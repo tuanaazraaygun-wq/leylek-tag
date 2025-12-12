@@ -584,6 +584,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [calling, setCalling] = useState(false);
 
   useEffect(() => {
     loadData();
