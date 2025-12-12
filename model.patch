@@ -1,0 +1,14 @@
+diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+index 554ced7..c24d3e5 100644
+--- a/frontend/app/index.tsx
++++ b/frontend/app/index.tsx
+@@ -199,8 +199,7 @@ export default function App() {
+       <SafeAreaView style={styles.container}>
+         <ScrollView contentContainerStyle={styles.scrollContent}>
+           <View style={styles.logoContainer}>
+-            <Logo size=\"large\" />
+-            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
++            <Logo size=\"large\" showSlogan={true} />
+           </View>
+ 
+           <View style={styles.formContainer}>
