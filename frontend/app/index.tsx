@@ -3,9 +3,24 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Logo from '../components/Logo';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
+
+// Leylek TAG Colors
+const COLORS = {
+  primary: '#3FA9F5',
+  secondary: '#FF6B35',
+  background: '#FFFFFF',
+  surface: '#E9EDF2',
+  text: '#1B1B1E',
+  gray400: '#ADB5BD',
+  gray500: '#6C757D',
+  gray600: '#495057',
+  success: '#00C853',
+  info: '#007AFF',
+};
 
 // User Context
 interface User {
