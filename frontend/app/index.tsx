@@ -415,6 +415,24 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
     }
   };
 
+  // SESLİ ARAMA - Mock fonksiyon
+  const handleVoiceCall = () => {
+    setCalling(true);
+    Alert.alert(
+      '📞 Sesli Arama',
+      'Sürücünüzle bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
+      [
+        {
+          text: 'Aramayı Sonlandır',
+          onPress: () => {
+            setCalling(false);
+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+          }
+        }
+      ]
+    );
+  };
+
   const handleAcceptOffer = async (offerId: string) => {
     if (!activeTag) return;
 
