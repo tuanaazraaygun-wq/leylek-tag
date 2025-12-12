@@ -462,45 +462,23 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
       <ScrollView style={styles.content}>
         {!activeTag ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Yeni Yolculuk Talebi</Text>
+            <Text style={styles.cardTitle}>🚗 Taksi Çağır</Text>
+            <Text style={styles.subtitle}>Tek dokunuşla yakındaki sürücülere çağrı gönder</Text>
             
-            <Text style={styles.label}>Nereden</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Başlangıç konumu (örn: Kadıköy, İstanbul)"
-              placeholderTextColor="#999"
-              value={pickupLocation}
-              onChangeText={setPickupLocation}
-            />
-
-            <Text style={styles.label}>Nereye</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Varış konumu (örn: Beşiktaş, İstanbul)"
-              placeholderTextColor="#999"
-              value={dropoffLocation}
-              onChangeText={setDropoffLocation}
-            />
-
-            <Text style={styles.label}>Notlar (Opsiyonel)</Text>
-            <TextInput
-              style={[styles.input, { height: 80 }]}
-              placeholder="Ek bilgiler..."
-              placeholderTextColor="#999"
-              multiline
-              value={notes}
-              onChangeText={setNotes}
-            />
-
             <TouchableOpacity
-              style={[styles.primaryButton, loading && { opacity: 0.5 }]}
-              onPress={handleCreateRequest}
+              style={[styles.callButtonLarge, loading && { opacity: 0.5 }]}
+              onPress={handleCallButton}
               disabled={loading}
             >
-              <Text style={styles.primaryButtonText}>
-                {loading ? 'Oluşturuluyor...' : 'Talep Oluştur'}
+              <Ionicons name="call" size={40} color="#FFF" />
+              <Text style={styles.callButtonLargeText}>
+                {loading ? 'ÇAĞRI GÖNDERİLİYOR...' : 'ÇAĞRI GÖNDER'}
               </Text>
             </TouchableOpacity>
+            
+            <Text style={styles.callNote}>
+              📍 Mevcut konumunuz otomatik tespit edilecek
+            </Text>
           </View>
         ) : (
           <>
