@@ -1,13 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Colors, Spacing, BorderRadius, FontSize } from '../constants/Colors';
+import Logo from '../components/Logo';
+import { Link, useRouter } from 'expo-router';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
 
-// User Context
+// Types
 interface User {
   id: string;
   phone: string;
@@ -15,6 +29,9 @@ interface User {
   role: 'passenger' | 'driver';
   rating: number;
   total_ratings: number;
+  total_trips: number;
+  profile_photo?: string;
+  driver_details?: any;
 }
 
 interface Tag {
@@ -28,6 +45,8 @@ interface Tag {
   driver_id?: string;
   driver_name?: string;
   final_price?: number;
+  emergency_shared: boolean;
+  share_link?: string;
   created_at: string;
   matched_at?: string;
   completed_at?: string;
@@ -38,6 +57,7 @@ interface Offer {
   driver_id: string;
   driver_name: string;
   driver_rating: number;
+  driver_photo?: string;
   price: number;
   estimated_time: number;
   notes?: string;
@@ -46,6 +66,7 @@ interface Offer {
 }
 
 export default function App() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'dashboard'>('login');
@@ -88,7 +109,7 @@ export default function App() {
     setName('');
   };
 
-  // ==================== AUTH FUNCTIONS ====================
+  // Auth Functions
   const handleSendOTP = async () => {
     if (!phone || phone.length < 10) {
       Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
@@ -164,11 +185,11 @@ export default function App() {
     }
   };
 
-  // ==================== RENDER SCREENS ====================
+  // Render Functions
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color="#00A67E" />
+        <ActivityIndicator size=\"large\" color={Colors.primary} />
       </SafeAreaView>
     );
   }
@@ -178,8 +199,7 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Ionicons name="car-sport" size={80} color="#00A67E" />
-            <Text style={styles.logoText}>Leylek TAG</Text>
+            <Logo size=\"large\" />
             <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
           </View>
 
@@ -187,9 +207,9 @@ export default function App() {
             <Text style={styles.label}>Telefon Numarası</Text>
             <TextInput
               style={styles.input}
-              placeholder="5XX XXX XX XX"
-              placeholderTextColor="#999"
-              keyboardType="phone-pad"
+              placeholder=\"5XX XXX XX XX\"
+              placeholderTextColor={Colors.gray400}
+              keyboardType=\"phone-pad\"
               value={phone}
               onChangeText={setPhone}
               maxLength={11}
@@ -209,8 +229,8 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Ionicons name="shield-checkmark" size={60} color="#00A67E" />
-            <Text style={styles.logoText}>Doğrulama</Text>
+            <Ionicons name=\"shield-checkmark\" size={60} color={Colors.primary} />
+            <Text style={styles.title}>Doğrulama</Text>
             <Text style={styles.subtitle}>{phone} numarasına gönderilen kodu girin</Text>
           </View>
 
@@ -218,9 +238,9 @@ export default function App() {
             <Text style={styles.label}>OTP Kodu</Text>
             <TextInput
               style={styles.input}
-              placeholder="123456"
-              placeholderTextColor="#999"
-              keyboardType="number-pad"
+              placeholder=\"123456\"
+              placeholderTextColor={Colors.gray400}
+              keyboardType=\"number-pad\"
               value={otp}
               onChangeText={setOtp}
               maxLength={6}
@@ -244,8 +264,8 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Ionicons name="person-add" size={60} color="#00A67E" />
-            <Text style={styles.logoText}>Kayıt Ol</Text>
+            <Ionicons name=\"person-add\" size={60} color={Colors.primary} />
+            <Text style={styles.title}>Kayıt Ol</Text>
             <Text style={styles.subtitle}>Hesabınızı oluşturun</Text>
           </View>
 
@@ -253,13 +273,13 @@ export default function App() {
             <Text style={styles.label}>Adınız</Text>
             <TextInput
               style={styles.input}
-              placeholder="Adınızı girin"
-              placeholderTextColor="#999"
+              placeholder=\"Adınızı girin\"
+              placeholderTextColor={Colors.gray400}
               value={name}
               onChangeText={setName}
             />
 
-            <Text style={[styles.label, { marginTop: 20 }]}>Rol Seçin</Text>
+            <Text style={[styles.label, { marginTop: Spacing.lg }]}>Rol Seçin</Text>
             <View style={styles.roleContainer}>
               <TouchableOpacity
                 style={[
@@ -269,9 +289,9 @@ export default function App() {
                 onPress={() => setSelectedRole('passenger')}
               >
                 <Ionicons
-                  name="person"
+                  name=\"person\"
                   size={40}
-                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
+                  color={selectedRole === 'passenger' ? '#FFF' : Colors.primary}
                 />
                 <Text
                   style={[
@@ -291,9 +311,9 @@ export default function App() {
                 onPress={() => setSelectedRole('driver')}
               >
                 <Ionicons
-                  name="car"
+                  name=\"car\"
                   size={40}
-                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
+                  color={selectedRole === 'driver' ? '#FFF' : Colors.primary}
                 />
                 <Text
                   style={[
@@ -327,8 +347,9 @@ export default function App() {
   return null;
 }
 
-// ==================== PASSENGER DASHBOARD ====================
+// Passenger Dashboard Component
 function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
+  const router = useRouter();
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [pickupLocation, setPickupLocation] = useState('');
@@ -339,7 +360,7 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
 
   useEffect(() => {
     loadActiveTag();
-    const interval = setInterval(loadActiveTag, 5000); // Her 5 saniyede bir kontrol et
+    const interval = setInterval(loadActiveTag, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -444,15 +465,25 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Yolcu Paneli</Text>
+          <Logo size=\"small\" showText={false} />
           <Text style={styles.headerSubtitle}>{user.name}</Text>
         </View>
-        <TouchableOpacity onPress={logout}>
-          <Ionicons name="log-out" size={28} color="#FFF" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.headerIcon}>
+            <Ionicons name=\"person\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/history' as any)} style={styles.headerIcon}>
+            <Ionicons name=\"time\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={logout} style={styles.headerIcon}>
+            <Ionicons name=\"log-out\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={loadActiveTag} colors={[Colors.primary]} />
+      }>
         {!activeTag ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Yeni Yolculuk Talebi</Text>
@@ -460,8 +491,8 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
             <Text style={styles.label}>Nereden</Text>
             <TextInput
               style={styles.input}
-              placeholder="Başlangıç konumu (örn: Kadıköy, İstanbul)"
-              placeholderTextColor="#999"
+              placeholder=\"Başlangıç konumu (örn: Kadıköy, İstanbul)\"
+              placeholderTextColor={Colors.gray400}
               value={pickupLocation}
               onChangeText={setPickupLocation}
             />
@@ -469,8 +500,8 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
             <Text style={styles.label}>Nereye</Text>
             <TextInput
               style={styles.input}
-              placeholder="Varış konumu (örn: Beşiktaş, İstanbul)"
-              placeholderTextColor="#999"
+              placeholder=\"Varış konumu (örn: Beşiktaş, İstanbul)\"
+              placeholderTextColor={Colors.gray400}
               value={dropoffLocation}
               onChangeText={setDropoffLocation}
             />
@@ -478,8 +509,8 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
             <Text style={styles.label}>Notlar (Opsiyonel)</Text>
             <TextInput
               style={[styles.input, { height: 80 }]}
-              placeholder="Ek bilgiler..."
-              placeholderTextColor="#999"
+              placeholder=\"Ek bilgiler...\"
+              placeholderTextColor={Colors.gray400}
               multiline
               value={notes}
               onChangeText={setNotes}
@@ -498,8 +529,8 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
         ) : (
           <>
             <View style={styles.card}>
-              <View style={styles.tagStatusBadge}>
-                <Text style={styles.tagStatusText}>
+              <View style={[styles.tagStatusBadge, { backgroundColor: Colors.surface }]}>
+                <Text style={[styles.tagStatusText, { color: Colors.primary }]}>
                   {activeTag.status === 'pending' && '⏳ Teklifler Bekleniyor'}
                   {activeTag.status === 'offers_received' && '📬 Teklifler Alındı'}
                   {activeTag.status === 'matched' && '✅ Eşleşildi'}
@@ -509,12 +540,12 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
               </View>
 
               <View style={styles.locationRow}>
-                <Ionicons name="location" size={20} color="#00A67E" />
+                <Ionicons name=\"location\" size={20} color={Colors.primary} />
                 <Text style={styles.locationText}>{activeTag.pickup_location}</Text>
               </View>
 
               <View style={styles.locationRow}>
-                <Ionicons name="flag" size={20} color="#FF5A5F" />
+                <Ionicons name=\"flag\" size={20} color={Colors.secondary} />
                 <Text style={styles.locationText}>{activeTag.dropoff_location}</Text>
               </View>
 
@@ -523,6 +554,13 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
                   <Text style={styles.driverName}>Sürücü: {activeTag.driver_name}</Text>
                   <Text style={styles.driverPrice}>Fiyat: ₺{activeTag.final_price}</Text>
                 </View>
+              )}
+
+              {activeTag.emergency_shared && (
+                <TouchableOpacity style={styles.emergencyButton}>
+                  <Ionicons name=\"warning\" size={20} color=\"#FFF\" />
+                  <Text style={styles.emergencyButtonText}>Acil Durum Aktif</Text>
+                </TouchableOpacity>
               )}
             </View>
 
@@ -555,16 +593,21 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
               </View>
             )}
 
-            {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
+            {(activeTag.status === 'matched' || activeTag.status === 'in_progress') && (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>İletişim</Text>
                 <TouchableOpacity style={styles.callButton}>
-                  <Ionicons name="call" size={24} color="#FFF" />
+                  <Ionicons name=\"call\" size={24} color=\"#FFF\" />
                   <Text style={styles.callButtonText}>Sürücüyü Ara</Text>
                 </TouchableOpacity>
                 <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama</Text>
+
+                <TouchableOpacity style={styles.shareButton}>
+                  <Ionicons name=\"share-social\" size={20} color={Colors.primary} />
+                  <Text style={styles.shareButtonText}>Yolculuğu Paylaş</Text>
+                </TouchableOpacity>
               </View>
-            ) : null}
+            )}
           </>
         )}
       </ScrollView>
@@ -572,8 +615,9 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
   );
 }
 
-// ==================== DRIVER DASHBOARD ====================
+// Driver Dashboard Component (devam edecek...)
 function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+  const router = useRouter();
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -712,13 +756,27 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Sürücü Paneli</Text>
-          <Text style={styles.headerSubtitle}>{user.name} ⭐ {user.rating}</Text>
+        <View style={styles.headerLeft}>
+          <Logo size=\"small\" showText={false} />
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerTitle}>{user.name}</Text>
+            <Text style={styles.headerSubtitle}>⭐ {user.rating}</Text>
+          </View>
         </View>
-        <TouchableOpacity onPress={logout}>
-          <Ionicons name="log-out" size={28} color="#FFF" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/driver-verify' as any)} style={styles.headerIcon}>
+            <Ionicons name=\"shield-checkmark\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.headerIcon}>
+            <Ionicons name=\"person\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/history' as any)} style={styles.headerIcon}>
+            <Ionicons name=\"time\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={logout} style={styles.headerIcon}>
+            <Ionicons name=\"log-out\" size={24} color=\"#FFF\" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.content}>
@@ -726,8 +784,8 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Aktif Yolculuk</Text>
             
-            <View style={styles.tagStatusBadge}>
-              <Text style={styles.tagStatusText}>
+            <View style={[styles.tagStatusBadge, { backgroundColor: Colors.surface }]}>
+              <Text style={[styles.tagStatusText, { color: Colors.primary }]}>
                 {activeTag.status === 'matched' && '✅ Eşleşildi'}
                 {activeTag.status === 'in_progress' && '🚗 Devam Ediyor'}
               </Text>
@@ -736,12 +794,12 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
             <Text style={styles.passengerName}>Yolcu: {activeTag.passenger_name}</Text>
 
             <View style={styles.locationRow}>
-              <Ionicons name="location" size={20} color="#00A67E" />
+              <Ionicons name=\"location\" size={20} color={Colors.primary} />
               <Text style={styles.locationText}>{activeTag.pickup_location}</Text>
             </View>
 
             <View style={styles.locationRow}>
-              <Ionicons name="flag" size={20} color="#FF5A5F" />
+              <Ionicons name=\"flag\" size={20} color={Colors.secondary} />
               <Text style={styles.locationText}>{activeTag.dropoff_location}</Text>
             </View>
 
@@ -760,7 +818,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
             )}
 
             <TouchableOpacity style={styles.callButton}>
-              <Ionicons name="call" size={24} color="#FFF" />
+              <Ionicons name=\"call\" size={24} color=\"#FFF\" />
               <Text style={styles.callButtonText}>Yolcuyu Ara</Text>
             </TouchableOpacity>
           </View>
@@ -776,12 +834,12 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
                   <Text style={styles.requestPassenger}>{request.passenger_name}</Text>
                   
                   <View style={styles.locationRow}>
-                    <Ionicons name="location" size={18} color="#00A67E" />
+                    <Ionicons name=\"location\" size={18} color={Colors.primary} />
                     <Text style={styles.requestLocation}>{request.pickup_location}</Text>
                   </View>
 
                   <View style={styles.locationRow}>
-                    <Ionicons name="flag" size={18} color="#FF5A5F" />
+                    <Ionicons name=\"flag\" size={18} color={Colors.secondary} />
                     <Text style={styles.requestLocation}>{request.dropoff_location}</Text>
                   </View>
 
@@ -807,318 +865,360 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
   );
 }
 
-// ==================== STYLES ====================
+// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5'
+    backgroundColor: Colors.background
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
+    padding: Spacing.lg,
     justifyContent: 'center'
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 40
+    marginBottom: Spacing.xxl
   },
-  logoText: {
-    fontSize: 36,
+  title: {
+    fontSize: FontSize.xxxl,
     fontWeight: 'bold',
-    color: '#00A67E',
-    marginTop: 10
+    color: Colors.primary,
+    marginTop: Spacing.md
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 5,
+    fontSize: FontSize.md,
+    color: Colors.gray500,
+    marginTop: Spacing.sm,
     textAlign: 'center'
   },
   formContainer: {
     width: '100%'
   },
   label: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 8
+    color: Colors.text,
+    marginBottom: Spacing.sm
   },
   input: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: FontSize.md,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    marginBottom: 16
+    borderColor: Colors.border,
+    marginBottom: Spacing.md,
+    color: Colors.text
   },
   primaryButton: {
-    backgroundColor: '#00A67E',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
     alignItems: 'center',
-    marginTop: 8
+    marginTop: Spacing.sm
   },
   primaryButtonText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: 'bold'
   },
   secondaryButton: {
     backgroundColor: 'transparent',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#00A67E'
+    borderColor: Colors.primary
   },
   secondaryButtonText: {
-    color: '#00A67E',
-    fontSize: 16,
+    color: Colors.primary,
+    fontSize: FontSize.md,
     fontWeight: 'bold'
   },
   roleContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24
+    marginBottom: Spacing.lg
   },
   roleButton: {
     flex: 1,
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 24,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
     alignItems: 'center',
-    marginHorizontal: 8,
+    marginHorizontal: Spacing.sm,
     borderWidth: 2,
-    borderColor: '#E0E0E0'
+    borderColor: Colors.border
   },
   roleButtonActive: {
-    backgroundColor: '#00A67E',
-    borderColor: '#00A67E'
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary
   },
   roleButtonText: {
-    marginTop: 8,
-    fontSize: 16,
+    marginTop: Spacing.sm,
+    fontSize: FontSize.md,
     fontWeight: '600',
-    color: '#00A67E'
+    color: Colors.primary
   },
   roleButtonTextActive: {
     color: '#FFF'
   },
   header: {
-    backgroundColor: '#00A67E',
-    padding: 20,
+    backgroundColor: Colors.primary,
+    padding: Spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  headerInfo: {
+    marginLeft: Spacing.md
+  },
   headerTitle: {
-    fontSize: 24,
+    fontSize: FontSize.lg,
     fontWeight: 'bold',
     color: '#FFF'
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: FontSize.sm,
     color: '#FFF',
     opacity: 0.9,
-    marginTop: 4
+    marginTop: Spacing.xs
+  },
+  headerActions: {
+    flexDirection: 'row'
+  },
+  headerIcon: {
+    marginLeft: Spacing.md
   },
   content: {
     flex: 1,
-    padding: 16
+    padding: Spacing.md
   },
   card: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: FontSize.xl,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 16
+    color: Colors.text,
+    marginBottom: Spacing.md
   },
   tagStatusBadge: {
-    backgroundColor: '#E8F8F5',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
     alignItems: 'center'
   },
   tagStatusText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#00A67E'
+    fontSize: FontSize.md,
+    fontWeight: '600'
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12
+    marginBottom: Spacing.md
   },
   locationText: {
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 8,
+    fontSize: FontSize.md,
+    color: Colors.text,
+    marginLeft: Spacing.sm,
     flex: 1
   },
   driverInfo: {
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    marginTop: Spacing.md
   },
   driverName: {
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: '600',
-    color: '#333'
+    color: Colors.text
   },
   driverPrice: {
-    fontSize: 18,
+    fontSize: FontSize.lg,
     fontWeight: 'bold',
-    color: '#00A67E',
-    marginTop: 4
+    color: Colors.primary,
+    marginTop: Spacing.xs
   },
   offerCard: {
-    backgroundColor: '#F8F8F8',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md
   },
   offerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8
+    marginBottom: Spacing.sm
   },
   offerDriverName: {
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: '600',
-    color: '#333'
+    color: Colors.text
   },
   offerRating: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
+    marginTop: Spacing.xs
   },
   offerPrice: {
-    fontSize: 20,
+    fontSize: FontSize.xl,
     fontWeight: 'bold',
-    color: '#00A67E'
+    color: Colors.primary
   },
   offerTime: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
+    marginTop: Spacing.xs
   },
   offerNotes: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 12
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
+    marginBottom: Spacing.md
   },
   acceptButton: {
-    backgroundColor: '#00A67E',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: Colors.secondary,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
     alignItems: 'center'
   },
   acceptButtonText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: 'bold'
   },
   callButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.info,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12
+    marginTop: Spacing.md
   },
   callButtonText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: 'bold',
-    marginLeft: 8
+    marginLeft: Spacing.sm
   },
   callNote: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: FontSize.xs,
+    color: Colors.gray500,
     textAlign: 'center',
-    marginTop: 8
+    marginTop: Spacing.sm
+  },
+  shareButton: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.sm
+  },
+  shareButtonText: {
+    color: Colors.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    marginLeft: Spacing.sm
+  },
+  emergencyButton: {
+    backgroundColor: Colors.error,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md
+  },
+  emergencyButtonText: {
+    color: '#FFF',
+    fontSize: FontSize.sm,
+    fontWeight: 'bold',
+    marginLeft: Spacing.sm
   },
   requestCard: {
-    backgroundColor: '#F8F8F8',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md
   },
   requestPassenger: {
-    fontSize: 16,
+    fontSize: FontSize.md,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 8
+    color: Colors.text,
+    marginBottom: Spacing.sm
   },
   requestLocation: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
+    fontSize: FontSize.sm,
+    color: Colors.gray600,
+    marginLeft: Spacing.sm,
     flex: 1
   },
   sendOfferButton: {
-    backgroundColor: '#00A67E',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: Colors.secondary,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
     alignItems: 'center',
-    marginTop: 12
+    marginTop: Spacing.md
   },
   sendOfferButtonText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: FontSize.sm,
     fontWeight: 'bold'
   },
   offeredBadge: {
-    backgroundColor: '#E8F8F5',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: Colors.success + '20',
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
     alignItems: 'center',
-    marginTop: 12
+    marginTop: Spacing.md
   },
   offeredText: {
-    color: '#00A67E',
-    fontSize: 14,
+    color: Colors.success,
+    fontSize: FontSize.sm,
     fontWeight: '600'
   },
   passengerName: {
-    fontSize: 18,
+    fontSize: FontSize.lg,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 12
+    color: Colors.text,
+    marginBottom: Spacing.md
   },
   priceText: {
-    fontSize: 20,
+    fontSize: FontSize.xl,
     fontWeight: 'bold',
-    color: '#00A67E',
-    marginTop: 12,
-    marginBottom: 12
+    color: Colors.primary,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md
   },
   completeButton: {
-    backgroundColor: '#FF9500',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.warning,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
     alignItems: 'center',
-    marginBottom: 8
+    marginBottom: Spacing.sm
   },
   emptyText: {
-    fontSize: 16,
-    color: '#999',
+    fontSize: FontSize.md,
+    color: Colors.gray400,
     textAlign: 'center',
-    marginTop: 20
+    marginTop: Spacing.lg
   }
 });
