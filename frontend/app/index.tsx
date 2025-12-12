@@ -512,31 +512,29 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
             </View>
 
             {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Gelen Teklifler ({offers.length})</Text>
-                {offers.map((offer) => (
-                  <View key={offer.id} style={styles.offerCard}>
-                    <View style={styles.offerHeader}>
-                      <View>
-                        <Text style={styles.offerDriverName}>{offer.driver_name}</Text>
-                        <Text style={styles.offerRating}>⭐ {offer.driver_rating}</Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.offerPrice}>₺{offer.price}</Text>
-                        <Text style={styles.offerTime}>~{offer.estimated_time} dk</Text>
-                      </View>
-                    </View>
-                    {offer.notes && (
-                      <Text style={styles.offerNotes}>{offer.notes}</Text>
-                    )}
+              <View style={styles.offersContainer}>
+                <Text style={styles.offersTitle}>💬 Gelen Teklifler ({offers.length})</Text>
+                <View style={styles.balloonsContainer}>
+                  {offers.map((offer) => (
                     <TouchableOpacity
-                      style={styles.acceptButton}
+                      key={offer.id}
+                      style={styles.offerBalloon}
                       onPress={() => handleAcceptOffer(offer.id)}
                     >
-                      <Text style={styles.acceptButtonText}>Kabul Et</Text>
+                      <View style={styles.balloonContent}>
+                        <Text style={styles.balloonDriverName}>{offer.driver_name}</Text>
+                        <Text style={styles.balloonRating}>⭐ {offer.driver_rating}</Text>
+                        <Text style={styles.balloonPrice}>₺{offer.price}</Text>
+                        <Text style={styles.balloonTime}>~{offer.estimated_time} dk</Text>
+                        {offer.notes && (
+                          <Text style={styles.balloonNotes}>{offer.notes}</Text>
+                        )}
+                      </View>
+                      <View style={styles.balloonTail} />
                     </TouchableOpacity>
-                  </View>
-                ))}
+                  ))}
+                </View>
+                <Text style={styles.balloonHint}>💡 Bir balona dokunarak teklifi kabul edin</Text>
               </View>
             )}
 
