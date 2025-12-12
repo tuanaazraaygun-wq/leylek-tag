@@ -3,8 +3,6 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Logo from '../components/Logo';
-import { Colors, Spacing, BorderRadius, FontSize } from '../constants/Colors';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
@@ -180,7 +178,9 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Logo size="large" showSlogan={true} />
+            <Ionicons name="car-sport" size={80} color="#00A67E" />
+            <Text style={styles.logoText}>Leylek TAG</Text>
+            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
           </View>
 
           <View style={styles.formContainer}>
