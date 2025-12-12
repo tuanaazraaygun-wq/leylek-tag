@@ -784,9 +784,15 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={styles.callButton}>
+            <TouchableOpacity 
+              style={[styles.callButton, calling && { opacity: 0.7 }]}
+              onPress={handleDriverVoiceCall}
+              disabled={calling}
+            >
               <Ionicons name="call" size={24} color="#FFF" />
-              <Text style={styles.callButtonText}>Yolcuyu Ara</Text>
+              <Text style={styles.callButtonText}>
+                {calling ? 'Aranıyor...' : 'Yolcuyu Ara'}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
