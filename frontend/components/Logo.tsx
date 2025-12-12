@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, G } from 'react-native-svg';
+import Svg, { Path, G, Circle } from 'react-native-svg';
 import { Colors, FontSize, Spacing } from '../constants/Colors';
 
 interface LogoProps {
@@ -20,93 +20,120 @@ export default function Logo({ size = 'medium', showText = true, showSlogan = fa
 
   return (
     <View style={styles.container}>
-      {/* Modern Minimal Uçan Leylek Logosu */}
+      {/* PROFESYONEL UÇAN LEYLEK LOGOSU - Twitter/Uber Minimalizmi */}
       <View style={[styles.logoContainer, { width: currentSize.icon, height: currentSize.icon }]}>
         <Svg
           width={currentSize.icon}
           height={currentSize.icon}
-          viewBox="0 0 100 100"
+          viewBox="0 0 120 120"
           fill="none"
         >
           <G>
-            {/* Ana Leylek Gövdesi - Minimal Tek Çizgi Stil */}
-            {/* Gövde (Body) */}
+            {/* ================== MAIN STORK SILHOUETTE ================== */}
+            
+            {/* BAŞ & UZUN GAGA - Leylek karakteristiği */}
             <Path
-              d="M 50 45 Q 48 50 47 55 Q 46 60 45 65"
+              d="M 65 45 L 80 38"
+              stroke={Colors.primary}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+            
+            {/* Baş yuvarlak geçiş */}
+            <Path
+              d="M 65 45 Q 63 43 60 42"
+              stroke={Colors.primary}
+              strokeWidth="3"
+              strokeLinecap="round"
+              fill="none"
+            />
+            
+            {/* BOYUN & GÖVDE - Tek akışkan çizgi */}
+            <Path
+              d="M 60 42 Q 58 46 58 52 Q 58 58 56 64"
+              stroke={Colors.primary}
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              fill="none"
+            />
+            
+            {/* KUYRUK - Hafif aşağı */}
+            <Path
+              d="M 56 64 Q 52 68 48 70"
               stroke={Colors.primary}
               strokeWidth="2.5"
               strokeLinecap="round"
               fill="none"
             />
             
-            {/* Baş ve Gaga (Head & Beak) */}
+            {/* ================== KANATLAR - V ŞEKLİNDE YUKARI ================== */}
+            
+            {/* SOL KANAT - Yukarı doğru açık */}
             <Path
-              d="M 50 45 Q 52 42 54 40 L 62 35"
+              d="M 58 50 Q 40 42 25 38 Q 18 36 12 38"
               stroke={Colors.primary}
-              strokeWidth="2.5"
+              strokeWidth="3.5"
               strokeLinecap="round"
+              strokeLinejoin="round"
               fill="none"
             />
             
-            {/* Sol Kanat (Left Wing - Yukarı açık) */}
+            {/* Sol kanat detay (tüy etkisi) */}
             <Path
-              d="M 50 48 Q 35 38 25 35 Q 20 33 15 34"
-              stroke={Colors.primary}
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              fill="none"
-            />
-            
-            {/* Sağ Kanat (Right Wing - Yukarı açık) */}
-            <Path
-              d="M 50 48 Q 65 38 75 35 Q 80 33 85 34"
-              stroke={Colors.primary}
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              fill="none"
-            />
-            
-            {/* Kuyruk (Tail) */}
-            <Path
-              d="M 45 65 Q 42 68 40 70"
+              d="M 40 42 L 36 44 M 30 40 L 26 42"
               stroke={Colors.primary}
               strokeWidth="2"
               strokeLinecap="round"
-              fill="none"
+              opacity="0.6"
             />
             
-            {/* Bacaklar (Legs - hafif arkaya) */}
+            {/* SAĞ KANAT - Yukarı doğru açık */}
             <Path
-              d="M 46 62 L 44 72 M 48 63 L 50 72"
+              d="M 58 50 Q 76 42 91 38 Q 98 36 104 38"
               stroke={Colors.primary}
-              strokeWidth="1.5"
+              strokeWidth="3.5"
               strokeLinecap="round"
+              strokeLinejoin="round"
               fill="none"
             />
             
-            {/* Göz (Eye - minimal nokta) */}
+            {/* Sağ kanat detay (tüy etkisi) */}
             <Path
-              d="M 53 40 L 53 40"
+              d="M 76 42 L 80 44 M 86 40 L 90 42"
               stroke={Colors.primary}
               strokeWidth="2"
               strokeLinecap="round"
+              opacity="0.6"
             />
             
-            {/* Kanat Detayları (Wing feathers - minimal) */}
+            {/* ================== DETAYLAR ================== */}
+            
+            {/* GÖZ - Minimal nokta */}
+            <Circle
+              cx="64"
+              cy="43"
+              r="1.5"
+              fill={Colors.primary}
+            />
+            
+            {/* BACAKLAR - İnce, arkaya doğru */}
             <Path
-              d="M 35 38 L 32 40 M 30 37 L 27 39"
+              d="M 56 62 L 54 72"
               stroke={Colors.primary}
-              strokeWidth="1.5"
+              strokeWidth="1.8"
               strokeLinecap="round"
-              opacity="0.7"
+              opacity="0.8"
             />
             <Path
-              d="M 65 38 L 68 40 M 70 37 L 73 39"
+              d="M 58 63 L 60 72"
               stroke={Colors.primary}
-              strokeWidth="1.5"
+              strokeWidth="1.8"
               strokeLinecap="round"
-              opacity="0.7"
+              opacity="0.8"
             />
+            
           </G>
         </Svg>
       </View>
