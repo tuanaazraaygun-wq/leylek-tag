@@ -178,9 +178,7 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Ionicons name="car-sport" size={80} color="#00A67E" />
-            <Text style={styles.logoText}>Leylek TAG</Text>
-            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
+            <Logo size="large" showSlogan={true} />
           </View>
 
           <View style={styles.formContainer}>
