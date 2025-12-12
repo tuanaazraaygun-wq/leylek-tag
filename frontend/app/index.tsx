@@ -716,6 +716,23 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
       ]
     );
   };
+  // SESLİ ARAMA - Driver için mock fonksiyon
+  const handleDriverVoiceCall = () => {
+    setCalling(true);
+    Alert.alert(
+      '📞 Sesli Arama',
+      'Yolcunuzla bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
+      [
+        {
+          text: 'Aramayı Sonlandır',
+          onPress: () => {
+            setCalling(false);
+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
