@@ -558,12 +558,18 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
 
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>İletişim</Text>
-                <TouchableOpacity style={styles.callButton}>
+                <Text style={styles.cardTitle}>📞 İletişim</Text>
+                <TouchableOpacity 
+                  style={[styles.callButton, calling && { opacity: 0.7 }]}
+                  onPress={handleVoiceCall}
+                  disabled={calling}
+                >
                   <Ionicons name="call" size={24} color="#FFF" />
-                  <Text style={styles.callButtonText}>Sürücüyü Ara</Text>
+                  <Text style={styles.callButtonText}>
+                    {calling ? 'Aranıyor...' : 'Sürücüyü Ara'}
+                  </Text>
                 </TouchableOpacity>
-                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama</Text>
+                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama • 📱 Numaralar gizli</Text>
               </View>
             ) : null}
           </>
