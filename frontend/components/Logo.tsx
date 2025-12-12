@@ -20,226 +20,320 @@ export default function Logo({ size = 'medium', showText = true, showSlogan = fa
 
   return (
     <View style={styles.container}>
-      {/* GERÇEKÇİ & EFEKTLİ UÇAN LEYLEK LOGOSU */}
+      {/* ULTRA GERÇEKÇİ UÇAN LEYLEK LOGOSU - Doğal Kanat Pozisyonu */}
       <View style={[styles.logoContainer, { width: currentSize.icon, height: currentSize.icon }]}>
         <Svg
           width={currentSize.icon}
           height={currentSize.icon}
-          viewBox="0 0 140 140"
+          viewBox="0 0 160 140"
           fill="none"
         >
           <Defs>
-            {/* Gradient - Mavi tonları */}
-            <LinearGradient id="storkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            {/* Ana gövde gradient */}
+            <LinearGradient id="bodyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
               <Stop offset="0%" stopColor="#4AB8FF" stopOpacity="1" />
-              <Stop offset="50%" stopColor={Colors.primary} stopOpacity="1" />
+              <Stop offset="40%" stopColor={Colors.primary} stopOpacity="1" />
               <Stop offset="100%" stopColor="#2E8BC0" stopOpacity="1" />
             </LinearGradient>
             
-            {/* Gölge gradient */}
-            <LinearGradient id="shadowGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor={Colors.primary} stopOpacity="0.3" />
+            {/* Kanat gradient - daha koyu */}
+            <LinearGradient id="wingGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor="#4AB8FF" stopOpacity="0.9" />
+              <Stop offset="50%" stopColor={Colors.primary} stopOpacity="0.95" />
+              <Stop offset="100%" stopColor="#2E8BC0" stopOpacity="1" />
+            </LinearGradient>
+            
+            {/* Gölge */}
+            <LinearGradient id="shadowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor={Colors.primary} stopOpacity="0.25" />
               <Stop offset="100%" stopColor={Colors.primary} stopOpacity="0" />
             </LinearGradient>
           </Defs>
           
           <G>
-            {/* =============== GÖLGE (ALT KATMAN) =============== */}
+            {/* ==================== GÖLGE ==================== */}
             <Ellipse
-              cx="70"
-              cy="75"
-              rx="45"
-              ry="8"
-              fill="url(#shadowGradient)"
-              opacity="0.2"
+              cx="80"
+              cy="95"
+              rx="40"
+              ry="6"
+              fill="url(#shadowGrad)"
+              opacity="0.3"
             />
             
-            {/* =============== ANA GÖVDE =============== */}
+            {/* ==================== UZUN BOYUN & GÖVDE (Gerçekçi Anatomi) ==================== */}
             
-            {/* Gövde - Dolu şekil */}
+            {/* Gövde - Elips şeklinde gerçekçi */}
+            <Ellipse
+              cx="75"
+              cy="65"
+              rx="8"
+              ry="14"
+              fill="url(#bodyGradient)"
+              stroke={Colors.primary}
+              strokeWidth="0.5"
+            />
+            
+            {/* Göğüs bölgesi - daha şişkin */}
+            <Ellipse
+              cx="76"
+              cy="60"
+              rx="9"
+              ry="10"
+              fill="url(#bodyGradient)"
+              opacity="0.9"
+            />
+            
+            {/* Uzun ince boyun */}
             <Path
-              d="M 65 48 Q 64 52 64 58 Q 64 65 62 72 Q 61 75 60 78"
-              fill="url(#storkGradient)"
+              d="M 76 52 Q 77 56 76 60"
+              fill="url(#bodyGradient)"
+              stroke={Colors.primary}
+              strokeWidth="2.5"
+            />
+            
+            {/* Boyun detay çizgisi */}
+            <Path
+              d="M 77 52 Q 78 56 78 59"
+              stroke="#4AB8FF"
+              strokeWidth="1"
+              opacity="0.5"
+            />
+            
+            {/* ==================== BAŞ & GAGA (Gerçekçi) ==================== */}
+            
+            {/* Baş - Hafif oval */}
+            <Ellipse
+              cx="78"
+              cy="48"
+              rx="5"
+              ry="6"
+              fill="url(#bodyGradient)"
               stroke={Colors.primary}
               strokeWidth="1"
             />
             
-            {/* =============== BAŞ VE GAGA =============== */}
-            
-            {/* Baş - Yuvarlak */}
-            <Circle
-              cx="68"
-              cy="46"
-              r="6"
-              fill="url(#storkGradient)"
-              stroke={Colors.primary}
-              strokeWidth="1.5"
-            />
-            
-            {/* Uzun gaga - Leylek karakteristiği */}
+            {/* Uzun leylek gagası - İki parçalı */}
             <Path
-              d="M 73 45 L 92 40"
+              d="M 82 47 L 98 43"
               stroke="#FF6B35"
-              strokeWidth="3"
+              strokeWidth="3.5"
               strokeLinecap="round"
             />
             <Path
-              d="M 73 47 L 91 42"
+              d="M 82 49 L 97 45"
               stroke="#FF8855"
-              strokeWidth="2"
+              strokeWidth="2.5"
               strokeLinecap="round"
-              opacity="0.7"
+              opacity="0.8"
             />
             
-            {/* Göz */}
+            {/* Gaga detayı */}
+            <Path
+              d="M 82 48 L 87 46"
+              stroke="#CC5528"
+              strokeWidth="1"
+              strokeLinecap="round"
+              opacity="0.6"
+            />
+            
+            {/* Göz - Gerçekçi */}
             <Circle
-              cx="70"
-              cy="45"
+              cx="80"
+              cy="47"
               r="2"
               fill="#1B1B1E"
             />
             <Circle
-              cx="70.5"
-              cy="44.5"
-              r="0.8"
+              cx="80.6"
+              cy="46.5"
+              r="0.7"
               fill="#FFFFFF"
             />
             
-            {/* =============== KANATLAR - GERÇEKÇİ TÜY YAPISI =============== */}
+            {/* ==================== KANATLAR - DOĞAL POZİSYON (Daha Dar Açılı) ==================== */}
             
-            {/* SOL KANAT - Ana yapı */}
+            {/* SOL KANAT - Hafif yukarı ama daha dar */}
+            
+            {/* Ana kanat kemiği */}
             <Path
-              d="M 64 55 Q 45 48 28 45 Q 18 43 10 46"
-              fill="url(#storkGradient)"
+              d="M 75 58 Q 60 56 45 55 Q 35 54 28 56"
+              fill="url(#wingGradient)"
               stroke={Colors.primary}
               strokeWidth="2"
               strokeLinecap="round"
-              strokeLinejoin="round"
             />
             
-            {/* Sol kanat tüy detayları */}
+            {/* Birincil uçuş tüyleri (uzun) */}
             <Path
-              d="M 50 50 L 46 52 M 40 48 L 36 50 M 30 46 L 26 48 M 20 45 L 16 47"
+              d="M 60 56 L 57 60 M 52 55 L 49 59 M 44 55 L 41 59 M 36 55 L 33 59 M 30 56 L 27 60"
               stroke={Colors.primary}
               strokeWidth="2.5"
               strokeLinecap="round"
-              opacity="0.8"
+              opacity="0.85"
             />
+            
+            {/* İkincil tüyler (kısa) */}
             <Path
-              d="M 48 51 L 44 54 M 38 49 L 34 52 M 28 47 L 24 50"
+              d="M 58 57 L 56 62 M 50 56 L 48 61 M 42 56 L 40 61 M 34 56 L 32 61"
               stroke="#2E8BC0"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.6"
+            />
+            
+            {/* Kanat üst highlight */}
+            <Path
+              d="M 72 58 Q 62 57 52 56"
+              stroke="#4AB8FF"
               strokeWidth="2"
               strokeLinecap="round"
               opacity="0.5"
             />
             
-            {/* Sol kanat üst katman (parlak alan) */}
+            {/* Omuz bağlantısı */}
             <Path
-              d="M 60 54 Q 50 51 40 49"
-              stroke="#4AB8FF"
-              strokeWidth="2"
-              strokeLinecap="round"
-              opacity="0.6"
-            />
-            
-            {/* SAĞ KANAT - Ana yapı */}
-            <Path
-              d="M 64 55 Q 83 48 100 45 Q 110 43 118 46"
-              fill="url(#storkGradient)"
+              d="M 74 58 Q 70 59 68 60"
               stroke={Colors.primary}
               strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            
-            {/* Sağ kanat tüy detayları */}
-            <Path
-              d="M 78 50 L 82 52 M 88 48 L 92 50 M 98 46 L 102 48 M 108 45 L 112 47"
-              stroke={Colors.primary}
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              opacity="0.8"
-            />
-            <Path
-              d="M 80 51 L 84 54 M 90 49 L 94 52 M 100 47 L 104 50"
-              stroke="#2E8BC0"
-              strokeWidth="2"
-              strokeLinecap="round"
-              opacity="0.5"
-            />
-            
-            {/* Sağ kanat üst katman (parlak alan) */}
-            <Path
-              d="M 68 54 Q 78 51 88 49"
-              stroke="#4AB8FF"
-              strokeWidth="2"
-              strokeLinecap="round"
-              opacity="0.6"
-            />
-            
-            {/* =============== KUYRUK - DETAYLI =============== */}
-            <Path
-              d="M 60 78 Q 55 82 50 84 L 48 85"
-              stroke={Colors.primary}
-              strokeWidth="3"
-              strokeLinecap="round"
-              fill="none"
-            />
-            <Path
-              d="M 60 79 Q 56 81 52 83"
-              stroke="#2E8BC0"
-              strokeWidth="2"
-              strokeLinecap="round"
-              opacity="0.6"
-            />
-            
-            {/* Kuyruk tüyleri */}
-            <Path
-              d="M 54 82 L 51 85 M 52 83 L 49 86"
-              stroke={Colors.primary}
-              strokeWidth="1.5"
               strokeLinecap="round"
               opacity="0.7"
             />
             
-            {/* =============== BACAKLAR - UZUN VE İNCE =============== */}
+            {/* SAĞ KANAT - Hafif yukarı ama daha dar */}
             
-            {/* Sol bacak */}
+            {/* Ana kanat kemiği */}
             <Path
-              d="M 62 75 L 60 92 M 60 92 L 58 94 M 60 92 L 62 94"
-              stroke="#FF6B35"
-              strokeWidth="2.5"
+              d="M 77 58 Q 92 56 107 55 Q 117 54 124 56"
+              fill="url(#wingGradient)"
+              stroke={Colors.primary}
+              strokeWidth="2"
               strokeLinecap="round"
-              strokeLinejoin="round"
             />
             
-            {/* Sağ bacak */}
+            {/* Birincil uçuş tüyleri (uzun) */}
             <Path
-              d="M 65 76 L 67 92 M 67 92 L 65 94 M 67 92 L 69 94"
-              stroke="#FF6B35"
+              d="M 92 56 L 95 60 M 100 55 L 103 59 M 108 55 L 111 59 M 116 55 L 119 59 M 122 56 L 125 60"
+              stroke={Colors.primary}
               strokeWidth="2.5"
               strokeLinecap="round"
-              strokeLinejoin="round"
+              opacity="0.85"
             />
             
-            {/* =============== EK DETAYLAR =============== */}
-            
-            {/* Boyun detayı */}
+            {/* İkincil tüyler (kısa) */}
             <Path
-              d="M 66 48 Q 65 52 65 56"
+              d="M 94 57 L 96 62 M 102 56 L 104 61 M 110 56 L 112 61 M 118 56 L 120 61"
+              stroke="#2E8BC0"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.6"
+            />
+            
+            {/* Kanat üst highlight */}
+            <Path
+              d="M 80 58 Q 90 57 100 56"
               stroke="#4AB8FF"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.5"
+            />
+            
+            {/* Omuz bağlantısı */}
+            <Path
+              d="M 78 58 Q 82 59 84 60"
+              stroke={Colors.primary}
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.7"
+            />
+            
+            {/* ==================== KUYRUK - GERÇEKÇİ AÇILIŞ ==================== */}
+            
+            {/* Ana kuyruk yapısı */}
+            <Path
+              d="M 74 78 Q 70 84 67 88"
+              fill="url(#wingGradient)"
+              stroke={Colors.primary}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+            
+            {/* Kuyruk tüyleri - yelpaze şeklinde */}
+            <Path
+              d="M 72 80 L 69 88 M 73 81 L 71 89 M 74 82 L 73 90"
+              stroke={Colors.primary}
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.8"
+            />
+            
+            {/* Kuyruk detayları */}
+            <Path
+              d="M 71 82 L 68 90 M 72 83 L 70 91"
+              stroke="#2E8BC0"
               strokeWidth="1.5"
               strokeLinecap="round"
               opacity="0.5"
             />
             
-            {/* Işık efekti (highlight) */}
-            <Circle
-              cx="66"
-              cy="58"
-              r="3"
+            {/* ==================== BACAKLAR - İNCE VE UZUN ==================== */}
+            
+            {/* Sol bacak */}
+            <Path
+              d="M 73 78 L 70 95"
+              stroke="#FF6B35"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+            {/* Sol ayak parmakları */}
+            <Path
+              d="M 70 95 L 68 98 M 70 95 L 70 98 M 70 95 L 72 98"
+              stroke="#FF6B35"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            
+            {/* Sağ bacak */}
+            <Path
+              d="M 77 78 L 80 95"
+              stroke="#FF6B35"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+            {/* Sağ ayak parmakları */}
+            <Path
+              d="M 80 95 L 78 98 M 80 95 L 80 98 M 80 95 L 82 98"
+              stroke="#FF6B35"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            
+            {/* Bacak detayı (eklem) */}
+            <Path
+              d="M 73 86 L 73 87 M 77 86 L 77 87"
+              stroke="#CC5528"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            
+            {/* ==================== DETAYLAR ==================== */}
+            
+            {/* Işık efekti - göğüs */}
+            <Ellipse
+              cx="77"
+              cy="62"
+              rx="3"
+              ry="4"
               fill="#FFFFFF"
-              opacity="0.3"
+              opacity="0.25"
+            />
+            
+            {/* Gövde çizgileri (anatomi) */}
+            <Path
+              d="M 75 62 Q 76 65 76 68"
+              stroke="#2E8BC0"
+              strokeWidth="1"
+              opacity="0.4"
             />
             
           </G>
