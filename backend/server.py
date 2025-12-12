@@ -1,215 +1,53 @@
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+"""
+Leylek TAG - Full Featured Backend
+MongoDB (Supabase'e geçiş için hazır)
+"""
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
-from datetime import datetime
 from bson import ObjectId
-from enum import Enum
-import random
-import json
+from datetime import datetime
+import secrets
+import base64
+
+# Import models
+from models import *
+from database import db_instance
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get('DB_NAME', 'leylek_tag')]
-
-# Create the main app
-app = FastAPI(title="Leylek TAG API")
+# Create app
+app = FastAPI(title="Leylek TAG API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==================== ENUMS ====================
-class UserRole(str, Enum):
-    PASSENGER = "passenger"
-    DRIVER = "driver"
+# ==================== STARTUP/SHUTDOWN ====================
+@app.on_event("startup")
+async def startup_db():
+    await db_instance.connect()
+    logger.info("✅ Database connected")
 
-class TagStatus(str, Enum):
-    PENDING = "pending"  # Yolcu talebi oluşturuldu
-    OFFERS_RECEIVED = "offers_received"  # Teklifler geldi
-    MATCHED = "matched"  # Eşleşme yapıldı
-    IN_PROGRESS = "in_progress"  # Yolculuk başladı
-    COMPLETED = "completed"  # Tamamlandı
-    CANCELLED = "cancelled"  # İptal edildi
-
-class OfferStatus(str, Enum):
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-
-# ==================== PYDANTIC MODELS ====================
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __get_pydantic_json_schema__(cls, schema, handler):
-        return {"type": "string"}
-
-# AUTH MODELS
-class SendOTPRequest(BaseModel):
-    phone: str
-
-class VerifyOTPRequest(BaseModel):
-    phone: str
-    otp: str
-
-class RegisterRequest(BaseModel):
-    phone: str
-    name: str
-    role: UserRole
-
-class User(BaseModel):
-    phone: str
-    name: str
-    role: UserRole
-    rating: float = 5.0
-    total_ratings: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-class UserResponse(BaseModel):
-    id: str
-    phone: str
-    name: str
-    role: UserRole
-    rating: float
-    total_ratings: int
-
-# TAG MODELS
-class CreateTagRequest(BaseModel):
-    pickup_location: str
-    dropoff_location: str
-    notes: Optional[str] = None
-
-class SendOfferRequest(BaseModel):
-    tag_id: str
-    price: float
-    estimated_time: int  # dakika cinsinden
-    notes: Optional[str] = None
-
-class AcceptOfferRequest(BaseModel):
-    tag_id: str
-    offer_id: str
-
-class Offer(BaseModel):
-    driver_id: str
-    driver_name: str
-    driver_rating: float
-    price: float
-    estimated_time: int
-    notes: Optional[str] = None
-    status: OfferStatus = OfferStatus.PENDING
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-class OfferResponse(BaseModel):
-    id: str
-    driver_id: str
-    driver_name: str
-    driver_rating: float
-    price: float
-    estimated_time: int
-    notes: Optional[str] = None
-    status: OfferStatus
-    created_at: datetime
-
-class Tag(BaseModel):
-    passenger_id: str
-    passenger_name: str
-    pickup_location: str
-    dropoff_location: str
-    notes: Optional[str] = None
-    status: TagStatus = TagStatus.PENDING
-    driver_id: Optional[str] = None
-    driver_name: Optional[str] = None
-    accepted_offer_id: Optional[str] = None
-    final_price: Optional[float] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    matched_at: Optional[datetime] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-
-class TagResponse(BaseModel):
-    id: str
-    passenger_id: str
-    passenger_name: str
-    pickup_location: str
-    dropoff_location: str
-    notes: Optional[str] = None
-    status: TagStatus
-    driver_id: Optional[str] = None
-    driver_name: Optional[str] = None
-    final_price: Optional[float] = None
-    created_at: datetime
-    matched_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-
-# CALL MODELS
-class InitiateCallRequest(BaseModel):
-    tag_id: str
-    caller_id: str
-
-class CallSignal(BaseModel):
-    tag_id: str
-    user_id: str
-    signal_type: str  # offer, answer, ice-candidate
-    signal_data: dict
-
-class EndCallRequest(BaseModel):
-    tag_id: str
-    caller_id: str
-    duration: int  # saniye
-
-class CallLog(BaseModel):
-    tag_id: str
-    caller_id: str
-    receiver_id: str
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-    ended_at: Optional[datetime] = None
-    duration: Optional[int] = None
-    caller_ip: Optional[str] = None
-    receiver_ip: Optional[str] = None
-
-# RATING MODELS
-class SubmitRatingRequest(BaseModel):
-    tag_id: str
-    rated_user_id: str
-    rating: int  # 1-5 arası
-    comment: Optional[str] = None
-
-class Rating(BaseModel):
-    tag_id: str
-    rater_id: str
-    rated_user_id: str
-    rating: int
-    comment: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+@app.on_event("shutdown")
+async def shutdown_db():
+    await db_instance.disconnect()
+    logger.info("❌ Database disconnected")
 
 # ==================== AUTH ENDPOINTS ====================
 @api_router.post("/auth/send-otp")
 async def send_otp(request: SendOTPRequest):
     """
-    SMS gönderme (Mock) - İleride NetGSM entegrasyonu
+    SMS gönderme - Şimdilik mock, NetGSM entegrasyonu sonra
     """
-    # Mock: Gerçek SMS gönderme yok, sadece log
-    logger.info(f"OTP gönderildi: {request.phone} -> 123456 (MOCK)")
+    # TODO: NetGSM entegrasyonu
+    logger.info(f"📱 OTP gönderildi: {request.phone} -> 123456 (MOCK)")
     
     return {
         "success": True,
@@ -219,15 +57,11 @@ async def send_otp(request: SendOTPRequest):
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(request: VerifyOTPRequest):
-    """
-    OTP doğrulama (Mock)
-    """
-    # Mock: Her zaman 123456 kabul ediliyor
+    """OTP doğrulama"""
     if request.otp != "123456":
         raise HTTPException(status_code=400, detail="Geçersiz OTP")
     
-    # Kullanıcı var mı kontrol et
-    user = await db.users.find_one({"phone": request.phone})
+    user = await db_instance.find_one("users", {"phone": request.phone})
     
     return {
         "success": True,
@@ -238,44 +72,44 @@ async def verify_otp(request: VerifyOTPRequest):
             phone=user["phone"],
             name=user["name"],
             role=user["role"],
+            profile_photo=user.get("profile_photo"),
             rating=user.get("rating", 5.0),
-            total_ratings=user.get("total_ratings", 0)
+            total_ratings=user.get("total_ratings", 0),
+            total_trips=user.get("total_trips", 0),
+            driver_details=user.get("driver_details")
         ).dict() if user else None
     }
 
 @api_router.post("/auth/register")
 async def register(request: RegisterRequest):
-    """
-    Kullanıcı kaydı ve rol seçimi
-    """
-    # Kullanıcı zaten var mı?
-    existing = await db.users.find_one({"phone": request.phone})
+    """Kullanıcı kaydı"""
+    existing = await db_instance.find_one("users", {"phone": request.phone})
     if existing:
         raise HTTPException(status_code=400, detail="Bu telefon numarası zaten kayıtlı")
     
     user_data = User(**request.dict()).dict()
-    result = await db.users.insert_one(user_data)
-    user_data["_id"] = result.inserted_id
+    user_id = await db_instance.insert_one("users", user_data)
     
     return {
         "success": True,
         "message": "Kayıt başarılı",
         "user": UserResponse(
-            id=str(result.inserted_id),
+            id=user_id,
             phone=user_data["phone"],
             name=user_data["name"],
             role=user_data["role"],
+            profile_photo=user_data.get("profile_photo"),
             rating=user_data["rating"],
-            total_ratings=user_data["total_ratings"]
+            total_ratings=user_data["total_ratings"],
+            total_trips=user_data["total_trips"],
+            driver_details=user_data.get("driver_details")
         ).dict()
     }
 
 @api_router.get("/auth/user/{user_id}")
 async def get_user(user_id: str):
-    """
-    Kullanıcı bilgilerini getir
-    """
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    """Kullanıcı bilgisi"""
+    user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     
@@ -284,87 +118,105 @@ async def get_user(user_id: str):
         phone=user["phone"],
         name=user["name"],
         role=user["role"],
+        profile_photo=user.get("profile_photo"),
         rating=user.get("rating", 5.0),
-        total_ratings=user.get("total_ratings", 0)
+        total_ratings=user.get("total_ratings", 0),
+        total_trips=user.get("total_trips", 0),
+        driver_details=user.get("driver_details")
     )
+
+@api_router.put("/auth/user/{user_id}/profile")
+async def update_profile(user_id: str, request: UpdateProfileRequest):
+    """Profil güncelleme"""
+    update_data = {k: v for k, v in request.dict().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Güncellenecek veri yok")
+    
+    await db_instance.update_one(
+        "users",
+        {"_id": ObjectId(user_id)},
+        {"$set": update_data}
+    )
+    
+    return {"success": True, "message": "Profil güncellendi"}
+
+@api_router.put("/auth/user/{user_id}/driver-details")
+async def update_driver_details(user_id: str, request: UpdateDriverDetailsRequest):
+    """Sürücü bilgilerini güncelle"""
+    user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
+    if not user or user["role"] != UserRole.DRIVER:
+        raise HTTPException(status_code=403, detail="Sadece sürücüler güncelleyebilir")
+    
+    driver_data = {k: v for k, v in request.dict().items() if v is not None}
+    
+    await db_instance.update_one(
+        "users",
+        {"_id": ObjectId(user_id)},
+        {"$set": {"driver_details": driver_data}}
+    )
+    
+    return {"success": True, "message": "Sürücü bilgileri güncellendi"}
 
 # ==================== PASSENGER ENDPOINTS ====================
 @api_router.post("/passenger/create-request")
 async def create_request(user_id: str, request: CreateTagRequest):
-    """
-    Yolcu yolculuk talebi oluşturur
-    """
-    # Kullanıcıyı bul
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    """Yolcu talebi oluştur"""
+    user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user or user["role"] != UserRole.PASSENGER:
         raise HTTPException(status_code=403, detail="Sadece yolcular talep oluşturabilir")
     
-    # Aktif TAG var mı kontrol et
-    active_tag = await db.tags.find_one({
+    # Aktif TAG kontrolü
+    active_tag = await db_instance.find_one("tags", {
         "passenger_id": user_id,
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED, TagStatus.MATCHED, TagStatus.IN_PROGRESS]}
     })
     if active_tag:
         raise HTTPException(status_code=400, detail="Zaten aktif bir TAG'ınız var")
     
+    # Share link oluştur
+    share_token = secrets.token_urlsafe(16)
+    share_link = f"leylektag://share/{share_token}"
+    
     tag_data = Tag(
         passenger_id=user_id,
         passenger_name=user["name"],
         pickup_location=request.pickup_location,
         dropoff_location=request.dropoff_location,
-        notes=request.notes
+        pickup_lat=request.pickup_lat,
+        pickup_lng=request.pickup_lng,
+        dropoff_lat=request.dropoff_lat,
+        dropoff_lng=request.dropoff_lng,
+        notes=request.notes,
+        share_link=share_link
     ).dict()
     
-    result = await db.tags.insert_one(tag_data)
-    tag_data["_id"] = result.inserted_id
+    tag_id = await db_instance.insert_one("tags", tag_data)
     
     return {
         "success": True,
         "message": "Talep oluşturuldu",
         "tag": TagResponse(
-            id=str(result.inserted_id),
-            passenger_id=tag_data["passenger_id"],
-            passenger_name=tag_data["passenger_name"],
-            pickup_location=tag_data["pickup_location"],
-            dropoff_location=tag_data["dropoff_location"],
-            notes=tag_data.get("notes"),
-            status=tag_data["status"],
-            driver_id=tag_data.get("driver_id"),
-            driver_name=tag_data.get("driver_name"),
-            final_price=tag_data.get("final_price"),
-            created_at=tag_data["created_at"],
-            matched_at=tag_data.get("matched_at"),
-            completed_at=tag_data.get("completed_at")
+            id=tag_id,
+            **{k: v for k, v in tag_data.items() if k != "_id"}
         ).dict()
     }
 
 @api_router.get("/passenger/offers/{tag_id}")
 async def get_offers(tag_id: str, user_id: str):
-    """
-    Yolcu için gelen teklifleri listele
-    """
-    # TAG'i bul ve doğrula
-    tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+    """Teklifleri listele"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["passenger_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
     
-    # Teklifleri getir
-    offers = await db.offers.find({"tag_id": tag_id}).to_list(100)
+    offers = await db_instance.find_many("offers", {"tag_id": tag_id})
     
     offer_responses = []
     for offer in offers:
         offer_responses.append(OfferResponse(
             id=str(offer["_id"]),
-            driver_id=offer["driver_id"],
-            driver_name=offer["driver_name"],
-            driver_rating=offer["driver_rating"],
-            price=offer["price"],
-            estimated_time=offer["estimated_time"],
-            notes=offer.get("notes"),
-            status=offer["status"],
-            created_at=offer["created_at"]
+            **{k: v for k, v in offer.items() if k != "_id"}
         ))
     
     return {
@@ -374,59 +226,51 @@ async def get_offers(tag_id: str, user_id: str):
 
 @api_router.post("/passenger/accept-offer")
 async def accept_offer(user_id: str, request: AcceptOfferRequest):
-    """
-    Yolcu bir teklifi kabul eder ve eşleşme başlar
-    """
-    # TAG'i bul
-    tag = await db.tags.find_one({"_id": ObjectId(request.tag_id)})
+    """Teklif kabul et"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["passenger_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
     
-    # Teklifi bul
-    offer = await db.offers.find_one({"_id": ObjectId(request.offer_id), "tag_id": request.tag_id})
+    offer = await db_instance.find_one("offers", {"_id": ObjectId(request.offer_id), "tag_id": request.tag_id})
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
     
-    # TAG'i güncelle
-    await db.tags.update_one(
+    # TAG güncelle
+    await db_instance.update_one(
+        "tags",
         {"_id": ObjectId(request.tag_id)},
-        {
-            "$set": {
-                "status": TagStatus.MATCHED,
-                "driver_id": offer["driver_id"],
-                "driver_name": offer["driver_name"],
-                "accepted_offer_id": request.offer_id,
-                "final_price": offer["price"],
-                "matched_at": datetime.utcnow()
-            }
-        }
+        {"$set": {
+            "status": TagStatus.MATCHED,
+            "driver_id": offer["driver_id"],
+            "driver_name": offer["driver_name"],
+            "accepted_offer_id": request.offer_id,
+            "final_price": offer["price"],
+            "matched_at": datetime.utcnow()
+        }}
     )
     
-    # Teklifi kabul edildi olarak işaretle
-    await db.offers.update_one(
+    # Teklifi kabul et
+    await db_instance.update_one(
+        "offers",
         {"_id": ObjectId(request.offer_id)},
         {"$set": {"status": OfferStatus.ACCEPTED}}
     )
     
     # Diğer teklifleri reddet
-    await db.offers.update_many(
+    await db_instance.update_many(
+        "offers",
         {"tag_id": request.tag_id, "_id": {"$ne": ObjectId(request.offer_id)}},
         {"$set": {"status": OfferStatus.REJECTED}}
     )
     
-    return {
-        "success": True,
-        "message": "Teklif kabul edildi, eşleşme başarılı!"
-    }
+    return {"success": True, "message": "Teklif kabul edildi, eşleşme başarılı!"}
 
 @api_router.get("/passenger/active-tag")
 async def get_passenger_active_tag(user_id: str):
-    """
-    Yolcunun aktif TAG'ini getir
-    """
-    tag = await db.tags.find_one({
+    """Aktif TAG getir"""
+    tag = await db_instance.find_one("tags", {
         "passenger_id": user_id,
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED, TagStatus.MATCHED, TagStatus.IN_PROGRESS]}
     })
@@ -434,49 +278,49 @@ async def get_passenger_active_tag(user_id: str):
     if not tag:
         return {"success": True, "tag": None}
     
-    # Teklif sayısını getir
-    offer_count = await db.offers.count_documents({"tag_id": str(tag["_id"])})
+    offer_count = await db_instance.count_documents("offers", {"tag_id": str(tag["_id"])})
     
     return {
         "success": True,
         "tag": TagResponse(
             id=str(tag["_id"]),
-            passenger_id=tag["passenger_id"],
-            passenger_name=tag["passenger_name"],
-            pickup_location=tag["pickup_location"],
-            dropoff_location=tag["dropoff_location"],
-            notes=tag.get("notes"),
-            status=tag["status"],
-            driver_id=tag.get("driver_id"),
-            driver_name=tag.get("driver_name"),
-            final_price=tag.get("final_price"),
-            created_at=tag["created_at"],
-            matched_at=tag.get("matched_at"),
-            completed_at=tag.get("completed_at")
+            **{k: v for k, v in tag.items() if k != "_id"}
         ).dict(),
         "offer_count": offer_count
     }
 
+@api_router.get("/passenger/history")
+async def get_passenger_history(user_id: str):
+    """Geçmiş yolculuklar"""
+    tags = await db_instance.find_many("tags", {
+        "passenger_id": user_id,
+        "status": TagStatus.COMPLETED
+    }, limit=50)
+    
+    history = []
+    for tag in tags:
+        history.append(TagResponse(
+            id=str(tag["_id"]),
+            **{k: v for k, v in tag.items() if k != "_id"}
+        ))
+    
+    return {"success": True, "history": [h.dict() for h in history]}
+
 # ==================== DRIVER ENDPOINTS ====================
 @api_router.get("/driver/requests")
 async def get_driver_requests(user_id: str):
-    """
-    Sürücü için aktif talepleri listele
-    """
-    # Kullanıcıyı doğrula
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    """Aktif talepleri listele"""
+    user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user or user["role"] != UserRole.DRIVER:
         raise HTTPException(status_code=403, detail="Sadece sürücüler talepleri görebilir")
     
-    # PENDING veya OFFERS_RECEIVED durumundaki TAG'leri getir
-    tags = await db.tags.find({
+    tags = await db_instance.find_many("tags", {
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]}
-    }).to_list(100)
+    })
     
     tag_responses = []
     for tag in tags:
-        # Bu sürücü teklif vermiş mi?
-        driver_offer = await db.offers.find_one({
+        driver_offer = await db_instance.find_one("offers", {
             "tag_id": str(tag["_id"]),
             "driver_id": user_id
         })
@@ -484,83 +328,59 @@ async def get_driver_requests(user_id: str):
         tag_responses.append({
             **TagResponse(
                 id=str(tag["_id"]),
-                passenger_id=tag["passenger_id"],
-                passenger_name=tag["passenger_name"],
-                pickup_location=tag["pickup_location"],
-                dropoff_location=tag["dropoff_location"],
-                notes=tag.get("notes"),
-                status=tag["status"],
-                driver_id=tag.get("driver_id"),
-                driver_name=tag.get("driver_name"),
-                final_price=tag.get("final_price"),
-                created_at=tag["created_at"],
-                matched_at=tag.get("matched_at"),
-                completed_at=tag.get("completed_at")
+                **{k: v for k, v in tag.items() if k != "_id"}
             ).dict(),
             "has_offered": driver_offer is not None
         })
     
-    return {
-        "success": True,
-        "requests": tag_responses
-    }
+    return {"success": True, "requests": tag_responses}
 
 @api_router.post("/driver/send-offer")
 async def send_offer(user_id: str, request: SendOfferRequest):
-    """
-    Sürücü bir talep için teklif gönderir
-    """
-    # Kullanıcıyı bul
-    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    """Teklif gönder"""
+    user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user or user["role"] != UserRole.DRIVER:
         raise HTTPException(status_code=403, detail="Sadece sürücüler teklif gönderebilir")
     
-    # TAG'i bul
-    tag = await db.tags.find_one({"_id": ObjectId(request.tag_id)})
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["status"] not in [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]:
         raise HTTPException(status_code=400, detail="Bu TAG artık teklif kabul etmiyor")
     
-    # Daha önce teklif vermiş mi?
-    existing_offer = await db.offers.find_one({
+    existing_offer = await db_instance.find_one("offers", {
         "tag_id": request.tag_id,
         "driver_id": user_id
     })
     if existing_offer:
         raise HTTPException(status_code=400, detail="Bu talep için zaten teklif verdiniz")
     
-    # Teklifi kaydet
     offer_data = Offer(
+        tag_id=request.tag_id,
         driver_id=user_id,
         driver_name=user["name"],
         driver_rating=user.get("rating", 5.0),
+        driver_photo=user.get("profile_photo"),
         price=request.price,
         estimated_time=request.estimated_time,
         notes=request.notes
     ).dict()
-    offer_data["tag_id"] = request.tag_id
     
-    result = await db.offers.insert_one(offer_data)
+    offer_id = await db_instance.insert_one("offers", offer_data)
     
     # TAG durumunu güncelle
-    await db.tags.update_one(
+    await db_instance.update_one(
+        "tags",
         {"_id": ObjectId(request.tag_id)},
         {"$set": {"status": TagStatus.OFFERS_RECEIVED}}
     )
     
-    return {
-        "success": True,
-        "message": "Teklif gönderildi",
-        "offer_id": str(result.inserted_id)
-    }
+    return {"success": True, "message": "Teklif gönderildi", "offer_id": offer_id}
 
 @api_router.get("/driver/active-tag")
 async def get_driver_active_tag(user_id: str):
-    """
-    Sürücünün aktif TAG'ini getir (eşleştiği)
-    """
-    tag = await db.tags.find_one({
+    """Aktif TAG getir"""
+    tag = await db_instance.find_one("tags", {
         "driver_id": user_id,
         "status": {"$in": [TagStatus.MATCHED, TagStatus.IN_PROGRESS]}
     })
@@ -572,114 +392,137 @@ async def get_driver_active_tag(user_id: str):
         "success": True,
         "tag": TagResponse(
             id=str(tag["_id"]),
-            passenger_id=tag["passenger_id"],
-            passenger_name=tag["passenger_name"],
-            pickup_location=tag["pickup_location"],
-            dropoff_location=tag["dropoff_location"],
-            notes=tag.get("notes"),
-            status=tag["status"],
-            driver_id=tag.get("driver_id"),
-            driver_name=tag.get("driver_name"),
-            final_price=tag.get("final_price"),
-            created_at=tag["created_at"],
-            matched_at=tag.get("matched_at"),
-            completed_at=tag.get("completed_at")
+            **{k: v for k, v in tag.items() if k != "_id"}
         ).dict()
     }
 
 @api_router.post("/driver/start-tag/{tag_id}")
 async def start_tag(tag_id: str, user_id: str):
-    """
-    Sürücü TAG'ı başlatır (yolcuya doğru hareket ediyor)
-    """
-    tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+    """TAG başlat"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["driver_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
     
-    await db.tags.update_one(
+    await db_instance.update_one(
+        "tags",
         {"_id": ObjectId(tag_id)},
-        {
-            "$set": {
-                "status": TagStatus.IN_PROGRESS,
-                "started_at": datetime.utcnow()
-            }
-        }
+        {"$set": {
+            "status": TagStatus.IN_PROGRESS,
+            "started_at": datetime.utcnow()
+        }}
     )
     
     return {"success": True, "message": "Yolculuk başlatıldı"}
 
 @api_router.post("/driver/complete-tag/{tag_id}")
 async def complete_tag(tag_id: str, user_id: str):
-    """
-    Sürücü TAG'ı tamamlar
-    """
-    tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+    """TAG tamamla"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["driver_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
     
-    await db.tags.update_one(
+    await db_instance.update_one(
+        "tags",
         {"_id": ObjectId(tag_id)},
-        {
-            "$set": {
-                "status": TagStatus.COMPLETED,
-                "completed_at": datetime.utcnow()
-            }
-        }
+        {"$set": {
+            "status": TagStatus.COMPLETED,
+            "completed_at": datetime.utcnow()
+        }}
+    )
+    
+    # Trip sayısını artır
+    await db_instance.update_one(
+        "users",
+        {"_id": ObjectId(user_id)},
+        {"$inc": {"total_trips": 1}}
+    )
+    await db_instance.update_one(
+        "users",
+        {"_id": ObjectId(tag["passenger_id"])},
+        {"$inc": {"total_trips": 1}}
     )
     
     return {"success": True, "message": "Yolculuk tamamlandı"}
 
-# ==================== TAG ENDPOINTS ====================
-@api_router.get("/tag/{tag_id}")
-async def get_tag(tag_id: str, user_id: str):
-    """
-    TAG detayını getir
-    """
-    tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+@api_router.get("/driver/history")
+async def get_driver_history(user_id: str):
+    """Geçmiş yolculuklar"""
+    tags = await db_instance.find_many("tags", {
+        "driver_id": user_id,
+        "status": TagStatus.COMPLETED
+    }, limit=50)
+    
+    history = []
+    for tag in tags:
+        history.append(TagResponse(
+            id=str(tag["_id"]),
+            **{k: v for k, v in tag.items() if k != "_id"}
+        ))
+    
+    return {"success": True, "history": [h.dict() for h in history]}
+
+# ==================== EMERGENCY ENDPOINTS ====================
+@api_router.post("/emergency/trigger")
+async def trigger_emergency(user_id: str, tag_id: str):
+    """Acil durum butonu"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     
-    # Kullanıcı bu TAG'e dahil mi?
-    if tag["passenger_id"] != user_id and tag.get("driver_id") != user_id:
-        raise HTTPException(status_code=403, detail="Bu TAG'e erişim yetkiniz yok")
+    # TAG'i acil durum olarak işaretle
+    await db_instance.update_one(
+        "tags",
+        {"_id": ObjectId(tag_id)},
+        {"$set": {"emergency_shared": True}}
+    )
+    
+    # Emergency alert kaydet
+    alert = EmergencyAlert(
+        tag_id=tag_id,
+        user_id=user_id,
+        alert_type="sos",
+        message="Acil durum bildirimi",
+        location=tag.get("pickup_location")
+    ).dict()
+    
+    await db_instance.insert_one("emergency_alerts", alert)
+    
+    # TODO: SMS/bildirim gönder
+    logger.warning(f"🚨 ACIL DURUM: Tag {tag_id}, User {user_id}")
+    
+    return {"success": True, "message": "Acil durum bildirimi gönderildi"}
+
+@api_router.get("/emergency/share/{share_token}")
+async def get_shared_trip(share_token: str):
+    """Paylaşılan yolculuk bilgisi"""
+    share_link = f"leylektag://share/{share_token}"
+    tag = await db_instance.find_one("tags", {"share_link": share_link})
+    
+    if not tag:
+        raise HTTPException(status_code=404, detail="Yolculuk bulunamadı")
     
     return {
         "success": True,
         "tag": TagResponse(
             id=str(tag["_id"]),
-            passenger_id=tag["passenger_id"],
-            passenger_name=tag["passenger_name"],
-            pickup_location=tag["pickup_location"],
-            dropoff_location=tag["dropoff_location"],
-            notes=tag.get("notes"),
-            status=tag["status"],
-            driver_id=tag.get("driver_id"),
-            driver_name=tag.get("driver_name"),
-            final_price=tag.get("final_price"),
-            created_at=tag["created_at"],
-            matched_at=tag.get("matched_at"),
-            completed_at=tag.get("completed_at")
+            **{k: v for k, v in tag.items() if k != "_id"}
         ).dict()
     }
 
 # ==================== CALL ENDPOINTS ====================
 @api_router.post("/call/initiate")
 async def initiate_call(request: InitiateCallRequest):
-    """
-    Sesli arama başlatır ve log kaydı oluşturur
-    """
-    # TAG'i kontrol et
-    tag = await db.tags.find_one({"_id": ObjectId(request.tag_id)})
+    """Arama başlat"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["status"] not in [TagStatus.MATCHED, TagStatus.IN_PROGRESS]:
         raise HTTPException(status_code=400, detail="Bu TAG'de arama yapılamaz")
     
-    # Arayan ve alıcıyı belirle
     if request.caller_id == tag["passenger_id"]:
         receiver_id = tag["driver_id"]
     elif request.caller_id == tag.get("driver_id"):
@@ -687,52 +530,36 @@ async def initiate_call(request: InitiateCallRequest):
     else:
         raise HTTPException(status_code=403, detail="Bu TAG'de arama yapma yetkiniz yok")
     
-    # Call log oluştur
     call_log = CallLog(
         tag_id=request.tag_id,
         caller_id=request.caller_id,
         receiver_id=receiver_id
     ).dict()
     
-    result = await db.call_logs.insert_one(call_log)
+    call_id = await db_instance.insert_one("call_logs", call_log)
     
     return {
         "success": True,
-        "call_id": str(result.inserted_id),
+        "call_id": call_id,
         "receiver_id": receiver_id
     }
 
-@api_router.post("/call/signal")
-async def signal_call(signal: CallSignal):
-    """
-    WebRTC signaling için kullanılır
-    """
-    # Bu endpoint gerçek zamanlı WebRTC signaling için kullanılır
-    # Şu an basit bir log tutuyoruz
-    logger.info(f"Signal alındı: {signal.signal_type} - Tag: {signal.tag_id}")
-    
-    return {"success": True}
-
 @api_router.post("/call/end")
 async def end_call(request: EndCallRequest):
-    """
-    Aramayı sonlandırır ve log'u tamamlar
-    """
-    # En son call log'u bul ve güncelle
-    call_log = await db.call_logs.find_one(
+    """Arama sonlandır"""
+    call_log = await db_instance.find_one(
+        "call_logs",
         {"tag_id": request.tag_id, "caller_id": request.caller_id},
-        sort=[("started_at", -1)]
     )
     
     if call_log:
-        await db.call_logs.update_one(
+        await db_instance.update_one(
+            "call_logs",
             {"_id": call_log["_id"]},
-            {
-                "$set": {
-                    "ended_at": datetime.utcnow(),
-                    "duration": request.duration
-                }
-            }
+            {"$set": {
+                "ended_at": datetime.utcnow(),
+                "duration": request.duration
+            }}
         )
     
     return {"success": True, "message": "Arama sonlandırıldı"}
@@ -740,28 +567,23 @@ async def end_call(request: EndCallRequest):
 # ==================== RATING ENDPOINTS ====================
 @api_router.post("/rating/submit")
 async def submit_rating(user_id: str, request: SubmitRatingRequest):
-    """
-    Kullanıcı karşı tarafa puan verir
-    """
+    """Puan ver"""
     if request.rating < 1 or request.rating > 5:
-        raise HTTPException(status_code=400, detail="Puan 1-5 arasında olmalıdır")
+        raise HTTPException(status_code=400, detail="Puan 1-5 arası olmalıdır")
     
-    # TAG'i kontrol et
-    tag = await db.tags.find_one({"_id": ObjectId(request.tag_id)})
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["status"] != TagStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Sadece tamamlanmış TAG'ler için puan verilebilir")
     
-    # Daha önce puan verilmiş mi?
-    existing = await db.ratings.find_one({
+    existing = await db_instance.find_one("ratings", {
         "tag_id": request.tag_id,
         "rater_id": user_id
     })
     if existing:
         raise HTTPException(status_code=400, detail="Bu TAG için zaten puan verdiniz")
     
-    # Rating kaydet
     rating_data = Rating(
         tag_id=request.tag_id,
         rater_id=user_id,
@@ -770,30 +592,27 @@ async def submit_rating(user_id: str, request: SubmitRatingRequest):
         comment=request.comment
     ).dict()
     
-    await db.ratings.insert_one(rating_data)
+    await db_instance.insert_one("ratings", rating_data)
     
-    # Kullanıcının ortalama puanını güncelle
-    user_ratings = await db.ratings.find({"rated_user_id": request.rated_user_id}).to_list(1000)
+    # Ortalama puanı güncelle
+    user_ratings = await db_instance.find_many("ratings", {"rated_user_id": request.rated_user_id})
     avg_rating = sum([r["rating"] for r in user_ratings]) / len(user_ratings)
     
-    await db.users.update_one(
+    await db_instance.update_one(
+        "users",
         {"_id": ObjectId(request.rated_user_id)},
-        {
-            "$set": {
-                "rating": round(avg_rating, 1),
-                "total_ratings": len(user_ratings)
-            }
-        }
+        {"$set": {
+            "rating": round(avg_rating, 1),
+            "total_ratings": len(user_ratings)
+        }}
     )
     
     return {"success": True, "message": "Puan verildi"}
 
 @api_router.get("/rating/check/{tag_id}")
 async def check_rating(tag_id: str, user_id: str):
-    """
-    Kullanıcı bu TAG için puan vermiş mi kontrol et
-    """
-    rating = await db.ratings.find_one({
+    """Puan verilmiş mi kontrol et"""
+    rating = await db_instance.find_one("ratings", {
         "tag_id": tag_id,
         "rater_id": user_id
     })
@@ -801,6 +620,44 @@ async def check_rating(tag_id: str, user_id: str):
     return {
         "success": True,
         "has_rated": rating is not None
+    }
+
+# ==================== STATISTICS ====================
+@api_router.get("/stats/user/{user_id}")
+async def get_user_stats(user_id: str):
+    """Kullanıcı istatistikleri"""
+    user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    if user["role"] == UserRole.PASSENGER:
+        completed_trips = await db_instance.count_documents("tags", {
+            "passenger_id": user_id,
+            "status": TagStatus.COMPLETED
+        })
+        total_spent = 0  # TODO: Hesapla
+    else:
+        completed_trips = await db_instance.count_documents("tags", {
+            "driver_id": user_id,
+            "status": TagStatus.COMPLETED
+        })
+        # Kazanç hesapla
+        completed_tags = await db_instance.find_many("tags", {
+            "driver_id": user_id,
+            "status": TagStatus.COMPLETED
+        })
+        total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
+    
+    return {
+        "success": True,
+        "stats": {
+            "total_trips": user.get("total_trips", 0),
+            "completed_trips": completed_trips,
+            "rating": user.get("rating", 5.0),
+            "total_ratings": user.get("total_ratings", 0),
+            "total_earned": total_earned if user["role"] == UserRole.DRIVER else None,
+            "total_spent": total_spent if user["role"] == UserRole.PASSENGER else None
+        }
     }
 
 # Include router
@@ -815,10 +672,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
-
 @app.get("/")
 async def root():
-    return {"message": "Leylek TAG API", "version": "1.0.0"}
+    return {
+        "message": "🕊️ Leylek TAG API",
+        "version": "2.0.0",
+        "status": "running"
+    }
