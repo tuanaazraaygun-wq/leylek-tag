@@ -344,11 +344,8 @@ export default function App() {
 function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [pickupLocation, setPickupLocation] = useState('');
-  const [dropoffLocation, setDropoffLocation] = useState('');
-  const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [calling, setCalling] = useState(false);
 
   useEffect(() => {
     loadActiveTag();
@@ -386,36 +383,33 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
     }
   };
 
-  const handleCreateRequest = async () => {
-    if (!pickupLocation || !dropoffLocation) {
-      Alert.alert('Hata', 'Başlangıç ve varış noktalarını girin');
-      return;
-    }
-
+  // ÇAĞRI BUTONU - Otomatik konum ile talep oluştur
+  const handleCallButton = async () => {
     setLoading(true);
     try {
+      // Mock konum (gerçek GPS sonra eklenecek)
+      const mockLocation = 'Mevcut Konumunuz';
+      const mockDestination = 'Varış Noktası';
+
       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pickup_location: pickupLocation,
-          dropoff_location: dropoffLocation,
-          notes
+          pickup_location: mockLocation,
+          dropoff_location: mockDestination,
+          notes: 'Çağrı butonu ile oluşturuldu'
         })
       });
 
       const data = await response.json();
       if (data.success) {
-        Alert.alert('Başarılı', 'Talebiniz oluşturuldu, teklifler bekleniyor...');
         setActiveTag(data.tag);
-        setPickupLocation('');
-        setDropoffLocation('');
-        setNotes('');
+        Alert.alert('✅ Çağrı Gönderildi', 'Yakındaki sürücüler tekliflerini gönderiyor...');
       } else {
-        Alert.alert('Hata', data.detail || 'Talep oluşturulamadı');
+        Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
       }
     } catch (error) {
-      Alert.alert('Hata', 'Talep oluşturulamadı');
+      Alert.alert('Hata', 'Çağrı gönderilemedi');
     } finally {
       setLoading(false);
     }
