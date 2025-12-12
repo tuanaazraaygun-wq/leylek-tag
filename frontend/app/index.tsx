@@ -199,7 +199,7 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Logo size=\"large\" showSlogan={true} />
+            <Logo size="large" showSlogan={true} />
           </View>
 
           <View style={styles.formContainer}>
