@@ -49,6 +49,22 @@ async def get_cities():
         "cities": TURKIYE_SEHIRLERI
     }
 
+@api_router.post("/user/update-location")
+async def update_location(user_id: str, latitude: float, longitude: float):
+    """Kullanıcı konumunu güncelle"""
+    try:
+        await db_instance.update_one(
+            "users",
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "location": {"latitude": latitude, "longitude": longitude},
+                "last_active": datetime.utcnow()
+            }}
+        )
+        return {"success": True, "message": "Konum güncellendi"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @api_router.post("/auth/send-otp")
 async def send_otp(request: SendOTPRequest):
     """
