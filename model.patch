@@ -1,581 +1,610 @@
 diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
-index 5e9a60f..63b315c 100644
+index bd251c5..213dbe9 100644
 --- a/frontend/app/index.tsx
 +++ b/frontend/app/index.tsx
-@@ -1152,111 +1152,116 @@ const styles = StyleSheet.create({
-     textAlign: 'center',
-     marginTop: 20
-   },
--  // ÇAĞRI BUTONU STİLLERİ
-+  // Yeni stiller - Çağrı Butonu & Mavi Balonlar
-   callButtonLarge: {
--    backgroundColor: '#FF6B35',
--    borderRadius: 20,
--    padding: 24,
-+    backgroundColor: COLORS.secondary,
-+    borderRadius: 80,
-+    padding: 30,
-     alignItems: 'center',
-     justifyContent: 'center',
--    marginVertical: 20,
--    flexDirection: 'row',
--    shadowColor: '#FF6B35',
--    shadowOffset: { width: 0, height: 4 },
-+    marginVertical: 40,
-+    shadowColor: '#000',
-+    shadowOffset: { width: 0, height: 8 },
-     shadowOpacity: 0.3,
--    shadowRadius: 8,
--    elevation: 8
-+    shadowRadius: 12,
-+    elevation: 10,
-   },
-   callButtonLargeText: {
-     color: '#FFF',
--    fontSize: 20,
-+    fontSize: 24,
-     fontWeight: 'bold',
--    marginLeft: 12,
--    letterSpacing: 1
-+    marginTop: 12,
-+    letterSpacing: 1,
-+  },
-+  callNote: {
-+    fontSize: 14,
-+    color: COLORS.gray500,
-+    textAlign: 'center',
-+    marginTop: 8,
-   },
--  // MAVİ BALON STİLLERİ
-   offersContainer: {
--    marginBottom: 16
-+    backgroundColor: COLORS.background,
-+    borderRadius: 16,
-+    padding: 20,
-+    marginBottom: 16,
-   },
-   offersTitle: {
--    fontSize: 18,
-+    fontSize: 22,
-     fontWeight: 'bold',
--    color: '#333',
-+    color: COLORS.text,
-     marginBottom: 16,
--    textAlign: 'center'
-+    textAlign: 'center',
-   },
-   balloonsContainer: {
-     flexDirection: 'row',
-     flexWrap: 'wrap',
-     justifyContent: 'space-around',
--    paddingHorizontal: 10
-+    marginBottom: 16,
-   },
-   offerBalloon: {
--    backgroundColor: '#3FA9F5',
-+    width: '45%',
-+    backgroundColor: COLORS.primary,
-     borderRadius: 20,
-     padding: 16,
--    margin: 8,
--    minWidth: 140,
--    maxWidth: 160,
--    shadowColor: '#3FA9F5',
-+    marginBottom: 16,
-+    shadowColor: COLORS.primary,
-     shadowOffset: { width: 0, height: 4 },
--    shadowOpacity: 0.3,
-+    shadowOpacity: 0.4,
-     shadowRadius: 8,
-     elevation: 6,
--    position: 'relative'
-+    position: 'relative',
-   },
-   balloonContent: {
--    alignItems: 'center'
-+    alignItems: 'center',
-   },
-   balloonDriverName: {
--    color: '#FFF',
--    fontSize: 16,
-+    fontSize: 18,
-     fontWeight: 'bold',
--    marginBottom: 4
-+    color: '#FFF',
-+    marginBottom: 4,
-   },
-   balloonRating: {
-+    fontSize: 14,
-     color: '#FFF',
--    fontSize: 12,
-     opacity: 0.9,
--    marginBottom: 8
-+    marginBottom: 8,
-   },
-   balloonPrice: {
--    color: '#FFF',
--    fontSize: 20,
-+    fontSize: 24,
-     fontWeight: 'bold',
--    marginBottom: 4
-+    color: '#FFF',
-+    marginBottom: 4,
-   },
-   balloonTime: {
-+    fontSize: 14,
-     color: '#FFF',
--    fontSize: 12,
--    opacity: 0.8
-+    opacity: 0.9,
-+    marginBottom: 4,
-   },
-   balloonNotes: {
-+    fontSize: 12,
-     color: '#FFF',
--    fontSize: 10,
-     opacity: 0.8,
--    marginTop: 4,
--    textAlign: 'center'
-+    textAlign: 'center',
-+    marginTop: 8,
-   },
-   balloonTail: {
-     position: 'absolute',
--    bottom: -8,
--    left: '50%',
--    marginLeft: -8,
-+    bottom: -10,
-+    left: '40%',
-     width: 0,
-     height: 0,
--    borderLeftWidth: 8,
--    borderRightWidth: 8,
--    borderTopWidth: 8,
-+    borderLeftWidth: 10,
-     borderLeftColor: 'transparent',
-+    borderRightWidth: 10,
-     borderRightColor: 'transparent',
--    borderTopColor: '#3FA9F5'
-+    borderTopWidth: 10,
-+    borderTopColor: COLORS.primary,
-   },
-   balloonHint: {
-     fontSize: 14,
--    color: '#666',
-+    color: COLORS.gray500,
-     textAlign: 'center',
--    marginTop: 16,
--    fontStyle: 'italic'
-+    fontStyle: 'italic',
-   }
- });
+@@ -94,6 +94,19 @@ export default function App() {
+     loadUser();
+   }, []);
+ 
++  useEffect(() => {
++    if (user && screen === 'dashboard') {
++      requestLocationPermission().then(granted => {
++        if (granted) {
++          updateUserLocation();
++          // Her 10 saniyede bir konum güncelle
++          const interval = setInterval(updateUserLocation, 10000);
++          return () => clearInterval(interval);
++        }
++      });
++    }
++  }, [user, screen]);
++
+   const loadUser = async () => {
+     try {
+       const userData = await AsyncStorage.getItem('user');
 diff --git a/model.patch b/model.patch
-index c685b3e..e69de29 100644
+index cad349c..e69de29 100644
 --- a/model.patch
 +++ b/model.patch
-@@ -1,405 +0,0 @@
+@@ -1,581 +0,0 @@
 -diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
--index b10999f..5e9a60f 100644
+-index 5e9a60f..63b315c 100644
 ---- a/frontend/app/index.tsx
 -+++ b/frontend/app/index.tsx
--@@ -344,11 +344,8 @@ export default function App() {
-- function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
--   const [activeTag, setActiveTag] = useState<Tag | null>(null);
--   const [offers, setOffers] = useState<Offer[]>([]);
---  const [pickupLocation, setPickupLocation] = useState('');
---  const [dropoffLocation, setDropoffLocation] = useState('');
---  const [notes, setNotes] = useState('');
--   const [loading, setLoading] = useState(false);
---  const [refreshing, setRefreshing] = useState(false);
--+  const [calling, setCalling] = useState(false);
-- 
--   useEffect(() => {
--     loadActiveTag();
--@@ -386,41 +383,56 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
--     }
--   };
-- 
---  const handleCreateRequest = async () => {
---    if (!pickupLocation || !dropoffLocation) {
---      Alert.alert('Hata', 'Başlangıç ve varış noktalarını girin');
---      return;
---    }
---
--+  // ÇAĞRI BUTONU - Otomatik konum ile talep oluştur
--+  const handleCallButton = async () => {
--     setLoading(true);
--     try {
--+      // Mock konum (gerçek GPS sonra eklenecek)
--+      const mockLocation = 'Mevcut Konumunuz';
--+      const mockDestination = 'Varış Noktası';
--+
--       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
--         method: 'POST',
--         headers: { 'Content-Type': 'application/json' },
--         body: JSON.stringify({
---          pickup_location: pickupLocation,
---          dropoff_location: dropoffLocation,
---          notes
--+          pickup_location: mockLocation,
--+          dropoff_location: mockDestination,
--+          notes: 'Çağrı butonu ile oluşturuldu'
--         })
--       });
-- 
--       const data = await response.json();
--       if (data.success) {
---        Alert.alert('Başarılı', 'Talebiniz oluşturuldu, teklifler bekleniyor...');
--         setActiveTag(data.tag);
---        setPickupLocation('');
---        setDropoffLocation('');
---        setNotes('');
--+        Alert.alert('✅ Çağrı Gönderildi', 'Yakındaki sürücüler tekliflerini gönderiyor...');
--       } else {
---        Alert.alert('Hata', data.detail || 'Talep oluşturulamadı');
--+        Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
--       }
--     } catch (error) {
---      Alert.alert('Hata', 'Talep oluşturulamadı');
--+      Alert.alert('Hata', 'Çağrı gönderilemedi');
--     } finally {
--       setLoading(false);
--     }
--   };
-- 
--+  // SESLİ ARAMA - Mock fonksiyon
--+  const handleVoiceCall = () => {
--+    setCalling(true);
--+    Alert.alert(
--+      '📞 Sesli Arama',
--+      'Sürücünüzle bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
--+      [
--+        {
--+          text: 'Aramayı Sonlandır',
--+          onPress: () => {
--+            setCalling(false);
--+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
--+          }
--+        }
--+      ]
--+    );
--+  };
--+
--   const handleAcceptOffer = async (offerId: string) => {
--     if (!activeTag) return;
-- 
--@@ -468,45 +480,23 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
--       <ScrollView style={styles.content}>
--         {!activeTag ? (
--           <View style={styles.card}>
---            <Text style={styles.cardTitle}>Yeni Yolculuk Talebi</Text>
--+            <Text style={styles.cardTitle}>🚗 Taksi Çağır</Text>
--+            <Text style={styles.subtitle}>Tek dokunuşla yakındaki sürücülere çağrı gönder</Text>
--             
---            <Text style={styles.label}>Nereden</Text>
---            <TextInput
---              style={styles.input}
---              placeholder="Başlangıç konumu (örn: Kadıköy, İstanbul)"
---              placeholderTextColor="#999"
---              value={pickupLocation}
---              onChangeText={setPickupLocation}
---            />
---
---            <Text style={styles.label}>Nereye</Text>
---            <TextInput
---              style={styles.input}
---              placeholder="Varış konumu (örn: Beşiktaş, İstanbul)"
---              placeholderTextColor="#999"
---              value={dropoffLocation}
---              onChangeText={setDropoffLocation}
---            />
---
---            <Text style={styles.label}>Notlar (Opsiyonel)</Text>
---            <TextInput
---              style={[styles.input, { height: 80 }]}
---              placeholder="Ek bilgiler..."
---              placeholderTextColor="#999"
---              multiline
---              value={notes}
---              onChangeText={setNotes}
---            />
---
--             <TouchableOpacity
---              style={[styles.primaryButton, loading && { opacity: 0.5 }]}
---              onPress={handleCreateRequest}
--+              style={[styles.callButtonLarge, loading && { opacity: 0.5 }]}
--+              onPress={handleCallButton}
--               disabled={loading}
--             >
---              <Text style={styles.primaryButtonText}>
---                {loading ? 'Oluşturuluyor...' : 'Talep Oluştur'}
--+              <Ionicons name="call" size={40} color="#FFF" />
--+              <Text style={styles.callButtonLargeText}>
--+                {loading ? 'ÇAĞRI GÖNDERİLİYOR...' : 'ÇAĞRI GÖNDER'}
--               </Text>
--             </TouchableOpacity>
--+            
--+            <Text style={styles.callNote}>
--+              📍 Mevcut konumunuz otomatik tespit edilecek
--+            </Text>
--           </View>
--         ) : (
--           <>
--@@ -540,42 +530,46 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
--             </View>
-- 
--             {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
---              <View style={styles.card}>
---                <Text style={styles.cardTitle}>Gelen Teklifler ({offers.length})</Text>
---                {offers.map((offer) => (
---                  <View key={offer.id} style={styles.offerCard}>
---                    <View style={styles.offerHeader}>
---                      <View>
---                        <Text style={styles.offerDriverName}>{offer.driver_name}</Text>
---                        <Text style={styles.offerRating}>⭐ {offer.driver_rating}</Text>
---                      </View>
---                      <View style={{ alignItems: 'flex-end' }}>
---                        <Text style={styles.offerPrice}>₺{offer.price}</Text>
---                        <Text style={styles.offerTime}>~{offer.estimated_time} dk</Text>
---                      </View>
---                    </View>
---                    {offer.notes && (
---                      <Text style={styles.offerNotes}>{offer.notes}</Text>
---                    )}
--+              <View style={styles.offersContainer}>
--+                <Text style={styles.offersTitle}>💬 Gelen Teklifler ({offers.length})</Text>
--+                <View style={styles.balloonsContainer}>
--+                  {offers.map((offer) => (
--                     <TouchableOpacity
---                      style={styles.acceptButton}
--+                      key={offer.id}
--+                      style={styles.offerBalloon}
--                       onPress={() => handleAcceptOffer(offer.id)}
--                     >
---                      <Text style={styles.acceptButtonText}>Kabul Et</Text>
--+                      <View style={styles.balloonContent}>
--+                        <Text style={styles.balloonDriverName}>{offer.driver_name}</Text>
--+                        <Text style={styles.balloonRating}>⭐ {offer.driver_rating}</Text>
--+                        <Text style={styles.balloonPrice}>₺{offer.price}</Text>
--+                        <Text style={styles.balloonTime}>~{offer.estimated_time} dk</Text>
--+                        {offer.notes && (
--+                          <Text style={styles.balloonNotes}>{offer.notes}</Text>
--+                        )}
--+                      </View>
--+                      <View style={styles.balloonTail} />
--                     </TouchableOpacity>
---                  </View>
---                ))}
--+                  ))}
--+                </View>
--+                <Text style={styles.balloonHint}>💡 Bir balona dokunarak teklifi kabul edin</Text>
--               </View>
--             )}
-- 
--             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
--               <View style={styles.card}>
---                <Text style={styles.cardTitle}>İletişim</Text>
---                <TouchableOpacity style={styles.callButton}>
--+                <Text style={styles.cardTitle}>📞 İletişim</Text>
--+                <TouchableOpacity 
--+                  style={[styles.callButton, calling && { opacity: 0.7 }]}
--+                  onPress={handleVoiceCall}
--+                  disabled={calling}
--+                >
--                   <Ionicons name="call" size={24} color="#FFF" />
---                  <Text style={styles.callButtonText}>Sürücüyü Ara</Text>
--+                  <Text style={styles.callButtonText}>
--+                    {calling ? 'Aranıyor...' : 'Sürücüyü Ara'}
--+                  </Text>
--                 </TouchableOpacity>
---                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama</Text>
--+                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama • 📱 Numaralar gizli</Text>
--               </View>
--             ) : null}
--           </>
--@@ -590,6 +584,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
--   const [activeTag, setActiveTag] = useState<Tag | null>(null);
--   const [requests, setRequests] = useState<any[]>([]);
--   const [loading, setLoading] = useState(false);
--+  const [calling, setCalling] = useState(false);
-- 
--   useEffect(() => {
--     loadData();
--@@ -721,6 +716,23 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
--       ]
--     );
--   };
--+  // SESLİ ARAMA - Driver için mock fonksiyon
--+  const handleDriverVoiceCall = () => {
--+    setCalling(true);
--+    Alert.alert(
--+      '📞 Sesli Arama',
--+      'Yolcunuzla bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
--+      [
--+        {
--+          text: 'Aramayı Sonlandır',
--+          onPress: () => {
--+            setCalling(false);
--+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
--+          }
--+        }
--+      ]
--+    );
--+  };
-- 
--   return (
--     <SafeAreaView style={styles.container}>
--@@ -772,9 +784,15 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
--               </TouchableOpacity>
--             )}
-- 
---            <TouchableOpacity style={styles.callButton}>
--+            <TouchableOpacity 
--+              style={[styles.callButton, calling && { opacity: 0.7 }]}
--+              onPress={handleDriverVoiceCall}
--+              disabled={calling}
--+            >
--               <Ionicons name="call" size={24} color="#FFF" />
---              <Text style={styles.callButtonText}>Yolcuyu Ara</Text>
--+              <Text style={styles.callButtonText}>
--+                {calling ? 'Aranıyor...' : 'Yolcuyu Ara'}
--+              </Text>
--             </TouchableOpacity>
--           </View>
--         ) : (
--@@ -1133,5 +1151,112 @@ const styles = StyleSheet.create({
--     color: '#999',
+-@@ -1152,111 +1152,116 @@ const styles = StyleSheet.create({
 -     textAlign: 'center',
 -     marginTop: 20
+-   },
+--  // ÇAĞRI BUTONU STİLLERİ
+-+  // Yeni stiller - Çağrı Butonu & Mavi Balonlar
+-   callButtonLarge: {
+--    backgroundColor: '#FF6B35',
+--    borderRadius: 20,
+--    padding: 24,
+-+    backgroundColor: COLORS.secondary,
+-+    borderRadius: 80,
+-+    padding: 30,
+-     alignItems: 'center',
+-     justifyContent: 'center',
+--    marginVertical: 20,
+--    flexDirection: 'row',
+--    shadowColor: '#FF6B35',
+--    shadowOffset: { width: 0, height: 4 },
+-+    marginVertical: 40,
+-+    shadowColor: '#000',
+-+    shadowOffset: { width: 0, height: 8 },
+-     shadowOpacity: 0.3,
+--    shadowRadius: 8,
+--    elevation: 8
+-+    shadowRadius: 12,
+-+    elevation: 10,
+-   },
+-   callButtonLargeText: {
+-     color: '#FFF',
+--    fontSize: 20,
+-+    fontSize: 24,
+-     fontWeight: 'bold',
+--    marginLeft: 12,
+--    letterSpacing: 1
+-+    marginTop: 12,
+-+    letterSpacing: 1,
 -+  },
--+  // ÇAĞRI BUTONU STİLLERİ
--+  callButtonLarge: {
--+    backgroundColor: '#FF6B35',
--+    borderRadius: 20,
--+    padding: 24,
--+    alignItems: 'center',
--+    justifyContent: 'center',
--+    marginVertical: 20,
--+    flexDirection: 'row',
--+    shadowColor: '#FF6B35',
--+    shadowOffset: { width: 0, height: 4 },
--+    shadowOpacity: 0.3,
--+    shadowRadius: 8,
--+    elevation: 8
--+  },
--+  callButtonLargeText: {
--+    color: '#FFF',
--+    fontSize: 20,
--+    fontWeight: 'bold',
--+    marginLeft: 12,
--+    letterSpacing: 1
--+  },
--+  // MAVİ BALON STİLLERİ
--+  offersContainer: {
--+    marginBottom: 16
--+  },
--+  offersTitle: {
--+    fontSize: 18,
--+    fontWeight: 'bold',
--+    color: '#333',
--+    marginBottom: 16,
--+    textAlign: 'center'
--+  },
--+  balloonsContainer: {
--+    flexDirection: 'row',
--+    flexWrap: 'wrap',
--+    justifyContent: 'space-around',
--+    paddingHorizontal: 10
--+  },
--+  offerBalloon: {
--+    backgroundColor: '#3FA9F5',
--+    borderRadius: 20,
--+    padding: 16,
--+    margin: 8,
--+    minWidth: 140,
--+    maxWidth: 160,
--+    shadowColor: '#3FA9F5',
--+    shadowOffset: { width: 0, height: 4 },
--+    shadowOpacity: 0.3,
--+    shadowRadius: 8,
--+    elevation: 6,
--+    position: 'relative'
--+  },
--+  balloonContent: {
--+    alignItems: 'center'
--+  },
--+  balloonDriverName: {
--+    color: '#FFF',
--+    fontSize: 16,
--+    fontWeight: 'bold',
--+    marginBottom: 4
--+  },
--+  balloonRating: {
--+    color: '#FFF',
--+    fontSize: 12,
--+    opacity: 0.9,
--+    marginBottom: 8
--+  },
--+  balloonPrice: {
--+    color: '#FFF',
--+    fontSize: 20,
--+    fontWeight: 'bold',
--+    marginBottom: 4
--+  },
--+  balloonTime: {
--+    color: '#FFF',
--+    fontSize: 12,
--+    opacity: 0.8
--+  },
--+  balloonNotes: {
--+    color: '#FFF',
--+    fontSize: 10,
--+    opacity: 0.8,
--+    marginTop: 4,
--+    textAlign: 'center'
--+  },
--+  balloonTail: {
--+    position: 'absolute',
--+    bottom: -8,
--+    left: '50%',
--+    marginLeft: -8,
--+    width: 0,
--+    height: 0,
--+    borderLeftWidth: 8,
--+    borderRightWidth: 8,
--+    borderTopWidth: 8,
--+    borderLeftColor: 'transparent',
--+    borderRightColor: 'transparent',
--+    borderTopColor: '#3FA9F5'
--+  },
--+  balloonHint: {
+-+  callNote: {
 -+    fontSize: 14,
--+    color: '#666',
+-+    color: COLORS.gray500,
 -+    textAlign: 'center',
--+    marginTop: 16,
--+    fontStyle: 'italic'
+-+    marginTop: 8,
+-   },
+--  // MAVİ BALON STİLLERİ
+-   offersContainer: {
+--    marginBottom: 16
+-+    backgroundColor: COLORS.background,
+-+    borderRadius: 16,
+-+    padding: 20,
+-+    marginBottom: 16,
+-   },
+-   offersTitle: {
+--    fontSize: 18,
+-+    fontSize: 22,
+-     fontWeight: 'bold',
+--    color: '#333',
+-+    color: COLORS.text,
+-     marginBottom: 16,
+--    textAlign: 'center'
+-+    textAlign: 'center',
+-   },
+-   balloonsContainer: {
+-     flexDirection: 'row',
+-     flexWrap: 'wrap',
+-     justifyContent: 'space-around',
+--    paddingHorizontal: 10
+-+    marginBottom: 16,
+-   },
+-   offerBalloon: {
+--    backgroundColor: '#3FA9F5',
+-+    width: '45%',
+-+    backgroundColor: COLORS.primary,
+-     borderRadius: 20,
+-     padding: 16,
+--    margin: 8,
+--    minWidth: 140,
+--    maxWidth: 160,
+--    shadowColor: '#3FA9F5',
+-+    marginBottom: 16,
+-+    shadowColor: COLORS.primary,
+-     shadowOffset: { width: 0, height: 4 },
+--    shadowOpacity: 0.3,
+-+    shadowOpacity: 0.4,
+-     shadowRadius: 8,
+-     elevation: 6,
+--    position: 'relative'
+-+    position: 'relative',
+-   },
+-   balloonContent: {
+--    alignItems: 'center'
+-+    alignItems: 'center',
+-   },
+-   balloonDriverName: {
+--    color: '#FFF',
+--    fontSize: 16,
+-+    fontSize: 18,
+-     fontWeight: 'bold',
+--    marginBottom: 4
+-+    color: '#FFF',
+-+    marginBottom: 4,
+-   },
+-   balloonRating: {
+-+    fontSize: 14,
+-     color: '#FFF',
+--    fontSize: 12,
+-     opacity: 0.9,
+--    marginBottom: 8
+-+    marginBottom: 8,
+-   },
+-   balloonPrice: {
+--    color: '#FFF',
+--    fontSize: 20,
+-+    fontSize: 24,
+-     fontWeight: 'bold',
+--    marginBottom: 4
+-+    color: '#FFF',
+-+    marginBottom: 4,
+-   },
+-   balloonTime: {
+-+    fontSize: 14,
+-     color: '#FFF',
+--    fontSize: 12,
+--    opacity: 0.8
+-+    opacity: 0.9,
+-+    marginBottom: 4,
+-   },
+-   balloonNotes: {
+-+    fontSize: 12,
+-     color: '#FFF',
+--    fontSize: 10,
+-     opacity: 0.8,
+--    marginTop: 4,
+--    textAlign: 'center'
+-+    textAlign: 'center',
+-+    marginTop: 8,
+-   },
+-   balloonTail: {
+-     position: 'absolute',
+--    bottom: -8,
+--    left: '50%',
+--    marginLeft: -8,
+-+    bottom: -10,
+-+    left: '40%',
+-     width: 0,
+-     height: 0,
+--    borderLeftWidth: 8,
+--    borderRightWidth: 8,
+--    borderTopWidth: 8,
+-+    borderLeftWidth: 10,
+-     borderLeftColor: 'transparent',
+-+    borderRightWidth: 10,
+-     borderRightColor: 'transparent',
+--    borderTopColor: '#3FA9F5'
+-+    borderTopWidth: 10,
+-+    borderTopColor: COLORS.primary,
+-   },
+-   balloonHint: {
+-     fontSize: 14,
+--    color: '#666',
+-+    color: COLORS.gray500,
+-     textAlign: 'center',
+--    marginTop: 16,
+--    fontStyle: 'italic'
+-+    fontStyle: 'italic',
 -   }
 - });
 -diff --git a/model.patch b/model.patch
--index 4803773..df154e4 100644
+-index c685b3e..e69de29 100644
 ---- a/model.patch
 -+++ b/model.patch
--@@ -1,19 +0,0 @@
+-@@ -1,405 +0,0 @@
+--diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+--index b10999f..5e9a60f 100644
+----- a/frontend/app/index.tsx
+--+++ b/frontend/app/index.tsx
+--@@ -344,11 +344,8 @@ export default function App() {
+-- function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
+--   const [activeTag, setActiveTag] = useState<Tag | null>(null);
+--   const [offers, setOffers] = useState<Offer[]>([]);
+---  const [pickupLocation, setPickupLocation] = useState('');
+---  const [dropoffLocation, setDropoffLocation] = useState('');
+---  const [notes, setNotes] = useState('');
+--   const [loading, setLoading] = useState(false);
+---  const [refreshing, setRefreshing] = useState(false);
+--+  const [calling, setCalling] = useState(false);
+-- 
+--   useEffect(() => {
+--     loadActiveTag();
+--@@ -386,41 +383,56 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
+--     }
+--   };
+-- 
+---  const handleCreateRequest = async () => {
+---    if (!pickupLocation || !dropoffLocation) {
+---      Alert.alert('Hata', 'Başlangıç ve varış noktalarını girin');
+---      return;
+---    }
+---
+--+  // ÇAĞRI BUTONU - Otomatik konum ile talep oluştur
+--+  const handleCallButton = async () => {
+--     setLoading(true);
+--     try {
+--+      // Mock konum (gerçek GPS sonra eklenecek)
+--+      const mockLocation = 'Mevcut Konumunuz';
+--+      const mockDestination = 'Varış Noktası';
+--+
+--       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
+--         method: 'POST',
+--         headers: { 'Content-Type': 'application/json' },
+--         body: JSON.stringify({
+---          pickup_location: pickupLocation,
+---          dropoff_location: dropoffLocation,
+---          notes
+--+          pickup_location: mockLocation,
+--+          dropoff_location: mockDestination,
+--+          notes: 'Çağrı butonu ile oluşturuldu'
+--         })
+--       });
+-- 
+--       const data = await response.json();
+--       if (data.success) {
+---        Alert.alert('Başarılı', 'Talebiniz oluşturuldu, teklifler bekleniyor...');
+--         setActiveTag(data.tag);
+---        setPickupLocation('');
+---        setDropoffLocation('');
+---        setNotes('');
+--+        Alert.alert('✅ Çağrı Gönderildi', 'Yakındaki sürücüler tekliflerini gönderiyor...');
+--       } else {
+---        Alert.alert('Hata', data.detail || 'Talep oluşturulamadı');
+--+        Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
+--       }
+--     } catch (error) {
+---      Alert.alert('Hata', 'Talep oluşturulamadı');
+--+      Alert.alert('Hata', 'Çağrı gönderilemedi');
+--     } finally {
+--       setLoading(false);
+--     }
+--   };
+-- 
+--+  // SESLİ ARAMA - Mock fonksiyon
+--+  const handleVoiceCall = () => {
+--+    setCalling(true);
+--+    Alert.alert(
+--+      '📞 Sesli Arama',
+--+      'Sürücünüzle bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
+--+      [
+--+        {
+--+          text: 'Aramayı Sonlandır',
+--+          onPress: () => {
+--+            setCalling(false);
+--+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+--+          }
+--+        }
+--+      ]
+--+    );
+--+  };
+--+
+--   const handleAcceptOffer = async (offerId: string) => {
+--     if (!activeTag) return;
+-- 
+--@@ -468,45 +480,23 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
+--       <ScrollView style={styles.content}>
+--         {!activeTag ? (
+--           <View style={styles.card}>
+---            <Text style={styles.cardTitle}>Yeni Yolculuk Talebi</Text>
+--+            <Text style={styles.cardTitle}>🚗 Taksi Çağır</Text>
+--+            <Text style={styles.subtitle}>Tek dokunuşla yakındaki sürücülere çağrı gönder</Text>
+--             
+---            <Text style={styles.label}>Nereden</Text>
+---            <TextInput
+---              style={styles.input}
+---              placeholder="Başlangıç konumu (örn: Kadıköy, İstanbul)"
+---              placeholderTextColor="#999"
+---              value={pickupLocation}
+---              onChangeText={setPickupLocation}
+---            />
+---
+---            <Text style={styles.label}>Nereye</Text>
+---            <TextInput
+---              style={styles.input}
+---              placeholder="Varış konumu (örn: Beşiktaş, İstanbul)"
+---              placeholderTextColor="#999"
+---              value={dropoffLocation}
+---              onChangeText={setDropoffLocation}
+---            />
+---
+---            <Text style={styles.label}>Notlar (Opsiyonel)</Text>
+---            <TextInput
+---              style={[styles.input, { height: 80 }]}
+---              placeholder="Ek bilgiler..."
+---              placeholderTextColor="#999"
+---              multiline
+---              value={notes}
+---              onChangeText={setNotes}
+---            />
+---
+--             <TouchableOpacity
+---              style={[styles.primaryButton, loading && { opacity: 0.5 }]}
+---              onPress={handleCreateRequest}
+--+              style={[styles.callButtonLarge, loading && { opacity: 0.5 }]}
+--+              onPress={handleCallButton}
+--               disabled={loading}
+--             >
+---              <Text style={styles.primaryButtonText}>
+---                {loading ? 'Oluşturuluyor...' : 'Talep Oluştur'}
+--+              <Ionicons name="call" size={40} color="#FFF" />
+--+              <Text style={styles.callButtonLargeText}>
+--+                {loading ? 'ÇAĞRI GÖNDERİLİYOR...' : 'ÇAĞRI GÖNDER'}
+--               </Text>
+--             </TouchableOpacity>
+--+            
+--+            <Text style={styles.callNote}>
+--+              📍 Mevcut konumunuz otomatik tespit edilecek
+--+            </Text>
+--           </View>
+--         ) : (
+--           <>
+--@@ -540,42 +530,46 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
+--             </View>
+-- 
+--             {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
+---              <View style={styles.card}>
+---                <Text style={styles.cardTitle}>Gelen Teklifler ({offers.length})</Text>
+---                {offers.map((offer) => (
+---                  <View key={offer.id} style={styles.offerCard}>
+---                    <View style={styles.offerHeader}>
+---                      <View>
+---                        <Text style={styles.offerDriverName}>{offer.driver_name}</Text>
+---                        <Text style={styles.offerRating}>⭐ {offer.driver_rating}</Text>
+---                      </View>
+---                      <View style={{ alignItems: 'flex-end' }}>
+---                        <Text style={styles.offerPrice}>₺{offer.price}</Text>
+---                        <Text style={styles.offerTime}>~{offer.estimated_time} dk</Text>
+---                      </View>
+---                    </View>
+---                    {offer.notes && (
+---                      <Text style={styles.offerNotes}>{offer.notes}</Text>
+---                    )}
+--+              <View style={styles.offersContainer}>
+--+                <Text style={styles.offersTitle}>💬 Gelen Teklifler ({offers.length})</Text>
+--+                <View style={styles.balloonsContainer}>
+--+                  {offers.map((offer) => (
+--                     <TouchableOpacity
+---                      style={styles.acceptButton}
+--+                      key={offer.id}
+--+                      style={styles.offerBalloon}
+--                       onPress={() => handleAcceptOffer(offer.id)}
+--                     >
+---                      <Text style={styles.acceptButtonText}>Kabul Et</Text>
+--+                      <View style={styles.balloonContent}>
+--+                        <Text style={styles.balloonDriverName}>{offer.driver_name}</Text>
+--+                        <Text style={styles.balloonRating}>⭐ {offer.driver_rating}</Text>
+--+                        <Text style={styles.balloonPrice}>₺{offer.price}</Text>
+--+                        <Text style={styles.balloonTime}>~{offer.estimated_time} dk</Text>
+--+                        {offer.notes && (
+--+                          <Text style={styles.balloonNotes}>{offer.notes}</Text>
+--+                        )}
+--+                      </View>
+--+                      <View style={styles.balloonTail} />
+--                     </TouchableOpacity>
+---                  </View>
+---                ))}
+--+                  ))}
+--+                </View>
+--+                <Text style={styles.balloonHint}>💡 Bir balona dokunarak teklifi kabul edin</Text>
+--               </View>
+--             )}
+-- 
+--             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
+--               <View style={styles.card}>
+---                <Text style={styles.cardTitle}>İletişim</Text>
+---                <TouchableOpacity style={styles.callButton}>
+--+                <Text style={styles.cardTitle}>📞 İletişim</Text>
+--+                <TouchableOpacity 
+--+                  style={[styles.callButton, calling && { opacity: 0.7 }]}
+--+                  onPress={handleVoiceCall}
+--+                  disabled={calling}
+--+                >
+--                   <Ionicons name="call" size={24} color="#FFF" />
+---                  <Text style={styles.callButtonText}>Sürücüyü Ara</Text>
+--+                  <Text style={styles.callButtonText}>
+--+                    {calling ? 'Aranıyor...' : 'Sürücüyü Ara'}
+--+                  </Text>
+--                 </TouchableOpacity>
+---                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama</Text>
+--+                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama • 📱 Numaralar gizli</Text>
+--               </View>
+--             ) : null}
+--           </>
+--@@ -590,6 +584,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+--   const [activeTag, setActiveTag] = useState<Tag | null>(null);
+--   const [requests, setRequests] = useState<any[]>([]);
+--   const [loading, setLoading] = useState(false);
+--+  const [calling, setCalling] = useState(false);
+-- 
+--   useEffect(() => {
+--     loadData();
+--@@ -721,6 +716,23 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+--       ]
+--     );
+--   };
+--+  // SESLİ ARAMA - Driver için mock fonksiyon
+--+  const handleDriverVoiceCall = () => {
+--+    setCalling(true);
+--+    Alert.alert(
+--+      '📞 Sesli Arama',
+--+      'Yolcunuzla bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
+--+      [
+--+        {
+--+          text: 'Aramayı Sonlandır',
+--+          onPress: () => {
+--+            setCalling(false);
+--+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+--+          }
+--+        }
+--+      ]
+--+    );
+--+  };
+-- 
+--   return (
+--     <SafeAreaView style={styles.container}>
+--@@ -772,9 +784,15 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+--               </TouchableOpacity>
+--             )}
+-- 
+---            <TouchableOpacity style={styles.callButton}>
+--+            <TouchableOpacity 
+--+              style={[styles.callButton, calling && { opacity: 0.7 }]}
+--+              onPress={handleDriverVoiceCall}
+--+              disabled={calling}
+--+            >
+--               <Ionicons name="call" size={24} color="#FFF" />
+---              <Text style={styles.callButtonText}>Yolcuyu Ara</Text>
+--+              <Text style={styles.callButtonText}>
+--+                {calling ? 'Aranıyor...' : 'Yolcuyu Ara'}
+--+              </Text>
+--             </TouchableOpacity>
+--           </View>
+--         ) : (
+--@@ -1133,5 +1151,112 @@ const styles = StyleSheet.create({
+--     color: '#999',
+--     textAlign: 'center',
+--     marginTop: 20
+--+  },
+--+  // ÇAĞRI BUTONU STİLLERİ
+--+  callButtonLarge: {
+--+    backgroundColor: '#FF6B35',
+--+    borderRadius: 20,
+--+    padding: 24,
+--+    alignItems: 'center',
+--+    justifyContent: 'center',
+--+    marginVertical: 20,
+--+    flexDirection: 'row',
+--+    shadowColor: '#FF6B35',
+--+    shadowOffset: { width: 0, height: 4 },
+--+    shadowOpacity: 0.3,
+--+    shadowRadius: 8,
+--+    elevation: 8
+--+  },
+--+  callButtonLargeText: {
+--+    color: '#FFF',
+--+    fontSize: 20,
+--+    fontWeight: 'bold',
+--+    marginLeft: 12,
+--+    letterSpacing: 1
+--+  },
+--+  // MAVİ BALON STİLLERİ
+--+  offersContainer: {
+--+    marginBottom: 16
+--+  },
+--+  offersTitle: {
+--+    fontSize: 18,
+--+    fontWeight: 'bold',
+--+    color: '#333',
+--+    marginBottom: 16,
+--+    textAlign: 'center'
+--+  },
+--+  balloonsContainer: {
+--+    flexDirection: 'row',
+--+    flexWrap: 'wrap',
+--+    justifyContent: 'space-around',
+--+    paddingHorizontal: 10
+--+  },
+--+  offerBalloon: {
+--+    backgroundColor: '#3FA9F5',
+--+    borderRadius: 20,
+--+    padding: 16,
+--+    margin: 8,
+--+    minWidth: 140,
+--+    maxWidth: 160,
+--+    shadowColor: '#3FA9F5',
+--+    shadowOffset: { width: 0, height: 4 },
+--+    shadowOpacity: 0.3,
+--+    shadowRadius: 8,
+--+    elevation: 6,
+--+    position: 'relative'
+--+  },
+--+  balloonContent: {
+--+    alignItems: 'center'
+--+  },
+--+  balloonDriverName: {
+--+    color: '#FFF',
+--+    fontSize: 16,
+--+    fontWeight: 'bold',
+--+    marginBottom: 4
+--+  },
+--+  balloonRating: {
+--+    color: '#FFF',
+--+    fontSize: 12,
+--+    opacity: 0.9,
+--+    marginBottom: 8
+--+  },
+--+  balloonPrice: {
+--+    color: '#FFF',
+--+    fontSize: 20,
+--+    fontWeight: 'bold',
+--+    marginBottom: 4
+--+  },
+--+  balloonTime: {
+--+    color: '#FFF',
+--+    fontSize: 12,
+--+    opacity: 0.8
+--+  },
+--+  balloonNotes: {
+--+    color: '#FFF',
+--+    fontSize: 10,
+--+    opacity: 0.8,
+--+    marginTop: 4,
+--+    textAlign: 'center'
+--+  },
+--+  balloonTail: {
+--+    position: 'absolute',
+--+    bottom: -8,
+--+    left: '50%',
+--+    marginLeft: -8,
+--+    width: 0,
+--+    height: 0,
+--+    borderLeftWidth: 8,
+--+    borderRightWidth: 8,
+--+    borderTopWidth: 8,
+--+    borderLeftColor: 'transparent',
+--+    borderRightColor: 'transparent',
+--+    borderTopColor: '#3FA9F5'
+--+  },
+--+  balloonHint: {
+--+    fontSize: 14,
+--+    color: '#666',
+--+    textAlign: 'center',
+--+    marginTop: 16,
+--+    fontStyle: 'italic'
+--   }
+-- });
 --diff --git a/model.patch b/model.patch
---index 8d5451a..e69de29 100644
+--index 4803773..df154e4 100644
 ----- a/model.patch
 --+++ b/model.patch
---@@ -1,14 +0,0 @@
----diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
----index 554ced7..c24d3e5 100644
------- a/frontend/app/index.tsx
----+++ b/frontend/app/index.tsx
----@@ -199,8 +199,7 @@ export default function App() {
----       <SafeAreaView style={styles.container}>
----         <ScrollView contentContainerStyle={styles.scrollContent}>
----           <View style={styles.logoContainer}>
-----            <Logo size=\"large\" />
-----            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
----+            <Logo size=\"large\" showSlogan={true} />
----           </View>
---- 
----           <View style={styles.formContainer}>
+--@@ -1,19 +0,0 @@
+---diff --git a/model.patch b/model.patch
+---index 8d5451a..e69de29 100644
+------ a/model.patch
+---+++ b/model.patch
+---@@ -1,14 +0,0 @@
+----diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+----index 554ced7..c24d3e5 100644
+------- a/frontend/app/index.tsx
+----+++ b/frontend/app/index.tsx
+----@@ -199,8 +199,7 @@ export default function App() {
+----       <SafeAreaView style={styles.container}>
+----         <ScrollView contentContainerStyle={styles.scrollContent}>
+----           <View style={styles.logoContainer}>
+-----            <Logo size=\"large\" />
+-----            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
+----+            <Logo size=\"large\" showSlogan={true} />
+----           </View>
+---- 
+----           <View style={styles.formContainer}>
