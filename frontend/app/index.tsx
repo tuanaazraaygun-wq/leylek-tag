@@ -80,6 +80,9 @@ export default function App() {
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver'>('passenger');
+  const [selectedCity, setSelectedCity] = useState('');
+  const [cities, setCities] = useState<string[]>([]);
+  const [showCityPicker, setShowCityPicker] = useState(false);
 
   useEffect(() => {
     loadUser();
