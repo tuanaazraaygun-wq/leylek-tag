@@ -13,6 +13,7 @@ from bson import ObjectId
 from datetime import datetime
 import secrets
 import base64
+from geopy.distance import geodesic
 
 # Import models
 from models import *
