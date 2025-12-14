@@ -41,6 +41,14 @@ async def shutdown_db():
     logger.info("❌ Database disconnected")
 
 # ==================== AUTH ENDPOINTS ====================
+@api_router.get("/auth/cities")
+async def get_cities():
+    """Türkiye şehirlerini getir"""
+    return {
+        "success": True,
+        "cities": TURKIYE_SEHIRLERI
+    }
+
 @api_router.post("/auth/send-otp")
 async def send_otp(request: SendOTPRequest):
     """
