@@ -58,6 +58,7 @@ class User(BaseModel):
     name: str
     role: UserRole
     city: str  # Kullanıcının şehri (zorunlu)
+    location: Optional[dict] = None  # {"latitude": 41.0082, "longitude": 28.9784}
     profile_photo: Optional[str] = None  # base64
     rating: float = 5.0
     total_ratings: int = 0
