@@ -13,7 +13,7 @@ import Animated, {
   withSpring
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+// import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'; // Geçici devre dışı
 import * as Location from 'expo-location';
 import Logo from '../components/Logo';
 
