@@ -173,6 +173,7 @@ async def register(request: RegisterRequest):
             phone=user_data["phone"],
             name=user_data["name"],
             role=user_data["role"],
+            city=user_data["city"],
             profile_photo=user_data.get("profile_photo"),
             rating=user_data["rating"],
             total_ratings=user_data["total_ratings"],
