@@ -285,6 +285,11 @@ export default function App() {
   }
 
   if (screen === 'register') {
+    // Şehir listesini yükle
+    if (cities.length === 0) {
+      loadCities();
+    }
+
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -303,6 +308,16 @@ export default function App() {
               value={name}
               onChangeText={setName}
             />
+
+            <Text style={[styles.label, { marginTop: 20 }]}>Şehir</Text>
+            <TouchableOpacity
+              style={styles.input}
+              onPress={() => setShowCityPicker(true)}
+            >
+              <Text style={selectedCity ? styles.inputText : styles.placeholderText}>
+                {selectedCity || 'Şehir seçin'}
+              </Text>
+            </TouchableOpacity>
 
             <Text style={[styles.label, { marginTop: 20 }]}>Rol Seçin</Text>
             <View style={styles.roleContainer}>
