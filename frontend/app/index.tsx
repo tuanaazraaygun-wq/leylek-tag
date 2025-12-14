@@ -85,6 +85,10 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState('');
   const [cities, setCities] = useState<string[]>([]);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  
+  // GPS & Map states
+  const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  const [locationPermission, setLocationPermission] = useState(false);
 
   useEffect(() => {
     loadUser();
