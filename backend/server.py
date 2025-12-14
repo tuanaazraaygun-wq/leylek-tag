@@ -360,17 +360,30 @@ async def get_passenger_history(user_id: str):
 # ==================== DRIVER ENDPOINTS ====================
 @api_router.get("/driver/requests")
 async def get_driver_requests(user_id: str):
-    """Aktif talepleri listele"""
+    """Aktif talepleri listele - SADECE AYNI ŞEHİRDEKİLER"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user or user["role"] != UserRole.DRIVER:
         raise HTTPException(status_code=403, detail="Sadece sürücüler talepleri görebilir")
     
+    driver_city = user.get("city")
+    
+    # Şehir bilgisi yok ise (eski kullanıcılar için)
+    if not driver_city:
+        logger.warning(f"⚠️ Sürücü {user_id} şehir bilgisi eksik")
+        return {"success": True, "requests": []}
+    
+    # Sadece aynı şehirdeki TAGleri getir
     tags = await db_instance.find_many("tags", {
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]}
     })
     
     tag_responses = []
     for tag in tags:
+        # Her TAG için yolcunun şehrini kontrol et
+        passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
+        if not passenger or passenger.get("city") != driver_city:
+            continue  # Farklı şehirden, atla
+        
         driver_offer = await db_instance.find_one("offers", {
             "tag_id": str(tag["_id"]),
             "driver_id": user_id
@@ -384,6 +397,7 @@ async def get_driver_requests(user_id: str):
             "has_offered": driver_offer is not None
         })
     
+    logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı")
     return {"success": True, "requests": tag_responses}
 
 @api_router.post("/driver/send-offer")
