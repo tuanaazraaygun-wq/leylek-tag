@@ -412,12 +412,39 @@ async def get_driver_requests(user_id: str):
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]}
     })
     
+    # Sürücünün konumu
+    driver_location = user.get("location")
+    if not driver_location:
+        logger.warning(f"⚠️ Sürücü {user_id} konum bilgisi eksik")
+        return {"success": True, "requests": []}
+    
+    driver_lat = driver_location.get("latitude")
+    driver_lng = driver_location.get("longitude")
+    
     tag_responses = []
     for tag in tags:
         # Her TAG için yolcunun şehrini kontrol et
         passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
         if not passenger or passenger.get("city") != driver_city:
             continue  # Farklı şehirden, atla
+        
+        # Mesafe hesaplamaları
+        distance_to_passenger = 0.0
+        trip_distance = 0.0
+        
+        # Sürücü -> Yolcu mesafesi
+        if tag.get("pickup_lat") and tag.get("pickup_lng"):
+            distance_to_passenger = calculate_distance(
+                driver_lat, driver_lng,
+                tag["pickup_lat"], tag["pickup_lng"]
+            )
+        
+        # Yolcunun gideceği mesafe (pickup -> dropoff)
+        if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
+            trip_distance = calculate_distance(
+                tag["pickup_lat"], tag["pickup_lng"],
+                tag["dropoff_lat"], tag["dropoff_lng"]
+            )
         
         driver_offer = await db_instance.find_one("offers", {
             "tag_id": str(tag["_id"]),
@@ -429,7 +456,9 @@ async def get_driver_requests(user_id: str):
                 id=str(tag["_id"]),
                 **{k: v for k, v in tag.items() if k != "_id"}
             ).dict(),
-            "has_offered": driver_offer is not None
+            "has_offered": driver_offer is not None,
+            "distance_to_passenger_km": round(distance_to_passenger, 2),  # Sürücü -> Yolcu
+            "trip_distance_km": round(trip_distance, 2)  # Yolculuğun kendisi
         })
     
     logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı")
