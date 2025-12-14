@@ -697,36 +697,6 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
       <ScrollView style={styles.content}>
         {!activeTag ? (
           <View style={styles.emptyStateContainer}>
-            {/* Harita Gösterimi */}
-            {userLocation && (
-              <View style={styles.mapContainer}>
-                <MapView
-                  style={styles.map}
-                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                  initialRegion={{
-                    latitude: userLocation.latitude,
-                    longitude: userLocation.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  region={{
-                    latitude: userLocation.latitude,
-                    longitude: userLocation.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  showsUserLocation={true}
-                  showsMyLocationButton={false}
-                >
-                  <Marker
-                    coordinate={userLocation}
-                    title="Konumunuz"
-                    pinColor={COLORS.primary}
-                  />
-                </MapView>
-              </View>
-            )}
-            
             <Text style={styles.welcomeTitle}>Hoş Geldiniz</Text>
             <Text style={styles.welcomeSubtitle}>Yakındaki sürücülere çağrı gönderin</Text>
             
