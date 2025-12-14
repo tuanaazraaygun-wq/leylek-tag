@@ -71,6 +71,7 @@ class UserResponse(BaseModel):
     phone: str
     name: str
     role: UserRole
+    city: str
     profile_photo: Optional[str] = None
     rating: float
     total_ratings: int
