@@ -57,9 +57,53 @@ async def send_otp(request: SendOTPRequest):
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(request: VerifyOTPRequest):
-    """OTP doğrulama"""
+    """OTP doğrulama + IP ban kontrolü"""
+    # TODO: Gerçek IP adresi almak için: request.client.host
+    # Şimdilik mock IP kullanacağız
+    client_ip = "127.0.0.1"  # request.client.host  
+    
+    # IP ban kontrolü
+    failed_attempt = await db_instance.find_one("failed_login_attempts", {"ip_address": client_ip})
+    if failed_attempt and failed_attempt.get("is_banned"):
+        raise HTTPException(status_code=403, detail="IP adresiniz yasaklandı. Lütfen müşteri hizmetleri ile iletişime geçin.")
+    
+    # OTP doğrulama
     if request.otp != "123456":
+        # Başarısız deneme kaydet
+        if failed_attempt:
+            new_count = failed_attempt.get("attempt_count", 0) + 1
+            is_banned = new_count >= 10
+            await db_instance.update_one(
+                "failed_login_attempts",
+                {"ip_address": client_ip},
+                {
+                    "$set": {
+                        "attempt_count": new_count,
+                        "is_banned": is_banned,
+                        "banned_at": datetime.utcnow() if is_banned else None,
+                        "last_attempt": datetime.utcnow(),
+                        "phone": request.phone
+                    }
+                }
+            )
+            if is_banned:
+                logger.warning(f"🚫 IP BAN: {client_ip} (10+ başarısız deneme)")
+                raise HTTPException(status_code=403, detail="Çok fazla başarısız deneme. IP adresiniz yasaklandı.")
+        else:
+            await db_instance.insert_one("failed_login_attempts", {
+                "ip_address": client_ip,
+                "phone": request.phone,
+                "attempt_count": 1,
+                "is_banned": False,
+                "last_attempt": datetime.utcnow(),
+                "created_at": datetime.utcnow()
+            })
+        
         raise HTTPException(status_code=400, detail="Geçersiz OTP")
+    
+    # Başarılı giriş - başarısız denemeleri sıfırla
+    if failed_attempt:
+        await db_instance.delete_one("failed_login_attempts", {"ip_address": client_ip})
     
     user = await db_instance.find_one("users", {"phone": request.phone})
     
@@ -72,6 +116,7 @@ async def verify_otp(request: VerifyOTPRequest):
             phone=user["phone"],
             name=user["name"],
             role=user["role"],
+            city=user.get("city", ""),
             profile_photo=user.get("profile_photo"),
             rating=user.get("rating", 5.0),
             total_ratings=user.get("total_ratings", 0),
