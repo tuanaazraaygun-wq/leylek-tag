@@ -187,6 +187,47 @@ export default function App() {
     }
   };
 
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setLocationPermission(true);
+        return true;
+      } else {
+        Alert.alert('İzin Gerekli', 'Konum izni olmadan uygulama çalışamaz');
+        return false;
+      }
+    } catch (error) {
+      console.error('Konum izni hatası:', error);
+      return false;
+    }
+  };
+
+  const updateUserLocation = async () => {
+    if (!user) return;
+    
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+      
+      const coords = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      };
+      
+      setUserLocation(coords);
+      
+      // Backend'e gönder
+      await fetch(`${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`, {
+        method: 'POST'
+      });
+      
+    } catch (error) {
+      console.error('Konum alınamadı:', error);
+    }
+  };
+
   const handleRegister = async () => {
     if (!name) {
       Alert.alert('Hata', 'Adınızı girin');
