@@ -3,6 +3,16 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withRepeat, 
+  withSequence, 
+  withTiming,
+  Easing,
+  withSpring
+} from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import Logo from '../components/Logo';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
