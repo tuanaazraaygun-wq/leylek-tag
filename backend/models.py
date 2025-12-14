@@ -57,6 +57,7 @@ class User(BaseModel):
     phone: str
     name: str
     role: UserRole
+    city: str  # Kullanıcının şehri (zorunlu)
     profile_photo: Optional[str] = None  # base64
     rating: float = 5.0
     total_ratings: int = 0
