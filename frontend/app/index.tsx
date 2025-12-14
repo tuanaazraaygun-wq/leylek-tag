@@ -563,23 +563,14 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
 
       <ScrollView style={styles.content}>
         {!activeTag ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🚗 Taksi Çağır</Text>
-            <Text style={styles.subtitle}>Tek dokunuşla yakındaki sürücülere çağrı gönder</Text>
+          <View style={styles.emptyStateContainer}>
+            <Text style={styles.welcomeTitle}>Hoş Geldiniz</Text>
+            <Text style={styles.welcomeSubtitle}>Yakındaki sürücülere çağrı gönderin</Text>
             
-            <TouchableOpacity
-              style={[styles.callButtonLarge, loading && { opacity: 0.5 }]}
-              onPress={handleCallButton}
-              disabled={loading}
-            >
-              <Ionicons name="call" size={40} color="#FFF" />
-              <Text style={styles.callButtonLargeText}>
-                {loading ? 'ÇAĞRI GÖNDERİLİYOR...' : 'ÇAĞRI GÖNDER'}
-              </Text>
-            </TouchableOpacity>
+            <AnimatedPulseButton onPress={handleCallButton} loading={loading} />
             
-            <Text style={styles.callNote}>
-              📍 Mevcut konumunuz otomatik tespit edilecek
+            <Text style={styles.callHintText}>
+              📍 Konumunuz otomatik tespit edilecek
             </Text>
           </View>
         ) : (
