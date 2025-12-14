@@ -244,3 +244,13 @@ class EmergencyAlert(BaseModel):
     message: str
     location: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ==================== IP BAN MODELS ====================
+class FailedLoginAttempt(BaseModel):
+    ip_address: str
+    phone: str
+    attempt_count: int = 1
+    is_banned: bool = False
+    banned_at: Optional[datetime] = None
+    last_attempt: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
