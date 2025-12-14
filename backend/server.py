@@ -22,13 +22,22 @@ from database import db_instance
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Logger setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("server")
+
+# ==================== HELPER FUNCTIONS ====================
+def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """İki nokta arasındaki mesafeyi km cinsinden hesapla"""
+    try:
+        return geodesic((lat1, lng1), (lat2, lng2)).km
+    except Exception as e:
+        logger.error(f"Mesafe hesaplama hatası: {e}")
+        return 0.0
+
 # Create app
 app = FastAPI(title="Leylek TAG API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # ==================== STARTUP/SHUTDOWN ====================
 @app.on_event("startup")
