@@ -90,6 +90,7 @@ class RegisterRequest(BaseModel):
     phone: str
     name: str
     role: UserRole
+    city: str  # Şehir seçimi zorunlu
 
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
