@@ -94,6 +94,19 @@ export default function App() {
     loadUser();
   }, []);
 
+  useEffect(() => {
+    if (user && screen === 'dashboard') {
+      requestLocationPermission().then(granted => {
+        if (granted) {
+          updateUserLocation();
+          // Her 10 saniyede bir konum güncelle
+          const interval = setInterval(updateUserLocation, 10000);
+          return () => clearInterval(interval);
+        }
+      });
+    }
+  }, [user, screen]);
+
   const loadUser = async () => {
     try {
       const userData = await AsyncStorage.getItem('user');
