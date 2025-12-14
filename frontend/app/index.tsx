@@ -350,6 +350,80 @@ export default function App() {
   return null;
 }
 
+// ==================== ANIMATED PULSE BUTTON ====================
+function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+  const scale = useSharedValue(1);
+  const pulseOpacity = useSharedValue(0.7);
+
+  useEffect(() => {
+    // Kalp gibi atan animasyon
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.15, { duration: 800, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+        withTiming(1, { duration: 800, easing: Easing.bezier(0.25, 0.1, 0.25, 1) })
+      ),
+      -1,  // Sonsuz tekrar
+      false
+    );
+
+    // Nefes alır gibi opacity
+    pulseOpacity.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 800 }),
+        withTiming(0.7, { duration: 800 })
+      ),
+      -1,
+      false
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }],
+      opacity: pulseOpacity.value,
+    };
+  });
+
+  const handlePress = () => {
+    // Basma efekti
+    scale.value = withSequence(
+      withTiming(0.9, { duration: 100 }),
+      withSpring(1.15, { damping: 10, stiffness: 100 })
+    );
+    onPress();
+  };
+
+  return (
+    <TouchableOpacity 
+      onPress={handlePress} 
+      disabled={loading}
+      activeOpacity={0.8}
+      style={styles.callButtonContainer}
+    >
+      <Animated.View style={[animatedStyle]}>
+        <LinearGradient
+          colors={[COLORS.primary, COLORS.secondary]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientButton}
+        >
+          {loading ? (
+            <ActivityIndicator size="large" color="#FFF" />
+          ) : (
+            <>
+              <Ionicons name="call" size={60} color="#FFF" />
+              <Text style={styles.callButtonText}>ÇAĞRI</Text>
+            </>
+          )}
+        </LinearGradient>
+      </Animated.View>
+      
+      {/* Glow/Pulse efekti için dış halka */}
+      <Animated.View style={[styles.pulseRing, animatedStyle]} />
+    </TouchableOpacity>
+  );
+}
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
