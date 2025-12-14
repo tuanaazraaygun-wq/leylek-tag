@@ -169,9 +169,26 @@ export default function App() {
     }
   };
 
+  const loadCities = async () => {
+    try {
+      const response = await fetch(`${API_URL}/auth/cities`);
+      const data = await response.json();
+      if (data.success) {
+        setCities(data.cities);
+      }
+    } catch (error) {
+      console.error('Şehirler yüklenemedi:', error);
+    }
+  };
+
   const handleRegister = async () => {
     if (!name) {
       Alert.alert('Hata', 'Adınızı girin');
+      return;
+    }
+
+    if (!selectedCity) {
+      Alert.alert('Hata', 'Şehir seçimi yapmalısınız');
       return;
     }
 
@@ -179,13 +196,15 @@ export default function App() {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, name, role: selectedRole })
+        body: JSON.stringify({ phone, name, role: selectedRole, city: selectedCity })
       });
 
       const data = await response.json();
       if (data.success) {
         await saveUser(data.user);
         setScreen('dashboard');
+      } else {
+        Alert.alert('Hata', data.detail || 'Kayıt oluşturulamadı');
       }
     } catch (error) {
       Alert.alert('Hata', 'Kayıt oluşturulamadı');
