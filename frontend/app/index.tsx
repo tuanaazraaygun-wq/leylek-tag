@@ -370,6 +370,42 @@ export default function App() {
               <Text style={styles.primaryButtonText}>Kayıt Ol</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Şehir Seçici Modal */}
+          <Modal
+            visible={showCityPicker}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowCityPicker(false)}
+          >
+            <View style={styles.modalContainer}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Şehir Seçin</Text>
+                <FlatList
+                  data={cities}
+                  keyExtractor={(item) => item}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.cityItem}
+                      onPress={() => {
+                        setSelectedCity(item);
+                        setShowCityPicker(false);
+                      }}
+                    >
+                      <Text style={styles.cityItemText}>{item}</Text>
+                      {selectedCity === item && <Ionicons name="checkmark" size={24} color="#00A67E" />}
+                    </TouchableOpacity>
+                  )}
+                />
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowCityPicker(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>Kapat</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </SafeAreaView>
     );
