@@ -800,7 +800,7 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
       activeOpacity={0.8}
       style={styles.callButtonContainer}
     >
-      <Animated.View style={[animatedStyle]}>
+      <Animated.View style={[{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}>
         <LinearGradient
           colors={[COLORS.primary, COLORS.secondary]}
           start={{ x: 0, y: 0 }}
@@ -819,7 +819,7 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
       </Animated.View>
       
       {/* Glow/Pulse efekti için dış halka */}
-      <Animated.View style={[styles.pulseRing, animatedStyle]} />
+      <Animated.View style={[styles.pulseRing, { transform: [{ scale: scaleAnim }], opacity: opacityAnim }]} />
     </TouchableOpacity>
   );
 }
