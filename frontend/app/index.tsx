@@ -897,11 +897,15 @@ function PassengerDashboard({
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
+  const [showArrowHint, setShowArrowHint] = useState(false);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
+  const destinationButtonScale = useRef(new Animated.Value(1)).current;
+  const arrowPosition = useRef(new Animated.Value(-100)).current;
 
   useEffect(() => {
+    // Ara butonu pulse
     Animated.loop(
       Animated.sequence([
         Animated.timing(buttonPulse, {
@@ -912,6 +916,22 @@ function PassengerDashboard({
         Animated.timing(buttonPulse, {
           toValue: 1,
           duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Hedef seçin butonu pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(destinationButtonScale, {
+          toValue: 1.05,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(destinationButtonScale, {
+          toValue: 1,
+          duration: 1500,
           useNativeDriver: true,
         }),
       ])
