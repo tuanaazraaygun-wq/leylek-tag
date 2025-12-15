@@ -684,6 +684,49 @@ export default function App() {
   return null;
 }
 
+// ==================== TRAFIK LAMBASI ANIMASYONU ====================
+function TrafficLightBorder({ children }: { children: React.ReactNode }) {
+  const [colorIndex, setColorIndex] = useState(0);
+  const colors = ['#FCD34D', '#EF4444', '#10B981']; // Sarı, Kırmızı, Yeşil
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 0.3,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setColorIndex((prev) => (prev + 1) % 3);
+      });
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        styles.trafficLightBorder,
+        {
+          borderColor: colors[colorIndex],
+          opacity: fadeAnim,
+          shadowColor: colors[colorIndex],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 // ==================== TAM EKRAN OFFER KART ====================
 function FullScreenOfferCard({ 
   offer, 
