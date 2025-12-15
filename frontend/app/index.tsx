@@ -1093,6 +1093,37 @@ function PassengerDashboard({
     }
   };
 
+  // TEKLİFLER VARSA TAM EKRAN GÖS TER
+  if (offers.length > 0 && activeTag && activeTag.status !== 'matched' && activeTag.status !== 'in_progress') {
+    return (
+      <View style={styles.fullScreenContainer}>
+        <FullScreenOfferCard
+          offer={offers[currentOfferIndex]}
+          onSwipeUp={() => {
+            if (currentOfferIndex < offers.length - 1) {
+              setCurrentOfferIndex(currentOfferIndex + 1);
+            }
+          }}
+          onSwipeDown={() => {
+            if (currentOfferIndex > 0) {
+              setCurrentOfferIndex(currentOfferIndex - 1);
+            }
+          }}
+          onAccept={() => handleAcceptOffer(offers[currentOfferIndex].id)}
+          isFirst={currentOfferIndex === 0}
+          isLast={currentOfferIndex === offers.length - 1}
+        />
+        
+        {/* Sayfa Göstergesi */}
+        <View style={styles.offerIndicator}>
+          <Text style={styles.offerIndicatorText}>
+            {currentOfferIndex + 1} / {offers.length}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
