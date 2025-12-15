@@ -2765,6 +2765,24 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
     textAlign: 'center',
   },
+  ratingLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    width: 60,
+    gap: 2,
+  },
+  starIcon: {
+    fontSize: 10,
+  },
   vehicleBrand: {
     fontSize: 28,
     fontWeight: 'bold',
