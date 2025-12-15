@@ -821,33 +821,38 @@ async def get_user_stats(user_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     
-    if user["role"] == UserRole.PASSENGER:
-        completed_trips = await db_instance.count_documents("tags", {
-            "passenger_id": user_id,
-            "status": TagStatus.COMPLETED
-        })
-        total_spent = 0  # TODO: Hesapla
-    else:
-        completed_trips = await db_instance.count_documents("tags", {
-            "driver_id": user_id,
-            "status": TagStatus.COMPLETED
-        })
-        # Kazanç hesapla
-        completed_tags = await db_instance.find_many("tags", {
-            "driver_id": user_id,
-            "status": TagStatus.COMPLETED
-        })
-        total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
+    # Count trips as passenger
+    passenger_trips = await db_instance.count_documents("tags", {
+        "passenger_id": user_id,
+        "status": TagStatus.COMPLETED
+    })
+    
+    # Count trips as driver
+    driver_trips = await db_instance.count_documents("tags", {
+        "driver_id": user_id,
+        "status": TagStatus.COMPLETED
+    })
+    
+    # Calculate earnings as driver
+    completed_tags = await db_instance.find_many("tags", {
+        "driver_id": user_id,
+        "status": TagStatus.COMPLETED
+    })
+    total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
+    
+    # Calculate spending as passenger (TODO: implement)
+    total_spent = 0
     
     return {
         "success": True,
         "stats": {
             "total_trips": user.get("total_trips", 0),
-            "completed_trips": completed_trips,
+            "passenger_trips": passenger_trips,
+            "driver_trips": driver_trips,
             "rating": user.get("rating", 5.0),
             "total_ratings": user.get("total_ratings", 0),
-            "total_earned": total_earned if user["role"] == UserRole.DRIVER else None,
-            "total_spent": total_spent if user["role"] == UserRole.PASSENGER else None
+            "total_earned": total_earned,
+            "total_spent": total_spent
         }
     }
 
