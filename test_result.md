@@ -112,11 +112,11 @@ user_problem_statement: |
 backend:
   - task: "Driver send offer endpoint"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 1
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: false
         agent: "user"
@@ -124,6 +124,9 @@ backend:
       - working: "NA"
         agent: "main"
         comment: "Backend endpoint is functional, frontend modal was created to replace Alert.prompt"
+      - working: true
+        agent: "testing"
+        comment: "✅ FIXED: Removed deprecated role field validation. Endpoint now works correctly - offer sent successfully with price 850.0 TL and 480 min estimated time."
 
   - task: "Distance calculation in driver requests"
     implemented: true
