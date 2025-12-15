@@ -898,6 +898,7 @@ function PassengerDashboard({
   const [calling, setCalling] = useState(false);
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
   const [showArrowHint, setShowArrowHint] = useState(false);
+  const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
@@ -937,6 +938,26 @@ function PassengerDashboard({
       ])
     ).start();
   }, []);
+
+  // CANLI KONUM GÜNCELLEME - Eşleşince başla
+  useEffect(() => {
+    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
+      const interval = setInterval(async () => {
+        try {
+          // Sürücü konumunu backend'den al
+          const response = await fetch(`${API_URL}/passenger/driver-location/${activeTag.driver_id}`);
+          const data = await response.json();
+          if (data.location) {
+            setDriverLocation(data.location);
+          }
+        } catch (error) {
+          console.log('Konum alınamadı:', error);
+        }
+      }, 5000); // 5 saniyede bir güncelle
+
+      return () => clearInterval(interval);
+    }
+  }, [activeTag]);
 
   useEffect(() => {
     loadActiveTag();
