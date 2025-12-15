@@ -676,28 +676,40 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
     }
   };
 
-  // ÇAĞRI BUTONU - Otomatik konum ile talep oluştur
+  // ÇAĞRI BUTONU - Hedef kontrolü + koordinat gönderimi
   const handleCallButton = async () => {
+    // Hedef kontrolü
+    if (!destination) {
+      Alert.alert('⚠️ Hedef Gerekli', 'Lütfen önce nereye gitmek istediğinizi seçin');
+      return;
+    }
+
+    // Konum kontrolü
+    if (!userLocation) {
+      Alert.alert('⚠️ Konum Gerekli', 'Konumunuz alınıyor, lütfen bekleyin...');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Mock konum (gerçek GPS sonra eklenecek)
-      const mockLocation = 'Mevcut Konumunuz';
-      const mockDestination = 'Varış Noktası';
-
       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pickup_location: mockLocation,
-          dropoff_location: mockDestination,
-          notes: 'Çağrı butonu ile oluşturuldu'
+          pickup_location: 'Mevcut Konumunuz',
+          dropoff_location: destination.address,
+          pickup_lat: userLocation.latitude,
+          pickup_lng: userLocation.longitude,
+          dropoff_lat: destination.latitude,
+          dropoff_lng: destination.longitude,
+          notes: 'Hedef belirlendi'
         })
       });
 
       const data = await response.json();
       if (data.success) {
         setActiveTag(data.tag);
-        Alert.alert('✅ Çağrı Gönderildi', 'Yakındaki sürücüler tekliflerini gönderiyor...');
+        Alert.alert('✅ Çağrı Gönderildi', `Yakındaki sürücüler "${destination.address}" için tekliflerini gönderiyor...`);
       } else {
         Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
       }
