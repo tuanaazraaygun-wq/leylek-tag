@@ -1,333 +1,209 @@
 <analysis>
+
 <original_problem_statement>
-The user wants to build a mobile application named **Leylek TAG**. This is a ride-sharing/matching application, not a taxi service.
+The user wants to build a mobile ride-sharing application named **Leylek TAG**. This is a matching application, not a taxi service.
 
 **Core Concept:**
-A passenger requests a ride from their location. Nearby drivers receive the request and submit price bids. The passenger reviews the bids and selects a driver. Once matched, the passenger and driver can communicate via an in-app, end-to-end encrypted WebRTC voice call. The payment is handled between users, not through the app.
+A passenger sets their destination, which creates a request visible to nearby drivers. Drivers see the passenger's location, the destination, the distance to the passenger, and the total trip distance. They then submit price bids. The passenger reviews incoming offers on a TikTok-style swipeable interface and selects a driver. Once matched, they can communicate via an in-app, end-to-end encrypted WebRTC voice call for a limited time (e.g., 20 minutes).
 
-**User Roles:**
-- **Passenger:** Sees their location, selects a destination, sends a request to drivers, reviews bids, chooses a driver, tracks the driver live on a map, initiates a voice call after matching, and rates the driver post-trip.
-- **Driver:** Sees their location, receives nearby passenger requests, sends price bids, gets matched, drives to the passenger, communicates via voice call, and ends the TAG (trip) upon completion.
+**User Roles & Flow:**
+-   **Dynamic Roles:** A user is not fixed as a passenger or driver at registration. Upon each login, they choose their role for that session.
+-   **Passenger:**
+    1.  Logs in with a phone number and mock OTP.
+    2.  Selects the Passenger role.
+    3.  Sees a map/input to select a destination. The user wants this to be a map-based picker with Google Places Autocomplete.
+    4.  Presses a large, animated ÇAĞRI (CALL) button.
+    5.  Receives offers from drivers in a swipeable, TikTok-like card interface.
+    6.  Selects an offer to create a TAG (match).
+    7.  Communicates with the driver via a mock Call button (to be implemented with WebRTC).
+-   **Driver:**
+    1.  Logs in and selects the Driver role.
+    2.  Sees a list of nearby ride requests. Each request card shows the passenger's name, distance to the passenger, and the total trip distance/destination.
+    3.  Submits a price bid on a request.
+    4.  If selected, gets matched and can communicate with the passenger.
 
 **Key Features (PRODUCT REQUIREMENTS):**
-- **Authentication:** Phone number login with SMS verification.
-- **Maps & Location:** Google Maps-based interface for live location tracking of both user and drivers, route drawing, and selecting pickup/dropoff points.
-- **Bidding System:** Drivers bid on passenger requests, and passengers choose the preferred bid.
-- **WebRTC Voice Call:** An end-to-end encrypted voice call feature, activated only after a match is made, ensuring number privacy. No audio is recorded.
-- **TAG System:** The entire lifecycle of a ride, from request to completion.
-- **Logging:** A legal safety log that records metadata (who called whom, TAG ID, call timestamps, duration, IP addresses) but no voice recordings.
-- **Design:** The user has provided a detailed Design Manifesto emphasizing a very serious, professional, and trustworthy UI/UX, similar to Uber or Bolt, with a specific color palette (Leylek Blue #3FA9F5, Action Orange #FF6B35, etc.) and a custom flying stork logo.
+-   **Authentication:** Phone number login with a mock OTP (). A real SMS system (NetGSM) is planned for later.
+-   **Security:** An IP ban system that blocks an IP after 10 failed login attempts.
+-   **Location & Matching:** Initially requested city-based filtering, but has been updated to be **GPS-based filtering within a configurable radius (e.g., 20km)**.
+-   **UI/UX:** A very specific and evolving vision. Key elements implemented include a custom flying stork logo, a user-defined color palette, and a prominent, animated pulsing call button.
+-   **Bidding System:** A fully implemented flow for passengers to request rides, drivers to bid, and passengers to accept.
+-   **WebRTC Voice Call:** A critical, but **not yet implemented**, feature.
+-   **Database:** The user's ultimate goal is **Supabase**, and they have provided API keys. However, to speed up development, a decision was made to build on **MongoDB** first and migrate later.
+-   **Admin Panel:** Planned for the future to manage users, IP bans, view ride/call logs, and see statistics.
 
-The user initially requested to use **Supabase** as the database and **NetGSM** for SMS, but agreed to start development with **MongoDB** and a mock SMS system, with the plan to migrate/integrate the preferred services later.
 </original_problem_statement>
 
 **User's preferred language**: The user's primary language is **Turkish**. The next agent MUST respond in Turkish.
 
 **what currently exists?**
-A full-stack application has been partially developed.
-- **Backend:** A FastAPI server using **MongoDB** is in place. It includes models and API endpoints for user authentication (mock OTP), creating ride requests (TAGs), submitting offers, and matching.
-- **Frontend:** An Expo (React Native) application with a multi-screen structure using  exists. Key screens like , , , and  have been created.
-- **UI/UX:** A  file implements the user's requested color palette. A custom, iterative  has been created based on detailed user feedback for a flying stork SVG logo. The main screen UI was recently refactored to feature a single Call button and display offers as blue bubbles to match a specific user request, but its functionality is mocked.
+A full-stack application with a FastAPI/MongoDB backend and a React Native (Expo) frontend.
+-   **Backend:** Supports dynamic user roles, mock OTP auth, IP banning, creating ride requests (TAGs) with destination coordinates, submitting offers, and filtering driver requests by GPS radius (partially implemented). It uses  for distance calculations.
+-   **Frontend ():** A large, single-file component that handles all screens and logic:
+    -   Login, OTP verification.
+    -   **Dynamic Role Selection Screen:** Appears after every login.
+    -   **Passenger Dashboard:** Includes a destination input (with a partially implemented map-based picker using  and Google Places), an animated pulsing call button, and a TikTok-style swipeable card view for incoming offers.
+    -   **Driver Dashboard:** Displays a list of active ride requests with distance information.
+-   The application is currently functional after a series of major refactors and bug fixes.
 
 **Last working item**:
-    - Last item agent was working: The agent was refactoring the main passenger screen () to match the user's desired flow: replacing from/to inputs with a single large ÇAĞRI (CALL) button and displaying incoming driver offers as blue bubbles.
-    - Status: **BLOCKED**
+    - Last item agent was working: The agent was implementing the user's request to switch from city-based filtering to GPS-based filtering for drivers.
+    - Status: **IN PROGRESS**
     - Agent Testing Done: N
-    - Which testing method agent to use? The agent should first use  to view the  logs for the 
-  Usage: expo [command] [options]
-
-  Options:
-  
-    -V, --version                     output the version number
-    --non-interactive                 Fail, if an interactive prompt would be required to continue.
-    -h, --help                        output usage information
-  
-  Commands:
-
-    init [name]                       Create a new Expo project
-    start [path]                      Start a local dev server for the app
-    start:web [path]                  Start a Webpack dev server for the web app
-    export [path]                     Export the static files of the app for hosting it on a web server
-    install [packages...]             Install a module or other package to a project
-    run:android [path]                Run the Android app binary locally
-    run:ios [path]                    Run the iOS app binary locally
-    send [path]                       Share the project's URL to an email address
-
-    login                             Login to an Expo account
-    logout                            Logout of an Expo account
-    register                          Sign up for a new Expo account
-    whoami                            Return the currently authenticated account
-
-    client:install:ios                Install Expo Go for iOS on the simulator
-    client:install:android            Install Expo Go for Android on a connected device or emulator
-
-    config [path]                     Show the project config
-    doctor [path]                     Diagnose issues with the project
-    upgrade [sdk-version]             Upgrade the project packages and config for the given SDK version
-
-    customize:web [path]              Eject the default web files for customization
-    prebuild [path]                   Create native iOS and Android project files before building natively.
-                                      Learn more: https://docs.expo.dev/workflow/customizing/
-
-    build:web [path]                  Build the web app for production
-
-    credentials:manager [path]        Superseded by eas credentials in eas-cli
-
-    url [path]                        Log a URL for opening the project in Expo Go
-    url:ipa [path]                    Log the download URL for the standalone iOS binary
-    url:apk [path]                    Log the download URL for the standalone Android binary
-
-    webhooks [path]                   List all webhooks for a project
-    webhooks:add [path]               Add a webhook to a project
-    webhooks:remove [path]            Delete a webhook
-    webhooks:update [path]            Update an existing webhook
-
-    build:ios [path]                  Superseded by eas build in eas-cli
-    build:android [path]              Superseded by eas build in eas-cli
-    build:status [path]               Superseded by eas build:list in eas-cli
-    eject [path]                      Superseded by expo prebuild
-    fetch:ios:certs [path]            Superseded by eas credentials in eas-cli
-    fetch:android:keystore [path]     Superseded by eas credentials in eas-cli
-    fetch:android:hashes [path]       Superseded by eas credentials in eas-cli
-    fetch:android:upload-cert [path]  Superseded by eas credentials in eas-cli
-    publish [path]                    Superseded by eas update in eas-cli
-    publish:set [path]                Superseded by eas update:republish in eas-cli
-    publish:rollback [path]           Superseded by eas update:republish in eas-cli
-    publish:history [path]            Superseded by eas update:list in eas-cli
-    publish:details [path]            Superseded by eas update:view in eas-cli
-    push:android:upload [path]        Superseded by eas credentials in eas-cli
-    push:android:show [path]          Superseded by eas credentials in eas-cli
-    push:android:clear [path]         Superseded by eas credentials in eas-cli
-    upload:android [path]             Superseded by eas submit in eas-cli
-    upload:ios [path]                 Superseded by eas submit in eas-cli
-    client:ios [path]                 Superseded by Expo Dev Clients
-
-[19:45:26]   Run a command with --help for more info 💡
-[19:45:26]     $ expo start --help
-[19:45:26] service to diagnose the startup failure. Once the app is running, a  check is needed to verify the new UI.
-    - User Testing Done: N (User reported the app is not opening, which blocked any testing).
+    - Which testing method agent to use? backend testing agent. First, use curl to manually test the  endpoint with two users (one passenger, one driver) at different coordinates to ensure the radius logic works. Then, a full frontend test is needed to confirm the driver sees the correct requests.
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  Issue 1: The application is not starting. (P0)
+  Issue 1: The user reported that a driver in Adana could not see a request from a passenger in Adana. This was happening because of a bug in the old city-based filtering logic and a case where the driver's location was not set. The agent attempted a fix by making the logic case-insensitive and adding a mock location, but then pivoted to replacing the entire logic with GPS-based filtering. The new GPS logic is not fully tested. (P0)
 
   Issues Detail:
-  - Issue 1: 
-     - **Description:** After the last set of UI changes to , the user reported UYGULAMADA BIR SORUN VAR AÇILMIYOR (There is a problem with the app, it's not opening). The last relevant log entry showed an  which might be a transient platform issue, but the immediate cause of the failure is unknown.
-     - **Attempted fixes:** The agent was about to start debugging when the user initiated a conversation about the app's overall strategy. The debugging has not yet started.
-     - **Next debug checklist:**
-       1.  Execute backend                          STOPPED   Dec 14 07:45 PM
-code-server                      STOPPED   Not started
-expo                             STOPPED   Dec 14 07:45 PM
-mongodb                          RUNNING   pid 81, uptime 0:00:03
-nginx-code-proxy                 RUNNING   pid 77, uptime 0:00:03 to confirm 
-  Usage: expo [command] [options]
-
-  Options:
-  
-    -V, --version                     output the version number
-    --non-interactive                 Fail, if an interactive prompt would be required to continue.
-    -h, --help                        output usage information
-  
-  Commands:
-
-    init [name]                       Create a new Expo project
-    start [path]                      Start a local dev server for the app
-    start:web [path]                  Start a Webpack dev server for the web app
-    export [path]                     Export the static files of the app for hosting it on a web server
-    install [packages...]             Install a module or other package to a project
-    run:android [path]                Run the Android app binary locally
-    run:ios [path]                    Run the iOS app binary locally
-    send [path]                       Share the project's URL to an email address
-
-    login                             Login to an Expo account
-    logout                            Logout of an Expo account
-    register                          Sign up for a new Expo account
-    whoami                            Return the currently authenticated account
-
-    client:install:ios                Install Expo Go for iOS on the simulator
-    client:install:android            Install Expo Go for Android on a connected device or emulator
-
-    config [path]                     Show the project config
-    doctor [path]                     Diagnose issues with the project
-    upgrade [sdk-version]             Upgrade the project packages and config for the given SDK version
-
-    customize:web [path]              Eject the default web files for customization
-    prebuild [path]                   Create native iOS and Android project files before building natively.
-                                      Learn more: https://docs.expo.dev/workflow/customizing/
-
-    build:web [path]                  Build the web app for production
-
-    credentials:manager [path]        Superseded by eas credentials in eas-cli
-
-    url [path]                        Log a URL for opening the project in Expo Go
-    url:ipa [path]                    Log the download URL for the standalone iOS binary
-    url:apk [path]                    Log the download URL for the standalone Android binary
-
-    webhooks [path]                   List all webhooks for a project
-    webhooks:add [path]               Add a webhook to a project
-    webhooks:remove [path]            Delete a webhook
-    webhooks:update [path]            Update an existing webhook
-
-    build:ios [path]                  Superseded by eas build in eas-cli
-    build:android [path]              Superseded by eas build in eas-cli
-    build:status [path]               Superseded by eas build:list in eas-cli
-    eject [path]                      Superseded by expo prebuild
-    fetch:ios:certs [path]            Superseded by eas credentials in eas-cli
-    fetch:android:keystore [path]     Superseded by eas credentials in eas-cli
-    fetch:android:hashes [path]       Superseded by eas credentials in eas-cli
-    fetch:android:upload-cert [path]  Superseded by eas credentials in eas-cli
-    publish [path]                    Superseded by eas update in eas-cli
-    publish:set [path]                Superseded by eas update:republish in eas-cli
-    publish:rollback [path]           Superseded by eas update:republish in eas-cli
-    publish:history [path]            Superseded by eas update:list in eas-cli
-    publish:details [path]            Superseded by eas update:view in eas-cli
-    push:android:upload [path]        Superseded by eas credentials in eas-cli
-    push:android:show [path]          Superseded by eas credentials in eas-cli
-    push:android:clear [path]         Superseded by eas credentials in eas-cli
-    upload:android [path]             Superseded by eas submit in eas-cli
-    upload:ios [path]                 Superseded by eas submit in eas-cli
-    client:ios [path]                 Superseded by Expo Dev Clients
-
-[19:45:27]   Run a command with --help for more info 💡
-[19:45:27]     $ expo start --help
-[19:45:27] and  services are running.
-       2.  Execute  to check for Metro Bundler or runtime errors.
-       3.  Execute  for any other errors.
-       4.  If no errors are found, restart the service with expo: ERROR (not running)
-expo: started and re-check logs.
-       5.  The issue might be related to the recent heavy modifications in . Review the file for syntax errors.
-     - **Why fix this issue and what will be achieved with the fix?** This is a critical blocker. The app must be running for any further development or testing to occur.
-     - **Status:**  NOT STARTED
-     - **Is recurring issue?** Y (The agent has previously struggled with frontend build/cache issues that prevented the app from starting, requiring  and manual cache clearing.)
-     - **Should Test frontend/backend/both after fix?** Frontend.
-     - **Blocked on other issue:** None. This is the primary blocker.
+  - Issue 1: **Driver not seeing nearby requests due to faulty filtering logic.**
+     - Attempted fixes: The agent initially patched the city-based filter. However, the user then requested a switch to GPS-based filtering. The agent added a  config variable and updated the  endpoint in  to use  distance calculation instead of city matching.
+     - Next debug checklist:
+       1.  Review the changes in  around line 430, specifically the  endpoint. Ensure the distance calculation is correct and the database query properly filters drivers within the  of the passenger's location.
+       2.  Manually test the endpoint using  with two users with known coordinates to verify that the filter works as expected.
+       3.  Perform a full-flow test with two user accounts on the frontend.
+     - Why fix this issue and what will be achieved with the fix? This is a core function of the app. Fixing it will ensure drivers only see relevant, nearby ride requests, making the app usable.
+     - Status:  IN PROGRESS
+     - Is recurring issue? Y (Filtering logic has been a recurring point of failure and changes).
+     - Should Test frontend/backend/both after fix? Both.
+     - Blocked on other issue: None.
 
 **In progress Task List**:
-  Task 1:  Finalize and verify the Blue Bubble UI (P1)
+  Task 1:  Implement animated arrow hint (P1)
 
  Task Detail:
   - Task 1: 
-     - **Description:** Implement the user's requested UI on the main screen: a single Call button and displaying driver offers as blue bubbles.
-     - **Where to resume:** The code has been written in  and styles were added. However, it is not verified due to the app startup failure (Issue 1). Once the app is running, this UI needs to be tested to ensure it renders correctly and the mock logic for creating a request and displaying offers works.
-     - **What will be achieved with this?** This will fulfill a specific UI/UX request from the user, making the app's flow visually match their vision, even with mock data.
-     - **Status:**  IN PROGRESS
-     - **Should Test frontend/backend/both after fix?** Frontend
-     - **Blocked on something:** Issue 1: The application is not starting.
+     - Description: The user requested that if a passenger presses the ÇAĞRI button without selecting a destination, an animated, sky-blue arrow should appear and point towards the Nereye gitmek istiyorsunuz? input field, instead of showing a text warning.
+     - Where to resume: The agent started this by adding state for the arrow animation in  and modifying the  function. However, the implementation is incomplete. The UI component for the arrow and the  logic to show/hide it needs to be created and styled.
+     - What will be achieved with this? A more intuitive and visually appealing user experience, as requested by the user.
+     - Status:  IN PROGRESS
+     - Should Test frontend/backend/both after fix? Frontend.
+     - Blocked on something: None.
 
 **Upcoming and Future Tasks**
-  **Upcoming Tasks (Core Functionality - Phase 2):**
-    - **P0: Implement Real GPS & Location System:**
-        - Integrate Google Maps for displaying the user and drivers.
-        - Use  to get the device's real-time GPS coordinates.
-        - The user will need to provide a Google Maps API Key.
-    - **P0: Implement Find Nearest Drivers Logic:**
-        - **Backend:** Create an endpoint (e.g., ) that accepts a passenger's coordinates and returns only drivers within a certain radius. This requires drivers to periodically send their location to the backend.
-        - **Frontend:** Call this new endpoint instead of fetching all requests.
-    - **P1: Implement Real WebRTC Voice Calls:**
-        - Integrate a WebRTC library (e.g., ).
-        - **Backend:** Implement a WebSocket-based signaling mechanism for WebRTC handshakes.
-        - **Frontend:** Implement the client-side logic to establish a peer-to-peer connection and handle the audio stream when the Call button is pressed.
+  **Upcoming Tasks:**
+    - **P0: Implement WebRTC Voice Calls:** This is the most critical missing core feature. It involves integrating a WebRTC library, setting up a WebSocket signaling server on the backend, and implementing the call/receive logic on the frontend with a 20-minute timer.
+    - **P1: Finalize Map-Based Destination Picker:** The user wants a map to appear in the destination selection modal, using Google Places Autocomplete for address search and allowing users to pick a location by tapping the map. The agent started this but it caused issues.  was re-installed but the implementation is not complete.
+    - **P1: Build Admin Panel:** The user has specified requirements: user list (ban/unban), IP ban management, ride (TAG) logs, call metadata logs, a system for complaints/reports, and statistics.
 
-  **Future Tasks (Enhancements & Integrations - Phase 3 & 4):**
-    - **P1: Implement Push Notifications:** Notify drivers of new nearby requests.
-    - **P1: Implement Security Features:** Add Driver ID/license verification, an in-app SOS button, and a ride-sharing link feature.
-    - **P2: Integrate NetGSM:** Replace the mock SMS OTP system with the real NetGSM API. The user will provide credentials.
-    - **P2: Migrate Database to Supabase:** This is a key user requirement. Plan and execute the migration from MongoDB to Supabase. The user will provide credentials.
-    - **P2: Implement Advanced Rating System:** Add detailed ratings (cleanliness, driving) and a badge/achievement system.
+  **Future Tasks:**
+    - **P2: Supabase Migration:** A major task to migrate the entire backend from MongoDB to Supabase, using the keys provided by the user.
+    - **P2: NetGSM Integration:** Replace the mock OTP system with the real NetGSM API for SMS verification.
+    - **P2: Advanced UI/UX:** Implement an iPhone-style PIN login screen with a full-screen custom keypad.
 
 **Completed work in this session**
-- **Initial Backend Setup (MongoDB):** Created a FastAPI server with a MongoDB connection, including models and basic CRUD endpoints for Users, TAGs (Rides), and Offers.
-- **Mock Authentication:** Implemented a phone number login flow with a hardcoded mock OTP ().
-- **Basic Bidding Flow:** Passengers can create text-based requests, and drivers can see all requests and submit bids.
-- **Frontend Scaffolding:** Set up an Expo project with  and created initial files for Profile, History, and Driver Verification screens.
-- **UI Customization:**
-    - Implemented the user's specific color palette in .
-    - Created a highly customized SVG logo in  through multiple iterations based on detailed user feedback.
+- **Major Auth/Role Refactor:** Converted the application from a fixed-role system to a **dynamic role selection system** where users choose Passenger or Driver at every login. This involved significant changes to the backend models and API endpoints, and the entire frontend login/dashboard flow.
+- **Implemented Destination-First Flow:** The user flow was changed so passengers must select a destination *before* creating a ride request.
+- **Implemented TikTok-Style Offer Cards:** The passenger's offer screen was rebuilt to use swipeable cards for a modern feel.
+- **Implemented Driver Distance Cards:** Driver's request cards were updated to show the distance to the passenger and the total trip distance.
+- **Fixed Multiple Critical Bugs:**
+    - Resolved several app not opening issues, including a  web incompatibility (by removing the package) and missing props passed to a component (identified by ).
+    - Fixed numerous backend  bugs that arose from the dynamic role refactor.
+    - Fixed a bug where the ÇAĞRI button was unresponsive due to a silent backend 500 error.
+- **Partially Implemented GPS-based Filtering:** Switched the backend logic from city-based matching to preparing for GPS radius-based matching.
 
 **Earlier issues found/mentioned but not fixed**
-- No outstanding issues were mentioned and then ignored. The agent addressed issues as they arose, though it struggled with frontend debugging.
+- The user requested an animated arrow to point to the destination input. The agent started this but did not complete it. It is listed in the In progress Task List.
 
 **Known issue recurrence from previous fork**
-  - **Issue:** The agent has repeatedly run into issues with the Expo Metro Bundler, particularly after making significant or messy edits to JSX files. This has led to corrupted files, ghost file errors (where the bundler looks for a deleted file), and persistent cache problems.
-  - **Recurrence count:** 2 major debugging sessions in this fork.
-  - **Status:** RESOLVED (for now), but the agent shows a weakness in this area. It required calling  and extensive manual cache clearing ([19:45:28] Starting project at /app/frontend, ) to resolve. The next agent must be very careful when editing frontend files and should be prepared to clear caches if a similar screen not opening issue occurs.
+  - **Issue recurrence in previous fork:**  in backend. After the major refactor to remove the static  field from the  model, the agent repeatedly missed updating all endpoints, causing several 500 errors until each one was found and fixed. The next agent must be extremely cautious when touching user-related logic.
+  - **Recurrence count:** 3+ times in this session.
+  - **Status:** RESOLVED (for now), but it's a high-risk area.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI, MongoDB (via  async driver)
-- **Frontend:** React Native, Expo, Expo Router (file-based routing)
-- **State Management:** React  and  for basic state.
-- **Styling:**  for all component styling.
-- **Planned:** WebRTC, Google Maps API, Push Notifications.
+- **Backend:** FastAPI, MongoDB (),  for distance calculation.
+- **Frontend:** React Native, Expo, .
+- **UI/Animation:**  for the animated call button,  for swipeable cards, .
+- **State Management:**  for local state.
+- **Architecture:** Dynamic role selection per session.
 
 **key DB schema**
-- **users**: 
-- **tags**: 
-- **offers**: 
-- **ratings**: 
-- **call_logs**: 
+  - **users**:  (Note:  field was removed).
+  - **tags**: 
+  - **offers**: 
+  - **failed_login_attempts**: 
 
 **changes in tech stack**
-- A critical decision was made to use **MongoDB** for initial development, despite the user's strong preference for **Supabase**. This was done to unblock progress, with a commitment to migrate to Supabase in a future phase.
+  -  library was added to the backend for distance calculations.
+  -  was added, then removed to fix a web preview bug, then re-added for the destination picker. Its stability is a concern.
 
 **All files of reference**
-- : The core backend application logic. Contains all API endpoints.
-- : Manages the connection to the MongoDB database.
-- : Defines the Pydantic data models for the application.
-- : The main entry point and most complex screen. It handles auth, and the passenger/driver dashboards. Was just heavily modified and is the likely source of the current error.
-- : The custom, multi-iteration SVG logo component.
-- : Stores the user-defined color palette.
-- , , : Additional screens that have been scaffolded.
+-   **/app/backend/server.py**: The heart of the backend. Contains almost all business logic. Last modified to switch to GPS-based filtering.
+-   **/app/frontend/app/index.tsx**: A monolithic file containing the entire frontend application's UI and logic. Has been heavily modified throughout the session.
+-   **/app/backend/models.py**: Defines all data structures. The  model was significantly changed (role removed, location added).
+
+**Areas that need refactoring**:
+-   The  file is over 1500 lines long and contains multiple screens and complex state logic. It should be broken down into smaller, reusable components and separate screen files (e.g., , , , etc.).
+
+**key api endpoints**
+-   
+-    (Implements IP Ban logic)
+-   
+-    (Recently changed to use GPS radius)
+-   
+-   
+-   
 
 **Critical Info for New Agent**
-- **User is Hands-On:** The user is very involved, especially with UI/UX, and provides detailed manifestos. Be prepared for multiple iterations on visual elements.
-- **Core Features are Missing:** The app's most important features, **real-time GPS location** and **WebRTC voice chat**, are not implemented. The current functionality is based on text inputs and mock buttons.
-- **Tech Stack Compromise:** You are building on MongoDB, but the user expects a future migration to **Supabase**. Do not treat MongoDB as the final database.
-- **Current Blocker:** The app is **not starting**. Your first task is to debug the Expo application. Refer to the  section, as the problem is likely related to the Metro bundler cache or a syntax error in .
-- **Save Credits:** The user has explicitly asked to manage development 비용 in a way that minimizes credit consumption. Be efficient and prioritize tasks that deliver visible progress.
+-   **Dynamic Roles:** The biggest architectural change is the dynamic role system. A user is not a driver or passenger; they *choose a role* for the session. This has been the source of many  bugs in the backend. Be extra careful when working with user data.
+-   **Fragile Frontend:** The  file is a monolith and very fragile. Refactoring it should be a priority. Also,  has caused issues with the web preview; use it with platform-specific checks () to avoid blocking development.
+-   **User is Very Involved:** The user provides frequent, detailed feedback and often changes the application's flow. Expect iterative development and confirm all plans before implementation.
+-   **MongoDB is a Placeholder:** The user wants to use Supabase eventually. Do not build complex, MongoDB-specific logic that would be hard to migrate.
+-   **Current Task:** Your immediate task is to finish and test the GPS-based filtering for driver requests. After that, implement the animated arrow hint for the destination input.
 
 **documents created in this job**
-- None.
+-   None.
 
 **Last 10 User Messages and any pending user messages**
-1.  **User:** Yes, start, do it as I want.
-    *   *Status:* Agent started implementing the UI changes.
-2.  **User:** The app has a problem, it's not opening. I want to chat about the app first. I am very curious about your ideas.
-    *   *Status:* Agent paused debugging to have a strategic conversation.
-3.  **User:** (Re-explains the entire desired flow for passenger and driver, emphasizing key features like nearest drivers and WebRTC).
-    *   *Status:* Agent understood and provided a detailed analysis and a roadmap.
-4.  **User:** The app will be completely free at first. I have a budget for WebRTC. There's no legal problem. I'll add a membership fee for drivers later. The flow should be as I want, not too complicated. We'll add Supabase and NetGSM later. For now, let's get the app working quickly to save credits. You should manage me correctly.
-    *   *Status:* Agent understood the priorities: fix the app, keep it simple, be efficient.
-5.  **User:** We can continue.
-    *   *Status:* This is the last user message, giving the agent the green light to proceed with fixing the app.
+1.  **User:** When I press the call button, it does nothing. No calls reach the drivers.
+    *   *Status:* Agent debugged and found a  in the backend  endpoint. A fix was applied.
+2.  **User:** The call button worked, but the driver doesn't see the active requests.
+    *   *Status:* Agent investigated and found the  endpoint was empty.
+3.  **User:** I added a driver and passenger from Adana, but the request still doesn't appear.
+    *   *Status:* Agent identified bugs in the city-based filtering logic.
+4.  **User:** Let's continue.
+    *   *Status:* Agent acknowledged.
+5.  **User:** Let's do GPS-based filtering and the animated arrow. We can do WebRTC later.
+    *   *Status:* Agent agreed and started working on the GPS filtering on the backend.
+6.  **User:** When selecting a destination, I want a map to appear. I want to search for places in Turkey and select from the map to make it easier.
+    *   *Status:* Agent acknowledged and started re-implementing the map-based destination picker.
+7.  **User:** It's not working. I select a destination, but the call button doesn't work.
+    *   *Status:* Agent found a bug where  was null and patched it.
+8.  **User:** The call button is completely unresponsive.
+    *   *Status:* Agent found the  function was not defined in the correct scope and fixed it.
+9.  **User:** I log in, select passenger, but when I press the call button, nothing happens. No call reaches the drivers.
+    *   *Status:* Agent used  and found a missing  environment variable was the root cause. This was fixed.
+10. **User:** The call button worked, but now the driver panel doesn't show active requests.
+    *   *Status:* This is the current problem being debugged, leading to the discovery of the faulty city-filtering logic.
 
 **Project Health Check:**
-- **Broken:** The entire frontend application is currently non-functional as it fails to start. The file  is the most probable cause.
-- **Mocked:**
-    - SMS OTP Verification ( is hardcoded).
-    - Find nearest driver logic (all drivers see all requests).
-    - WebRTC voice call (the Call button is a UI-only mock).
-    - Location input (uses text fields, not GPS).
+-   **Broken:** The core logic of matching drivers to passengers via GPS radius is currently half-implemented and untested.
+-   **Mocked:**
+    -   WebRTC voice calls (buttons exist but have no function).
+    -   SMS OTP verification (hardcoded ).
+-   **Needs Refactoring:** The entire frontend in  is a high-priority refactoring candidate.
 
 **3rd Party Integrations**
-- **MongoDB:** Currently in use for the database.
-- **Google Maps API:** Planned, not integrated. Requires user API Key.
-- **NetGSM:** Planned for SMS verification, not integrated. Requires user API Key/Credentials.
-- **Supabase:** Planned for future database migration, not integrated. Requires user project credentials.
+-   **MongoDB:** The current database.
+-   **Google Maps API:** API key is configured. Used for  and planned for Google Places Autocomplete. Requires User API Key.
+-   **NetGSM:** Planned for SMS, not integrated. Requires User API Key.
+-   **Supabase:** The target database for a future migration. Requires User API Key.
 
 **Testing status**
-  - Testing agent used after significant changes: NO
-  - Troubleshoot agent used after agent stuck in loop: YES (Used to diagnose a Metro Bundler issue)
+  - Testing agent used after significant changes: YES ( was used multiple times to great effect).
+  - Troubleshoot agent used after agent stuck in loop: YES
   - Test files created: []
-  - Known regressions: The main application screen is not rendering.
+  - Known regressions: The app has been unstable due to rapid, major changes. Key regressions around the role system and API calls have been frequent but were fixed.
 
 **Credentials to test flow:**
-- **Phone:** 
-- **OTP:**  (This is mocked/hardcoded in the backend)
+-   **Phone:** Any 10-digit number (e.g.,  for passenger,  for driver).
+-   **OTP:**  (hardcoded).
 
 **What agent forgot to execute**
-The agent has been responsive to the user's iterative requests, but the core functionalities (Maps and WebRTC) from the original problem statement have been continuously postponed in favor of UI changes. While this was directed by the user, the agent should now prioritize implementing these core features after fixing the current blocker.
+-   The full implementation of the animated arrow pointing to the destination input. The user requested this, the agent started it, but it was left incomplete while debugging other issues.
 
 </analysis>
