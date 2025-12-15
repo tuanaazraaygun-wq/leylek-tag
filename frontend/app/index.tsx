@@ -749,21 +749,21 @@ function FullScreenOfferCard({
               <Text style={styles.priceLarge}>₺{offer.price}</Text>
             </View>
 
-            {/* HEMEN GEL Butonu - Nefes Alır */}
-            <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+            {/* HEMEN GEL Butonu - Geniş ve Efektli */}
+            <Animated.View style={[styles.acceptButtonContainer, { transform: [{ scale: buttonPulse }] }]}>
               <TouchableOpacity 
                 style={styles.acceptButton}
                 onPress={onAccept}
                 activeOpacity={0.8}
               >
                 <LinearGradient
-                  colors={['#10B981', '#059669']}
+                  colors={['#10B981', '#059669', '#047857']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.acceptButtonGradient}
                 >
                   <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
-                  <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+                  <Ionicons name="checkmark-circle" size={36} color="#FFF" />
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
