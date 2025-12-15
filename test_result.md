@@ -148,15 +148,18 @@ backend:
 
   - task: "Passenger cancel TAG endpoint"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "New endpoint /api/passenger/cancel-tag created - sets TAG to CANCELLED status and rejects all offers"
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING: TAG cancellation successful. TAG status set to CANCELLED, all related offers rejected. Verified no active TAG remains after cancellation."
 
   - task: "Passenger update destination endpoint"
     implemented: true
