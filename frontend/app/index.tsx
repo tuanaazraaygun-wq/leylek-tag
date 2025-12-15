@@ -1761,7 +1761,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
 
       {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
         <View style={styles.fullScreenContainer}>
-          {/* CANLি 3D HARİTA - Yolcu ile aynı */}
+          {/* CANLI 3D HARİTA - Yolcu ile aynı */}
           <LiveMapView
             userLocation={{
               latitude: userLocation?.latitude || 41.0082,
@@ -1846,21 +1846,15 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
         </View>
       ) : (
         <ScrollView style={styles.content}>
-          {/* Talep Listesi */}
-          {!activeTag && requests.length === 0 && (
+          {requests.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="car-sport" size={80} color={COLORS.primary} />
               <Text style={styles.emptyStateText}>Henüz çağrı yok</Text>
               <Text style={styles.emptyStateSubtext}>Yeni çağrılar burada görünecek</Text>
             </View>
-          )}
-          
-          {!activeTag && requests.length > 0 && (
-            <>
-              <Text style={styles.requestsTitle}>📍 Yakındaki Çağrılar</Text>
-            
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Aktif Talepler ({requests.length})</Text>
+          ) : (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>📍 Yakındaki Çağrılar ({requests.length})</Text>
             
             {requests.length === 0 ? (
               <Text style={styles.emptyText}>Henüz talep yok</Text>
