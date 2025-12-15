@@ -1,0 +1,129 @@
+{
+  "summary": {
+    "passed": 10,
+    "failed": 1,
+    "total": 11,
+    "success_rate": 90.9090909090909
+  },
+  "results": [
+    {
+      "test": "Setup Passenger User",
+      "passed": true,
+      "message": "Created passenger: Test Yolcu Ahmet",
+      "details": {},
+      "timestamp": "2025-12-15T11:37:10.390501"
+    },
+    {
+      "test": "Setup Driver User",
+      "passed": true,
+      "message": "Created driver: Test Sürücü Mehmet",
+      "details": {},
+      "timestamp": "2025-12-15T11:37:10.440732"
+    },
+    {
+      "test": "Update Driver Location",
+      "passed": true,
+      "message": "Driver location set to Adana (37.1, 35.1)",
+      "details": {},
+      "timestamp": "2025-12-15T11:37:10.489694"
+    },
+    {
+      "test": "Create TAG with Coordinates",
+      "passed": true,
+      "message": "TAG created with coordinates saved: True",
+      "details": {
+        "tag_id": "693ff2e67594480d34171d96",
+        "pickup_coords": "(37.0, 35.0)",
+        "dropoff_coords": "(41.0, 29.0)",
+        "coordinates_match": true
+      },
+      "timestamp": "2025-12-15T11:37:10.503738"
+    },
+    {
+      "test": "Distance Calculation - Driver to Passenger",
+      "passed": true,
+      "message": "Distance calculated correctly: True",
+      "details": {
+        "distance_to_passenger_km": 14.22,
+        "trip_distance_km": 683.31,
+        "expected_distance_range": "10-20km (Adana to Adana)",
+        "expected_trip_range": "500-600km (Adana to Istanbul)",
+        "calculation_working": true
+      },
+      "timestamp": "2025-12-15T11:37:10.521727"
+    },
+    {
+      "test": "Distance Values Reasonableness",
+      "passed": true,
+      "message": "Distance values are reasonable: True",
+      "details": {
+        "distance_to_passenger_reasonable": true,
+        "trip_distance_reasonable": true
+      },
+      "timestamp": "2025-12-15T11:37:10.521759"
+    },
+    {
+      "test": "Driver Send Offer",
+      "passed": false,
+      "message": "Offer sent successfully: False",
+      "details": {
+        "offer_price": 850.0,
+        "estimated_time": 480,
+        "response": {
+          "error": "500, message='Attempt to decode JSON with unexpected mimetype: text/plain; charset=utf-8', url='https://passenger-bid.preview.emergentagent.com/api/driver/send-offer?user_id=693ff2e67594480d34171d95'"
+        }
+      },
+      "timestamp": "2025-12-15T11:37:10.539397"
+    },
+    {
+      "test": "Passenger Update Destination",
+      "passed": true,
+      "message": "Destination updated successfully: True",
+      "details": {
+        "new_destination": "Taksim, İstanbul",
+        "new_coordinates": "(41.05, 28.98)",
+        "response": {
+          "success": true,
+          "message": "Hedef başarıyla güncellendi"
+        }
+      },
+      "timestamp": "2025-12-15T11:37:10.548656"
+    },
+    {
+      "test": "Destination Update Verification",
+      "passed": true,
+      "message": "Destination coordinates updated in database: True",
+      "details": {
+        "updated_location": "Taksim, İstanbul",
+        "updated_coords": "(41.05, 28.98)"
+      },
+      "timestamp": "2025-12-15T11:37:10.560788"
+    },
+    {
+      "test": "Passenger Cancel TAG",
+      "passed": true,
+      "message": "TAG cancelled successfully: True",
+      "details": {
+        "cancelled_tag_id": "693ff2e67594480d34171d96",
+        "response": {
+          "success": true,
+          "message": "Çağrı başarıyla iptal edildi"
+        }
+      },
+      "timestamp": "2025-12-15T11:37:10.610650"
+    },
+    {
+      "test": "TAG Cancellation Verification",
+      "passed": true,
+      "message": "No active TAG after cancellation: True",
+      "details": {
+        "active_tag_response": {
+          "success": true,
+          "tag": null
+        }
+      },
+      "timestamp": "2025-12-15T11:37:10.618139"
+    }
+  ],
+  "timestamp": "2025-12-15T11:37:10.618280"
+}
