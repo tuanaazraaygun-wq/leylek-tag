@@ -1648,9 +1648,15 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   
+  // GPS & Map states
+  const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  
   // Sesli arama state'leri
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [selectedPassengerName, setSelectedPassengerName] = useState('');
+  
+  // Animation
+  const buttonPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadData();
