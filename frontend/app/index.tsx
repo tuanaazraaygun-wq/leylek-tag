@@ -1429,6 +1429,47 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
           </View>
         )}
       </ScrollView>
+
+      {/* Teklif Gönderme Modalı */}
+      <Modal
+        visible={offerModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setOfferModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>💰 Teklif Gönder</Text>
+            <Text style={styles.modalSubtitle}>Fiyat teklifinizi girin</Text>
+            
+            <TextInput
+              style={styles.priceInput}
+              placeholder="Fiyat (₺)"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+              value={offerPrice}
+              onChangeText={setOfferPrice}
+              autoFocus={true}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setOfferModalVisible(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>İptal</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.modalSubmitButton}
+                onPress={submitOffer}
+              >
+                <Text style={styles.modalSubmitButtonText}>Gönder</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
