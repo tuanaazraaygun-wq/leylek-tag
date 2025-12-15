@@ -1238,15 +1238,18 @@ function PassengerDashboard({
             {/* CANLI HARİTA - Tam Ekran */}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.fullScreenMapContainer}>
-                {/* Harita göstergesi - gerçek harita mobilde çalışacak */}
+                {/* CANLI HARİTA */}
                 <View style={styles.mapView}>
-                  <View style={styles.mapPlaceholderFull}>
-                    <Ionicons name="location" size={60} color={COLORS.primary} />
-                    <Text style={styles.mapPlaceholderTitle}>🗺️ Canlı Konum Takibi</Text>
-                    <Text style={styles.mapIconText}>{user.gender === 'female' ? '👩' : '🧑'} Sen</Text>
-                    <Text style={styles.mapIconText}>🚗 {activeTag.driver_name}</Text>
-                    <Text style={styles.mapPlaceholderNote}>Mobil uygulamada canlı harita aktif</Text>
-                  </View>
+                  <LiveMapView
+                    userLocation={userLocation}
+                    otherLocation={activeTag.driver_location}
+                    userIcon={user.gender === 'female' ? '👩' : '🧑'}
+                    otherIcon="🚗"
+                    userName="Sen"
+                    otherName={activeTag.driver_name}
+                    distance={2.5}
+                    estimatedTime={5}
+                  />
                 </View>
 
                 {/* Üst Bilgi - Mesafeler ve Süre */}
