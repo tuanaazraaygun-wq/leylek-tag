@@ -563,6 +563,11 @@ async def get_driver_requests(user_id: str):
     
     tag_responses = []
     for tag in tags:
+        # ŞEHİR FİLTRELEMESİ: Sadece aynı şehirdeki TAG'leri göster
+        tag_city = tag.get("city", "Diğer")
+        if tag_city != driver_city:
+            continue  # Farklı şehir, atla
+        
         # Yolcu bilgisini al
         passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
         if not passenger:
