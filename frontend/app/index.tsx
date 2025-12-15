@@ -3062,9 +3062,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
   },
+  fixedBottomButton: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: 20,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(30, 64, 175, 0.95)',
+  },
   acceptButtonContainer: {
     width: '100%',
-    paddingHorizontal: 10,
   },
   acceptButton: {
     width: '100%',
