@@ -1514,59 +1514,14 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
       <ScrollView style={styles.content}>
         {activeTag ? (
           <View style={styles.liveMapContainer}>
-            {Platform.OS !== 'web' ? (
-              <MapView
-                style={styles.liveMap}
-                provider={PROVIDER_GOOGLE}
-                initialRegion={{
-                  latitude: userLocation?.latitude || 41.0082,
-                  longitude: userLocation?.longitude || 28.9784,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
-                }}
-                showsUserLocation={true}
-                showsMyLocationButton={true}
-              >
-                {/* Sürücü (Sen) Marker - Araç */}
-                {userLocation && (
-                  <Marker
-                    coordinate={{
-                      latitude: userLocation.latitude,
-                      longitude: userLocation.longitude,
-                    }}
-                    title="Sen"
-                    description="Sürücü"
-                  >
-                    <View style={styles.markerContainer}>
-                      <Text style={styles.markerIcon}>🚗</Text>
-                    </View>
-                  </Marker>
-                )}
-                
-                {/* Yolcu Marker - Kadın/Erkek */}
-                {activeTag.passenger_location && (
-                  <Marker
-                    coordinate={{
-                      latitude: activeTag.passenger_location.latitude || 41.0082,
-                      longitude: activeTag.passenger_location.longitude || 28.9784,
-                    }}
-                    title={activeTag.passenger_name}
-                    description="Yolcu"
-                  >
-                    <View style={styles.markerContainer}>
-                      <Text style={styles.markerIcon}>
-                        {activeTag.passenger_gender === 'female' ? '👩' : '🧑'}
-                      </Text>
-                    </View>
-                  </Marker>
-                )}
-              </MapView>
-            ) : (
-              <View style={styles.webMapPlaceholder}>
-                <Text style={styles.webMapText}>🗺️ Harita</Text>
-                <Text style={styles.webMapSubtext}>Web preview'da harita desteklenmiyor</Text>
-              </View>
-            )}
+            <LiveMap
+              userLocation={userLocation}
+              otherLocation={activeTag.passenger_location}
+              userIcon="🚗"
+              otherIcon={activeTag.passenger_gender === 'female' ? '👩' : '🧑'}
+              userName="Sen"
+              otherName={activeTag.passenger_name}
+            />
             
             {/* Alt Bilgi Paneli */}
             <View style={styles.mapInfoPanel}>
