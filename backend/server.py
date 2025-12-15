@@ -439,6 +439,10 @@ async def get_driver_requests(user_id: str):
                 driver_lat, driver_lng,
                 tag["pickup_lat"], tag["pickup_lng"]
             )
+            
+            # GPS BAZLI FİLTRELEME: MAX_DISTANCE_KM dışındaki çağrıları gösterme
+            if distance_to_passenger > MAX_DISTANCE_KM:
+                continue  # Çok uzak, atla
         
         # Yolcunun gideceği mesafe (pickup -> dropoff)
         if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
