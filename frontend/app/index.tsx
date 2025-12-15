@@ -956,6 +956,42 @@ function PassengerDashboard({
     );
   };
 
+  const handleCancelTag = async () => {
+    if (!activeTag) return;
+
+    Alert.alert(
+      'Çağrıyı İptal Et',
+      'Çağrınızı iptal etmek istediğinizden emin misiniz? Sürücülere bildirim gönderilecek.',
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        {
+          text: 'İptal Et',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${API_URL}/passenger/cancel-tag?user_id=${user.id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag_id: activeTag.id })
+              });
+
+              const data = await response.json();
+              if (data.success) {
+                Alert.alert('✅ İptal Edildi', 'Çağrınız başarıyla iptal edildi.');
+                setActiveTag(null);
+                setOffers([]);
+              } else {
+                Alert.alert('Hata', data.detail || 'Çağrı iptal edilemedi');
+              }
+            } catch (error) {
+              Alert.alert('Hata', 'Çağrı iptal edilemedi');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
