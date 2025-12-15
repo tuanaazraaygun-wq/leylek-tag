@@ -1222,35 +1222,6 @@ function PassengerDashboard({
               )}
             </View>
 
-            {/* TAM EKRAN TEKLİF KARTLARI */}
-            {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
-              <View style={styles.fullScreenOffersContainer}>
-                <FullScreenOfferCard
-                  offer={offers[currentOfferIndex]}
-                  onSwipeUp={() => {
-                    if (currentOfferIndex < offers.length - 1) {
-                      setCurrentOfferIndex(currentOfferIndex + 1);
-                    }
-                  }}
-                  onSwipeDown={() => {
-                    if (currentOfferIndex > 0) {
-                      setCurrentOfferIndex(currentOfferIndex - 1);
-                    }
-                  }}
-                  onAccept={() => handleAcceptOffer(offers[currentOfferIndex].id)}
-                  isFirst={currentOfferIndex === 0}
-                  isLast={currentOfferIndex === offers.length - 1}
-                />
-                
-                {/* Sayfa Göstergesi */}
-                <View style={styles.offerIndicator}>
-                  <Text style={styles.offerIndicatorText}>
-                    {currentOfferIndex + 1} / {offers.length}
-                  </Text>
-                </View>
-              </View>
-            )}
-
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>📞 İletişim</Text>
