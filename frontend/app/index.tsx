@@ -1224,20 +1224,101 @@ function PassengerDashboard({
               )}
             </View>
 
+            {/* CANLI HARİTA - Eşleşildiğinde */}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>📞 İletişim</Text>
-                <TouchableOpacity 
-                  style={[styles.callButton, calling && { opacity: 0.7 }]}
-                  onPress={handleVoiceCall}
-                  disabled={calling}
-                >
-                  <Ionicons name="call" size={24} color="#FFF" />
-                  <Text style={styles.callButtonText}>
-                    {calling ? 'Aranıyor...' : 'Sürücüyü Ara'}
-                  </Text>
-                </TouchableOpacity>
-                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama • 📱 Numaralar gizli</Text>
+              <View style={styles.liveMapContainer}>
+                {Platform.OS !== 'web' ? (
+                  <MapView
+                    style={styles.liveMap}
+                    provider={PROVIDER_GOOGLE}
+                    initialRegion={{
+                      latitude: userLocation?.latitude || 41.0082,
+                      longitude: userLocation?.longitude || 28.9784,
+                      latitudeDelta: 0.05,
+                      longitudeDelta: 0.05,
+                    }}
+                    showsUserLocation={true}
+                    showsMyLocationButton={true}
+                  >
+                    {/* Yolcu Marker - Kadın/Erkek */}
+                    {userLocation && (
+                      <Marker
+                        coordinate={{
+                          latitude: userLocation.latitude,
+                          longitude: userLocation.longitude,
+                        }}
+                        title="Sen"
+                        description="Yolcu"
+                      >
+                        <View style={styles.markerContainer}>
+                          <Text style={styles.markerIcon}>
+                            {user.gender === 'female' ? '👩' : '🧑'}
+                          </Text>
+                        </View>
+                      </Marker>
+                    )}
+                    
+                    {/* Sürücü Marker - Araç */}
+                    {activeTag.driver_location && (
+                      <Marker
+                        coordinate={{
+                          latitude: activeTag.driver_location.latitude || 41.0082,
+                          longitude: activeTag.driver_location.longitude || 28.9784,
+                        }}
+                        title={activeTag.driver_name}
+                        description="Sürücü"
+                      >
+                        <View style={styles.markerContainer}>
+                          <Text style={styles.markerIcon}>🚗</Text>
+                        </View>
+                      </Marker>
+                    )}
+                  </MapView>
+                ) : (
+                  <View style={styles.webMapPlaceholder}>
+                    <Text style={styles.webMapText}>🗺️ Harita</Text>
+                    <Text style={styles.webMapSubtext}>Web preview'da harita desteklenmiyor</Text>
+                  </View>
+                )}
+                
+                {/* Alt Bilgi Paneli */}
+                <View style={styles.mapInfoPanel}>
+                  <View style={styles.driverInfoBox}>
+                    <View style={styles.driverAvatarMap}>
+                      <Text style={styles.driverAvatarMapText}>
+                        {activeTag.driver_name?.charAt(0) || '?'}
+                      </Text>
+                    </View>
+                    <View style={styles.driverDetailsMap}>
+                      <Text style={styles.driverNameMap}>{activeTag.driver_name}</Text>
+                      <Text style={styles.driverStatusMap}>
+                        {activeTag.status === 'matched' ? '📍 Yolda' : '🚗 Yolculuk Devam Ediyor'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.callButtonMap}
+                      onPress={handleVoiceCall}
+                      disabled={calling}
+                    >
+                      <Ionicons name="call" size={28} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.tripInfoMap}>
+                    <View style={styles.tripInfoItem}>
+                      <Ionicons name="cash" size={20} color={COLORS.primary} />
+                      <Text style={styles.tripInfoText}>₺{activeTag.final_price}</Text>
+                    </View>
+                    <View style={styles.tripInfoItem}>
+                      <Ionicons name="location" size={20} color="#00A67E" />
+                      <Text style={styles.tripInfoText}>{activeTag.pickup_location}</Text>
+                    </View>
+                    <View style={styles.tripInfoItem}>
+                      <Ionicons name="flag" size={20} color="#FF5A5F" />
+                      <Text style={styles.tripInfoText}>{activeTag.dropoff_location}</Text>
+                    </View>
+                  </View>
+                </View>
               </View>
             ) : null}
           </>
