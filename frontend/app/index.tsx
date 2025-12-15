@@ -3029,16 +3029,15 @@ const styles = StyleSheet.create({
     marginVertical: 12,
     marginHorizontal: 20,
   },
-  offerScrollContent: {
+  offerContentFlex: {
     flex: 1,
-  },
-  offerScrollContainer: {
-    paddingBottom: 120, // HEMEN GEL butonu için alan
+    justifyContent: 'space-evenly', // Tüm elemanlar eşit dağılım
+    paddingTop: 80,
+    paddingBottom: 100, // HEMEN GEL butonu için alan
   },
   priceSection: {
     alignItems: 'center',
     paddingHorizontal: 20,
-    marginTop: 20,
   },
   priceBox: {
     backgroundColor: 'rgba(255,255,255,0.2)',
