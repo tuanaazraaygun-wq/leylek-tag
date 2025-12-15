@@ -505,8 +505,6 @@ export default function App() {
 
   // ==================== PREMIUM ROLE SELECTION SCREEN ====================
   if (screen === 'role-select') {
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-
     const handleRoleSelect = (role: 'passenger' | 'driver') => {
       setSelectedRole(role);
       
