@@ -424,10 +424,10 @@ async def get_driver_requests(user_id: str):
     
     tag_responses = []
     for tag in tags:
-        # Her TAG için yolcunun şehrini kontrol et
+        # Yolcu bilgisini al
         passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
-        if not passenger or passenger.get("city") != driver_city:
-            continue  # Farklı şehirden, atla
+        if not passenger:
+            continue  # Yolcu bulunamadı, atla
         
         # Mesafe hesaplamaları
         distance_to_passenger = 0.0
