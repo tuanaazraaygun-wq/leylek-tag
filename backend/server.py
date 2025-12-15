@@ -396,8 +396,8 @@ async def get_passenger_history(user_id: str):
 async def get_driver_requests(user_id: str):
     """Aktif talepleri listele - SADECE AYNI ŞEHİRDEKİLER"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
-    if not user or user["role"] != UserRole.DRIVER:
-        raise HTTPException(status_code=403, detail="Sadece sürücüler talepleri görebilir")
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     
     driver_city = user.get("city")
     
