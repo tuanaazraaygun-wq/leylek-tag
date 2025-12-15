@@ -706,13 +706,43 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
         {!activeTag ? (
           <View style={styles.emptyStateContainer}>
             <Text style={styles.welcomeTitle}>Hoş Geldiniz</Text>
-            <Text style={styles.welcomeSubtitle}>Yakındaki sürücülere çağrı gönderin</Text>
+            <Text style={styles.welcomeSubtitle}>Nereye gitmek istiyorsunuz?</Text>
             
-            <AnimatedPulseButton onPress={handleCallButton} loading={loading} />
+            {/* Hedef Seçme Alanı */}
+            <TouchableOpacity
+              style={styles.destinationInput}
+              onPress={() => setShowDestinationPicker(true)}
+            >
+              <Ionicons name="location" size={24} color={COLORS.primary} />
+              <Text style={destination ? styles.destinationText : styles.destinationPlaceholder}>
+                {destination ? destination.address : 'Hedef seçin...'}
+              </Text>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.gray500} />
+            </TouchableOpacity>
             
-            <Text style={styles.callHintText}>
-              📍 Konumunuz otomatik tespit edilecek
-            </Text>
+            {destination && (
+              <View style={styles.destinationInfo}>
+                <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                <Text style={styles.destinationConfirm}>Hedef belirlendi</Text>
+              </View>
+            )}
+            
+            <AnimatedPulseButton 
+              onPress={handleCallButton} 
+              loading={loading}
+            />
+            
+            {!destination && (
+              <Text style={styles.callHintText}>
+                ⚠️ Önce hedef seçmelisiniz
+              </Text>
+            )}
+            
+            {destination && (
+              <Text style={styles.callHintText}>
+                📍 Konumunuz otomatik tespit edilecek
+              </Text>
+            )}
           </View>
         ) : (
           <>
