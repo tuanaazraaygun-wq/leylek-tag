@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
 # ==================== CONFIG ====================
-MAX_DISTANCE_KM = 20  # Admin ayarı: Maksimum mesafe (km)
+MAX_DISTANCE_KM = 50  # Admin ayarı: Maksimum mesafe (km) - Google Play/Apple onaylı
 
 # ==================== HELPER FUNCTIONS ====================
 def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
