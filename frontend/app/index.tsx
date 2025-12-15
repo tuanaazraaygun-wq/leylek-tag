@@ -1755,7 +1755,10 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
             {/* Ara Butonu - Sağ Alt */}
             <TouchableOpacity 
               style={styles.floatingCallButton}
-              onPress={handleDriverVoiceCall}
+              onPress={() => {
+                setSelectedPassengerName(activeTag.passenger_name || 'Yolcu');
+                setShowVoiceCall(true);
+              }}
               disabled={calling}
             >
               <LinearGradient
