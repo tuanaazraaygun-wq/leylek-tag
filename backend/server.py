@@ -246,8 +246,8 @@ async def update_driver_details(user_id: str, request: UpdateDriverDetailsReques
 async def create_request(user_id: str, request: CreateTagRequest):
     """Yolcu talebi oluştur"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
-    if not user or user["role"] != UserRole.PASSENGER:
-        raise HTTPException(status_code=403, detail="Sadece yolcular talep oluşturabilir")
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     
     # Aktif TAG kontrolü
     active_tag = await db_instance.find_one("tags", {
