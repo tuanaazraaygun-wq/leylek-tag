@@ -1547,6 +1547,14 @@ function PassengerDashboard({
           </View>
         </View>
       </Modal>
+
+      {/* Sesli Arama Modal */}
+      <VoiceCall
+        visible={showVoiceCall}
+        remoteUserName={selectedDriverName}
+        isIncoming={false}
+        onEnd={() => setShowVoiceCall(false)}
+      />
     </SafeAreaView>
   );
 }
