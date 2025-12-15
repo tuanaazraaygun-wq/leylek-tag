@@ -3065,7 +3065,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingTop: 12,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(30, 64, 175, 0.95)',
+    backgroundColor: 'transparent', // Zemin ile aynı, belli olmasın
   },
   acceptButtonContainer: {
     width: '100%',
