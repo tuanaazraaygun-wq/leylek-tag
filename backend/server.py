@@ -664,27 +664,16 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     
     offer_id = await db_instance.insert_one("offers", offer_data)
     
-    # OTOMATIK EŞLEŞME: Teklif verince direkt matched olsun
+    # TAG durumunu güncelle (OFFERS_RECEIVED)
     await db_instance.update_one(
         "tags",
         {"_id": ObjectId(request.tag_id)},
-        {"$set": {
-            "status": TagStatus.MATCHED,
-            "driver_id": user_id,
-            "driver_name": user["name"],
-            "matched_at": datetime.utcnow()
-        }}
+        {"$set": {"status": TagStatus.OFFERS_RECEIVED}}
     )
     
-    # Diğer teklifleri sil (artık gerek yok)
-    await db_instance.db.offers.delete_many({
-        "tag_id": request.tag_id,
-        "_id": {"$ne": ObjectId(offer_id)}
-    })
+    logger.info(f"📩 Teklif gönderildi: {user['name']} -> TAG {request.tag_id}")
     
-    logger.info(f"✅ Otomatik eşleşme: {user['name']} -> TAG {request.tag_id}")
-    
-    return {"success": True, "message": "Eşleşme sağlandı!", "offer_id": offer_id, "matched": True}
+    return {"success": True, "message": "Teklif gönderildi", "offer_id": offer_id}
 
 @api_router.get("/driver/active-tag")
 async def get_driver_active_tag(user_id: str):
