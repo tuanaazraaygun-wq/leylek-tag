@@ -56,7 +56,6 @@ class DriverDetails(BaseModel):
 class User(BaseModel):
     phone: str
     name: str
-    role: UserRole
     city: str  # Kullanıcının şehri (zorunlu)
     location: Optional[dict] = None  # {"latitude": 41.0082, "longitude": 28.9784}
     profile_photo: Optional[str] = None  # base64
@@ -66,6 +65,7 @@ class User(BaseModel):
     driver_details: Optional[DriverDetails] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_active: datetime = Field(default_factory=datetime.utcnow)
+    # Not: Role artık yok! Her TAG/session'da dinamik seçilir
 
 class UserResponse(BaseModel):
     id: str
