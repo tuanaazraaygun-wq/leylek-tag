@@ -1558,52 +1558,116 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
 
       <ScrollView style={styles.content}>
         {activeTag ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Aktif Yolculuk</Text>
+          <View style={styles.liveMapContainer}>
+            {Platform.OS !== 'web' ? (
+              <MapView
+                style={styles.liveMap}
+                provider={PROVIDER_GOOGLE}
+                initialRegion={{
+                  latitude: userLocation?.latitude || 41.0082,
+                  longitude: userLocation?.longitude || 28.9784,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+                showsUserLocation={true}
+                showsMyLocationButton={true}
+              >
+                {/* Sürücü (Sen) Marker - Araç */}
+                {userLocation && (
+                  <Marker
+                    coordinate={{
+                      latitude: userLocation.latitude,
+                      longitude: userLocation.longitude,
+                    }}
+                    title="Sen"
+                    description="Sürücü"
+                  >
+                    <View style={styles.markerContainer}>
+                      <Text style={styles.markerIcon}>🚗</Text>
+                    </View>
+                  </Marker>
+                )}
+                
+                {/* Yolcu Marker - Kadın/Erkek */}
+                {activeTag.passenger_location && (
+                  <Marker
+                    coordinate={{
+                      latitude: activeTag.passenger_location.latitude || 41.0082,
+                      longitude: activeTag.passenger_location.longitude || 28.9784,
+                    }}
+                    title={activeTag.passenger_name}
+                    description="Yolcu"
+                  >
+                    <View style={styles.markerContainer}>
+                      <Text style={styles.markerIcon}>
+                        {activeTag.passenger_gender === 'female' ? '👩' : '🧑'}
+                      </Text>
+                    </View>
+                  </Marker>
+                )}
+              </MapView>
+            ) : (
+              <View style={styles.webMapPlaceholder}>
+                <Text style={styles.webMapText}>🗺️ Harita</Text>
+                <Text style={styles.webMapSubtext}>Web preview'da harita desteklenmiyor</Text>
+              </View>
+            )}
             
-            <View style={styles.tagStatusBadge}>
-              <Text style={styles.tagStatusText}>
-                {activeTag.status === 'matched' && '✅ Eşleşildi'}
-                {activeTag.status === 'in_progress' && '🚗 Devam Ediyor'}
-              </Text>
+            {/* Alt Bilgi Paneli */}
+            <View style={styles.mapInfoPanel}>
+              <View style={styles.driverInfoBox}>
+                <View style={styles.driverAvatarMap}>
+                  <Text style={styles.driverAvatarMapText}>
+                    {activeTag.passenger_name?.charAt(0) || '?'}
+                  </Text>
+                </View>
+                <View style={styles.driverDetailsMap}>
+                  <Text style={styles.driverNameMap}>{activeTag.passenger_name}</Text>
+                  <Text style={styles.driverStatusMap}>
+                    {activeTag.status === 'matched' ? '📍 Bekliyor' : '🚗 Yolculuk Devam Ediyor'}
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  style={styles.callButtonMap}
+                  onPress={handleDriverVoiceCall}
+                  disabled={calling}
+                >
+                  <Ionicons name="call" size={28} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.tripInfoMap}>
+                <View style={styles.tripInfoItem}>
+                  <Ionicons name="cash" size={20} color={COLORS.primary} />
+                  <Text style={styles.tripInfoText}>₺{activeTag.final_price}</Text>
+                </View>
+                <View style={styles.tripInfoItem}>
+                  <Ionicons name="location" size={20} color="#00A67E" />
+                  <Text style={styles.tripInfoText}>{activeTag.pickup_location}</Text>
+                </View>
+                <View style={styles.tripInfoItem}>
+                  <Ionicons name="flag" size={20} color="#FF5A5F" />
+                  <Text style={styles.tripInfoText}>{activeTag.dropoff_location}</Text>
+                </View>
+              </View>
+              
+              {/* Yolculuk Kontrolleri */}
+              <View style={styles.tripActions}>
+                {activeTag.status === 'matched' && (
+                  <TouchableOpacity style={styles.startTripButton} onPress={handleStartTag}>
+                    <Ionicons name="play-circle" size={24} color="#FFF" />
+                    <Text style={styles.startTripButtonText}>Yolculuğu Başlat</Text>
+                  </TouchableOpacity>
+                )}
+
+                {activeTag.status === 'in_progress' && (
+                  <TouchableOpacity style={styles.completeTripButton} onPress={handleCompleteTag}>
+                    <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+                    <Text style={styles.completeTripButtonText}>Yolculuğu Tamamla</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-
-            <Text style={styles.passengerName}>Yolcu: {activeTag.passenger_name}</Text>
-
-            <View style={styles.locationRow}>
-              <Ionicons name="location" size={20} color="#00A67E" />
-              <Text style={styles.locationText}>{activeTag.pickup_location}</Text>
-            </View>
-
-            <View style={styles.locationRow}>
-              <Ionicons name="flag" size={20} color="#FF5A5F" />
-              <Text style={styles.locationText}>{activeTag.dropoff_location}</Text>
-            </View>
-
-            <Text style={styles.priceText}>Fiyat: ₺{activeTag.final_price}</Text>
-
-            {activeTag.status === 'matched' && (
-              <TouchableOpacity style={styles.primaryButton} onPress={handleStartTag}>
-                <Text style={styles.primaryButtonText}>Yolculuğu Başlat</Text>
-              </TouchableOpacity>
-            )}
-
-            {activeTag.status === 'in_progress' && (
-              <TouchableOpacity style={styles.completeButton} onPress={handleCompleteTag}>
-                <Text style={styles.primaryButtonText}>Yolculuğu Tamamla</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity 
-              style={[styles.callButton, calling && { opacity: 0.7 }]}
-              onPress={handleDriverVoiceCall}
-              disabled={calling}
-            >
-              <Ionicons name="call" size={24} color="#FFF" />
-              <Text style={styles.callButtonText}>
-                {calling ? 'Aranıyor...' : 'Yolcuyu Ara'}
-              </Text>
-            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.card}>
