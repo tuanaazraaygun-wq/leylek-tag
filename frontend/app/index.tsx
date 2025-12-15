@@ -1677,8 +1677,10 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
                       <Text style={styles.sendOfferButtonText}>Teklif Gönder</Text>
                     </TouchableOpacity>
                   )}
+                  </LinearGradient>
                 </View>
-              ))
+                );
+              })
             )}
           </View>
         )}
