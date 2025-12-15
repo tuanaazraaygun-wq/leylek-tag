@@ -866,22 +866,20 @@ function PassengerDashboard({
       return;
     }
 
-    // Konum kontrolü
-    if (!userLocation) {
-      Alert.alert('⚠️ Konum Gerekli', 'Konumunuz alınıyor, lütfen bekleyin...');
-      return;
-    }
-
     setLoading(true);
     try {
+      // GPS konumu varsa kullan, yoksa mock konum
+      const pickupLat = userLocation?.latitude || 41.0082;
+      const pickupLng = userLocation?.longitude || 28.9784;
+
       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pickup_location: 'Mevcut Konumunuz',
           dropoff_location: destination.address,
-          pickup_lat: userLocation.latitude,
-          pickup_lng: userLocation.longitude,
+          pickup_lat: pickupLat,
+          pickup_lng: pickupLng,
           dropoff_lat: destination.latitude,
           dropoff_lng: destination.longitude,
           notes: 'Hedef belirlendi'
