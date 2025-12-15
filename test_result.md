@@ -163,15 +163,18 @@ backend:
 
   - task: "Passenger update destination endpoint"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "New endpoint /api/passenger/update-destination created - updates dropoff location and coordinates"
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING: Destination update successful. Changed from Kadıköy to Taksim (41.05, 28.98). Coordinates properly updated in database and verified."
 
 frontend:
   - task: "Driver offer modal (replace Alert.prompt)"
