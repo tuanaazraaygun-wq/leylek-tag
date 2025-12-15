@@ -1112,6 +1112,8 @@ function PassengerDashboard({
           onAccept={() => handleAcceptOffer(offers[currentOfferIndex].id)}
           isFirst={currentOfferIndex === 0}
           isLast={currentOfferIndex === offers.length - 1}
+          currentIndex={currentOfferIndex}
+          totalOffers={offers.length}
         />
         
         {/* Sayfa Göstergesi */}
