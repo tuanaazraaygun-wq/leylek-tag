@@ -7,12 +7,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import Logo from '../components/Logo';
 
-// Conditional import - sadece mobilde
-let LiveMap: any = null;
-if (Platform.OS !== 'web') {
-  LiveMap = require('../components/LiveMap').default;
-}
-
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
