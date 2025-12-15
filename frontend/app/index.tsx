@@ -2037,12 +2037,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1
   },
-  driverInfo: {
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12
-  },
+  // Removed duplicate driverInfo - keeping the later version
   driverName: {
     fontSize: 16,
     fontWeight: '600',
