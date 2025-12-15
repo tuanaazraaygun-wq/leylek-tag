@@ -2101,12 +2101,7 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   // Removed duplicate callButtonText - keeping the animated version
-  callNote: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 8
-  },
+  // Removed duplicate callNote - keeping the later version
   requestCard: {
     backgroundColor: '#FFF',
     padding: 20,
