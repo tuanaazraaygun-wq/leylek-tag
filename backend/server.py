@@ -922,3 +922,30 @@ async def root():
         "version": "2.0.0",
         "status": "running"
     }
+
+
+# ==================== ADMIN: TEMİZLE ====================
+@app.delete("/api/admin/clear-all")
+async def clear_all_data():
+    """Tüm TAG ve teklifleri temizle"""
+    try:
+        db = db_instance.get_db()
+        
+        # Tüm TAG'leri sil
+        tags_result = await db.tags.delete_many({})
+        
+        # Tüm teklifleri sil
+        offers_result = await db.offers.delete_many({})
+        
+        logger.info(f"🧹 Temizleme: {tags_result.deleted_count} TAG, {offers_result.deleted_count} teklif silindi")
+        
+        return {
+            "success": True,
+            "deleted_tags": tags_result.deleted_count,
+            "deleted_offers": offers_result.deleted_count,
+            "message": "Tüm veriler temizlendi"
+        }
+    except Exception as e:
+        logger.error(f"Temizleme hatası: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
