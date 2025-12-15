@@ -500,95 +500,166 @@ export default function App() {
     );
   }
 
-  // Role Selection Screen - Her girişte gösterilir
+  // ==================== PREMIUM ROLE SELECTION SCREEN ====================
   if (screen === 'role-select') {
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    const handleRoleSelect = (role: 'passenger' | 'driver') => {
+      setSelectedRole(role);
+      
+      // Animasyon
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 0.95,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 3,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
+    const handleContinue = async () => {
+      if (!selectedRole) return;
+      
+      try {
+        await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
+        if (selectedRole && user) {
+          // Kullanıcının rolünü güncelle
+          const updatedUser = { ...user, role: selectedRole };
+          setUser(updatedUser);
+          setScreen('dashboard');
+        }
+      } catch (error) {
+        console.error('Role kaydedilemedi:', error);
+        if (selectedRole && user) {
+          const updatedUser = { ...user, role: selectedRole };
+          setUser(updatedUser);
+          setScreen('dashboard');
+        }
+      }
+    };
+
     return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="person-circle" size={60} color="#00A67E" />
-            <Text style={styles.logoText}>Rol Seçimi</Text>
-            <Text style={styles.subtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
+      <View style={styles.roleSelectionContainer}>
+        <SafeAreaView style={styles.roleSelectionSafe}>
+          {/* Başlık Alanı */}
+          <View style={styles.roleHeader}>
+            <View style={styles.roleHeaderIcon}>
+              <Ionicons name="people-circle" size={48} color="#2ECC71" />
+            </View>
+            <Text style={styles.roleHeaderTitle}>Rol Seçimi</Text>
+            <Text style={styles.roleHeaderSubtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
           </View>
 
-          <View style={styles.formContainer}>
-            <Text style={[styles.label, { textAlign: 'center', marginBottom: 30 }]}>
-              Hoş geldiniz {user?.name}! Rolünüzü seçin:
-            </Text>
-            
-            <View style={styles.roleContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  selectedRole === 'passenger' && styles.roleButtonActive
-                ]}
-                onPress={() => setSelectedRole('passenger')}
-              >
-                <Ionicons
-                  name="person"
-                  size={40}
-                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
-                />
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    selectedRole === 'passenger' && styles.roleButtonTextActive
-                  ]}
-                >
+          {/* Rol Kartları */}
+          <View style={styles.roleCardsContainer}>
+            {/* Yolcu Kartı */}
+            <TouchableOpacity
+              style={[
+                styles.roleCardPremium,
+                selectedRole === 'passenger' && styles.roleCardPremiumSelected
+              ]}
+              onPress={() => handleRoleSelect('passenger')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.roleCardContent}>
+                <View style={styles.roleCardIconContainer}>
+                  <Ionicons 
+                    name="person-outline" 
+                    size={40} 
+                    color={selectedRole === 'passenger' ? '#2ECC71' : '#7F8C8D'} 
+                  />
+                  <Ionicons 
+                    name="location" 
+                    size={24} 
+                    color={selectedRole === 'passenger' ? '#2ECC71' : '#7F8C8D'}
+                    style={styles.roleCardIconOverlay}
+                  />
+                </View>
+                <Text style={[
+                  styles.roleCardTitle,
+                  selectedRole === 'passenger' && styles.roleCardTitleSelected
+                ]}>
                   Yolcu
                 </Text>
-                <Text style={styles.roleDescription}>
-                  Yolculuk talep et
+                <Text style={styles.roleCardDescription}>
+                  Yakın sürücülerden teklif al
                 </Text>
-              </TouchableOpacity>
+                {selectedRole === 'passenger' && (
+                  <View style={styles.roleCardCheckmark}>
+                    <Ionicons name="checkmark-circle" size={28} color="#2ECC71" />
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  selectedRole === 'driver' && styles.roleButtonActive
-                ]}
-                onPress={() => setSelectedRole('driver')}
-              >
-                <Ionicons
-                  name="car"
-                  size={40}
-                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
-                />
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    selectedRole === 'driver' && styles.roleButtonTextActive
-                  ]}
-                >
+            {/* Sürücü Kartı */}
+            <TouchableOpacity
+              style={[
+                styles.roleCardPremium,
+                selectedRole === 'driver' && styles.roleCardPremiumSelected
+              ]}
+              onPress={() => handleRoleSelect('driver')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.roleCardContent}>
+                <View style={styles.roleCardIconContainer}>
+                  <Ionicons 
+                    name="car-sport-outline" 
+                    size={40} 
+                    color={selectedRole === 'driver' ? '#2ECC71' : '#7F8C8D'} 
+                  />
+                  <Ionicons 
+                    name="options" 
+                    size={24} 
+                    color={selectedRole === 'driver' ? '#2ECC71' : '#7F8C8D'}
+                    style={styles.roleCardIconOverlay}
+                  />
+                </View>
+                <Text style={[
+                  styles.roleCardTitle,
+                  selectedRole === 'driver' && styles.roleCardTitleSelected
+                ]}>
                   Sürücü
                 </Text>
-                <Text style={styles.roleDescription}>
-                  Yolcu taşı
+                <Text style={styles.roleCardDescription}>
+                  Yolculuk teklifleri ver
                 </Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity 
-              style={[styles.primaryButton, !selectedRole && { opacity: 0.5 }]} 
-              onPress={() => {
-                if (selectedRole && user) {
-                  // Kullanıcının rolünü güncelle
-                  const updatedUser = { ...user, role: selectedRole };
-                  setUser(updatedUser);
-                  setScreen('dashboard');
-                }
-              }}
-              disabled={!selectedRole}
-            >
-              <Text style={styles.primaryButtonText}>Devam Et</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryButton} onPress={logout}>
-              <Text style={styles.secondaryButtonText}>Çıkış Yap</Text>
+                {selectedRole === 'driver' && (
+                  <View style={styles.roleCardCheckmark}>
+                    <Ionicons name="checkmark-circle" size={28} color="#2ECC71" />
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </SafeAreaView>
+
+          {/* Devam Et Butonu */}
+          <TouchableOpacity
+            style={[
+              styles.roleContinueButton,
+              !selectedRole && styles.roleContinueButtonDisabled
+            ]}
+            onPress={handleContinue}
+            disabled={!selectedRole}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={selectedRole ? ['#2ECC71', '#27AE60'] : ['#BDC3C7', '#95A5A6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.roleContinueGradient}
+            >
+              <Text style={styles.roleContinueText}>Devam Et</Text>
+              <Ionicons name="arrow-forward" size={24} color="#FFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
     );
   }
 
