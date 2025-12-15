@@ -2606,20 +2606,23 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
   },
   messageSection: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 16,
-    padding: 20,
-    marginVertical: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    marginHorizontal: 20,
   },
   messageText: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#FFF',
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: 'center',
   },
   priceSection: {
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   priceBox: {
     backgroundColor: 'rgba(255,255,255,0.3)',
