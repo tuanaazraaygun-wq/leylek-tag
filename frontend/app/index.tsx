@@ -994,17 +994,9 @@ function PassengerDashboard({
               loading={loading}
             />
             
-            {!destination && (
-              <Text style={styles.callHintText}>
-                ⚠️ Önce hedef seçmelisiniz
-              </Text>
-            )}
-            
-            {destination && (
-              <Text style={styles.callHintText}>
-                📍 Konumunuz otomatik tespit edilecek
-              </Text>
-            )}
+            <Text style={styles.callHintText}>
+              📍 Konumunuz otomatik tespit edilecek
+            </Text>
           </View>
         ) : (
           <>
