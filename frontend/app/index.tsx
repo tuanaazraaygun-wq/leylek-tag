@@ -554,6 +554,98 @@ export default function App() {
     );
   }
 
+  // Role Selection Screen - Her girişte gösterilir
+  if (screen === 'role-select') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.logoContainer}>
+            <Ionicons name="person-circle" size={60} color="#00A67E" />
+            <Text style={styles.logoText}>Rol Seçimi</Text>
+            <Text style={styles.subtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
+          </View>
+
+          <View style={styles.formContainer}>
+            <Text style={[styles.label, { textAlign: 'center', marginBottom: 30 }]}>
+              Hoş geldiniz {user?.name}! Rolünüzü seçin:
+            </Text>
+            
+            <View style={styles.roleContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.roleButton,
+                  selectedRole === 'passenger' && styles.roleButtonActive
+                ]}
+                onPress={() => setSelectedRole('passenger')}
+              >
+                <Ionicons
+                  name="person"
+                  size={40}
+                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
+                />
+                <Text
+                  style={[
+                    styles.roleButtonText,
+                    selectedRole === 'passenger' && styles.roleButtonTextActive
+                  ]}
+                >
+                  Yolcu
+                </Text>
+                <Text style={styles.roleDescription}>
+                  Yolculuk talep et
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.roleButton,
+                  selectedRole === 'driver' && styles.roleButtonActive
+                ]}
+                onPress={() => setSelectedRole('driver')}
+              >
+                <Ionicons
+                  name="car"
+                  size={40}
+                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
+                />
+                <Text
+                  style={[
+                    styles.roleButtonText,
+                    selectedRole === 'driver' && styles.roleButtonTextActive
+                  ]}
+                >
+                  Sürücü
+                </Text>
+                <Text style={styles.roleDescription}>
+                  Yolcu taşı
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.primaryButton, !selectedRole && { opacity: 0.5 }]} 
+              onPress={() => {
+                if (selectedRole && user) {
+                  // Kullanıcının rolünü güncelle
+                  const updatedUser = { ...user, role: selectedRole };
+                  setUser(updatedUser);
+                  setScreen('dashboard');
+                }
+              }}
+              disabled={!selectedRole}
+            >
+              <Text style={styles.primaryButtonText}>Devam Et</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.secondaryButton} onPress={logout}>
+              <Text style={styles.secondaryButtonText}>Çıkış Yap</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   // Dashboard
   if (user && screen === 'dashboard') {
     return user.role === 'passenger' ? (
