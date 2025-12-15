@@ -1187,10 +1187,6 @@ function PassengerDashboard({
               onPress={handleCallButton} 
               loading={loading}
             />
-            
-            <Text style={styles.callHintText}>
-              📍 Konumunuz otomatik tespit edilecek
-            </Text>
           </View>
         ) : activeTag.status === 'matched' || activeTag.status === 'in_progress' ? null : (
           <>
