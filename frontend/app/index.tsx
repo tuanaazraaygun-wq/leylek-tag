@@ -1280,10 +1280,11 @@ function PassengerDashboard({
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
+          </View>
+        )}
 
             {/* CANLI HARİTA - Tam Ekran */}
-            {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
+            {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
                 {/* CANLI HARİTA */}
                 <View style={styles.mapView}>
