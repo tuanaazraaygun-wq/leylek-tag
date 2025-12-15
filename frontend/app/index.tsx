@@ -1674,23 +1674,29 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
                       </View>
                     </View>
                   
-                  {/* Mesafe Bilgileri - ÖNEMLİ! */}
+                  {/* Mesafe ve Süre Bilgileri - ÖNEMLİ! */}
                   <View style={styles.distanceContainer}>
                     <View style={styles.distanceBox}>
-                      <Ionicons name="car" size={20} color={COLORS.primary} />
-                      <Text style={styles.distanceLabel}>Size Mesafe</Text>
+                      <Ionicons name="car" size={20} color="#FFF" />
+                      <Text style={styles.distanceLabel}>Sürücü → Yolcu</Text>
                       <Text style={styles.distanceValue}>
-                        {request.distance_to_passenger_km ? `${request.distance_to_passenger_km} km` : 'Hesaplanıyor...'}
+                        {distanceToPassenger > 0 ? `${distanceToPassenger} km` : 'Hesaplanıyor...'}
+                      </Text>
+                      <Text style={styles.timeValue}>
+                        {timeToPassenger > 0 ? `${timeToPassenger} dk` : ''}
                       </Text>
                     </View>
                     
                     <View style={styles.distanceDivider} />
                     
                     <View style={styles.distanceBox}>
-                      <Ionicons name="navigate" size={20} color={COLORS.secondary} />
-                      <Text style={styles.distanceLabel}>Yolculuk</Text>
+                      <Ionicons name="navigate" size={20} color="#FFF" />
+                      <Text style={styles.distanceLabel}>Yolculuk Mesafesi</Text>
                       <Text style={styles.distanceValue}>
-                        {request.trip_distance_km ? `${request.trip_distance_km} km` : 'Hesaplanıyor...'}
+                        {tripDistance > 0 ? `${tripDistance} km` : 'Hesaplanıyor...'}
+                      </Text>
+                      <Text style={styles.timeValue}>
+                        {tripTime > 0 ? `${tripTime} dk` : ''}
                       </Text>
                     </View>
                   </View>
