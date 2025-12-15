@@ -1,43 +1,43 @@
 {
   "summary": {
-    "passed": 10,
-    "failed": 1,
+    "passed": 11,
+    "failed": 0,
     "total": 11,
-    "success_rate": 90.9090909090909
+    "success_rate": 100.0
   },
   "results": [
     {
       "test": "Setup Passenger User",
       "passed": true,
-      "message": "Created passenger: Test Yolcu Ahmet",
+      "message": "Using existing passenger: Test Yolcu Ahmet",
       "details": {},
-      "timestamp": "2025-12-15T11:37:10.390501"
+      "timestamp": "2025-12-15T11:38:10.371864"
     },
     {
       "test": "Setup Driver User",
       "passed": true,
-      "message": "Created driver: Test Sürücü Mehmet",
+      "message": "Using existing driver: Test Sürücü Mehmet",
       "details": {},
-      "timestamp": "2025-12-15T11:37:10.440732"
+      "timestamp": "2025-12-15T11:38:10.396094"
     },
     {
       "test": "Update Driver Location",
       "passed": true,
       "message": "Driver location set to Adana (37.1, 35.1)",
       "details": {},
-      "timestamp": "2025-12-15T11:37:10.489694"
+      "timestamp": "2025-12-15T11:38:10.445180"
     },
     {
       "test": "Create TAG with Coordinates",
       "passed": true,
       "message": "TAG created with coordinates saved: True",
       "details": {
-        "tag_id": "693ff2e67594480d34171d96",
+        "tag_id": "693ff3225e9fc700b34eb201",
         "pickup_coords": "(37.0, 35.0)",
         "dropoff_coords": "(41.0, 29.0)",
         "coordinates_match": true
       },
-      "timestamp": "2025-12-15T11:37:10.503738"
+      "timestamp": "2025-12-15T11:38:10.463270"
     },
     {
       "test": "Distance Calculation - Driver to Passenger",
@@ -50,7 +50,7 @@
         "expected_trip_range": "500-600km (Adana to Istanbul)",
         "calculation_working": true
       },
-      "timestamp": "2025-12-15T11:37:10.521727"
+      "timestamp": "2025-12-15T11:38:10.483253"
     },
     {
       "test": "Distance Values Reasonableness",
@@ -60,20 +60,22 @@
         "distance_to_passenger_reasonable": true,
         "trip_distance_reasonable": true
       },
-      "timestamp": "2025-12-15T11:37:10.521759"
+      "timestamp": "2025-12-15T11:38:10.483285"
     },
     {
       "test": "Driver Send Offer",
-      "passed": false,
-      "message": "Offer sent successfully: False",
+      "passed": true,
+      "message": "Offer sent successfully: True",
       "details": {
         "offer_price": 850.0,
         "estimated_time": 480,
         "response": {
-          "error": "500, message='Attempt to decode JSON with unexpected mimetype: text/plain; charset=utf-8', url='https://passenger-bid.preview.emergentagent.com/api/driver/send-offer?user_id=693ff2e67594480d34171d95'"
+          "success": true,
+          "message": "Teklif gönderildi",
+          "offer_id": "693ff3225e9fc700b34eb202"
         }
       },
-      "timestamp": "2025-12-15T11:37:10.539397"
+      "timestamp": "2025-12-15T11:38:10.559585"
     },
     {
       "test": "Passenger Update Destination",
@@ -87,7 +89,7 @@
           "message": "Hedef başarıyla güncellendi"
         }
       },
-      "timestamp": "2025-12-15T11:37:10.548656"
+      "timestamp": "2025-12-15T11:38:10.570671"
     },
     {
       "test": "Destination Update Verification",
@@ -97,20 +99,20 @@
         "updated_location": "Taksim, İstanbul",
         "updated_coords": "(41.05, 28.98)"
       },
-      "timestamp": "2025-12-15T11:37:10.560788"
+      "timestamp": "2025-12-15T11:38:10.580017"
     },
     {
       "test": "Passenger Cancel TAG",
       "passed": true,
       "message": "TAG cancelled successfully: True",
       "details": {
-        "cancelled_tag_id": "693ff2e67594480d34171d96",
+        "cancelled_tag_id": "693ff3225e9fc700b34eb201",
         "response": {
           "success": true,
           "message": "Çağrı başarıyla iptal edildi"
         }
       },
-      "timestamp": "2025-12-15T11:37:10.610650"
+      "timestamp": "2025-12-15T11:38:10.629372"
     },
     {
       "test": "TAG Cancellation Verification",
@@ -122,8 +124,8 @@
           "tag": null
         }
       },
-      "timestamp": "2025-12-15T11:37:10.618139"
+      "timestamp": "2025-12-15T11:38:10.639158"
     }
   ],
-  "timestamp": "2025-12-15T11:37:10.618280"
+  "timestamp": "2025-12-15T11:38:10.639317"
 }
