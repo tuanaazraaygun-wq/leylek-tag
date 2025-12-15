@@ -62,6 +62,7 @@ class User(BaseModel):
     rating: float = 5.0
     total_ratings: int = 0
     total_trips: int = 0
+    is_premium: bool = False  # Premium üyelik durumu
     driver_details: Optional[DriverDetails] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_active: datetime = Field(default_factory=datetime.utcnow)
