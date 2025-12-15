@@ -1223,55 +1223,41 @@ function PassengerDashboard({
               )}
             </View>
 
-            {/* CANLI HARİTA - Eşleşildiğinde */}
+            {/* CANLI HARİTA - Tam Ekran */}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
-              <View style={styles.liveMapContainer}>
-                <View style={styles.mapPlaceholder}>
-                  <Text style={styles.mapPlaceholderIcon}>🗺️</Text>
-                  <Text style={styles.mapPlaceholderTitle}>Canlı Harita</Text>
-                  <Text style={styles.mapPlaceholderText}>{user.gender === 'female' ? '👩' : '🧑'} Sen</Text>
-                  <Text style={styles.mapPlaceholderText}>🚗 {activeTag.driver_name}</Text>
-                  <Text style={styles.mapPlaceholderNote}>Harita özelliği yakında eklenecek</Text>
-                </View>
-                
-                {/* Alt Bilgi Paneli */}
-                <View style={styles.mapInfoPanel}>
-                  <View style={styles.driverInfoBox}>
-                    <View style={styles.driverAvatarMap}>
-                      <Text style={styles.driverAvatarMapText}>
-                        {activeTag.driver_name?.charAt(0) || '?'}
-                      </Text>
-                    </View>
-                    <View style={styles.driverDetailsMap}>
-                      <Text style={styles.driverNameMap}>{activeTag.driver_name}</Text>
-                      <Text style={styles.driverStatusMap}>
-                        {activeTag.status === 'matched' ? '📍 Yolda' : '🚗 Yolculuk Devam Ediyor'}
-                      </Text>
-                    </View>
-                    <TouchableOpacity 
-                      style={styles.callButtonMap}
-                      onPress={handleVoiceCall}
-                      disabled={calling}
-                    >
-                      <Ionicons name="call" size={28} color="#FFF" />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.tripInfoMap}>
-                    <View style={styles.tripInfoItem}>
-                      <Ionicons name="cash" size={20} color={COLORS.primary} />
-                      <Text style={styles.tripInfoText}>₺{activeTag.final_price}</Text>
-                    </View>
-                    <View style={styles.tripInfoItem}>
-                      <Ionicons name="location" size={20} color="#00A67E" />
-                      <Text style={styles.tripInfoText}>{activeTag.pickup_location}</Text>
-                    </View>
-                    <View style={styles.tripInfoItem}>
-                      <Ionicons name="flag" size={20} color="#FF5A5F" />
-                      <Text style={styles.tripInfoText}>{activeTag.dropoff_location}</Text>
-                    </View>
+              <View style={styles.fullScreenMapContainer}>
+                {/* Harita göstergesi - gerçek harita mobilde çalışacak */}
+                <View style={styles.mapView}>
+                  <View style={styles.mapPlaceholderFull}>
+                    <Ionicons name="location" size={60} color={COLORS.primary} />
+                    <Text style={styles.mapPlaceholderTitle}>🗺️ Canlı Konum Takibi</Text>
+                    <Text style={styles.mapIconText}>{user.gender === 'female' ? '👩' : '🧑'} Sen</Text>
+                    <Text style={styles.mapIconText}>🚗 {activeTag.driver_name}</Text>
+                    <Text style={styles.mapPlaceholderNote}>Mobil uygulamada canlı harita aktif</Text>
                   </View>
                 </View>
+
+                {/* Üst Bilgi - Süre */}
+                <View style={styles.mapTopInfo}>
+                  <View style={styles.meetingTimeBox}>
+                    <Ionicons name="time" size={24} color="#FFF" />
+                    <Text style={styles.meetingTimeText}>5 dakika sonra buluşacaksınız</Text>
+                  </View>
+                </View>
+
+                {/* Ara Butonu - Sağ Alt */}
+                <TouchableOpacity 
+                  style={styles.floatingCallButton}
+                  onPress={handleVoiceCall}
+                  disabled={calling}
+                >
+                  <LinearGradient
+                    colors={['#10B981', '#059669']}
+                    style={styles.floatingCallGradient}
+                  >
+                    <Ionicons name="call" size={32} color="#FFF" />
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
             ) : null}
           </>
