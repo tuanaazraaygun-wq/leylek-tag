@@ -2152,11 +2152,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  passengerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-  },
+  // Removed duplicate passengerName - keeping the later version
   premiumBadgeSmall: {
     fontSize: 10,
     fontWeight: 'bold',
