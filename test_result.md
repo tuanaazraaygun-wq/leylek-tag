@@ -130,11 +130,11 @@ backend:
 
   - task: "Distance calculation in driver requests"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
-    stuck_count: 1
+    stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: false
         agent: "user"
@@ -142,6 +142,9 @@ backend:
       - working: "NA"
         agent: "main"
         comment: "Need to verify coordinates are being saved correctly when TAG is created"
+      - working: true
+        agent: "testing"
+        comment: "✅ RESOLVED: Distance calculation is working perfectly! Driver to passenger: 14.22km, Trip distance: 683.31km (Adana to Istanbul). Coordinates are properly saved and distances calculated using geopy.distance.geodesic."
 
   - task: "Passenger cancel TAG endpoint"
     implemented: true
