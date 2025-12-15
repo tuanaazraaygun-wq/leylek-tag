@@ -1512,14 +1512,13 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
       <ScrollView style={styles.content}>
         {activeTag ? (
           <View style={styles.liveMapContainer}>
-            <LiveMap
-              userLocation={userLocation}
-              otherLocation={activeTag.passenger_location}
-              userIcon="🚗"
-              otherIcon={activeTag.passenger_gender === 'female' ? '👩' : '🧑'}
-              userName="Sen"
-              otherName={activeTag.passenger_name}
-            />
+            <View style={styles.mapPlaceholder}>
+              <Text style={styles.mapPlaceholderIcon}>🗺️</Text>
+              <Text style={styles.mapPlaceholderTitle}>Canlı Harita</Text>
+              <Text style={styles.mapPlaceholderText}>🚗 Sen</Text>
+              <Text style={styles.mapPlaceholderText}>{activeTag.passenger_gender === 'female' ? '👩' : '🧑'} {activeTag.passenger_name}</Text>
+              <Text style={styles.mapPlaceholderNote}>Harita özelliği yakında eklenecek</Text>
+            </View>
             
             {/* Alt Bilgi Paneli */}
             <View style={styles.mapInfoPanel}>
