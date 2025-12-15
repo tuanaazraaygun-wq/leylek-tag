@@ -731,24 +731,23 @@ function FullScreenOfferCard({
             </TouchableOpacity>
           </View>
 
-          {/* Kaydırma İpuçları */}
-          <View style={styles.swipeHints}>
-            {!isLast && (
-              <View style={styles.swipeHintUp}>
-                <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.swipeHintTextSmall}>Sonraki</Text>
-              </View>
-            )}
+          {/* Navigation Butonları */}
+          <View style={styles.navigationButtons}>
             {!isFirst && (
-              <View style={styles.swipeHintDown}>
-                <Text style={styles.swipeHintTextSmall}>Önceki</Text>
-                <Ionicons name="chevron-down" size={20} color="rgba(255,255,255,0.6)" />
-              </View>
+              <TouchableOpacity style={styles.navButton} onPress={onSwipeDown}>
+                <Ionicons name="chevron-up" size={32} color="#FFF" />
+                <Text style={styles.navButtonText}>Önceki</Text>
+              </TouchableOpacity>
+            )}
+            {!isLast && (
+              <TouchableOpacity style={styles.navButton} onPress={onSwipeUp}>
+                <Text style={styles.navButtonText}>Sonraki</Text>
+                <Ionicons name="chevron-down" size={32} color="#FFF" />
+              </TouchableOpacity>
             )}
           </View>
         </LinearGradient>
-      </Animated.View>
-    </PanGestureHandler>
+      </View>
   );
 }
 
