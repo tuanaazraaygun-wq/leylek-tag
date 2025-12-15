@@ -78,10 +78,21 @@ export default function LiveMapView({
       style={styles.map}
       provider={PROVIDER_GOOGLE}
       initialRegion={initialRegion}
+      camera={{
+        center: {
+          latitude: userLocation?.latitude || 41.0082,
+          longitude: userLocation?.longitude || 28.9784,
+        },
+        pitch: 45, // 3D görünüm
+        heading: 0,
+        altitude: 1000,
+        zoom: 14,
+      }}
       showsUserLocation={false}
       showsMyLocationButton={true}
       showsCompass={true}
       showsTraffic={false}
+      showsBuildings={true}
     >
       {/* User Marker */}
       {userLocation && (
