@@ -1035,6 +1035,10 @@ function PassengerDashboard({
   const [showArrowHint, setShowArrowHint] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
   
+  // Sesli arama state'leri
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
+  const [selectedDriverName, setSelectedDriverName] = useState('');
+  
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
   const destinationButtonScale = useRef(new Animated.Value(1)).current;
