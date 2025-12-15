@@ -1955,7 +1955,6 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
         </ScrollView>
       )}
 
-      {/* Teklif Gönderme Modalı */}
       <Modal
         visible={offerModalVisible}
         transparent={true}
