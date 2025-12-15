@@ -1227,59 +1227,14 @@ function PassengerDashboard({
             {/* CANLI HARİTA - Eşleşildiğinde */}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.liveMapContainer}>
-                {Platform.OS !== 'web' ? (
-                  <MapView
-                    style={styles.liveMap}
-                    provider={PROVIDER_GOOGLE}
-                    initialRegion={{
-                      latitude: userLocation?.latitude || 41.0082,
-                      longitude: userLocation?.longitude || 28.9784,
-                      latitudeDelta: 0.05,
-                      longitudeDelta: 0.05,
-                    }}
-                    showsUserLocation={true}
-                    showsMyLocationButton={true}
-                  >
-                    {/* Yolcu Marker - Kadın/Erkek */}
-                    {userLocation && (
-                      <Marker
-                        coordinate={{
-                          latitude: userLocation.latitude,
-                          longitude: userLocation.longitude,
-                        }}
-                        title="Sen"
-                        description="Yolcu"
-                      >
-                        <View style={styles.markerContainer}>
-                          <Text style={styles.markerIcon}>
-                            {user.gender === 'female' ? '👩' : '🧑'}
-                          </Text>
-                        </View>
-                      </Marker>
-                    )}
-                    
-                    {/* Sürücü Marker - Araç */}
-                    {activeTag.driver_location && (
-                      <Marker
-                        coordinate={{
-                          latitude: activeTag.driver_location.latitude || 41.0082,
-                          longitude: activeTag.driver_location.longitude || 28.9784,
-                        }}
-                        title={activeTag.driver_name}
-                        description="Sürücü"
-                      >
-                        <View style={styles.markerContainer}>
-                          <Text style={styles.markerIcon}>🚗</Text>
-                        </View>
-                      </Marker>
-                    )}
-                  </MapView>
-                ) : (
-                  <View style={styles.webMapPlaceholder}>
-                    <Text style={styles.webMapText}>🗺️ Harita</Text>
-                    <Text style={styles.webMapSubtext}>Web preview'da harita desteklenmiyor</Text>
-                  </View>
-                )}
+                <LiveMap
+                  userLocation={userLocation}
+                  otherLocation={activeTag.driver_location}
+                  userIcon={user.gender === 'female' ? '👩' : '🧑'}
+                  otherIcon="🚗"
+                  userName="Sen"
+                  otherName={activeTag.driver_name}
+                />
                 
                 {/* Alt Bilgi Paneli */}
                 <View style={styles.mapInfoPanel}>
