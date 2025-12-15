@@ -2100,12 +2100,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12
   },
-  callButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8
-  },
+  // Removed duplicate callButtonText - keeping the animated version
   callNote: {
     fontSize: 12,
     color: '#666',
