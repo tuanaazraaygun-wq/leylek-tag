@@ -740,7 +740,23 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
 }
 
 // ==================== PASSENGER DASHBOARD ====================
-function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
+function PassengerDashboard({ 
+  user, 
+  logout,
+  destination,
+  setDestination,
+  userLocation,
+  showDestinationPicker,
+  setShowDestinationPicker
+}: { 
+  user: User; 
+  logout: () => void;
+  destination: any;
+  setDestination: any;
+  userLocation: any;
+  showDestinationPicker: boolean;
+  setShowDestinationPicker: (show: boolean) => void;
+}) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(false);
