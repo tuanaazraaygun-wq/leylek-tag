@@ -411,6 +411,40 @@ async def update_destination(user_id: str, request: UpdateDestinationRequest):
     logger.info(f"✅ Hedef güncellendi: {request.tag_id} -> {request.dropoff_location}")
     return {"success": True, "message": "Hedef başarıyla güncellendi"}
 
+@api_router.get("/passenger/driver-location/{driver_id}")
+async def get_driver_location(driver_id: str):
+    """Sürücünün canlı konumunu al"""
+    driver = await db_instance.find_one("users", {"_id": ObjectId(driver_id)})
+    if not driver:
+        return {"location": None}
+    
+    location = driver.get("location")
+    if location and "coordinates" in location:
+        return {
+            "location": {
+                "latitude": location["coordinates"][1],
+                "longitude": location["coordinates"][0]
+            }
+        }
+    return {"location": None}
+
+@api_router.get("/driver/passenger-location/{passenger_id}")
+async def get_passenger_location(passenger_id: str):
+    """Yolcunun canlı konumunu al"""
+    passenger = await db_instance.find_one("users", {"_id": ObjectId(passenger_id)})
+    if not passenger:
+        return {"location": None}
+    
+    location = passenger.get("location")
+    if location and "coordinates" in location:
+        return {
+            "location": {
+                "latitude": location["coordinates"][1],
+                "longitude": location["coordinates"][0]
+            }
+        }
+    return {"location": None}
+
 @api_router.get("/passenger/active-tag")
 async def get_passenger_active_tag(user_id: str):
     """Aktif TAG getir"""
