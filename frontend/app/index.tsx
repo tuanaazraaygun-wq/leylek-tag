@@ -564,6 +564,107 @@ export default function App() {
   return null;
 }
 
+// ==================== SWIPEABLE OFFER CARD ====================
+function SwipeableOfferCard({ 
+  offer, 
+  onSwipeUp, 
+  onAccept, 
+  isLast 
+}: { 
+  offer: any; 
+  onSwipeUp: () => void; 
+  onAccept: () => void;
+  isLast: boolean;
+}) {
+  const translateY = useSharedValue(0);
+  const opacity = useSharedValue(1);
+
+  const gestureHandler = useAnimatedGestureHandler({
+    onStart: (_, ctx: any) => {
+      ctx.startY = translateY.value;
+    },
+    onActive: (event, ctx) => {
+      translateY.value = ctx.startY + event.translationY;
+      
+      // Sadece yukarı kaydırma
+      if (translateY.value < 0) {
+        opacity.value = 1 + (translateY.value / SCREEN_HEIGHT);
+      }
+    },
+    onEnd: (event) => {
+      // Yukarı kaydırma eşiği: -100px
+      if (translateY.value < -100) {
+        translateY.value = withTiming(-SCREEN_HEIGHT, { duration: 300 });
+        opacity.value = withTiming(0, { duration: 300 });
+        runOnJS(onSwipeUp)();
+      } else {
+        translateY.value = withSpring(0);
+        opacity.value = withSpring(1);
+      }
+    },
+  });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: translateY.value }],
+      opacity: opacity.value,
+    };
+  });
+
+  return (
+    <PanGestureHandler onGestureEvent={gestureHandler}>
+      <Animated.View style={[styles.swipeCard, animatedStyle]}>
+        <TouchableOpacity 
+          style={styles.swipeCardInner}
+          onPress={onAccept}
+          activeOpacity={0.95}
+        >
+          <LinearGradient
+            colors={[COLORS.primary, '#5BB8FF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.swipeCardGradient}
+          >
+            {/* Şoför Bilgileri */}
+            <View style={styles.swipeCardHeader}>
+              <View style={styles.driverAvatar}>
+                <Text style={styles.driverAvatarText}>
+                  {offer.driver_name?.charAt(0) || '?'}
+                </Text>
+              </View>
+              <View style={styles.driverInfo}>
+                <Text style={styles.swipeDriverName}>{offer.driver_name}</Text>
+                <Text style={styles.swipeDriverRating}>⭐ {offer.driver_rating} · 🚗 {offer.estimated_time} dk</Text>
+              </View>
+            </View>
+
+            {/* Fiyat */}
+            <View style={styles.swipePriceContainer}>
+              <Text style={styles.swipePriceLabel}>Teklif Fiyatı</Text>
+              <Text style={styles.swipePrice}>₺{offer.price}</Text>
+            </View>
+
+            {/* Notlar */}
+            {offer.notes && (
+              <View style={styles.swipeNotesContainer}>
+                <Text style={styles.swipeNotes}>💬 {offer.notes}</Text>
+              </View>
+            )}
+
+            {/* Swipe Hint */}
+            <View style={styles.swipeHint}>
+              <Ionicons name="chevron-up" size={24} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.swipeHintText}>
+                {isLast ? 'Tıkla & Seç' : 'Yukarı kaydır veya tıkla'}
+              </Text>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+      </Animated.View>
+    </PanGestureHandler>
+  );
+}
+
 // ==================== ANIMATED PULSE BUTTON ====================
 function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
   const scale = useSharedValue(1);
