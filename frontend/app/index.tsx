@@ -1759,7 +1759,6 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
         </TouchableOpacity>
       </View>
 
-      <>
       {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
         <View style={styles.fullScreenContainer}>
           {/* CANLI 3D HARİTA - Yolcu ile aynı */}
