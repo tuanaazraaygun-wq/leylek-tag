@@ -89,6 +89,14 @@ export default function App() {
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [locationPermission, setLocationPermission] = useState(false);
+  
+  // Destination states
+  const [destination, setDestination] = useState<{
+    address: string;
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [showDestinationPicker, setShowDestinationPicker] = useState(false);
 
   useEffect(() => {
     loadUser();
