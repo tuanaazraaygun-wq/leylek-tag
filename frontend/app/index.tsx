@@ -1954,8 +1954,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
                 );
               })
             )}
-              </View>
-            </>
+          </View>
           )}
         </ScrollView>
 
