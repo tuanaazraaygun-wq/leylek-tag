@@ -830,12 +830,8 @@ function FullScreenOfferCard({
             </View>
           </View>
 
-          {/* Kaydırılabilir İçerik */}
-          <ScrollView 
-            style={styles.offerScrollContent}
-            contentContainerStyle={styles.offerScrollContainer}
-            showsVerticalScrollIndicator={false}
-          >
+          {/* Tüm İçerik - Kaydırmasız, Tam Sığıyor */}
+          <View style={styles.offerContentFlex}>
             {/* Araç - Hareketli */}
             <Animated.View style={[styles.vehicleSection, { transform: [{ translateY: carBounce }] }]}>
               {offer.is_premium && offer.vehicle_photo ? (
@@ -890,7 +886,7 @@ function FullScreenOfferCard({
                 <Text style={styles.priceLarge}>₺{offer.price}</Text>
               </View>
             </View>
-          </ScrollView>
+          </View>
 
           {/* HEMEN GEL Butonu - SABİT EN ALTTA */}
           <View style={styles.fixedBottomButton}>
