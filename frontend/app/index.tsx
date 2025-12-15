@@ -1215,10 +1215,10 @@ function PassengerDashboard({
 
       const data = await response.json();
       if (data.success) {
-        // Sesli aramayı başlat
+        // Sadece sürücü adını kaydet, arama başlatma
         setSelectedDriverName(selectedOffer.driver_name);
-        setShowVoiceCall(true);
         loadActiveTag();
+        Alert.alert('Başarılı', 'Eşleşme sağlandı! Haritada konumları görebilirsiniz.');
       }
     } catch (error) {
       Alert.alert('Hata', 'Teklif kabul edilemedi');
