@@ -1188,49 +1188,45 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
     }
   };
 
-  const handleSendOffer = async (tagId: string) => {
-    Alert.prompt(
-      'Teklif Gönder',
-      'Fiyat teklifinizi girin (₺)',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Gönder',
-          onPress: async (price) => {
-            if (!price || isNaN(Number(price))) {
-              Alert.alert('Hata', 'Geçerli bir fiyat girin');
-              return;
-            }
+  const [offerModalVisible, setOfferModalVisible] = useState(false);
+  const [selectedTagForOffer, setSelectedTagForOffer] = useState<string | null>(null);
+  const [offerPrice, setOfferPrice] = useState('');
 
-            try {
-              const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  tag_id: tagId,
-                  price: Number(price),
-                  estimated_time: 15,
-                  notes: 'Hemen geliyorum!'
-                })
-              });
+  const handleSendOffer = (tagId: string) => {
+    setSelectedTagForOffer(tagId);
+    setOfferPrice('');
+    setOfferModalVisible(true);
+  };
 
-              const data = await response.json();
-              if (data.success) {
-                Alert.alert('Başarılı', 'Teklifiniz gönderildi');
-                loadRequests();
-              } else {
-                Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
-              }
-            } catch (error) {
-              Alert.alert('Hata', 'Teklif gönderilemedi');
-            }
-          }
-        }
-      ],
-      'plain-text',
-      '',
-      'numeric'
-    );
+  const submitOffer = async () => {
+    if (!offerPrice || isNaN(Number(offerPrice))) {
+      Alert.alert('Hata', 'Geçerli bir fiyat girin');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: selectedTagForOffer,
+          price: Number(offerPrice),
+          estimated_time: 15,
+          notes: 'Hemen geliyorum!'
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        Alert.alert('Başarılı', 'Teklifiniz gönderildi');
+        setOfferModalVisible(false);
+        loadRequests();
+      } else {
+        Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Teklif gönderilemedi');
+    }
   };
 
   const handleStartTag = async () => {
