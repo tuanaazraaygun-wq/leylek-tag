@@ -686,17 +686,17 @@ function FullScreenOfferCard({
   return (
       <View style={styles.fullScreenCard}>
         <LinearGradient
-          colors={['#0F172A', '#1E293B', '#334155']}
+          colors={['#1e40af', '#3b82f6', '#60a5fa']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.fullScreenGradient}
         >
-          {/* Sol Üst: Sayfa Göstergesi */}
-          <View style={styles.pageIndicatorLeft}>
-            <Text style={styles.pageIndicatorText}>{currentIndex + 1} / {totalOffers}</Text>
+          {/* Sol Üst: Sadece Rakam */}
+          <View style={styles.offerNumberCircle}>
+            <Text style={styles.offerNumberText}>{currentIndex + 1}</Text>
           </View>
 
-          {/* Sağ Üst: Şoför Profili */}
+          {/* Sağ Üst: Şoför Profili + 10 Yıldız */}
           <View style={styles.driverProfileRight}>
             <View style={styles.driverAvatarSmall}>
               <Text style={styles.driverAvatarSmallText}>
@@ -704,7 +704,14 @@ function FullScreenOfferCard({
               </Text>
             </View>
             <Text style={styles.driverNameSmall}>{offer.driver_name}</Text>
-            <Text style={styles.driverRatingSmall}>⭐ {offer.driver_rating}</Text>
+            <Text style={styles.ratingLabel}>Puanlama</Text>
+            <View style={styles.starsContainer}>
+              {[...Array(10)].map((_, i) => (
+                <Text key={i} style={styles.starIcon}>
+                  {i < Math.round(offer.driver_rating * 2) ? '⭐' : '☆'}
+                </Text>
+              ))}
+            </View>
           </View>
 
           {/* Araç - Hareketli */}
