@@ -588,6 +588,8 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     vehicle_photo = driver_details.get("vehicle_photo")
     is_premium = user.get("is_premium", False)
     
+    from datetime import datetime, timedelta
+    
     offer_data = Offer(
         tag_id=request.tag_id,
         driver_id=user_id,
@@ -604,6 +606,9 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     offer_data["vehicle_color"] = vehicle_color
     offer_data["vehicle_photo"] = vehicle_photo
     offer_data["is_premium"] = is_premium
+    
+    # 10 dakika sonra expire olacak
+    offer_data["expires_at"] = datetime.utcnow() + timedelta(minutes=OFFER_EXPIRY_MINUTES)
     
     offer_id = await db_instance.insert_one("offers", offer_data)
     
