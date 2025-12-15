@@ -1469,14 +1469,58 @@ function PassengerDashboard({
                     onPress={() => {
                       Alert.alert(
                         'Yolculuğu Tamamla',
-                        'Yolcuyu hedefe ulaştırdınız mı?',
+                        'Sürücü ile buluştunuz mu?',
                         [
-                          { text: 'Hayır', style: 'cancel' },
+                          { 
+                            text: 'Hayır, Buluşmadık',
+                            style: 'destructive',
+                            onPress: () => {
+                              Alert.alert(
+                                '⚠️ Uyarı: Ceza Uygulanacak',
+                                'Karşı taraf onaylamadan bitirirseniz puanınız düşecek. Devam etmek istiyor musunuz?',
+                                [
+                                  { text: 'İptal', style: 'cancel' },
+                                  {
+                                    text: 'Evet, Bitir',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      try {
+                                        const response = await fetch(
+                                          `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=false`,
+                                          { method: 'POST' }
+                                        );
+                                        const data = await response.json();
+                                        if (data.success) {
+                                          Alert.alert('Tamamlandı', data.message);
+                                          setActiveTag(null);
+                                          loadActiveTag();
+                                        }
+                                      } catch (error) {
+                                        Alert.alert('Hata', 'İşlem başarısız');
+                                      }
+                                    }
+                                  }
+                                ]
+                              );
+                            }
+                          },
                           {
                             text: 'Evet, Tamamla',
                             onPress: async () => {
-                              // TODO: Backend endpoint ekle
-                              Alert.alert('Başarılı', 'Yolculuk tamamlandı!');
+                              try {
+                                const response = await fetch(
+                                  `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
+                                  { method: 'POST' }
+                                );
+                                const data = await response.json();
+                                if (data.success) {
+                                  Alert.alert('Başarılı', 'Yolculuk tamamlandı!');
+                                  setActiveTag(null);
+                                  loadActiveTag();
+                                }
+                              } catch (error) {
+                                Alert.alert('Hata', 'İşlem başarısız');
+                              }
                             }
                           }
                         ]
