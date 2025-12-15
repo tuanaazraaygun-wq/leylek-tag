@@ -1183,12 +1183,11 @@ function PassengerDashboard({
               onSubmitEditing={(e) => {
                 const address = e.nativeEvent.text;
                 if (address) {
-                  setDestination({
-                    address: address,
-                    latitude: 41.0082 + Math.random() * 0.1,
-                    longitude: 28.9784 + Math.random() * 0.1
-                  });
-                  setShowDestinationPicker(false);
+                  handleDestinationSelect(
+                    address,
+                    41.0082 + Math.random() * 0.1,
+                    28.9784 + Math.random() * 0.1
+                  );
                 }
               }}
             />
@@ -1207,12 +1206,11 @@ function PassengerDashboard({
                   key={index}
                   style={styles.popularItem}
                   onPress={() => {
-                    setDestination({
-                      address: place,
-                      latitude: 41.0082 + Math.random() * 0.1,
-                      longitude: 28.9784 + Math.random() * 0.1
-                    });
-                    setShowDestinationPicker(false);
+                    handleDestinationSelect(
+                      place,
+                      41.0082 + Math.random() * 0.1,
+                      28.9784 + Math.random() * 0.1
+                    );
                   }}
                 >
                   <Ionicons name="location-outline" size={20} color={COLORS.primary} />
