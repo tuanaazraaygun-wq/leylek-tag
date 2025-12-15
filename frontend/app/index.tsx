@@ -847,14 +847,33 @@ function FullScreenOfferCard({
             </View>
           </Animated.View>
 
-          {/* Mesaj */}
+          {/* Mesaj - BÜYÜK VE EFEKTLİ */}
           <View style={styles.messageSection}>
-            <Text style={styles.messageText}>
-              📍 {offer.estimated_time || 5} dakikada gelirim
-            </Text>
-            <Text style={styles.messageText}>
-              🚗 {Math.round((offer.estimated_time || 5) * 3)} dakikada gideriz
-            </Text>
+            <TrafficLightBorder>
+              <View style={styles.timeInfoContainer}>
+                <View style={styles.timeInfoRow}>
+                  <Text style={styles.timeEmoji}>📍</Text>
+                  <View style={styles.timeTextContainer}>
+                    <Text style={styles.timeTextLarge}>
+                      {offer.estimated_time || 5} dakikada
+                    </Text>
+                    <Text style={styles.timeTextSubLarge}>gelirim</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.timeDivider} />
+                
+                <View style={styles.timeInfoRow}>
+                  <Text style={styles.timeEmoji}>🚗</Text>
+                  <View style={styles.timeTextContainer}>
+                    <Text style={styles.timeTextLarge}>
+                      {Math.round((offer.estimated_time || 5) * 3)} dakikada
+                    </Text>
+                    <Text style={styles.timeTextSubLarge}>gideriz</Text>
+                  </View>
+                </View>
+              </View>
+            </TrafficLightBorder>
           </View>
 
           {/* Fiyat */}
