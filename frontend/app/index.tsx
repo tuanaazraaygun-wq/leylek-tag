@@ -1237,19 +1237,24 @@ function PassengerDashboard({
                   </View>
                 </View>
 
-                {/* Ara Butonu - Sağ Alt */}
-                <TouchableOpacity 
-                  style={styles.floatingCallButton}
-                  onPress={handleVoiceCall}
-                  disabled={calling}
-                >
-                  <LinearGradient
-                    colors={['#10B981', '#059669']}
-                    style={styles.floatingCallGradient}
+                {/* Büyük Ara Butonu - Sağ Alt - Hareketli */}
+                <Animated.View style={[styles.floatingCallButton, { transform: [{ scale: buttonPulse }] }]}>
+                  <TouchableOpacity 
+                    onPress={handleVoiceCall}
+                    disabled={calling}
+                    activeOpacity={0.8}
                   >
-                    <Ionicons name="call" size={32} color="#FFF" />
-                  </LinearGradient>
-                </TouchableOpacity>
+                    <LinearGradient
+                      colors={['#10B981', '#059669', '#047857']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.floatingCallGradient}
+                    >
+                      <Ionicons name="call" size={40} color="#FFF" />
+                      {calling && <Text style={styles.callingText}>Aranıyor...</Text>}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
               </View>
             ) : null}
           </>
