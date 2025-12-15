@@ -555,7 +555,15 @@ export default function App() {
   // Dashboard
   if (user && screen === 'dashboard') {
     return user.role === 'passenger' ? (
-      <PassengerDashboard user={user} logout={logout} />
+      <PassengerDashboard 
+        user={user} 
+        logout={logout}
+        destination={destination}
+        setDestination={setDestination}
+        userLocation={userLocation}
+        showDestinationPicker={showDestinationPicker}
+        setShowDestinationPicker={setShowDestinationPicker}
+      />
     ) : (
       <DriverDashboard user={user} logout={logout} />
     );
