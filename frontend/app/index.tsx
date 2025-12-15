@@ -1171,15 +1171,13 @@ function PassengerDashboard({
               📍 Konumunuz otomatik tespit edilecek
             </Text>
           </View>
-        ) : (
+        ) : activeTag.status === 'matched' || activeTag.status === 'in_progress' ? null : (
           <>
             <View style={styles.card}>
               <View style={styles.tagStatusBadge}>
                 <Text style={styles.tagStatusText}>
                   {activeTag.status === 'pending' && '⏳ Teklifler Bekleniyor'}
                   {activeTag.status === 'offers_received' && '📬 Teklifler Alındı'}
-                  {activeTag.status === 'matched' && '✅ Eşleşildi'}
-                  {activeTag.status === 'in_progress' && '🚗 Yolculuk Devam Ediyor'}
                   {activeTag.status === 'completed' && '✔️ Tamamlandı'}
                 </Text>
               </View>
@@ -1193,13 +1191,6 @@ function PassengerDashboard({
                 <Ionicons name="flag" size={20} color="#FF5A5F" />
                 <Text style={styles.locationText}>{activeTag.dropoff_location}</Text>
               </View>
-
-              {activeTag.driver_name && (
-                <View style={styles.driverInfo}>
-                  <Text style={styles.driverName}>Sürücü: {activeTag.driver_name}</Text>
-                  <Text style={styles.driverPrice}>Fiyat: ₺{activeTag.final_price}</Text>
-                </View>
-              )}
 
               {/* Hedef Düzenle ve Çağrıyı İptal Et Butonları */}
               {(activeTag.status === 'pending' || activeTag.status === 'offers_received') && (
@@ -1224,6 +1215,7 @@ function PassengerDashboard({
             </View>
 
             {/* CANLI HARİTA - Tam Ekran */}
+            )}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.fullScreenMapContainer}>
                 {/* Harita göstergesi - gerçek harita mobilde çalışacak */}
