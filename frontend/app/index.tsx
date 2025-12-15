@@ -1586,17 +1586,49 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
             {requests.length === 0 ? (
               <Text style={styles.emptyText}>Henüz talep yok</Text>
             ) : (
-              requests.map((request) => (
+              requests.map((request: any, index: number) => {
+                // Renkli gradient seçimi
+                const gradientColors = [
+                  ['#667eea', '#764ba2'],
+                  ['#f093fb', '#f5576c'],
+                  ['#4facfe', '#00f2fe'],
+                  ['#43e97b', '#38f9d7'],
+                  ['#fa709a', '#fee140'],
+                ];
+                const gradient = gradientColors[index % gradientColors.length];
+                
+                return (
                 <View key={request.id} style={styles.requestCard}>
-                  {/* Yolcu Bilgisi */}
-                  <View style={styles.requestHeader}>
-                    <View style={styles.passengerAvatar}>
-                      <Text style={styles.passengerAvatarText}>
-                        {request.passenger_name?.charAt(0) || '?'}
-                      </Text>
+                  <LinearGradient
+                    colors={gradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.requestCardGradient}
+                  >
+                    {/* Yolcu Bilgileri */}
+                    <View style={styles.requestHeader}>
+                      {request.is_premium && request.profile_photo ? (
+                        <Image 
+                          source={{ uri: request.profile_photo }}
+                          style={styles.premiumPassengerPhoto}
+                        />
+                      ) : (
+                        <View style={styles.passengerAvatar}>
+                          <Text style={styles.passengerAvatarText}>
+                            {request.passenger_name?.charAt(0) || '?'}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.passengerInfo}>
+                        <View style={styles.passengerNameContainer}>
+                          <Text style={styles.passengerName}>{request.passenger_name}</Text>
+                          {request.is_premium && (
+                            <Text style={styles.premiumBadgeSmall}>⭐ PREMIUM</Text>
+                          )}
+                        </View>
+                        <Text style={styles.passengerRating}>⭐ 5.0</Text>
+                      </View>
                     </View>
-                    <Text style={styles.requestPassenger}>{request.passenger_name}</Text>
-                  </View>
                   
                   {/* Mesafe Bilgileri - ÖNEMLİ! */}
                   <View style={styles.distanceContainer}>
