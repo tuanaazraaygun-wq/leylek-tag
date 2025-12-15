@@ -919,7 +919,7 @@ function FullScreenOfferCard({
               </TouchableOpacity>
             )}
           </View>
-        </LinearGradient>
+        </View>
       </View>
   );
 }
