@@ -1235,7 +1235,6 @@ function PassengerDashboard({
             </View>
 
             {/* CANLI HARİTA - Tam Ekran */}
-            )}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.fullScreenMapContainer}>
                 {/* Harita göstergesi - gerçek harita mobilde çalışacak */}
