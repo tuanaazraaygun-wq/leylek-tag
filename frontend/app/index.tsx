@@ -1847,37 +1847,17 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
       ) : (
         <ScrollView style={styles.content}>
           {/* Talep Listesi */}
-          {activeTag ? (
-            <View style={styles.fullScreenMapContainer}>
-              <Text>Bekliyor...</Text>
-            </TouchableOpacity>
-
-            {/* Yolculuk Kontrol Butonları - Alt Orta */}
-            {activeTag.status === 'matched' && (
-              <View style={styles.floatingActionContainer}>
-                <TouchableOpacity style={styles.startTripButtonFloat} onPress={handleStartTag}>
-                  <LinearGradient
-                    colors={['#3B82F6', '#2563EB']}
-                    style={styles.actionButtonGradient}
-                  >
-                    <Ionicons name="play-circle" size={28} color="#FFF" />
-                    <Text style={styles.actionButtonText}>Yolculuğu Başlat</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {activeTag.status === 'in_progress' && (
-              <View style={styles.floatingActionContainer}>
-                <TouchableOpacity style={styles.completeTripButtonFloat} onPress={handleCompleteTag}>
-                  <LinearGradient
-                    colors={['#10B981', '#059669']}
-                    style={styles.actionButtonGradient}
-                  >
-                    <Ionicons name="checkmark-circle" size={28} color="#FFF" />
-                    <Text style={styles.actionButtonText}>Yolculuğu Tamamla</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+          {!activeTag && requests.length === 0 && (
+            <View style={styles.emptyState}>
+              <Ionicons name="car-sport" size={80} color={COLORS.primary} />
+              <Text style={styles.emptyStateText}>Henüz çağrı yok</Text>
+              <Text style={styles.emptyStateSubtext}>Yeni çağrılar burada görünecek</Text>
+            </View>
+          )}
+          
+          {!activeTag && requests.length > 0 && (
+            <View style={styles.requestsList}>
+              <Text style={styles.requestsTitle}>📍 Yakındaki Çağrılar</Text>
               </View>
             )}
           </View>
