@@ -619,7 +619,9 @@ function FullScreenOfferCard({
   onSwipeDown,
   onAccept, 
   isFirst,
-  isLast 
+  isLast,
+  currentIndex,
+  totalOffers
 }: { 
   offer: any; 
   onSwipeUp: () => void;
@@ -627,7 +629,46 @@ function FullScreenOfferCard({
   onAccept: () => void;
   isFirst: boolean;
   isLast: boolean;
+  currentIndex: number;
+  totalOffers: number;
 }) {
+  // Araç animasyonu
+  const carBounce = useRef(new Animated.Value(0)).current;
+  const buttonPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Araç yukarı aşağı hareket
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(carBounce, {
+          toValue: -10,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(carBounce, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Buton nefes alma
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(buttonPulse, {
+          toValue: 1.05,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(buttonPulse, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
 
   // Araç rengi emoji
   const getCarEmoji = (color: string) => {
@@ -645,15 +686,30 @@ function FullScreenOfferCard({
   return (
       <View style={styles.fullScreenCard}>
         <LinearGradient
-          colors={['#1E3A8A', '#3B82F6', '#60A5FA']}
+          colors={['#0F172A', '#1E293B', '#334155']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.fullScreenGradient}
         >
-          {/* Üst Kısım: Araç Görseli */}
-          <View style={styles.vehicleSection}>
+          {/* Sol Üst: Sayfa Göstergesi */}
+          <View style={styles.pageIndicatorLeft}>
+            <Text style={styles.pageIndicatorText}>{currentIndex + 1} / {totalOffers}</Text>
+          </View>
+
+          {/* Sağ Üst: Şoför Profili */}
+          <View style={styles.driverProfileRight}>
+            <View style={styles.driverAvatarSmall}>
+              <Text style={styles.driverAvatarSmallText}>
+                {offer.driver_name?.charAt(0) || '?'}
+              </Text>
+            </View>
+            <Text style={styles.driverNameSmall}>{offer.driver_name}</Text>
+            <Text style={styles.driverRatingSmall}>⭐ {offer.driver_rating}</Text>
+          </View>
+
+          {/* Araç - Hareketli */}
+          <Animated.View style={[styles.vehicleSection, { transform: [{ translateY: carBounce }] }]}>
             {offer.is_premium && offer.vehicle_photo ? (
-              // Premium: Gerçek araç fotoğrafı
               <View style={styles.premiumBadgeContainer}>
                 <Text style={styles.premiumBadge}>⭐ PREMIUM</Text>
               </View>
@@ -663,29 +719,13 @@ function FullScreenOfferCard({
               <Text style={styles.vehicleEmoji}>
                 {getCarEmoji(offer.vehicle_color || '')}
               </Text>
-              <Text style={styles.vehicleModel}>
-                {offer.vehicle_model || 'Araç Bilgisi Yok'}
-              </Text>
-              {offer.vehicle_color && (
-                <Text style={styles.vehicleColor}>
-                  {offer.vehicle_color}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          {/* Orta Kısım: Şoför Bilgileri */}
-          <View style={styles.driverSection}>
-            <View style={styles.driverAvatarLarge}>
-              <Text style={styles.driverAvatarLargeText}>
-                {offer.driver_name?.charAt(0) || '?'}
+              <Text style={styles.vehicleBrand}>
+                {offer.vehicle_model || 'BMW'}
               </Text>
             </View>
-            <Text style={styles.driverNameLarge}>{offer.driver_name}</Text>
-            <Text style={styles.driverRatingLarge}>⭐ {offer.driver_rating} / 5.0</Text>
-          </View>
+          </Animated.View>
 
-          {/* Mesaj Kısmı */}
+          {/* Mesaj */}
           <View style={styles.messageSection}>
             <Text style={styles.messageText}>
               📍 {offer.estimated_time || 5} dakikada gelirim
@@ -695,42 +735,45 @@ function FullScreenOfferCard({
             </Text>
           </View>
 
-          {/* Alt Kısım: Fiyat ve Buton */}
+          {/* Fiyat */}
           <View style={styles.priceSection}>
             <View style={styles.priceBox}>
               <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
               <Text style={styles.priceLarge}>₺{offer.price}</Text>
             </View>
 
-            <TouchableOpacity 
-              style={styles.acceptButton}
-              onPress={onAccept}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#10B981', '#059669']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.acceptButtonGradient}
+            {/* HEMEN GEL Butonu - Nefes Alır */}
+            <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+              <TouchableOpacity 
+                style={styles.acceptButton}
+                onPress={onAccept}
+                activeOpacity={0.8}
               >
-                <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
-                <Ionicons name="checkmark-circle" size={32} color="#FFF" />
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#10B981', '#059669']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.acceptButtonGradient}
+                >
+                  <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
+                  <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
 
-          {/* Navigation Butonları */}
+          {/* Alt: Navigation Butonları */}
           <View style={styles.navigationButtons}>
             {!isFirst && (
               <TouchableOpacity style={styles.navButton} onPress={onSwipeDown}>
-                <Ionicons name="chevron-up" size={32} color="#FFF" />
+                <Ionicons name="chevron-up" size={28} color="#FFF" />
                 <Text style={styles.navButtonText}>Önceki</Text>
               </TouchableOpacity>
             )}
             {!isLast && (
               <TouchableOpacity style={styles.navButton} onPress={onSwipeUp}>
                 <Text style={styles.navButtonText}>Sonraki</Text>
-                <Ionicons name="chevron-down" size={32} color="#FFF" />
+                <Ionicons name="chevron-down" size={28} color="#FFF" />
               </TouchableOpacity>
             )}
           </View>
