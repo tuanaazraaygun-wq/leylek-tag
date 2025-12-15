@@ -77,6 +77,7 @@ class UserResponse(BaseModel):
     rating: float
     total_ratings: int
     total_trips: int
+    is_premium: bool = False
     driver_details: Optional[DriverDetails] = None
     # Not: role yok, dinamik seçilecek
 
