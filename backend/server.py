@@ -149,7 +149,6 @@ async def verify_otp(request: VerifyOTPRequest):
             id=str(user["_id"]),
             phone=user["phone"],
             name=user["name"],
-            role=user["role"],
             city=user.get("city", ""),
             profile_photo=user.get("profile_photo"),
             rating=user.get("rating", 5.0),
