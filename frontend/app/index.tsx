@@ -2128,8 +2128,9 @@ const styles = StyleSheet.create({
   },
   distanceLabel: {
     fontSize: 12,
-    color: COLORS.gray500,
+    color: '#FFF',
     fontWeight: '600',
+    opacity: 0.9,
   },
   distanceValue: {
     fontSize: 20,
