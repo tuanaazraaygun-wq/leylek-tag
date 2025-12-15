@@ -2711,19 +2711,23 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   // New styles for updated FullScreenOfferCard
-  pageIndicatorLeft: {
+  offerNumberCircle: {
     position: 'absolute',
     top: 60,
-    left: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
+    left: 30,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
     zIndex: 1000,
   },
-  pageIndicatorText: {
+  offerNumberText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 32,
     fontWeight: 'bold',
   },
   driverProfileRight: {
