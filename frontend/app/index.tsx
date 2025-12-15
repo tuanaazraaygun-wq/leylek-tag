@@ -655,8 +655,7 @@ function FullScreenOfferCard({
   };
 
   return (
-    <PanGestureHandler onGestureEvent={gestureHandler}>
-      <Animated.View style={[styles.fullScreenCard, animatedStyle]}>
+      <View style={styles.fullScreenCard}>
         <LinearGradient
           colors={['#1E3A8A', '#3B82F6', '#60A5FA']}
           start={{ x: 0, y: 0 }}
