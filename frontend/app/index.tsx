@@ -992,6 +992,38 @@ function PassengerDashboard({
     );
   };
 
+  const handleDestinationSelect = async (address: string, lat: number, lng: number) => {
+    const newDestination = { address, latitude: lat, longitude: lng };
+    setDestination(newDestination);
+    setShowDestinationPicker(false);
+
+    // Eğer aktif TAG varsa, hedefi güncelle
+    if (activeTag) {
+      try {
+        const response = await fetch(`${API_URL}/passenger/update-destination?user_id=${user.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tag_id: activeTag.id,
+            dropoff_location: address,
+            dropoff_lat: lat,
+            dropoff_lng: lng
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          Alert.alert('✅ Güncellendi', 'Hedef adresiniz başarıyla güncellendi.');
+          loadActiveTag(); // TAG'i yeniden yükle
+        } else {
+          Alert.alert('Hata', data.detail || 'Hedef güncellenemedi');
+        }
+      } catch (error) {
+        Alert.alert('Hata', 'Hedef güncellenemedi');
+      }
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
