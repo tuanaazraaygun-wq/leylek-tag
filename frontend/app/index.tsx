@@ -739,46 +739,57 @@ function FullScreenOfferCard({
   );
 }
 
-// ==================== ANIMATED PULSE BUTTON ====================
+// ==================== SIMPLE PULSE BUTTON ====================
 function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
-  const scale = useSharedValue(1);
-  const pulseOpacity = useSharedValue(0.7);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(0.7)).current;
 
   useEffect(() => {
-    // Kalp gibi atan animasyon
-    scale.value = withRepeat(
-      withSequence(
-        withTiming(1.15, { duration: 800, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
-        withTiming(1, { duration: 800, easing: Easing.bezier(0.25, 0.1, 0.25, 1) })
-      ),
-      -1,  // Sonsuz tekrar
-      false
-    );
+    // Basit scale animasyonu
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.15,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
 
-    // Nefes alır gibi opacity
-    pulseOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 800 }),
-        withTiming(0.7, { duration: 800 })
-      ),
-      -1,
-      false
-    );
+    // Opacity animasyonu
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0.7,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: scale.value }],
-      opacity: pulseOpacity.value,
-    };
-  });
-
   const handlePress = () => {
-    // Basma efekti
-    scale.value = withSequence(
-      withTiming(0.9, { duration: 100 }),
-      withSpring(1.15, { damping: 10, stiffness: 100 })
-    );
+    Animated.sequence([
+      Animated.timing(scaleAnim, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1.15,
+        useNativeDriver: true,
+      }),
+    ]).start();
     onPress();
   };
 
