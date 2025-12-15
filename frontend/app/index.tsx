@@ -1181,44 +1181,30 @@ function PassengerDashboard({
       <ScrollView style={styles.content}>
         {!activeTag ? (
           <View style={styles.emptyStateContainer}>
-            <Text style={styles.welcomeTitle}>Hoş Geldiniz</Text>
+            <Text style={styles.welcomeTitleSky}>Hoş Geldiniz</Text>
             <Text style={styles.welcomeSubtitle}>Nereye gitmek istiyorsunuz?</Text>
             
-            {/* Hedef Seçme Alanı - BÜYÜK VE HAREKETLİ */}
-            <Animated.View style={{ transform: [{ scale: destinationButtonScale }] }}>
-              <TouchableOpacity
-                style={styles.destinationInputLarge}
-                onPress={() => {
-                  setShowDestinationPicker(true);
-                  setShowArrowHint(false);
-                }}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={destination ? ['#10B981', '#059669'] : ['#3B82F6', '#2563EB']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.destinationGradient}
-                >
-                  <Ionicons name="location" size={32} color="#FFF" />
-                  <Text style={styles.destinationTextLarge}>
-                    {destination ? destination.address : 'Hedef Seçin'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={28} color="#FFF" />
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
+            {/* Hedef Seçme Alanı - GÖK MAVİSİ, BÜYÜK */}
+            <TouchableOpacity
+              style={styles.destinationBoxSky}
+              onPress={() => {
+                setShowDestinationPicker(true);
+                setShowArrowHint(false);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="location-sharp" size={36} color="#87CEEB" />
+              <Text style={styles.destinationTextSky}>
+                {destination ? destination.address : 'Hedef Seçin'}
+              </Text>
+              <Ionicons name="chevron-forward" size={24} color="#87CEEB" />
+            </TouchableOpacity>
 
             {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
             {showArrowHint && (
-              <Animated.View 
-                style={[
-                  styles.arrowHint,
-                  { transform: [{ translateX: arrowPosition }] }
-                ]}
-              >
-                <Text style={styles.arrowText}>👈 Önce buraya!</Text>
-              </Animated.View>
+              <View style={styles.arrowHintSky}>
+                <Text style={styles.arrowTextSky}>☝️ Önce hedef seçin!</Text>
+              </View>
             )}
             
             {destination && (
