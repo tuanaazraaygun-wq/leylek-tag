@@ -1515,6 +1515,12 @@ const styles = StyleSheet.create({
   roleButtonTextActive: {
     color: '#FFF'
   },
+  roleDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center'
+  },
   header: {
     backgroundColor: '#00A67E',
     padding: 20,
