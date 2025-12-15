@@ -221,12 +221,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Distance calculation in driver requests"
-    - "Driver send offer endpoint"
-    - "Passenger cancel TAG endpoint"
-    - "Passenger update destination endpoint"
-  stuck_tasks:
-    - "Distance calculation in driver requests"
+    - "All backend tasks completed successfully"
+  stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
