@@ -1231,27 +1231,60 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
             ) : (
               requests.map((request) => (
                 <View key={request.id} style={styles.requestCard}>
-                  <Text style={styles.requestPassenger}>{request.passenger_name}</Text>
+                  {/* Yolcu Bilgisi */}
+                  <View style={styles.requestHeader}>
+                    <View style={styles.passengerAvatar}>
+                      <Text style={styles.passengerAvatarText}>
+                        {request.passenger_name?.charAt(0) || '?'}
+                      </Text>
+                    </View>
+                    <Text style={styles.requestPassenger}>{request.passenger_name}</Text>
+                  </View>
                   
+                  {/* Mesafe Bilgileri - ÖNEMLİ! */}
+                  <View style={styles.distanceContainer}>
+                    <View style={styles.distanceBox}>
+                      <Ionicons name="car" size={20} color={COLORS.primary} />
+                      <Text style={styles.distanceLabel}>Size Mesafe</Text>
+                      <Text style={styles.distanceValue}>
+                        {request.distance_to_passenger_km ? `${request.distance_to_passenger_km} km` : 'Hesaplanıyor...'}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.distanceDivider} />
+                    
+                    <View style={styles.distanceBox}>
+                      <Ionicons name="navigate" size={20} color={COLORS.secondary} />
+                      <Text style={styles.distanceLabel}>Yolculuk</Text>
+                      <Text style={styles.distanceValue}>
+                        {request.trip_distance_km ? `${request.trip_distance_km} km` : 'Hesaplanıyor...'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Lokasyon Bilgileri */}
                   <View style={styles.locationRow}>
                     <Ionicons name="location" size={18} color="#00A67E" />
-                    <Text style={styles.requestLocation}>{request.pickup_location}</Text>
+                    <Text style={styles.requestLocation}>Başlangıç: {request.pickup_location}</Text>
                   </View>
 
                   <View style={styles.locationRow}>
                     <Ionicons name="flag" size={18} color="#FF5A5F" />
-                    <Text style={styles.requestLocation}>{request.dropoff_location}</Text>
+                    <Text style={styles.requestLocation}>Hedef: {request.dropoff_location}</Text>
                   </View>
 
+                  {/* Teklif Gönder / Gönderildi */}
                   {request.has_offered ? (
                     <View style={styles.offeredBadge}>
-                      <Text style={styles.offeredText}>✓ Teklif Gönderildi</Text>
+                      <Ionicons name="checkmark-circle" size={20} color="#00A67E" />
+                      <Text style={styles.offeredText}>Teklif Gönderildi</Text>
                     </View>
                   ) : (
                     <TouchableOpacity
                       style={styles.sendOfferButton}
                       onPress={() => handleSendOffer(request.id)}
                     >
+                      <Ionicons name="cash-outline" size={20} color="#FFF" />
                       <Text style={styles.sendOfferButtonText}>Teklif Gönder</Text>
                     </TouchableOpacity>
                   )}
