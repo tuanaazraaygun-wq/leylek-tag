@@ -86,10 +86,12 @@ export default function App() {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
-  const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver'>('passenger');
   const [selectedCity, setSelectedCity] = useState('');
   const [cities, setCities] = useState<string[]>([]);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  
+  // Role Selection (Dinamik - Her girişte seçilir)
+  const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
   
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
