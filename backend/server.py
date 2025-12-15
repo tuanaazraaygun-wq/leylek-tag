@@ -546,6 +546,13 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     if existing_offer:
         raise HTTPException(status_code=400, detail="Bu talep için zaten teklif verdiniz")
     
+    # Sürücü araç bilgilerini al
+    driver_details = user.get("driver_details", {})
+    vehicle_model = driver_details.get("vehicle_model", "Araç Bilgisi Yok")
+    vehicle_color = driver_details.get("vehicle_color", "")
+    vehicle_photo = driver_details.get("vehicle_photo")
+    is_premium = user.get("is_premium", False)
+    
     offer_data = Offer(
         tag_id=request.tag_id,
         driver_id=user_id,
@@ -556,6 +563,12 @@ async def send_offer(user_id: str, request: SendOfferRequest):
         estimated_time=request.estimated_time,
         notes=request.notes
     ).dict()
+    
+    # Araç bilgilerini ekle
+    offer_data["vehicle_model"] = vehicle_model
+    offer_data["vehicle_color"] = vehicle_color
+    offer_data["vehicle_photo"] = vehicle_photo
+    offer_data["is_premium"] = is_premium
     
     offer_id = await db_instance.insert_one("offers", offer_data)
     
