@@ -547,7 +547,7 @@ async def send_offer(user_id: str, request: SendOfferRequest):
         raise HTTPException(status_code=400, detail="Bu talep için zaten teklif verdiniz")
     
     # Sürücü araç bilgilerini al
-    driver_details = user.get("driver_details", {})
+    driver_details = user.get("driver_details") or {}
     vehicle_model = driver_details.get("vehicle_model", "Araç Bilgisi Yok")
     vehicle_color = driver_details.get("vehicle_color", "")
     vehicle_photo = driver_details.get("vehicle_photo")
