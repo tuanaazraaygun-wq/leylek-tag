@@ -715,24 +715,37 @@ async def start_tag(tag_id: str, user_id: str):
     return {"success": True, "message": "Yolculuk başlatıldı"}
 
 @api_router.post("/driver/complete-tag/{tag_id}")
-async def complete_tag(tag_id: str, user_id: str):
-    """TAG tamamla"""
+async def complete_tag(tag_id: str, user_id: str, approved: bool = True):
+    """TAG tamamla - CEZA SİSTEMİ ile"""
     tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["driver_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
     
+    # CEZA SİSTEMİ: Onaysız bitirme
+    penalty_applied = False
+    if not approved:
+        # Tek taraflı bitirme - CEZA!
+        await db_instance.update_one(
+            "users",
+            {"_id": ObjectId(user_id)},
+            {"$inc": {"rating": -0.5}}  # Puan düşür
+        )
+        penalty_applied = True
+        logger.warning(f"⚠️ CEZA: {user_id} tek taraflı bitirdi - Puan -0.5")
+    
     await db_instance.update_one(
         "tags",
         {"_id": ObjectId(tag_id)},
         {"$set": {
             "status": TagStatus.COMPLETED,
-            "completed_at": datetime.utcnow()
+            "completed_at": datetime.utcnow(),
+            "penalty_applied": penalty_applied
         }}
     )
     
-    # Trip sayısını artır
+    # Trip sayısını artır (her durumda)
     await db_instance.update_one(
         "users",
         {"_id": ObjectId(user_id)},
@@ -744,7 +757,11 @@ async def complete_tag(tag_id: str, user_id: str):
         {"$inc": {"total_trips": 1}}
     )
     
-    return {"success": True, "message": "Yolculuk tamamlandı"}
+    message = "Yolculuk tamamlandı"
+    if penalty_applied:
+        message += " (Uyarı: Tek taraflı bitirme cezası uygulandı)"
+    
+    return {"success": True, "message": message, "penalty_applied": penalty_applied}
 
 @api_router.get("/driver/history")
 async def get_driver_history(user_id: str):
