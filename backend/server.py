@@ -28,6 +28,7 @@ logger = logging.getLogger("server")
 
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50  # Admin ayarı: Maksimum mesafe (km) - Google Play/Apple onaylı
+OFFER_EXPIRY_MINUTES = 10  # Teklif 10 dakika sonra otomatik silinir
 
 # ==================== HELPER FUNCTIONS ====================
 def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
