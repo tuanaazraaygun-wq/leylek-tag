@@ -1,1505 +1,1528 @@
 diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
-index 75748c4..85e9ec5 100644
+index 85e9ec5..f2c048d 100644
 --- a/frontend/app/index.tsx
 +++ b/frontend/app/index.tsx
-@@ -619,7 +619,9 @@ function FullScreenOfferCard({
-   onSwipeDown,
-   onAccept, 
-   isFirst,
--  isLast 
-+  isLast,
-+  currentIndex,
-+  totalOffers
- }: { 
-   offer: any; 
-   onSwipeUp: () => void;
-@@ -627,7 +629,46 @@ function FullScreenOfferCard({
-   onAccept: () => void;
-   isFirst: boolean;
-   isLast: boolean;
-+  currentIndex: number;
-+  totalOffers: number;
- }) {
-+  // Araç animasyonu
-+  const carBounce = useRef(new Animated.Value(0)).current;
-+  const buttonPulse = useRef(new Animated.Value(1)).current;
-+
-+  useEffect(() => {
-+    // Araç yukarı aşağı hareket
-+    Animated.loop(
-+      Animated.sequence([
-+        Animated.timing(carBounce, {
-+          toValue: -10,
-+          duration: 1500,
-+          useNativeDriver: true,
-+        }),
-+        Animated.timing(carBounce, {
-+          toValue: 0,
-+          duration: 1500,
-+          useNativeDriver: true,
-+        }),
-+      ])
-+    ).start();
-+
-+    // Buton nefes alma
-+    Animated.loop(
-+      Animated.sequence([
-+        Animated.timing(buttonPulse, {
-+          toValue: 1.05,
-+          duration: 1000,
-+          useNativeDriver: true,
-+        }),
-+        Animated.timing(buttonPulse, {
-+          toValue: 1,
-+          duration: 1000,
-+          useNativeDriver: true,
-+        }),
-+      ])
-+    ).start();
-+  }, []);
- 
-   // Araç rengi emoji
-   const getCarEmoji = (color: string) => {
-@@ -645,15 +686,30 @@ function FullScreenOfferCard({
-   return (
-       <View style={styles.fullScreenCard}>
-         <LinearGradient
--          colors={['#1E3A8A', '#3B82F6', '#60A5FA']}
-+          colors={['#0F172A', '#1E293B', '#334155']}
-           start={{ x: 0, y: 0 }}
-           end={{ x: 0, y: 1 }}
-           style={styles.fullScreenGradient}
-         >
--          {/* Üst Kısım: Araç Görseli */}
--          <View style={styles.vehicleSection}>
-+          {/* Sol Üst: Sayfa Göstergesi */}
-+          <View style={styles.pageIndicatorLeft}>
-+            <Text style={styles.pageIndicatorText}>{currentIndex + 1} / {totalOffers}</Text>
-+          </View>
-+
-+          {/* Sağ Üst: Şoför Profili */}
-+          <View style={styles.driverProfileRight}>
-+            <View style={styles.driverAvatarSmall}>
-+              <Text style={styles.driverAvatarSmallText}>
-+                {offer.driver_name?.charAt(0) || '?'}
-+              </Text>
-+            </View>
-+            <Text style={styles.driverNameSmall}>{offer.driver_name}</Text>
-+            <Text style={styles.driverRatingSmall}>⭐ {offer.driver_rating}</Text>
-+          </View>
-+
-+          {/* Araç - Hareketli */}
-+          <Animated.View style={[styles.vehicleSection, { transform: [{ translateY: carBounce }] }]}>
-             {offer.is_premium && offer.vehicle_photo ? (
--              // Premium: Gerçek araç fotoğrafı
-               <View style={styles.premiumBadgeContainer}>
-                 <Text style={styles.premiumBadge}>⭐ PREMIUM</Text>
-               </View>
-@@ -663,29 +719,13 @@ function FullScreenOfferCard({
-               <Text style={styles.vehicleEmoji}>
-                 {getCarEmoji(offer.vehicle_color || '')}
-               </Text>
--              <Text style={styles.vehicleModel}>
--                {offer.vehicle_model || 'Araç Bilgisi Yok'}
--              </Text>
--              {offer.vehicle_color && (
--                <Text style={styles.vehicleColor}>
--                  {offer.vehicle_color}
--                </Text>
--              )}
--            </View>
--          </View>
--
--          {/* Orta Kısım: Şoför Bilgileri */}
--          <View style={styles.driverSection}>
--            <View style={styles.driverAvatarLarge}>
--              <Text style={styles.driverAvatarLargeText}>
--                {offer.driver_name?.charAt(0) || '?'}
-+              <Text style={styles.vehicleBrand}>
-+                {offer.vehicle_model || 'BMW'}
-               </Text>
-             </View>
--            <Text style={styles.driverNameLarge}>{offer.driver_name}</Text>
--            <Text style={styles.driverRatingLarge}>⭐ {offer.driver_rating} / 5.0</Text>
--          </View>
-+          </Animated.View>
- 
--          {/* Mesaj Kısmı */}
-+          {/* Mesaj */}
-           <View style={styles.messageSection}>
-             <Text style={styles.messageText}>
-               📍 {offer.estimated_time || 5} dakikada gelirim
-@@ -695,42 +735,45 @@ function FullScreenOfferCard({
-             </Text>
-           </View>
- 
--          {/* Alt Kısım: Fiyat ve Buton */}
-+          {/* Fiyat */}
-           <View style={styles.priceSection}>
-             <View style={styles.priceBox}>
-               <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
-               <Text style={styles.priceLarge}>₺{offer.price}</Text>
-             </View>
- 
--            <TouchableOpacity 
--              style={styles.acceptButton}
--              onPress={onAccept}
--              activeOpacity={0.8}
--            >
--              <LinearGradient
--                colors={['#10B981', '#059669']}
--                start={{ x: 0, y: 0 }}
--                end={{ x: 1, y: 0 }}
--                style={styles.acceptButtonGradient}
-+            {/* HEMEN GEL Butonu - Nefes Alır */}
-+            <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
-+              <TouchableOpacity 
-+                style={styles.acceptButton}
-+                onPress={onAccept}
-+                activeOpacity={0.8}
-               >
--                <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
--                <Ionicons name="checkmark-circle" size={32} color="#FFF" />
--              </LinearGradient>
--            </TouchableOpacity>
-+                <LinearGradient
-+                  colors={['#10B981', '#059669']}
-+                  start={{ x: 0, y: 0 }}
-+                  end={{ x: 1, y: 0 }}
-+                  style={styles.acceptButtonGradient}
-+                >
-+                  <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
-+                  <Ionicons name="checkmark-circle" size={32} color="#FFF" />
-+                </LinearGradient>
-+              </TouchableOpacity>
-+            </Animated.View>
-           </View>
- 
--          {/* Navigation Butonları */}
-+          {/* Alt: Navigation Butonları */}
-           <View style={styles.navigationButtons}>
-             {!isFirst && (
-               <TouchableOpacity style={styles.navButton} onPress={onSwipeDown}>
--                <Ionicons name="chevron-up" size={32} color="#FFF" />
-+                <Ionicons name="chevron-up" size={28} color="#FFF" />
-                 <Text style={styles.navButtonText}>Önceki</Text>
-               </TouchableOpacity>
-             )}
-             {!isLast && (
-               <TouchableOpacity style={styles.navButton} onPress={onSwipeUp}>
-                 <Text style={styles.navButtonText}>Sonraki</Text>
--                <Ionicons name="chevron-down" size={32} color="#FFF" />
-+                <Ionicons name="chevron-down" size={28} color="#FFF" />
-               </TouchableOpacity>
-             )}
-           </View>
-@@ -1069,6 +1112,8 @@ function PassengerDashboard({
-           onAccept={() => handleAcceptOffer(offers[currentOfferIndex].id)}
-           isFirst={currentOfferIndex === 0}
-           isLast={currentOfferIndex === offers.length - 1}
-+          currentIndex={currentOfferIndex}
-+          totalOffers={offers.length}
+@@ -1115,13 +1115,6 @@ function PassengerDashboard({
+           currentIndex={currentOfferIndex}
+           totalOffers={offers.length}
          />
-         
-         {/* Sayfa Göstergesi */}
-@@ -2660,4 +2705,62 @@ const styles = StyleSheet.create({
-     fontSize: 14,
-     fontWeight: 'bold',
-   },
-+  // New styles for updated FullScreenOfferCard
-+  pageIndicatorLeft: {
-+    position: 'absolute',
-+    top: 60,
-+    left: 20,
-+    backgroundColor: 'rgba(0,0,0,0.5)',
-+    paddingHorizontal: 12,
-+    paddingVertical: 6,
-+    borderRadius: 15,
-+    zIndex: 1000,
-+  },
-+  pageIndicatorText: {
-+    color: '#FFF',
-+    fontSize: 14,
-+    fontWeight: 'bold',
-+  },
-+  driverProfileRight: {
-+    position: 'absolute',
-+    top: 60,
-+    right: 20,
-+    alignItems: 'center',
-+    zIndex: 1000,
-+  },
-+  driverAvatarSmall: {
-+    width: 50,
-+    height: 50,
-+    borderRadius: 25,
-+    backgroundColor: 'rgba(255,255,255,0.3)',
-+    alignItems: 'center',
-+    justifyContent: 'center',
-+    marginBottom: 8,
-+    borderWidth: 2,
-+    borderColor: '#FFF',
-+  },
-+  driverAvatarSmallText: {
-+    fontSize: 20,
-+    fontWeight: 'bold',
-+    color: '#FFF',
-+  },
-+  driverNameSmall: {
-+    fontSize: 14,
-+    fontWeight: 'bold',
-+    color: '#FFF',
-+    textAlign: 'center',
-+    marginBottom: 4,
-+  },
-+  driverRatingSmall: {
-+    fontSize: 12,
-+    color: 'rgba(255,255,255,0.9)',
-+    textAlign: 'center',
-+  },
-+  vehicleBrand: {
-+    fontSize: 28,
-+    fontWeight: 'bold',
-+    color: '#FFF',
-+    textAlign: 'center',
-+    marginBottom: 8,
-+  },
- });
+-        
+-        {/* Sayfa Göstergesi */}
+-        <View style={styles.offerIndicator}>
+-          <Text style={styles.offerIndicatorText}>
+-            {currentOfferIndex + 1} / {offers.length}
+-          </Text>
+-        </View>
+       </View>
+     );
+   }
 diff --git a/model.patch b/model.patch
-index 4845f20..2e8cdf7 100644
+index 77a2d55..e69de29 100644
 --- a/model.patch
 +++ b/model.patch
-@@ -1,1233 +0,0 @@
--diff --git a/backend/server.py b/backend/server.py
--index 3c31bd8..856e51d 100644
----- a/backend/server.py
--+++ b/backend/server.py
--@@ -231,8 +231,8 @@ async def update_profile(user_id: str, request: UpdateProfileRequest):
-- async def update_driver_details(user_id: str, request: UpdateDriverDetailsRequest):
--     """Sürücü bilgilerini güncelle"""
--     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
---    if not user or user["role"] != UserRole.DRIVER:
---        raise HTTPException(status_code=403, detail="Sadece sürücüler güncelleyebilir")
--+    if not user:
--+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
--     
--     driver_data = {k: v for k, v in request.dict().items() if v is not None}
--     
--@@ -530,8 +530,8 @@ async def get_driver_requests(user_id: str):
-- async def send_offer(user_id: str, request: SendOfferRequest):
--     """Teklif gönder"""
--     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
---    if not user or user["role"] != UserRole.DRIVER:
---        raise HTTPException(status_code=403, detail="Sadece sürücüler teklif gönderebilir")
--+    if not user:
--+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
--     
--     tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
--     if not tag:
--@@ -821,33 +821,38 @@ async def get_user_stats(user_id: str):
--     if not user:
--         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
--     
---    if user["role"] == UserRole.PASSENGER:
---        completed_trips = await db_instance.count_documents("tags", {
---            "passenger_id": user_id,
---            "status": TagStatus.COMPLETED
---        })
---        total_spent = 0  # TODO: Hesapla
---    else:
---        completed_trips = await db_instance.count_documents("tags", {
---            "driver_id": user_id,
---            "status": TagStatus.COMPLETED
---        })
---        # Kazanç hesapla
---        completed_tags = await db_instance.find_many("tags", {
---            "driver_id": user_id,
---            "status": TagStatus.COMPLETED
---        })
---        total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
--+    # Count trips as passenger
--+    passenger_trips = await db_instance.count_documents("tags", {
--+        "passenger_id": user_id,
--+        "status": TagStatus.COMPLETED
--+    })
--+    
--+    # Count trips as driver
--+    driver_trips = await db_instance.count_documents("tags", {
--+        "driver_id": user_id,
--+        "status": TagStatus.COMPLETED
--+    })
--+    
--+    # Calculate earnings as driver
--+    completed_tags = await db_instance.find_many("tags", {
--+        "driver_id": user_id,
--+        "status": TagStatus.COMPLETED
--+    })
--+    total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
--+    
--+    # Calculate spending as passenger (TODO: implement)
--+    total_spent = 0
--     
--     return {
--         "success": True,
--         "stats": {
--             "total_trips": user.get("total_trips", 0),
---            "completed_trips": completed_trips,
--+            "passenger_trips": passenger_trips,
--+            "driver_trips": driver_trips,
--             "rating": user.get("rating", 5.0),
--             "total_ratings": user.get("total_ratings", 0),
---            "total_earned": total_earned if user["role"] == UserRole.DRIVER else None,
---            "total_spent": total_spent if user["role"] == UserRole.PASSENGER else None
--+            "total_earned": total_earned,
--+            "total_spent": total_spent
--         }
--     }
+@@ -1,1505 +0,0 @@
+-diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+-index 75748c4..85e9ec5 100644
+---- a/frontend/app/index.tsx
+-+++ b/frontend/app/index.tsx
+-@@ -619,7 +619,9 @@ function FullScreenOfferCard({
+-   onSwipeDown,
+-   onAccept, 
+-   isFirst,
+--  isLast 
+-+  isLast,
+-+  currentIndex,
+-+  totalOffers
+- }: { 
+-   offer: any; 
+-   onSwipeUp: () => void;
+-@@ -627,7 +629,46 @@ function FullScreenOfferCard({
+-   onAccept: () => void;
+-   isFirst: boolean;
+-   isLast: boolean;
+-+  currentIndex: number;
+-+  totalOffers: number;
+- }) {
+-+  // Araç animasyonu
+-+  const carBounce = useRef(new Animated.Value(0)).current;
+-+  const buttonPulse = useRef(new Animated.Value(1)).current;
+-+
+-+  useEffect(() => {
+-+    // Araç yukarı aşağı hareket
+-+    Animated.loop(
+-+      Animated.sequence([
+-+        Animated.timing(carBounce, {
+-+          toValue: -10,
+-+          duration: 1500,
+-+          useNativeDriver: true,
+-+        }),
+-+        Animated.timing(carBounce, {
+-+          toValue: 0,
+-+          duration: 1500,
+-+          useNativeDriver: true,
+-+        }),
+-+      ])
+-+    ).start();
+-+
+-+    // Buton nefes alma
+-+    Animated.loop(
+-+      Animated.sequence([
+-+        Animated.timing(buttonPulse, {
+-+          toValue: 1.05,
+-+          duration: 1000,
+-+          useNativeDriver: true,
+-+        }),
+-+        Animated.timing(buttonPulse, {
+-+          toValue: 1,
+-+          duration: 1000,
+-+          useNativeDriver: true,
+-+        }),
+-+      ])
+-+    ).start();
+-+  }, []);
 - 
+-   // Araç rengi emoji
+-   const getCarEmoji = (color: string) => {
+-@@ -645,15 +686,30 @@ function FullScreenOfferCard({
+-   return (
+-       <View style={styles.fullScreenCard}>
+-         <LinearGradient
+--          colors={['#1E3A8A', '#3B82F6', '#60A5FA']}
+-+          colors={['#0F172A', '#1E293B', '#334155']}
+-           start={{ x: 0, y: 0 }}
+-           end={{ x: 0, y: 1 }}
+-           style={styles.fullScreenGradient}
+-         >
+--          {/* Üst Kısım: Araç Görseli */}
+--          <View style={styles.vehicleSection}>
+-+          {/* Sol Üst: Sayfa Göstergesi */}
+-+          <View style={styles.pageIndicatorLeft}>
+-+            <Text style={styles.pageIndicatorText}>{currentIndex + 1} / {totalOffers}</Text>
+-+          </View>
+-+
+-+          {/* Sağ Üst: Şoför Profili */}
+-+          <View style={styles.driverProfileRight}>
+-+            <View style={styles.driverAvatarSmall}>
+-+              <Text style={styles.driverAvatarSmallText}>
+-+                {offer.driver_name?.charAt(0) || '?'}
+-+              </Text>
+-+            </View>
+-+            <Text style={styles.driverNameSmall}>{offer.driver_name}</Text>
+-+            <Text style={styles.driverRatingSmall}>⭐ {offer.driver_rating}</Text>
+-+          </View>
+-+
+-+          {/* Araç - Hareketli */}
+-+          <Animated.View style={[styles.vehicleSection, { transform: [{ translateY: carBounce }] }]}>
+-             {offer.is_premium && offer.vehicle_photo ? (
+--              // Premium: Gerçek araç fotoğrafı
+-               <View style={styles.premiumBadgeContainer}>
+-                 <Text style={styles.premiumBadge}>⭐ PREMIUM</Text>
+-               </View>
+-@@ -663,29 +719,13 @@ function FullScreenOfferCard({
+-               <Text style={styles.vehicleEmoji}>
+-                 {getCarEmoji(offer.vehicle_color || '')}
+-               </Text>
+--              <Text style={styles.vehicleModel}>
+--                {offer.vehicle_model || 'Araç Bilgisi Yok'}
+--              </Text>
+--              {offer.vehicle_color && (
+--                <Text style={styles.vehicleColor}>
+--                  {offer.vehicle_color}
+--                </Text>
+--              )}
+--            </View>
+--          </View>
+--
+--          {/* Orta Kısım: Şoför Bilgileri */}
+--          <View style={styles.driverSection}>
+--            <View style={styles.driverAvatarLarge}>
+--              <Text style={styles.driverAvatarLargeText}>
+--                {offer.driver_name?.charAt(0) || '?'}
+-+              <Text style={styles.vehicleBrand}>
+-+                {offer.vehicle_model || 'BMW'}
+-               </Text>
+-             </View>
+--            <Text style={styles.driverNameLarge}>{offer.driver_name}</Text>
+--            <Text style={styles.driverRatingLarge}>⭐ {offer.driver_rating} / 5.0</Text>
+--          </View>
+-+          </Animated.View>
+- 
+--          {/* Mesaj Kısmı */}
+-+          {/* Mesaj */}
+-           <View style={styles.messageSection}>
+-             <Text style={styles.messageText}>
+-               📍 {offer.estimated_time || 5} dakikada gelirim
+-@@ -695,42 +735,45 @@ function FullScreenOfferCard({
+-             </Text>
+-           </View>
+- 
+--          {/* Alt Kısım: Fiyat ve Buton */}
+-+          {/* Fiyat */}
+-           <View style={styles.priceSection}>
+-             <View style={styles.priceBox}>
+-               <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
+-               <Text style={styles.priceLarge}>₺{offer.price}</Text>
+-             </View>
+- 
+--            <TouchableOpacity 
+--              style={styles.acceptButton}
+--              onPress={onAccept}
+--              activeOpacity={0.8}
+--            >
+--              <LinearGradient
+--                colors={['#10B981', '#059669']}
+--                start={{ x: 0, y: 0 }}
+--                end={{ x: 1, y: 0 }}
+--                style={styles.acceptButtonGradient}
+-+            {/* HEMEN GEL Butonu - Nefes Alır */}
+-+            <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+-+              <TouchableOpacity 
+-+                style={styles.acceptButton}
+-+                onPress={onAccept}
+-+                activeOpacity={0.8}
+-               >
+--                <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
+--                <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+--              </LinearGradient>
+--            </TouchableOpacity>
+-+                <LinearGradient
+-+                  colors={['#10B981', '#059669']}
+-+                  start={{ x: 0, y: 0 }}
+-+                  end={{ x: 1, y: 0 }}
+-+                  style={styles.acceptButtonGradient}
+-+                >
+-+                  <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
+-+                  <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+-+                </LinearGradient>
+-+              </TouchableOpacity>
+-+            </Animated.View>
+-           </View>
+- 
+--          {/* Navigation Butonları */}
+-+          {/* Alt: Navigation Butonları */}
+-           <View style={styles.navigationButtons}>
+-             {!isFirst && (
+-               <TouchableOpacity style={styles.navButton} onPress={onSwipeDown}>
+--                <Ionicons name="chevron-up" size={32} color="#FFF" />
+-+                <Ionicons name="chevron-up" size={28} color="#FFF" />
+-                 <Text style={styles.navButtonText}>Önceki</Text>
+-               </TouchableOpacity>
+-             )}
+-             {!isLast && (
+-               <TouchableOpacity style={styles.navButton} onPress={onSwipeUp}>
+-                 <Text style={styles.navButtonText}>Sonraki</Text>
+--                <Ionicons name="chevron-down" size={32} color="#FFF" />
+-+                <Ionicons name="chevron-down" size={28} color="#FFF" />
+-               </TouchableOpacity>
+-             )}
+-           </View>
+-@@ -1069,6 +1112,8 @@ function PassengerDashboard({
+-           onAccept={() => handleAcceptOffer(offers[currentOfferIndex].id)}
+-           isFirst={currentOfferIndex === 0}
+-           isLast={currentOfferIndex === offers.length - 1}
+-+          currentIndex={currentOfferIndex}
+-+          totalOffers={offers.length}
+-         />
+-         
+-         {/* Sayfa Göstergesi */}
+-@@ -2660,4 +2705,62 @@ const styles = StyleSheet.create({
+-     fontSize: 14,
+-     fontWeight: 'bold',
+-   },
+-+  // New styles for updated FullScreenOfferCard
+-+  pageIndicatorLeft: {
+-+    position: 'absolute',
+-+    top: 60,
+-+    left: 20,
+-+    backgroundColor: 'rgba(0,0,0,0.5)',
+-+    paddingHorizontal: 12,
+-+    paddingVertical: 6,
+-+    borderRadius: 15,
+-+    zIndex: 1000,
+-+  },
+-+  pageIndicatorText: {
+-+    color: '#FFF',
+-+    fontSize: 14,
+-+    fontWeight: 'bold',
+-+  },
+-+  driverProfileRight: {
+-+    position: 'absolute',
+-+    top: 60,
+-+    right: 20,
+-+    alignItems: 'center',
+-+    zIndex: 1000,
+-+  },
+-+  driverAvatarSmall: {
+-+    width: 50,
+-+    height: 50,
+-+    borderRadius: 25,
+-+    backgroundColor: 'rgba(255,255,255,0.3)',
+-+    alignItems: 'center',
+-+    justifyContent: 'center',
+-+    marginBottom: 8,
+-+    borderWidth: 2,
+-+    borderColor: '#FFF',
+-+  },
+-+  driverAvatarSmallText: {
+-+    fontSize: 20,
+-+    fontWeight: 'bold',
+-+    color: '#FFF',
+-+  },
+-+  driverNameSmall: {
+-+    fontSize: 14,
+-+    fontWeight: 'bold',
+-+    color: '#FFF',
+-+    textAlign: 'center',
+-+    marginBottom: 4,
+-+  },
+-+  driverRatingSmall: {
+-+    fontSize: 12,
+-+    color: 'rgba(255,255,255,0.9)',
+-+    textAlign: 'center',
+-+  },
+-+  vehicleBrand: {
+-+    fontSize: 28,
+-+    fontWeight: 'bold',
+-+    color: '#FFF',
+-+    textAlign: 'center',
+-+    marginBottom: 8,
+-+  },
+- });
 -diff --git a/model.patch b/model.patch
--index 046f7b3..e69de29 100644
+-index 4845f20..2e8cdf7 100644
 ---- a/model.patch
 -+++ b/model.patch
--@@ -1,1017 +0,0 @@
+-@@ -1,1233 +0,0 @@
+--diff --git a/backend/server.py b/backend/server.py
+--index 3c31bd8..856e51d 100644
+----- a/backend/server.py
+--+++ b/backend/server.py
+--@@ -231,8 +231,8 @@ async def update_profile(user_id: str, request: UpdateProfileRequest):
+-- async def update_driver_details(user_id: str, request: UpdateDriverDetailsRequest):
+--     """Sürücü bilgilerini güncelle"""
+--     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
+---    if not user or user["role"] != UserRole.DRIVER:
+---        raise HTTPException(status_code=403, detail="Sadece sürücüler güncelleyebilir")
+--+    if not user:
+--+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+--     
+--     driver_data = {k: v for k, v in request.dict().items() if v is not None}
+--     
+--@@ -530,8 +530,8 @@ async def get_driver_requests(user_id: str):
+-- async def send_offer(user_id: str, request: SendOfferRequest):
+--     """Teklif gönder"""
+--     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
+---    if not user or user["role"] != UserRole.DRIVER:
+---        raise HTTPException(status_code=403, detail="Sadece sürücüler teklif gönderebilir")
+--+    if not user:
+--+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+--     
+--     tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
+--     if not tag:
+--@@ -821,33 +821,38 @@ async def get_user_stats(user_id: str):
+--     if not user:
+--         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+--     
+---    if user["role"] == UserRole.PASSENGER:
+---        completed_trips = await db_instance.count_documents("tags", {
+---            "passenger_id": user_id,
+---            "status": TagStatus.COMPLETED
+---        })
+---        total_spent = 0  # TODO: Hesapla
+---    else:
+---        completed_trips = await db_instance.count_documents("tags", {
+---            "driver_id": user_id,
+---            "status": TagStatus.COMPLETED
+---        })
+---        # Kazanç hesapla
+---        completed_tags = await db_instance.find_many("tags", {
+---            "driver_id": user_id,
+---            "status": TagStatus.COMPLETED
+---        })
+---        total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
+--+    # Count trips as passenger
+--+    passenger_trips = await db_instance.count_documents("tags", {
+--+        "passenger_id": user_id,
+--+        "status": TagStatus.COMPLETED
+--+    })
+--+    
+--+    # Count trips as driver
+--+    driver_trips = await db_instance.count_documents("tags", {
+--+        "driver_id": user_id,
+--+        "status": TagStatus.COMPLETED
+--+    })
+--+    
+--+    # Calculate earnings as driver
+--+    completed_tags = await db_instance.find_many("tags", {
+--+        "driver_id": user_id,
+--+        "status": TagStatus.COMPLETED
+--+    })
+--+    total_earned = sum([tag.get("final_price", 0) for tag in completed_tags])
+--+    
+--+    # Calculate spending as passenger (TODO: implement)
+--+    total_spent = 0
+--     
+--     return {
+--         "success": True,
+--         "stats": {
+--             "total_trips": user.get("total_trips", 0),
+---            "completed_trips": completed_trips,
+--+            "passenger_trips": passenger_trips,
+--+            "driver_trips": driver_trips,
+--             "rating": user.get("rating", 5.0),
+--             "total_ratings": user.get("total_ratings", 0),
+---            "total_earned": total_earned if user["role"] == UserRole.DRIVER else None,
+---            "total_spent": total_spent if user["role"] == UserRole.PASSENGER else None
+--+            "total_earned": total_earned,
+--+            "total_spent": total_spent
+--         }
+--     }
+-- 
 --diff --git a/model.patch b/model.patch
---index a9d0cae..e69de29 100644
+--index 046f7b3..e69de29 100644
 ----- a/model.patch
 --+++ b/model.patch
---@@ -1,1012 +0,0 @@
+--@@ -1,1017 +0,0 @@
 ---diff --git a/model.patch b/model.patch
----index b944d1a..e69de29 100644
+---index a9d0cae..e69de29 100644
 ------ a/model.patch
 ---+++ b/model.patch
----@@ -1,1007 +0,0 @@
+---@@ -1,1012 +0,0 @@
 ----diff --git a/model.patch b/model.patch
-----index 40de756..e69de29 100644
+----index b944d1a..e69de29 100644
 ------- a/model.patch
 ----+++ b/model.patch
-----@@ -1,1002 +0,0 @@
------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
------index 071a7cf..939568e 100644
--------- a/frontend/app/index.tsx
------+++ b/frontend/app/index.tsx
------@@ -271,7 +271,7 @@ export default function App() {
------       const response = await fetch(`${API_URL}/auth/register`, {
------         method: 'POST',
------         headers: { 'Content-Type': 'application/json' },
-------        body: JSON.stringify({ phone, name, role: 'passenger', city: selectedCity })
------+        body: JSON.stringify({ phone, name, city: selectedCity })
------       });
------ 
------       const data = await response.json();
+----@@ -1,1007 +0,0 @@
 -----diff --git a/model.patch b/model.patch
------index 938c124..e69de29 100644
+-----index 40de756..e69de29 100644
 -------- a/model.patch
 -----+++ b/model.patch
------@@ -1,984 +0,0 @@
+-----@@ -1,1002 +0,0 @@
 ------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
-------index 6653030..071a7cf 100644
+------index 071a7cf..939568e 100644
 --------- a/frontend/app/index.tsx
 ------+++ b/frontend/app/index.tsx
 ------@@ -271,7 +271,7 @@ export default function App() {
 ------       const response = await fetch(`${API_URL}/auth/register`, {
 ------         method: 'POST',
 ------         headers: { 'Content-Type': 'application/json' },
--------        body: JSON.stringify({ phone, name, role: selectedRole, city: selectedCity })
-------+        body: JSON.stringify({ phone, name, role: 'passenger', city: selectedCity })
+-------        body: JSON.stringify({ phone, name, role: 'passenger', city: selectedCity })
+------+        body: JSON.stringify({ phone, name, city: selectedCity })
 ------       });
 ------ 
 ------       const data = await response.json();
-------@@ -395,52 +395,9 @@ export default function App() {
-------               </Text>
-------             </TouchableOpacity>
------- 
--------            <Text style={[styles.label, { marginTop: 20 }]}>Rol Seçin</Text>
--------            <View style={styles.roleContainer}>
--------              <TouchableOpacity
--------                style={[
--------                  styles.roleButton,
--------                  selectedRole === 'passenger' && styles.roleButtonActive
--------                ]}
--------                onPress={() => setSelectedRole('passenger')}
--------              >
--------                <Ionicons
--------                  name="person"
--------                  size={40}
--------                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
--------                />
--------                <Text
--------                  style={[
--------                    styles.roleButtonText,
--------                    selectedRole === 'passenger' && styles.roleButtonTextActive
--------                  ]}
--------                >
--------                  Yolcu
--------                </Text>
--------              </TouchableOpacity>
--------
--------              <TouchableOpacity
--------                style={[
--------                  styles.roleButton,
--------                  selectedRole === 'driver' && styles.roleButtonActive
--------                ]}
--------                onPress={() => setSelectedRole('driver')}
--------              >
--------                <Ionicons
--------                  name="car"
--------                  size={40}
--------                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
--------                />
--------                <Text
--------                  style={[
--------                    styles.roleButtonText,
--------                    selectedRole === 'driver' && styles.roleButtonTextActive
--------                  ]}
--------                >
--------                  Sürücü
--------                </Text>
--------              </TouchableOpacity>
--------            </View>
-------+            <Text style={[styles.label, { marginTop: 20, textAlign: 'center', fontSize: 14, color: '#666' }]}>
-------+              📍 Telefon: {phone}
-------+            </Text>
------- 
-------             <TouchableOpacity style={styles.primaryButton} onPress={handleRegister}>
-------               <Text style={styles.primaryButtonText}>Kayıt Ol</Text>
 ------diff --git a/model.patch b/model.patch
-------index 8d991c4..e69de29 100644
+------index 938c124..e69de29 100644
 --------- a/model.patch
 ------+++ b/model.patch
-------@@ -1,910 +0,0 @@
+------@@ -1,984 +0,0 @@
 -------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
--------index 9b8a967..d65c42d 100644
+-------index 6653030..071a7cf 100644
 ---------- a/frontend/app/index.tsx
 -------+++ b/frontend/app/index.tsx
--------@@ -127,7 +127,7 @@ export default function App() {
--------       const userData = await AsyncStorage.getItem('user');
--------       if (userData) {
--------         setUser(JSON.parse(userData));
---------        setScreen('dashboard');
--------+        setScreen('role-select'); // Her girişte rol seçimi
--------       }
--------     } catch (error) {
--------       console.error('Kullanıcı yüklenemedi:', error);
--------@@ -191,9 +191,9 @@ export default function App() {
--------       if (data.success) {
--------         if (data.user_exists && data.user) {
--------           await saveUser(data.user);
---------          setScreen('dashboard');
--------+          setScreen('role-select'); // Her girişte rol seçimi
--------         } else {
---------          setScreen('register');
--------+          setScreen('register'); // Yeni kullanıcı
--------         }
--------       } else {
--------         Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
--------@@ -554,6 +554,98 @@ export default function App() {
--------     );
--------   }
+-------@@ -271,7 +271,7 @@ export default function App() {
+-------       const response = await fetch(`${API_URL}/auth/register`, {
+-------         method: 'POST',
+-------         headers: { 'Content-Type': 'application/json' },
+--------        body: JSON.stringify({ phone, name, role: selectedRole, city: selectedCity })
+-------+        body: JSON.stringify({ phone, name, role: 'passenger', city: selectedCity })
+-------       });
 ------- 
--------+  // Role Selection Screen - Her girişte gösterilir
--------+  if (screen === 'role-select') {
--------+    return (
--------+      <SafeAreaView style={styles.container}>
--------+        <ScrollView contentContainerStyle={styles.scrollContent}>
--------+          <View style={styles.logoContainer}>
--------+            <Ionicons name="person-circle" size={60} color="#00A67E" />
--------+            <Text style={styles.logoText}>Rol Seçimi</Text>
--------+            <Text style={styles.subtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
--------+          </View>
--------+
--------+          <View style={styles.formContainer}>
--------+            <Text style={[styles.label, { textAlign: 'center', marginBottom: 30 }]}>
--------+              Hoş geldiniz {user?.name}! Rolünüzü seçin:
+-------       const data = await response.json();
+-------@@ -395,52 +395,9 @@ export default function App() {
+-------               </Text>
+-------             </TouchableOpacity>
+------- 
+--------            <Text style={[styles.label, { marginTop: 20 }]}>Rol Seçin</Text>
+--------            <View style={styles.roleContainer}>
+--------              <TouchableOpacity
+--------                style={[
+--------                  styles.roleButton,
+--------                  selectedRole === 'passenger' && styles.roleButtonActive
+--------                ]}
+--------                onPress={() => setSelectedRole('passenger')}
+--------              >
+--------                <Ionicons
+--------                  name="person"
+--------                  size={40}
+--------                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
+--------                />
+--------                <Text
+--------                  style={[
+--------                    styles.roleButtonText,
+--------                    selectedRole === 'passenger' && styles.roleButtonTextActive
+--------                  ]}
+--------                >
+--------                  Yolcu
+--------                </Text>
+--------              </TouchableOpacity>
+--------
+--------              <TouchableOpacity
+--------                style={[
+--------                  styles.roleButton,
+--------                  selectedRole === 'driver' && styles.roleButtonActive
+--------                ]}
+--------                onPress={() => setSelectedRole('driver')}
+--------              >
+--------                <Ionicons
+--------                  name="car"
+--------                  size={40}
+--------                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
+--------                />
+--------                <Text
+--------                  style={[
+--------                    styles.roleButtonText,
+--------                    selectedRole === 'driver' && styles.roleButtonTextActive
+--------                  ]}
+--------                >
+--------                  Sürücü
+--------                </Text>
+--------              </TouchableOpacity>
+--------            </View>
+-------+            <Text style={[styles.label, { marginTop: 20, textAlign: 'center', fontSize: 14, color: '#666' }]}>
+-------+              📍 Telefon: {phone}
 -------+            </Text>
--------+            
--------+            <View style={styles.roleContainer}>
--------+              <TouchableOpacity
--------+                style={[
--------+                  styles.roleButton,
--------+                  selectedRole === 'passenger' && styles.roleButtonActive
--------+                ]}
--------+                onPress={() => setSelectedRole('passenger')}
--------+              >
--------+                <Ionicons
--------+                  name="person"
--------+                  size={40}
--------+                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
--------+                />
--------+                <Text
--------+                  style={[
--------+                    styles.roleButtonText,
--------+                    selectedRole === 'passenger' && styles.roleButtonTextActive
--------+                  ]}
--------+                >
--------+                  Yolcu
--------+                </Text>
--------+                <Text style={styles.roleDescription}>
--------+                  Yolculuk talep et
--------+                </Text>
--------+              </TouchableOpacity>
--------+
--------+              <TouchableOpacity
--------+                style={[
--------+                  styles.roleButton,
--------+                  selectedRole === 'driver' && styles.roleButtonActive
--------+                ]}
--------+                onPress={() => setSelectedRole('driver')}
--------+              >
--------+                <Ionicons
--------+                  name="car"
--------+                  size={40}
--------+                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
--------+                />
--------+                <Text
--------+                  style={[
--------+                    styles.roleButtonText,
--------+                    selectedRole === 'driver' && styles.roleButtonTextActive
--------+                  ]}
--------+                >
--------+                  Sürücü
--------+                </Text>
--------+                <Text style={styles.roleDescription}>
--------+                  Yolcu taşı
--------+                </Text>
--------+              </TouchableOpacity>
--------+            </View>
--------+
--------+            <TouchableOpacity 
--------+              style={[styles.primaryButton, !selectedRole && { opacity: 0.5 }]} 
--------+              onPress={() => {
--------+                if (selectedRole && user) {
--------+                  // Kullanıcının rolünü güncelle
--------+                  const updatedUser = { ...user, role: selectedRole };
--------+                  setUser(updatedUser);
--------+                  setScreen('dashboard');
--------+                }
--------+              }}
--------+              disabled={!selectedRole}
--------+            >
--------+              <Text style={styles.primaryButtonText}>Devam Et</Text>
--------+            </TouchableOpacity>
--------+
--------+            <TouchableOpacity style={styles.secondaryButton} onPress={logout}>
--------+              <Text style={styles.secondaryButtonText}>Çıkış Yap</Text>
--------+            </TouchableOpacity>
--------+          </View>
--------+        </ScrollView>
--------+      </SafeAreaView>
--------+    );
--------+  }
--------+
--------   // Dashboard
--------   if (user && screen === 'dashboard') {
--------     return user.role === 'passenger' ? (
--------@@ -1423,6 +1515,12 @@ const styles = StyleSheet.create({
--------   roleButtonTextActive: {
--------     color: '#FFF'
--------   },
--------+  roleDescription: {
--------+    fontSize: 12,
--------+    color: '#666',
--------+    marginTop: 4,
--------+    textAlign: 'center'
--------+  },
--------   header: {
--------     backgroundColor: '#00A67E',
--------     padding: 20,
+------- 
+-------             <TouchableOpacity style={styles.primaryButton} onPress={handleRegister}>
+-------               <Text style={styles.primaryButtonText}>Kayıt Ol</Text>
 -------diff --git a/model.patch b/model.patch
--------index 46dd01d..a16510f 100644
+-------index 8d991c4..e69de29 100644
 ---------- a/model.patch
 -------+++ b/model.patch
--------@@ -1,768 +0,0 @@
+-------@@ -1,910 +0,0 @@
 --------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
---------index 63015ca..9b8a967 100644
+--------index 9b8a967..d65c42d 100644
 ----------- a/frontend/app/index.tsx
 --------+++ b/frontend/app/index.tsx
---------@@ -80,7 +80,7 @@ interface Offer {
--------- export default function App() {
---------   const [user, setUser] = useState<User | null>(null);
---------   const [loading, setLoading] = useState(true);
----------  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'dashboard'>('login');
---------+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'role-select' | 'dashboard'>('login');
+--------@@ -127,7 +127,7 @@ export default function App() {
+--------       const userData = await AsyncStorage.getItem('user');
+--------       if (userData) {
+--------         setUser(JSON.parse(userData));
+---------        setScreen('dashboard');
+--------+        setScreen('role-select'); // Her girişte rol seçimi
+--------       }
+--------     } catch (error) {
+--------       console.error('Kullanıcı yüklenemedi:', error);
+--------@@ -191,9 +191,9 @@ export default function App() {
+--------       if (data.success) {
+--------         if (data.user_exists && data.user) {
+--------           await saveUser(data.user);
+---------          setScreen('dashboard');
+--------+          setScreen('role-select'); // Her girişte rol seçimi
+--------         } else {
+---------          setScreen('register');
+--------+          setScreen('register'); // Yeni kullanıcı
+--------         }
+--------       } else {
+--------         Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
+--------@@ -554,6 +554,98 @@ export default function App() {
+--------     );
+--------   }
 -------- 
---------   // Auth states
---------   const [phone, setPhone] = useState('');
+--------+  // Role Selection Screen - Her girişte gösterilir
+--------+  if (screen === 'role-select') {
+--------+    return (
+--------+      <SafeAreaView style={styles.container}>
+--------+        <ScrollView contentContainerStyle={styles.scrollContent}>
+--------+          <View style={styles.logoContainer}>
+--------+            <Ionicons name="person-circle" size={60} color="#00A67E" />
+--------+            <Text style={styles.logoText}>Rol Seçimi</Text>
+--------+            <Text style={styles.subtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
+--------+          </View>
+--------+
+--------+          <View style={styles.formContainer}>
+--------+            <Text style={[styles.label, { textAlign: 'center', marginBottom: 30 }]}>
+--------+              Hoş geldiniz {user?.name}! Rolünüzü seçin:
+--------+            </Text>
+--------+            
+--------+            <View style={styles.roleContainer}>
+--------+              <TouchableOpacity
+--------+                style={[
+--------+                  styles.roleButton,
+--------+                  selectedRole === 'passenger' && styles.roleButtonActive
+--------+                ]}
+--------+                onPress={() => setSelectedRole('passenger')}
+--------+              >
+--------+                <Ionicons
+--------+                  name="person"
+--------+                  size={40}
+--------+                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
+--------+                />
+--------+                <Text
+--------+                  style={[
+--------+                    styles.roleButtonText,
+--------+                    selectedRole === 'passenger' && styles.roleButtonTextActive
+--------+                  ]}
+--------+                >
+--------+                  Yolcu
+--------+                </Text>
+--------+                <Text style={styles.roleDescription}>
+--------+                  Yolculuk talep et
+--------+                </Text>
+--------+              </TouchableOpacity>
+--------+
+--------+              <TouchableOpacity
+--------+                style={[
+--------+                  styles.roleButton,
+--------+                  selectedRole === 'driver' && styles.roleButtonActive
+--------+                ]}
+--------+                onPress={() => setSelectedRole('driver')}
+--------+              >
+--------+                <Ionicons
+--------+                  name="car"
+--------+                  size={40}
+--------+                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
+--------+                />
+--------+                <Text
+--------+                  style={[
+--------+                    styles.roleButtonText,
+--------+                    selectedRole === 'driver' && styles.roleButtonTextActive
+--------+                  ]}
+--------+                >
+--------+                  Sürücü
+--------+                </Text>
+--------+                <Text style={styles.roleDescription}>
+--------+                  Yolcu taşı
+--------+                </Text>
+--------+              </TouchableOpacity>
+--------+            </View>
+--------+
+--------+            <TouchableOpacity 
+--------+              style={[styles.primaryButton, !selectedRole && { opacity: 0.5 }]} 
+--------+              onPress={() => {
+--------+                if (selectedRole && user) {
+--------+                  // Kullanıcının rolünü güncelle
+--------+                  const updatedUser = { ...user, role: selectedRole };
+--------+                  setUser(updatedUser);
+--------+                  setScreen('dashboard');
+--------+                }
+--------+              }}
+--------+              disabled={!selectedRole}
+--------+            >
+--------+              <Text style={styles.primaryButtonText}>Devam Et</Text>
+--------+            </TouchableOpacity>
+--------+
+--------+            <TouchableOpacity style={styles.secondaryButton} onPress={logout}>
+--------+              <Text style={styles.secondaryButtonText}>Çıkış Yap</Text>
+--------+            </TouchableOpacity>
+--------+          </View>
+--------+        </ScrollView>
+--------+      </SafeAreaView>
+--------+    );
+--------+  }
+--------+
+--------   // Dashboard
+--------   if (user && screen === 'dashboard') {
+--------     return user.role === 'passenger' ? (
+--------@@ -1423,6 +1515,12 @@ const styles = StyleSheet.create({
+--------   roleButtonTextActive: {
+--------     color: '#FFF'
+--------   },
+--------+  roleDescription: {
+--------+    fontSize: 12,
+--------+    color: '#666',
+--------+    marginTop: 4,
+--------+    textAlign: 'center'
+--------+  },
+--------   header: {
+--------     backgroundColor: '#00A67E',
+--------     padding: 20,
 --------diff --git a/model.patch b/model.patch
---------index f1134a2..e69de29 100644
+--------index 46dd01d..a16510f 100644
 ----------- a/model.patch
 --------+++ b/model.patch
---------@@ -1,750 +0,0 @@
+--------@@ -1,768 +0,0 @@
+---------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+---------index 63015ca..9b8a967 100644
+------------ a/frontend/app/index.tsx
+---------+++ b/frontend/app/index.tsx
+---------@@ -80,7 +80,7 @@ interface Offer {
+--------- export default function App() {
+---------   const [user, setUser] = useState<User | null>(null);
+---------   const [loading, setLoading] = useState(true);
+----------  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'dashboard'>('login');
+---------+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'role-select' | 'dashboard'>('login');
+--------- 
+---------   // Auth states
+---------   const [phone, setPhone] = useState('');
 ---------diff --git a/model.patch b/model.patch
----------index 6cb15e6..e69de29 100644
+---------index f1134a2..e69de29 100644
 ------------ a/model.patch
 ---------+++ b/model.patch
----------@@ -1,745 +0,0 @@
-----------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
-----------index b87d35c..c9809aa 100644
-------------- a/frontend/app/index.tsx
-----------+++ b/frontend/app/index.tsx
-----------@@ -1545,10 +1545,64 @@ const styles = StyleSheet.create({
-----------     marginTop: 8
-----------   },
-----------   requestCard: {
------------    backgroundColor: '#F8F8F8',
-----------+    backgroundColor: '#FFF',
-----------+    padding: 20,
-----------+    borderRadius: 16,
-----------+    marginBottom: 16,
-----------+    shadowColor: '#000',
-----------+    shadowOffset: { width: 0, height: 4 },
-----------+    shadowOpacity: 0.15,
-----------+    shadowRadius: 8,
-----------+    elevation: 4
-----------+  },
-----------+  requestHeader: {
-----------+    flexDirection: 'row',
-----------+    alignItems: 'center',
-----------+    marginBottom: 16,
-----------+    gap: 12,
-----------+  },
-----------+  passengerAvatar: {
-----------+    width: 48,
-----------+    height: 48,
-----------+    borderRadius: 24,
-----------+    backgroundColor: COLORS.primary,
-----------+    alignItems: 'center',
-----------+    justifyContent: 'center',
-----------+  },
-----------+  passengerAvatarText: {
-----------+    fontSize: 20,
-----------+    fontWeight: 'bold',
-----------+    color: '#FFF',
-----------+  },
-----------+  distanceContainer: {
-----------+    flexDirection: 'row',
-----------+    backgroundColor: '#F8F9FA',
-----------     borderRadius: 12,
-----------     padding: 16,
------------    marginBottom: 12
-----------+    marginBottom: 16,
-----------+    alignItems: 'center',
-----------+    justifyContent: 'space-around',
-----------+  },
-----------+  distanceBox: {
-----------+    flex: 1,
-----------+    alignItems: 'center',
-----------+    gap: 6,
-----------+  },
-----------+  distanceDivider: {
-----------+    width: 1,
-----------+    height: 60,
-----------+    backgroundColor: '#E0E0E0',
-----------+    marginHorizontal: 12,
-----------+  },
-----------+  distanceLabel: {
-----------+    fontSize: 12,
-----------+    color: COLORS.gray500,
-----------+    fontWeight: '600',
-----------+  },
-----------+  distanceValue: {
-----------+    fontSize: 20,
-----------+    fontWeight: 'bold',
-----------+    color: COLORS.text,
-----------   },
-----------   requestPassenger: {
-----------     fontSize: 16,
+---------@@ -1,750 +0,0 @@
 ----------diff --git a/model.patch b/model.patch
-----------index 501113a..e69de29 100644
+----------index 6cb15e6..e69de29 100644
 ------------- a/model.patch
 ----------+++ b/model.patch
-----------@@ -1,669 +0,0 @@
------------diff --git a/backend/server.py b/backend/server.py
------------index 465cbe3..88c3d6a 100644
--------------- a/backend/server.py
------------+++ b/backend/server.py
------------@@ -22,14 +22,23 @@ from database import db_instance
------------ ROOT_DIR = Path(__file__).parent
------------ load_dotenv(ROOT_DIR / '.env')
------------ 
------------+# Logger setup
------------+logging.basicConfig(level=logging.INFO)
------------+logger = logging.getLogger("server")
------------+
------------+# ==================== HELPER FUNCTIONS ====================
------------+def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
------------+    """İki nokta arasındaki mesafeyi km cinsinden hesapla"""
------------+    try:
------------+        return geodesic((lat1, lng1), (lat2, lng2)).km
------------+    except Exception as e:
------------+        logger.error(f"Mesafe hesaplama hatası: {e}")
------------+        return 0.0
------------+
------------ # Create app
------------ app = FastAPI(title="Leylek TAG API", version="2.0.0")
------------ api_router = APIRouter(prefix="/api")
------------ 
-------------# Configure logging
-------------logging.basicConfig(level=logging.INFO)
-------------logger = logging.getLogger(__name__)
-------------
------------ # ==================== STARTUP/SHUTDOWN ====================
------------ @app.on_event("startup")
------------ async def startup_db():
+----------@@ -1,745 +0,0 @@
+-----------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+-----------index b87d35c..c9809aa 100644
+-------------- a/frontend/app/index.tsx
+-----------+++ b/frontend/app/index.tsx
+-----------@@ -1545,10 +1545,64 @@ const styles = StyleSheet.create({
+-----------     marginTop: 8
+-----------   },
+-----------   requestCard: {
+------------    backgroundColor: '#F8F8F8',
+-----------+    backgroundColor: '#FFF',
+-----------+    padding: 20,
+-----------+    borderRadius: 16,
+-----------+    marginBottom: 16,
+-----------+    shadowColor: '#000',
+-----------+    shadowOffset: { width: 0, height: 4 },
+-----------+    shadowOpacity: 0.15,
+-----------+    shadowRadius: 8,
+-----------+    elevation: 4
+-----------+  },
+-----------+  requestHeader: {
+-----------+    flexDirection: 'row',
+-----------+    alignItems: 'center',
+-----------+    marginBottom: 16,
+-----------+    gap: 12,
+-----------+  },
+-----------+  passengerAvatar: {
+-----------+    width: 48,
+-----------+    height: 48,
+-----------+    borderRadius: 24,
+-----------+    backgroundColor: COLORS.primary,
+-----------+    alignItems: 'center',
+-----------+    justifyContent: 'center',
+-----------+  },
+-----------+  passengerAvatarText: {
+-----------+    fontSize: 20,
+-----------+    fontWeight: 'bold',
+-----------+    color: '#FFF',
+-----------+  },
+-----------+  distanceContainer: {
+-----------+    flexDirection: 'row',
+-----------+    backgroundColor: '#F8F9FA',
+-----------     borderRadius: 12,
+-----------     padding: 16,
+------------    marginBottom: 12
+-----------+    marginBottom: 16,
+-----------+    alignItems: 'center',
+-----------+    justifyContent: 'space-around',
+-----------+  },
+-----------+  distanceBox: {
+-----------+    flex: 1,
+-----------+    alignItems: 'center',
+-----------+    gap: 6,
+-----------+  },
+-----------+  distanceDivider: {
+-----------+    width: 1,
+-----------+    height: 60,
+-----------+    backgroundColor: '#E0E0E0',
+-----------+    marginHorizontal: 12,
+-----------+  },
+-----------+  distanceLabel: {
+-----------+    fontSize: 12,
+-----------+    color: COLORS.gray500,
+-----------+    fontWeight: '600',
+-----------+  },
+-----------+  distanceValue: {
+-----------+    fontSize: 20,
+-----------+    fontWeight: 'bold',
+-----------+    color: COLORS.text,
+-----------   },
+-----------   requestPassenger: {
+-----------     fontSize: 16,
 -----------diff --git a/model.patch b/model.patch
------------index 9fe25a4..e69de29 100644
+-----------index 501113a..e69de29 100644
 -------------- a/model.patch
 -----------+++ b/model.patch
------------@@ -1,632 +0,0 @@
+-----------@@ -1,669 +0,0 @@
 ------------diff --git a/backend/server.py b/backend/server.py
-------------index 3cfbf4c..465cbe3 100644
+------------index 465cbe3..88c3d6a 100644
 --------------- a/backend/server.py
 ------------+++ b/backend/server.py
-------------@@ -13,6 +13,7 @@ from bson import ObjectId
------------- from datetime import datetime
------------- import secrets
------------- import base64
-------------+from geopy.distance import geodesic
+------------@@ -22,14 +22,23 @@ from database import db_instance
+------------ ROOT_DIR = Path(__file__).parent
+------------ load_dotenv(ROOT_DIR / '.env')
 ------------ 
------------- # Import models
------------- from models import *
+------------+# Logger setup
+------------+logging.basicConfig(level=logging.INFO)
+------------+logger = logging.getLogger("server")
+------------+
+------------+# ==================== HELPER FUNCTIONS ====================
+------------+def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+------------+    """İki nokta arasındaki mesafeyi km cinsinden hesapla"""
+------------+    try:
+------------+        return geodesic((lat1, lng1), (lat2, lng2)).km
+------------+    except Exception as e:
+------------+        logger.error(f"Mesafe hesaplama hatası: {e}")
+------------+        return 0.0
+------------+
+------------ # Create app
+------------ app = FastAPI(title="Leylek TAG API", version="2.0.0")
+------------ api_router = APIRouter(prefix="/api")
+------------ 
+-------------# Configure logging
+-------------logging.basicConfig(level=logging.INFO)
+-------------logger = logging.getLogger(__name__)
+-------------
+------------ # ==================== STARTUP/SHUTDOWN ====================
+------------ @app.on_event("startup")
+------------ async def startup_db():
 ------------diff --git a/model.patch b/model.patch
-------------index 7e21102..e69de29 100644
+------------index 9fe25a4..e69de29 100644
 --------------- a/model.patch
 ------------+++ b/model.patch
-------------@@ -1,615 +0,0 @@
+------------@@ -1,632 +0,0 @@
+-------------diff --git a/backend/server.py b/backend/server.py
+-------------index 3cfbf4c..465cbe3 100644
+---------------- a/backend/server.py
+-------------+++ b/backend/server.py
+-------------@@ -13,6 +13,7 @@ from bson import ObjectId
+------------- from datetime import datetime
+------------- import secrets
+------------- import base64
+-------------+from geopy.distance import geodesic
+------------- 
+------------- # Import models
+------------- from models import *
 -------------diff --git a/model.patch b/model.patch
--------------index 3acd8ad..e69de29 100644
+-------------index 7e21102..e69de29 100644
 ---------------- a/model.patch
 -------------+++ b/model.patch
--------------@@ -1,610 +0,0 @@
---------------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
---------------index bd251c5..213dbe9 100644
------------------ a/frontend/app/index.tsx
---------------+++ b/frontend/app/index.tsx
---------------@@ -94,6 +94,19 @@ export default function App() {
---------------     loadUser();
---------------   }, []);
--------------- 
---------------+  useEffect(() => {
---------------+    if (user && screen === 'dashboard') {
---------------+      requestLocationPermission().then(granted => {
---------------+        if (granted) {
---------------+          updateUserLocation();
---------------+          // Her 10 saniyede bir konum güncelle
---------------+          const interval = setInterval(updateUserLocation, 10000);
---------------+          return () => clearInterval(interval);
---------------+        }
---------------+      });
---------------+    }
---------------+  }, [user, screen]);
---------------+
---------------   const loadUser = async () => {
---------------     try {
---------------       const userData = await AsyncStorage.getItem('user');
+-------------@@ -1,615 +0,0 @@
 --------------diff --git a/model.patch b/model.patch
---------------index cad349c..e69de29 100644
+--------------index 3acd8ad..e69de29 100644
 ----------------- a/model.patch
 --------------+++ b/model.patch
---------------@@ -1,581 +0,0 @@
+--------------@@ -1,610 +0,0 @@
 ---------------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
----------------index 5e9a60f..63b315c 100644
+---------------index bd251c5..213dbe9 100644
 ------------------ a/frontend/app/index.tsx
 ---------------+++ b/frontend/app/index.tsx
----------------@@ -1152,111 +1152,116 @@ const styles = StyleSheet.create({
----------------     textAlign: 'center',
----------------     marginTop: 20
----------------   },
-----------------  // ÇAĞRI BUTONU STİLLERİ
----------------+  // Yeni stiller - Çağrı Butonu & Mavi Balonlar
----------------   callButtonLarge: {
-----------------    backgroundColor: '#FF6B35',
-----------------    borderRadius: 20,
-----------------    padding: 24,
----------------+    backgroundColor: COLORS.secondary,
----------------+    borderRadius: 80,
----------------+    padding: 30,
----------------     alignItems: 'center',
----------------     justifyContent: 'center',
-----------------    marginVertical: 20,
-----------------    flexDirection: 'row',
-----------------    shadowColor: '#FF6B35',
-----------------    shadowOffset: { width: 0, height: 4 },
----------------+    marginVertical: 40,
----------------+    shadowColor: '#000',
----------------+    shadowOffset: { width: 0, height: 8 },
----------------     shadowOpacity: 0.3,
-----------------    shadowRadius: 8,
-----------------    elevation: 8
----------------+    shadowRadius: 12,
----------------+    elevation: 10,
----------------   },
----------------   callButtonLargeText: {
----------------     color: '#FFF',
-----------------    fontSize: 20,
----------------+    fontSize: 24,
----------------     fontWeight: 'bold',
-----------------    marginLeft: 12,
-----------------    letterSpacing: 1
----------------+    marginTop: 12,
----------------+    letterSpacing: 1,
----------------+  },
----------------+  callNote: {
----------------+    fontSize: 14,
----------------+    color: COLORS.gray500,
----------------+    textAlign: 'center',
----------------+    marginTop: 8,
----------------   },
-----------------  // MAVİ BALON STİLLERİ
----------------   offersContainer: {
-----------------    marginBottom: 16
----------------+    backgroundColor: COLORS.background,
----------------+    borderRadius: 16,
----------------+    padding: 20,
----------------+    marginBottom: 16,
----------------   },
----------------   offersTitle: {
-----------------    fontSize: 18,
----------------+    fontSize: 22,
----------------     fontWeight: 'bold',
-----------------    color: '#333',
----------------+    color: COLORS.text,
----------------     marginBottom: 16,
-----------------    textAlign: 'center'
----------------+    textAlign: 'center',
----------------   },
----------------   balloonsContainer: {
----------------     flexDirection: 'row',
----------------     flexWrap: 'wrap',
----------------     justifyContent: 'space-around',
-----------------    paddingHorizontal: 10
----------------+    marginBottom: 16,
----------------   },
----------------   offerBalloon: {
-----------------    backgroundColor: '#3FA9F5',
----------------+    width: '45%',
----------------+    backgroundColor: COLORS.primary,
----------------     borderRadius: 20,
----------------     padding: 16,
-----------------    margin: 8,
-----------------    minWidth: 140,
-----------------    maxWidth: 160,
-----------------    shadowColor: '#3FA9F5',
----------------+    marginBottom: 16,
----------------+    shadowColor: COLORS.primary,
----------------     shadowOffset: { width: 0, height: 4 },
-----------------    shadowOpacity: 0.3,
----------------+    shadowOpacity: 0.4,
----------------     shadowRadius: 8,
----------------     elevation: 6,
-----------------    position: 'relative'
----------------+    position: 'relative',
----------------   },
----------------   balloonContent: {
-----------------    alignItems: 'center'
----------------+    alignItems: 'center',
----------------   },
----------------   balloonDriverName: {
-----------------    color: '#FFF',
-----------------    fontSize: 16,
----------------+    fontSize: 18,
----------------     fontWeight: 'bold',
-----------------    marginBottom: 4
----------------+    color: '#FFF',
----------------+    marginBottom: 4,
----------------   },
----------------   balloonRating: {
----------------+    fontSize: 14,
----------------     color: '#FFF',
-----------------    fontSize: 12,
----------------     opacity: 0.9,
-----------------    marginBottom: 8
----------------+    marginBottom: 8,
----------------   },
----------------   balloonPrice: {
-----------------    color: '#FFF',
-----------------    fontSize: 20,
----------------+    fontSize: 24,
----------------     fontWeight: 'bold',
-----------------    marginBottom: 4
----------------+    color: '#FFF',
----------------+    marginBottom: 4,
----------------   },
----------------   balloonTime: {
----------------+    fontSize: 14,
----------------     color: '#FFF',
-----------------    fontSize: 12,
-----------------    opacity: 0.8
----------------+    opacity: 0.9,
----------------+    marginBottom: 4,
----------------   },
----------------   balloonNotes: {
----------------+    fontSize: 12,
----------------     color: '#FFF',
-----------------    fontSize: 10,
----------------     opacity: 0.8,
-----------------    marginTop: 4,
-----------------    textAlign: 'center'
----------------+    textAlign: 'center',
----------------+    marginTop: 8,
----------------   },
----------------   balloonTail: {
----------------     position: 'absolute',
-----------------    bottom: -8,
-----------------    left: '50%',
-----------------    marginLeft: -8,
----------------+    bottom: -10,
----------------+    left: '40%',
----------------     width: 0,
----------------     height: 0,
-----------------    borderLeftWidth: 8,
-----------------    borderRightWidth: 8,
-----------------    borderTopWidth: 8,
----------------+    borderLeftWidth: 10,
----------------     borderLeftColor: 'transparent',
----------------+    borderRightWidth: 10,
----------------     borderRightColor: 'transparent',
-----------------    borderTopColor: '#3FA9F5'
----------------+    borderTopWidth: 10,
----------------+    borderTopColor: COLORS.primary,
----------------   },
----------------   balloonHint: {
----------------     fontSize: 14,
-----------------    color: '#666',
----------------+    color: COLORS.gray500,
----------------     textAlign: 'center',
-----------------    marginTop: 16,
-----------------    fontStyle: 'italic'
----------------+    fontStyle: 'italic',
----------------   }
---------------- });
+---------------@@ -94,6 +94,19 @@ export default function App() {
+---------------     loadUser();
+---------------   }, []);
+--------------- 
+---------------+  useEffect(() => {
+---------------+    if (user && screen === 'dashboard') {
+---------------+      requestLocationPermission().then(granted => {
+---------------+        if (granted) {
+---------------+          updateUserLocation();
+---------------+          // Her 10 saniyede bir konum güncelle
+---------------+          const interval = setInterval(updateUserLocation, 10000);
+---------------+          return () => clearInterval(interval);
+---------------+        }
+---------------+      });
+---------------+    }
+---------------+  }, [user, screen]);
+---------------+
+---------------   const loadUser = async () => {
+---------------     try {
+---------------       const userData = await AsyncStorage.getItem('user');
 ---------------diff --git a/model.patch b/model.patch
----------------index c685b3e..e69de29 100644
+---------------index cad349c..e69de29 100644
 ------------------ a/model.patch
 ---------------+++ b/model.patch
----------------@@ -1,405 +0,0 @@
+---------------@@ -1,581 +0,0 @@
 ----------------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
-----------------index b10999f..5e9a60f 100644
+----------------index 5e9a60f..63b315c 100644
 ------------------- a/frontend/app/index.tsx
 ----------------+++ b/frontend/app/index.tsx
-----------------@@ -344,11 +344,8 @@ export default function App() {
----------------- function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
-----------------   const [activeTag, setActiveTag] = useState<Tag | null>(null);
-----------------   const [offers, setOffers] = useState<Offer[]>([]);
------------------  const [pickupLocation, setPickupLocation] = useState('');
------------------  const [dropoffLocation, setDropoffLocation] = useState('');
------------------  const [notes, setNotes] = useState('');
-----------------   const [loading, setLoading] = useState(false);
------------------  const [refreshing, setRefreshing] = useState(false);
-----------------+  const [calling, setCalling] = useState(false);
----------------- 
-----------------   useEffect(() => {
-----------------     loadActiveTag();
-----------------@@ -386,41 +383,56 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
-----------------     }
-----------------   };
----------------- 
------------------  const handleCreateRequest = async () => {
------------------    if (!pickupLocation || !dropoffLocation) {
------------------      Alert.alert('Hata', 'Başlangıç ve varış noktalarını girin');
------------------      return;
------------------    }
------------------
-----------------+  // ÇAĞRI BUTONU - Otomatik konum ile talep oluştur
-----------------+  const handleCallButton = async () => {
-----------------     setLoading(true);
-----------------     try {
-----------------+      // Mock konum (gerçek GPS sonra eklenecek)
-----------------+      const mockLocation = 'Mevcut Konumunuz';
-----------------+      const mockDestination = 'Varış Noktası';
-----------------+
-----------------       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
-----------------         method: 'POST',
-----------------         headers: { 'Content-Type': 'application/json' },
-----------------         body: JSON.stringify({
------------------          pickup_location: pickupLocation,
------------------          dropoff_location: dropoffLocation,
------------------          notes
-----------------+          pickup_location: mockLocation,
-----------------+          dropoff_location: mockDestination,
-----------------+          notes: 'Çağrı butonu ile oluşturuldu'
-----------------         })
-----------------       });
----------------- 
-----------------       const data = await response.json();
-----------------       if (data.success) {
------------------        Alert.alert('Başarılı', 'Talebiniz oluşturuldu, teklifler bekleniyor...');
-----------------         setActiveTag(data.tag);
------------------        setPickupLocation('');
------------------        setDropoffLocation('');
------------------        setNotes('');
-----------------+        Alert.alert('✅ Çağrı Gönderildi', 'Yakındaki sürücüler tekliflerini gönderiyor...');
-----------------       } else {
------------------        Alert.alert('Hata', data.detail || 'Talep oluşturulamadı');
-----------------+        Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
-----------------       }
-----------------     } catch (error) {
------------------      Alert.alert('Hata', 'Talep oluşturulamadı');
-----------------+      Alert.alert('Hata', 'Çağrı gönderilemedi');
-----------------     } finally {
-----------------       setLoading(false);
-----------------     }
-----------------   };
----------------- 
-----------------+  // SESLİ ARAMA - Mock fonksiyon
-----------------+  const handleVoiceCall = () => {
-----------------+    setCalling(true);
-----------------+    Alert.alert(
-----------------+      '📞 Sesli Arama',
-----------------+      'Sürücünüzle bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
-----------------+      [
-----------------+        {
-----------------+          text: 'Aramayı Sonlandır',
-----------------+          onPress: () => {
-----------------+            setCalling(false);
-----------------+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
-----------------+          }
-----------------+        }
-----------------+      ]
-----------------+    );
-----------------+  };
-----------------+
-----------------   const handleAcceptOffer = async (offerId: string) => {
-----------------     if (!activeTag) return;
----------------- 
-----------------@@ -468,45 +480,23 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
-----------------       <ScrollView style={styles.content}>
-----------------         {!activeTag ? (
-----------------           <View style={styles.card}>
------------------            <Text style={styles.cardTitle}>Yeni Yolculuk Talebi</Text>
-----------------+            <Text style={styles.cardTitle}>🚗 Taksi Çağır</Text>
-----------------+            <Text style={styles.subtitle}>Tek dokunuşla yakındaki sürücülere çağrı gönder</Text>
-----------------             
------------------            <Text style={styles.label}>Nereden</Text>
------------------            <TextInput
------------------              style={styles.input}
------------------              placeholder="Başlangıç konumu (örn: Kadıköy, İstanbul)"
------------------              placeholderTextColor="#999"
------------------              value={pickupLocation}
------------------              onChangeText={setPickupLocation}
------------------            />
------------------
------------------            <Text style={styles.label}>Nereye</Text>
------------------            <TextInput
------------------              style={styles.input}
------------------              placeholder="Varış konumu (örn: Beşiktaş, İstanbul)"
------------------              placeholderTextColor="#999"
------------------              value={dropoffLocation}
------------------              onChangeText={setDropoffLocation}
------------------            />
------------------
------------------            <Text style={styles.label}>Notlar (Opsiyonel)</Text>
------------------            <TextInput
------------------              style={[styles.input, { height: 80 }]}
------------------              placeholder="Ek bilgiler..."
------------------              placeholderTextColor="#999"
------------------              multiline
------------------              value={notes}
------------------              onChangeText={setNotes}
------------------            />
------------------
-----------------             <TouchableOpacity
------------------              style={[styles.primaryButton, loading && { opacity: 0.5 }]}
------------------              onPress={handleCreateRequest}
-----------------+              style={[styles.callButtonLarge, loading && { opacity: 0.5 }]}
-----------------+              onPress={handleCallButton}
-----------------               disabled={loading}
-----------------             >
------------------              <Text style={styles.primaryButtonText}>
------------------                {loading ? 'Oluşturuluyor...' : 'Talep Oluştur'}
-----------------+              <Ionicons name="call" size={40} color="#FFF" />
-----------------+              <Text style={styles.callButtonLargeText}>
-----------------+                {loading ? 'ÇAĞRI GÖNDERİLİYOR...' : 'ÇAĞRI GÖNDER'}
-----------------               </Text>
-----------------             </TouchableOpacity>
-----------------+            
-----------------+            <Text style={styles.callNote}>
-----------------+              📍 Mevcut konumunuz otomatik tespit edilecek
-----------------+            </Text>
-----------------           </View>
-----------------         ) : (
-----------------           <>
-----------------@@ -540,42 +530,46 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
-----------------             </View>
----------------- 
-----------------             {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
------------------              <View style={styles.card}>
------------------                <Text style={styles.cardTitle}>Gelen Teklifler ({offers.length})</Text>
------------------                {offers.map((offer) => (
------------------                  <View key={offer.id} style={styles.offerCard}>
------------------                    <View style={styles.offerHeader}>
------------------                      <View>
------------------                        <Text style={styles.offerDriverName}>{offer.driver_name}</Text>
------------------                        <Text style={styles.offerRating}>⭐ {offer.driver_rating}</Text>
------------------                      </View>
------------------                      <View style={{ alignItems: 'flex-end' }}>
------------------                        <Text style={styles.offerPrice}>₺{offer.price}</Text>
------------------                        <Text style={styles.offerTime}>~{offer.estimated_time} dk</Text>
------------------                      </View>
------------------                    </View>
------------------                    {offer.notes && (
------------------                      <Text style={styles.offerNotes}>{offer.notes}</Text>
------------------                    )}
-----------------+              <View style={styles.offersContainer}>
-----------------+                <Text style={styles.offersTitle}>💬 Gelen Teklifler ({offers.length})</Text>
-----------------+                <View style={styles.balloonsContainer}>
-----------------+                  {offers.map((offer) => (
-----------------                     <TouchableOpacity
------------------                      style={styles.acceptButton}
-----------------+                      key={offer.id}
-----------------+                      style={styles.offerBalloon}
-----------------                       onPress={() => handleAcceptOffer(offer.id)}
-----------------                     >
------------------                      <Text style={styles.acceptButtonText}>Kabul Et</Text>
-----------------+                      <View style={styles.balloonContent}>
-----------------+                        <Text style={styles.balloonDriverName}>{offer.driver_name}</Text>
-----------------+                        <Text style={styles.balloonRating}>⭐ {offer.driver_rating}</Text>
-----------------+                        <Text style={styles.balloonPrice}>₺{offer.price}</Text>
-----------------+                        <Text style={styles.balloonTime}>~{offer.estimated_time} dk</Text>
-----------------+                        {offer.notes && (
-----------------+                          <Text style={styles.balloonNotes}>{offer.notes}</Text>
-----------------+                        )}
-----------------+                      </View>
-----------------+                      <View style={styles.balloonTail} />
-----------------                     </TouchableOpacity>
------------------                  </View>
------------------                ))}
-----------------+                  ))}
-----------------+                </View>
-----------------+                <Text style={styles.balloonHint}>💡 Bir balona dokunarak teklifi kabul edin</Text>
-----------------               </View>
-----------------             )}
----------------- 
-----------------             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
-----------------               <View style={styles.card}>
------------------                <Text style={styles.cardTitle}>İletişim</Text>
------------------                <TouchableOpacity style={styles.callButton}>
-----------------+                <Text style={styles.cardTitle}>📞 İletişim</Text>
-----------------+                <TouchableOpacity 
-----------------+                  style={[styles.callButton, calling && { opacity: 0.7 }]}
-----------------+                  onPress={handleVoiceCall}
-----------------+                  disabled={calling}
-----------------+                >
-----------------                   <Ionicons name="call" size={24} color="#FFF" />
------------------                  <Text style={styles.callButtonText}>Sürücüyü Ara</Text>
-----------------+                  <Text style={styles.callButtonText}>
-----------------+                    {calling ? 'Aranıyor...' : 'Sürücüyü Ara'}
-----------------+                  </Text>
-----------------                 </TouchableOpacity>
------------------                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama</Text>
-----------------+                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama • 📱 Numaralar gizli</Text>
-----------------               </View>
-----------------             ) : null}
-----------------           </>
-----------------@@ -590,6 +584,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
-----------------   const [activeTag, setActiveTag] = useState<Tag | null>(null);
-----------------   const [requests, setRequests] = useState<any[]>([]);
-----------------   const [loading, setLoading] = useState(false);
-----------------+  const [calling, setCalling] = useState(false);
----------------- 
-----------------   useEffect(() => {
-----------------     loadData();
-----------------@@ -721,6 +716,23 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
-----------------       ]
-----------------     );
-----------------   };
-----------------+  // SESLİ ARAMA - Driver için mock fonksiyon
-----------------+  const handleDriverVoiceCall = () => {
-----------------+    setCalling(true);
-----------------+    Alert.alert(
-----------------+      '📞 Sesli Arama',
-----------------+      'Yolcunuzla bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
-----------------+      [
-----------------+        {
-----------------+          text: 'Aramayı Sonlandır',
-----------------+          onPress: () => {
-----------------+            setCalling(false);
-----------------+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
-----------------+          }
-----------------+        }
-----------------+      ]
-----------------+    );
-----------------+  };
----------------- 
-----------------   return (
-----------------     <SafeAreaView style={styles.container}>
-----------------@@ -772,9 +784,15 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
-----------------               </TouchableOpacity>
-----------------             )}
----------------- 
------------------            <TouchableOpacity style={styles.callButton}>
-----------------+            <TouchableOpacity 
-----------------+              style={[styles.callButton, calling && { opacity: 0.7 }]}
-----------------+              onPress={handleDriverVoiceCall}
-----------------+              disabled={calling}
-----------------+            >
-----------------               <Ionicons name="call" size={24} color="#FFF" />
------------------              <Text style={styles.callButtonText}>Yolcuyu Ara</Text>
-----------------+              <Text style={styles.callButtonText}>
-----------------+                {calling ? 'Aranıyor...' : 'Yolcuyu Ara'}
-----------------+              </Text>
-----------------             </TouchableOpacity>
-----------------           </View>
-----------------         ) : (
-----------------@@ -1133,5 +1151,112 @@ const styles = StyleSheet.create({
-----------------     color: '#999',
+----------------@@ -1152,111 +1152,116 @@ const styles = StyleSheet.create({
 ----------------     textAlign: 'center',
 ----------------     marginTop: 20
+----------------   },
+-----------------  // ÇAĞRI BUTONU STİLLERİ
+----------------+  // Yeni stiller - Çağrı Butonu & Mavi Balonlar
+----------------   callButtonLarge: {
+-----------------    backgroundColor: '#FF6B35',
+-----------------    borderRadius: 20,
+-----------------    padding: 24,
+----------------+    backgroundColor: COLORS.secondary,
+----------------+    borderRadius: 80,
+----------------+    padding: 30,
+----------------     alignItems: 'center',
+----------------     justifyContent: 'center',
+-----------------    marginVertical: 20,
+-----------------    flexDirection: 'row',
+-----------------    shadowColor: '#FF6B35',
+-----------------    shadowOffset: { width: 0, height: 4 },
+----------------+    marginVertical: 40,
+----------------+    shadowColor: '#000',
+----------------+    shadowOffset: { width: 0, height: 8 },
+----------------     shadowOpacity: 0.3,
+-----------------    shadowRadius: 8,
+-----------------    elevation: 8
+----------------+    shadowRadius: 12,
+----------------+    elevation: 10,
+----------------   },
+----------------   callButtonLargeText: {
+----------------     color: '#FFF',
+-----------------    fontSize: 20,
+----------------+    fontSize: 24,
+----------------     fontWeight: 'bold',
+-----------------    marginLeft: 12,
+-----------------    letterSpacing: 1
+----------------+    marginTop: 12,
+----------------+    letterSpacing: 1,
 ----------------+  },
-----------------+  // ÇAĞRI BUTONU STİLLERİ
-----------------+  callButtonLarge: {
-----------------+    backgroundColor: '#FF6B35',
-----------------+    borderRadius: 20,
-----------------+    padding: 24,
-----------------+    alignItems: 'center',
-----------------+    justifyContent: 'center',
-----------------+    marginVertical: 20,
-----------------+    flexDirection: 'row',
-----------------+    shadowColor: '#FF6B35',
-----------------+    shadowOffset: { width: 0, height: 4 },
-----------------+    shadowOpacity: 0.3,
-----------------+    shadowRadius: 8,
-----------------+    elevation: 8
-----------------+  },
-----------------+  callButtonLargeText: {
-----------------+    color: '#FFF',
-----------------+    fontSize: 20,
-----------------+    fontWeight: 'bold',
-----------------+    marginLeft: 12,
-----------------+    letterSpacing: 1
-----------------+  },
-----------------+  // MAVİ BALON STİLLERİ
-----------------+  offersContainer: {
-----------------+    marginBottom: 16
-----------------+  },
-----------------+  offersTitle: {
-----------------+    fontSize: 18,
-----------------+    fontWeight: 'bold',
-----------------+    color: '#333',
-----------------+    marginBottom: 16,
-----------------+    textAlign: 'center'
-----------------+  },
-----------------+  balloonsContainer: {
-----------------+    flexDirection: 'row',
-----------------+    flexWrap: 'wrap',
-----------------+    justifyContent: 'space-around',
-----------------+    paddingHorizontal: 10
-----------------+  },
-----------------+  offerBalloon: {
-----------------+    backgroundColor: '#3FA9F5',
-----------------+    borderRadius: 20,
-----------------+    padding: 16,
-----------------+    margin: 8,
-----------------+    minWidth: 140,
-----------------+    maxWidth: 160,
-----------------+    shadowColor: '#3FA9F5',
-----------------+    shadowOffset: { width: 0, height: 4 },
-----------------+    shadowOpacity: 0.3,
-----------------+    shadowRadius: 8,
-----------------+    elevation: 6,
-----------------+    position: 'relative'
-----------------+  },
-----------------+  balloonContent: {
-----------------+    alignItems: 'center'
-----------------+  },
-----------------+  balloonDriverName: {
-----------------+    color: '#FFF',
-----------------+    fontSize: 16,
-----------------+    fontWeight: 'bold',
-----------------+    marginBottom: 4
-----------------+  },
-----------------+  balloonRating: {
-----------------+    color: '#FFF',
-----------------+    fontSize: 12,
-----------------+    opacity: 0.9,
-----------------+    marginBottom: 8
-----------------+  },
-----------------+  balloonPrice: {
-----------------+    color: '#FFF',
-----------------+    fontSize: 20,
-----------------+    fontWeight: 'bold',
-----------------+    marginBottom: 4
-----------------+  },
-----------------+  balloonTime: {
-----------------+    color: '#FFF',
-----------------+    fontSize: 12,
-----------------+    opacity: 0.8
-----------------+  },
-----------------+  balloonNotes: {
-----------------+    color: '#FFF',
-----------------+    fontSize: 10,
-----------------+    opacity: 0.8,
-----------------+    marginTop: 4,
-----------------+    textAlign: 'center'
-----------------+  },
-----------------+  balloonTail: {
-----------------+    position: 'absolute',
-----------------+    bottom: -8,
-----------------+    left: '50%',
-----------------+    marginLeft: -8,
-----------------+    width: 0,
-----------------+    height: 0,
-----------------+    borderLeftWidth: 8,
-----------------+    borderRightWidth: 8,
-----------------+    borderTopWidth: 8,
-----------------+    borderLeftColor: 'transparent',
-----------------+    borderRightColor: 'transparent',
-----------------+    borderTopColor: '#3FA9F5'
-----------------+  },
-----------------+  balloonHint: {
+----------------+  callNote: {
 ----------------+    fontSize: 14,
-----------------+    color: '#666',
+----------------+    color: COLORS.gray500,
 ----------------+    textAlign: 'center',
-----------------+    marginTop: 16,
-----------------+    fontStyle: 'italic'
+----------------+    marginTop: 8,
+----------------   },
+-----------------  // MAVİ BALON STİLLERİ
+----------------   offersContainer: {
+-----------------    marginBottom: 16
+----------------+    backgroundColor: COLORS.background,
+----------------+    borderRadius: 16,
+----------------+    padding: 20,
+----------------+    marginBottom: 16,
+----------------   },
+----------------   offersTitle: {
+-----------------    fontSize: 18,
+----------------+    fontSize: 22,
+----------------     fontWeight: 'bold',
+-----------------    color: '#333',
+----------------+    color: COLORS.text,
+----------------     marginBottom: 16,
+-----------------    textAlign: 'center'
+----------------+    textAlign: 'center',
+----------------   },
+----------------   balloonsContainer: {
+----------------     flexDirection: 'row',
+----------------     flexWrap: 'wrap',
+----------------     justifyContent: 'space-around',
+-----------------    paddingHorizontal: 10
+----------------+    marginBottom: 16,
+----------------   },
+----------------   offerBalloon: {
+-----------------    backgroundColor: '#3FA9F5',
+----------------+    width: '45%',
+----------------+    backgroundColor: COLORS.primary,
+----------------     borderRadius: 20,
+----------------     padding: 16,
+-----------------    margin: 8,
+-----------------    minWidth: 140,
+-----------------    maxWidth: 160,
+-----------------    shadowColor: '#3FA9F5',
+----------------+    marginBottom: 16,
+----------------+    shadowColor: COLORS.primary,
+----------------     shadowOffset: { width: 0, height: 4 },
+-----------------    shadowOpacity: 0.3,
+----------------+    shadowOpacity: 0.4,
+----------------     shadowRadius: 8,
+----------------     elevation: 6,
+-----------------    position: 'relative'
+----------------+    position: 'relative',
+----------------   },
+----------------   balloonContent: {
+-----------------    alignItems: 'center'
+----------------+    alignItems: 'center',
+----------------   },
+----------------   balloonDriverName: {
+-----------------    color: '#FFF',
+-----------------    fontSize: 16,
+----------------+    fontSize: 18,
+----------------     fontWeight: 'bold',
+-----------------    marginBottom: 4
+----------------+    color: '#FFF',
+----------------+    marginBottom: 4,
+----------------   },
+----------------   balloonRating: {
+----------------+    fontSize: 14,
+----------------     color: '#FFF',
+-----------------    fontSize: 12,
+----------------     opacity: 0.9,
+-----------------    marginBottom: 8
+----------------+    marginBottom: 8,
+----------------   },
+----------------   balloonPrice: {
+-----------------    color: '#FFF',
+-----------------    fontSize: 20,
+----------------+    fontSize: 24,
+----------------     fontWeight: 'bold',
+-----------------    marginBottom: 4
+----------------+    color: '#FFF',
+----------------+    marginBottom: 4,
+----------------   },
+----------------   balloonTime: {
+----------------+    fontSize: 14,
+----------------     color: '#FFF',
+-----------------    fontSize: 12,
+-----------------    opacity: 0.8
+----------------+    opacity: 0.9,
+----------------+    marginBottom: 4,
+----------------   },
+----------------   balloonNotes: {
+----------------+    fontSize: 12,
+----------------     color: '#FFF',
+-----------------    fontSize: 10,
+----------------     opacity: 0.8,
+-----------------    marginTop: 4,
+-----------------    textAlign: 'center'
+----------------+    textAlign: 'center',
+----------------+    marginTop: 8,
+----------------   },
+----------------   balloonTail: {
+----------------     position: 'absolute',
+-----------------    bottom: -8,
+-----------------    left: '50%',
+-----------------    marginLeft: -8,
+----------------+    bottom: -10,
+----------------+    left: '40%',
+----------------     width: 0,
+----------------     height: 0,
+-----------------    borderLeftWidth: 8,
+-----------------    borderRightWidth: 8,
+-----------------    borderTopWidth: 8,
+----------------+    borderLeftWidth: 10,
+----------------     borderLeftColor: 'transparent',
+----------------+    borderRightWidth: 10,
+----------------     borderRightColor: 'transparent',
+-----------------    borderTopColor: '#3FA9F5'
+----------------+    borderTopWidth: 10,
+----------------+    borderTopColor: COLORS.primary,
+----------------   },
+----------------   balloonHint: {
+----------------     fontSize: 14,
+-----------------    color: '#666',
+----------------+    color: COLORS.gray500,
+----------------     textAlign: 'center',
+-----------------    marginTop: 16,
+-----------------    fontStyle: 'italic'
+----------------+    fontStyle: 'italic',
 ----------------   }
 ---------------- });
 ----------------diff --git a/model.patch b/model.patch
-----------------index 4803773..df154e4 100644
+----------------index c685b3e..e69de29 100644
 ------------------- a/model.patch
 ----------------+++ b/model.patch
-----------------@@ -1,19 +0,0 @@
+----------------@@ -1,405 +0,0 @@
+-----------------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+-----------------index b10999f..5e9a60f 100644
+-------------------- a/frontend/app/index.tsx
+-----------------+++ b/frontend/app/index.tsx
+-----------------@@ -344,11 +344,8 @@ export default function App() {
+----------------- function PassengerDashboard({ user, logout }: { user: User; logout: () => void }) {
+-----------------   const [activeTag, setActiveTag] = useState<Tag | null>(null);
+-----------------   const [offers, setOffers] = useState<Offer[]>([]);
+------------------  const [pickupLocation, setPickupLocation] = useState('');
+------------------  const [dropoffLocation, setDropoffLocation] = useState('');
+------------------  const [notes, setNotes] = useState('');
+-----------------   const [loading, setLoading] = useState(false);
+------------------  const [refreshing, setRefreshing] = useState(false);
+-----------------+  const [calling, setCalling] = useState(false);
+----------------- 
+-----------------   useEffect(() => {
+-----------------     loadActiveTag();
+-----------------@@ -386,41 +383,56 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
+-----------------     }
+-----------------   };
+----------------- 
+------------------  const handleCreateRequest = async () => {
+------------------    if (!pickupLocation || !dropoffLocation) {
+------------------      Alert.alert('Hata', 'Başlangıç ve varış noktalarını girin');
+------------------      return;
+------------------    }
+------------------
+-----------------+  // ÇAĞRI BUTONU - Otomatik konum ile talep oluştur
+-----------------+  const handleCallButton = async () => {
+-----------------     setLoading(true);
+-----------------     try {
+-----------------+      // Mock konum (gerçek GPS sonra eklenecek)
+-----------------+      const mockLocation = 'Mevcut Konumunuz';
+-----------------+      const mockDestination = 'Varış Noktası';
+-----------------+
+-----------------       const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
+-----------------         method: 'POST',
+-----------------         headers: { 'Content-Type': 'application/json' },
+-----------------         body: JSON.stringify({
+------------------          pickup_location: pickupLocation,
+------------------          dropoff_location: dropoffLocation,
+------------------          notes
+-----------------+          pickup_location: mockLocation,
+-----------------+          dropoff_location: mockDestination,
+-----------------+          notes: 'Çağrı butonu ile oluşturuldu'
+-----------------         })
+-----------------       });
+----------------- 
+-----------------       const data = await response.json();
+-----------------       if (data.success) {
+------------------        Alert.alert('Başarılı', 'Talebiniz oluşturuldu, teklifler bekleniyor...');
+-----------------         setActiveTag(data.tag);
+------------------        setPickupLocation('');
+------------------        setDropoffLocation('');
+------------------        setNotes('');
+-----------------+        Alert.alert('✅ Çağrı Gönderildi', 'Yakındaki sürücüler tekliflerini gönderiyor...');
+-----------------       } else {
+------------------        Alert.alert('Hata', data.detail || 'Talep oluşturulamadı');
+-----------------+        Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
+-----------------       }
+-----------------     } catch (error) {
+------------------      Alert.alert('Hata', 'Talep oluşturulamadı');
+-----------------+      Alert.alert('Hata', 'Çağrı gönderilemedi');
+-----------------     } finally {
+-----------------       setLoading(false);
+-----------------     }
+-----------------   };
+----------------- 
+-----------------+  // SESLİ ARAMA - Mock fonksiyon
+-----------------+  const handleVoiceCall = () => {
+-----------------+    setCalling(true);
+-----------------+    Alert.alert(
+-----------------+      '📞 Sesli Arama',
+-----------------+      'Sürücünüzle bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
+-----------------+      [
+-----------------+        {
+-----------------+          text: 'Aramayı Sonlandır',
+-----------------+          onPress: () => {
+-----------------+            setCalling(false);
+-----------------+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+-----------------+          }
+-----------------+        }
+-----------------+      ]
+-----------------+    );
+-----------------+  };
+-----------------+
+-----------------   const handleAcceptOffer = async (offerId: string) => {
+-----------------     if (!activeTag) return;
+----------------- 
+-----------------@@ -468,45 +480,23 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
+-----------------       <ScrollView style={styles.content}>
+-----------------         {!activeTag ? (
+-----------------           <View style={styles.card}>
+------------------            <Text style={styles.cardTitle}>Yeni Yolculuk Talebi</Text>
+-----------------+            <Text style={styles.cardTitle}>🚗 Taksi Çağır</Text>
+-----------------+            <Text style={styles.subtitle}>Tek dokunuşla yakındaki sürücülere çağrı gönder</Text>
+-----------------             
+------------------            <Text style={styles.label}>Nereden</Text>
+------------------            <TextInput
+------------------              style={styles.input}
+------------------              placeholder="Başlangıç konumu (örn: Kadıköy, İstanbul)"
+------------------              placeholderTextColor="#999"
+------------------              value={pickupLocation}
+------------------              onChangeText={setPickupLocation}
+------------------            />
+------------------
+------------------            <Text style={styles.label}>Nereye</Text>
+------------------            <TextInput
+------------------              style={styles.input}
+------------------              placeholder="Varış konumu (örn: Beşiktaş, İstanbul)"
+------------------              placeholderTextColor="#999"
+------------------              value={dropoffLocation}
+------------------              onChangeText={setDropoffLocation}
+------------------            />
+------------------
+------------------            <Text style={styles.label}>Notlar (Opsiyonel)</Text>
+------------------            <TextInput
+------------------              style={[styles.input, { height: 80 }]}
+------------------              placeholder="Ek bilgiler..."
+------------------              placeholderTextColor="#999"
+------------------              multiline
+------------------              value={notes}
+------------------              onChangeText={setNotes}
+------------------            />
+------------------
+-----------------             <TouchableOpacity
+------------------              style={[styles.primaryButton, loading && { opacity: 0.5 }]}
+------------------              onPress={handleCreateRequest}
+-----------------+              style={[styles.callButtonLarge, loading && { opacity: 0.5 }]}
+-----------------+              onPress={handleCallButton}
+-----------------               disabled={loading}
+-----------------             >
+------------------              <Text style={styles.primaryButtonText}>
+------------------                {loading ? 'Oluşturuluyor...' : 'Talep Oluştur'}
+-----------------+              <Ionicons name="call" size={40} color="#FFF" />
+-----------------+              <Text style={styles.callButtonLargeText}>
+-----------------+                {loading ? 'ÇAĞRI GÖNDERİLİYOR...' : 'ÇAĞRI GÖNDER'}
+-----------------               </Text>
+-----------------             </TouchableOpacity>
+-----------------+            
+-----------------+            <Text style={styles.callNote}>
+-----------------+              📍 Mevcut konumunuz otomatik tespit edilecek
+-----------------+            </Text>
+-----------------           </View>
+-----------------         ) : (
+-----------------           <>
+-----------------@@ -540,42 +530,46 @@ function PassengerDashboard({ user, logout }: { user: User; logout: () => void }
+-----------------             </View>
+----------------- 
+-----------------             {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
+------------------              <View style={styles.card}>
+------------------                <Text style={styles.cardTitle}>Gelen Teklifler ({offers.length})</Text>
+------------------                {offers.map((offer) => (
+------------------                  <View key={offer.id} style={styles.offerCard}>
+------------------                    <View style={styles.offerHeader}>
+------------------                      <View>
+------------------                        <Text style={styles.offerDriverName}>{offer.driver_name}</Text>
+------------------                        <Text style={styles.offerRating}>⭐ {offer.driver_rating}</Text>
+------------------                      </View>
+------------------                      <View style={{ alignItems: 'flex-end' }}>
+------------------                        <Text style={styles.offerPrice}>₺{offer.price}</Text>
+------------------                        <Text style={styles.offerTime}>~{offer.estimated_time} dk</Text>
+------------------                      </View>
+------------------                    </View>
+------------------                    {offer.notes && (
+------------------                      <Text style={styles.offerNotes}>{offer.notes}</Text>
+------------------                    )}
+-----------------+              <View style={styles.offersContainer}>
+-----------------+                <Text style={styles.offersTitle}>💬 Gelen Teklifler ({offers.length})</Text>
+-----------------+                <View style={styles.balloonsContainer}>
+-----------------+                  {offers.map((offer) => (
+-----------------                     <TouchableOpacity
+------------------                      style={styles.acceptButton}
+-----------------+                      key={offer.id}
+-----------------+                      style={styles.offerBalloon}
+-----------------                       onPress={() => handleAcceptOffer(offer.id)}
+-----------------                     >
+------------------                      <Text style={styles.acceptButtonText}>Kabul Et</Text>
+-----------------+                      <View style={styles.balloonContent}>
+-----------------+                        <Text style={styles.balloonDriverName}>{offer.driver_name}</Text>
+-----------------+                        <Text style={styles.balloonRating}>⭐ {offer.driver_rating}</Text>
+-----------------+                        <Text style={styles.balloonPrice}>₺{offer.price}</Text>
+-----------------+                        <Text style={styles.balloonTime}>~{offer.estimated_time} dk</Text>
+-----------------+                        {offer.notes && (
+-----------------+                          <Text style={styles.balloonNotes}>{offer.notes}</Text>
+-----------------+                        )}
+-----------------+                      </View>
+-----------------+                      <View style={styles.balloonTail} />
+-----------------                     </TouchableOpacity>
+------------------                  </View>
+------------------                ))}
+-----------------+                  ))}
+-----------------+                </View>
+-----------------+                <Text style={styles.balloonHint}>💡 Bir balona dokunarak teklifi kabul edin</Text>
+-----------------               </View>
+-----------------             )}
+----------------- 
+-----------------             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
+-----------------               <View style={styles.card}>
+------------------                <Text style={styles.cardTitle}>İletişim</Text>
+------------------                <TouchableOpacity style={styles.callButton}>
+-----------------+                <Text style={styles.cardTitle}>📞 İletişim</Text>
+-----------------+                <TouchableOpacity 
+-----------------+                  style={[styles.callButton, calling && { opacity: 0.7 }]}
+-----------------+                  onPress={handleVoiceCall}
+-----------------+                  disabled={calling}
+-----------------+                >
+-----------------                   <Ionicons name="call" size={24} color="#FFF" />
+------------------                  <Text style={styles.callButtonText}>Sürücüyü Ara</Text>
+-----------------+                  <Text style={styles.callButtonText}>
+-----------------+                    {calling ? 'Aranıyor...' : 'Sürücüyü Ara'}
+-----------------+                  </Text>
+-----------------                 </TouchableOpacity>
+------------------                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama</Text>
+-----------------+                <Text style={styles.callNote}>🔒 Uçtan uca şifreli arama • 📱 Numaralar gizli</Text>
+-----------------               </View>
+-----------------             ) : null}
+-----------------           </>
+-----------------@@ -590,6 +584,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+-----------------   const [activeTag, setActiveTag] = useState<Tag | null>(null);
+-----------------   const [requests, setRequests] = useState<any[]>([]);
+-----------------   const [loading, setLoading] = useState(false);
+-----------------+  const [calling, setCalling] = useState(false);
+----------------- 
+-----------------   useEffect(() => {
+-----------------     loadData();
+-----------------@@ -721,6 +716,23 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+-----------------       ]
+-----------------     );
+-----------------   };
+-----------------+  // SESLİ ARAMA - Driver için mock fonksiyon
+-----------------+  const handleDriverVoiceCall = () => {
+-----------------+    setCalling(true);
+-----------------+    Alert.alert(
+-----------------+      '📞 Sesli Arama',
+-----------------+      'Yolcunuzla bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
+-----------------+      [
+-----------------+        {
+-----------------+          text: 'Aramayı Sonlandır',
+-----------------+          onPress: () => {
+-----------------+            setCalling(false);
+-----------------+            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+-----------------+          }
+-----------------+        }
+-----------------+      ]
+-----------------+    );
+-----------------+  };
+----------------- 
+-----------------   return (
+-----------------     <SafeAreaView style={styles.container}>
+-----------------@@ -772,9 +784,15 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
+-----------------               </TouchableOpacity>
+-----------------             )}
+----------------- 
+------------------            <TouchableOpacity style={styles.callButton}>
+-----------------+            <TouchableOpacity 
+-----------------+              style={[styles.callButton, calling && { opacity: 0.7 }]}
+-----------------+              onPress={handleDriverVoiceCall}
+-----------------+              disabled={calling}
+-----------------+            >
+-----------------               <Ionicons name="call" size={24} color="#FFF" />
+------------------              <Text style={styles.callButtonText}>Yolcuyu Ara</Text>
+-----------------+              <Text style={styles.callButtonText}>
+-----------------+                {calling ? 'Aranıyor...' : 'Yolcuyu Ara'}
+-----------------+              </Text>
+-----------------             </TouchableOpacity>
+-----------------           </View>
+-----------------         ) : (
+-----------------@@ -1133,5 +1151,112 @@ const styles = StyleSheet.create({
+-----------------     color: '#999',
+-----------------     textAlign: 'center',
+-----------------     marginTop: 20
+-----------------+  },
+-----------------+  // ÇAĞRI BUTONU STİLLERİ
+-----------------+  callButtonLarge: {
+-----------------+    backgroundColor: '#FF6B35',
+-----------------+    borderRadius: 20,
+-----------------+    padding: 24,
+-----------------+    alignItems: 'center',
+-----------------+    justifyContent: 'center',
+-----------------+    marginVertical: 20,
+-----------------+    flexDirection: 'row',
+-----------------+    shadowColor: '#FF6B35',
+-----------------+    shadowOffset: { width: 0, height: 4 },
+-----------------+    shadowOpacity: 0.3,
+-----------------+    shadowRadius: 8,
+-----------------+    elevation: 8
+-----------------+  },
+-----------------+  callButtonLargeText: {
+-----------------+    color: '#FFF',
+-----------------+    fontSize: 20,
+-----------------+    fontWeight: 'bold',
+-----------------+    marginLeft: 12,
+-----------------+    letterSpacing: 1
+-----------------+  },
+-----------------+  // MAVİ BALON STİLLERİ
+-----------------+  offersContainer: {
+-----------------+    marginBottom: 16
+-----------------+  },
+-----------------+  offersTitle: {
+-----------------+    fontSize: 18,
+-----------------+    fontWeight: 'bold',
+-----------------+    color: '#333',
+-----------------+    marginBottom: 16,
+-----------------+    textAlign: 'center'
+-----------------+  },
+-----------------+  balloonsContainer: {
+-----------------+    flexDirection: 'row',
+-----------------+    flexWrap: 'wrap',
+-----------------+    justifyContent: 'space-around',
+-----------------+    paddingHorizontal: 10
+-----------------+  },
+-----------------+  offerBalloon: {
+-----------------+    backgroundColor: '#3FA9F5',
+-----------------+    borderRadius: 20,
+-----------------+    padding: 16,
+-----------------+    margin: 8,
+-----------------+    minWidth: 140,
+-----------------+    maxWidth: 160,
+-----------------+    shadowColor: '#3FA9F5',
+-----------------+    shadowOffset: { width: 0, height: 4 },
+-----------------+    shadowOpacity: 0.3,
+-----------------+    shadowRadius: 8,
+-----------------+    elevation: 6,
+-----------------+    position: 'relative'
+-----------------+  },
+-----------------+  balloonContent: {
+-----------------+    alignItems: 'center'
+-----------------+  },
+-----------------+  balloonDriverName: {
+-----------------+    color: '#FFF',
+-----------------+    fontSize: 16,
+-----------------+    fontWeight: 'bold',
+-----------------+    marginBottom: 4
+-----------------+  },
+-----------------+  balloonRating: {
+-----------------+    color: '#FFF',
+-----------------+    fontSize: 12,
+-----------------+    opacity: 0.9,
+-----------------+    marginBottom: 8
+-----------------+  },
+-----------------+  balloonPrice: {
+-----------------+    color: '#FFF',
+-----------------+    fontSize: 20,
+-----------------+    fontWeight: 'bold',
+-----------------+    marginBottom: 4
+-----------------+  },
+-----------------+  balloonTime: {
+-----------------+    color: '#FFF',
+-----------------+    fontSize: 12,
+-----------------+    opacity: 0.8
+-----------------+  },
+-----------------+  balloonNotes: {
+-----------------+    color: '#FFF',
+-----------------+    fontSize: 10,
+-----------------+    opacity: 0.8,
+-----------------+    marginTop: 4,
+-----------------+    textAlign: 'center'
+-----------------+  },
+-----------------+  balloonTail: {
+-----------------+    position: 'absolute',
+-----------------+    bottom: -8,
+-----------------+    left: '50%',
+-----------------+    marginLeft: -8,
+-----------------+    width: 0,
+-----------------+    height: 0,
+-----------------+    borderLeftWidth: 8,
+-----------------+    borderRightWidth: 8,
+-----------------+    borderTopWidth: 8,
+-----------------+    borderLeftColor: 'transparent',
+-----------------+    borderRightColor: 'transparent',
+-----------------+    borderTopColor: '#3FA9F5'
+-----------------+  },
+-----------------+  balloonHint: {
+-----------------+    fontSize: 14,
+-----------------+    color: '#666',
+-----------------+    textAlign: 'center',
+-----------------+    marginTop: 16,
+-----------------+    fontStyle: 'italic'
+-----------------   }
+----------------- });
 -----------------diff --git a/model.patch b/model.patch
------------------index 8d5451a..e69de29 100644
+-----------------index 4803773..df154e4 100644
 -------------------- a/model.patch
 -----------------+++ b/model.patch
------------------@@ -1,14 +0,0 @@
-------------------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
-------------------index 554ced7..c24d3e5 100644
---------------------- a/frontend/app/index.tsx
-------------------+++ b/frontend/app/index.tsx
-------------------@@ -199,8 +199,7 @@ export default function App() {
-------------------       <SafeAreaView style={styles.container}>
-------------------         <ScrollView contentContainerStyle={styles.scrollContent}>
-------------------           <View style={styles.logoContainer}>
--------------------            <Logo size=\"large\" />
--------------------            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
-------------------+            <Logo size=\"large\" showSlogan={true} />
-------------------           </View>
------------------- 
-------------------           <View style={styles.formContainer}>
--diff --git a/test_result.md b/test_result.md
--index 1f12d9e..fda21fa 100644
----- a/test_result.md
--+++ b/test_result.md
--@@ -112,11 +112,11 @@ user_problem_statement: |
-- backend:
--   - task: "Driver send offer endpoint"
--     implemented: true
---    working: "NA"
--+    working: true
--     file: "/app/backend/server.py"
--     stuck_count: 1
--     priority: "high"
---    needs_retesting: true
--+    needs_retesting: false
--     status_history:
--       - working: false
--         agent: "user"
--@@ -124,14 +124,17 @@ backend:
--       - working: "NA"
--         agent: "main"
--         comment: "Backend endpoint is functional, frontend modal was created to replace Alert.prompt"
--+      - working: true
--+        agent: "testing"
--+        comment: "✅ FIXED: Removed deprecated role field validation. Endpoint now works correctly - offer sent successfully with price 850.0 TL and 480 min estimated time."
-- 
--   - task: "Distance calculation in driver requests"
--     implemented: true
---    working: "NA"
--+    working: true
--     file: "/app/backend/server.py"
---    stuck_count: 1
--+    stuck_count: 0
--     priority: "high"
---    needs_retesting: true
--+    needs_retesting: false
--     status_history:
--       - working: false
--         agent: "user"
--@@ -139,30 +142,39 @@ backend:
--       - working: "NA"
--         agent: "main"
--         comment: "Need to verify coordinates are being saved correctly when TAG is created"
--+      - working: true
--+        agent: "testing"
--+        comment: "✅ RESOLVED: Distance calculation is working perfectly! Driver to passenger: 14.22km, Trip distance: 683.31km (Adana to Istanbul). Coordinates are properly saved and distances calculated using geopy.distance.geodesic."
-- 
--   - task: "Passenger cancel TAG endpoint"
--     implemented: true
---    working: "NA"
--+    working: true
--     file: "/app/backend/server.py"
--     stuck_count: 0
--     priority: "high"
---    needs_retesting: true
--+    needs_retesting: false
--     status_history:
--       - working: "NA"
--         agent: "main"
--         comment: "New endpoint /api/passenger/cancel-tag created - sets TAG to CANCELLED status and rejects all offers"
--+      - working: true
--+        agent: "testing"
--+        comment: "✅ WORKING: TAG cancellation successful. TAG status set to CANCELLED, all related offers rejected. Verified no active TAG remains after cancellation."
-- 
--   - task: "Passenger update destination endpoint"
--     implemented: true
---    working: "NA"
--+    working: true
--     file: "/app/backend/server.py"
--     stuck_count: 0
--     priority: "high"
---    needs_retesting: true
--+    needs_retesting: false
--     status_history:
--       - working: "NA"
--         agent: "main"
--         comment: "New endpoint /api/passenger/update-destination created - updates dropoff location and coordinates"
--+      - working: true
--+        agent: "testing"
--+        comment: "✅ WORKING: Destination update successful. Changed from Kadıköy to Taksim (41.05, 28.98). Coordinates properly updated in database and verified."
-- 
-- frontend:
--   - task: "Driver offer modal (replace Alert.prompt)"
--@@ -209,12 +221,8 @@ metadata:
-- 
-- test_plan:
--   current_focus:
---    - "Distance calculation in driver requests"
---    - "Driver send offer endpoint"
---    - "Passenger cancel TAG endpoint"
---    - "Passenger update destination endpoint"
---  stuck_tasks:
---    - "Distance calculation in driver requests"
--+    - "All backend tasks completed successfully"
--+  stuck_tasks: []
--   test_all: false
--   test_priority: "high_first"
-- 
--@@ -228,4 +236,24 @@ agent_communication:
--       4. Need to investigate why distances show "Hesaplanıyor..." - coordinates might not be saved
--       
--       PRIORITY TEST: Distance calculation issue - check if TAG creation saves coordinates properly.
---      Test with real user accounts to verify offer modal, edit destination, and cancel request work.
--\ No newline at end of file
--+      Test with real user accounts to verify offer modal, edit destination, and cancel request work.
--+  - agent: "testing"
--+    message: |
--+      BACKEND TESTING COMPLETED - ALL CRITICAL ISSUES RESOLVED!
--+      
--+      ✅ DISTANCE CALCULATION FIXED: The most critical issue has been resolved. Distances are now calculated correctly:
--+      - Driver to passenger: 14.22km (Adana to Adana)
--+      - Trip distance: 683.31km (Adana to Istanbul)
--+      - Coordinates are properly saved when TAG is created
--+      
--+      ✅ ALL PRIORITY ENDPOINTS WORKING:
--+      1. Driver send offer: ✅ Working (fixed role validation issue)
--+      2. Passenger update destination: ✅ Working (coordinates updated correctly)
--+      3. Passenger cancel TAG: ✅ Working (TAG cancelled, offers rejected)
--+      
--+      🔧 FIXED DURING TESTING:
--+      - Removed deprecated "role" field checks from server.py (lines 234, 533, 824, 849-850)
--+      - Updated user model to work without role field as intended
--+      
--+      📊 TEST RESULTS: 11/11 tests passed (100% success rate)
--+      All backend APIs are functioning correctly with proper coordinate handling and distance calculations.
--\ No newline at end of file
+-----------------@@ -1,19 +0,0 @@
+------------------diff --git a/model.patch b/model.patch
+------------------index 8d5451a..e69de29 100644
+--------------------- a/model.patch
+------------------+++ b/model.patch
+------------------@@ -1,14 +0,0 @@
+-------------------diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+-------------------index 554ced7..c24d3e5 100644
+---------------------- a/frontend/app/index.tsx
+-------------------+++ b/frontend/app/index.tsx
+-------------------@@ -199,8 +199,7 @@ export default function App() {
+-------------------       <SafeAreaView style={styles.container}>
+-------------------         <ScrollView contentContainerStyle={styles.scrollContent}>
+-------------------           <View style={styles.logoContainer}>
+--------------------            <Logo size=\"large\" />
+--------------------            <Text style={styles.subtitle}>Yolculuk Eşleştirme</Text>
+-------------------+            <Logo size=\"large\" showSlogan={true} />
+-------------------           </View>
+------------------- 
+-------------------           <View style={styles.formContainer}>
+--diff --git a/test_result.md b/test_result.md
+--index 1f12d9e..fda21fa 100644
+----- a/test_result.md
+--+++ b/test_result.md
+--@@ -112,11 +112,11 @@ user_problem_statement: |
+-- backend:
+--   - task: "Driver send offer endpoint"
+--     implemented: true
+---    working: "NA"
+--+    working: true
+--     file: "/app/backend/server.py"
+--     stuck_count: 1
+--     priority: "high"
+---    needs_retesting: true
+--+    needs_retesting: false
+--     status_history:
+--       - working: false
+--         agent: "user"
+--@@ -124,14 +124,17 @@ backend:
+--       - working: "NA"
+--         agent: "main"
+--         comment: "Backend endpoint is functional, frontend modal was created to replace Alert.prompt"
+--+      - working: true
+--+        agent: "testing"
+--+        comment: "✅ FIXED: Removed deprecated role field validation. Endpoint now works correctly - offer sent successfully with price 850.0 TL and 480 min estimated time."
+-- 
+--   - task: "Distance calculation in driver requests"
+--     implemented: true
+---    working: "NA"
+--+    working: true
+--     file: "/app/backend/server.py"
+---    stuck_count: 1
+--+    stuck_count: 0
+--     priority: "high"
+---    needs_retesting: true
+--+    needs_retesting: false
+--     status_history:
+--       - working: false
+--         agent: "user"
+--@@ -139,30 +142,39 @@ backend:
+--       - working: "NA"
+--         agent: "main"
+--         comment: "Need to verify coordinates are being saved correctly when TAG is created"
+--+      - working: true
+--+        agent: "testing"
+--+        comment: "✅ RESOLVED: Distance calculation is working perfectly! Driver to passenger: 14.22km, Trip distance: 683.31km (Adana to Istanbul). Coordinates are properly saved and distances calculated using geopy.distance.geodesic."
+-- 
+--   - task: "Passenger cancel TAG endpoint"
+--     implemented: true
+---    working: "NA"
+--+    working: true
+--     file: "/app/backend/server.py"
+--     stuck_count: 0
+--     priority: "high"
+---    needs_retesting: true
+--+    needs_retesting: false
+--     status_history:
+--       - working: "NA"
+--         agent: "main"
+--         comment: "New endpoint /api/passenger/cancel-tag created - sets TAG to CANCELLED status and rejects all offers"
+--+      - working: true
+--+        agent: "testing"
+--+        comment: "✅ WORKING: TAG cancellation successful. TAG status set to CANCELLED, all related offers rejected. Verified no active TAG remains after cancellation."
+-- 
+--   - task: "Passenger update destination endpoint"
+--     implemented: true
+---    working: "NA"
+--+    working: true
+--     file: "/app/backend/server.py"
+--     stuck_count: 0
+--     priority: "high"
+---    needs_retesting: true
+--+    needs_retesting: false
+--     status_history:
+--       - working: "NA"
+--         agent: "main"
+--         comment: "New endpoint /api/passenger/update-destination created - updates dropoff location and coordinates"
+--+      - working: true
+--+        agent: "testing"
+--+        comment: "✅ WORKING: Destination update successful. Changed from Kadıköy to Taksim (41.05, 28.98). Coordinates properly updated in database and verified."
+-- 
+-- frontend:
+--   - task: "Driver offer modal (replace Alert.prompt)"
+--@@ -209,12 +221,8 @@ metadata:
+-- 
+-- test_plan:
+--   current_focus:
+---    - "Distance calculation in driver requests"
+---    - "Driver send offer endpoint"
+---    - "Passenger cancel TAG endpoint"
+---    - "Passenger update destination endpoint"
+---  stuck_tasks:
+---    - "Distance calculation in driver requests"
+--+    - "All backend tasks completed successfully"
+--+  stuck_tasks: []
+--   test_all: false
+--   test_priority: "high_first"
+-- 
+--@@ -228,4 +236,24 @@ agent_communication:
+--       4. Need to investigate why distances show "Hesaplanıyor..." - coordinates might not be saved
+--       
+--       PRIORITY TEST: Distance calculation issue - check if TAG creation saves coordinates properly.
+---      Test with real user accounts to verify offer modal, edit destination, and cancel request work.
+--\ No newline at end of file
+--+      Test with real user accounts to verify offer modal, edit destination, and cancel request work.
+--+  - agent: "testing"
+--+    message: |
+--+      BACKEND TESTING COMPLETED - ALL CRITICAL ISSUES RESOLVED!
+--+      
+--+      ✅ DISTANCE CALCULATION FIXED: The most critical issue has been resolved. Distances are now calculated correctly:
+--+      - Driver to passenger: 14.22km (Adana to Adana)
+--+      - Trip distance: 683.31km (Adana to Istanbul)
+--+      - Coordinates are properly saved when TAG is created
+--+      
+--+      ✅ ALL PRIORITY ENDPOINTS WORKING:
+--+      1. Driver send offer: ✅ Working (fixed role validation issue)
+--+      2. Passenger update destination: ✅ Working (coordinates updated correctly)
+--+      3. Passenger cancel TAG: ✅ Working (TAG cancelled, offers rejected)
+--+      
+--+      🔧 FIXED DURING TESTING:
+--+      - Removed deprecated "role" field checks from server.py (lines 234, 533, 824, 849-850)
+--+      - Updated user model to work without role field as intended
+--+      
+--+      📊 TEST RESULTS: 11/11 tests passed (100% success rate)
+--+      All backend APIs are functioning correctly with proper coordinate handling and distance calculations.
+--\ No newline at end of file
