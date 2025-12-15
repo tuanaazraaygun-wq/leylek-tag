@@ -194,6 +194,15 @@ class AcceptOfferRequest(BaseModel):
     tag_id: str
     offer_id: str
 
+class CancelTagRequest(BaseModel):
+    tag_id: str
+
+class UpdateDestinationRequest(BaseModel):
+    tag_id: str
+    dropoff_location: str
+    dropoff_lat: float
+    dropoff_lng: float
+
 # ==================== CALL MODELS ====================
 class InitiateCallRequest(BaseModel):
     tag_id: str
