@@ -231,8 +231,8 @@ async def update_profile(user_id: str, request: UpdateProfileRequest):
 async def update_driver_details(user_id: str, request: UpdateDriverDetailsRequest):
     """Sürücü bilgilerini güncelle"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
-    if not user or user["role"] != UserRole.DRIVER:
-        raise HTTPException(status_code=403, detail="Sadece sürücüler güncelleyebilir")
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     
     driver_data = {k: v for k, v in request.dict().items() if v is not None}
     
