@@ -12,6 +12,10 @@
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "AIzaSyCWNE9hKK9rqJKsRACnJ9alkVouKUZvESo"
+      },
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Sürücü ve yolcu arasında sesli görüşme yapmak için mikrofon izni gereklidir.",
+        "NSCameraUsageDescription": "Profil fotoğrafı çekmek için kamera izni gereklidir."
       }
     },
     "android": {
