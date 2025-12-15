@@ -2134,7 +2134,13 @@ const styles = StyleSheet.create({
   distanceValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: '#FFF',
+  },
+  timeValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+    opacity: 0.9,
   },
   requestPassenger: {
     fontSize: 16,
