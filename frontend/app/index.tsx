@@ -889,6 +889,7 @@ function PassengerDashboard({
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
+  const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
 
   useEffect(() => {
     loadActiveTag();
