@@ -1497,70 +1497,70 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
 
       <ScrollView style={styles.content}>
         {activeTag ? (
-          <View style={styles.liveMapContainer}>
-            <View style={styles.mapPlaceholder}>
-              <Text style={styles.mapPlaceholderIcon}>🗺️</Text>
-              <Text style={styles.mapPlaceholderTitle}>Canlı Harita</Text>
-              <Text style={styles.mapPlaceholderText}>🚗 Sen</Text>
-              <Text style={styles.mapPlaceholderText}>{activeTag.passenger_gender === 'female' ? '👩' : '🧑'} {activeTag.passenger_name}</Text>
-              <Text style={styles.mapPlaceholderNote}>Harita özelliği yakında eklenecek</Text>
+          <View style={styles.fullScreenMapContainer}>
+            {/* Harita */}
+            <View style={styles.mapView}>
+              <View style={styles.mapPlaceholderFull}>
+                <Ionicons name="location" size={60} color={COLORS.primary} />
+                <Text style={styles.mapPlaceholderTitle}>🗺️ Canlı Konum Takibi</Text>
+                <Text style={styles.mapIconText}>🚗 Sen</Text>
+                <Text style={styles.mapIconText}>{activeTag.passenger_gender === 'female' ? '👩' : '🧑'} {activeTag.passenger_name}</Text>
+                <Text style={styles.mapPlaceholderNote}>Mobil uygulamada canlı harita aktif</Text>
+              </View>
             </View>
-            
-            {/* Alt Bilgi Paneli */}
-            <View style={styles.mapInfoPanel}>
-              <View style={styles.driverInfoBox}>
-                <View style={styles.driverAvatarMap}>
-                  <Text style={styles.driverAvatarMapText}>
-                    {activeTag.passenger_name?.charAt(0) || '?'}
-                  </Text>
-                </View>
-                <View style={styles.driverDetailsMap}>
-                  <Text style={styles.driverNameMap}>{activeTag.passenger_name}</Text>
-                  <Text style={styles.driverStatusMap}>
-                    {activeTag.status === 'matched' ? '📍 Bekliyor' : '🚗 Yolculuk Devam Ediyor'}
-                  </Text>
-                </View>
-                <TouchableOpacity 
-                  style={styles.callButtonMap}
-                  onPress={handleDriverVoiceCall}
-                  disabled={calling}
-                >
-                  <Ionicons name="call" size={28} color="#FFF" />
+
+            {/* Üst Bilgi - Süre */}
+            <View style={styles.mapTopInfo}>
+              <View style={styles.meetingTimeBox}>
+                <Ionicons name="time" size={24} color="#FFF" />
+                <Text style={styles.meetingTimeText}>
+                  {activeTag.status === 'matched' ? '5 dakika sonra yolcuyu alacaksınız' : 'Yolculuk devam ediyor'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Ara Butonu - Sağ Alt */}
+            <TouchableOpacity 
+              style={styles.floatingCallButton}
+              onPress={handleDriverVoiceCall}
+              disabled={calling}
+            >
+              <LinearGradient
+                colors={['#10B981', '#059669']}
+                style={styles.floatingCallGradient}
+              >
+                <Ionicons name="call" size={32} color="#FFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Yolculuk Kontrol Butonları - Alt Orta */}
+            {activeTag.status === 'matched' && (
+              <View style={styles.floatingActionContainer}>
+                <TouchableOpacity style={styles.startTripButtonFloat} onPress={handleStartTag}>
+                  <LinearGradient
+                    colors={['#3B82F6', '#2563EB']}
+                    style={styles.actionButtonGradient}
+                  >
+                    <Ionicons name="play-circle" size={28} color="#FFF" />
+                    <Text style={styles.actionButtonText}>Yolculuğu Başlat</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
-              
-              <View style={styles.tripInfoMap}>
-                <View style={styles.tripInfoItem}>
-                  <Ionicons name="cash" size={20} color={COLORS.primary} />
-                  <Text style={styles.tripInfoText}>₺{activeTag.final_price}</Text>
-                </View>
-                <View style={styles.tripInfoItem}>
-                  <Ionicons name="location" size={20} color="#00A67E" />
-                  <Text style={styles.tripInfoText}>{activeTag.pickup_location}</Text>
-                </View>
-                <View style={styles.tripInfoItem}>
-                  <Ionicons name="flag" size={20} color="#FF5A5F" />
-                  <Text style={styles.tripInfoText}>{activeTag.dropoff_location}</Text>
-                </View>
-              </View>
-              
-              {/* Yolculuk Kontrolleri */}
-              <View style={styles.tripActions}>
-                {activeTag.status === 'matched' && (
-                  <TouchableOpacity style={styles.startTripButton} onPress={handleStartTag}>
-                    <Ionicons name="play-circle" size={24} color="#FFF" />
-                    <Text style={styles.startTripButtonText}>Yolculuğu Başlat</Text>
-                  </TouchableOpacity>
-                )}
+            )}
 
-                {activeTag.status === 'in_progress' && (
-                  <TouchableOpacity style={styles.completeTripButton} onPress={handleCompleteTag}>
-                    <Ionicons name="checkmark-circle" size={24} color="#FFF" />
-                    <Text style={styles.completeTripButtonText}>Yolculuğu Tamamla</Text>
-                  </TouchableOpacity>
-                )}
+            {activeTag.status === 'in_progress' && (
+              <View style={styles.floatingActionContainer}>
+                <TouchableOpacity style={styles.completeTripButtonFloat} onPress={handleCompleteTag}>
+                  <LinearGradient
+                    colors={['#10B981', '#059669']}
+                    style={styles.actionButtonGradient}
+                  >
+                    <Ionicons name="checkmark-circle" size={28} color="#FFF" />
+                    <Text style={styles.actionButtonText}>Yolculuğu Tamamla</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
-            </View>
+            )}
           </View>
         ) : (
           <View style={styles.card}>
