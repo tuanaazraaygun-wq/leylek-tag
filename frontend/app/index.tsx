@@ -277,7 +277,8 @@ export default function App() {
       const data = await response.json();
       if (data.success) {
         await saveUser(data.user);
-        setScreen('dashboard');
+        Alert.alert('✅ Kayıt Başarılı', 'Hesabınız oluşturuldu!');
+        setScreen('role-select'); // Kayıttan sonra rol seçimi
       } else {
         Alert.alert('Hata', data.detail || 'Kayıt oluşturulamadı');
       }
