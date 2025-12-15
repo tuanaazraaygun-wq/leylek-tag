@@ -2889,6 +2889,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     justifyContent: 'space-between',
+    backgroundColor: '#3b82f6', // Düz mavi (Android için)
   },
   vehicleSection: {
     alignItems: 'center',
