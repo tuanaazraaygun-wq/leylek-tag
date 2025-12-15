@@ -640,46 +640,6 @@ function FullScreenOfferCard({
   isFirst: boolean;
   isLast: boolean;
 }) {
-  const translateY = useSharedValue(0);
-  const opacity = useSharedValue(1);
-
-  const gestureHandler = useAnimatedGestureHandler({
-    onStart: (_, ctx: any) => {
-      ctx.startY = translateY.value;
-    },
-    onActive: (event, ctx) => {
-      translateY.value = ctx.startY + event.translationY;
-      
-      // Yukarı veya aşağı kaydırma
-      const progress = Math.abs(translateY.value / SCREEN_HEIGHT);
-      opacity.value = 1 - progress * 0.5;
-    },
-    onEnd: (event) => {
-      // Yukarı kaydırma (-150px eşiği)
-      if (translateY.value < -150 && !isLast) {
-        translateY.value = withTiming(-SCREEN_HEIGHT, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        runOnJS(onSwipeUp)();
-      } 
-      // Aşağı kaydırma (+150px eşiği)
-      else if (translateY.value > 150 && !isFirst) {
-        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
-        opacity.value = withTiming(0, { duration: 300 });
-        runOnJS(onSwipeDown)();
-      } 
-      else {
-        translateY.value = withSpring(0);
-        opacity.value = withSpring(1);
-      }
-    },
-  });
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateY: translateY.value }],
-      opacity: opacity.value,
-    };
-  });
 
   // Araç rengi emoji
   const getCarEmoji = (color: string) => {
