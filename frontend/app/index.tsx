@@ -395,52 +395,9 @@ export default function App() {
               </Text>
             </TouchableOpacity>
 
-            <Text style={[styles.label, { marginTop: 20 }]}>Rol Seçin</Text>
-            <View style={styles.roleContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  selectedRole === 'passenger' && styles.roleButtonActive
-                ]}
-                onPress={() => setSelectedRole('passenger')}
-              >
-                <Ionicons
-                  name="person"
-                  size={40}
-                  color={selectedRole === 'passenger' ? '#FFF' : '#00A67E'}
-                />
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    selectedRole === 'passenger' && styles.roleButtonTextActive
-                  ]}
-                >
-                  Yolcu
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  selectedRole === 'driver' && styles.roleButtonActive
-                ]}
-                onPress={() => setSelectedRole('driver')}
-              >
-                <Ionicons
-                  name="car"
-                  size={40}
-                  color={selectedRole === 'driver' ? '#FFF' : '#00A67E'}
-                />
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    selectedRole === 'driver' && styles.roleButtonTextActive
-                  ]}
-                >
-                  Sürücü
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.label, { marginTop: 20, textAlign: 'center', fontSize: 14, color: '#666' }]}>
+              📍 Telefon: {phone}
+            </Text>
 
             <TouchableOpacity style={styles.primaryButton} onPress={handleRegister}>
               <Text style={styles.primaryButtonText}>Kayıt Ol</Text>
