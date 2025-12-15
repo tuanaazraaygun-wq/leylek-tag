@@ -860,12 +860,18 @@ function PassengerDashboard({
 
   // ÇAĞRI BUTONU - Hedef kontrolü + koordinat gönderimi
   const handleCallButton = async () => {
+    console.log('🔵 ÇAĞRI BUTONU TIKLANDI!');
+    console.log('Destination:', destination);
+    console.log('User:', user);
+    
     // Hedef kontrolü
     if (!destination) {
+      console.log('⚠️ Hedef yok!');
       Alert.alert('⚠️ Hedef Gerekli', 'Lütfen önce nereye gitmek istediğinizi seçin');
       return;
     }
 
+    console.log('✅ Hedef var, loading başlıyor...');
     setLoading(true);
     try {
       // GPS konumu varsa kullan, yoksa mock konum
