@@ -1349,8 +1349,6 @@ function PassengerDashboard({
                 </Animated.View>
               </View>
             ) : null}
-          </>
-        )}
       </ScrollView>
 
       {/* Hedef Seçme Modal - PassengerDashboard içinde */}
