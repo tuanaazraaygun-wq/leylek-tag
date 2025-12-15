@@ -1203,33 +1203,26 @@ function PassengerDashboard({
   const handleAcceptOffer = async (offerId: string) => {
     if (!activeTag) return;
 
-    Alert.alert(
-      'Teklifi Kabul Et',
-      'Bu teklifi kabul etmek istediğinizden emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Kabul Et',
-          onPress: async () => {
-            try {
-              const response = await fetch(`${API_URL}/passenger/accept-offer?user_id=${user.id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag_id: activeTag.id, offer_id: offerId })
-              });
+    const selectedOffer = offers.find(o => o.id === offerId);
+    if (!selectedOffer) return;
 
-              const data = await response.json();
-              if (data.success) {
-                Alert.alert('Başarılı', 'Eşleşme sağlandı! Sürücünüz size ulaşıyor.');
-                loadActiveTag();
-              }
-            } catch (error) {
-              Alert.alert('Hata', 'Teklif kabul edilemedi');
-            }
-          }
-        }
-      ]
-    );
+    try {
+      const response = await fetch(`${API_URL}/passenger/accept-offer?user_id=${user.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_id: activeTag.id, offer_id: offerId })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Sesli aramayı başlat
+        setSelectedDriverName(selectedOffer.driver_name);
+        setShowVoiceCall(true);
+        loadActiveTag();
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Teklif kabul edilemedi');
+    }
   };
 
   const handleCancelTag = async () => {
