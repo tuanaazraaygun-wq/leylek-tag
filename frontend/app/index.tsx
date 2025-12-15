@@ -2937,12 +2937,8 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
   },
   messageSection: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    marginHorizontal: 20,
+    marginBottom: 20,
+    marginHorizontal: 16,
   },
   messageText: {
     fontSize: 16,
@@ -2950,6 +2946,60 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 6,
     textAlign: 'center',
+  },
+  // Trafik Lambası Bordür
+  trafficLightBorder: {
+    borderWidth: 4,
+    borderRadius: 20,
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  // Zaman Bilgisi Container
+  timeInfoContainer: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 16,
+    padding: 16,
+  },
+  timeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 8,
+  },
+  timeEmoji: {
+    fontSize: 48,
+    marginRight: 16,
+  },
+  timeTextContainer: {
+    alignItems: 'center',
+  },
+  timeTextLarge: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 10,
+    letterSpacing: 1,
+  },
+  timeTextSubLarge: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#E0F2FE',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 5,
+    marginTop: 4,
+  },
+  timeDivider: {
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    marginVertical: 12,
+    marginHorizontal: 20,
   },
   priceSection: {
     alignItems: 'center',
