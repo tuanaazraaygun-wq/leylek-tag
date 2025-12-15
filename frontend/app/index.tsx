@@ -1567,6 +1567,10 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
+  
+  // Sesli arama state'leri
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
+  const [selectedPassengerName, setSelectedPassengerName] = useState('');
 
   useEffect(() => {
     loadData();
