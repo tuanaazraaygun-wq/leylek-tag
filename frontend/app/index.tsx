@@ -2624,24 +2624,24 @@ const styles = StyleSheet.create({
     color: '#FFF',
     letterSpacing: 2,
   },
-  swipeHints: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
+  navigationButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    justifyContent: 'space-around',
+    marginTop: 20,
+    gap: 20,
   },
-  swipeHintUp: {
+  navButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    flexDirection: 'column',
     alignItems: 'center',
+    gap: 4,
   },
-  swipeHintDown: {
-    alignItems: 'center',
-  },
-  swipeHintTextSmall: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
+  navButtonText: {
+    color: '#FFF',
+    fontSize: 14,
     fontWeight: '600',
   },
   offerIndicator: {
