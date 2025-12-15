@@ -929,7 +929,7 @@ async def root():
 async def clear_all_data():
     """Tüm TAG ve teklifleri temizle"""
     try:
-        db = db_instance.get_db()
+        db = db_instance.db
         
         # Tüm TAG'leri sil
         tags_result = await db.tags.delete_many({})
