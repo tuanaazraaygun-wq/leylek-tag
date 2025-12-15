@@ -2060,6 +2060,11 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 16,
   },
+  requestCardSky: {
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: '#87CEEB', // Gök mavisi
+  },
   premiumPassengerPhoto: {
     width: 48,
     height: 48,
