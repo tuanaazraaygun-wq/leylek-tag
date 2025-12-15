@@ -2012,6 +2012,45 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
   },
+  requestCardGradient: {
+    padding: 20,
+    borderRadius: 16,
+  },
+  premiumPassengerPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  passengerInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  passengerNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  passengerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  premiumBadgeSmall: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  passengerRating: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 2,
+  },
   distanceContainer: {
     flexDirection: 'row',
     backgroundColor: '#F8F9FA',
