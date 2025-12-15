@@ -81,6 +81,9 @@ export default function App() {
   // Role Selection (Dinamik - Her girişte seçilir)
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
   
+  // Animation for role selection
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [locationPermission, setLocationPermission] = useState(false);
