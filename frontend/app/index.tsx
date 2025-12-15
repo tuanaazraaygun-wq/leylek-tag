@@ -2311,15 +2311,20 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   distanceValue: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFF',
+    color: '#60A5FA', // Gök mavisi - BELİRGİN!
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   timeValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
-    opacity: 0.9,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#60A5FA', // Gök mavisi - BELİRGİN!
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   requestPassenger: {
     fontSize: 16,
