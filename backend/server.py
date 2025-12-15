@@ -530,8 +530,8 @@ async def get_driver_requests(user_id: str):
 async def send_offer(user_id: str, request: SendOfferRequest):
     """Teklif gönder"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
-    if not user or user["role"] != UserRole.DRIVER:
-        raise HTTPException(status_code=403, detail="Sadece sürücüler teklif gönderebilir")
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     
     tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
     if not tag:
