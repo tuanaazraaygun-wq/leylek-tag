@@ -1638,24 +1638,17 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
               <Text style={styles.emptyText}>Henüz talep yok</Text>
             ) : (
               requests.map((request: any, index: number) => {
-                // Renkli gradient seçimi
-                const gradientColors = [
-                  ['#667eea', '#764ba2'],
-                  ['#f093fb', '#f5576c'],
-                  ['#4facfe', '#00f2fe'],
-                  ['#43e97b', '#38f9d7'],
-                  ['#fa709a', '#fee140'],
-                ];
-                const gradient = gradientColors[index % gradientColors.length];
+                // Mesafe ve süre hesaplama
+                const distanceToPassenger = request.distance_to_passenger_km || 0;
+                const timeToPassenger = Math.round((distanceToPassenger / 40) * 60); // 40 km/h ortalama
+                
+                const tripDistance = request.trip_distance_km || 0;
+                const tripTime = Math.round((tripDistance / 50) * 60); // 50 km/h ortalama şehir içi
                 
                 return (
                 <View key={request.id} style={styles.requestCard}>
-                  <LinearGradient
-                    colors={gradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.requestCardGradient}
-                  >
+                  {/* TEK TİP GÖK MAVİSİ KART */}
+                  <View style={styles.requestCardSky}>
                     {/* Yolcu Bilgileri */}
                     <View style={styles.requestHeader}>
                       {request.is_premium && request.profile_photo ? (
