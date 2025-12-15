@@ -1487,7 +1487,7 @@ function PassengerDashboard({
                     <View style={styles.completeButtonCircle}>
                       <Ionicons name="checkmark-done" size={32} color="#FFF" />
                     </View>
-                    <Text style={styles.buttonLabel}>Tamamla</Text>
+                    <Text style={styles.buttonLabelRed}>BİTİR</Text>
                   </TouchableOpacity>
 
                   {/* Sağ: Yeşil Ara Butonu */}
