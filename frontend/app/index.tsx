@@ -2897,8 +2897,7 @@ const styles = StyleSheet.create({
   },
   vehicleSection: {
     alignItems: 'center',
-    marginTop: 120,
-    marginBottom: 20,
+    marginVertical: 10,
   },
   premiumBadgeContainer: {
     position: 'absolute',
