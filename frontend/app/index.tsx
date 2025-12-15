@@ -1226,22 +1226,13 @@ function PassengerDashboard({
             {/* CANLI HARİTA - Eşleşildiğinde */}
             {activeTag.status === 'matched' || activeTag.status === 'in_progress' ? (
               <View style={styles.liveMapContainer}>
-                {LiveMap ? (
-                  <LiveMap
-                    userLocation={userLocation}
-                    otherLocation={activeTag.driver_location}
-                    userIcon={user.gender === 'female' ? '👩' : '🧑'}
-                    otherIcon="🚗"
-                    userName="Sen"
-                    otherName={activeTag.driver_name}
-                  />
-                ) : (
-                  <View style={styles.webMapPlaceholder}>
-                    <Text style={styles.webMapText}>🗺️ Harita</Text>
-                    <Text style={styles.webMapSubtext}>Web preview'da harita desteklenmiyor</Text>
-                    <Text style={styles.webMapSubtext}>Mobilde tam çalışır</Text>
-                  </View>
-                )}
+                <View style={styles.mapPlaceholder}>
+                  <Text style={styles.mapPlaceholderIcon}>🗺️</Text>
+                  <Text style={styles.mapPlaceholderTitle}>Canlı Harita</Text>
+                  <Text style={styles.mapPlaceholderText}>{user.gender === 'female' ? '👩' : '🧑'} Sen</Text>
+                  <Text style={styles.mapPlaceholderText}>🚗 {activeTag.driver_name}</Text>
+                  <Text style={styles.mapPlaceholderNote}>Harita özelliği yakında eklenecek</Text>
+                </View>
                 
                 {/* Alt Bilgi Paneli */}
                 <View style={styles.mapInfoPanel}>
