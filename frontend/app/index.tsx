@@ -191,9 +191,9 @@ export default function App() {
       if (data.success) {
         if (data.user_exists && data.user) {
           await saveUser(data.user);
-          setScreen('dashboard');
+          setScreen('role-select'); // Her girişte rol seçimi
         } else {
-          setScreen('register');
+          setScreen('register'); // Yeni kullanıcı
         }
       } else {
         Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
