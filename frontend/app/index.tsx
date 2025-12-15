@@ -271,7 +271,7 @@ export default function App() {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, name, role: 'passenger', city: selectedCity })
+        body: JSON.stringify({ phone, name, city: selectedCity })
       });
 
       const data = await response.json();
