@@ -1944,6 +1944,14 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
           </View>
         </View>
       </Modal>
+
+      {/* Sesli Arama Modal */}
+      <VoiceCall
+        visible={showVoiceCall}
+        remoteUserName={selectedPassengerName}
+        isIncoming={false}
+        onEnd={() => setShowVoiceCall(false)}
+      />
     </SafeAreaView>
   );
 }
