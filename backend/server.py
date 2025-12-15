@@ -563,11 +563,6 @@ async def get_driver_requests(user_id: str):
     
     tag_responses = []
     for tag in tags:
-        # ŞEHİR FİLTRELEMESİ: Sadece aynı şehirdeki TAG'leri göster
-        tag_city = tag.get("city", "Diğer")
-        if tag_city != driver_city:
-            continue  # Farklı şehir, atla
-        
         # Yolcu bilgisini al
         passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
         if not passenger:
@@ -577,16 +572,16 @@ async def get_driver_requests(user_id: str):
         distance_to_passenger = 0.0
         trip_distance = 0.0
         
-        # Sürücü -> Yolcu mesafesi
+        # Sürücü -> Yolcu mesafesi (GPS BAZLI FİLTRELEME)
         if tag.get("pickup_lat") and tag.get("pickup_lng"):
             distance_to_passenger = calculate_distance(
                 driver_lat, driver_lng,
                 tag["pickup_lat"], tag["pickup_lng"]
             )
             
-            # GPS BAZLI FİLTRELEME: MAX_DISTANCE_KM dışındaki çağrıları gösterme
+            # 50 KM FİLTRE: Sadece 50 km içindeki yolcular
             if distance_to_passenger > MAX_DISTANCE_KM:
-                continue  # Çok uzak, atla
+                continue  # 50 km'den uzak, atla
         
         # Yolcunun gideceği mesafe (pickup -> dropoff)
         if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
