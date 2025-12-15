@@ -2157,16 +2157,25 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   sendOfferButton: {
-    backgroundColor: '#00A67E',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#FFF',
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderRadius: 16,
     alignItems: 'center',
-    marginTop: 12
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#4682B4',
   },
   sendOfferButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: 'bold'
+    color: '#4682B4',
+    fontSize: 18,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   offeredBadge: {
     backgroundColor: '#E8F8F5',
