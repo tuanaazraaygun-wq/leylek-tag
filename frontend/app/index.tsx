@@ -1241,8 +1241,7 @@ function PassengerDashboard({
             />
           </View>
         ) : activeTag.status === 'matched' || activeTag.status === 'in_progress' ? null : (
-          <>
-            <View style={styles.card}>
+          <View style={styles.card}>
               <View style={styles.tagStatusBadge}>
                 <Text style={styles.tagStatusText}>
                   {activeTag.status === 'pending' && '⏳ Teklifler Bekleniyor'}
