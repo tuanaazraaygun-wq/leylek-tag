@@ -90,8 +90,8 @@ class VerifyOTPRequest(BaseModel):
 class RegisterRequest(BaseModel):
     phone: str
     name: str
-    role: UserRole
     city: str  # Şehir seçimi zorunlu
+    # Not: role kaldırıldı, her session'da dinamik seçilecek
 
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
