@@ -26,6 +26,9 @@ load_dotenv(ROOT_DIR / '.env')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
+# ==================== CONFIG ====================
+MAX_DISTANCE_KM = 20  # Admin ayarı: Maksimum mesafe (km)
+
 # ==================== HELPER FUNCTIONS ====================
 def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """İki nokta arasındaki mesafeyi km cinsinden hesapla"""
