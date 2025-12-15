@@ -1873,6 +1873,114 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text,
   },
+  // TikTok Swipeable Card Stilleri
+  swipeContainer: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  swipeTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  swipeSubtitle: {
+    fontSize: 14,
+    color: COLORS.gray500,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  swipeCardsWrapper: {
+    height: 500,
+    position: 'relative',
+  },
+  swipeCard: {
+    position: 'absolute',
+    width: '100%',
+    height: 450,
+    top: 0,
+    left: 0,
+  },
+  swipeCardInner: {
+    width: '100%',
+    height: '100%',
+  },
+  swipeCardGradient: {
+    flex: 1,
+    borderRadius: 24,
+    padding: 24,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  swipeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  driverAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverAvatarText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  driverInfo: {
+    flex: 1,
+  },
+  swipeDriverName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  swipeDriverRating: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  swipePriceContainer: {
+    alignItems: 'center',
+    paddingVertical: 30,
+  },
+  swipePriceLabel: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 8,
+  },
+  swipePrice: {
+    fontSize: 64,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  swipeNotesContainer: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+    padding: 16,
+  },
+  swipeNotes: {
+    fontSize: 15,
+    color: '#FFF',
+    lineHeight: 22,
+  },
+  swipeHint: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  swipeHintText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
+  },
   // Harita Stilleri
   mapContainer: {
     width: '100%',
