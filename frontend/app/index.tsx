@@ -2560,8 +2560,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   vehicleEmoji: {
-    fontSize: 120,
-    marginBottom: 16,
+    fontSize: 100,
+    marginBottom: 12,
   },
   vehicleModel: {
     fontSize: 24,
