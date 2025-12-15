@@ -71,13 +71,13 @@ class UserResponse(BaseModel):
     id: str
     phone: str
     name: str
-    role: UserRole
     city: str
     profile_photo: Optional[str] = None
     rating: float
     total_ratings: int
     total_trips: int
     driver_details: Optional[DriverDetails] = None
+    # Not: role yok, dinamik seçilecek
 
 # ==================== AUTH MODELS ====================
 class SendOTPRequest(BaseModel):
