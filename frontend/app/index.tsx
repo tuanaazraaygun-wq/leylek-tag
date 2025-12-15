@@ -2521,17 +2521,20 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   // TAM EKRAN OFFER KART STİLLERİ
+  fullScreenContainer: {
+    flex: 1,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    backgroundColor: '#000',
+  },
   fullScreenOffersContainer: {
     position: 'relative',
     height: SCREEN_HEIGHT - 100,
     marginTop: 20,
   },
   fullScreenCard: {
-    position: 'absolute',
     width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT - 100,
-    left: 0,
-    top: 0,
+    height: SCREEN_HEIGHT,
   },
   fullScreenGradient: {
     flex: 1,
