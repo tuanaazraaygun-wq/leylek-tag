@@ -1759,45 +1759,97 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        {activeTag ? (
-          <View style={styles.fullScreenMapContainer}>
-            {/* Harita */}
-            <View style={styles.mapView}>
-              <View style={styles.mapPlaceholderFull}>
-                <Ionicons name="location" size={60} color={COLORS.primary} />
-                <Text style={styles.mapPlaceholderTitle}>🗺️ Canlı Konum Takibi</Text>
-                <Text style={styles.mapIconText}>🚗 Sen</Text>
-                <Text style={styles.mapIconText}>{activeTag.passenger_gender === 'female' ? '👩' : '🧑'} {activeTag.passenger_name}</Text>
-                <Text style={styles.mapPlaceholderNote}>Mobil uygulamada canlı harita aktif</Text>
-              </View>
-            </View>
+      {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
+        <View style={styles.fullScreenContainer}>
+          {/* CANLি 3D HARİTA - Yolcu ile aynı */}
+          <LiveMapView
+            userLocation={{
+              latitude: userLocation?.latitude || 41.0082,
+              longitude: userLocation?.longitude || 28.9784,
+            }}
+            otherLocation={{
+              latitude: activeTag.pickup_lat || 41.0082,
+              longitude: activeTag.pickup_lng || 28.9784,
+            }}
+            userIcon="🚗"
+            otherIcon="🧑"
+            userName="Sen (Sürücü)"
+            otherName={activeTag.passenger_name}
+            estimatedTime={5}
+            distance={2.5}
+            price={activeTag.price}
+          />
 
-            {/* Üst Bilgi - Süre */}
-            <View style={styles.mapTopInfo}>
-              <View style={styles.meetingTimeBox}>
-                <Ionicons name="time" size={24} color="#FFF" />
-                <Text style={styles.meetingTimeText}>
-                  {activeTag.status === 'matched' ? '5 dakika sonra yolcuyu alacaksınız' : 'Yolculuk devam ediyor'}
-                </Text>
-              </View>
-            </View>
-
-            {/* Ara Butonu - Sağ Alt */}
+          {/* Alt Butonlar - Sol: Tamamla, Sağ: Ara */}
+          <View style={styles.matchedBottomButtons}>
+            {/* Sol: Kırmızı Tamamla Butonu */}
             <TouchableOpacity 
-              style={styles.floatingCallButton}
+              style={styles.completeButton}
               onPress={() => {
-                setSelectedPassengerName(activeTag.passenger_name || 'Yolcu');
-                setShowVoiceCall(true);
+                Alert.alert(
+                  'Yolculuğu Tamamla',
+                  'Yolcuyu hedefe ulaştırdınız mı?',
+                  [
+                    { text: 'Hayır', style: 'cancel' },
+                    {
+                      text: 'Evet, Tamamla',
+                      onPress: async () => {
+                        try {
+                          const response = await fetch(
+                            `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}`,
+                            { method: 'POST' }
+                          );
+                          const data = await response.json();
+                          if (data.success) {
+                            Alert.alert('Başarılı', 'Yolculuk tamamlandı');
+                            setActiveTag(null);
+                            loadRequests();
+                          }
+                        } catch (error) {
+                          Alert.alert('Hata', 'İşlem başarısız');
+                        }
+                      }
+                    }
+                  ]
+                );
               }}
-              disabled={calling}
+              activeOpacity={0.8}
             >
-              <LinearGradient
-                colors={['#10B981', '#059669']}
-                style={styles.floatingCallGradient}
+              <View style={styles.completeButtonCircle}>
+                <Ionicons name="checkmark-done" size={32} color="#FFF" />
+              </View>
+              <Text style={styles.buttonLabelRed}>BİTİR</Text>
+            </TouchableOpacity>
+
+            {/* Sağ: Yeşil Ara Butonu */}
+            <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+              <TouchableOpacity 
+                style={styles.callButton}
+                onPress={() => {
+                  setSelectedPassengerName(activeTag.passenger_name || 'Yolcu');
+                  setShowVoiceCall(true);
+                }}
+                activeOpacity={0.8}
               >
-                <Ionicons name="call" size={32} color="#FFF" />
-              </LinearGradient>
+                <LinearGradient
+                  colors={['#10B981', '#059669', '#047857']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.callButtonCircle}
+                >
+                  <Ionicons name="call" size={32} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.buttonLabelGreen}>ARA</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </View>
+      ) : (
+        <ScrollView style={styles.content}>
+          {/* Talep Listesi */}
+          {activeTag ? (
+            <View style={styles.fullScreenMapContainer}>
+              <Text>Bekliyor...</Text>
             </TouchableOpacity>
 
             {/* Yolculuk Kontrol Butonları - Alt Orta */}
