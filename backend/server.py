@@ -39,6 +39,35 @@ def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
         logger.error(f"Mesafe hesaplama hatası: {e}")
         return 0.0
 
+
+def get_city_from_coords(lat: float, lng: float) -> str:
+    """Koordinattan şehir adı çıkar (basitleştirilmiş)"""
+    # Türkiye'nin önemli şehirleri ve yaklaşık koordinatları
+    cities = {
+        "Ankara": (39.9334, 32.8597),
+        "İstanbul": (41.0082, 28.9784),
+        "İzmir": (38.4237, 27.1428),
+        "Antalya": (36.8969, 30.7133),
+        "Adana": (37.0000, 35.3213),
+        "Bursa": (40.1826, 29.0665),
+        "Gaziantep": (37.0662, 37.3833),
+        "Konya": (37.8746, 32.4932),
+    }
+    
+    # En yakın şehri bul
+    min_distance = float('inf')
+    closest_city = "Diğer"
+    
+    for city, (city_lat, city_lng) in cities.items():
+        distance = calculate_distance(lat, lng, city_lat, city_lng)
+        if distance < min_distance:
+            min_distance = distance
+            closest_city = city
+    
+    # 50 km'den yakınsa o şehir, değilse "Diğer"
+    return closest_city if min_distance < 50 else "Diğer"
+
+
 # Create app
 app = FastAPI(title="Leylek TAG API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
