@@ -354,6 +354,63 @@ async def accept_offer(user_id: str, request: AcceptOfferRequest):
     
     return {"success": True, "message": "Teklif kabul edildi, eşleşme başarılı!"}
 
+@api_router.post("/passenger/cancel-tag")
+async def cancel_tag(user_id: str, request: CancelTagRequest):
+    """Yolcu çağrıyı iptal eder"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
+    if not tag:
+        raise HTTPException(status_code=404, detail="TAG bulunamadı")
+    if tag["passenger_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
+    
+    # TAG'i iptal et
+    await db_instance.update_one(
+        "tags",
+        {"_id": ObjectId(request.tag_id)},
+        {"$set": {
+            "status": TagStatus.CANCELLED,
+            "cancelled_at": datetime.utcnow()
+        }}
+    )
+    
+    # İlgili teklifleri reddet
+    await db_instance.update_many(
+        "offers",
+        {"tag_id": request.tag_id},
+        {"$set": {"status": OfferStatus.REJECTED}}
+    )
+    
+    logger.info(f"✅ TAG iptal edildi: {request.tag_id}")
+    return {"success": True, "message": "Çağrı başarıyla iptal edildi"}
+
+@api_router.post("/passenger/update-destination")
+async def update_destination(user_id: str, request: UpdateDestinationRequest):
+    """Hedef adresini güncelle"""
+    tag = await db_instance.find_one("tags", {"_id": ObjectId(request.tag_id)})
+    if not tag:
+        raise HTTPException(status_code=404, detail="TAG bulunamadı")
+    if tag["passenger_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
+    
+    # TAG'in durumunu kontrol et - sadece pending veya offers_received ise güncelleme yapılabilir
+    if tag["status"] not in [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]:
+        raise HTTPException(status_code=400, detail="Bu aşamada hedef değiştirilemez")
+    
+    # Hedefi güncelle
+    await db_instance.update_one(
+        "tags",
+        {"_id": ObjectId(request.tag_id)},
+        {"$set": {
+            "dropoff_location": request.dropoff_location,
+            "dropoff_lat": request.dropoff_lat,
+            "dropoff_lng": request.dropoff_lng,
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    logger.info(f"✅ Hedef güncellendi: {request.tag_id} -> {request.dropoff_location}")
+    return {"success": True, "message": "Hedef başarıyla güncellendi"}
+
 @api_router.get("/passenger/active-tag")
 async def get_passenger_active_tag(user_id: str):
     """Aktif TAG getir"""
