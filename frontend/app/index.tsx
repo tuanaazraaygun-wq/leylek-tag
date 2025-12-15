@@ -1115,13 +1115,6 @@ function PassengerDashboard({
           currentIndex={currentOfferIndex}
           totalOffers={offers.length}
         />
-        
-        {/* Sayfa Göstergesi */}
-        <View style={styles.offerIndicator}>
-          <Text style={styles.offerIndicatorText}>
-            {currentOfferIndex + 1} / {offers.length}
-          </Text>
-        </View>
       </View>
     );
   }
