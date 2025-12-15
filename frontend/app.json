@@ -24,6 +24,12 @@
         "backgroundColor": "#000"
       },
       "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCWNE9hKK9rqJKsRACnJ9alkVouKUZvESo"
