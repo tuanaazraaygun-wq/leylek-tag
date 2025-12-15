@@ -201,7 +201,7 @@ async def get_user(user_id: str):
         id=str(user["_id"]),
         phone=user["phone"],
         name=user["name"],
-        role=user["role"],
+        city=user.get("city", ""),
         profile_photo=user.get("profile_photo"),
         rating=user.get("rating", 5.0),
         total_ratings=user.get("total_ratings", 0),
