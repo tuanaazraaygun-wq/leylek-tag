@@ -291,14 +291,26 @@ async def create_request(user_id: str, request: CreateTagRequest):
 
 @api_router.get("/passenger/offers/{tag_id}")
 async def get_offers(tag_id: str, user_id: str):
-    """Teklifleri listele"""
+    """Teklifleri listele - Expire olanları filtrele"""
+    from datetime import datetime
+    
     tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["passenger_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
     
-    offers = await db_instance.find_many("offers", {"tag_id": tag_id})
+    # Önce expire olanları sil
+    await db_instance.db.offers.delete_many({
+        "tag_id": tag_id,
+        "expires_at": {"$lt": datetime.utcnow()}
+    })
+    
+    # Sadece aktif teklifleri getir
+    offers = await db_instance.find_many("offers", {
+        "tag_id": tag_id,
+        "expires_at": {"$gte": datetime.utcnow()}
+    })
     
     offer_responses = []
     for offer in offers:
