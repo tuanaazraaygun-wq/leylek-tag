@@ -1508,7 +1508,7 @@ function PassengerDashboard({
                       >
                         <Ionicons name="call" size={32} color="#FFF" />
                       </LinearGradient>
-                      <Text style={styles.buttonLabel}>Ara</Text>
+                      <Text style={styles.buttonLabelGreen}>ARA</Text>
                     </TouchableOpacity>
                   </Animated.View>
                 </View>
