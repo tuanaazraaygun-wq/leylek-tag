@@ -161,7 +161,7 @@ async def verify_otp(request: VerifyOTPRequest):
 
 @api_router.post("/auth/register")
 async def register(request: RegisterRequest):
-    """Kullanıcı kaydı + Şehir validasyonu"""
+    """Kullanıcı kaydı + Şehir validasyonu (ROL YOK)"""
     # Şehir kontrolü
     if request.city not in TURKIYE_SEHIRLERI:
         raise HTTPException(status_code=400, detail="Geçersiz şehir seçimi")
@@ -173,7 +173,7 @@ async def register(request: RegisterRequest):
     user_data = User(**request.dict()).dict()
     user_id = await db_instance.insert_one("users", user_data)
     
-    logger.info(f"✅ Yeni kullanıcı: {request.name} ({request.role}) - {request.city}")
+    logger.info(f"✅ Yeni kullanıcı: {request.name} - {request.city}")
     
     return {
         "success": True,
@@ -182,7 +182,6 @@ async def register(request: RegisterRequest):
             id=user_id,
             phone=user_data["phone"],
             name=user_data["name"],
-            role=user_data["role"],
             city=user_data["city"],
             profile_photo=user_data.get("profile_photo"),
             rating=user_data["rating"],
