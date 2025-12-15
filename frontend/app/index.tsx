@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,12 +10,17 @@ import Animated, {
   withSequence, 
   withTiming,
   Easing,
-  withSpring
+  withSpring,
+  useAnimatedGestureHandler,
+  runOnJS
 } from 'react-native-reanimated';
+import { PanGestureHandler } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 // import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'; // Geçici devre dışı
 import * as Location from 'expo-location';
 import Logo from '../components/Logo';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
