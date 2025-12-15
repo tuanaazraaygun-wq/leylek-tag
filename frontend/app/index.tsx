@@ -1856,10 +1856,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>📍 Yakındaki Çağrılar ({requests.length})</Text>
             
-            {requests.length === 0 ? (
-              <Text style={styles.emptyText}>Henüz talep yok</Text>
-            ) : (
-              requests.map((request: any, index: number) => {
+            {requests.map((request: any, index: number) => {
                 // Mesafe ve süre hesaplama
                 const distanceToPassenger = request.distance_to_passenger_km || 0;
                 const timeToPassenger = Math.round((distanceToPassenger / 40) * 60); // 40 km/h ortalama
