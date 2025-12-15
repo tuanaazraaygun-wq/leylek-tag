@@ -1856,11 +1856,11 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
           )}
           
           {!activeTag && requests.length > 0 && (
-            <View style={styles.requestsList}>
+            <>
               <Text style={styles.requestsTitle}>📍 Yakındaki Çağrılar</Text>
             
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Aktif Talepler ({requests.length})</Text>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Aktif Talepler ({requests.length})</Text>
             
             {requests.length === 0 ? (
               <Text style={styles.emptyText}>Henüz talep yok</Text>
