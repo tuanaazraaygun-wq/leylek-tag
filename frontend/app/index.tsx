@@ -127,7 +127,7 @@ export default function App() {
       const userData = await AsyncStorage.getItem('user');
       if (userData) {
         setUser(JSON.parse(userData));
-        setScreen('dashboard');
+        setScreen('role-select'); // Her girişte rol seçimi
       }
     } catch (error) {
       console.error('Kullanıcı yüklenemedi:', error);
