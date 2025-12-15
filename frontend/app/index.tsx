@@ -2151,9 +2151,10 @@ const styles = StyleSheet.create({
   },
   requestLocation: {
     fontSize: 14,
-    color: '#666',
+    color: '#FFF',
     marginLeft: 8,
-    flex: 1
+    flex: 1,
+    fontWeight: '500',
   },
   sendOfferButton: {
     backgroundColor: '#00A67E',
