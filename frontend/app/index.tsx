@@ -624,16 +624,20 @@ export default function App() {
   return null;
 }
 
-// ==================== SWIPEABLE OFFER CARD ====================
-function SwipeableOfferCard({ 
+// ==================== TAM EKRAN OFFER KART ====================
+function FullScreenOfferCard({ 
   offer, 
   onSwipeUp, 
+  onSwipeDown,
   onAccept, 
+  isFirst,
   isLast 
 }: { 
   offer: any; 
-  onSwipeUp: () => void; 
+  onSwipeUp: () => void;
+  onSwipeDown: () => void; 
   onAccept: () => void;
+  isFirst: boolean;
   isLast: boolean;
 }) {
   const translateY = useSharedValue(0);
@@ -646,18 +650,24 @@ function SwipeableOfferCard({
     onActive: (event, ctx) => {
       translateY.value = ctx.startY + event.translationY;
       
-      // Sadece yukarı kaydırma
-      if (translateY.value < 0) {
-        opacity.value = 1 + (translateY.value / SCREEN_HEIGHT);
-      }
+      // Yukarı veya aşağı kaydırma
+      const progress = Math.abs(translateY.value / SCREEN_HEIGHT);
+      opacity.value = 1 - progress * 0.5;
     },
     onEnd: (event) => {
-      // Yukarı kaydırma eşiği: -100px
-      if (translateY.value < -100) {
+      // Yukarı kaydırma (-150px eşiği)
+      if (translateY.value < -150 && !isLast) {
         translateY.value = withTiming(-SCREEN_HEIGHT, { duration: 300 });
         opacity.value = withTiming(0, { duration: 300 });
         runOnJS(onSwipeUp)();
-      } else {
+      } 
+      // Aşağı kaydırma (+150px eşiği)
+      else if (translateY.value > 150 && !isFirst) {
+        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 });
+        opacity.value = withTiming(0, { duration: 300 });
+        runOnJS(onSwipeDown)();
+      } 
+      else {
         translateY.value = withSpring(0);
         opacity.value = withSpring(1);
       }
@@ -671,55 +681,113 @@ function SwipeableOfferCard({
     };
   });
 
+  // Araç rengi emoji
+  const getCarEmoji = (color: string) => {
+    const colorMap: any = {
+      'kırmızı': '🚗', 'red': '🚗',
+      'mavi': '🚙', 'blue': '🚙',
+      'siyah': '🚐', 'black': '🚐',
+      'beyaz': '🚕', 'white': '🚕',
+      'gri': '🚖', 'gray': '🚖',
+      'gümüş': '🚘', 'silver': '🚘',
+    };
+    return colorMap[color?.toLowerCase()] || '🚗';
+  };
+
   return (
     <PanGestureHandler onGestureEvent={gestureHandler}>
-      <Animated.View style={[styles.swipeCard, animatedStyle]}>
-        <TouchableOpacity 
-          style={styles.swipeCardInner}
-          onPress={onAccept}
-          activeOpacity={0.95}
+      <Animated.View style={[styles.fullScreenCard, animatedStyle]}>
+        <LinearGradient
+          colors={['#1E3A8A', '#3B82F6', '#60A5FA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.fullScreenGradient}
         >
-          <LinearGradient
-            colors={[COLORS.primary, '#5BB8FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.swipeCardGradient}
-          >
-            {/* Şoför Bilgileri */}
-            <View style={styles.swipeCardHeader}>
-              <View style={styles.driverAvatar}>
-                <Text style={styles.driverAvatarText}>
-                  {offer.driver_name?.charAt(0) || '?'}
+          {/* Üst Kısım: Araç Görseli */}
+          <View style={styles.vehicleSection}>
+            {offer.is_premium && offer.vehicle_photo ? (
+              // Premium: Gerçek araç fotoğrafı
+              <View style={styles.premiumBadgeContainer}>
+                <Text style={styles.premiumBadge}>⭐ PREMIUM</Text>
+              </View>
+            ) : null}
+            
+            <View style={styles.vehicleImageContainer}>
+              <Text style={styles.vehicleEmoji}>
+                {getCarEmoji(offer.vehicle_color || '')}
+              </Text>
+              <Text style={styles.vehicleModel}>
+                {offer.vehicle_model || 'Araç Bilgisi Yok'}
+              </Text>
+              {offer.vehicle_color && (
+                <Text style={styles.vehicleColor}>
+                  {offer.vehicle_color}
                 </Text>
-              </View>
-              <View style={styles.driverInfo}>
-                <Text style={styles.swipeDriverName}>{offer.driver_name}</Text>
-                <Text style={styles.swipeDriverRating}>⭐ {offer.driver_rating} · 🚗 {offer.estimated_time} dk</Text>
-              </View>
+              )}
             </View>
+          </View>
 
-            {/* Fiyat */}
-            <View style={styles.swipePriceContainer}>
-              <Text style={styles.swipePriceLabel}>Teklif Fiyatı</Text>
-              <Text style={styles.swipePrice}>₺{offer.price}</Text>
-            </View>
-
-            {/* Notlar */}
-            {offer.notes && (
-              <View style={styles.swipeNotesContainer}>
-                <Text style={styles.swipeNotes}>💬 {offer.notes}</Text>
-              </View>
-            )}
-
-            {/* Swipe Hint */}
-            <View style={styles.swipeHint}>
-              <Ionicons name="chevron-up" size={24} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.swipeHintText}>
-                {isLast ? 'Tıkla & Seç' : 'Yukarı kaydır veya tıkla'}
+          {/* Orta Kısım: Şoför Bilgileri */}
+          <View style={styles.driverSection}>
+            <View style={styles.driverAvatarLarge}>
+              <Text style={styles.driverAvatarLargeText}>
+                {offer.driver_name?.charAt(0) || '?'}
               </Text>
             </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <Text style={styles.driverNameLarge}>{offer.driver_name}</Text>
+            <Text style={styles.driverRatingLarge}>⭐ {offer.driver_rating} / 5.0</Text>
+          </View>
+
+          {/* Mesaj Kısmı */}
+          <View style={styles.messageSection}>
+            <Text style={styles.messageText}>
+              📍 {offer.estimated_time || 5} dakikada gelirim
+            </Text>
+            <Text style={styles.messageText}>
+              🚗 {Math.round((offer.estimated_time || 5) * 3)} dakikada gideriz
+            </Text>
+          </View>
+
+          {/* Alt Kısım: Fiyat ve Buton */}
+          <View style={styles.priceSection}>
+            <View style={styles.priceBox}>
+              <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
+              <Text style={styles.priceLarge}>₺{offer.price}</Text>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.acceptButton}
+              onPress={onAccept}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#10B981', '#059669']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.acceptButtonGradient}
+              >
+                <Text style={styles.acceptButtonText}>HEMEN GEL</Text>
+                <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+
+          {/* Kaydırma İpuçları */}
+          <View style={styles.swipeHints}>
+            {!isLast && (
+              <View style={styles.swipeHintUp}>
+                <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.6)" />
+                <Text style={styles.swipeHintTextSmall}>Sonraki</Text>
+              </View>
+            )}
+            {!isFirst && (
+              <View style={styles.swipeHintDown}>
+                <Text style={styles.swipeHintTextSmall}>Önceki</Text>
+                <Ionicons name="chevron-down" size={20} color="rgba(255,255,255,0.6)" />
+              </View>
+            )}
+          </View>
+        </LinearGradient>
       </Animated.View>
     </PanGestureHandler>
   );
