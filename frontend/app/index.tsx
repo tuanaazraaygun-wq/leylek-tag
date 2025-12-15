@@ -1955,8 +1955,8 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
               })
             )}
           </View>
-          )}
         </ScrollView>
+      )}
 
       {/* Teklif Gönderme Modalı */}
       <Modal
