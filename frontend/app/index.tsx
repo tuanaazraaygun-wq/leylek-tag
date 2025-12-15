@@ -896,6 +896,26 @@ function PassengerDashboard({
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
+  
+  // Ara butonu animasyonu
+  const buttonPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(buttonPulse, {
+          toValue: 1.1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(buttonPulse, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
 
   useEffect(() => {
     loadActiveTag();
