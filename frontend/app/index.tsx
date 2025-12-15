@@ -2538,7 +2538,8 @@ const styles = StyleSheet.create({
   },
   vehicleSection: {
     alignItems: 'center',
-    paddingTop: 40,
+    marginTop: 120,
+    marginBottom: 20,
   },
   premiumBadgeContainer: {
     position: 'absolute',
