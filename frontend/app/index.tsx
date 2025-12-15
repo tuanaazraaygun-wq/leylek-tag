@@ -801,12 +801,7 @@ function FullScreenOfferCard({
 
   return (
       <View style={styles.fullScreenCard}>
-        <LinearGradient
-          colors={['#1e40af', '#3b82f6', '#60a5fa']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.fullScreenGradient}
-        >
+        <View style={styles.fullScreenGradient}>
           {/* Sol Üst: Sadece Rakam */}
           <View style={styles.offerNumberCircle}>
             <Text style={styles.offerNumberText}>{currentIndex + 1}</Text>
