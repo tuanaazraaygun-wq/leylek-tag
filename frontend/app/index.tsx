@@ -2860,6 +2860,35 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  mapPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#E8F4F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  mapPlaceholderIcon: {
+    fontSize: 80,
+    marginBottom: 20,
+  },
+  mapPlaceholderTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 20,
+  },
+  mapPlaceholderText: {
+    fontSize: 18,
+    color: '#374151',
+    marginBottom: 10,
+  },
+  mapPlaceholderNote: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 20,
+    fontStyle: 'italic',
+  },
   webMapPlaceholder: {
     width: '100%',
     height: '100%',
