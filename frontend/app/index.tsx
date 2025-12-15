@@ -2688,10 +2688,11 @@ const styles = StyleSheet.create({
   },
   offerIndicator: {
     position: 'absolute',
-    top: 20,
+    top: 50,
     left: 0,
     right: 0,
     alignItems: 'center',
+    zIndex: 1000,
   },
   offerIndicatorText: {
     backgroundColor: 'rgba(0,0,0,0.6)',
