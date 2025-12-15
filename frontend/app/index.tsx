@@ -1031,6 +1031,27 @@ function PassengerDashboard({
                   <Text style={styles.driverPrice}>Fiyat: ₺{activeTag.final_price}</Text>
                 </View>
               )}
+
+              {/* Hedef Düzenle ve Çağrıyı İptal Et Butonları */}
+              {(activeTag.status === 'pending' || activeTag.status === 'offers_received') && (
+                <View style={styles.tagActionsContainer}>
+                  <TouchableOpacity
+                    style={styles.editDestinationButton}
+                    onPress={() => setShowDestinationPicker(true)}
+                  >
+                    <Ionicons name="create-outline" size={18} color={COLORS.primary} />
+                    <Text style={styles.editDestinationButtonText}>Hedefi Düzenle</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.cancelTagButton}
+                    onPress={handleCancelTag}
+                  >
+                    <Ionicons name="close-circle-outline" size={18} color="#FF5A5F" />
+                    <Text style={styles.cancelTagButtonText}>Çağrıyı İptal Et</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
             {offers.length > 0 && activeTag.status !== 'matched' && activeTag.status !== 'in_progress' && (
