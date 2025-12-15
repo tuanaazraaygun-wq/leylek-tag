@@ -3424,6 +3424,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  buttonLabelRed: {
+    marginTop: 8,
+    color: '#EF4444',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  buttonLabelGreen: {
+    marginTop: 8,
+    color: '#10B981',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
   floatingCallButton: {
     position: 'absolute',
     bottom: 50,
