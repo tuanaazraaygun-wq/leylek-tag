@@ -2090,17 +2090,7 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 12
   },
-  acceptButton: {
-    backgroundColor: '#00A67E',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center'
-  },
-  acceptButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: 'bold'
-  },
+  // Removed duplicate acceptButton and acceptButtonText - keeping the full-screen versions
   callButton: {
     backgroundColor: '#007AFF',
     borderRadius: 12,
