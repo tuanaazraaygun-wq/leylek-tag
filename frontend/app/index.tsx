@@ -1461,26 +1461,57 @@ function PassengerDashboard({
                   </View>
                 </View>
 
-                {/* Büyük Ara Butonu - Sağ Alt - Hareketli */}
-                <Animated.View style={[styles.floatingCallButton, { transform: [{ scale: buttonPulse }] }]}>
+                {/* Alt Butonlar - Sol: Tamamla, Sağ: Ara */}
+                <View style={styles.matchedBottomButtons}>
+                  {/* Sol: Kırmızı Tamamla Butonu */}
                   <TouchableOpacity 
+                    style={styles.completeButton}
                     onPress={() => {
-                      setSelectedDriverName(activeTag.driver_name || 'Sürücü');
-                      setShowVoiceCall(true);
+                      Alert.alert(
+                        'Yolculuğu Tamamla',
+                        'Yolcuyu hedefe ulaştırdınız mı?',
+                        [
+                          { text: 'Hayır', style: 'cancel' },
+                          {
+                            text: 'Evet, Tamamla',
+                            onPress: async () => {
+                              // TODO: Backend endpoint ekle
+                              Alert.alert('Başarılı', 'Yolculuk tamamlandı!');
+                            }
+                          }
+                        ]
+                      );
                     }}
-                    disabled={calling}
                     activeOpacity={0.8}
                   >
-                    <LinearGradient
-                      colors={['#10B981', '#059669', '#047857']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.floatingCallGradient}
-                    >
-                      <Ionicons name="call" size={40} color="#FFF" />
-                    </LinearGradient>
+                    <View style={styles.completeButtonCircle}>
+                      <Ionicons name="checkmark-done" size={32} color="#FFF" />
+                    </View>
+                    <Text style={styles.buttonLabel}>Tamamla</Text>
                   </TouchableOpacity>
-                </Animated.View>
+
+                  {/* Sağ: Yeşil Ara Butonu */}
+                  <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
+                    <TouchableOpacity 
+                      style={styles.callButton}
+                      onPress={() => {
+                        setSelectedDriverName(activeTag.driver_name || 'Sürücü');
+                        setShowVoiceCall(true);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <LinearGradient
+                        colors={['#10B981', '#059669', '#047857']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.callButtonCircle}
+                      >
+                        <Ionicons name="call" size={32} color="#FFF" />
+                      </LinearGradient>
+                      <Text style={styles.buttonLabel}>Ara</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                </View>
               </View>
             ) : null}
       </ScrollView>
