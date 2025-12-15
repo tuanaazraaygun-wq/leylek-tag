@@ -1184,17 +1184,42 @@ function PassengerDashboard({
             <Text style={styles.welcomeTitle}>Hoş Geldiniz</Text>
             <Text style={styles.welcomeSubtitle}>Nereye gitmek istiyorsunuz?</Text>
             
-            {/* Hedef Seçme Alanı */}
-            <TouchableOpacity
-              style={styles.destinationInput}
-              onPress={() => setShowDestinationPicker(true)}
-            >
-              <Ionicons name="location" size={24} color={COLORS.primary} />
-              <Text style={destination ? styles.destinationText : styles.destinationPlaceholder}>
-                {destination ? destination.address : 'Hedef seçin...'}
-              </Text>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.gray500} />
-            </TouchableOpacity>
+            {/* Hedef Seçme Alanı - BÜYÜK VE HAREKETLİ */}
+            <Animated.View style={{ transform: [{ scale: destinationButtonScale }] }}>
+              <TouchableOpacity
+                style={styles.destinationInputLarge}
+                onPress={() => {
+                  setShowDestinationPicker(true);
+                  setShowArrowHint(false);
+                }}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={destination ? ['#10B981', '#059669'] : ['#3B82F6', '#2563EB']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.destinationGradient}
+                >
+                  <Ionicons name="location" size={32} color="#FFF" />
+                  <Text style={styles.destinationTextLarge}>
+                    {destination ? destination.address : 'Hedef Seçin'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={28} color="#FFF" />
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
+            {showArrowHint && (
+              <Animated.View 
+                style={[
+                  styles.arrowHint,
+                  { transform: [{ translateX: arrowPosition }] }
+                ]}
+              >
+                <Text style={styles.arrowText}>👈 Önce buraya!</Text>
+              </Animated.View>
+            )}
             
             {destination && (
               <View style={styles.destinationInfo}>
