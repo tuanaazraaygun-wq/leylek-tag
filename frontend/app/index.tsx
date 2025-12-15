@@ -1545,10 +1545,64 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   requestCard: {
-    backgroundColor: '#F8F8F8',
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4
+  },
+  requestHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  passengerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passengerAvatarText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  distanceContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F8F9FA',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12
+    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  distanceBox: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  distanceDivider: {
+    width: 1,
+    height: 60,
+    backgroundColor: '#E0E0E0',
+    marginHorizontal: 12,
+  },
+  distanceLabel: {
+    fontSize: 12,
+    color: COLORS.gray500,
+    fontWeight: '600',
+  },
+  distanceValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
   },
   requestPassenger: {
     fontSize: 16,
