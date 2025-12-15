@@ -410,14 +410,14 @@ async def get_driver_requests(user_id: str):
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]}
     })
     
-    # Sürücünün konumu
+    # Sürücünün konumu (yoksa mock konum kullan)
     driver_location = user.get("location")
     if not driver_location:
-        logger.warning(f"⚠️ Sürücü {user_id} konum bilgisi eksik")
-        return {"success": True, "requests": []}
+        logger.warning(f"⚠️ Sürücü {user_id} konum bilgisi eksik, mock konum kullanılıyor")
+        driver_location = {"latitude": 41.0082, "longitude": 28.9784}
     
-    driver_lat = driver_location.get("latitude")
-    driver_lng = driver_location.get("longitude")
+    driver_lat = driver_location.get("latitude", 41.0082)
+    driver_lng = driver_location.get("longitude", 28.9784)
     
     tag_responses = []
     for tag in tags:
