@@ -294,6 +294,9 @@ async def create_request(user_id: str, request: CreateTagRequest):
     share_token = secrets.token_urlsafe(16)
     share_link = f"leylektag://share/{share_token}"
     
+    # Şehir bilgisini hesapla
+    passenger_city = get_city_from_coords(request.pickup_lat, request.pickup_lng)
+    
     tag_data = Tag(
         passenger_id=user_id,
         passenger_name=user["name"],
@@ -306,6 +309,9 @@ async def create_request(user_id: str, request: CreateTagRequest):
         notes=request.notes,
         share_link=share_link
     ).dict()
+    
+    # Şehir bilgisini ekle
+    tag_data["city"] = passenger_city
     
     tag_id = await db_instance.insert_one("tags", tag_data)
     
