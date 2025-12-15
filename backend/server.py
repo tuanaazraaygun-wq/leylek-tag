@@ -721,14 +721,14 @@ async def complete_tag(tag_id: str, user_id: str, approved: bool = True):
     # CEZA SİSTEMİ: Onaysız bitirme
     penalty_applied = False
     if not approved:
-        # Tek taraflı bitirme - CEZA!
+        # Tek taraflı bitirme - CEZA! -3 PUAN
         await db_instance.update_one(
             "users",
             {"_id": ObjectId(user_id)},
-            {"$inc": {"rating": -0.5}}  # Puan düşür
+            {"$inc": {"rating": -3.0}}  # 3 puan düşür
         )
         penalty_applied = True
-        logger.warning(f"⚠️ CEZA: {user_id} tek taraflı bitirdi - Puan -0.5")
+        logger.warning(f"⚠️ CEZA: {user_id} tek taraflı bitirdi - Puan -3")
     
     await db_instance.update_one(
         "tags",
