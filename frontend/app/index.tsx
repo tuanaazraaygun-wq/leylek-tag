@@ -3463,50 +3463,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
   },
-  // Sky Blue Theme Styles
-  welcomeTitleSky: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#87CEEB', // Sky blue
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  destinationBoxSky: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F8FF', // Alice blue background
-    borderRadius: 20,
-    padding: 20,
-    marginVertical: 20,
-    borderWidth: 2,
-    borderColor: '#87CEEB', // Sky blue border
-    shadowColor: '#87CEEB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-    gap: 15,
-  },
-  destinationTextSky: {
-    flex: 1,
-    fontSize: 18,
-    color: '#4682B4', // Steel blue text
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  arrowHintSky: {
-    backgroundColor: '#87CEEB',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 10,
-    alignSelf: 'center',
-  },
-  arrowTextSky: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  // Duplicate styles removed - keeping the first definitions
   // ==================== PREMIUM ROLE SELECTION STYLES ====================
   roleSelectionContainer: {
     flex: 1,
