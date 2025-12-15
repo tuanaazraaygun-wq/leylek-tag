@@ -1464,7 +1464,10 @@ function PassengerDashboard({
                 {/* Büyük Ara Butonu - Sağ Alt - Hareketli */}
                 <Animated.View style={[styles.floatingCallButton, { transform: [{ scale: buttonPulse }] }]}>
                   <TouchableOpacity 
-                    onPress={handleVoiceCall}
+                    onPress={() => {
+                      setSelectedDriverName(activeTag.driver_name || 'Sürücü');
+                      setShowVoiceCall(true);
+                    }}
                     disabled={calling}
                     activeOpacity={0.8}
                   >
@@ -1475,7 +1478,6 @@ function PassengerDashboard({
                       style={styles.floatingCallGradient}
                     >
                       <Ionicons name="call" size={40} color="#FFF" />
-                      {calling && <Text style={styles.callingText}>Aranıyor...</Text>}
                     </LinearGradient>
                   </TouchableOpacity>
                 </Animated.View>
