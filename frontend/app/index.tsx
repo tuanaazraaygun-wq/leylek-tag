@@ -474,6 +474,74 @@ export default function App() {
               </View>
             </View>
           </Modal>
+
+          {/* Hedef Seçme Modal */}
+          <Modal
+            visible={showDestinationPicker}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowDestinationPicker(false)}
+          >
+            <View style={styles.modalContainer}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>🎯 Nereye Gitmek İstiyorsunuz?</Text>
+                
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Adres ara... (örn: Taksim, İstanbul)"
+                  placeholderTextColor="#999"
+                  autoFocus={true}
+                  onSubmitEditing={(e) => {
+                    const address = e.nativeEvent.text;
+                    if (address) {
+                      // Mock koordinatlar (şimdilik)
+                      setDestination({
+                        address: address,
+                        latitude: 41.0082 + Math.random() * 0.1,
+                        longitude: 28.9784 + Math.random() * 0.1
+                      });
+                      setShowDestinationPicker(false);
+                    }
+                  }}
+                />
+                
+                <Text style={styles.popularTitle}>Popüler Konumlar:</Text>
+                <ScrollView style={styles.popularList}>
+                  {[
+                    'Taksim Meydanı, İstanbul',
+                    'Kadıköy İskele, İstanbul',
+                    'Atatürk Havalimanı',
+                    'Sabiha Gökçen Havalimanı',
+                    'Kızılay, Ankara',
+                    'Konak, İzmir'
+                  ].map((place, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.popularItem}
+                      onPress={() => {
+                        setDestination({
+                          address: place,
+                          latitude: 41.0082 + Math.random() * 0.1,
+                          longitude: 28.9784 + Math.random() * 0.1
+                        });
+                        setShowDestinationPicker(false);
+                      }}
+                    >
+                      <Ionicons name="location-outline" size={20} color={COLORS.primary} />
+                      <Text style={styles.popularItemText}>{place}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowDestinationPicker(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>İptal</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </SafeAreaView>
     );
