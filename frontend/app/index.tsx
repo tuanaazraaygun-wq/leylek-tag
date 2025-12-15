@@ -80,7 +80,7 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'dashboard'>('login');
+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'role-select' | 'dashboard'>('login');
 
   // Auth states
   const [phone, setPhone] = useState('');
