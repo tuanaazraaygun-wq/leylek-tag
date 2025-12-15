@@ -2003,6 +2003,7 @@ function DriverDashboard({ user, logout }: { user: User; logout: () => void }) {
         isIncoming={false}
         onEnd={() => setShowVoiceCall(false)}
       />
+      </>
     </SafeAreaView>
   );
 }
