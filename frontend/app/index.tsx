@@ -830,61 +830,70 @@ function FullScreenOfferCard({
             </View>
           </View>
 
-          {/* Araç - Hareketli */}
-          <Animated.View style={[styles.vehicleSection, { transform: [{ translateY: carBounce }] }]}>
-            {offer.is_premium && offer.vehicle_photo ? (
-              <View style={styles.premiumBadgeContainer}>
-                <Text style={styles.premiumBadge}>⭐ PREMIUM</Text>
+          {/* Kaydırılabilir İçerik */}
+          <ScrollView 
+            style={styles.offerScrollContent}
+            contentContainerStyle={styles.offerScrollContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Araç - Hareketli */}
+            <Animated.View style={[styles.vehicleSection, { transform: [{ translateY: carBounce }] }]}>
+              {offer.is_premium && offer.vehicle_photo ? (
+                <View style={styles.premiumBadgeContainer}>
+                  <Text style={styles.premiumBadge}>⭐ PREMIUM</Text>
+                </View>
+              ) : null}
+              
+              <View style={styles.vehicleImageContainer}>
+                <Text style={styles.vehicleEmoji}>
+                  {getCarEmoji(offer.vehicle_color || '')}
+                </Text>
+                <Text style={styles.vehicleBrand}>
+                  {offer.vehicle_model || 'BMW'}
+                </Text>
               </View>
-            ) : null}
-            
-            <View style={styles.vehicleImageContainer}>
-              <Text style={styles.vehicleEmoji}>
-                {getCarEmoji(offer.vehicle_color || '')}
-              </Text>
-              <Text style={styles.vehicleBrand}>
-                {offer.vehicle_model || 'BMW'}
-              </Text>
-            </View>
-          </Animated.View>
+            </Animated.View>
 
-          {/* Mesaj - BÜYÜK VE EFEKTLİ */}
-          <View style={styles.messageSection}>
-            <TrafficLightBorder>
-              <View style={styles.timeInfoContainer}>
-                <View style={styles.timeInfoRow}>
-                  <Text style={styles.timeEmoji}>📍</Text>
-                  <View style={styles.timeTextContainer}>
-                    <Text style={styles.timeTextLarge}>
-                      {offer.estimated_time || 5} dakikada
-                    </Text>
-                    <Text style={styles.timeTextSubLarge}>gelirim</Text>
+            {/* Mesaj - BÜYÜK VE EFEKTLİ */}
+            <View style={styles.messageSection}>
+              <TrafficLightBorder>
+                <View style={styles.timeInfoContainer}>
+                  <View style={styles.timeInfoRow}>
+                    <Text style={styles.timeEmoji}>📍</Text>
+                    <View style={styles.timeTextContainer}>
+                      <Text style={styles.timeTextLarge}>
+                        {offer.estimated_time || 5} dakikada
+                      </Text>
+                      <Text style={styles.timeTextSubLarge}>gelirim</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.timeDivider} />
+                  
+                  <View style={styles.timeInfoRow}>
+                    <Text style={styles.timeEmoji}>🚗</Text>
+                    <View style={styles.timeTextContainer}>
+                      <Text style={styles.timeTextLarge}>
+                        {Math.round((offer.estimated_time || 5) * 3)} dakikada
+                      </Text>
+                      <Text style={styles.timeTextSubLarge}>gideriz</Text>
+                    </View>
                   </View>
                 </View>
-                
-                <View style={styles.timeDivider} />
-                
-                <View style={styles.timeInfoRow}>
-                  <Text style={styles.timeEmoji}>🚗</Text>
-                  <View style={styles.timeTextContainer}>
-                    <Text style={styles.timeTextLarge}>
-                      {Math.round((offer.estimated_time || 5) * 3)} dakikada
-                    </Text>
-                    <Text style={styles.timeTextSubLarge}>gideriz</Text>
-                  </View>
-                </View>
-              </View>
-            </TrafficLightBorder>
-          </View>
-
-          {/* Fiyat */}
-          <View style={styles.priceSection}>
-            <View style={styles.priceBox}>
-              <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
-              <Text style={styles.priceLarge}>₺{offer.price}</Text>
+              </TrafficLightBorder>
             </View>
 
-            {/* HEMEN GEL Butonu - Geniş ve Efektli */}
+            {/* Fiyat */}
+            <View style={styles.priceSection}>
+              <View style={styles.priceBox}>
+                <Text style={styles.priceLabelLarge}>Teklif Fiyatım</Text>
+                <Text style={styles.priceLarge}>₺{offer.price}</Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* HEMEN GEL Butonu - SABİT EN ALTTA */}
+          <View style={styles.fixedBottomButton}>
             <Animated.View style={[styles.acceptButtonContainer, { transform: [{ scale: buttonPulse }] }]}>
               <TouchableOpacity 
                 style={styles.acceptButton}
