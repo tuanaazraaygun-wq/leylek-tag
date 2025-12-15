@@ -1248,11 +1248,32 @@ function PassengerDashboard({
                   </View>
                 </View>
 
-                {/* Üst Bilgi - Süre */}
+                {/* Üst Bilgi - Mesafeler ve Süre */}
                 <View style={styles.mapTopInfo}>
-                  <View style={styles.meetingTimeBox}>
-                    <Ionicons name="time" size={24} color="#FFF" />
-                    <Text style={styles.meetingTimeText}>5 dakika sonra buluşacaksınız</Text>
+                  <View style={styles.mapStatsContainer}>
+                    {/* Mesafe Bilgisi */}
+                    <View style={styles.mapStatBox}>
+                      <Ionicons name="locate" size={20} color="#FFF" />
+                      <Text style={styles.mapStatLabel}>Mesafe</Text>
+                      <Text style={styles.mapStatValue}>2.5 km</Text>
+                    </View>
+                    
+                    {/* Süre Bilgisi */}
+                    <View style={styles.mapStatBoxMain}>
+                      <Ionicons name="time" size={24} color="#FFF" />
+                      <Text style={styles.mapStatTimeText}>5 dk</Text>
+                      <Text style={styles.mapStatSubtext}>sonra buluşacaksınız</Text>
+                    </View>
+                    
+                    {/* Fiyat - Gizli Sekmeden Gösterilebilir */}
+                    <TouchableOpacity 
+                      style={styles.mapStatBox}
+                      onPress={() => Alert.alert('Kabul Edilen Teklif', `Fiyat: ₺${activeTag.final_price}`)}
+                    >
+                      <Ionicons name="eye-outline" size={20} color="#FFF" />
+                      <Text style={styles.mapStatLabel}>Fiyat</Text>
+                      <Text style={styles.mapStatValue}>Gör</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
