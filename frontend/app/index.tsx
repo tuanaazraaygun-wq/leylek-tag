@@ -1544,9 +1544,25 @@ function PassengerDashboard({
                   <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
                     <TouchableOpacity 
                       style={styles.callButton}
-                      onPress={() => {
+                      onPress={async () => {
                         const driverName = activeTag?.driver_name || 'Sürücü';
-                        console.log('ARA butonu - Driver name:', driverName);
+                        console.log('📞 Arama başlatılıyor:', driverName);
+                        
+                        // Backend'e arama bildirimi gönder
+                        try {
+                          await fetch(`${API_URL}/voice/start-call`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              tag_id: activeTag?.id,
+                              caller_id: user.id,
+                              caller_name: user.name
+                            })
+                          });
+                        } catch (error) {
+                          console.error('Arama bildirimi hatası:', error);
+                        }
+                        
                         setSelectedDriverName(driverName);
                         setShowVoiceCall(true);
                       }}
