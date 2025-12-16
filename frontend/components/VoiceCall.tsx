@@ -94,16 +94,25 @@ export default function VoiceCall({
       }
 
       console.log('🎥 Agora başlatılıyor...', isVideoCall ? 'Video' : 'Ses');
+      console.log('📍 Channel:', channelName, 'UID:', localUid, 'AppID:', AGORA_APP_ID?.substring(0,8) + '...');
 
       // Engine oluştur
+      if (!createAgoraRtcEngine) {
+        console.error('❌ createAgoraRtcEngine fonksiyonu bulunamadı!');
+        Alert.alert('Hata', 'Agora SDK yüklenemedi');
+        return;
+      }
+      
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
+      console.log('✅ Engine oluşturuldu');
 
       // Initialize
       engine.initialize({
         appId: AGORA_APP_ID,
         channelProfile: ChannelProfileType.ChannelProfileCommunication,
       });
+      console.log('✅ Engine initialize edildi');
 
       // Event listeners
       engine.registerEventHandler({
@@ -122,19 +131,24 @@ export default function VoiceCall({
           handleEndCall();
         },
         onError: (err: any) => {
-          console.error('Agora hatası:', err);
+          console.error('❌ Agora hatası:', err);
+          Alert.alert('Agora Hatası', JSON.stringify(err));
         },
       });
+      console.log('✅ Event handlers kaydedildi');
 
       // Video veya ses moduna göre ayarla
       if (isVideoCall) {
         engine.enableVideo();
         engine.startPreview();
+        console.log('✅ Video etkinleştirildi');
       } else {
         engine.enableAudio();
+        console.log('✅ Audio etkinleştirildi');
       }
 
       // Kanala katıl
+      console.log('🔄 Kanala katılınıyor:', channelName);
       engine.joinChannel(null, channelName, localUid, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
         publishMicrophoneTrack: true,
@@ -142,6 +156,7 @@ export default function VoiceCall({
         autoSubscribeAudio: true,
         autoSubscribeVideo: isVideoCall,
       });
+      console.log('✅ joinChannel çağrıldı');
 
     } catch (error) {
       console.error('Agora init hatası:', error);
