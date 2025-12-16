@@ -909,10 +909,12 @@ function FullScreenOfferCard({
 function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.7)).current;
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const opacityAnimRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     // Basit scale animasyonu
-    Animated.loop(
+    animationRef.current = Animated.loop(
       Animated.sequence([
         Animated.timing(scaleAnim, {
           toValue: 1.15,
@@ -925,10 +927,11 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    animationRef.current.start();
 
     // Opacity animasyonu
-    Animated.loop(
+    opacityAnimRef.current = Animated.loop(
       Animated.sequence([
         Animated.timing(opacityAnim, {
           toValue: 1,
@@ -941,7 +944,13 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    opacityAnimRef.current.start();
+
+    return () => {
+      animationRef.current?.stop();
+      opacityAnimRef.current?.stop();
+    };
   }, []);
 
   const handlePress = () => {
