@@ -732,10 +732,12 @@ function FullScreenOfferCard({
   // Araç animasyonu
   const carBounce = useRef(new Animated.Value(0)).current;
   const buttonPulse = useRef(new Animated.Value(1)).current;
+  const carAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const buttonAnimRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     // Araç yukarı aşağı hareket
-    Animated.loop(
+    carAnimRef.current = Animated.loop(
       Animated.sequence([
         Animated.timing(carBounce, {
           toValue: -10,
@@ -748,10 +750,11 @@ function FullScreenOfferCard({
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    carAnimRef.current.start();
 
     // Buton nefes alma
-    Animated.loop(
+    buttonAnimRef.current = Animated.loop(
       Animated.sequence([
         Animated.timing(buttonPulse, {
           toValue: 1.05,
@@ -764,7 +767,13 @@ function FullScreenOfferCard({
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    buttonAnimRef.current.start();
+
+    return () => {
+      carAnimRef.current?.stop();
+      buttonAnimRef.current?.stop();
+    };
   }, []);
 
   // Araç rengi emoji
