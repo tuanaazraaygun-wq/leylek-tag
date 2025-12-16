@@ -1096,6 +1096,29 @@ function PassengerDashboard({
     }
   }, [activeTag, userLocation]);
 
+  // GELEN ARAMA KONTROLÜ - Polling
+  useEffect(() => {
+    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
+      const checkIncoming = async () => {
+        try {
+          const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+          const data = await response.json();
+          
+          if (data.success && data.has_incoming) {
+            console.log('📞 GELEN ARAMA!', data.call.caller_name);
+            setSelectedDriverName(data.call.caller_name);
+            setShowVoiceCall(true);
+          }
+        } catch (error) {
+          console.log('Gelen arama kontrolü hatası:', error);
+        }
+      };
+
+      const interval = setInterval(checkIncoming, 3000); // 3 saniyede bir kontrol
+      return () => clearInterval(interval);
+    }
+  }, [activeTag, user.id, showVoiceCall]);
+
   useEffect(() => {
     loadActiveTag();
     const interval = setInterval(loadActiveTag, 5000); // Her 5 saniyede bir kontrol et
