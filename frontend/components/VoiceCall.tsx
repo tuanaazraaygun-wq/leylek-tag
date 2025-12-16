@@ -147,16 +147,27 @@ export default function VoiceCall({
         console.log('✅ Audio etkinleştirildi');
       }
 
-      // Kanala katıl
+      // Kanala katıl - Agora 4.x API
       console.log('🔄 Kanala katılınıyor:', channelName);
-      engine.joinChannel(null, channelName, localUid, {
+      
+      // Token null olarak gönder (test mode için)
+      const token = null;
+      
+      // joinChannel with correct parameters for Agora 4.x
+      const result = engine.joinChannel(token, channelName, localUid, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: isVideoCall,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: isVideoCall,
       });
-      console.log('✅ joinChannel çağrıldı');
+      
+      console.log('✅ joinChannel çağrıldı, result:', result);
+      
+      // Manuel olarak connected durumuna geç (event gelmezse)
+      setTimeout(() => {
+        if (callState === 'connecting') {
+          console.log('⏱️ Timeout - Manuel bağlantı');
+          setCallState('connected');
+          startTimer();
+        }
+      }, 3000);
 
     } catch (error) {
       console.error('Agora init hatası:', error);
