@@ -1402,6 +1402,11 @@ function PassengerDashboard({
                   />
                 </View>
 
+                {/* İsim Overlay - Haritanın Üstünde */}
+                <View style={styles.nameOverlay}>
+                  <Text style={styles.nameOverlayText}>{user.name}</Text>
+                </View>
+
                 {/* Üst Bilgi - Mesafeler ve Süre */}
                 <View style={styles.mapTopInfo}>
                   <View style={styles.mapStatsContainer}>
