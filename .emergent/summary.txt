@@ -1,209 +1,211 @@
 <analysis>
+**original_problem_statement:**
+The user wants to build Leylek TAG, a mobile ride-sharing application.
 
-<original_problem_statement>
-The user wants to build a mobile ride-sharing application named **Leylek TAG**. This is a matching application, not a taxi service.
-
-**Core Concept:**
-A passenger sets their destination, which creates a request visible to nearby drivers. Drivers see the passenger's location, the destination, the distance to the passenger, and the total trip distance. They then submit price bids. The passenger reviews incoming offers on a TikTok-style swipeable interface and selects a driver. Once matched, they can communicate via an in-app, end-to-end encrypted WebRTC voice call for a limited time (e.g., 20 minutes).
-
-**User Roles & Flow:**
--   **Dynamic Roles:** A user is not fixed as a passenger or driver at registration. Upon each login, they choose their role for that session.
--   **Passenger:**
-    1.  Logs in with a phone number and mock OTP.
-    2.  Selects the Passenger role.
-    3.  Sees a map/input to select a destination. The user wants this to be a map-based picker with Google Places Autocomplete.
-    4.  Presses a large, animated ÇAĞRI (CALL) button.
-    5.  Receives offers from drivers in a swipeable, TikTok-like card interface.
-    6.  Selects an offer to create a TAG (match).
-    7.  Communicates with the driver via a mock Call button (to be implemented with WebRTC).
--   **Driver:**
-    1.  Logs in and selects the Driver role.
-    2.  Sees a list of nearby ride requests. Each request card shows the passenger's name, distance to the passenger, and the total trip distance/destination.
-    3.  Submits a price bid on a request.
-    4.  If selected, gets matched and can communicate with the passenger.
-
-**Key Features (PRODUCT REQUIREMENTS):**
--   **Authentication:** Phone number login with a mock OTP (). A real SMS system (NetGSM) is planned for later.
--   **Security:** An IP ban system that blocks an IP after 10 failed login attempts.
--   **Location & Matching:** Initially requested city-based filtering, but has been updated to be **GPS-based filtering within a configurable radius (e.g., 20km)**.
--   **UI/UX:** A very specific and evolving vision. Key elements implemented include a custom flying stork logo, a user-defined color palette, and a prominent, animated pulsing call button.
--   **Bidding System:** A fully implemented flow for passengers to request rides, drivers to bid, and passengers to accept.
--   **WebRTC Voice Call:** A critical, but **not yet implemented**, feature.
--   **Database:** The user's ultimate goal is **Supabase**, and they have provided API keys. However, to speed up development, a decision was made to build on **MongoDB** first and migrate later.
--   **Admin Panel:** Planned for the future to manage users, IP bans, view ride/call logs, and see statistics.
-
-</original_problem_statement>
+**PRODUCT REQUIREMENTS:**
+- **Core Flow:** Passengers create ride requests (TAG). Nearby drivers see these requests and can send offers. The passenger views these offers in a TikTok-style vertical swipe interface and accepts one (HEMEN GEL).
+- **Matching & Live Tracking:** Upon acceptance, a match is created. Both passenger and driver are taken to a unified, full-screen, 3D live map where they can track each other's location in real-time.
+- **Communication:** After matching, both users should have ARA (Call) and BİTİR (End) buttons. The call is a mock UI for now, but a future goal is full WebRTC voice chat with a 20-minute limit.
+- **Penalty System:** If a user cancels a ride unilaterally before meeting, they receive a confirmation prompt. If they proceed, their rating is penalized (-3 points).
+- **Filtering:** Drivers should only see ride requests from passengers within a 50km radius.
+- **UI/UX:** The user wants a modern, premium feel. This has led to multiple redesigns of the offer cards, map screen, and buttons. Key requests include large, prominent text, animated borders, and clean layouts.
+- **Future Features:** Swipe-to-dismiss requests for drivers, sound notifications, a star-based rating system, premium user profile photos, and in-app navigation/route drawing.
 
 **User's preferred language**: The user's primary language is **Turkish**. The next agent MUST respond in Turkish.
 
 **what currently exists?**
-A full-stack application with a FastAPI/MongoDB backend and a React Native (Expo) frontend.
--   **Backend:** Supports dynamic user roles, mock OTP auth, IP banning, creating ride requests (TAGs) with destination coordinates, submitting offers, and filtering driver requests by GPS radius (partially implemented). It uses  for distance calculations.
--   **Frontend ():** A large, single-file component that handles all screens and logic:
-    -   Login, OTP verification.
-    -   **Dynamic Role Selection Screen:** Appears after every login.
-    -   **Passenger Dashboard:** Includes a destination input (with a partially implemented map-based picker using  and Google Places), an animated pulsing call button, and a TikTok-style swipeable card view for incoming offers.
-    -   **Driver Dashboard:** Displays a list of active ride requests with distance information.
--   The application is currently functional after a series of major refactors and bug fixes.
+A full-stack application with a FastAPI/MongoDB backend and a React Native (Expo) frontend. The entire frontend—including all screens, components, logic, and styles—is contained within a single monolithic file: , which is now over 3,000 lines long. This monolithic structure is extremely fragile and has been the source of numerous bugs.
+
+The application has a phone/OTP login (), role selection (Passenger/Driver), a TikTok-style full-screen offer viewer for passengers, and a unified 3D live map screen for matched rides. The backend supports creating requests, sending offers, matching, live location updates (via polling), and a basic cancellation penalty system.
+
+Several critical Android crashes related to  and  were addressed by removing the former and reducing the usage of the latter.
 
 **Last working item**:
-    - Last item agent was working: The agent was implementing the user's request to switch from city-based filtering to GPS-based filtering for drivers.
+    - Last item agent was working: The agent was fixing the UI for the matched map screen. The user requested removing the top green header and overlaying the user's name directly onto the map for a more immersive, full-screen experience. The agent edited the JSX in the  to conditionally hide the header and add a new text overlay.
     - Status: **IN PROGRESS**
     - Agent Testing Done: N
-    - Which testing method agent to use? backend testing agent. First, use curl to manually test the  endpoint with two users (one passenger, one driver) at different coordinates to ensure the radius logic works. Then, a full frontend test is needed to confirm the driver sees the correct requests.
+    - Which testing method agent to use? screenshot tool. The agent should take screenshots of both the Passenger and Driver map screens to verify the green header is gone and the name overlay is present and correctly styled, without breaking the layout.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  Issue 1: The user reported that a driver in Adana could not see a request from a passenger in Adana. This was happening because of a bug in the old city-based filtering logic and a case where the driver's location was not set. The agent attempted a fix by making the logic case-insensitive and adding a mock location, but then pivoted to replacing the entire logic with GPS-based filtering. The new GPS logic is not fully tested. (P0)
+  - Issue 1: Critical Frontend Fragility due to Monolithic Architecture (P0)
+  - Issue 2: Mock Voice Call Timer is Stuck at 0:00 (P1)
+  - Issue 3: Buttons on Matched Map Screen are too low on some devices (P2)
 
   Issues Detail:
-  - Issue 1: **Driver not seeing nearby requests due to faulty filtering logic.**
-     - Attempted fixes: The agent initially patched the city-based filter. However, the user then requested a switch to GPS-based filtering. The agent added a  config variable and updated the  endpoint in  to use  distance calculation instead of city matching.
+  - Issue 1: **Critical Frontend Fragility due to Monolithic Architecture**
+     - Description: The  file contains all application logic. This has repeatedly caused bugs where fixing one component breaks another (e.g., fixing Android broke the web, fixing the driver dashboard broke it again). The agent has spent significant time hunting for unclosed JSX tags, misplaced operators, and component-specific rendering errors. This is the highest-priority underlying problem.
+     - Next debug checklist: This is not a bug to fix but a refactoring task. The next agent should strongly propose to the user to pause feature development and undertake a refactoring of  into smaller, manageable component files (e.g., , , etc.).
+     - Why fix this issue and what will be achieved with the fix? Refactoring will dramatically improve stability, reduce bugs, and speed up future development. Without this, the app will remain unstable.
+     - Status:  NOT STARTED
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Frontend.
+     - Blocked on other issue: None, but requires user agreement.
+  - Issue 2: **Mock Voice Call Timer is Stuck at 0:00**
+     - Description: The  component, which appears when a user presses ARA, has a timer that doesn't advance. The user has pointed this out.
      - Next debug checklist:
-       1.  Review the changes in  around line 430, specifically the  endpoint. Ensure the distance calculation is correct and the database query properly filters drivers within the  of the passenger's location.
-       2.  Manually test the endpoint using  with two users with known coordinates to verify that the filter works as expected.
-       3.  Perform a full-flow test with two user accounts on the frontend.
-     - Why fix this issue and what will be achieved with the fix? This is a core function of the app. Fixing it will ensure drivers only see relevant, nearby ride requests, making the app usable.
+        1. In , locate the  responsible for the timer.
+        2. Implement  to increment a seconds counter every second.
+        3. Format the seconds into a  string to display.
+        4. Ensure the interval is cleared when the component unmounts using the  cleanup function.
+     - Why fix this issue and what will be achieved with this? It's a UI bug that makes the mock call screen feel broken. Fixing it will improve the user experience.
+     - Status:  NOT STARTED
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Frontend.
+     - Blocked on other issue: None.
+  - Issue 3: **Buttons on Matched Map Screen are too low on some devices**
+     - Description: The user has repeatedly reported that the ARA and BİTİR buttons on the live map screen are positioned too low, sometimes getting cut off by the phone's home indicator. The agent has increased the  CSS property multiple times, but the issue may be related to not using  correctly.
+     - Attempted fixes: Increased  value in  style from 40 to 80 to 120.
+     - Next debug checklist:
+        1. Wrap the  and its overlay buttons in a .
+        2. Instead of a large absolute  value, use  from  hook to dynamically position the buttons above the home bar.
+     - Why fix this issue and what will be achieved with the fix? Ensures critical action buttons are always accessible on all devices.
      - Status:  IN PROGRESS
-     - Is recurring issue? Y (Filtering logic has been a recurring point of failure and changes).
-     - Should Test frontend/backend/both after fix? Both.
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Frontend (using screenshot tool).
      - Blocked on other issue: None.
 
 **In progress Task List**:
-  Task 1:  Implement animated arrow hint (P1)
-
+  - Task 1: Complete Map Screen UI Refactor (P0)
  Task Detail:
-  - Task 1: 
-     - Description: The user requested that if a passenger presses the ÇAĞRI button without selecting a destination, an animated, sky-blue arrow should appear and point towards the Nereye gitmek istiyorsunuz? input field, instead of showing a text warning.
-     - Where to resume: The agent started this by adding state for the arrow animation in  and modifying the  function. However, the implementation is incomplete. The UI component for the arrow and the  logic to show/hide it needs to be created and styled.
-     - What will be achieved with this? A more intuitive and visually appealing user experience, as requested by the user.
+  - Task 1: **Complete Map Screen UI Refactor**
+     - Where to resume: The agent has modified  in  to hide the header and add a name overlay. This needs to be replicated for  to ensure both have the same identical, clean map UI. The new  style also needs to be checked and potentially adjusted.
+     - What will be achieved with this? Fulfills a direct user request for a cleaner, more immersive map experience.
      - Status:  IN PROGRESS
      - Should Test frontend/backend/both after fix? Frontend.
      - Blocked on something: None.
 
 **Upcoming and Future Tasks**
   **Upcoming Tasks:**
-    - **P0: Implement WebRTC Voice Calls:** This is the most critical missing core feature. It involves integrating a WebRTC library, setting up a WebSocket signaling server on the backend, and implementing the call/receive logic on the frontend with a 20-minute timer.
-    - **P1: Finalize Map-Based Destination Picker:** The user wants a map to appear in the destination selection modal, using Google Places Autocomplete for address search and allowing users to pick a location by tapping the map. The agent started this but it caused issues.  was re-installed but the implementation is not complete.
-    - **P1: Build Admin Panel:** The user has specified requirements: user list (ban/unban), IP ban management, ride (TAG) logs, call metadata logs, a system for complaints/reports, and statistics.
-
+    - **P0: Implement Real WebRTC Voice Calls:** The current implementation is a UI-only mock. The user's primary goal is to have functional voice communication. This will likely require completing the Supabase migration first for realtime signaling.
+    - **P1: Implement Swipe-to-Dismiss for Drivers:** User requested that drivers be able to swipe away a ride request card, hiding it for a set time (e.g., 5 minutes). This requires frontend gesture handling and backend logic.
+    - **P1: Implement Sound Notifications:** Add audible alerts for drivers when a new request comes in, and for passengers when a new offer arrives. This will require .
+    - **P1: Add Human/Car Markers to Map:** Replace the default map pins with custom icons (a person silhouette for the passenger, a car icon for the driver).
   **Future Tasks:**
-    - **P2: Supabase Migration:** A major task to migrate the entire backend from MongoDB to Supabase, using the keys provided by the user.
-    - **P2: NetGSM Integration:** Replace the mock OTP system with the real NetGSM API for SMS verification.
-    - **P2: Advanced UI/UX:** Implement an iPhone-style PIN login screen with a full-screen custom keypad.
+    - **P2: Implement Star-based Rating System:** Build the logic for the -3 point penalty to affect a user's score and display it as stars in their profile.
+    - **P2: Implement In-App Navigation/Route Drawing:** Use a service like Google Maps Directions API to draw the optimal route on the  for the driver.
+    - **P2: Complete Supabase Migration:** This task from the previous session is still pending and is a blocker for real WebRTC.
+    - **P3: Premium User Profile Photos:** Allow premium users to upload and display a profile picture.
+    - **P3: Admin Panel:** Build the planned admin panel for user management.
 
 **Completed work in this session**
-- **Major Auth/Role Refactor:** Converted the application from a fixed-role system to a **dynamic role selection system** where users choose Passenger or Driver at every login. This involved significant changes to the backend models and API endpoints, and the entire frontend login/dashboard flow.
-- **Implemented Destination-First Flow:** The user flow was changed so passengers must select a destination *before* creating a ride request.
-- **Implemented TikTok-Style Offer Cards:** The passenger's offer screen was rebuilt to use swipeable cards for a modern feel.
-- **Implemented Driver Distance Cards:** Driver's request cards were updated to show the distance to the passenger and the total trip distance.
-- **Fixed Multiple Critical Bugs:**
-    - Resolved several app not opening issues, including a  web incompatibility (by removing the package) and missing props passed to a component (identified by ).
-    - Fixed numerous backend  bugs that arose from the dynamic role refactor.
-    - Fixed a bug where the ÇAĞRI button was unresponsive due to a silent backend 500 error.
-- **Partially Implemented GPS-based Filtering:** Switched the backend logic from city-based matching to preparing for GPS radius-based matching.
+- **Critical Crash Fixes:**
+  - Resolved a CORS issue that prevented the user from logging in.
+  - Fixed a Rendered more hooks than during the previous render crash by moving hooks out of conditional blocks.
+  - Fixed multiple Android-specific crashes by reducing  usage and fixing JSX syntax errors in .
+  - Fixed an Android render error by adding a proper TypeScript interface for  props.
+  - Fixed a crash in the Driver Panel by passing the missing  prop.
+  - Fixed a  crash by simplifying an animated border component.
+- **Feature Implementation & Refinement:**
+  - Implemented the full-screen TikTok-style offer card layout with a fixed bottom button.
+  - Created a unified, 3D  for both passenger and driver after a match is made.
+  - Designed and implemented the dual-button layout (BİTİR and ARA) on the map screen.
+  - Implemented a backend penalty system for unilateral ride cancellations.
+  - Implemented 50km distance-based filtering for driver requests on the backend.
+  - Implemented 10-minute expiry for offers on the backend.
+  - Created a mock  component and wired it to the ARA button.
+- **Pivots in Logic:**
+  - Correctly pivoted from an automatic match on offer system back to a passenger must accept offer system based on user clarification.
+  - Correctly pivoted from city-based filtering back to 50km distance-based filtering per user request.
 
 **Earlier issues found/mentioned but not fixed**
-- The user requested an animated arrow to point to the destination input. The agent started this but did not complete it. It is listed in the In progress Task List.
+   - **Issue 1: Root cause of  crashes**
+     - Debug checklist: The library was completely removed. To fix this, one would need to: 1. Ensure  includes the . 2. Verify package versions are compatible. 3. Re-introduce the library and test a simple animation on Android.
+     - Why to solve this issue and what will be achieved with this? Restoring this library would allow for more fluid and complex animations (like the originally requested pulsing button), which is key to the premium feel the user wants.
+     - Should Test frontend/backend/both after fix: Frontend.
+     - Is recurring issue? Y (It was the cause of many early crashes).
 
 **Known issue recurrence from previous fork**
-  - **Issue recurrence in previous fork:**  in backend. After the major refactor to remove the static  field from the  model, the agent repeatedly missed updating all endpoints, causing several 500 errors until each one was found and fixed. The next agent must be extremely cautious when touching user-related logic.
-  - **Recurrence count:** 3+ times in this session.
-  - **Status:** RESOLVED (for now), but it's a high-risk area.
+  - **Issue recurrence in previous fork:**  in backend.
+  - **Recurrence count:** 0. This was not an issue in this session.
+  - **Status:** RESOLVED. The agent correctly handled the dynamic role system.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI, MongoDB (),  for distance calculation.
-- **Frontend:** React Native, Expo, .
-- **UI/Animation:**  for the animated call button,  for swipeable cards, .
-- **State Management:**  for local state.
-- **Architecture:** Dynamic role selection per session.
+- **Frontend:** React Native (Expo), . The entire app is a single screen with conditional rendering managed by a  hook.
+- **State Management:** A mix of  and  at the top level of the  component. Props are drilled down extensively.
+- **Backend:** FastAPI with a single  file.
+- **Database:** MongoDB (Motor async driver).
+- **UI/Animation:** Core  API for simple animations (pulse, color fade).  was removed.  usage was minimized.
 
 **key DB schema**
-  - **users**:  (Note:  field was removed).
-  - **tags**: 
-  - **offers**: 
-  - **failed_login_attempts**: 
+  - **users**: {phone, name, is_premium, ratings, etc.}
+  - **tags**: {passenger_id, pickup_location, destination_location, status ('pending', 'matched', 'completed'), driver_id, city, etc.}
+  - **offers**: {tag_id, driver_id, price, created_at, expires_at, etc.}
 
 **changes in tech stack**
-  -  library was added to the backend for distance calculations.
-  -  was added, then removed to fix a web preview bug, then re-added for the destination picker. Its stability is a concern.
+-  was removed to fix Android crashes.
+-  and related packages were installed, but are not yet used for a real call.
 
 **All files of reference**
--   **/app/backend/server.py**: The heart of the backend. Contains almost all business logic. Last modified to switch to GPS-based filtering.
--   **/app/frontend/app/index.tsx**: A monolithic file containing the entire frontend application's UI and logic. Has been heavily modified throughout the session.
--   **/app/backend/models.py**: Defines all data structures. The  model was significantly changed (role removed, location added).
+- : **The most critical file.** Almost all changes in this session were made here. It contains all UI and frontend logic.
+- : The second most edited file. All backend logic changes were made here, including filtering, penalties, and matching logic.
+- : A new file created for the mock voice call UI.
+- : Updated to support a 3D camera angle.
+- : Updated to add microphone permissions for iOS and Android.
 
 **Areas that need refactoring**:
--   The  file is over 1500 lines long and contains multiple screens and complex state logic. It should be broken down into smaller, reusable components and separate screen files (e.g., , , , etc.).
+- **CRITICAL:** The  file is unmaintainable. It **must** be broken down into smaller, reusable components and screen files (e.g., , , ). The current monolithic structure is a direct cause of instability and slow development.
 
 **key api endpoints**
--   
--    (Implements IP Ban logic)
--   
--    (Recently changed to use GPS radius)
--   
--   
--   
+- **MODIFIED:**  - Logic was changed from auto-matching back to just creating an offer.
+- **MODIFIED:**  - Logic was changed from city-based filtering to 50km distance filtering.
+- **MODIFIED:**  - Logic was updated to include a penalty system based on whether the cancellation was approved.
+- **NEW (Internal):**  - Endpoint to wipe all offers and tags.
+- **NEW (Internal):**  - Endpoint to wipe all users, offers, and tags.
 
 **Critical Info for New Agent**
--   **Dynamic Roles:** The biggest architectural change is the dynamic role system. A user is not a driver or passenger; they *choose a role* for the session. This has been the source of many  bugs in the backend. Be extra careful when working with user data.
--   **Fragile Frontend:** The  file is a monolith and very fragile. Refactoring it should be a priority. Also,  has caused issues with the web preview; use it with platform-specific checks () to avoid blocking development.
--   **User is Very Involved:** The user provides frequent, detailed feedback and often changes the application's flow. Expect iterative development and confirm all plans before implementation.
--   **MongoDB is a Placeholder:** The user wants to use Supabase eventually. Do not build complex, MongoDB-specific logic that would be hard to migrate.
--   **Current Task:** Your immediate task is to finish and test the GPS-based filtering for driver requests. After that, implement the animated arrow hint for the destination input.
+- **The Monolith is the Enemy:** You will be tempted to make quick fixes in . Resist. Every change risks breaking something unrelated. Your highest priority should be to convince the user to allow a refactoring session to break this file apart.
+- **User Clarification is Key:** The user's requirements evolve. The agent implemented auto-matching and city-filtering only to have the user ask for them to be reverted. Always confirm the desired flow, especially for core logic.
+- **Android is Fragile:** The app has a history of Android-specific crashes related to UI rendering (, , JSX syntax). Test changes on Android carefully.
+- **Talk in Turkish:** The user communicates exclusively in Turkish. All your responses must be in Turkish.
 
 **documents created in this job**
--   None.
+  - /app/frontend/components/VoiceCall.tsx
 
 **Last 10 User Messages and any pending user messages**
-1.  **User:** When I press the call button, it does nothing. No calls reach the drivers.
-    *   *Status:* Agent debugged and found a  in the backend  endpoint. A fix was applied.
-2.  **User:** The call button worked, but the driver doesn't see the active requests.
-    *   *Status:* Agent investigated and found the  endpoint was empty.
-3.  **User:** I added a driver and passenger from Adana, but the request still doesn't appear.
-    *   *Status:* Agent identified bugs in the city-based filtering logic.
-4.  **User:** Let's continue.
-    *   *Status:* Agent acknowledged.
-5.  **User:** Let's do GPS-based filtering and the animated arrow. We can do WebRTC later.
-    *   *Status:* Agent agreed and started working on the GPS filtering on the backend.
-6.  **User:** When selecting a destination, I want a map to appear. I want to search for places in Turkey and select from the map to make it easier.
-    *   *Status:* Agent acknowledged and started re-implementing the map-based destination picker.
-7.  **User:** It's not working. I select a destination, but the call button doesn't work.
-    *   *Status:* Agent found a bug where  was null and patched it.
-8.  **User:** The call button is completely unresponsive.
-    *   *Status:* Agent found the  function was not defined in the correct scope and fixed it.
-9.  **User:** I log in, select passenger, but when I press the call button, nothing happens. No call reaches the drivers.
-    *   *Status:* Agent used  and found a missing  environment variable was the root cause. This was fixed.
-10. **User:** The call button worked, but now the driver panel doesn't show active requests.
-    *   *Status:* This is the current problem being debugged, leading to the discovery of the faulty city-filtering logic.
+1. **User:** The driver panel isnt working on Android." (Status: **Addressed**. Agent fixed a crash by adding a missing prop.)
+2. **User:** Wants human/car markers on map, a confirmation-based penalty system, a star rating system, and in-app navigation. (Status: **Partially Completed**. Penalty system was implemented, the rest are pending.)
+3. **User:** "Add the end and call buttons to the passenger panel." (Status: **Addressed**. Agent verified the buttons were already in the code and restarted the server.)
+4. **User:** Sent a screenshot of a `useInsertionEffect` crash. (Status: **Resolved**. Agent simplified the component causing the crash.)
+5. **User:** Summarized future tasks (swipe-to-dismiss, call UI, penalty). (Status: **Acknowledged**.)
+6. **User:** "The call screen isnt appearing on the passenger panel. (Status: **Resolved**. Agent fixed a state issue where the driver's name wasn't being set.)
+7. **User:** The call/end buttons are too low on the screen. (Status: **Partially Addressed**. Agent increased the  CSS property.)
+8. **User:** The passenger buttons are still too low. (Status: **Partially Addressed**. Agent increased the  property again.)
+9. **User:** Wants the green header on the map screen removed and the user's name overlaid on the map. (Status: **In Progress**. This was the last action.)
+10. **User:** After matching, the screen goes back. Wants passenger to accept the offer. Reiterates desire for unified map screen and penalty system. (Status: **Resolved**. This was a key clarification that led the agent to revert the auto-matching logic.)
 
 **Project Health Check:**
--   **Broken:** The core logic of matching drivers to passengers via GPS radius is currently half-implemented and untested.
--   **Mocked:**
-    -   WebRTC voice calls (buttons exist but have no function).
-    -   SMS OTP verification (hardcoded ).
--   **Needs Refactoring:** The entire frontend in  is a high-priority refactoring candidate.
+- **Broken:** Stability is very low. The monolithic  causes frequent, unpredictable bugs.
+- **Mocked:**
+    - WebRTC Voice Calls (UI only).
+    - Sound Notifications.
+    - Rating System (backend penalty exists, but no UI/profile integration).
+- **Needs Refactoring:**
+    - **CRITICAL:** The  file must be broken down.
 
 **3rd Party Integrations**
--   **MongoDB:** The current database.
--   **Google Maps API:** API key is configured. Used for  and planned for Google Places Autocomplete. Requires User API Key.
--   **NetGSM:** Planned for SMS, not integrated. Requires User API Key.
--   **Supabase:** The target database for a future migration. Requires User API Key.
+- **MongoDB:** Current database.
+- **Supabase:** Planned future database. Keys are available in the previous Handoff, but migration has not started. Requires User API Key.
+- **Google Maps API:** Used by . Requires User API Key.
 
 **Testing status**
-  - Testing agent used after significant changes: YES ( was used multiple times to great effect).
-  - Troubleshoot agent used after agent stuck in loop: YES
+  - Testing agent used after significant changes: NO.
+  - Troubleshoot agent used after agent stuck in loop: YES, very effectively, to diagnose CORS, JSX, and TypeScript errors.
   - Test files created: []
-  - Known regressions: The app has been unstable due to rapid, major changes. Key regressions around the role system and API calls have been frequent but were fixed.
+  - Known regressions: All animations from  are gone.
 
 **Credentials to test flow:**
--   **Phone:** Any 10-digit number (e.g.,  for passenger,  for driver).
--   **OTP:**  (hardcoded).
+- **Phone:** Any 10-digit number.
+- **OTP:**  (hardcoded).
 
 **What agent forgot to execute**
--   The full implementation of the animated arrow pointing to the destination input. The user requested this, the agent started it, but it was left incomplete while debugging other issues.
+- **Human/Car Silhouette Markers:** User requested custom markers for the map, but this was not implemented.
+- **Star-based Rating System UI:** The backend has a -3 point penalty, but there is no UI to show user ratings or stars.
+- **In-app Navigation/Route Drawing:** User requested this, but it was deferred.
+- **Swipe-to-Dismiss for Drivers:** User requested this, but it was not implemented.
+- **Sound Notifications:** User requested this, but it was not implemented.
 
 </analysis>
