@@ -118,15 +118,11 @@ export default function VoiceCall({
         return;
       }
 
-      // AgoraRTC yüklenene kadar bekle
-      let attempts = 0;
-      while (!AgoraRTC && attempts < 20) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
-      }
-
-      if (!AgoraRTC) {
+      // Önce SDK'yı yükle
+      const loaded = await loadAgoraWebSDK();
+      if (!loaded || !AgoraRTC) {
         console.error('Agora Web SDK yüklenemedi');
+        Alert.alert('Hata', 'Sesli arama SDK yüklenemedi. Lütfen sayfayı yenileyin.');
         return;
       }
 
