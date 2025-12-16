@@ -1075,7 +1075,7 @@ async def check_incoming_call(user_id: str):
     Gelen arama kontrolü - polling ile
     """
     try:
-        db = await db_instance.get_database()
+        db = db_instance.db
         
         # Bu kullanıcıya gelen çalan arama var mı?
         incoming_call = await db.call_requests.find_one({
