@@ -3,44 +3,22 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal, Alert, Platform } from
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// Native Agora SDK
-let RtcEngine: any = null;
-let ChannelProfileType: any = null;
-let ClientRoleType: any = null;
+// Agora UIKit - sadece native platformlarda
+let AgoraUIKit: any = null;
 
-// Web Agora SDK
-let AgoraRTC: any = null;
-
-// SSR kontrolü - window varsa client-side'dayız
+// SSR ve platform kontrolü
 const isClient = typeof window !== 'undefined';
+const isNative = Platform.OS !== 'web';
 
-// Native SDK yükleme (sadece native platformda)
-if (Platform.OS !== 'web') {
+// Native platformda Agora UIKit'i yükle
+if (isNative) {
   try {
-    const AgoraModule = require('react-native-agora');
-    RtcEngine = AgoraModule.default;
-    ChannelProfileType = AgoraModule.ChannelProfileType;
-    ClientRoleType = AgoraModule.ClientRoleType;
+    AgoraUIKit = require('agora-rn-uikit').default;
+    console.log('✅ Agora UIKit yüklendi');
   } catch (e) {
-    console.log('Agora native SDK yüklenemedi');
+    console.log('⚠️ Agora UIKit yüklenemedi:', e);
   }
 }
-
-// Web SDK yükleme fonksiyonu (client-side'da çağrılacak)
-const loadAgoraWebSDK = async () => {
-  if (Platform.OS === 'web' && isClient && !AgoraRTC) {
-    try {
-      const module = await import('agora-rtc-sdk-ng');
-      AgoraRTC = module.default;
-      console.log('✅ Agora Web SDK yüklendi');
-      return true;
-    } catch (e) {
-      console.error('Agora Web SDK yüklenemedi:', e);
-      return false;
-    }
-  }
-  return !!AgoraRTC;
-};
 
 interface VoiceCallProps {
   visible: boolean;
@@ -51,7 +29,6 @@ interface VoiceCallProps {
 }
 
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
-const IS_WEB = Platform.OS === 'web';
 
 export default function VoiceCall({
   visible,
@@ -60,40 +37,32 @@ export default function VoiceCall({
   userId,
   onEnd,
 }: VoiceCallProps) {
-  const [callState, setCallState] = useState<'connecting' | 'connected' | 'ended'>('connecting');
+  const [callActive, setCallActive] = useState(false);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [remoteUserJoined, setRemoteUserJoined] = useState(false);
-  
-  // Native engine
-  const engineRef = useRef<any>(null);
-  
-  // Web client & tracks
-  const webClientRef = useRef<any>(null);
-  const localAudioTrackRef = useRef<any>(null);
-  
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Agora UIKit connection data
+  const connectionData = {
+    appId: AGORA_APP_ID,
+    channel: channelName,
+    uid: parseInt(userId.substring(0, 8), 16) || Math.floor(Math.random() * 10000),
+  };
+
+  // Agora UIKit settings - sadece ses için
+  const settings = {
+    displayUsername: true,
+    mode: 1, // Audio only mode
+  };
 
   useEffect(() => {
     if (visible) {
-      if (IS_WEB) {
-        initAgoraWeb();
-      } else {
-        initAgoraNative();
-      }
-    }
-
-    return () => {
-      cleanup();
-    };
-  }, [visible]);
-
-  // Timer
-  useEffect(() => {
-    if (callState === 'connected') {
+      setCallActive(true);
+      // Timer başlat
       durationIntervalRef.current = setInterval(() => {
         setDuration((prev) => {
           const newDuration = prev + 1;
+          // 20 dakika limit
           if (newDuration >= 1200) {
             handleEndCall();
             return prev;
@@ -101,145 +70,14 @@ export default function VoiceCall({
           return newDuration;
         });
       }, 1000);
-      
-      return () => {
-        if (durationIntervalRef.current) {
-          clearInterval(durationIntervalRef.current);
-        }
-      };
     }
-  }, [callState]);
 
-  // WEB AGORA INIT
-  const initAgoraWeb = async () => {
-    try {
-      if (!AGORA_APP_ID) {
-        Alert.alert('Hata', 'Agora App ID bulunamadı');
-        return;
+    return () => {
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
       }
-
-      // Önce SDK'yı yükle
-      const loaded = await loadAgoraWebSDK();
-      if (!loaded || !AgoraRTC) {
-        console.error('Agora Web SDK yüklenemedi');
-        Alert.alert('Hata', 'Sesli arama SDK yüklenemedi. Lütfen sayfayı yenileyin.');
-        return;
-      }
-
-      console.log('🌐 Web Agora başlatılıyor...');
-
-      // Client oluştur
-      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-      webClientRef.current = client;
-
-      // Event listeners
-      client.on('user-published', async (user: any, mediaType: string) => {
-        console.log('👤 Kullanıcı yayın başlattı:', user.uid, mediaType);
-        await client.subscribe(user, mediaType);
-        
-        if (mediaType === 'audio') {
-          user.audioTrack.play();
-          setRemoteUserJoined(true);
-          setCallState('connected');
-        }
-      });
-
-      client.on('user-unpublished', (user: any) => {
-        console.log('👤 Kullanıcı yayını durdurdu:', user.uid);
-        setRemoteUserJoined(false);
-      });
-
-      client.on('user-left', (user: any) => {
-        console.log('👤 Kullanıcı ayrıldı:', user.uid);
-        handleEndCall();
-      });
-
-      // Kanala katıl
-      const uid = parseInt(userId.substring(0, 8), 16);
-      await client.join(AGORA_APP_ID, channelName, null, uid);
-      console.log('✅ Kanala katıldı:', channelName);
-
-      // Mikrofon track oluştur
-      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-      localAudioTrackRef.current = audioTrack;
-
-      // Yayınla
-      await client.publish([audioTrack]);
-      console.log('📢 Ses yayını başladı');
-
-      // Bağlantı başarılı
-      setTimeout(() => {
-        if (callState === 'connecting') {
-          setCallState('connected');
-        }
-      }, 2000);
-
-    } catch (error) {
-      console.error('Web Agora init hatası:', error);
-      Alert.alert('Hata', 'Sesli arama başlatılamadı: ' + error);
-    }
-  };
-
-  // NATIVE AGORA INIT
-  const initAgoraNative = async () => {
-    try {
-      if (!AGORA_APP_ID || !RtcEngine) {
-        Alert.alert('Hata', 'Agora SDK bulunamadı');
-        return;
-      }
-
-      console.log('📱 Native Agora başlatılıyor...');
-
-      const engine = await RtcEngine.create(AGORA_APP_ID);
-      engineRef.current = engine;
-
-      engine.addListener('UserJoined', (uid: number) => {
-        console.log('👤 Kullanıcı katıldı:', uid);
-        setRemoteUserJoined(true);
-        setCallState('connected');
-      });
-
-      engine.addListener('UserOffline', (uid: number, reason: number) => {
-        console.log('👤 Kullanıcı ayrıldı:', uid, reason);
-        setRemoteUserJoined(false);
-        handleEndCall();
-      });
-
-      engine.addListener('JoinChannelSuccess', (channel: string, uid: number) => {
-        console.log('✅ Kanala katıldı:', channel, uid);
-      });
-
-      await engine.enableAudio();
-      await engine.setChannelProfile(ChannelProfileType.ChannelProfileCommunication);
-      await engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
-
-      await engine.joinChannel(
-        null,
-        channelName,
-        null,
-        parseInt(userId.substring(0, 8), 16)
-      );
-
-      console.log('📞 Native aramaya bağlanıldı');
-    } catch (error) {
-      console.error('Native Agora init hatası:', error);
-      Alert.alert('Hata', 'Sesli arama başlatılamadı');
-    }
-  };
-
-  const handleMuteToggle = async () => {
-    try {
-      if (IS_WEB && localAudioTrackRef.current) {
-        await localAudioTrackRef.current.setEnabled(isMuted);
-        setIsMuted(!isMuted);
-      } else if (engineRef.current) {
-        await engineRef.current.muteLocalAudioStream(!isMuted);
-        setIsMuted(!isMuted);
-      }
-    } catch (error) {
-      console.error('Mute hatası:', error);
-    }
-  };
+    };
+  }, [visible]);
 
   const handleEndCall = async () => {
     // Arama logla
@@ -262,39 +100,14 @@ export default function VoiceCall({
       }
     }
     
-    await cleanup();
-    setCallState('ended');
-    onEnd?.();
-  };
-
-  const cleanup = async () => {
-    try {
-      if (durationIntervalRef.current) {
-        clearInterval(durationIntervalRef.current);
-        durationIntervalRef.current = null;
-      }
-
-      if (IS_WEB) {
-        // Web cleanup
-        if (localAudioTrackRef.current) {
-          localAudioTrackRef.current.close();
-          localAudioTrackRef.current = null;
-        }
-        if (webClientRef.current) {
-          await webClientRef.current.leave();
-          webClientRef.current = null;
-        }
-      } else {
-        // Native cleanup
-        if (engineRef.current) {
-          await engineRef.current.leaveChannel();
-          await engineRef.current.destroy();
-          engineRef.current = null;
-        }
-      }
-    } catch (error) {
-      console.error('Cleanup hatası:', error);
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
     }
+    
+    setCallActive(false);
+    setDuration(0);
+    onEnd?.();
   };
 
   const formatDuration = (seconds: number) => {
@@ -303,88 +116,129 @@ export default function VoiceCall({
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  // Agora callbacks
+  const rtcCallbacks = {
+    EndCall: () => {
+      handleEndCall();
+    },
+    UserJoined: () => {
+      console.log('👤 Kullanıcı katıldı');
+    },
+    UserOffline: () => {
+      console.log('👤 Kullanıcı ayrıldı');
+      handleEndCall();
+    },
+  };
+
   if (!visible) return null;
 
-  // Bağlanıyor
-  if (callState === 'connecting') {
+  // Web platformunda basit UI göster
+  if (Platform.OS === 'web') {
     return (
       <Modal visible={visible} transparent animationType="fade">
         <View style={styles.modalContainer}>
           <LinearGradient
             colors={['#1e3a8a', '#3b82f6', '#60a5fa']}
-            style={styles.incomingContainer}
+            style={styles.webContainer}
           >
             <View style={styles.callerInfo}>
               <View style={styles.avatarLarge}>
                 <Text style={styles.avatarText}>{remoteUserName[0]}</Text>
               </View>
               <Text style={styles.callerName}>{remoteUserName}</Text>
-              <Text style={styles.callingText}>Bağlanıyor...</Text>
+              <Text style={styles.durationText}>{formatDuration(duration)}</Text>
+              <Text style={styles.webNotice}>
+                ⚠️ Web'de sesli arama desteklenmiyor.{'\n'}
+                Lütfen Android uygulamasını kullanın.
+              </Text>
             </View>
 
-            <View style={styles.incomingActions}>
-              <TouchableOpacity
-                style={[styles.callButton, styles.rejectButton]}
-                onPress={handleEndCall}
-              >
-                <Ionicons name="close" size={36} color="#FFF" />
-                <Text style={styles.buttonLabel}>İptal</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.callButton, styles.rejectButton]}
+              onPress={handleEndCall}
+            >
+              <Ionicons name="close" size={36} color="#FFF" />
+              <Text style={styles.buttonLabel}>Kapat</Text>
+            </TouchableOpacity>
           </LinearGradient>
         </View>
       </Modal>
     );
   }
 
-  // Aktif arama
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalContainer}>
-        <LinearGradient
-          colors={['#065f46', '#10b981', '#34d399']}
-          style={styles.activeContainer}
-        >
-          <View style={styles.activeHeader}>
-            <View style={styles.avatarMedium}>
-              <Text style={styles.avatarText}>{remoteUserName[0]}</Text>
-            </View>
-            <Text style={styles.activeCallerName}>{remoteUserName}</Text>
-            <Text style={styles.durationText}>{formatDuration(duration)}</Text>
-            <Text style={styles.statusText}>
-              {duration >= 1140 
-                ? '⚠️ 1 dakika kaldı' 
-                : remoteUserJoined 
-                  ? '✅ Aramada' 
-                  : '⏳ Bekleniyor...'}
-            </Text>
-            <Text style={styles.encryptionText}>🔒 Uçtan uca şifreli</Text>
-          </View>
-
-          <View style={styles.activeControls}>
-            <TouchableOpacity
-              style={[styles.controlButton, isMuted && styles.mutedButton]}
-              onPress={handleMuteToggle}
-            >
-              <Ionicons
-                name={isMuted ? 'mic-off' : 'mic'}
-                size={28}
-                color="#FFF"
-              />
-              <Text style={styles.controlLabel}>
-                {isMuted ? 'Aç' : 'Sustur'}
+  // Native platformda Agora UIKit kullan
+  if (!AgoraUIKit) {
+    return (
+      <Modal visible={visible} transparent animationType="fade">
+        <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['#1e3a8a', '#3b82f6', '#60a5fa']}
+            style={styles.webContainer}
+          >
+            <View style={styles.callerInfo}>
+              <View style={styles.avatarLarge}>
+                <Text style={styles.avatarText}>{remoteUserName[0]}</Text>
+              </View>
+              <Text style={styles.callerName}>{remoteUserName}</Text>
+              <Text style={styles.durationText}>{formatDuration(duration)}</Text>
+              <Text style={styles.webNotice}>
+                ⚠️ Agora SDK yüklenemedi.{'\n'}
+                Dev Client ile tekrar deneyin.
               </Text>
-            </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
-              style={[styles.controlButton, styles.endButton]}
+              style={[styles.callButton, styles.rejectButton]}
               onPress={handleEndCall}
             >
-              <Ionicons name="call" size={32} color="#FFF" />
-              <Text style={styles.controlLabel}>Bitir</Text>
+              <Ionicons name="close" size={36} color="#FFF" />
+              <Text style={styles.buttonLabel}>Kapat</Text>
             </TouchableOpacity>
+          </LinearGradient>
+        </View>
+      </Modal>
+    );
+  }
+
+  // Agora UIKit ile gerçek sesli arama
+  return (
+    <Modal visible={visible} transparent={false} animationType="slide">
+      <View style={styles.agoraContainer}>
+        {/* Header */}
+        <LinearGradient
+          colors={['#065f46', '#10b981']}
+          style={styles.agoraHeader}
+        >
+          <View style={styles.avatarMedium}>
+            <Text style={styles.avatarTextSmall}>{remoteUserName[0]}</Text>
           </View>
+          <Text style={styles.agoraCallerName}>{remoteUserName}</Text>
+          <Text style={styles.agoraDuration}>{formatDuration(duration)}</Text>
+          <Text style={styles.encryptionText}>🔒 Uçtan uca şifreli</Text>
+          {duration >= 1140 && (
+            <Text style={styles.warningText}>⚠️ 1 dakika kaldı</Text>
+          )}
         </LinearGradient>
+
+        {/* Agora UIKit - Audio Only */}
+        <View style={styles.agoraContent}>
+          <AgoraUIKit
+            connectionData={connectionData}
+            rtcCallbacks={rtcCallbacks}
+            settings={settings}
+          />
+        </View>
+
+        {/* Custom End Button */}
+        <View style={styles.agoraFooter}>
+          <TouchableOpacity
+            style={styles.endCallButton}
+            onPress={handleEndCall}
+          >
+            <Ionicons name="call" size={32} color="#FFF" />
+            <Text style={styles.endCallText}>Aramayı Bitir</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -396,14 +250,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
-  incomingContainer: {
+  webContainer: {
     flex: 1,
     justifyContent: 'space-around',
-    paddingVertical: 60,
-  },
-  activeContainer: {
-    flex: 1,
-    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 60,
   },
   callerInfo: {
@@ -425,10 +275,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   avatarText: {
     fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  avatarTextSmall: {
+    fontSize: 32,
     fontWeight: 'bold',
     color: '#FFF',
   },
@@ -436,16 +291,19 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#FFF',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  callingText: {
-    fontSize: 18,
+  durationText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 16,
+  },
+  webNotice: {
+    fontSize: 16,
     color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
-  },
-  incomingActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    lineHeight: 24,
     paddingHorizontal: 40,
   },
   callButton: {
@@ -464,58 +322,60 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
   },
-  activeHeader: {
+  // Agora UIKit Styles
+  agoraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  agoraHeader: {
+    paddingTop: 60,
+    paddingBottom: 20,
     alignItems: 'center',
   },
-  activeCallerName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 12,
-  },
-  durationText: {
-    fontSize: 48,
+  agoraCallerName: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#FFF',
     marginBottom: 8,
   },
-  statusText: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: '600',
-    marginBottom: 4,
+  agoraDuration: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 8,
   },
   encryptionText: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
   },
-  activeControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 60,
+  warningText: {
+    fontSize: 16,
+    color: '#fbbf24',
+    fontWeight: 'bold',
+    marginTop: 8,
   },
-  controlButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
+  agoraContent: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+  },
+  agoraFooter: {
+    padding: 20,
+    paddingBottom: 40,
     alignItems: 'center',
+    backgroundColor: '#000',
   },
-  mutedButton: {
-    backgroundColor: '#ef4444',
-  },
-  endButton: {
+  endCallButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#dc2626',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 30,
+    gap: 12,
   },
-  controlLabel: {
+  endCallText: {
     color: '#FFF',
-    fontSize: 11,
-    marginTop: 4,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
