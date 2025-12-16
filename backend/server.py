@@ -1159,7 +1159,7 @@ async def log_voice_call(
     - Privacy için sadece istatistik tutulur
     """
     try:
-        db = await db_instance.get_database()
+        db = db_instance.db
         
         # Call log kaydı
         call_log = {
