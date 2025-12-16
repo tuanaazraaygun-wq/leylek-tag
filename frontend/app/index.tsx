@@ -3429,12 +3429,13 @@ const styles = StyleSheet.create({
   // Matched Bottom Buttons (Sol: Tamamla, Sağ: Ara)
   matchedBottomButtons: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 80, // Yukarı taşındı - telefon altına girmesin
     left: 20,
     right: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingBottom: 20, // Extra padding
   },
   completeButton: {
     alignItems: 'center',
