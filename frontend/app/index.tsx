@@ -2164,12 +2164,15 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
       </Modal>
 
       {/* Sesli Arama Modal */}
-      <VoiceCall
-        visible={showVoiceCall}
-        remoteUserName={selectedPassengerName}
-        isIncoming={false}
-        onEnd={() => setShowVoiceCall(false)}
-      />
+      {activeTag && (
+        <VoiceCall
+          visible={showVoiceCall}
+          remoteUserName={selectedPassengerName}
+          channelName={activeTag.id}
+          userId={user.id}
+          onEnd={() => setShowVoiceCall(false)}
+        />
+      )}
       </>
     </SafeAreaView>
   );
