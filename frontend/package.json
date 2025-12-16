@@ -23,6 +23,7 @@
     "expo": "^54.0.29",
     "expo-av": "~16.0.8",
     "expo-blur": "~14.1.5",
+    "expo-build-properties": "^1.0.10",
     "expo-constants": "~17.1.7",
     "expo-dev-client": "^6.0.20",
     "expo-font": "~13.3.2",
