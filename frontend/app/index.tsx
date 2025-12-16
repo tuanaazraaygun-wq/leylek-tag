@@ -1073,6 +1073,19 @@ function PassengerDashboard({
           const data = await response.json();
           if (data.location) {
             setDriverLocation(data.location);
+            // Mesafeyi hesapla
+            if (userLocation) {
+              const distance = calculateDistance(
+                userLocation.latitude,
+                userLocation.longitude,
+                data.location.latitude,
+                data.location.longitude
+              );
+              setRealDistance(distance);
+              // Tahmini süreyi hesapla (ortalama 40 km/h)
+              const time = Math.round((distance / 40) * 60);
+              setEstimatedTime(time);
+            }
           }
         } catch (error) {
           console.log('Konum alınamadı:', error);
@@ -1081,7 +1094,7 @@ function PassengerDashboard({
 
       return () => clearInterval(interval);
     }
-  }, [activeTag]);
+  }, [activeTag, userLocation]);
 
   useEffect(() => {
     loadActiveTag();
