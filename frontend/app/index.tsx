@@ -1863,37 +1863,69 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Sürücü Paneli</Text>
-          <Text style={styles.headerSubtitle}>{user.name} ⭐ {user.rating}</Text>
+      {/* Üst Header - Sadece Matched Değilse Göster */}
+      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Sürücü Paneli</Text>
+            <Text style={styles.headerSubtitle}>{user.name} ⭐ {user.rating}</Text>
+          </View>
+          <TouchableOpacity onPress={logout}>
+            <Ionicons name="log-out" size={28} color="#FFF" />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={logout}>
-          <Ionicons name="log-out" size={28} color="#FFF" />
-        </TouchableOpacity>
-      </View>
+      )}
 
       <>
       {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
-        <View style={styles.fullScreenContainer}>
-          {/* CANLI 3D HARİTA - Yolcu ile aynı */}
-          <LiveMapView
-            userLocation={{
-              latitude: userLocation?.latitude || 41.0082,
-              longitude: userLocation?.longitude || 28.9784,
-            }}
-            otherLocation={{
-              latitude: activeTag.pickup_lat || 41.0082,
-              longitude: activeTag.pickup_lng || 28.9784,
-            }}
-            userIcon="🚗"
-            otherIcon="🧑"
-            userName="Sen (Sürücü)"
-            otherName={activeTag.passenger_name}
-            estimatedTime={5}
-            distance={2.5}
-            price={activeTag.price}
-          />
+        <View style={styles.fullScreenMapContainer}>
+          {/* CANLI HARİTA */}
+          <View style={styles.mapView}>
+            <LiveMapView
+              userLocation={userLocation}
+              otherLocation={passengerLocation || activeTag.passenger_location}
+              userIcon="🚗"
+              otherIcon={user.gender === 'female' ? '👩' : '🧑'}
+              userName="Sen"
+              otherName={activeTag.passenger_name}
+              distance={realDistance || 2.5}
+              estimatedTime={estimatedTime || 5}
+            />
+          </View>
+
+          {/* İsim Overlay - Haritanın Üstünde */}
+          <View style={styles.nameOverlay}>
+            <Text style={styles.nameOverlayText}>{user.name}</Text>
+          </View>
+
+          {/* Üst Bilgi - Mesafeler ve Süre */}
+          <View style={styles.mapTopInfo}>
+            <View style={styles.mapStatsContainer}>
+              {/* Mesafe Bilgisi */}
+              <View style={styles.mapStatBox}>
+                <Ionicons name="locate" size={20} color="#FFF" />
+                <Text style={styles.mapStatLabel}>Mesafe</Text>
+                <Text style={styles.mapStatValue}>{realDistance > 0 ? `${realDistance} km` : '...'}</Text>
+              </View>
+              
+              {/* Süre Bilgisi */}
+              <View style={styles.mapStatBoxMain}>
+                <Ionicons name="time" size={24} color="#FFF" />
+                <Text style={styles.mapStatTimeText}>{estimatedTime > 0 ? `${estimatedTime} dk` : '...'}</Text>
+                <Text style={styles.mapStatSubtext}>sonra buluşacaksınız</Text>
+              </View>
+              
+              {/* Fiyat */}
+              <TouchableOpacity 
+                style={styles.mapStatBox}
+                onPress={() => Alert.alert('Kabul Edilen Teklif', `Fiyat: ₺${activeTag.final_price}`)}
+              >
+                <Ionicons name="eye-outline" size={20} color="#FFF" />
+                <Text style={styles.mapStatLabel}>Fiyat</Text>
+                <Text style={styles.mapStatValue}>Gör</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Alt Butonlar - Sol: Tamamla, Sağ: Ara */}
           <View style={styles.matchedBottomButtons}>
