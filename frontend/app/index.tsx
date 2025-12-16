@@ -1016,6 +1016,10 @@ function PassengerDashboard({
   const [showArrowHint, setShowArrowHint] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
   
+  // Mesafe ve süre state'leri
+  const [realDistance, setRealDistance] = useState<number>(0);
+  const [estimatedTime, setEstimatedTime] = useState<number>(0);
+  
   // Sesli arama state'leri
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [selectedDriverName, setSelectedDriverName] = useState('');
