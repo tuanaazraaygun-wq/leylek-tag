@@ -68,6 +68,12 @@
           }
         }
       ],
+      [
+        "react-native-maps",
+        {
+          "googleMapsApiKey": "AIzaSyCWNE9hKK9rqJKsRACnJ9alkVouKUZvESo"
+        }
+      ],
       "expo-font",
       "expo-web-browser"
     ],
