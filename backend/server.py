@@ -1132,7 +1132,7 @@ async def reject_call(tag_id: str, user_id: str):
     Aramayı reddet
     """
     try:
-        db = await db_instance.get_database()
+        db = db_instance.db
         
         # Call request'i sil
         await db.call_requests.delete_one({"tag_id": tag_id, "receiver_id": user_id})
