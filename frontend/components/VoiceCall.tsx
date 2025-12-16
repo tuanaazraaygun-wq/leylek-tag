@@ -3,19 +3,28 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal, Alert, Platform } from
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// Agora'yı sadece native platformlarda import et
+// Native Agora SDK
 let RtcEngine: any = null;
 let ChannelProfileType: any = null;
 let ClientRoleType: any = null;
 
-if (Platform.OS !== 'web') {
+// Web Agora SDK
+let AgoraRTC: any = null;
+
+if (Platform.OS === 'web') {
+  // Web için Agora RTC SDK
+  import('agora-rtc-sdk-ng').then((module) => {
+    AgoraRTC = module.default;
+  });
+} else {
+  // Native için react-native-agora
   try {
     const AgoraModule = require('react-native-agora');
     RtcEngine = AgoraModule.default;
     ChannelProfileType = AgoraModule.ChannelProfileType;
     ClientRoleType = AgoraModule.ClientRoleType;
   } catch (e) {
-    console.log('Agora yüklenemedi (web platform)');
+    console.log('Agora native SDK yüklenemedi');
   }
 }
 
@@ -28,7 +37,7 @@ interface VoiceCallProps {
 }
 
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
-const IS_NATIVE = Platform.OS !== 'web';
+const IS_WEB = Platform.OS === 'web';
 
 export default function VoiceCall({
   visible,
@@ -42,19 +51,21 @@ export default function VoiceCall({
   const [isMuted, setIsMuted] = useState(false);
   const [remoteUserJoined, setRemoteUserJoined] = useState(false);
   
+  // Native engine
   const engineRef = useRef<any>(null);
+  
+  // Web client & tracks
+  const webClientRef = useRef<any>(null);
+  const localAudioTrackRef = useRef<any>(null);
+  
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (visible) {
-      if (IS_NATIVE && RtcEngine) {
-        initAgora();
+      if (IS_WEB) {
+        initAgoraWeb();
       } else {
-        // Web için mock - otomatik bağlan
-        setTimeout(() => {
-          setCallState('connected');
-          setRemoteUserJoined(true);
-        }, 2000);
+        initAgoraNative();
       }
     }
 
@@ -63,13 +74,12 @@ export default function VoiceCall({
     };
   }, [visible]);
 
-  // Timer için useEffect
+  // Timer
   useEffect(() => {
     if (callState === 'connected') {
       durationIntervalRef.current = setInterval(() => {
         setDuration((prev) => {
           const newDuration = prev + 1;
-          // 20 dakika = 1200 saniye
           if (newDuration >= 1200) {
             handleEndCall();
             return prev;
@@ -86,18 +96,93 @@ export default function VoiceCall({
     }
   }, [callState]);
 
-  const initAgora = async () => {
+  // WEB AGORA INIT
+  const initAgoraWeb = async () => {
     try {
       if (!AGORA_APP_ID) {
         Alert.alert('Hata', 'Agora App ID bulunamadı');
         return;
       }
 
-      // Agora Engine oluştur
+      // AgoraRTC yüklenene kadar bekle
+      let attempts = 0;
+      while (!AgoraRTC && attempts < 20) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+
+      if (!AgoraRTC) {
+        console.error('Agora Web SDK yüklenemedi');
+        return;
+      }
+
+      console.log('🌐 Web Agora başlatılıyor...');
+
+      // Client oluştur
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+      webClientRef.current = client;
+
+      // Event listeners
+      client.on('user-published', async (user: any, mediaType: string) => {
+        console.log('👤 Kullanıcı yayın başlattı:', user.uid, mediaType);
+        await client.subscribe(user, mediaType);
+        
+        if (mediaType === 'audio') {
+          user.audioTrack.play();
+          setRemoteUserJoined(true);
+          setCallState('connected');
+        }
+      });
+
+      client.on('user-unpublished', (user: any) => {
+        console.log('👤 Kullanıcı yayını durdurdu:', user.uid);
+        setRemoteUserJoined(false);
+      });
+
+      client.on('user-left', (user: any) => {
+        console.log('👤 Kullanıcı ayrıldı:', user.uid);
+        handleEndCall();
+      });
+
+      // Kanala katıl
+      const uid = parseInt(userId.substring(0, 8), 16);
+      await client.join(AGORA_APP_ID, channelName, null, uid);
+      console.log('✅ Kanala katıldı:', channelName);
+
+      // Mikrofon track oluştur
+      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      localAudioTrackRef.current = audioTrack;
+
+      // Yayınla
+      await client.publish([audioTrack]);
+      console.log('📢 Ses yayını başladı');
+
+      // Bağlantı başarılı
+      setTimeout(() => {
+        if (callState === 'connecting') {
+          setCallState('connected');
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('Web Agora init hatası:', error);
+      Alert.alert('Hata', 'Sesli arama başlatılamadı: ' + error);
+    }
+  };
+
+  // NATIVE AGORA INIT
+  const initAgoraNative = async () => {
+    try {
+      if (!AGORA_APP_ID || !RtcEngine) {
+        Alert.alert('Hata', 'Agora SDK bulunamadı');
+        return;
+      }
+
+      console.log('📱 Native Agora başlatılıyor...');
+
       const engine = await RtcEngine.create(AGORA_APP_ID);
       engineRef.current = engine;
 
-      // Event listeners
       engine.addListener('UserJoined', (uid: number) => {
         console.log('👤 Kullanıcı katıldı:', uid);
         setRemoteUserJoined(true);
@@ -110,50 +195,44 @@ export default function VoiceCall({
         handleEndCall();
       });
 
-      engine.addListener('JoinChannelSuccess', (channel: string, uid: number, elapsed: number) => {
+      engine.addListener('JoinChannelSuccess', (channel: string, uid: number) => {
         console.log('✅ Kanala katıldı:', channel, uid);
       });
 
-      engine.addListener('Error', (errorCode: number) => {
-        console.error('❌ Agora hatası:', errorCode);
-      });
-
-      // Audio ayarları
       await engine.enableAudio();
       await engine.setChannelProfile(ChannelProfileType.ChannelProfileCommunication);
       await engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
 
-      // Kanala katıl
       await engine.joinChannel(
-        null, // Token (şimdilik null)
+        null,
         channelName,
         null,
-        parseInt(userId.substring(0, 8), 16) // user_id'den sayısal UID
+        parseInt(userId.substring(0, 8), 16)
       );
 
-      console.log('📞 Aramaya bağlanılıyor...', channelName);
+      console.log('📞 Native aramaya bağlanıldı');
     } catch (error) {
-      console.error('Agora init hatası:', error);
+      console.error('Native Agora init hatası:', error);
       Alert.alert('Hata', 'Sesli arama başlatılamadı');
     }
   };
 
   const handleMuteToggle = async () => {
-    if (IS_NATIVE && engineRef.current) {
-      try {
+    try {
+      if (IS_WEB && localAudioTrackRef.current) {
+        await localAudioTrackRef.current.setEnabled(isMuted);
+        setIsMuted(!isMuted);
+      } else if (engineRef.current) {
         await engineRef.current.muteLocalAudioStream(!isMuted);
         setIsMuted(!isMuted);
-      } catch (error) {
-        console.error('Mute hatası:', error);
       }
-    } else {
-      // Web mock
-      setIsMuted(!isMuted);
+    } catch (error) {
+      console.error('Mute hatası:', error);
     }
   };
 
   const handleEndCall = async () => {
-    // Arama süresini logla
+    // Arama logla
     if (duration > 0) {
       try {
         const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -185,10 +264,23 @@ export default function VoiceCall({
         durationIntervalRef.current = null;
       }
 
-      if (IS_NATIVE && engineRef.current) {
-        await engineRef.current.leaveChannel();
-        await engineRef.current.destroy();
-        engineRef.current = null;
+      if (IS_WEB) {
+        // Web cleanup
+        if (localAudioTrackRef.current) {
+          localAudioTrackRef.current.close();
+          localAudioTrackRef.current = null;
+        }
+        if (webClientRef.current) {
+          await webClientRef.current.leave();
+          webClientRef.current = null;
+        }
+      } else {
+        // Native cleanup
+        if (engineRef.current) {
+          await engineRef.current.leaveChannel();
+          await engineRef.current.destroy();
+          engineRef.current = null;
+        }
       }
     } catch (error) {
       console.error('Cleanup hatası:', error);
@@ -203,7 +295,7 @@ export default function VoiceCall({
 
   if (!visible) return null;
 
-  // Bağlanıyor durumu
+  // Bağlanıyor
   if (callState === 'connecting') {
     return (
       <Modal visible={visible} transparent animationType="fade">
@@ -217,9 +309,7 @@ export default function VoiceCall({
                 <Text style={styles.avatarText}>{remoteUserName[0]}</Text>
               </View>
               <Text style={styles.callerName}>{remoteUserName}</Text>
-              <Text style={styles.callingText}>
-                {IS_NATIVE ? 'Bağlanıyor...' : '🌐 Web Demo - Mock Arama'}
-              </Text>
+              <Text style={styles.callingText}>Bağlanıyor...</Text>
             </View>
 
             <View style={styles.incomingActions}>
@@ -237,7 +327,7 @@ export default function VoiceCall({
     );
   }
 
-  // Aktif arama durumu
+  // Aktif arama
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.modalContainer}>
@@ -258,9 +348,7 @@ export default function VoiceCall({
                   ? '✅ Aramada' 
                   : '⏳ Bekleniyor...'}
             </Text>
-            <Text style={styles.encryptionText}>
-              {IS_NATIVE ? '🔒 Uçtan uca şifreli' : '🌐 Web Demo'}
-            </Text>
+            <Text style={styles.encryptionText}>🔒 Uçtan uca şifreli</Text>
           </View>
 
           <View style={styles.activeControls}>
@@ -344,7 +432,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
-    paddingHorizontal: 20,
   },
   incomingActions: {
     flexDirection: 'row',
@@ -360,9 +447,6 @@ const styles = StyleSheet.create({
   },
   rejectButton: {
     backgroundColor: '#ef4444',
-  },
-  acceptButton: {
-    backgroundColor: '#10b981',
   },
   buttonLabel: {
     color: '#FFF',
