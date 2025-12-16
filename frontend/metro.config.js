@@ -11,10 +11,10 @@ config.cacheStores = [
   new FileStore({ root: path.join(root, 'cache') }),
 ];
 
-// WEB İÇİN react-native-maps EXCLUDE ET
+// WEB İÇİN react-native-maps ve react-native-agora EXCLUDE ET
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  // Web'de react-native-maps'i boş module olarak döndür
-  if (platform === 'web' && moduleName.includes('react-native-maps')) {
+  // Web'de react-native-maps ve react-native-agora'yı boş module olarak döndür
+  if (platform === 'web' && (moduleName.includes('react-native-maps') || moduleName.includes('react-native-agora'))) {
     return {
       type: 'empty',
     };
