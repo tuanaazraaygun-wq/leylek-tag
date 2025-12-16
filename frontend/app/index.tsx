@@ -1506,7 +1506,9 @@ function PassengerDashboard({
                     <TouchableOpacity 
                       style={styles.callButton}
                       onPress={() => {
-                        setSelectedDriverName(activeTag.driver_name || 'Sürücü');
+                        const driverName = activeTag?.driver_name || 'Sürücü';
+                        console.log('ARA butonu - Driver name:', driverName);
+                        setSelectedDriverName(driverName);
                         setShowVoiceCall(true);
                       }}
                       activeOpacity={0.8}
