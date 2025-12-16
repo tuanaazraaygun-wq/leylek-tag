@@ -1288,15 +1288,18 @@ function PassengerDashboard({
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Yolcu Paneli</Text>
-          <Text style={styles.headerSubtitle}>{user.name}</Text>
+      {/* Üst Header - Sadece Matched Değilse Göster */}
+      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Yolcu Paneli</Text>
+            <Text style={styles.headerSubtitle}>{user.name}</Text>
+          </View>
+          <TouchableOpacity onPress={logout}>
+            <Ionicons name="log-out" size={28} color="#FFF" />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={logout}>
-          <Ionicons name="log-out" size={28} color="#FFF" />
-        </TouchableOpacity>
-      </View>
+      )}
 
       <ScrollView style={styles.content}>
         {!activeTag ? (
