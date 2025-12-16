@@ -131,6 +131,26 @@ export default function VoiceCall({
   };
 
   const handleEndCall = async () => {
+    // Arama süresini logla
+    if (duration > 0) {
+      try {
+        const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+        await fetch(`${BACKEND_URL}/api/voice/log-call`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            other_user_id: 'unknown', // TAG'den alınacak
+            tag_id: channelName,
+            duration: duration,
+            call_type: 'outgoing'
+          })
+        });
+      } catch (error) {
+        console.log('Arama loglama hatası:', error);
+      }
+    }
+    
     await cleanup();
     setCallState('ended');
     onEnd?.();
