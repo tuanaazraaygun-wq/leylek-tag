@@ -1646,6 +1646,69 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
+  useEffect(() => {
+    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
+      const interval = setInterval(async () => {
+        try {
+          // Yolcu konumunu backend'den al
+          const response = await fetch(`${API_URL}/driver/passenger-location/${activeTag.passenger_id}`);
+          const data = await response.json();
+          if (data.location) {
+            setPassengerLocation(data.location);
+            // Mesafeyi hesapla
+            if (userLocation) {
+              const distance = calculateDistance(
+                userLocation.latitude,
+                userLocation.longitude,
+                data.location.latitude,
+                data.location.longitude
+              );
+              setRealDistance(distance);
+              // Tahmini süreyi hesapla (ortalama 40 km/h)
+              const time = Math.round((distance / 40) * 60);
+              setEstimatedTime(time);
+            }
+          }
+        } catch (error) {
+          console.log('Yolcu konumu alınamadı:', error);
+        }
+      }, 5000); // 5 saniyede bir güncelle
+
+      return () => clearInterval(interval);
+    }
+  }, [activeTag, userLocation]);
+
+  // GPS konum güncellemesi
+  useEffect(() => {
+    const updateLocation = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High
+          });
+          const coords = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude
+          };
+          setUserLocation(coords);
+          
+          // Backend'e gönder
+          await fetch(`${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`, {
+            method: 'POST'
+          });
+        }
+      } catch (error) {
+        console.error('Konum alınamadı:', error);
+      }
+    };
+
+    updateLocation();
+    const locationInterval = setInterval(updateLocation, 10000); // 10 saniyede bir
+    return () => clearInterval(locationInterval);
+  }, [user.id]);
+
   const loadData = async () => {
     await Promise.all([loadActiveTag(), loadRequests()]);
   };
