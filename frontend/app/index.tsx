@@ -1752,6 +1752,29 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     }
   }, [activeTag, userLocation]);
 
+  // GELEN ARAMA KONTROLÜ - Polling
+  useEffect(() => {
+    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
+      const checkIncoming = async () => {
+        try {
+          const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+          const data = await response.json();
+          
+          if (data.success && data.has_incoming) {
+            console.log('📞 SÜRÜCÜYE GELEN ARAMA!', data.call.caller_name);
+            setSelectedPassengerName(data.call.caller_name);
+            setShowVoiceCall(true);
+          }
+        } catch (error) {
+          console.log('Gelen arama kontrolü hatası:', error);
+        }
+      };
+
+      const interval = setInterval(checkIncoming, 3000); // 3 saniyede bir kontrol
+      return () => clearInterval(interval);
+    }
+  }, [activeTag, user.id, showVoiceCall]);
+
   // GPS konum güncellemesi
   useEffect(() => {
     const updateLocation = async () => {
