@@ -1445,13 +1445,13 @@ function PassengerDashboard({
                     <View style={styles.mapStatBox}>
                       <Ionicons name="locate" size={20} color="#FFF" />
                       <Text style={styles.mapStatLabel}>Mesafe</Text>
-                      <Text style={styles.mapStatValue}>2.5 km</Text>
+                      <Text style={styles.mapStatValue}>{realDistance > 0 ? `${realDistance} km` : '...'}</Text>
                     </View>
                     
                     {/* Süre Bilgisi */}
                     <View style={styles.mapStatBoxMain}>
                       <Ionicons name="time" size={24} color="#FFF" />
-                      <Text style={styles.mapStatTimeText}>5 dk</Text>
+                      <Text style={styles.mapStatTimeText}>{estimatedTime > 0 ? `${estimatedTime} dk` : '...'}</Text>
                       <Text style={styles.mapStatSubtext}>sonra buluşacaksınız</Text>
                     </View>
                     
