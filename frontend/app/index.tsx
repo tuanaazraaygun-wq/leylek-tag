@@ -2008,8 +2008,26 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
             <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
               <TouchableOpacity 
                 style={styles.callButton}
-                onPress={() => {
-                  setSelectedPassengerName(activeTag.passenger_name || 'Yolcu');
+                onPress={async () => {
+                  const passengerName = activeTag.passenger_name || 'Yolcu';
+                  console.log('📞 Sürücü arıyor:', passengerName);
+                  
+                  // Backend'e arama bildirimi gönder
+                  try {
+                    await fetch(`${API_URL}/voice/start-call`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        tag_id: activeTag.id,
+                        caller_id: user.id,
+                        caller_name: user.name
+                      })
+                    });
+                  } catch (error) {
+                    console.error('Arama bildirimi hatası:', error);
+                  }
+                  
+                  setSelectedPassengerName(passengerName);
                   setShowVoiceCall(true);
                 }}
                 activeOpacity={0.8}
