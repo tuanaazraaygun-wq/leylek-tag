@@ -11,13 +11,11 @@ let ClientRoleType: any = null;
 // Web Agora SDK
 let AgoraRTC: any = null;
 
-if (Platform.OS === 'web') {
-  // Web için Agora RTC SDK
-  import('agora-rtc-sdk-ng').then((module) => {
-    AgoraRTC = module.default;
-  });
-} else {
-  // Native için react-native-agora
+// SSR kontrolü - window varsa client-side'dayız
+const isClient = typeof window !== 'undefined';
+
+// Native SDK yükleme (sadece native platformda)
+if (Platform.OS !== 'web') {
   try {
     const AgoraModule = require('react-native-agora');
     RtcEngine = AgoraModule.default;
@@ -27,6 +25,22 @@ if (Platform.OS === 'web') {
     console.log('Agora native SDK yüklenemedi');
   }
 }
+
+// Web SDK yükleme fonksiyonu (client-side'da çağrılacak)
+const loadAgoraWebSDK = async () => {
+  if (Platform.OS === 'web' && isClient && !AgoraRTC) {
+    try {
+      const module = await import('agora-rtc-sdk-ng');
+      AgoraRTC = module.default;
+      console.log('✅ Agora Web SDK yüklendi');
+      return true;
+    } catch (e) {
+      console.error('Agora Web SDK yüklenemedi:', e);
+      return false;
+    }
+  }
+  return !!AgoraRTC;
+};
 
 interface VoiceCallProps {
   visible: boolean;
