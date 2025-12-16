@@ -3050,16 +3050,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textAlign: 'center',
   },
-  // Trafik Lambası Bordür
+  // Trafik Lambası Bordür (Basitleştirildi - Android fix)
   trafficLightBorder: {
-    borderWidth: 4,
+    borderWidth: 3,
+    borderColor: '#10B981',
     borderRadius: 20,
     padding: 20,
     backgroundColor: 'rgba(0,0,0,0.3)',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
-    elevation: 10,
+    elevation: 8,
   },
   // Zaman Bilgisi Container
   timeInfoContainer: {
