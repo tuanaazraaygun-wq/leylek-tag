@@ -1627,6 +1627,11 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  const [passengerLocation, setPassengerLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  
+  // Mesafe ve süre state'leri
+  const [realDistance, setRealDistance] = useState<number>(0);
+  const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
   // Sesli arama state'leri
   const [showVoiceCall, setShowVoiceCall] = useState(false);
