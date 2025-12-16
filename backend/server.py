@@ -1033,7 +1033,7 @@ async def start_voice_call(
     Arama başlat - karşı tarafa bildirim gönder
     """
     try:
-        db = await db_instance.get_database()
+        db = db_instance.db
         
         # TAG'i bul
         tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
