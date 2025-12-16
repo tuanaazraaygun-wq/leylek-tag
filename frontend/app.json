@@ -59,12 +59,13 @@
         }
       ],
       [
-        "react-native-agora",
+        "expo-build-properties",
         {
-          "ios": {
-            "microphonePermission": "Sesli arama için mikrofon izni gerekli"
-          },
-          "android": {}
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34
+          }
         }
       ]
     ],
