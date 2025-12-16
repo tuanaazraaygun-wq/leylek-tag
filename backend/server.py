@@ -1022,7 +1022,129 @@ async def clear_all_data():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== VOICE CALL LOGGING ====================
+# ==================== VOICE CALL SYSTEM ====================
+@app.post("/api/voice/start-call")
+async def start_voice_call(
+    tag_id: str,
+    caller_id: str,
+    caller_name: str
+):
+    """
+    Arama başlat - karşı tarafa bildirim gönder
+    """
+    try:
+        db = await db_instance.get_database()
+        
+        # TAG'i bul
+        tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+        if not tag:
+            return {"success": False, "detail": "TAG bulunamadı"}
+        
+        # Call request oluştur
+        call_request = {
+            "tag_id": tag_id,
+            "caller_id": caller_id,
+            "caller_name": caller_name,
+            "receiver_id": tag["driver_id"] if caller_id == tag["passenger_id"] else tag["passenger_id"],
+            "receiver_name": tag["driver_name"] if caller_id == tag["passenger_id"] else tag["passenger_name"],
+            "status": "ringing",  # ringing, accepted, rejected, ended
+            "created_at": datetime.utcnow()
+        }
+        
+        # Eski call request'leri sil (aynı TAG için)
+        await db.call_requests.delete_many({"tag_id": tag_id})
+        
+        # Yeni call request kaydet
+        await db.call_requests.insert_one(call_request)
+        
+        logger.info(f"📞 Arama başlatıldı: {caller_name} → TAG {tag_id}")
+        
+        return {
+            "success": True,
+            "message": "Arama başlatıldı",
+            "channel_name": tag_id
+        }
+    except Exception as e:
+        logger.error(f"Arama başlatma hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.get("/api/voice/check-incoming")
+async def check_incoming_call(user_id: str):
+    """
+    Gelen arama kontrolü - polling ile
+    """
+    try:
+        db = await db_instance.get_database()
+        
+        # Bu kullanıcıya gelen çalan arama var mı?
+        incoming_call = await db.call_requests.find_one({
+            "receiver_id": user_id,
+            "status": "ringing"
+        })
+        
+        if incoming_call:
+            return {
+                "success": True,
+                "has_incoming": True,
+                "call": {
+                    "caller_name": incoming_call["caller_name"],
+                    "caller_id": incoming_call["caller_id"],
+                    "channel_name": incoming_call["tag_id"],
+                    "tag_id": incoming_call["tag_id"]
+                }
+            }
+        
+        return {
+            "success": True,
+            "has_incoming": False
+        }
+    except Exception as e:
+        logger.error(f"Gelen arama kontrolü hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.post("/api/voice/answer-call")
+async def answer_call(tag_id: str, user_id: str):
+    """
+    Aramayı kabul et
+    """
+    try:
+        db = await db_instance.get_database()
+        
+        # Call request'i güncelle
+        await db.call_requests.update_one(
+            {"tag_id": tag_id, "receiver_id": user_id},
+            {"$set": {"status": "accepted"}}
+        )
+        
+        logger.info(f"📞 Arama kabul edildi: TAG {tag_id}")
+        
+        return {"success": True, "message": "Arama kabul edildi"}
+    except Exception as e:
+        logger.error(f"Arama kabul hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.post("/api/voice/reject-call")
+async def reject_call(tag_id: str, user_id: str):
+    """
+    Aramayı reddet
+    """
+    try:
+        db = await db_instance.get_database()
+        
+        # Call request'i sil
+        await db.call_requests.delete_one({"tag_id": tag_id, "receiver_id": user_id})
+        
+        logger.info(f"📞 Arama reddedildi: TAG {tag_id}")
+        
+        return {"success": True, "message": "Arama reddedildi"}
+    except Exception as e:
+        logger.error(f"Arama reddetme hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
 @app.post("/api/voice/log-call")
 async def log_voice_call(
     user_id: str,
@@ -1051,6 +1173,9 @@ async def log_voice_call(
         }
         
         await db.call_logs.insert_one(call_log)
+        
+        # Call request'i temizle
+        await db.call_requests.delete_many({"tag_id": tag_id})
         
         logger.info(f"📞 Arama loglandı: {user_id} → {other_user_id}, {duration}s")
         
