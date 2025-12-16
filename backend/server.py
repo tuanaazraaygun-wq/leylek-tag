@@ -1110,7 +1110,7 @@ async def answer_call(tag_id: str, user_id: str):
     Aramayı kabul et
     """
     try:
-        db = await db_instance.get_database()
+        db = db_instance.db
         
         # Call request'i güncelle
         await db.call_requests.update_one(
