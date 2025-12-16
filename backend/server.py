@@ -1021,3 +1021,45 @@ async def clear_all_data():
         logger.error(f"Temizleme hatası: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ==================== VOICE CALL LOGGING ====================
+@app.post("/api/voice/log-call")
+async def log_voice_call(
+    user_id: str,
+    other_user_id: str,
+    tag_id: str,
+    duration: int,  # saniye
+    call_type: str = "outgoing"  # outgoing, incoming
+):
+    """
+    Sesli arama logla
+    - Kayıt TUTULMAZ, sadece kim kiminle ne kadar konuştu loglanır
+    - Privacy için sadece istatistik tutulur
+    """
+    try:
+        db = await db_instance.get_database()
+        
+        # Call log kaydı
+        call_log = {
+            "user_id": user_id,
+            "other_user_id": other_user_id,
+            "tag_id": tag_id,
+            "duration_seconds": duration,
+            "call_type": call_type,
+            "timestamp": datetime.utcnow(),
+            "privacy_note": "NO_RECORDING_STORED"
+        }
+        
+        await db.call_logs.insert_one(call_log)
+        
+        logger.info(f"📞 Arama loglandı: {user_id} → {other_user_id}, {duration}s")
+        
+        return {
+            "success": True,
+            "message": "Arama loglandı",
+            "duration": duration
+        }
+    except Exception as e:
+        logger.error(f"Arama loglama hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
