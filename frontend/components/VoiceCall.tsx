@@ -2,22 +2,33 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import RtcEngine, { 
-  ChannelProfileType, 
-  ClientRoleType,
-  RtcEngineEventMap,
-  IRtcEngineEventHandler 
-} from 'react-native-agora';
+
+// Agora'yı sadece native platformlarda import et
+let RtcEngine: any = null;
+let ChannelProfileType: any = null;
+let ClientRoleType: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const AgoraModule = require('react-native-agora');
+    RtcEngine = AgoraModule.default;
+    ChannelProfileType = AgoraModule.ChannelProfileType;
+    ClientRoleType = AgoraModule.ClientRoleType;
+  } catch (e) {
+    console.log('Agora yüklenemedi (web platform)');
+  }
+}
 
 interface VoiceCallProps {
   visible: boolean;
   remoteUserName: string;
-  channelName: string; // TAG ID olacak
+  channelName: string;
   userId: string;
   onEnd?: () => void;
 }
 
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
+const IS_NATIVE = Platform.OS !== 'web';
 
 export default function VoiceCall({
   visible,
@@ -31,12 +42,20 @@ export default function VoiceCall({
   const [isMuted, setIsMuted] = useState(false);
   const [remoteUserJoined, setRemoteUserJoined] = useState(false);
   
-  const engineRef = useRef<RtcEngine | null>(null);
+  const engineRef = useRef<any>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (visible && !engineRef.current) {
-      initAgora();
+    if (visible) {
+      if (IS_NATIVE && RtcEngine) {
+        initAgora();
+      } else {
+        // Web için mock - otomatik bağlan
+        setTimeout(() => {
+          setCallState('connected');
+          setRemoteUserJoined(true);
+        }, 2000);
+      }
     }
 
     return () => {
@@ -79,23 +98,23 @@ export default function VoiceCall({
       engineRef.current = engine;
 
       // Event listeners
-      engine.addListener('UserJoined', (uid) => {
+      engine.addListener('UserJoined', (uid: number) => {
         console.log('👤 Kullanıcı katıldı:', uid);
         setRemoteUserJoined(true);
         setCallState('connected');
       });
 
-      engine.addListener('UserOffline', (uid, reason) => {
+      engine.addListener('UserOffline', (uid: number, reason: number) => {
         console.log('👤 Kullanıcı ayrıldı:', uid, reason);
         setRemoteUserJoined(false);
         handleEndCall();
       });
 
-      engine.addListener('JoinChannelSuccess', (channel, uid, elapsed) => {
+      engine.addListener('JoinChannelSuccess', (channel: string, uid: number, elapsed: number) => {
         console.log('✅ Kanala katıldı:', channel, uid);
       });
 
-      engine.addListener('Error', (errorCode) => {
+      engine.addListener('Error', (errorCode: number) => {
         console.error('❌ Agora hatası:', errorCode);
       });
 
@@ -106,10 +125,10 @@ export default function VoiceCall({
 
       // Kanala katıl
       await engine.joinChannel(
-        null, // Token (şimdilik null, sonra ekleyeceğiz)
+        null, // Token (şimdilik null)
         channelName,
         null,
-        parseInt(userId.substring(0, 8), 16) // user_id'den sayısal UID oluştur
+        parseInt(userId.substring(0, 8), 16) // user_id'den sayısal UID
       );
 
       console.log('📞 Aramaya bağlanılıyor...', channelName);
@@ -120,13 +139,16 @@ export default function VoiceCall({
   };
 
   const handleMuteToggle = async () => {
-    if (engineRef.current) {
+    if (IS_NATIVE && engineRef.current) {
       try {
         await engineRef.current.muteLocalAudioStream(!isMuted);
         setIsMuted(!isMuted);
       } catch (error) {
         console.error('Mute hatası:', error);
       }
+    } else {
+      // Web mock
+      setIsMuted(!isMuted);
     }
   };
 
@@ -140,7 +162,7 @@ export default function VoiceCall({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId,
-            other_user_id: 'unknown', // TAG'den alınacak
+            other_user_id: 'unknown',
             tag_id: channelName,
             duration: duration,
             call_type: 'outgoing'
@@ -163,7 +185,7 @@ export default function VoiceCall({
         durationIntervalRef.current = null;
       }
 
-      if (engineRef.current) {
+      if (IS_NATIVE && engineRef.current) {
         await engineRef.current.leaveChannel();
         await engineRef.current.destroy();
         engineRef.current = null;
@@ -195,7 +217,9 @@ export default function VoiceCall({
                 <Text style={styles.avatarText}>{remoteUserName[0]}</Text>
               </View>
               <Text style={styles.callerName}>{remoteUserName}</Text>
-              <Text style={styles.callingText}>Bağlanıyor...</Text>
+              <Text style={styles.callingText}>
+                {IS_NATIVE ? 'Bağlanıyor...' : '🌐 Web Demo - Mock Arama'}
+              </Text>
             </View>
 
             <View style={styles.incomingActions}>
@@ -234,7 +258,9 @@ export default function VoiceCall({
                   ? '✅ Aramada' 
                   : '⏳ Bekleniyor...'}
             </Text>
-            <Text style={styles.encryptionText}>🔒 Uçtan uca şifreli</Text>
+            <Text style={styles.encryptionText}>
+              {IS_NATIVE ? '🔒 Uçtan uca şifreli' : '🌐 Web Demo'}
+            </Text>
           </View>
 
           <View style={styles.activeControls}>
@@ -317,6 +343,8 @@ const styles = StyleSheet.create({
   callingText: {
     fontSize: 18,
     color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   incomingActions: {
     flexDirection: 'row',
