@@ -1763,6 +1763,27 @@ function PassengerDashboard({
         </View>
       </Modal>
 
+      {/* Gelen Arama Modal */}
+      <IncomingCall
+        visible={showIncomingCall && !showVoiceCall}
+        callerName={incomingCallInfo?.callerName || 'Arayan'}
+        callType={incomingCallInfo?.callType || 'audio'}
+        onAccept={() => {
+          setShowIncomingCall(false);
+          setSelectedDriverName(incomingCallInfo?.callerName || 'Arayan');
+          setIsVideoCall(incomingCallInfo?.callType === 'video');
+          setShowVoiceCall(true);
+        }}
+        onReject={async () => {
+          setShowIncomingCall(false);
+          setIncomingCallInfo(null);
+          // Backend'e reddetme bildirimi gönder
+          try {
+            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
+        }}
+      />
+
       {/* Sesli/Görüntülü Arama Modal */}
       {activeTag && (
         <VideoCall
