@@ -8,6 +8,7 @@ import * as Location from 'expo-location';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import VideoCall from '../components/VideoCall';
+import IncomingCall from '../components/IncomingCall';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
