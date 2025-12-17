@@ -129,23 +129,44 @@ export default function PlacesAutocomplete({
     }
   };
 
-  const getPlaceDetails = async (placeId: string, description: string) => {
+  const getPlaceDetails = async (placeId: string, description: string, location?: any) => {
     setLoading(true);
     Keyboard.dismiss();
     
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GOOGLE_MAPS_API_KEY}&language=tr`;
+      // Eğer location zaten varsa (yeni API'den geldi), direkt kullan
+      if (location && location.latitude && location.longitude) {
+        console.log('✅ Konum (yeni API):', description, location);
+        setQuery(description);
+        setShowPredictions(false);
+        setPredictions([]);
+        onPlaceSelected({
+          address: description,
+          latitude: location.latitude,
+          longitude: location.longitude,
+        });
+        setLoading(false);
+        return;
+      }
       
-      console.log('📍 Place Details çağrılıyor:', placeId);
+      // Yeni API ile detay al
+      const url = `https://places.googleapis.com/v1/places/${placeId}`;
       
-      const response = await fetch(url);
+      console.log('📍 Place Details (New) çağrılıyor:', placeId);
+      
+      const response = await fetch(url, {
+        headers: {
+          'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+          'X-Goog-FieldMask': 'location,formattedAddress,displayName'
+        }
+      });
+      
       const data = await response.json();
       
-      if (data.status === 'OK' && data.result) {
-        const { lat, lng } = data.result.geometry.location;
-        const address = data.result.formatted_address || description;
+      if (data.location) {
+        const address = data.formattedAddress || data.displayName?.text || description;
         
-        console.log('✅ Konum bulundu:', address, lat, lng);
+        console.log('✅ Konum bulundu:', address, data.location);
         
         setQuery(description);
         setShowPredictions(false);
@@ -153,14 +174,28 @@ export default function PlacesAutocomplete({
         
         onPlaceSelected({
           address,
-          latitude: lat,
-          longitude: lng,
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
         });
       } else {
-        console.error('Place Details hatası:', data.status);
+        // Fallback: Eski API
+        const oldUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GOOGLE_MAPS_API_KEY}&language=tr`;
+        const oldResponse = await fetch(oldUrl);
+        const oldData = await oldResponse.json();
+        
+        if (oldData.status === 'OK' && oldData.result) {
+          const { lat, lng } = oldData.result.geometry.location;
+          const address = oldData.result.formatted_address || description;
+          
+          setQuery(description);
+          setShowPredictions(false);
+          setPredictions([]);
+          
+          onPlaceSelected({ address, latitude: lat, longitude: lng });
+        }
       }
     } catch (error) {
-      console.error('Place Details isteği hatası:', error);
+      console.error('Place Details hatası:', error);
     } finally {
       setLoading(false);
     }
