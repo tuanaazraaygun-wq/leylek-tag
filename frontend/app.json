@@ -12,7 +12,7 @@
     "ios": {
       "supportsTablet": true,
       "config": {
-        "googleMapsApiKey": "AIzaSyCWNE9hKK9rqJKsRACnJ9alkVouKUZvESo"
+        "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
       },
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Sürücü ve yolcu arasında sesli görüşme yapmak için mikrofon izni gereklidir.",
