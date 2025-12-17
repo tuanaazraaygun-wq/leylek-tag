@@ -133,12 +133,12 @@ export default function VoiceCall({
       engine.setEnableSpeakerphone(true);
       console.log('✅ Audio enabled');
 
-      // Kanala katıl - basit şekilde
+      // Kanala katıl - Agora 4.x API (null token for testing mode)
       console.log('🔄 Kanala katılınıyor...');
-      engine.joinChannel('', channelName, localUid, {
-        clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
+      const joinResult = engine.joinChannel(null, channelName, localUid, {
+        clientRoleType: 1, // BROADCASTER
       });
-      console.log('✅ joinChannel called');
+      console.log('✅ joinChannel result:', joinResult);
 
       // 3 saniye sonra otomatik bağlan (event gelmezse)
       setTimeout(() => {
