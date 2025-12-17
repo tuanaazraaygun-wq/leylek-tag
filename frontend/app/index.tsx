@@ -9,6 +9,7 @@ import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
+import PlacesAutocomplete from '../components/PlacesAutocomplete';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
