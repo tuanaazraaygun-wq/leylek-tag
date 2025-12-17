@@ -1691,14 +1691,18 @@ function PassengerDashboard({
         </View>
       </Modal>
 
-      {/* Sesli Arama Modal */}
+      {/* Sesli/Görüntülü Arama Modal */}
       {activeTag && (
-        <VoiceCall
+        <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedDriverName}
           channelName={activeTag.id}
           userId={user.id}
-          onEnd={() => setShowVoiceCall(false)}
+          isVideoCall={isVideoCall}
+          onEnd={() => {
+            setShowVoiceCall(false);
+            setIsVideoCall(false);
+          }}
         />
       )}
     </SafeAreaView>
