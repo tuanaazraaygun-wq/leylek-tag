@@ -1582,45 +1582,83 @@ function PassengerDashboard({
                     <Text style={styles.buttonLabelRed}>BİTİR</Text>
                   </TouchableOpacity>
 
-                  {/* Sağ: Yeşil Ara Butonu */}
-                  <Animated.View style={{ transform: [{ scale: buttonPulse }] }}>
-                    <TouchableOpacity 
-                      style={styles.callButton}
-                      onPress={async () => {
-                        const driverName = activeTag?.driver_name || 'Sürücü';
-                        console.log('📞 Arama başlatılıyor:', driverName);
-                        
-                        // Backend'e arama bildirimi gönder
-                        try {
-                          await fetch(`${API_URL}/voice/start-call`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              tag_id: activeTag?.id,
-                              caller_id: user.id,
-                              caller_name: user.name
-                            })
-                          });
-                        } catch (error) {
-                          console.error('Arama bildirimi hatası:', error);
-                        }
-                        
-                        setSelectedDriverName(driverName);
-                        setShowVoiceCall(true);
-                      }}
-                      activeOpacity={0.8}
+                  {/* Sağ: Sesli Arama Butonu */}
+                  <TouchableOpacity 
+                    style={styles.callButton}
+                    onPress={async () => {
+                      const driverName = activeTag?.driver_name || 'Sürücü';
+                      console.log('📞 Sesli arama başlatılıyor:', driverName);
+                      
+                      try {
+                        await fetch(`${API_URL}/voice/start-call`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            tag_id: activeTag?.id,
+                            caller_id: user.id,
+                            caller_name: user.name,
+                            call_type: 'audio'
+                          })
+                        });
+                      } catch (error) {
+                        console.error('Arama bildirimi hatası:', error);
+                      }
+                      
+                      setSelectedDriverName(driverName);
+                      setIsVideoCall(false);
+                      setShowVoiceCall(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient
+                      colors={['#10B981', '#059669', '#047857']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.callButtonCircle}
                     >
-                      <LinearGradient
-                        colors={['#10B981', '#059669', '#047857']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.callButtonCircle}
-                      >
-                        <Ionicons name="call" size={32} color="#FFF" />
-                      </LinearGradient>
-                      <Text style={styles.buttonLabelGreen}>ARA</Text>
-                    </TouchableOpacity>
-                  </Animated.View>
+                      <Ionicons name="call" size={28} color="#FFF" />
+                    </LinearGradient>
+                    <Text style={styles.buttonLabelGreen}>SESLİ</Text>
+                  </TouchableOpacity>
+
+                  {/* En Sağ: Görüntülü Arama Butonu */}
+                  <TouchableOpacity 
+                    style={styles.callButton}
+                    onPress={async () => {
+                      const driverName = activeTag?.driver_name || 'Sürücü';
+                      console.log('📹 Görüntülü arama başlatılıyor:', driverName);
+                      
+                      try {
+                        await fetch(`${API_URL}/voice/start-call`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            tag_id: activeTag?.id,
+                            caller_id: user.id,
+                            caller_name: user.name,
+                            call_type: 'video'
+                          })
+                        });
+                      } catch (error) {
+                        console.error('Arama bildirimi hatası:', error);
+                      }
+                      
+                      setSelectedDriverName(driverName);
+                      setIsVideoCall(true);
+                      setShowVoiceCall(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient
+                      colors={['#3B82F6', '#2563EB', '#1D4ED8']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.callButtonCircle}
+                    >
+                      <Ionicons name="videocam" size={28} color="#FFF" />
+                    </LinearGradient>
+                    <Text style={styles.buttonLabelBlue}>VİDEO</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             ) : null}
