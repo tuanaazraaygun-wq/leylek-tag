@@ -201,8 +201,8 @@ export default function PlacesAutocomplete({
     }
   };
 
-  const handleSelectPrediction = (prediction: PlacePrediction) => {
-    getPlaceDetails(prediction.place_id, prediction.description);
+  const handleSelectPrediction = (prediction: any) => {
+    getPlaceDetails(prediction.place_id, prediction.description, prediction.location);
   };
 
   const clearInput = () => {
