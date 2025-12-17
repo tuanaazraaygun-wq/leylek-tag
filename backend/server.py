@@ -1025,14 +1025,19 @@ async def clear_all_data():
 # ==================== VOICE CALL SYSTEM ====================
 @app.post("/api/voice/start-call")
 async def start_voice_call(
-    tag_id: str,
-    caller_id: str,
-    caller_name: str
+    tag_id: str = None,
+    caller_id: str = None,
+    caller_name: str = None,
+    call_type: str = "audio"
 ):
     """
     Arama başlat - karşı tarafa bildirim gönder
     """
     try:
+        # Parametre kontrolü
+        if not tag_id or not caller_id:
+            return {"success": False, "detail": "tag_id ve caller_id gerekli"}
+        
         db = db_instance.db
         
         # TAG'i bul
@@ -1040,13 +1045,22 @@ async def start_voice_call(
         if not tag:
             return {"success": False, "detail": "TAG bulunamadı"}
         
+        # Karşı tarafı belirle
+        if caller_id == str(tag.get("passenger_id", "")):
+            receiver_id = str(tag.get("driver_id", ""))
+            receiver_name = tag.get("driver_name", "Şoför")
+        else:
+            receiver_id = str(tag.get("passenger_id", ""))
+            receiver_name = tag.get("passenger_name", "Yolcu")
+        
         # Call request oluştur
         call_request = {
             "tag_id": tag_id,
             "caller_id": caller_id,
-            "caller_name": caller_name,
-            "receiver_id": tag["driver_id"] if caller_id == tag["passenger_id"] else tag["passenger_id"],
-            "receiver_name": tag["driver_name"] if caller_id == tag["passenger_id"] else tag["passenger_name"],
+            "caller_name": caller_name or "Arayan",
+            "receiver_id": receiver_id,
+            "receiver_name": receiver_name,
+            "call_type": call_type,  # audio veya video
             "status": "ringing",  # ringing, accepted, rejected, ended
             "created_at": datetime.utcnow()
         }
@@ -1057,12 +1071,13 @@ async def start_voice_call(
         # Yeni call request kaydet
         await db.call_requests.insert_one(call_request)
         
-        logger.info(f"📞 Arama başlatıldı: {caller_name} → TAG {tag_id}")
+        logger.info(f"📞 Arama başlatıldı: {caller_name} → {receiver_name} ({call_type})")
         
         return {
             "success": True,
             "message": "Arama başlatıldı",
-            "channel_name": tag_id
+            "channel_name": tag_id,
+            "call_type": call_type
         }
     except Exception as e:
         logger.error(f"Arama başlatma hatası: {str(e)}")
