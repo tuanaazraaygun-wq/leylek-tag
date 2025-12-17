@@ -89,44 +89,52 @@ export default function VoiceCall({
         return;
       }
 
+      // Channel name'i temizle - sadece alfanumerik karakterler
+      // MongoDB ObjectId formatındaki TAG ID'sini kullan (24 karakter hex)
+      const safeChannelName = channelName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 64) || 'default_channel';
+      
       console.log('🎥 Agora başlatılıyor...');
       console.log('📍 AppID:', AGORA_APP_ID);
-      console.log('📍 Channel:', channelName);
+      console.log('📍 Original Channel:', channelName);
+      console.log('📍 Safe Channel:', safeChannelName);
       console.log('📍 UID:', localUid);
 
       // Engine oluştur
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
 
-      // Initialize with app ID
+      // Initialize with app ID - minimal configuration
       engine.initialize({
         appId: AGORA_APP_ID,
-        channelProfile: 1, // LIVE_BROADCASTING
       });
       console.log('✅ Engine initialized');
 
       // Event handlers kaydet
       engine.registerEventHandler({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
-          console.log('✅✅✅ KANALA KATILDI! Süre:', elapsed);
+          console.log('✅✅✅ KANALA KATILDI! Süre:', elapsed, 'ms');
           setCallState('connected');
           if (!durationIntervalRef.current) {
             startTimer();
           }
         },
         onUserJoined: (connection: any, uid: number, elapsed: number) => {
-          console.log('👤 Kullanıcı katıldı:', uid);
+          console.log('👤 Kullanıcı katıldı! UID:', uid);
           setRemoteUid(uid);
         },
         onUserOffline: (connection: any, uid: number, reason: number) => {
-          console.log('👤 Kullanıcı ayrıldı:', uid);
+          console.log('👤 Kullanıcı ayrıldı:', uid, 'reason:', reason);
           setRemoteUid(null);
         },
         onError: (err: number, msg: string) => {
-          console.error('❌ Agora Error:', err, msg);
+          console.error('❌ Agora Error Code:', err, 'Message:', msg);
         },
         onConnectionStateChanged: (connection: any, state: number, reason: number) => {
-          console.log('🔗 Connection state:', state, 'reason:', reason);
+          console.log('🔗 Connection state changed:', state, 'reason:', reason);
+          // state 3 = CONNECTED, state 5 = FAILED
+          if (state === 3) {
+            setCallState('connected');
+          }
         },
       });
 
@@ -134,23 +142,39 @@ export default function VoiceCall({
       engine.enableAudio();
       engine.setDefaultAudioRouteToSpeakerphone(true);
       engine.setEnableSpeakerphone(true);
+      console.log('✅ Audio enabled');
       
-      // Client role'ü BROADCASTER olarak ayarla
-      engine.setClientRole(1); // 1 = BROADCASTER
-      console.log('✅ Audio enabled, role set to BROADCASTER');
+      // Channel profile ayarla (COMMUNICATION = 0)
+      engine.setChannelProfile(0);
+      
+      // Client role'ü BROADCASTER olarak ayarla (1)
+      engine.setClientRole(1);
+      console.log('✅ Channel profile: COMMUNICATION, Role: BROADCASTER');
 
       // Kanala katıl - Agora 4.x API
-      // Testing Mode'da token null olabilir
+      // Token: Testing Mode için boş string veya null
+      // UID: 0 kullanarak otomatik atama yap
       console.log('🔄 Kanala katılınıyor...');
       
-      // joinChannel parametreleri: token, channelId, uid, options
-      const joinResult = engine.joinChannel('', channelName, localUid, {
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: false,
-        publishMicrophoneTrack: true,
-        clientRoleType: 1, // BROADCASTER
+      const joinResult = engine.joinChannel('', safeChannelName, 0, {
+        clientRoleType: 1,
+        channelProfile: 0,
       });
+      
       console.log('✅ joinChannel result:', joinResult);
+      
+      if (joinResult !== 0) {
+        console.error('❌ joinChannel failed with error:', joinResult);
+        // Retry with simpler params
+        setTimeout(() => {
+          console.log('🔄 Retrying with simpler params...');
+          try {
+            engine.joinChannel('', safeChannelName, 0, {});
+          } catch (e) {
+            console.error('Retry failed:', e);
+          }
+        }, 1000);
+      }
 
       // 5 saniye sonra durumu kontrol et
       setTimeout(() => {
