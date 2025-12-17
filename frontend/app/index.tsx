@@ -1044,6 +1044,39 @@ function PassengerDashboard({
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedDriverName, setSelectedDriverName] = useState('');
   
+  // Gelen arama state'leri
+  const [showIncomingCall, setShowIncomingCall] = useState(false);
+  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
+  
+  // Gelen arama polling
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    
+    const checkIncomingCall = async () => {
+      try {
+        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+        const data = await response.json();
+        
+        if (data.success && data.has_incoming && data.call) {
+          console.log('📞 Gelen arama var:', data.call);
+          setIncomingCallInfo({
+            callerName: data.call.caller_name,
+            callType: data.call.call_type || 'audio',
+            channelName: data.call.channel_name
+          });
+          setShowIncomingCall(true);
+        }
+      } catch (error) {
+        console.error('Gelen arama kontrolü hatası:', error);
+      }
+    };
+    
+    const interval = setInterval(checkIncomingCall, 2000);
+    checkIncomingCall();
+    
+    return () => clearInterval(interval);
+  }, [user?.id, activeTag, showVoiceCall]);
+  
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
   const destinationButtonScale = useRef(new Animated.Value(1)).current;
