@@ -1038,8 +1038,9 @@ function PassengerDashboard({
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
-  // Sesli arama state'leri
+  // Arama state'leri (sesli ve görüntülü)
   const [showVoiceCall, setShowVoiceCall] = useState(false);
+  const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedDriverName, setSelectedDriverName] = useState('');
   
   // Ara butonu animasyonu
