@@ -1103,10 +1103,11 @@ async def check_incoming_call(user_id: str):
                 "success": True,
                 "has_incoming": True,
                 "call": {
-                    "caller_name": incoming_call["caller_name"],
-                    "caller_id": incoming_call["caller_id"],
-                    "channel_name": incoming_call["tag_id"],
-                    "tag_id": incoming_call["tag_id"]
+                    "caller_name": incoming_call.get("caller_name", "Arayan"),
+                    "caller_id": incoming_call.get("caller_id", ""),
+                    "channel_name": incoming_call.get("tag_id", ""),
+                    "tag_id": incoming_call.get("tag_id", ""),
+                    "call_type": incoming_call.get("call_type", "audio")
                 }
             }
         
