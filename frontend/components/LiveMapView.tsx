@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Conditional import - sadece mobilde
 let MapView: any = null;
@@ -15,8 +15,9 @@ if (Platform.OS !== 'web') {
     MapView = Maps.default;
     Marker = Maps.Marker;
     PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+    console.log('✅ react-native-maps yüklendi');
   } catch (e) {
-    console.log('react-native-maps not available:', e);
+    console.log('⚠️ react-native-maps yüklenemedi:', e);
   }
 }
 
@@ -32,8 +33,8 @@ interface LiveMapViewProps {
   otherIcon: string;
   userName: string;
   otherName: string;
-  distance?: number; // km
-  estimatedTime?: number; // minutes
+  distance?: number;
+  estimatedTime?: number;
 }
 
 export default function LiveMapView({
@@ -46,85 +47,115 @@ export default function LiveMapView({
   distance,
   estimatedTime,
 }: LiveMapViewProps) {
-  // Web veya MapView yok ise
+  
+  // Web veya MapView yok ise placeholder göster
   if (Platform.OS === 'web' || !MapView) {
     return (
       <View style={styles.placeholderContainer}>
         <Ionicons name="location" size={80} color="#3B82F6" />
-        <Text style={styles.placeholderTitle}>🗺️ Canlı Konum Takibi</Text>
-        <Text style={styles.placeholderIcon}>{userIcon} {userName}</Text>
-        <Text style={styles.placeholderIcon}>{otherIcon} {otherName}</Text>
-        {distance && (
-          <Text style={styles.placeholderText}>Mesafe: {distance.toFixed(1)} km</Text>
+        <Text style={styles.placeholderTitle}>Canlı Konum Takibi</Text>
+        <View style={styles.userRow}>
+          <Text style={styles.placeholderIcon}>{userIcon}</Text>
+          <Text style={styles.placeholderName}>{userName}</Text>
+        </View>
+        <View style={styles.userRow}>
+          <Text style={styles.placeholderIcon}>{otherIcon}</Text>
+          <Text style={styles.placeholderName}>{otherName}</Text>
+        </View>
+        {distance !== undefined && (
+          <Text style={styles.infoText}>📍 Mesafe: {distance.toFixed(1)} km</Text>
         )}
-        {estimatedTime && (
-          <Text style={styles.placeholderText}>Tahmini Süre: {estimatedTime} dk</Text>
+        {estimatedTime !== undefined && (
+          <Text style={styles.infoText}>⏱️ Tahmini Süre: {estimatedTime} dk</Text>
         )}
-        <Text style={styles.placeholderNote}>Mobil uygulamada canlı harita aktif</Text>
+        <Text style={styles.noteText}>
+          {Platform.OS === 'web' 
+            ? 'Web\'de harita desteklenmiyor' 
+            : 'Harita yüklenemedi'}
+        </Text>
       </View>
     );
   }
 
-  // İlk bölge hesapla
-  const initialRegion = {
-    latitude: userLocation?.latitude || 41.0082,
-    longitude: userLocation?.longitude || 28.9784,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
+  // Konum yoksa varsayılan kullan (Ankara merkez)
+  const defaultLocation = {
+    latitude: 39.9334,
+    longitude: 32.8597,
   };
 
-  return (
-    <MapView
-      style={styles.map}
-      provider={PROVIDER_GOOGLE}
-      initialRegion={initialRegion}
-      camera={{
-        center: {
-          latitude: userLocation?.latitude || 41.0082,
-          longitude: userLocation?.longitude || 28.9784,
-        },
-        pitch: 45, // 3D görünüm
-        heading: 0,
-        altitude: 1000,
-        zoom: 14,
-      }}
-      showsUserLocation={false}
-      showsMyLocationButton={true}
-      showsCompass={true}
-      showsTraffic={false}
-      showsBuildings={true}
-    >
-      {/* User Marker */}
-      {userLocation && (
-        <Marker
-          coordinate={userLocation}
-          title={userName}
-          description="Sen"
-        >
-          <View style={styles.markerContainer}>
-            <Text style={styles.markerIcon}>{userIcon}</Text>
-            <View style={styles.markerShadow} />
-          </View>
-        </Marker>
-      )}
+  const centerLocation = userLocation || otherLocation || defaultLocation;
 
-      {/* Other Person Marker */}
-      {otherLocation && (
-        <Marker
-          coordinate={otherLocation}
-          title={otherName}
-        >
-          <View style={styles.markerContainer}>
-            <Text style={styles.markerIcon}>{otherIcon}</Text>
-            <View style={styles.markerShadow} />
+  return (
+    <View style={styles.mapContainer}>
+      <MapView
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={{
+          latitude: centerLocation.latitude,
+          longitude: centerLocation.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        showsCompass={true}
+        showsTraffic={false}
+        mapType="standard"
+      >
+        {/* User Marker */}
+        {userLocation && (
+          <Marker
+            coordinate={userLocation}
+            title={userName}
+            description="Sen"
+          >
+            <View style={styles.markerContainer}>
+              <View style={styles.markerBubble}>
+                <Text style={styles.markerIcon}>{userIcon}</Text>
+              </View>
+            </View>
+          </Marker>
+        )}
+
+        {/* Other Person Marker */}
+        {otherLocation && (
+          <Marker
+            coordinate={otherLocation}
+            title={otherName}
+          >
+            <View style={styles.markerContainer}>
+              <View style={[styles.markerBubble, styles.otherBubble]}>
+                <Text style={styles.markerIcon}>{otherIcon}</Text>
+              </View>
+            </View>
+          </Marker>
+        )}
+      </MapView>
+
+      {/* Info Overlay */}
+      <View style={styles.infoOverlay}>
+        {distance !== undefined && (
+          <View style={styles.infoBadge}>
+            <Ionicons name="navigate" size={16} color="#FFF" />
+            <Text style={styles.infoBadgeText}>{distance.toFixed(1)} km</Text>
           </View>
-        </Marker>
-      )}
-    </MapView>
+        )}
+        {estimatedTime !== undefined && (
+          <View style={styles.infoBadge}>
+            <Ionicons name="time" size={16} color="#FFF" />
+            <Text style={styles.infoBadgeText}>{estimatedTime} dk</Text>
+          </View>
+        )}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  mapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
   map: {
     width: '100%',
     height: '100%',
@@ -143,16 +174,26 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 20,
   },
-  placeholderIcon: {
-    fontSize: 32,
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginVertical: 8,
   },
-  placeholderText: {
+  placeholderIcon: {
+    fontSize: 32,
+    marginRight: 12,
+  },
+  placeholderName: {
+    fontSize: 18,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  infoText: {
     fontSize: 16,
     color: '#374151',
-    marginTop: 8,
+    marginTop: 12,
   },
-  placeholderNote: {
+  noteText: {
     fontSize: 14,
     color: '#6B7280',
     marginTop: 20,
@@ -160,16 +201,39 @@ const styles = StyleSheet.create({
   },
   markerContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
+  },
+  markerBubble: {
+    backgroundColor: '#3B82F6',
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#FFF',
+  },
+  otherBubble: {
+    backgroundColor: '#10B981',
   },
   markerIcon: {
-    fontSize: 48,
+    fontSize: 24,
   },
-  markerShadow: {
-    width: 20,
-    height: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: 10,
-    marginTop: -10,
+  infoOverlay: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  infoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  infoBadgeText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
