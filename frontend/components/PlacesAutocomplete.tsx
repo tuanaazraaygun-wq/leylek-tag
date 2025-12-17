@@ -71,24 +71,55 @@ export default function PlacesAutocomplete({
   const searchPlaces = async (input: string) => {
     setLoading(true);
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&language=tr&components=country:tr&types=geocode|establishment`;
+      // Places API (New) Text Search kullanımı
+      const url = `https://places.googleapis.com/v1/places:searchText`;
       
-      console.log('🔍 Places API çağrılıyor:', input);
+      console.log('🔍 Places API (New) çağrılıyor:', input);
       
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location'
+        },
+        body: JSON.stringify({
+          textQuery: input + ' Türkiye',
+          languageCode: 'tr',
+          regionCode: 'TR',
+          maxResultCount: 5
+        })
+      });
+      
       const data = await response.json();
       
-      console.log('📍 Places API yanıt:', data.status, data.predictions?.length || 0, 'sonuç');
+      console.log('📍 Places API yanıt:', data);
       
-      if (data.status === 'OK' && data.predictions) {
-        setPredictions(data.predictions);
+      if (data.places && data.places.length > 0) {
+        const formattedPredictions = data.places.map((place: any) => ({
+          place_id: place.id,
+          description: place.formattedAddress || place.displayName?.text,
+          structured_formatting: {
+            main_text: place.displayName?.text || '',
+            secondary_text: place.formattedAddress || ''
+          },
+          location: place.location
+        }));
+        setPredictions(formattedPredictions);
         setShowPredictions(true);
-      } else if (data.status === 'ZERO_RESULTS') {
-        setPredictions([]);
-        setShowPredictions(false);
       } else {
-        console.error('Places API hatası:', data.status, data.error_message);
-        setPredictions([]);
+        // Fallback: Eski API dene
+        const oldUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&language=tr&components=country:tr`;
+        const oldResponse = await fetch(oldUrl);
+        const oldData = await oldResponse.json();
+        
+        if (oldData.status === 'OK' && oldData.predictions) {
+          setPredictions(oldData.predictions);
+          setShowPredictions(true);
+        } else {
+          setPredictions([]);
+          setShowPredictions(false);
+        }
       }
     } catch (error) {
       console.error('Places API isteği hatası:', error);
