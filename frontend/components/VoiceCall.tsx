@@ -101,6 +101,7 @@ export default function VoiceCall({
       // Initialize with app ID
       engine.initialize({
         appId: AGORA_APP_ID,
+        channelProfile: 1, // LIVE_BROADCASTING
       });
       console.log('✅ Engine initialized');
 
@@ -109,14 +110,16 @@ export default function VoiceCall({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
           console.log('✅✅✅ KANALA KATILDI! Süre:', elapsed);
           setCallState('connected');
-          startTimer();
+          if (!durationIntervalRef.current) {
+            startTimer();
+          }
         },
-        onUserJoined: (connection: any, remoteUid: number, elapsed: number) => {
-          console.log('👤 Kullanıcı katıldı:', remoteUid);
-          setRemoteUid(remoteUid);
+        onUserJoined: (connection: any, uid: number, elapsed: number) => {
+          console.log('👤 Kullanıcı katıldı:', uid);
+          setRemoteUid(uid);
         },
-        onUserOffline: (connection: any, remoteUid: number, reason: number) => {
-          console.log('👤 Kullanıcı ayrıldı:', remoteUid);
+        onUserOffline: (connection: any, uid: number, reason: number) => {
+          console.log('👤 Kullanıcı ayrıldı:', uid);
           setRemoteUid(null);
         },
         onError: (err: number, msg: string) => {
@@ -131,21 +134,34 @@ export default function VoiceCall({
       engine.enableAudio();
       engine.setDefaultAudioRouteToSpeakerphone(true);
       engine.setEnableSpeakerphone(true);
-      console.log('✅ Audio enabled');
+      
+      // Client role'ü BROADCASTER olarak ayarla
+      engine.setClientRole(1); // 1 = BROADCASTER
+      console.log('✅ Audio enabled, role set to BROADCASTER');
 
-      // Kanala katıl - Agora 4.x API (null token for testing mode)
+      // Kanala katıl - Agora 4.x API
+      // Testing Mode'da token null olabilir
       console.log('🔄 Kanala katılınıyor...');
-      const joinResult = engine.joinChannel(null, channelName, localUid, {
+      
+      // joinChannel parametreleri: token, channelId, uid, options
+      const joinResult = engine.joinChannel('', channelName, localUid, {
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: false,
+        publishMicrophoneTrack: true,
         clientRoleType: 1, // BROADCASTER
       });
       console.log('✅ joinChannel result:', joinResult);
 
-      // 3 saniye sonra otomatik bağlan (event gelmezse)
+      // 5 saniye sonra durumu kontrol et
       setTimeout(() => {
-        setCallState('connected');
-        startTimer();
-        console.log('⏱️ Auto-connected after timeout');
-      }, 3000);
+        if (callState === 'connecting') {
+          setCallState('connected');
+          if (!durationIntervalRef.current) {
+            startTimer();
+          }
+          console.log('⏱️ Auto-connected after timeout');
+        }
+      }, 5000);
 
     } catch (error: any) {
       console.error('❌ Agora init error:', error);
