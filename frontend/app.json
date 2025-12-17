@@ -74,7 +74,11 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-agora",
+        {}
+      ]
     ],
     "experiments": {
       "typedRoutes": true
