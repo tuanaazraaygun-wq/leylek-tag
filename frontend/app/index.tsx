@@ -1710,46 +1710,32 @@ function PassengerDashboard({
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>🎯 Nereye Gitmek İstiyorsunuz?</Text>
             
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Adres ara... (örn: Taksim, İstanbul)"
-              placeholderTextColor="#999"
-              autoFocus={true}
-              onSubmitEditing={(e) => {
-                const address = e.nativeEvent.text;
-                if (address) {
-                  handleDestinationSelect(
-                    address,
-                    41.0082 + Math.random() * 0.1,
-                    28.9784 + Math.random() * 0.1
-                  );
-                }
+            <PlacesAutocomplete
+              placeholder="Nereye gitmek istiyorsunuz?"
+              onPlaceSelected={(place) => {
+                handleDestinationSelect(place.address, place.latitude, place.longitude);
               }}
             />
             
-            <Text style={styles.popularTitle}>Popüler Konumlar:</Text>
+            <Text style={[styles.popularTitle, { marginTop: 20 }]}>Popüler Konumlar:</Text>
             <ScrollView style={styles.popularList}>
               {[
-                'Taksim Meydanı, İstanbul',
-                'Kadıköy İskele, İstanbul',
-                'Atatürk Havalimanı',
-                'Sabiha Gökçen Havalimanı',
-                'Kızılay, Ankara',
-                'Konak, İzmir'
+                { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
+                { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.0230 },
+                { name: 'Kızılay, Ankara', lat: 39.9208, lng: 32.8541 },
+                { name: 'Ulus, Ankara', lat: 39.9420, lng: 32.8647 },
+                { name: 'Konak, İzmir', lat: 38.4189, lng: 27.1287 },
+                { name: 'Alsancak, İzmir', lat: 38.4361, lng: 27.1428 },
               ].map((place, index) => (
                 <TouchableOpacity
                   key={index}
                   style={styles.popularItem}
                   onPress={() => {
-                    handleDestinationSelect(
-                      place,
-                      41.0082 + Math.random() * 0.1,
-                      28.9784 + Math.random() * 0.1
-                    );
+                    handleDestinationSelect(place.name, place.lat, place.lng);
                   }}
                 >
                   <Ionicons name="location-outline" size={20} color={COLORS.primary} />
-                  <Text style={styles.popularItemText}>{place}</Text>
+                  <Text style={styles.popularItemText}>{place.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
