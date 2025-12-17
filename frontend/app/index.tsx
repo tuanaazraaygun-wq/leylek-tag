@@ -2431,6 +2431,26 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
         </View>
       </Modal>
 
+      {/* Gelen Arama Modal - Şoför */}
+      <IncomingCall
+        visible={showIncomingCall && !showVoiceCall}
+        callerName={incomingCallInfo?.callerName || 'Yolcu'}
+        callType={incomingCallInfo?.callType || 'audio'}
+        onAccept={() => {
+          setShowIncomingCall(false);
+          setSelectedPassengerName(incomingCallInfo?.callerName || 'Yolcu');
+          setIsVideoCall(incomingCallInfo?.callType === 'video');
+          setShowVoiceCall(true);
+        }}
+        onReject={async () => {
+          setShowIncomingCall(false);
+          setIncomingCallInfo(null);
+          try {
+            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
+        }}
+      />
+
       {/* Sesli/Görüntülü Arama Modal */}
       {activeTag && (
         <VideoCall
