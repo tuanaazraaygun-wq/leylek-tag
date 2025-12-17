@@ -1827,6 +1827,10 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedPassengerName, setSelectedPassengerName] = useState('');
   
+  // Gelen arama state'leri
+  const [showIncomingCall, setShowIncomingCall] = useState(false);
+  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
+  
   // Animation
   const buttonPulse = useRef(new Animated.Value(1)).current;
 
@@ -1835,6 +1839,35 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, []);
+  
+  // Gelen arama polling - Şoför için
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    
+    const checkIncomingCall = async () => {
+      try {
+        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+        const data = await response.json();
+        
+        if (data.success && data.has_incoming && data.call) {
+          console.log('📞 Şoför - Gelen arama var:', data.call);
+          setIncomingCallInfo({
+            callerName: data.call.caller_name,
+            callType: data.call.call_type || 'audio',
+            channelName: data.call.channel_name
+          });
+          setShowIncomingCall(true);
+        }
+      } catch (error) {
+        console.error('Gelen arama kontrolü hatası:', error);
+      }
+    };
+    
+    const interval = setInterval(checkIncomingCall, 2000);
+    checkIncomingCall();
+    
+    return () => clearInterval(interval);
+  }, [user?.id, activeTag, showVoiceCall]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
