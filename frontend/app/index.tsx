@@ -3812,7 +3812,14 @@ const styles = StyleSheet.create({
   buttonLabelGreen: {
     marginTop: 8,
     color: '#10B981',
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  buttonLabelBlue: {
+    marginTop: 8,
+    color: '#3B82F6',
+    fontSize: 14,
     fontWeight: 'bold',
     textTransform: 'uppercase',
   },
