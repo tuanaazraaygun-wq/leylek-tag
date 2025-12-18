@@ -39,6 +39,56 @@ def calculate_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
         logger.error(f"Mesafe hesaplama hatası: {e}")
         return 0.0
 
+import httpx
+
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
+    """Google Directions API ile gerçek mesafe ve süre hesapla"""
+    try:
+        if not GOOGLE_MAPS_API_KEY:
+            # API key yoksa düz çizgi mesafe hesapla
+            dist = calculate_distance(origin_lat, origin_lng, dest_lat, dest_lng)
+            dur = round((dist / 40) * 60)  # 40 km/h ortalama
+            return {"distance_km": round(dist, 1), "duration_min": dur, "source": "estimated"}
+        
+        url = f"https://maps.googleapis.com/maps/api/directions/json"
+        params = {
+            "origin": f"{origin_lat},{origin_lng}",
+            "destination": f"{dest_lat},{dest_lng}",
+            "key": GOOGLE_MAPS_API_KEY,
+            "mode": "driving",
+            "language": "tr"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=10.0)
+            data = response.json()
+        
+        if data.get("status") == "OK" and data.get("routes"):
+            route = data["routes"][0]
+            leg = route["legs"][0]
+            
+            distance_km = leg["distance"]["value"] / 1000
+            duration_min = round(leg["duration"]["value"] / 60)
+            
+            return {
+                "distance_km": round(distance_km, 1),
+                "duration_min": duration_min,
+                "source": "google"
+            }
+        else:
+            # API hatası - fallback
+            dist = calculate_distance(origin_lat, origin_lng, dest_lat, dest_lng)
+            dur = round((dist / 40) * 60)
+            return {"distance_km": round(dist, 1), "duration_min": dur, "source": "estimated"}
+            
+    except Exception as e:
+        logger.error(f"Route API hatası: {e}")
+        dist = calculate_distance(origin_lat, origin_lng, dest_lat, dest_lng)
+        dur = round((dist / 40) * 60)
+        return {"distance_km": round(dist, 1), "duration_min": dur, "source": "estimated"}
+
 
 def get_city_from_coords(lat: float, lng: float) -> str:
     """Koordinattan şehir adı çıkar (basitleştirilmiş)"""
