@@ -1037,6 +1037,7 @@ function PassengerDashboard({
   const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedDriverName, setSelectedDriverName] = useState('');
+  const [isCallCaller, setIsCallCaller] = useState(false); // BEN Mİ ARIYORUM?
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
