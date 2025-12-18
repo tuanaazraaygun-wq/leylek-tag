@@ -1300,18 +1300,19 @@ async def check_incoming_call(user_id: str):
     try:
         db = db_instance.db
         
-        # 30 saniyeden eski ringing aramaları "missed" olarak işaretle ve sil
-        thirty_seconds_ago = datetime.utcnow() - timedelta(seconds=30)
+        # 20 saniyeden eski ringing aramaları sil (daha agresif)
+        twenty_seconds_ago = datetime.utcnow() - timedelta(seconds=20)
         await db.call_requests.delete_many(
-            {"status": "ringing", "created_at": {"$lt": thirty_seconds_ago}}
+            {"status": "ringing", "created_at": {"$lt": twenty_seconds_ago}}
         )
         
-        # Tamamlanmış aramaları temizle (ended, rejected, missed)
+        # Tamamlanmış aramaları temizle (ended, rejected, missed, accepted)
+        # Accepted de sil çünkü Agora bağlantısı kuruldu, artık call_requests'e ihtiyaç yok
         await db.call_requests.delete_many(
-            {"status": {"$in": ["ended", "rejected", "missed"]}}
+            {"status": {"$in": ["ended", "rejected", "missed", "accepted"]}}
         )
         
-        # Bu kullanıcıya gelen çalan arama var mı?
+        # Bu kullanıcıya gelen SADECE "ringing" durumundaki arama var mı?
         incoming_call = await db.call_requests.find_one({
             "receiver_id": user_id,
             "status": "ringing"
