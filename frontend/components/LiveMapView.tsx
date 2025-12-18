@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Dimensions, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // react-native-maps'i sadece native platformlarda yükle
 let MapView: any = null;
@@ -29,12 +27,16 @@ interface LiveMapViewProps {
   isDriver: boolean;
   userName?: string;
   otherUserName?: string;
-  destinationLocation?: { latitude: number; longitude: number; address?: string } | null;
-  onDistanceUpdate?: (distance: number, duration: number) => void;
+  otherUserId?: string;
+  price?: number;
+  onBlock?: () => void;
+  onReport?: () => void;
+  onCall?: (type: 'audio' | 'video') => void;
+  onComplete?: () => void;
 }
 
-// Kullanıcının kendi API anahtarı (mobilde çalışır)
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyCWNE9hKK9rqJKsRACnJ9alkVouKUZvESo';
+// Kullanıcının kendi API anahtarı
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 export default function LiveMapView({
   userLocation,
@@ -42,13 +44,18 @@ export default function LiveMapView({
   isDriver,
   userName = 'Sen',
   otherUserName = 'Karşı Taraf',
-  destinationLocation,
-  onDistanceUpdate,
+  otherUserId,
+  price,
+  onBlock,
+  onReport,
+  onCall,
+  onComplete,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
+  const [streetName, setStreetName] = useState<string>('');
 
   // Polyline decode fonksiyonu
   const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
@@ -83,25 +90,24 @@ export default function LiveMapView({
     return points;
   };
 
-  // Google Directions API ile EN KISA YOL rotası al
+  // Google Directions API ile rota al
   const fetchRoute = async () => {
     if (!userLocation || !otherLocation) return;
 
     try {
-      // Her zaman şoförden yolcuya doğru hesapla - böylece iki taraf da aynı sonucu görür
+      // Her zaman şoförden yolcuya hesapla - her iki taraf da aynı değeri görsün
       let origin, destination;
       if (isDriver) {
         origin = `${userLocation.latitude},${userLocation.longitude}`;
         destination = `${otherLocation.latitude},${otherLocation.longitude}`;
       } else {
-        // Yolcu için de şoförden yolcuya hesapla (şoför -> yolcu)
         origin = `${otherLocation.latitude},${otherLocation.longitude}`;
         destination = `${userLocation.latitude},${userLocation.longitude}`;
       }
       
-      console.log('🗺️ Rota hesaplanıyor (şoför->yolcu):', origin, '->', destination);
+      console.log('🗺️ Rota hesaplanıyor:', origin, '->', destination);
       
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr&alternatives=false`;
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr`;
       
       const response = await fetch(url);
       const data = await response.json();
@@ -110,23 +116,23 @@ export default function LiveMapView({
         const route = data.routes[0];
         const leg = route.legs[0];
         
-        // Mesafe ve süre (en kısa yol) - Google'dan gelen gerçek değerler
+        // Mesafe ve süre - Google'dan gelen gerçek değerler
         const distKm = leg.distance.value / 1000;
         const durMin = Math.round(leg.duration.value / 60);
         
         setDistance(distKm);
         setDuration(durMin);
         
-        // Parent component'e bildir (senkronizasyon için)
-        if (onDistanceUpdate) {
-          onDistanceUpdate(distKm, durMin);
-        }
-        
         console.log('✅ Rota bulundu:', distKm.toFixed(1), 'km,', durMin, 'dakika');
         
-        // Polyline decode - yeşil çizgi için
+        // Polyline decode
         const points = decodePolyline(route.overview_polyline.points);
         setRouteCoordinates(points);
+        
+        // Şoförün bulunduğu sokak/cadde adı
+        if (!isDriver && leg.start_address) {
+          setStreetName(leg.start_address.split(',')[0]);
+        }
       } else {
         console.log('⚠️ Rota bulunamadı, düz çizgi kullanılıyor');
         // Fallback: Düz çizgi mesafe
@@ -138,13 +144,9 @@ export default function LiveMapView({
         setDistance(dist);
         setDuration(dur);
         setRouteCoordinates([userLocation, otherLocation]);
-        if (onDistanceUpdate) {
-          onDistanceUpdate(dist, dur);
-        }
       }
     } catch (error) {
       console.error('Rota hatası:', error);
-      // Fallback
       if (userLocation && otherLocation) {
         const dist = calculateDistance(
           userLocation.latitude, userLocation.longitude,
@@ -154,9 +156,6 @@ export default function LiveMapView({
         setDistance(dist);
         setDuration(dur);
         setRouteCoordinates([userLocation, otherLocation]);
-        if (onDistanceUpdate) {
-          onDistanceUpdate(dist, dur);
-        }
       }
     }
   };
@@ -176,15 +175,8 @@ export default function LiveMapView({
 
   // Konum değiştiğinde rota güncelle
   useEffect(() => {
-    console.log('🗺️ LiveMapView - userLocation:', userLocation);
-    console.log('🗺️ LiveMapView - otherLocation:', otherLocation);
-    console.log('🗺️ LiveMapView - isDriver:', isDriver);
-    
     if (userLocation && otherLocation) {
-      console.log('🗺️ İki konum da var, rota hesaplanıyor...');
       fetchRoute();
-    } else {
-      console.log('⚠️ Konum eksik - userLocation:', !!userLocation, 'otherLocation:', !!otherLocation);
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
@@ -192,26 +184,24 @@ export default function LiveMapView({
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
-        const coordinates = [userLocation, otherLocation];
-        if (destinationLocation) {
-          coordinates.push(destinationLocation);
-        }
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 180, right: 60, bottom: 120, left: 60 },
+        mapRef.current?.fitToCoordinates([userLocation, otherLocation], {
+          edgePadding: { top: 150, right: 50, bottom: 250, left: 50 },
           animated: true,
         });
       }, 500);
     }
-  }, [userLocation, otherLocation, destinationLocation]);
+  }, [userLocation, otherLocation]);
 
   // Google Maps'te navigasyon aç
-  const openGoogleMapsNavigation = (dest: { latitude: number; longitude: number }) => {
+  const openNavigation = () => {
+    if (!otherLocation) return;
+    
     const url = Platform.select({
-      ios: `comgooglemaps://?daddr=${dest.latitude},${dest.longitude}&directionsmode=driving`,
-      android: `google.navigation:q=${dest.latitude},${dest.longitude}&mode=d`,
+      ios: `comgooglemaps://?daddr=${otherLocation.latitude},${otherLocation.longitude}&directionsmode=driving`,
+      android: `google.navigation:q=${otherLocation.latitude},${otherLocation.longitude}&mode=d`,
     });
 
-    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}&travelmode=driving`;
+    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${otherLocation.latitude},${otherLocation.longitude}&travelmode=driving`;
 
     if (url) {
       Linking.canOpenURL(url)
@@ -222,9 +212,7 @@ export default function LiveMapView({
             Linking.openURL(webUrl);
           }
         })
-        .catch(() => {
-          Linking.openURL(webUrl);
-        });
+        .catch(() => Linking.openURL(webUrl));
     } else {
       Linking.openURL(webUrl);
     }
@@ -236,12 +224,6 @@ export default function LiveMapView({
       <View style={styles.webPlaceholder}>
         <Ionicons name="map" size={60} color="#22C55E" />
         <Text style={styles.webText}>Harita (Mobil Uygulamada)</Text>
-        {distance && duration && (
-          <View style={styles.webInfo}>
-            <Text style={styles.webInfoText}>📍 {distance.toFixed(1)} km</Text>
-            <Text style={styles.webInfoText}>⏱️ {duration} dk</Text>
-          </View>
-        )}
       </View>
     );
   }
@@ -267,106 +249,143 @@ export default function LiveMapView({
         initialRegion={initialRegion}
         showsUserLocation={false}
         showsMyLocationButton={false}
-        showsCompass={true}
+        showsCompass={false}
         mapType="standard"
       >
-        {/* YEŞİL ROTA ÇİZGİSİ - EN KISA YOL */}
+        {/* ROTA ÇİZGİSİ */}
         {routeCoordinates.length >= 2 && (
           <Polyline
             coordinates={routeCoordinates}
             strokeColor="#22C55E"
-            strokeWidth={6}
-            lineDashPattern={[0]}
+            strokeWidth={5}
           />
         )}
 
-        {/* KULLANICI - Ben */}
+        {/* BEN */}
         {userLocation && (
-          <Marker
-            coordinate={userLocation}
-            title={`${userName} (Sen)`}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={[styles.markerContainer, isDriver ? styles.driverMarker : styles.passengerMarker]}>
-              <Text style={styles.markerEmoji}>
-                {isDriver ? '🚗' : '🧍'}
-              </Text>
+          <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
+            <View style={[styles.marker, isDriver ? styles.driverMarker : styles.passengerMarker]}>
+              <Text style={styles.markerEmoji}>{isDriver ? '🚗' : '🧍'}</Text>
             </View>
           </Marker>
         )}
 
         {/* KARŞI TARAF */}
         {otherLocation && (
-          <Marker
-            coordinate={otherLocation}
-            title={otherUserName}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={[styles.markerContainer, !isDriver ? styles.driverMarker : styles.passengerMarker]}>
-              <Text style={styles.markerEmoji}>
-                {!isDriver ? '🚗' : '🧍'}
-              </Text>
-            </View>
-          </Marker>
-        )}
-
-        {/* HEDEF NOKTASI */}
-        {destinationLocation && (
-          <Marker
-            coordinate={destinationLocation}
-            title="Hedef"
-            description={destinationLocation.address}
-          >
-            <View style={styles.destinationMarker}>
-              <Ionicons name="flag" size={24} color="#FFF" />
+          <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
+            <View style={[styles.marker, !isDriver ? styles.driverMarker : styles.passengerMarker]}>
+              <Text style={styles.markerEmoji}>{!isDriver ? '🚗' : '🧍'}</Text>
             </View>
           </Marker>
         )}
       </MapView>
 
-      {/* ÜST KISIM - NAVİGASYON + MESAFE/SÜRE + BULUŞMA */}
-      <View style={styles.topContainer}>
-        {/* Navigasyon Butonu - En Üstte */}
-        {otherLocation && (
-          <TouchableOpacity
-            style={styles.navigationButton}
-            onPress={() => openGoogleMapsNavigation(otherLocation)}
-          >
-            <Ionicons name="navigate" size={24} color="#FFF" />
-            <Text style={styles.navigationButtonText}>
-              {isDriver ? 'Yolcuya Git' : 'Şoförü Gör'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Mesafe ve Süre Bilgisi */}
-        {distance && duration && (
-          <View style={styles.infoContainer}>
-            <View style={styles.infoItem}>
-              <Ionicons name="speedometer" size={20} color="#22C55E" />
-              <Text style={styles.infoText}>{distance.toFixed(1)} km</Text>
-            </View>
-            <View style={styles.infoDivider} />
-            <View style={styles.infoItem}>
-              <Ionicons name="time" size={20} color="#22C55E" />
-              <Text style={styles.infoText}>{duration} dk</Text>
-            </View>
-          </View>
-        )}
-
+      {/* ÜST BİLGİ - Transparan */}
+      <View style={styles.topInfo}>
+        {/* Mesafe ve Süre */}
+        <View style={styles.infoRow}>
+          <Text style={styles.infoText}>
+            📍 {distance ? `${distance.toFixed(1)} km` : '--'}
+          </Text>
+          <Text style={styles.infoText}>
+            ⏱️ {duration ? `${duration} dk` : '--'}
+          </Text>
+          {price && (
+            <Text style={styles.priceText}>💰 {price} ₺</Text>
+          )}
+        </View>
+        
         {/* Buluşma Mesajı */}
         {duration && (
-          <View style={styles.meetingContainer}>
-            <Text style={styles.meetingText}>
-              🤝 {duration} dakika sonra buluşacaksınız!
-            </Text>
-          </View>
+          <Text style={styles.meetingText}>
+            🤝 {duration} dakika sonra buluşacaksınız!
+          </Text>
+        )}
+        
+        {/* Şoförün bulunduğu sokak (yolcu için) */}
+        {!isDriver && streetName && (
+          <Text style={styles.streetText}>📍 {streetName}</Text>
         )}
       </View>
 
-      {/* CANLI GÖSTERGE - Sağ Alt */}
+      {/* ALT BUTONLAR */}
+      <View style={styles.bottomButtons}>
+        {/* Navigasyon Butonu */}
+        <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
+          <Ionicons name="navigate" size={24} color="#FFF" />
+          <Text style={styles.navButtonText}>
+            {isDriver ? 'Yolcuya Git' : 'Şoförü Gör'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Arama Butonları */}
+        <View style={styles.actionButtons}>
+          {/* Sesli Arama */}
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => onCall?.('audio')}
+          >
+            <View style={styles.callIcon}>
+              <Ionicons name="call" size={24} color="#FFF" />
+            </View>
+            <Text style={styles.actionLabel}>Sesli</Text>
+          </TouchableOpacity>
+
+          {/* Görüntülü Arama */}
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => onCall?.('video')}
+          >
+            <View style={[styles.callIcon, { backgroundColor: '#3B82F6' }]}>
+              <Ionicons name="videocam" size={24} color="#FFF" />
+            </View>
+            <Text style={styles.actionLabel}>Video</Text>
+          </TouchableOpacity>
+
+          {/* Bitir */}
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={onComplete}
+          >
+            <View style={[styles.callIcon, { backgroundColor: '#EF4444' }]}>
+              <Ionicons name="checkmark-done" size={24} color="#FFF" />
+            </View>
+            <Text style={styles.actionLabel}>Bitir</Text>
+          </TouchableOpacity>
+
+          {/* Engelle/Şikayet */}
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => {
+              Alert.alert(
+                'İşlem Seçin',
+                `${otherUserName} için ne yapmak istiyorsunuz?`,
+                [
+                  { text: 'İptal', style: 'cancel' },
+                  { 
+                    text: '🚫 Engelle', 
+                    style: 'destructive',
+                    onPress: onBlock 
+                  },
+                  { 
+                    text: '⚠️ Şikayet Et', 
+                    onPress: onReport 
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={[styles.callIcon, { backgroundColor: '#6B7280' }]}>
+              <Ionicons name="ellipsis-horizontal" size={24} color="#FFF" />
+            </View>
+            <Text style={styles.actionLabel}>Diğer</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* CANLI Gösterge */}
       <View style={styles.liveIndicator}>
-        <View style={styles.livePulse} />
+        <View style={styles.liveDot} />
         <Text style={styles.liveText}>CANLI</Text>
       </View>
     </View>
@@ -391,29 +410,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  webInfo: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  webInfoText: {
-    fontSize: 18,
-    color: '#333',
-    marginVertical: 4,
-  },
-  // Marker Styles
-  markerContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  // Marker
+  marker: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 6,
   },
   driverMarker: {
     backgroundColor: '#EF4444',
@@ -422,123 +427,123 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
   },
   markerEmoji: {
-    fontSize: 26,
+    fontSize: 24,
   },
-  destinationMarker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F59E0B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  // Üst Container - Tüm üst elemanlar
-  topContainer: {
+  // Üst Bilgi - Transparan
+  topInfo: {
     position: 'absolute',
     top: 50,
     left: 16,
     right: 16,
   },
-  // Navigasyon Butonu
-  navigationButton: {
-    backgroundColor: '#4285F4',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+  infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 6,
-    marginBottom: 10,
-  },
-  navigationButtonText: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  // Mesafe/Süre Bilgisi
-  infoContainer: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    gap: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-    marginBottom: 10,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   infoText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#FFF',
   },
-  infoDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: '#E5E7EB',
-  },
-  // Buluşma Mesajı
-  meetingContainer: {
-    backgroundColor: '#22C55E',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
+  priceText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#22C55E',
   },
   meetingText: {
+    textAlign: 'center',
+    marginTop: 8,
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#FFF',
+    backgroundColor: 'rgba(34, 197, 94, 0.8)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  streetText: {
+    textAlign: 'center',
+    marginTop: 6,
+    fontSize: 13,
+    color: '#FFF',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  // Alt Butonlar
+  bottomButtons: {
+    position: 'absolute',
+    bottom: 30,
+    left: 16,
+    right: 16,
+  },
+  navButton: {
+    backgroundColor: '#4285F4',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  navButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFF',
   },
-  // Live Indicator
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  actionButton: {
+    alignItems: 'center',
+  },
+  callIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  // Canlı Gösterge
   liveIndicator: {
     position: 'absolute',
-    bottom: 30,
+    top: 50,
     right: 16,
-    backgroundColor: '#EF4444',
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
   },
-  livePulse: {
+  liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#FFF',
   },
   liveText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#FFF',
   },
