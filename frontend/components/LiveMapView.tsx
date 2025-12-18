@@ -261,6 +261,8 @@ export default function LiveMapView({
         showsIndoors={false}
         showsIndoorLevelPicker={false}
         showsPointsOfInterest={false}
+        paddingAdjustmentBehavior="automatic"
+        mapPadding={{ left: 0, right: 0, top: 0, bottom: 100 }}
         customMapStyle={[
           {
             "featureType": "administrative",
