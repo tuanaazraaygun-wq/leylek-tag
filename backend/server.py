@@ -1290,11 +1290,15 @@ async def check_incoming_call(user_id: str):
     try:
         db = db_instance.db
         
-        # 30 saniyeden eski ringing aramaları "missed" olarak işaretle
+        # 30 saniyeden eski ringing aramaları "missed" olarak işaretle ve sil
         thirty_seconds_ago = datetime.utcnow() - timedelta(seconds=30)
-        await db.call_requests.update_many(
-            {"status": "ringing", "created_at": {"$lt": thirty_seconds_ago}},
-            {"$set": {"status": "missed"}}
+        await db.call_requests.delete_many(
+            {"status": "ringing", "created_at": {"$lt": thirty_seconds_ago}}
+        )
+        
+        # Tamamlanmış aramaları temizle (ended, rejected, missed)
+        await db.call_requests.delete_many(
+            {"status": {"$in": ["ended", "rejected", "missed"]}}
         )
         
         # Bu kullanıcıya gelen çalan arama var mı?
