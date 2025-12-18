@@ -1783,21 +1783,31 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   
   // Gelen arama polling - Şoför için
   useEffect(() => {
-    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall) return;
+    // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
+    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall || isCallCaller) return;
+    
+    // Sadece matched/in_progress durumunda polling yap
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+    
+    let isActive = true;
     
     const checkIncomingCall = async () => {
       // Çift kontrol - state değişmiş olabilir
-      if (showVoiceCall || showIncomingCall) return;
+      if (!isActive || showVoiceCall || showIncomingCall || isCallCaller) return;
       
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         
+        if (!isActive) return;
         if (!response.ok) return;
         
         const text = await response.text();
         if (!text || text.trim() === '') return;
         
         const data = JSON.parse(text);
+        
+        // Son kontrol
+        if (!isActive || showVoiceCall || showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
           console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
@@ -1809,9 +1819,7 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           setShowIncomingCall(true);
         }
       } catch (error) {
-        if (!(error instanceof SyntaxError)) {
-          console.error('Gelen arama kontrolü hatası:', error);
-        }
+        // Sessiz kal
       }
     };
     
@@ -1820,8 +1828,11 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     // Sonra her 3 saniyede bir kontrol et
     const interval = setInterval(checkIncomingCall, 3000);
     
-    return () => clearInterval(interval);
-  }, [user?.id, activeTag, showVoiceCall, showIncomingCall]);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [user?.id, activeTag, showVoiceCall, showIncomingCall, isCallCaller]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
