@@ -2036,6 +2036,7 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
             otherUserId={activeTag?.passenger_id}
             price={activeTag?.final_price}
+            routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               const passengerName = activeTag.passenger_name || 'Yolcu';
               try {
