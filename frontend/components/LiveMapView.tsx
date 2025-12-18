@@ -459,32 +459,32 @@ const styles = StyleSheet.create({
   },
   // Marker Outer - Geniş alan (tüm telefonlarda taşma önler)
   markerOuter: {
-    width: 80,
-    height: 80,
+    width: 90,
+    height: 90,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
   // Marker Inner - Tam yuvarlak daire (iPhone dahil tüm cihazlar)
   markerInner: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
   },
   driverMarker: {
-    backgroundColor: '#EF4444',
+    backgroundColor: '#DC2626', // Daha koyu kırmızı
   },
   passengerMarker: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#2563EB', // Daha koyu mavi
   },
   // Üst Kart
   topCard: {
