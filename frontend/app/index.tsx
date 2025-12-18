@@ -1049,7 +1049,20 @@ function PassengerDashboard({
     const checkIncomingCall = async () => {
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-        const data = await response.json();
+        
+        // Response kontrolü
+        if (!response.ok) {
+          console.log('⚠️ Check incoming response not ok:', response.status);
+          return;
+        }
+        
+        const text = await response.text();
+        if (!text || text.trim() === '') {
+          console.log('⚠️ Check incoming empty response');
+          return;
+        }
+        
+        const data = JSON.parse(text);
         
         if (data.success && data.has_incoming && data.call) {
           console.log('📞 Gelen arama var:', data.call);
@@ -1061,11 +1074,16 @@ function PassengerDashboard({
           setShowIncomingCall(true);
         }
       } catch (error) {
-        console.error('Gelen arama kontrolü hatası:', error);
+        // JSON parse hatası için sessiz kal
+        if (error instanceof SyntaxError) {
+          console.log('⚠️ Gelen arama JSON parse hatası - yoksay');
+        } else {
+          console.error('Gelen arama kontrolü hatası:', error);
+        }
       }
     };
     
-    const interval = setInterval(checkIncomingCall, 2000);
+    const interval = setInterval(checkIncomingCall, 3000); // 2 saniyeden 3 saniyeye çıkardık
     checkIncomingCall();
     
     return () => clearInterval(interval);
