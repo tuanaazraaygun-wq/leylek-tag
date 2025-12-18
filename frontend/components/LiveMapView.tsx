@@ -31,6 +31,7 @@ interface LiveMapViewProps {
   otherUserName?: string;
   otherUserId?: string;
   price?: number;
+  routeInfo?: { distance_km: number; duration_min: number } | null;
   onBlock?: () => void;
   onReport?: () => void;
   onCall?: (type: 'audio' | 'video') => void;
