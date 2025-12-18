@@ -305,20 +305,26 @@ export default function LiveMapView({
 
       {/* ALT BUTONLAR - SİMETRİK DÜZEN */}
       <View style={styles.bottomContainer}>
-        {/* Navigasyon Butonu */}
-        <TouchableOpacity style={styles.navButton} onPress={openNavigation} activeOpacity={0.8}>
-          <LinearGradient
-            colors={['#4285F4', '#2563EB']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.navButtonGradient}
-          >
-            <Ionicons name="navigate" size={22} color="#FFF" />
-            <Text style={styles.navButtonText}>
-              {isDriver ? 'Yolcuya Git' : 'Şoförü Gör'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* Navigasyon Butonu - SADECE ŞOFÖR İÇİN */}
+        {isDriver ? (
+          <TouchableOpacity style={styles.navButton} onPress={openNavigation} activeOpacity={0.8}>
+            <LinearGradient
+              colors={['#4285F4', '#2563EB']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.navButtonGradient}
+            >
+              <Ionicons name="navigate" size={22} color="#FFF" />
+              <Text style={styles.navButtonText}>Yolcuya Git (Google Maps)</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          /* Yolcu için: Şoförü haritada izleme bilgisi */
+          <View style={styles.watchingInfo}>
+            <Ionicons name="eye" size={20} color="#22C55E" />
+            <Text style={styles.watchingText}>Şoförün konumunu canlı izliyorsunuz</Text>
+          </View>
+        )}
 
         {/* Arama ve İşlem Butonları - 4 Sütun */}
         <View style={styles.actionRow}>
