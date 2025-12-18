@@ -366,7 +366,7 @@ export default function LiveMapView({
               style={styles.navButtonGradient}
             >
               <Ionicons name="navigate" size={22} color="#FFF" />
-              <Text style={styles.navButtonText}>Yolcuya Git (Google Maps)</Text>
+              <Text style={styles.navButtonText}>Yolcuya Git</Text>
             </LinearGradient>
           </TouchableOpacity>
         ) : (
