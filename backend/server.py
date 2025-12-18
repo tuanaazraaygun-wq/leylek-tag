@@ -1265,3 +1265,118 @@ async def log_voice_call(
         logger.error(f"Arama loglama hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
 
+
+
+# ==================== BLOCK & REPORT SYSTEM ====================
+@api_router.post("/user/block")
+async def block_user(user_id: str, blocked_user_id: str):
+    """Kullanıcıyı engelle"""
+    try:
+        db = db_instance.db
+        
+        # Zaten engellenmiş mi kontrol et
+        existing = await db.blocked_users.find_one({
+            "user_id": user_id,
+            "blocked_user_id": blocked_user_id
+        })
+        
+        if existing:
+            return {"success": False, "message": "Bu kullanıcı zaten engellenmiş"}
+        
+        # Engelleme kaydı oluştur
+        await db.blocked_users.insert_one({
+            "user_id": user_id,
+            "blocked_user_id": blocked_user_id,
+            "created_at": datetime.utcnow()
+        })
+        
+        logger.info(f"🚫 Kullanıcı engellendi: {user_id} -> {blocked_user_id}")
+        
+        return {"success": True, "message": "Kullanıcı engellendi"}
+    except Exception as e:
+        logger.error(f"Engelleme hatası: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.post("/user/unblock")
+async def unblock_user(user_id: str, blocked_user_id: str):
+    """Engeli kaldır"""
+    try:
+        db = db_instance.db
+        
+        result = await db.blocked_users.delete_one({
+            "user_id": user_id,
+            "blocked_user_id": blocked_user_id
+        })
+        
+        if result.deleted_count == 0:
+            return {"success": False, "message": "Engel bulunamadı"}
+        
+        logger.info(f"✅ Engel kaldırıldı: {user_id} -> {blocked_user_id}")
+        
+        return {"success": True, "message": "Engel kaldırıldı"}
+    except Exception as e:
+        logger.error(f"Engel kaldırma hatası: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.get("/user/blocked-list")
+async def get_blocked_list(user_id: str):
+    """Engellenen kullanıcılar listesi"""
+    try:
+        db = db_instance.db
+        
+        blocked = await db.blocked_users.find({"user_id": user_id}).to_list(100)
+        blocked_ids = [b["blocked_user_id"] for b in blocked]
+        
+        return {"success": True, "blocked_users": blocked_ids}
+    except Exception as e:
+        logger.error(f"Engel listesi hatası: {str(e)}")
+        return {"success": False, "blocked_users": []}
+
+
+@api_router.post("/user/report")
+async def report_user(user_id: str, reported_user_id: str, reason: str, description: str = ""):
+    """Kullanıcıyı şikayet et"""
+    try:
+        db = db_instance.db
+        
+        # Şikayet kaydı oluştur
+        report = {
+            "reporter_id": user_id,
+            "reported_user_id": reported_user_id,
+            "reason": reason,
+            "description": description,
+            "status": "pending",  # pending, reviewed, resolved, dismissed
+            "created_at": datetime.utcnow()
+        }
+        
+        await db.reports.insert_one(report)
+        
+        logger.warning(f"⚠️ Şikayet: {user_id} -> {reported_user_id} ({reason})")
+        
+        return {"success": True, "message": "Şikayetiniz alındı. En kısa sürede incelenecektir."}
+    except Exception as e:
+        logger.error(f"Şikayet hatası: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.get("/user/is-blocked")
+async def check_if_blocked(user_id: str, other_user_id: str):
+    """İki kullanıcı arasında engel var mı kontrol et"""
+    try:
+        db = db_instance.db
+        
+        # Her iki yönde de kontrol et
+        blocked = await db.blocked_users.find_one({
+            "$or": [
+                {"user_id": user_id, "blocked_user_id": other_user_id},
+                {"user_id": other_user_id, "blocked_user_id": user_id}
+            ]
+        })
+        
+        return {"success": True, "is_blocked": blocked is not None}
+    except Exception as e:
+        return {"success": False, "is_blocked": False}
+
+
