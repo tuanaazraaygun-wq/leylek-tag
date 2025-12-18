@@ -199,12 +199,35 @@ export default function VideoCall({
           console.log('👤👤👤 KARŞI TARAF KATILDI! UID:', uid);
           setRemoteUid(uid);
         },
-        onUserOffline: (connection: any, uid: number, reason: number) => {
+        onUserOffline: async (connection: any, uid: number, reason: number) => {
           console.log('👤 Kullanıcı ayrıldı:', uid, 'sebep:', reason);
           setRemoteUid(null);
+          
           // Karşı taraf ayrıldıysa aramayı sonlandır
+          console.log('📞 Karşı taraf kapattı, arama sonlandırılıyor...');
+          
+          // Backend'e bildir
+          const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+          try {
+            await fetch(`${BACKEND_URL}/api/voice/end-call?tag_id=${channelName}&user_id=${userId}`, {
+              method: 'POST'
+            });
+          } catch (e) {
+            console.log('End call error:', e);
+          }
+          
+          // Cleanup ve çıkış
+          if (engineRef.current) {
+            try {
+              engineRef.current.leaveChannel();
+              engineRef.current.release();
+              engineRef.current = null;
+            } catch (e) {}
+          }
+          
           Alert.alert('Arama Sonlandı', 'Karşı taraf aramadan ayrıldı.');
-          handleEndCall();
+          setCallState('ended');
+          onEnd?.();
         },
         onError: (err: number, msg: string) => {
           console.error('❌ Agora Error:', err, msg);
