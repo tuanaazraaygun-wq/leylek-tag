@@ -1179,25 +1179,27 @@ async def clear_all_data():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== VOICE CALL SYSTEM ====================
+# ==================== VOICE CALL SYSTEM v2 ====================
+# - Tek seferde tek arama
+# - 10 dakika süre limiti
+# - Müsait değil durumu
+# - Sadece eşleşen kişiler arayabilir
+
 class StartCallRequest(BaseModel):
     tag_id: str
     caller_id: str
     caller_name: str = "Arayan"
-    call_type: str = "audio"
+    call_type: str = "audio"  # audio veya video
 
 @app.post("/api/voice/start-call")
 async def start_voice_call(request: StartCallRequest):
-    """
-    Arama başlat - karşı tarafa bildirim gönder
-    """
+    """Arama başlat - tek seferde tek arama"""
     try:
         tag_id = request.tag_id
         caller_id = request.caller_id
         caller_name = request.caller_name
         call_type = request.call_type
         
-        # Parametre kontrolü
         if not tag_id or not caller_id:
             return {"success": False, "detail": "tag_id ve caller_id gerekli"}
         
@@ -1208,6 +1210,10 @@ async def start_voice_call(request: StartCallRequest):
         if not tag:
             return {"success": False, "detail": "TAG bulunamadı"}
         
+        # Sadece eşleşen kişiler arayabilir
+        if tag.get("status") not in ["matched", "in_progress"]:
+            return {"success": False, "detail": "Sadece eşleşme sonrası arama yapılabilir"}
+        
         # Karşı tarafı belirle
         if caller_id == str(tag.get("passenger_id", "")):
             receiver_id = str(tag.get("driver_id", ""))
@@ -1216,29 +1222,60 @@ async def start_voice_call(request: StartCallRequest):
             receiver_id = str(tag.get("passenger_id", ""))
             receiver_name = tag.get("passenger_name", "Yolcu")
         
-        # Call request oluştur
+        # Arayan zaten aramada mı?
+        caller_in_call = await db.call_requests.find_one({
+            "$or": [
+                {"caller_id": caller_id, "status": {"$in": ["ringing", "active"]}},
+                {"receiver_id": caller_id, "status": {"$in": ["ringing", "active"]}}
+            ]
+        })
+        if caller_in_call:
+            return {"success": False, "detail": "Zaten bir aramada olduğunuz için yeni arama başlatamazsınız"}
+        
+        # Karşı taraf aramada mı?
+        receiver_in_call = await db.call_requests.find_one({
+            "$or": [
+                {"caller_id": receiver_id, "status": {"$in": ["ringing", "active"]}},
+                {"receiver_id": receiver_id, "status": {"$in": ["ringing", "active"]}}
+            ]
+        })
+        if receiver_in_call:
+            return {"success": False, "detail": "Karşı taraf başka bir aramada, lütfen bekleyin"}
+        
+        # Karşı taraf müsait mi?
+        receiver_user = await db.users.find_one({"_id": ObjectId(receiver_id)})
+        if receiver_user and receiver_user.get("call_available") == False:
+            return {"success": False, "detail": "Karşı taraf şu an aramalara müsait değil"}
+        
+        # Eski tamamlanmış aramaları temizle (bu TAG için)
+        await db.call_requests.delete_many({
+            "tag_id": tag_id, 
+            "status": {"$in": ["rejected", "ended", "missed"]}
+        })
+        
+        # Yeni arama oluştur
         call_request = {
             "tag_id": tag_id,
             "caller_id": caller_id,
             "caller_name": caller_name or "Arayan",
             "receiver_id": receiver_id,
             "receiver_name": receiver_name,
-            "call_type": call_type,  # audio veya video
-            "status": "ringing",  # ringing, accepted, rejected, ended
-            "created_at": datetime.utcnow()
+            "call_type": call_type,
+            "status": "ringing",
+            "created_at": datetime.utcnow(),
+            "started_at": None,
+            "ended_at": None,
+            "max_duration": 600  # 10 dakika = 600 saniye
         }
         
-        # Eski call request'leri sil (aynı TAG için)
-        await db.call_requests.delete_many({"tag_id": tag_id})
-        
-        # Yeni call request kaydet
-        await db.call_requests.insert_one(call_request)
+        result = await db.call_requests.insert_one(call_request)
         
         logger.info(f"📞 Arama başlatıldı: {caller_name} → {receiver_name} ({call_type})")
         
         return {
             "success": True,
             "message": "Arama başlatıldı",
+            "call_id": str(result.inserted_id),
             "channel_name": tag_id,
             "call_type": call_type
         }
