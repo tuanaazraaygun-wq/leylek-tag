@@ -155,7 +155,7 @@ export default function LiveMapView({
 
   useEffect(() => {
     if (userLocation && otherLocation) {
-      fetchRoute();
+      fetchRoutePolyline();
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
