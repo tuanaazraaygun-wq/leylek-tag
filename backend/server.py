@@ -1378,9 +1378,22 @@ async def reject_call(tag_id: str, user_id: str):
 
 @app.post("/api/voice/end-call")
 async def end_call(tag_id: str, user_id: str):
-    """Aramayı sonlandır - tamamen sil"""
+    """Aramayı sonlandır - tamamen sil ve geçmişe kaydet"""
     try:
         db = db_instance.db
+        
+        # Mevcut aramayı bul
+        call = await db.call_requests.find_one({"tag_id": tag_id})
+        
+        if call:
+            # Arama geçmişine kaydet (5 sn bekleme kontrolü için)
+            await db.call_history.insert_one({
+                "tag_id": tag_id,
+                "caller_id": call.get("caller_id"),
+                "receiver_id": call.get("receiver_id"),
+                "call_type": call.get("call_type"),
+                "ended_at": datetime.utcnow()
+            })
         
         # Tüm aramaları bu TAG için sil (ikisi de çıksın)
         await db.call_requests.delete_many({"tag_id": tag_id})
