@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // react-native-maps'i sadece native platformlarda yükle
 let MapView: any = null;
@@ -15,7 +18,6 @@ if (Platform.OS !== 'web') {
     Marker = Maps.Marker;
     Polyline = Maps.Polyline;
     PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
-    console.log('✅ react-native-maps yüklendi');
   } catch (e) {
     console.log('⚠️ react-native-maps yüklenemedi:', e);
   }
@@ -35,7 +37,6 @@ interface LiveMapViewProps {
   onComplete?: () => void;
 }
 
-// Kullanıcının kendi API anahtarı
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 export default function LiveMapView({
@@ -57,7 +58,7 @@ export default function LiveMapView({
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
   const [streetName, setStreetName] = useState<string>('');
 
-  // Polyline decode fonksiyonu
+  // Polyline decode
   const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
     const points: {latitude: number, longitude: number}[] = [];
     let index = 0, lat = 0, lng = 0;
@@ -82,10 +83,7 @@ export default function LiveMapView({
       const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
       lng += dlng;
 
-      points.push({
-        latitude: lat / 1e5,
-        longitude: lng / 1e5,
-      });
+      points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
     }
     return points;
   };
@@ -95,7 +93,6 @@ export default function LiveMapView({
     if (!userLocation || !otherLocation) return;
 
     try {
-      // Her zaman şoförden yolcuya hesapla - her iki taraf da aynı değeri görsün
       let origin, destination;
       if (isDriver) {
         origin = `${userLocation.latitude},${userLocation.longitude}`;
@@ -104,8 +101,6 @@ export default function LiveMapView({
         origin = `${otherLocation.latitude},${otherLocation.longitude}`;
         destination = `${userLocation.latitude},${userLocation.longitude}`;
       }
-      
-      console.log('🗺️ Rota hesaplanıyor:', origin, '->', destination);
       
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr`;
       
@@ -116,26 +111,19 @@ export default function LiveMapView({
         const route = data.routes[0];
         const leg = route.legs[0];
         
-        // Mesafe ve süre - Google'dan gelen gerçek değerler
         const distKm = leg.distance.value / 1000;
         const durMin = Math.round(leg.duration.value / 60);
         
         setDistance(distKm);
         setDuration(durMin);
         
-        console.log('✅ Rota bulundu:', distKm.toFixed(1), 'km,', durMin, 'dakika');
-        
-        // Polyline decode
         const points = decodePolyline(route.overview_polyline.points);
         setRouteCoordinates(points);
         
-        // Şoförün bulunduğu sokak/cadde adı
         if (!isDriver && leg.start_address) {
           setStreetName(leg.start_address.split(',')[0]);
         }
       } else {
-        console.log('⚠️ Rota bulunamadı, düz çizgi kullanılıyor');
-        // Fallback: Düz çizgi mesafe
         const dist = calculateDistance(
           userLocation.latitude, userLocation.longitude,
           otherLocation.latitude, otherLocation.longitude
@@ -146,7 +134,6 @@ export default function LiveMapView({
         setRouteCoordinates([userLocation, otherLocation]);
       }
     } catch (error) {
-      console.error('Rota hatası:', error);
       if (userLocation && otherLocation) {
         const dist = calculateDistance(
           userLocation.latitude, userLocation.longitude,
@@ -160,39 +147,34 @@ export default function LiveMapView({
     }
   };
 
-  // Haversine formülü
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
       Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   };
 
-  // Konum değiştiğinde rota güncelle
   useEffect(() => {
     if (userLocation && otherLocation) {
       fetchRoute();
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
-  // Haritayı konumlara fit et
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
         mapRef.current?.fitToCoordinates([userLocation, otherLocation], {
-          edgePadding: { top: 150, right: 50, bottom: 250, left: 50 },
+          edgePadding: { top: 180, right: 50, bottom: 280, left: 50 },
           animated: true,
         });
       }, 500);
     }
   }, [userLocation, otherLocation]);
 
-  // Google Maps'te navigasyon aç
   const openNavigation = () => {
     if (!otherLocation) return;
     
@@ -205,20 +187,13 @@ export default function LiveMapView({
 
     if (url) {
       Linking.canOpenURL(url)
-        .then((supported) => {
-          if (supported) {
-            Linking.openURL(url);
-          } else {
-            Linking.openURL(webUrl);
-          }
-        })
+        .then((supported) => Linking.openURL(supported ? url : webUrl))
         .catch(() => Linking.openURL(webUrl));
     } else {
       Linking.openURL(webUrl);
     }
   };
 
-  // Web placeholder
   if (Platform.OS === 'web' || !MapView) {
     return (
       <View style={styles.webPlaceholder}>
@@ -280,113 +255,124 @@ export default function LiveMapView({
         )}
       </MapView>
 
-      {/* ÜST BİLGİ - Transparan */}
-      <View style={styles.topInfo}>
-        {/* Mesafe ve Süre */}
-        <View style={styles.infoRow}>
-          <Text style={styles.infoText}>
-            📍 {distance ? `${distance.toFixed(1)} km` : '--'}
-          </Text>
-          <Text style={styles.infoText}>
-            ⏱️ {duration ? `${duration} dk` : '--'}
-          </Text>
-          {price && (
-            <Text style={styles.priceText}>💰 {price} ₺</Text>
-          )}
-        </View>
-        
-        {/* Buluşma Mesajı */}
-        {duration && (
-          <Text style={styles.meetingText}>
-            🤝 {duration} dakika sonra buluşacaksınız!
-          </Text>
-        )}
-        
-        {/* Şoförün bulunduğu sokak (yolcu için) */}
-        {!isDriver && streetName && (
-          <Text style={styles.streetText}>📍 {streetName}</Text>
-        )}
-      </View>
-
-      {/* ALT BUTONLAR */}
-      <View style={styles.bottomButtons}>
-        {/* Navigasyon Butonu */}
-        <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
-          <Ionicons name="navigate" size={24} color="#FFF" />
-          <Text style={styles.navButtonText}>
-            {isDriver ? 'Yolcuya Git' : 'Şoförü Gör'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Arama Butonları */}
-        <View style={styles.actionButtons}>
-          {/* Sesli Arama */}
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={() => onCall?.('audio')}
-          >
-            <View style={styles.callIcon}>
-              <Ionicons name="call" size={24} color="#FFF" />
+      {/* ÜST BİLGİ KARTI - MAVİ GRADIENT */}
+      <View style={styles.topCard}>
+        <LinearGradient
+          colors={['#3B82F6', '#1D4ED8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.topCardGradient}
+        >
+          {/* Üst Satır: Mesafe - Süre - Fiyat */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Ionicons name="navigate-circle" size={22} color="#FFF" />
+              <Text style={styles.statValue}>{distance ? `${distance.toFixed(1)} km` : '--'}</Text>
+              <Text style={styles.statLabel}>Mesafe</Text>
             </View>
-            <Text style={styles.actionLabel}>Sesli</Text>
-          </TouchableOpacity>
-
-          {/* Görüntülü Arama */}
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={() => onCall?.('video')}
-          >
-            <View style={[styles.callIcon, { backgroundColor: '#3B82F6' }]}>
-              <Ionicons name="videocam" size={24} color="#FFF" />
+            
+            <View style={styles.statDivider} />
+            
+            <View style={styles.statItemMain}>
+              <Ionicons name="time" size={26} color="#FFF" />
+              <Text style={styles.statValueBig}>{duration ? `${duration} dk` : '--'}</Text>
+              <Text style={styles.statLabel}>Tahmini Süre</Text>
             </View>
-            <Text style={styles.actionLabel}>Video</Text>
-          </TouchableOpacity>
-
-          {/* Bitir */}
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={onComplete}
-          >
-            <View style={[styles.callIcon, { backgroundColor: '#EF4444' }]}>
-              <Ionicons name="checkmark-done" size={24} color="#FFF" />
+            
+            <View style={styles.statDivider} />
+            
+            <View style={styles.statItem}>
+              <Ionicons name="cash" size={22} color="#22C55E" />
+              <Text style={styles.statValueGreen}>{price ? `₺${price}` : '--'}</Text>
+              <Text style={styles.statLabel}>Fiyat</Text>
             </View>
-            <Text style={styles.actionLabel}>Bitir</Text>
-          </TouchableOpacity>
+          </View>
 
-          {/* Engelle/Şikayet */}
-          <TouchableOpacity 
-            style={styles.actionButton} 
-            onPress={() => {
-              Alert.alert(
-                'İşlem Seçin',
-                `${otherUserName} için ne yapmak istiyorsunuz?`,
-                [
-                  { text: 'İptal', style: 'cancel' },
-                  { 
-                    text: '🚫 Engelle', 
-                    style: 'destructive',
-                    onPress: onBlock 
-                  },
-                  { 
-                    text: '⚠️ Şikayet Et', 
-                    onPress: onReport 
-                  },
-                ]
-              );
-            }}
-          >
-            <View style={[styles.callIcon, { backgroundColor: '#6B7280' }]}>
-              <Ionicons name="ellipsis-horizontal" size={24} color="#FFF" />
-            </View>
-            <Text style={styles.actionLabel}>Diğer</Text>
-          </TouchableOpacity>
-        </View>
+          {/* Alt Satır: Buluşma Mesajı */}
+          <View style={styles.meetingRow}>
+            <Text style={styles.meetingText}>
+              🤝 {duration ? `${duration} dakika sonra buluşacaksınız!` : 'Hesaplanıyor...'}
+            </Text>
+          </View>
+
+          {/* Şoförün Sokağı (Yolcu için) */}
+          {!isDriver && streetName ? (
+            <Text style={styles.streetText}>📍 Şoför: {streetName}</Text>
+          ) : null}
+        </LinearGradient>
       </View>
 
       {/* CANLI Gösterge */}
       <View style={styles.liveIndicator}>
         <View style={styles.liveDot} />
         <Text style={styles.liveText}>CANLI</Text>
+      </View>
+
+      {/* ALT BUTONLAR - SİMETRİK DÜZEN */}
+      <View style={styles.bottomContainer}>
+        {/* Navigasyon Butonu */}
+        <TouchableOpacity style={styles.navButton} onPress={openNavigation} activeOpacity={0.8}>
+          <LinearGradient
+            colors={['#4285F4', '#2563EB']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.navButtonGradient}
+          >
+            <Ionicons name="navigate" size={22} color="#FFF" />
+            <Text style={styles.navButtonText}>
+              {isDriver ? 'Yolcuya Git' : 'Şoförü Gör'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* Arama ve İşlem Butonları - 4 Sütun */}
+        <View style={styles.actionRow}>
+          {/* Sesli Arama */}
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('audio')} activeOpacity={0.8}>
+            <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
+              <Ionicons name="call" size={26} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.actionBtnLabel}>Sesli</Text>
+          </TouchableOpacity>
+
+          {/* Görüntülü Arama */}
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('video')} activeOpacity={0.8}>
+            <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.actionBtnCircle}>
+              <Ionicons name="videocam" size={26} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.actionBtnLabel}>Video</Text>
+          </TouchableOpacity>
+
+          {/* Bitir */}
+          <TouchableOpacity style={styles.actionBtn} onPress={onComplete} activeOpacity={0.8}>
+            <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
+              <Ionicons name="checkmark-done" size={26} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.actionBtnLabel}>Bitir</Text>
+          </TouchableOpacity>
+
+          {/* Diğer (Engelle/Şikayet) */}
+          <TouchableOpacity 
+            style={styles.actionBtn} 
+            activeOpacity={0.8}
+            onPress={() => {
+              Alert.alert(
+                `${otherUserName}`,
+                'Ne yapmak istiyorsunuz?',
+                [
+                  { text: 'İptal', style: 'cancel' },
+                  { text: '🚫 Engelle', style: 'destructive', onPress: onBlock },
+                  { text: '⚠️ Şikayet Et', onPress: onReport },
+                ]
+              );
+            }}
+          >
+            <View style={styles.actionBtnCircleGray}>
+              <Ionicons name="ellipsis-horizontal" size={26} color="#FFF" />
+            </View>
+            <Text style={styles.actionBtnLabel}>Diğer</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -412,13 +398,18 @@ const styles = StyleSheet.create({
   },
   // Marker
   marker: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   driverMarker: {
     backgroundColor: '#EF4444',
@@ -429,122 +420,176 @@ const styles = StyleSheet.create({
   markerEmoji: {
     fontSize: 24,
   },
-  // Üst Bilgi - Transparan
-  topInfo: {
+  // Üst Kart
+  topCard: {
     position: 'absolute',
     top: 50,
     left: 16,
     right: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
   },
-  infoRow: {
+  topCardGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+  },
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    justifyContent: 'space-between',
   },
-  infoText: {
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statItemMain: {
+    flex: 1.3,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  statValue: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFF',
+    marginTop: 4,
   },
-  priceText: {
-    fontSize: 18,
+  statValueBig: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 4,
+  },
+  statValueGreen: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#22C55E',
+    marginTop: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  meetingRow: {
+    marginTop: 12,
+    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   meetingText: {
-    textAlign: 'center',
-    marginTop: 8,
     fontSize: 15,
     fontWeight: 'bold',
     color: '#FFF',
-    backgroundColor: 'rgba(34, 197, 94, 0.8)',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    textAlign: 'center',
   },
   streetText: {
-    textAlign: 'center',
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 13,
-    color: '#FFF',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
   },
-  // Alt Butonlar
-  bottomButtons: {
+  // Canlı Gösterge
+  liveIndicator: {
+    position: 'absolute',
+    top: 56,
+    right: 24,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFF',
+  },
+  liveText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  // Alt Container
+  bottomContainer: {
     position: 'absolute',
     bottom: 30,
     left: 16,
     right: 16,
   },
   navButton: {
-    backgroundColor: '#4285F4',
-    borderRadius: 12,
-    paddingVertical: 14,
+    marginBottom: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 6,
+  },
+  navButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 12,
+    paddingVertical: 14,
+    gap: 10,
   },
   navButtonText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#FFF',
   },
-  actionButtons: {
+  // Action Row - 4 sütun simetrik
+  actionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
   },
-  actionButton: {
+  actionBtn: {
     alignItems: 'center',
+    width: (SCREEN_WIDTH - 64) / 4,
   },
-  callIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#10B981',
+  actionBtnCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  actionLabel: {
-    marginTop: 4,
+  actionBtnCircleGray: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#6B7280',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  actionBtnLabel: {
+    marginTop: 6,
     fontSize: 12,
     fontWeight: '600',
-    color: '#FFF',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  // Canlı Gösterge
-  liveIndicator: {
-    position: 'absolute',
-    top: 50,
-    right: 16,
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
-    borderRadius: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FFF',
-  },
-  liveText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#FFF',
+    color: '#333',
   },
 });
