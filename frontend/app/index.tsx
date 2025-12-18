@@ -1493,13 +1493,10 @@ function PassengerDashboard({
                 <View style={styles.mapView}>
                   <LiveMapView
                     userLocation={userLocation}
-                    otherLocation={driverLocation || activeTag.driver_location}
-                    userIcon={user.gender === 'female' ? '👩' : '🧑'}
-                    otherIcon="🚗"
-                    userName="Sen"
-                    otherName={activeTag.driver_name}
-                    distance={2.5}
-                    estimatedTime={5}
+                    otherLocation={driverLocation || activeTag?.driver_location}
+                    isDriver={false}
+                    userName={user.name}
+                    otherUserName={activeTag?.driver_name || 'Şoför'}
                   />
                 </View>
 
