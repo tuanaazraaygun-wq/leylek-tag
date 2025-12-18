@@ -1347,20 +1347,88 @@ async def answer_call(tag_id: str, user_id: str):
 
 @app.post("/api/voice/reject-call")
 async def reject_call(tag_id: str, user_id: str):
-    """
-    Aramayı reddet
-    """
+    """Aramayı reddet"""
     try:
         db = db_instance.db
         
-        # Call request'i sil
-        await db.call_requests.delete_one({"tag_id": tag_id, "receiver_id": user_id})
+        # Call request'i rejected olarak işaretle
+        await db.call_requests.update_one(
+            {"tag_id": tag_id, "receiver_id": user_id},
+            {"$set": {"status": "rejected", "ended_at": datetime.utcnow()}}
+        )
         
         logger.info(f"📞 Arama reddedildi: TAG {tag_id}")
         
         return {"success": True, "message": "Arama reddedildi"}
     except Exception as e:
         logger.error(f"Arama reddetme hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.post("/api/voice/end-call")
+async def end_call(tag_id: str, user_id: str):
+    """Aramayı sonlandır"""
+    try:
+        db = db_instance.db
+        
+        # Aktif aramayı bul ve sonlandır
+        await db.call_requests.update_many(
+            {"tag_id": tag_id, "status": {"$in": ["ringing", "active", "accepted"]}},
+            {"$set": {"status": "ended", "ended_at": datetime.utcnow()}}
+        )
+        
+        logger.info(f"📞 Arama sonlandırıldı: TAG {tag_id}")
+        
+        return {"success": True, "message": "Arama sonlandırıldı"}
+    except Exception as e:
+        logger.error(f"Arama sonlandırma hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.post("/api/user/set-call-availability")
+async def set_call_availability(user_id: str, available: bool = True):
+    """Kullanıcının arama müsaitlik durumunu ayarla"""
+    try:
+        db = db_instance.db
+        
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"call_available": available}}
+        )
+        
+        status = "müsait" if available else "müsait değil"
+        logger.info(f"📞 Arama durumu değişti: {user_id} → {status}")
+        
+        return {"success": True, "available": available, "message": f"Arama durumu: {status}"}
+    except Exception as e:
+        logger.error(f"Müsaitlik ayarlama hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.get("/api/voice/call-status")
+async def get_call_status(tag_id: str, user_id: str):
+    """Arama durumunu kontrol et"""
+    try:
+        db = db_instance.db
+        
+        # Aktif arama var mı?
+        call = await db.call_requests.find_one({
+            "tag_id": tag_id,
+            "status": {"$in": ["ringing", "active", "accepted"]}
+        })
+        
+        if call:
+            return {
+                "success": True,
+                "has_active_call": True,
+                "status": call.get("status"),
+                "call_type": call.get("call_type"),
+                "caller_id": call.get("caller_id"),
+                "receiver_id": call.get("receiver_id")
+            }
+        
+        return {"success": True, "has_active_call": False}
+    except Exception as e:
         return {"success": False, "detail": str(e)}
 
 
