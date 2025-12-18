@@ -38,7 +38,7 @@ interface VideoCallProps {
 }
 
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
-const MAX_CALL_DURATION = 300; // 5 dakika = 300 saniye
+const MAX_CALL_DURATION = 600; // 10 dakika = 600 saniye
 
 export default function VideoCall({
   visible,
