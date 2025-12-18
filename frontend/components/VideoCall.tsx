@@ -83,56 +83,69 @@ export default function VideoCall({
 
   // ARAYAN İÇİN: Arama durumu takibi - reddedildi mi kontrol et
   useEffect(() => {
-    if (!visible || !isCaller || !channelName || !userId) return;
+    // Görünür değilse, arayan değilse, veya zaten reddedildiyse başlatma
+    if (!visible || !isCaller || !channelName || !userId || callRejected) {
+      return;
+    }
+    
+    let isActive = true; // Component hala mount mu?
     
     const checkCallStatus = async () => {
+      // Double-check: component hala aktif mi?
+      if (!isActive || callRejected) return;
+      
       try {
         const response = await fetch(`${BACKEND_URL}/api/voice/call-status?tag_id=${channelName}&user_id=${userId}`);
         const data = await response.json();
+        
+        // Component unmount olduysa işlemi durdur
+        if (!isActive) return;
         
         console.log('📞 Arayan call-status:', data);
         
         // Arama reddedildiyse veya sonlandırıldıysa
         if (data.success && !data.has_active_call) {
+          // Polling'i hemen durdur
+          if (callStatusIntervalRef.current) {
+            clearInterval(callStatusIntervalRef.current);
+            callStatusIntervalRef.current = null;
+          }
+          isActive = false;
+          
           if (data.was_rejected || data.status === 'rejected') {
             console.log('❌ Arama reddedildi!');
             setCallRejected(true);
             Alert.alert('Arama Reddedildi', 'Karşı taraf aramayı reddetti.');
-            
-            // Cleanup ve çıkış
-            if (callStatusIntervalRef.current) {
-              clearInterval(callStatusIntervalRef.current);
-              callStatusIntervalRef.current = null;
-            }
-            
             onRejected?.();
             onEnd?.();
-          } else if (data.status === 'ended' || data.status === 'none') {
-            // Arama sonlandı
-            console.log('📞 Arama sonlandı');
-            if (callStatusIntervalRef.current) {
-              clearInterval(callStatusIntervalRef.current);
-              callStatusIntervalRef.current = null;
-            }
+          } else if (data.status === 'ended') {
+            // Sadece "ended" durumunda - "none" değil (ilk açılışta none gelir)
+            console.log('📞 Arama karşı taraf tarafından sonlandırıldı');
             onEnd?.();
           }
+          // "none" durumunda bir şey yapma - arama henüz başlamamış olabilir
         }
       } catch (error) {
         console.log('Call status check error:', error);
       }
     };
     
-    // Her 2 saniyede kontrol et
-    callStatusIntervalRef.current = setInterval(checkCallStatus, 2000);
-    checkCallStatus(); // İlk kontrol
+    // Biraz bekle sonra kontrol başlat (Agora bağlantısı kurulsun)
+    const startDelay = setTimeout(() => {
+      if (!isActive) return;
+      callStatusIntervalRef.current = setInterval(checkCallStatus, 2500);
+      checkCallStatus(); // İlk kontrol
+    }, 3000);
     
     return () => {
+      isActive = false;
+      clearTimeout(startDelay);
       if (callStatusIntervalRef.current) {
         clearInterval(callStatusIntervalRef.current);
         callStatusIntervalRef.current = null;
       }
     };
-  }, [visible, isCaller, channelName, userId]);
+  }, [visible, isCaller, channelName, userId, callRejected]);
 
   const startTimer = () => {
     if (durationIntervalRef.current) return;
