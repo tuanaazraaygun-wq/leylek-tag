@@ -10,7 +10,7 @@ import os
 import logging
 from pathlib import Path
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta
 import secrets
 import base64
 from geopy.distance import geodesic
@@ -383,7 +383,7 @@ async def create_request(user_id: str, request: CreateTagRequest):
 @api_router.get("/passenger/offers/{tag_id}")
 async def get_offers(tag_id: str, user_id: str):
     """Teklifleri listele - Expire olanları filtrele"""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     
     tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
     if not tag:
@@ -757,7 +757,7 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     vehicle_photo = driver_details.get("vehicle_photo")
     is_premium = user.get("is_premium", False)
     
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timedelta
     
     offer_data = Offer(
         tag_id=request.tag_id,
