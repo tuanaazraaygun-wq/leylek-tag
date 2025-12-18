@@ -200,8 +200,11 @@ export default function VideoCall({
           setRemoteUid(uid);
         },
         onUserOffline: (connection: any, uid: number, reason: number) => {
-          console.log('👤 Kullanıcı ayrıldı:', uid);
+          console.log('👤 Kullanıcı ayrıldı:', uid, 'sebep:', reason);
           setRemoteUid(null);
+          // Karşı taraf ayrıldıysa aramayı sonlandır
+          Alert.alert('Arama Sonlandı', 'Karşı taraf aramadan ayrıldı.');
+          handleEndCall();
         },
         onError: (err: number, msg: string) => {
           console.error('❌ Agora Error:', err, msg);
