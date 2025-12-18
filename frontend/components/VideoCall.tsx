@@ -306,23 +306,16 @@ export default function VideoCall({
   const handleEndCall = async () => {
     console.log('📞 Arama sonlandırılıyor...');
     
-    // Backend'e log gönder
-    if (duration > 0) {
-      try {
-        const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-        await fetch(`${BACKEND_URL}/api/voice/log-call`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId,
-            tag_id: channelName,
-            duration: duration,
-            call_type: isVideoCall ? 'video' : 'audio'
-          })
-        });
-      } catch (error) {
-        console.log('Log hatası:', error);
-      }
+    const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+    
+    // Backend'e aramayı sonlandır - karşı taraf da çıksın
+    try {
+      await fetch(`${BACKEND_URL}/api/voice/end-call?tag_id=${channelName}&user_id=${userId}`, {
+        method: 'POST'
+      });
+      console.log('✅ Backend arama sonlandırıldı');
+    } catch (error) {
+      console.log('End call hatası:', error);
     }
 
     await cleanup();
