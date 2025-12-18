@@ -140,13 +140,13 @@ export default function LiveMapView({
         }
       } else {
         console.log('⚠️ API hatası, fallback kullanılıyor. Status:', data.status);
-        // Fallback: Düz çizgi mesafe x 1.4 (yol katsayısı)
+        // Fallback: Düz çizgi mesafe x 1.8 (şehir içi yol katsayısı)
         const straightDist = calculateDistance(
           userLocation.latitude, userLocation.longitude,
           otherLocation.latitude, otherLocation.longitude
         );
-        // Şehir içi yollar genelde düz çizginin 1.3-1.5 katı
-        const dist = straightDist * 1.4;
+        // Şehir içi yollar düz çizginin ~1.8 katı (virajlar, trafik)
+        const dist = straightDist * 1.8;
         // Ortalama 30 km/h şehir içi hız
         const dur = Math.round((dist / 30) * 60);
         setLocalDistance(dist);
