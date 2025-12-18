@@ -452,15 +452,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  // Marker - Tam yuvarlak, ikonlar tam sığsın
-  marker: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  // Marker Wrapper - Taşmayı önler
+  markerWrapper: {
+    width: 60,
+    height: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
+  },
+  // Marker Circle - Tam yuvarlak
+  markerCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -475,6 +482,8 @@ const styles = StyleSheet.create({
   },
   markerEmoji: {
     fontSize: 20,
+    lineHeight: 24,
+    textAlign: 'center',
   },
   // Üst Kart
   topCard: {
