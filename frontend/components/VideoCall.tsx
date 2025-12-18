@@ -34,10 +34,13 @@ interface VideoCallProps {
   channelName: string;
   userId: string;
   isVideoCall: boolean;
+  isCaller?: boolean; // ARAYAN MI?
   onEnd?: () => void;
+  onRejected?: () => void; // Arama reddedildiğinde
 }
 
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const MAX_CALL_DURATION = 600; // 10 dakika = 600 saniye
 
 export default function VideoCall({
@@ -46,7 +49,9 @@ export default function VideoCall({
   channelName,
   userId,
   isVideoCall,
+  isCaller = false,
   onEnd,
+  onRejected,
 }: VideoCallProps) {
   const [callState, setCallState] = useState<'connecting' | 'connected' | 'ended'>('connecting');
   const [duration, setDuration] = useState(0);
@@ -55,9 +60,11 @@ export default function VideoCall({
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [callRejected, setCallRejected] = useState(false);
   
   const engineRef = useRef<any>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const callStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const localUidRef = useRef<number>(Math.floor(Math.random() * 100000));
 
   useEffect(() => {
