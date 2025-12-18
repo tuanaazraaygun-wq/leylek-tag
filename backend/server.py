@@ -1023,17 +1023,23 @@ async def clear_all_data():
 
 
 # ==================== VOICE CALL SYSTEM ====================
-@app.post("/api/voice/start-call")
-async def start_voice_call(
-    tag_id: str = None,
-    caller_id: str = None,
-    caller_name: str = None,
+class StartCallRequest(BaseModel):
+    tag_id: str
+    caller_id: str
+    caller_name: str = "Arayan"
     call_type: str = "audio"
-):
+
+@app.post("/api/voice/start-call")
+async def start_voice_call(request: StartCallRequest):
     """
     Arama başlat - karşı tarafa bildirim gönder
     """
     try:
+        tag_id = request.tag_id
+        caller_id = request.caller_id
+        caller_name = request.caller_name
+        call_type = request.call_type
+        
         # Parametre kontrolü
         if not tag_id or not caller_id:
             return {"success": False, "detail": "tag_id ve caller_id gerekli"}
