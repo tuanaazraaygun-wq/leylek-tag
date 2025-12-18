@@ -344,8 +344,46 @@ export default function LiveMapView({
         <View style={styles.livePulse} />
         <Text style={styles.liveText}>CANLI</Text>
       </View>
+
+      {/* GOOGLE MAPS NAVİGASYON BUTONU - Sadece Şoför için */}
+      {isDriver && otherLocation && (
+        <TouchableOpacity
+          style={styles.navigationButton}
+          onPress={() => openGoogleMapsNavigation(otherLocation)}
+        >
+          <Ionicons name="navigate-circle" size={28} color="#FFF" />
+          <Text style={styles.navigationButtonText}>Navigasyonu Başlat</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
+
+  // Google Maps'te navigasyon aç
+  function openGoogleMapsNavigation(destination: { latitude: number; longitude: number }) {
+    const url = Platform.select({
+      ios: `comgooglemaps://?daddr=${destination.latitude},${destination.longitude}&directionsmode=driving`,
+      android: `google.navigation:q=${destination.latitude},${destination.longitude}&mode=d`,
+    });
+
+    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination.latitude},${destination.longitude}&travelmode=driving`;
+
+    if (url) {
+      Linking.canOpenURL(url)
+        .then((supported) => {
+          if (supported) {
+            Linking.openURL(url);
+          } else {
+            // Google Maps yüklü değilse web versiyonu aç
+            Linking.openURL(webUrl);
+          }
+        })
+        .catch(() => {
+          Linking.openURL(webUrl);
+        });
+    } else {
+      Linking.openURL(webUrl);
+    }
+  }
 }
 
 const styles = StyleSheet.create({
