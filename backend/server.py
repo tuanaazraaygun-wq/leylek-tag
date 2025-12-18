@@ -1442,27 +1442,45 @@ async def set_call_availability(user_id: str, available: bool = True):
 
 @app.get("/api/voice/call-status")
 async def get_call_status(tag_id: str, user_id: str):
-    """Arama durumunu kontrol et"""
+    """Arama durumunu kontrol et - ARAYAN için önemli"""
     try:
         db = db_instance.db
         
         # Aktif arama var mı?
         call = await db.call_requests.find_one({
-            "tag_id": tag_id,
-            "status": {"$in": ["ringing", "active", "accepted"]}
+            "tag_id": tag_id
         })
         
         if call:
+            status = call.get("status", "unknown")
+            is_caller = call.get("caller_id") == user_id
+            
             return {
                 "success": True,
-                "has_active_call": True,
-                "status": call.get("status"),
+                "has_active_call": status in ["ringing", "active", "accepted"],
+                "status": status,
                 "call_type": call.get("call_type"),
                 "caller_id": call.get("caller_id"),
-                "receiver_id": call.get("receiver_id")
+                "receiver_id": call.get("receiver_id"),
+                "is_caller": is_caller
             }
         
-        return {"success": True, "has_active_call": False}
+        # Arama yok - belki reddedildi veya sonlandırıldı
+        # Son call_history'ye bak
+        recent_history = await db.call_history.find_one(
+            {"tag_id": tag_id},
+            sort=[("ended_at", -1)]
+        )
+        
+        if recent_history:
+            return {
+                "success": True,
+                "has_active_call": False,
+                "status": recent_history.get("status", "ended"),
+                "was_rejected": recent_history.get("status") == "rejected"
+            }
+        
+        return {"success": True, "has_active_call": False, "status": "none"}
     except Exception as e:
         return {"success": False, "detail": str(e)}
 
