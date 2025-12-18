@@ -48,16 +48,19 @@ export default function LiveMapView({
   otherUserName = 'Karşı Taraf',
   otherUserId,
   price,
+  routeInfo,
   onBlock,
   onReport,
   onCall,
   onComplete,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
-  const [distance, setDistance] = useState<number | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
   const [streetName, setStreetName] = useState<string>('');
+  
+  // Backend'den gelen rota bilgisini kullan
+  const distance = routeInfo?.distance_km || null;
+  const duration = routeInfo?.duration_min || null;
 
   // Polyline decode
   const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
