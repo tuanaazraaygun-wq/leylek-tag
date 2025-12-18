@@ -1535,7 +1535,7 @@ function PassengerDashboard({
                   onCall={async (type) => {
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     try {
-                      await fetch(`${API_URL}/voice/start-call`, {
+                      const response = await fetch(`${API_URL}/voice/start-call`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1545,11 +1545,19 @@ function PassengerDashboard({
                           call_type: type
                         })
                       });
+                      const data = await response.json();
+                      if (!data.success) {
+                        Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
+                        return;
+                      }
                     } catch (error) {
                       console.error('Arama bildirimi hatası:', error);
+                      Alert.alert('Hata', 'Arama başlatılamadı');
+                      return;
                     }
                     setSelectedDriverName(driverName);
                     setIsVideoCall(type === 'video');
+                    setIsCallCaller(true); // BEN ARIYORUM
                     setShowVoiceCall(true);
                   }}
                   onComplete={() => {
