@@ -413,20 +413,20 @@ const styles = StyleSheet.create({
     color: '#333',
     marginVertical: 4,
   },
-  // Marker Styles
+  // Marker Styles - Daha büyük ve net
   markerContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
+    borderWidth: 4,
     borderColor: '#FFF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
   },
   driverMarker: {
     backgroundColor: '#EF4444',
@@ -436,10 +436,10 @@ const styles = StyleSheet.create({
   },
   connectedMarker: {
     borderColor: '#22C55E',
-    borderWidth: 4,
+    borderWidth: 5,
   },
   markerEmoji: {
-    fontSize: 24,
+    fontSize: 30,
   },
   destinationMarker: {
     width: 40,
