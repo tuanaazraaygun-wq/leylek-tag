@@ -285,9 +285,9 @@ export default function LiveMapView({
         {/* BEN */}
         {userLocation && (
           <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.markerWrapper}>
-              <View style={[styles.markerCircle, isDriver ? styles.driverMarker : styles.passengerMarker]}>
-                <Text style={styles.markerEmoji}>{isDriver ? '🚗' : '🧍'}</Text>
+            <View style={styles.markerOuter}>
+              <View style={[styles.markerInner, isDriver ? styles.driverMarker : styles.passengerMarker]}>
+                <Ionicons name={isDriver ? "car" : "person"} size={22} color="#FFF" />
               </View>
             </View>
           </Marker>
@@ -296,9 +296,9 @@ export default function LiveMapView({
         {/* KARŞI TARAF */}
         {otherLocation && (
           <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.markerWrapper}>
-              <View style={[styles.markerCircle, !isDriver ? styles.driverMarker : styles.passengerMarker]}>
-                <Text style={styles.markerEmoji}>{!isDriver ? '🚗' : '🧍'}</Text>
+            <View style={styles.markerOuter}>
+              <View style={[styles.markerInner, !isDriver ? styles.driverMarker : styles.passengerMarker]}>
+                <Ionicons name={!isDriver ? "car" : "person"} size={22} color="#FFF" />
               </View>
             </View>
           </Marker>
