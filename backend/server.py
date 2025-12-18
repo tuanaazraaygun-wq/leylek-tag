@@ -1361,7 +1361,7 @@ async def answer_call(tag_id: str, user_id: str):
 
 @app.post("/api/voice/reject-call")
 async def reject_call(tag_id: str, user_id: str):
-    """Aramayı reddet - tamamen sil ve 5sn kısıtlama ekle"""
+    """Aramayı reddet - tamamen sil ve 5 sn kısıtlama ekle"""
     try:
         db = db_instance.db
         
@@ -1369,7 +1369,7 @@ async def reject_call(tag_id: str, user_id: str):
         call = await db.call_requests.find_one({"tag_id": tag_id})
         
         if call:
-            # 5 sn bekleme için geçmişe kaydet
+            # Arama geçmişine kaydet (5 sn bekleme için)
             await db.call_history.insert_one({
                 "tag_id": tag_id,
                 "caller_id": call.get("caller_id"),
@@ -1379,12 +1379,12 @@ async def reject_call(tag_id: str, user_id: str):
                 "ended_at": datetime.utcnow()
             })
         
-        # Tüm aramaları sil (ikisi de çıksın)
+        # Call request'i tamamen sil (tekrar gelmesin)
         await db.call_requests.delete_many({"tag_id": tag_id})
         
         logger.info(f"📞 Arama reddedildi ve silindi: TAG {tag_id}")
         
-        return {"success": True, "message": "Arama reddedildi", "rejected": True}
+        return {"success": True, "message": "Arama reddedildi"}
     except Exception as e:
         logger.error(f"Arama reddetme hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
