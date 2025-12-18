@@ -1176,7 +1176,7 @@ function PassengerDashboard({
           const data = JSON.parse(text);
           
           if (data.success && data.has_incoming && data.call) {
-            console.log('📞 GELEN ARAMA!', data.call.caller_name);
+            console.log('📞 YOLCU - GELEN ARAMA!', data.call.caller_name);
             setIncomingCallInfo({
               callerName: data.call.caller_name,
               callType: data.call.call_type || 'audio',
@@ -1185,14 +1185,16 @@ function PassengerDashboard({
             setShowIncomingCall(true);
           }
         } catch (error) {
-          // JSON parse hatası için sessiz kal
           if (!(error instanceof SyntaxError)) {
             console.log('Gelen arama kontrolü hatası:', error);
           }
         }
       };
 
-      const interval = setInterval(checkIncoming, 3000);
+      // İlk kontrolü hemen yap
+      checkIncoming();
+      // Sonra her 2 saniyede bir kontrol et
+      const interval = setInterval(checkIncoming, 2000);
       return () => clearInterval(interval);
     }
   }, [activeTag, user.id, showVoiceCall, showIncomingCall]);
