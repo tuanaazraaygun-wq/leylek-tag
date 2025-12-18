@@ -1351,17 +1351,14 @@ async def answer_call(tag_id: str, user_id: str):
 
 @app.post("/api/voice/reject-call")
 async def reject_call(tag_id: str, user_id: str):
-    """Aramayı reddet"""
+    """Aramayı reddet - tamamen sil"""
     try:
         db = db_instance.db
         
-        # Call request'i rejected olarak işaretle
-        await db.call_requests.update_one(
-            {"tag_id": tag_id, "receiver_id": user_id},
-            {"$set": {"status": "rejected", "ended_at": datetime.utcnow()}}
-        )
+        # Call request'i tamamen sil (tekrar gelmesin)
+        await db.call_requests.delete_many({"tag_id": tag_id})
         
-        logger.info(f"📞 Arama reddedildi: TAG {tag_id}")
+        logger.info(f"📞 Arama reddedildi ve silindi: TAG {tag_id}")
         
         return {"success": True, "message": "Arama reddedildi"}
     except Exception as e:
@@ -1371,17 +1368,14 @@ async def reject_call(tag_id: str, user_id: str):
 
 @app.post("/api/voice/end-call")
 async def end_call(tag_id: str, user_id: str):
-    """Aramayı sonlandır"""
+    """Aramayı sonlandır - tamamen sil"""
     try:
         db = db_instance.db
         
-        # Aktif aramayı bul ve sonlandır
-        await db.call_requests.update_many(
-            {"tag_id": tag_id, "status": {"$in": ["ringing", "active", "accepted"]}},
-            {"$set": {"status": "ended", "ended_at": datetime.utcnow()}}
-        )
+        # Tüm aramaları bu TAG için sil (ikisi de çıksın)
+        await db.call_requests.delete_many({"tag_id": tag_id})
         
-        logger.info(f"📞 Arama sonlandırıldı: TAG {tag_id}")
+        logger.info(f"📞 Arama sonlandırıldı ve silindi: TAG {tag_id}")
         
         return {"success": True, "message": "Arama sonlandırıldı"}
     except Exception as e:
