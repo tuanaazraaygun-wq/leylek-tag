@@ -1232,6 +1232,16 @@ async def start_voice_call(request: StartCallRequest):
         if caller_in_call:
             return {"success": False, "detail": "Zaten bir aramada olduğunuz için yeni arama başlatamazsınız"}
         
+        # 5 saniye bekleme kontrolü - son aramadan bu yana
+        five_seconds_ago = datetime.utcnow() - timedelta(seconds=5)
+        recent_call = await db.call_history.find_one({
+            "caller_id": caller_id,
+            "tag_id": tag_id,
+            "ended_at": {"$gt": five_seconds_ago}
+        })
+        if recent_call:
+            return {"success": False, "detail": "Lütfen tekrar aramadan önce 5 saniye bekleyin"}
+        
         # Karşı taraf aramada mı?
         receiver_in_call = await db.call_requests.find_one({
             "$or": [
