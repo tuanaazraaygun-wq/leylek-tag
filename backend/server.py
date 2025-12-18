@@ -526,12 +526,27 @@ async def get_passenger_active_tag(user_id: str):
     
     offer_count = await db_instance.count_documents("offers", {"tag_id": str(tag["_id"])})
     
+    # Eşleşme varsa şoförün güncel konumunu al
+    driver_location = tag.get("driver_location")
+    if tag.get("driver_id") and tag.get("status") in [TagStatus.MATCHED, TagStatus.IN_PROGRESS]:
+        driver = await db_instance.find_one("users", {"_id": ObjectId(tag["driver_id"])})
+        if driver and driver.get("location") and "coordinates" in driver.get("location", {}):
+            driver_location = {
+                "latitude": driver["location"]["coordinates"][1],
+                "longitude": driver["location"]["coordinates"][0]
+            }
+    
+    tag_data = TagResponse(
+        id=str(tag["_id"]),
+        **{k: v for k, v in tag.items() if k != "_id"}
+    ).dict()
+    
+    # Şoför konumunu ekle
+    tag_data["driver_location"] = driver_location
+    
     return {
         "success": True,
-        "tag": TagResponse(
-            id=str(tag["_id"]),
-            **{k: v for k, v in tag.items() if k != "_id"}
-        ).dict(),
+        "tag": tag_data,
         "offer_count": offer_count
     }
 
