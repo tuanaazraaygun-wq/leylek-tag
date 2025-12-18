@@ -1850,12 +1850,18 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   
   // Gelen arama polling - Şoför için
   useEffect(() => {
-    if (!user?.id || !activeTag) return;
+    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall) return;
     
     const checkIncomingCall = async () => {
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-        const data = await response.json();
+        
+        if (!response.ok) return;
+        
+        const text = await response.text();
+        if (!text || text.trim() === '') return;
+        
+        const data = JSON.parse(text);
         
         if (data.success && data.has_incoming && data.call) {
           console.log('📞 Şoför - Gelen arama var:', data.call);
@@ -1867,15 +1873,18 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           setShowIncomingCall(true);
         }
       } catch (error) {
-        console.error('Gelen arama kontrolü hatası:', error);
+        // JSON parse hatası için sessiz kal
+        if (!(error instanceof SyntaxError)) {
+          console.error('Gelen arama kontrolü hatası:', error);
+        }
       }
     };
     
-    const interval = setInterval(checkIncomingCall, 2000);
+    const interval = setInterval(checkIncomingCall, 3000);
     checkIncomingCall();
     
     return () => clearInterval(interval);
-  }, [user?.id, activeTag, showVoiceCall]);
+  }, [user?.id, activeTag, showVoiceCall, showIncomingCall]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
