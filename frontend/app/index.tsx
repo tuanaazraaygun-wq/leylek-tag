@@ -1765,7 +1765,7 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
         const data = JSON.parse(text);
         
         if (data.success && data.has_incoming && data.call) {
-          console.log('📞 Şoför - Gelen arama var:', data.call);
+          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
           setIncomingCallInfo({
             callerName: data.call.caller_name,
             callType: data.call.call_type || 'audio',
@@ -1774,15 +1774,16 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           setShowIncomingCall(true);
         }
       } catch (error) {
-        // JSON parse hatası için sessiz kal
         if (!(error instanceof SyntaxError)) {
           console.error('Gelen arama kontrolü hatası:', error);
         }
       }
     };
     
-    const interval = setInterval(checkIncomingCall, 3000);
+    // İlk kontrolü hemen yap
     checkIncomingCall();
+    // Sonra her 2 saniyede bir kontrol et
+    const interval = setInterval(checkIncomingCall, 2000);
     
     return () => clearInterval(interval);
   }, [user?.id, activeTag, showVoiceCall, showIncomingCall]);
