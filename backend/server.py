@@ -575,7 +575,7 @@ async def get_passenger_history(user_id: str):
 # ==================== DRIVER ENDPOINTS ====================
 @api_router.get("/driver/requests")
 async def get_driver_requests(user_id: str):
-    """Aktif talepleri listele - SADECE AYNI ŞEHİRDEKİLER"""
+    """Aktif talepleri listele - SADECE AYNI ŞEHİRDEKİLER + ENGELLİ KULLANICILAR HARİÇ"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
@@ -586,6 +586,13 @@ async def get_driver_requests(user_id: str):
     if not driver_city:
         logger.warning(f"⚠️ Sürücü {user_id} şehir bilgisi eksik")
         return {"success": True, "requests": []}
+    
+    # Engellenen kullanıcıları al (iki yönlü)
+    db = db_instance.db
+    blocked_by_me = await db.blocked_users.find({"user_id": user_id}).to_list(100)
+    blocked_me = await db.blocked_users.find({"blocked_user_id": user_id}).to_list(100)
+    
+    blocked_ids = set([b["blocked_user_id"] for b in blocked_by_me] + [b["user_id"] for b in blocked_me])
     
     # Sadece aynı şehirdeki TAGleri getir
     tags = await db_instance.find_many("tags", {
