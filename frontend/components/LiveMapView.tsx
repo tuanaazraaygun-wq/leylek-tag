@@ -96,7 +96,7 @@ export default function LiveMapView({
     return points;
   };
 
-  // Polyline için rota çiz (sadece görsel)
+  // Polyline için rota çiz + mesafe/süre hesapla
   const fetchRoutePolyline = async () => {
     if (!userLocation || !otherLocation) {
       setRouteCoordinates([]);
@@ -104,7 +104,7 @@ export default function LiveMapView({
     }
 
     try {
-      // Şoförden yolcuya yol çiz
+      // Her zaman şoförden yolcuya hesapla
       let origin, destination;
       if (isDriver) {
         origin = `${userLocation.latitude},${userLocation.longitude}`;
@@ -116,34 +116,71 @@ export default function LiveMapView({
       
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr`;
       
+      console.log('🗺️ Rota isteği:', url);
       const response = await fetch(url);
       const data = await response.json();
+      console.log('🗺️ API yanıtı:', data.status);
 
       if (data.status === 'OK' && data.routes.length > 0) {
         const route = data.routes[0];
+        const leg = route.legs[0];
         const points = decodePolyline(route.overview_polyline.points);
         setRouteCoordinates(points);
         
+        // Google'dan gelen GERÇEK mesafe ve süre
+        const distKm = leg.distance.value / 1000;
+        const durMin = Math.round(leg.duration.value / 60);
+        setLocalDistance(distKm);
+        setLocalDuration(durMin);
+        console.log('✅ Google rota:', distKm.toFixed(1), 'km,', durMin, 'dk');
+        
         // Şoförün sokak adı (yolcu için)
-        if (!isDriver && route.legs[0]?.start_address) {
-          setStreetName(route.legs[0].start_address.split(',')[0]);
+        if (!isDriver && leg.start_address) {
+          setStreetName(leg.start_address.split(',')[0]);
         }
       } else {
-        // Fallback: Düz çizgi
+        console.log('⚠️ API hatası, fallback kullanılıyor');
+        // Fallback: Düz çizgi mesafe
+        const dist = calculateDistance(
+          userLocation.latitude, userLocation.longitude,
+          otherLocation.latitude, otherLocation.longitude
+        );
+        const dur = Math.round((dist / 40) * 60);
+        setLocalDistance(dist);
+        setLocalDuration(dur);
         setRouteCoordinates([
           isDriver ? userLocation : otherLocation,
           isDriver ? otherLocation : userLocation
         ]);
       }
     } catch (error) {
-      // Hata durumunda düz çizgi
+      console.error('🗺️ Rota hatası:', error);
       if (userLocation && otherLocation) {
+        const dist = calculateDistance(
+          userLocation.latitude, userLocation.longitude,
+          otherLocation.latitude, otherLocation.longitude
+        );
+        const dur = Math.round((dist / 40) * 60);
+        setLocalDistance(dist);
+        setLocalDuration(dur);
         setRouteCoordinates([
           isDriver ? userLocation : otherLocation,
           isDriver ? otherLocation : userLocation
         ]);
       }
     }
+  };
+  
+  // Haversine mesafe hesaplama
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
   };
 
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
