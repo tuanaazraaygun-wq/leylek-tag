@@ -33,7 +33,8 @@ interface LiveMapViewProps {
   onDistanceUpdate?: (distance: number, duration: number) => void;
 }
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw';
+// Kullanıcının kendi API anahtarı (mobilde çalışır)
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyCWNE9hKK9rqJKsRACnJ9alkVouKUZvESo';
 
 export default function LiveMapView({
   userLocation,
