@@ -1528,6 +1528,7 @@ function PassengerDashboard({
                   otherUserName={activeTag?.driver_name || 'Şoför'}
                   otherUserId={activeTag?.driver_id}
                   price={activeTag?.final_price}
+                  routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     try {
