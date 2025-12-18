@@ -89,8 +89,80 @@ export default function VideoCall({
     }, 1000);
   };
 
+  // İzin isteme fonksiyonu
+  const requestPermissions = async (): Promise<boolean> => {
+    try {
+      if (Platform.OS === 'android') {
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ];
+        
+        if (isVideoCall) {
+          permissions.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+        }
+
+        console.log('📱 Android izinleri isteniyor...');
+        const results = await PermissionsAndroid.requestMultiple(permissions);
+        
+        const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+        const cameraGranted = !isVideoCall || results[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
+        
+        console.log('🎤 Mikrofon izni:', audioGranted ? 'VERİLDİ' : 'REDDEDİLDİ');
+        if (isVideoCall) {
+          console.log('📹 Kamera izni:', cameraGranted ? 'VERİLDİ' : 'REDDEDİLDİ');
+        }
+        
+        if (!audioGranted) {
+          Alert.alert('İzin Gerekli', 'Sesli arama için mikrofon izni gereklidir.');
+          return false;
+        }
+        
+        if (isVideoCall && !cameraGranted) {
+          Alert.alert('İzin Gerekli', 'Görüntülü arama için kamera izni gereklidir.');
+          return false;
+        }
+        
+        return true;
+      }
+      
+      // iOS için expo-av ve expo-image-picker kullan
+      const { status: audioStatus } = await Audio.requestPermissionsAsync();
+      console.log('🎤 iOS Mikrofon izni:', audioStatus);
+      
+      if (audioStatus !== 'granted') {
+        Alert.alert('İzin Gerekli', 'Sesli arama için mikrofon izni gereklidir.');
+        return false;
+      }
+      
+      if (isVideoCall) {
+        const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
+        console.log('📹 iOS Kamera izni:', cameraStatus);
+        
+        if (cameraStatus !== 'granted') {
+          Alert.alert('İzin Gerekli', 'Görüntülü arama için kamera izni gereklidir.');
+          return false;
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('İzin hatası:', error);
+      return false;
+    }
+  };
+
   const initAgora = async () => {
     try {
+      // Önce izinleri iste
+      console.log('🔐 İzinler kontrol ediliyor...');
+      const hasPermissions = await requestPermissions();
+      if (!hasPermissions) {
+        console.error('❌ İzinler alınamadı!');
+        onEnd?.();
+        return;
+      }
+      console.log('✅ İzinler alındı!');
+
       if (!AGORA_APP_ID) {
         console.error('❌ Agora App ID bulunamadı!');
         Alert.alert('Hata', 'Agora App ID bulunamadı. Lütfen .env dosyasını kontrol edin.');
