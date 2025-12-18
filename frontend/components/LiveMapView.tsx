@@ -156,8 +156,15 @@ export default function LiveMapView({
 
   // Konum değiştiğinde rota güncelle
   useEffect(() => {
+    console.log('🗺️ LiveMapView - userLocation:', userLocation);
+    console.log('🗺️ LiveMapView - otherLocation:', otherLocation);
+    console.log('🗺️ LiveMapView - isDriver:', isDriver);
+    
     if (userLocation && otherLocation) {
+      console.log('🗺️ İki konum da var, rota hesaplanıyor...');
       fetchRoute();
+    } else {
+      console.log('⚠️ Konum eksik - userLocation:', !!userLocation, 'otherLocation:', !!otherLocation);
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
