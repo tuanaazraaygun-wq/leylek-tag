@@ -254,6 +254,24 @@ export default function LiveMapView({
         showsMyLocationButton={false}
         showsCompass={false}
         mapType="standard"
+        toolbarEnabled={false}
+        showsScale={false}
+        showsBuildings={false}
+        showsTraffic={false}
+        showsIndoors={false}
+        showsIndoorLevelPicker={false}
+        showsPointsOfInterest={false}
+        customMapStyle={[
+          {
+            "featureType": "administrative",
+            "elementType": "geometry",
+            "stylers": [{ "visibility": "off" }]
+          },
+          {
+            "featureType": "poi",
+            "stylers": [{ "visibility": "off" }]
+          }
+        ]}
       >
         {/* ROTA ÇİZGİSİ */}
         {routeCoordinates.length >= 2 && (
