@@ -610,6 +610,10 @@ async def get_driver_requests(user_id: str):
     
     tag_responses = []
     for tag in tags:
+        # Engelli kullanıcı kontrolü
+        if tag["passenger_id"] in blocked_ids:
+            continue  # Engelli kullanıcı, atla
+        
         # Yolcu bilgisini al
         passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
         if not passenger:
