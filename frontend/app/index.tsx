@@ -1045,29 +1045,37 @@ function PassengerDashboard({
   
   // Gelen arama polling
   useEffect(() => {
-    // Zaten aramadaysa veya gelen arama gösteriliyorsa polling yapma
-    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall) return;
+    // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
+    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall || isCallCaller) return;
+    
+    // Sadece matched/in_progress durumunda polling yap
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+    
+    let isActive = true;
     
     const checkIncomingCall = async () => {
       // Çift kontrol - state değişmiş olabilir
-      if (showVoiceCall || showIncomingCall) return;
+      if (!isActive || showVoiceCall || showIncomingCall || isCallCaller) return;
       
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         
+        if (!isActive) return;
+        
         // Response kontrolü
         if (!response.ok) {
-          console.log('⚠️ Check incoming response not ok:', response.status);
           return;
         }
         
         const text = await response.text();
         if (!text || text.trim() === '') {
-          console.log('⚠️ Check incoming empty response');
           return;
         }
         
         const data = JSON.parse(text);
+        
+        // Son kontrol
+        if (!isActive || showVoiceCall || showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
           console.log('📞 Gelen arama var:', data.call);
@@ -1079,20 +1087,18 @@ function PassengerDashboard({
           setShowIncomingCall(true);
         }
       } catch (error) {
-        // JSON parse hatası için sessiz kal
-        if (error instanceof SyntaxError) {
-          console.log('⚠️ Gelen arama JSON parse hatası - yoksay');
-        } else {
-          console.error('Gelen arama kontrolü hatası:', error);
-        }
+        // Sessiz kal
       }
     };
     
     const interval = setInterval(checkIncomingCall, 3000);
     checkIncomingCall();
     
-    return () => clearInterval(interval);
-  }, [user?.id, activeTag, showVoiceCall, showIncomingCall]);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [user?.id, activeTag, showVoiceCall, showIncomingCall, isCallCaller]);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
