@@ -1286,11 +1286,16 @@ async def start_voice_call(request: StartCallRequest):
 
 @app.get("/api/voice/check-incoming")
 async def check_incoming_call(user_id: str):
-    """
-    Gelen arama kontrolü - polling ile
-    """
+    """Gelen arama kontrolü - sadece aktif ringing aramalar"""
     try:
         db = db_instance.db
+        
+        # 30 saniyeden eski ringing aramaları "missed" olarak işaretle
+        thirty_seconds_ago = datetime.utcnow() - timedelta(seconds=30)
+        await db.call_requests.update_many(
+            {"status": "ringing", "created_at": {"$lt": thirty_seconds_ago}},
+            {"$set": {"status": "missed"}}
+        )
         
         # Bu kullanıcıya gelen çalan arama var mı?
         incoming_call = await db.call_requests.find_one({
@@ -1303,6 +1308,7 @@ async def check_incoming_call(user_id: str):
                 "success": True,
                 "has_incoming": True,
                 "call": {
+                    "call_id": str(incoming_call.get("_id", "")),
                     "caller_name": incoming_call.get("caller_name", "Arayan"),
                     "caller_id": incoming_call.get("caller_id", ""),
                     "channel_name": incoming_call.get("tag_id", ""),
@@ -1311,10 +1317,7 @@ async def check_incoming_call(user_id: str):
                 }
             }
         
-        return {
-            "success": True,
-            "has_incoming": False
-        }
+        return {"success": True, "has_incoming": False}
     except Exception as e:
         logger.error(f"Gelen arama kontrolü hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
