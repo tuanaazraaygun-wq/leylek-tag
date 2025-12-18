@@ -151,16 +151,21 @@ export default function VideoCall({
       // Client role: BROADCASTER (ses/video gönder ve al)
       engine.setClientRole(1); // 1 = BROADCASTER
 
-      // Audio ayarları
+      // Audio ayarları - ÖNEMLİ: enableLocalAudio ile mikrofonu aktifleştir
       engine.enableAudio();
+      engine.enableLocalAudio(true); // Mikrofonu aktifleştir
       engine.setDefaultAudioRouteToSpeakerphone(true);
       engine.setEnableSpeakerphone(true);
+      engine.adjustRecordingSignalVolume(400); // Mikrofon sesini yükselt
+      engine.adjustPlaybackSignalVolume(400); // Hoparlör sesini yükselt
+      console.log('✅ Audio enabled + Local Audio aktif');
 
       // Video ayarları (eğer görüntülü arama ise)
       if (isVideoCall) {
         engine.enableVideo();
+        engine.enableLocalVideo(true); // Kamerayı aktifleştir
         engine.startPreview();
-        console.log('✅ Video enabled');
+        console.log('✅ Video enabled + Local Video aktif');
       }
 
       console.log('🔄 Kanala katılınıyor:', safeChannelName);
