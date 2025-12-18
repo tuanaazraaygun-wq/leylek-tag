@@ -100,7 +100,12 @@ async def update_location(user_id: str, latitude: float, longitude: float):
             "users",
             {"_id": ObjectId(user_id)},
             {"$set": {
-                "location": {"latitude": latitude, "longitude": longitude},
+                "location": {
+                    "type": "Point",
+                    "coordinates": [longitude, latitude],  # GeoJSON format: [lng, lat]
+                    "latitude": latitude,
+                    "longitude": longitude
+                },
                 "last_active": datetime.utcnow()
             }}
         )
