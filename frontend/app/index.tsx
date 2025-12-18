@@ -2314,10 +2314,15 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
         visible={showIncomingCall && !showVoiceCall}
         callerName={incomingCallInfo?.callerName || 'Yolcu'}
         callType={incomingCallInfo?.callType || 'audio'}
-        onAccept={() => {
+        onAccept={async () => {
           setShowIncomingCall(false);
           setSelectedPassengerName(incomingCallInfo?.callerName || 'Yolcu');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
+          setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
+          // Backend'e kabul bildirimi gönder
+          try {
+            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
           setShowVoiceCall(true);
         }}
         onReject={async () => {
@@ -2337,9 +2342,16 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           channelName={activeTag.id}
           userId={user.id}
           isVideoCall={isVideoCall}
+          isCaller={isCallCaller}
           onEnd={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
+            setIsCallCaller(false);
+          }}
+          onRejected={() => {
+            setShowVoiceCall(false);
+            setIsVideoCall(false);
+            setIsCallCaller(false);
           }}
         />
       )}
