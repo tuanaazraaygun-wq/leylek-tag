@@ -757,7 +757,7 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     vehicle_photo = driver_details.get("vehicle_photo")
     is_premium = user.get("is_premium", False)
     
-    from datetime import datetime, timedelta, timedelta
+    from datetime import datetime, timedelta
     
     offer_data = Offer(
         tag_id=request.tag_id,
