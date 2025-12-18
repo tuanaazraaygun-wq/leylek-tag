@@ -360,6 +360,9 @@ export default function LiveMapView({
         <Text style={styles.liveText}>CANLI</Text>
       </View>
 
+      {/* Sol alt köşe örtücü (Google logosu gizleme) */}
+      <View style={styles.bottomLeftCover} />
+
       {/* ALT BUTONLAR - SİMETRİK DÜZEN */}
       <View style={styles.bottomContainer}>
         {/* Navigasyon Butonu - SADECE ŞOFÖR İÇİN */}
