@@ -457,23 +457,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  // Marker Outer - Geniş alan (taşma önler)
+  // Marker Outer - Geniş alan (tüm telefonlarda taşma önler)
   markerOuter: {
-    width: 56,
-    height: 56,
+    width: 70,
+    height: 70,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
-  // Marker Inner - Tam yuvarlak daire
+  // Marker Inner - Tam yuvarlak daire (iPhone dahil tüm cihazlar)
   markerInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
   },
   driverMarker: {
     backgroundColor: '#EF4444',
