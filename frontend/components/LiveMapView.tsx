@@ -345,14 +345,16 @@ export default function LiveMapView({
         <Text style={styles.liveText}>CANLI</Text>
       </View>
 
-      {/* GOOGLE MAPS NAVİGASYON BUTONU - Sadece Şoför için */}
-      {isDriver && otherLocation && (
+      {/* GOOGLE MAPS NAVİGASYON BUTONU - Herkes için */}
+      {otherLocation && (
         <TouchableOpacity
           style={styles.navigationButton}
           onPress={() => openGoogleMapsNavigation(otherLocation)}
         >
           <Ionicons name="navigate-circle" size={28} color="#FFF" />
-          <Text style={styles.navigationButtonText}>Navigasyonu Başlat</Text>
+          <Text style={styles.navigationButtonText}>
+            {isDriver ? 'Yolcuya Git' : 'Şoförü Gör'}
+          </Text>
         </TouchableOpacity>
       )}
     </View>
