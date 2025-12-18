@@ -373,6 +373,11 @@ export default function VideoCall({
       clearInterval(durationIntervalRef.current);
       durationIntervalRef.current = null;
     }
+    
+    if (callStatusIntervalRef.current) {
+      clearInterval(callStatusIntervalRef.current);
+      callStatusIntervalRef.current = null;
+    }
 
     if (engineRef.current) {
       try {
