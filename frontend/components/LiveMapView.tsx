@@ -669,4 +669,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
+  // Sol alt köşe örtücü (Google logosu gizleme)
+  bottomLeftCover: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 80,
+    height: 25,
+    backgroundColor: '#F5F5F5',
+  },
 });
