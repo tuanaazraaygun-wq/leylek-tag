@@ -58,9 +58,13 @@ export default function LiveMapView({
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
   const [streetName, setStreetName] = useState<string>('');
   
-  // Backend'den gelen rota bilgisini kullan
-  const distance = routeInfo?.distance_km || null;
-  const duration = routeInfo?.duration_min || null;
+  // Rota bilgisi - önce backend, yoksa local hesaplama
+  const [localDistance, setLocalDistance] = useState<number | null>(null);
+  const [localDuration, setLocalDuration] = useState<number | null>(null);
+  
+  // Backend değeri varsa onu kullan, yoksa local
+  const distance = routeInfo?.distance_km || localDistance;
+  const duration = routeInfo?.duration_min || localDuration;
 
   // Polyline decode
   const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
