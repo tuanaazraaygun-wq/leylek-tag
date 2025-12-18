@@ -577,7 +577,7 @@ const styles = StyleSheet.create({
   // Alt Container
   bottomContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 50,
     left: 16,
     right: 16,
   },
