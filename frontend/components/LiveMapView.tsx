@@ -92,11 +92,15 @@ export default function LiveMapView({
     return points;
   };
 
-  // Google Directions API ile rota al
-  const fetchRoute = async () => {
-    if (!userLocation || !otherLocation) return;
+  // Polyline için rota çiz (sadece görsel)
+  const fetchRoutePolyline = async () => {
+    if (!userLocation || !otherLocation) {
+      setRouteCoordinates([]);
+      return;
+    }
 
     try {
+      // Şoförden yolcuya yol çiz
       let origin, destination;
       if (isDriver) {
         origin = `${userLocation.latitude},${userLocation.longitude}`;
@@ -113,40 +117,27 @@ export default function LiveMapView({
 
       if (data.status === 'OK' && data.routes.length > 0) {
         const route = data.routes[0];
-        const leg = route.legs[0];
-        
-        const distKm = leg.distance.value / 1000;
-        const durMin = Math.round(leg.duration.value / 60);
-        
-        setDistance(distKm);
-        setDuration(durMin);
-        
         const points = decodePolyline(route.overview_polyline.points);
         setRouteCoordinates(points);
         
-        if (!isDriver && leg.start_address) {
-          setStreetName(leg.start_address.split(',')[0]);
+        // Şoförün sokak adı (yolcu için)
+        if (!isDriver && route.legs[0]?.start_address) {
+          setStreetName(route.legs[0].start_address.split(',')[0]);
         }
       } else {
-        const dist = calculateDistance(
-          userLocation.latitude, userLocation.longitude,
-          otherLocation.latitude, otherLocation.longitude
-        );
-        const dur = Math.round((dist / 40) * 60);
-        setDistance(dist);
-        setDuration(dur);
-        setRouteCoordinates([userLocation, otherLocation]);
+        // Fallback: Düz çizgi
+        setRouteCoordinates([
+          isDriver ? userLocation : otherLocation,
+          isDriver ? otherLocation : userLocation
+        ]);
       }
     } catch (error) {
+      // Hata durumunda düz çizgi
       if (userLocation && otherLocation) {
-        const dist = calculateDistance(
-          userLocation.latitude, userLocation.longitude,
-          otherLocation.latitude, otherLocation.longitude
-        );
-        const dur = Math.round((dist / 40) * 60);
-        setDistance(dist);
-        setDuration(dur);
-        setRouteCoordinates([userLocation, otherLocation]);
+        setRouteCoordinates([
+          isDriver ? userLocation : otherLocation,
+          isDriver ? otherLocation : userLocation
+        ]);
       }
     }
   };
