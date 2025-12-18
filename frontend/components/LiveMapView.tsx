@@ -448,20 +448,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  // Marker
+  // Marker - Tam yuvarlak, ikonlar sığsın
   marker: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#FFF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 6,
+    overflow: 'hidden',
   },
   driverMarker: {
     backgroundColor: '#EF4444',
@@ -470,7 +471,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
   },
   markerEmoji: {
-    fontSize: 24,
+    fontSize: 22,
+    textAlign: 'center',
   },
   // Üst Kart
   topCard: {
