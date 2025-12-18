@@ -223,7 +223,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "All backend tasks completed successfully"
+    - "Voice/video calling system fixes"
+    - "Map marker icon visibility"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -231,14 +232,42 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      Implemented 4 critical fixes:
-      1. Replaced Alert.prompt with custom modal for driver offers (Android compatibility)
-      2. Added passenger destination editing feature (opens same modal, calls update API)
-      3. Added passenger request cancellation feature (confirmation + API call)
-      4. Need to investigate why distances show "Hesaplanıyor..." - coordinates might not be saved
+      Implemented calling system fixes (P0):
       
-      PRIORITY TEST: Distance calculation issue - check if TAG creation saves coordinates properly.
-      Test with real user accounts to verify offer modal, edit destination, and cancel request work.
+      ## Backend Changes:
+      1. Enhanced /api/voice/call-status endpoint to track call state properly
+         - Returns was_rejected flag when call is rejected
+         - Returns call status from call_history when active call doesn't exist
+      
+      ## Frontend Changes (VideoCall.tsx):
+      1. Added isCaller prop to differentiate between caller and receiver
+      2. Added onRejected callback for handling call rejection
+      3. Caller now polls /api/voice/call-status every 2 seconds
+         - If call is rejected, shows "Arama Reddedildi" alert and closes
+         - If call ends, closes VideoCall properly
+      4. Added callStatusIntervalRef for proper cleanup
+      
+      ## Frontend Changes (index.tsx - both Passenger and Driver):
+      1. Added isCallCaller state to track who initiated the call
+      2. When initiating call: setIsCallCaller(true)
+      3. When accepting incoming call: setIsCallCaller(false)
+      4. Added answer-call API call when accepting incoming calls
+      5. Added extra guards in check-incoming polling (showVoiceCall || showIncomingCall)
+      6. VideoCall now receives isCaller and onRejected props
+      
+      ## Map Marker Icon Fix (LiveMapView.tsx):
+      1. Increased markerOuter from 80x80 to 90x90
+      2. Increased markerInner from 50x50 to 56x56
+      3. Increased icon size from 26 to 30
+      4. Enhanced shadow and elevation for better visibility
+      5. Darkened marker colors (DC2626 red, 2563EB blue)
+      
+      NEEDS MANUAL TESTING: Test the following scenarios:
+      1. Passenger calls driver → Driver should see IncomingCall screen (not auto-connect)
+      2. Driver rejects → Passenger should see "Arama Reddedildi" alert and close
+      3. Either party hangs up → Both should exit call properly
+      4. Map markers should be visible on all devices
+
   - agent: "testing"
     message: |
       BACKEND TESTING COMPLETED - ALL CRITICAL ISSUES RESOLVED!
