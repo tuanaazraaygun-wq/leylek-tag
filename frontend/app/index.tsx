@@ -2092,13 +2092,10 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           <View style={styles.mapView}>
             <LiveMapView
               userLocation={userLocation}
-              otherLocation={passengerLocation || activeTag.passenger_location}
-              userIcon="🚗"
-              otherIcon={user.gender === 'female' ? '👩' : '🧑'}
-              userName="Sen"
-              otherName={activeTag.passenger_name}
-              distance={realDistance || 2.5}
-              estimatedTime={estimatedTime || 5}
+              otherLocation={passengerLocation || activeTag?.passenger_location}
+              isDriver={true}
+              userName={user.name}
+              otherUserName={activeTag?.passenger_name || 'Yolcu'}
             />
           </View>
 
