@@ -108,6 +108,8 @@ user_problem_statement: |
   2. Fix distance calculation (showing "Hesaplanıyor..." for all requests)
   3. Add passenger ability to edit destination after creating request
   4. Add passenger ability to cancel active request with driver notification
+  5. Fix calling system issues (auto-connect, hang-up loops, rejection not working)
+  6. Fix map marker icons appearing small on some devices
 
 backend:
   - task: "Driver send offer endpoint"
