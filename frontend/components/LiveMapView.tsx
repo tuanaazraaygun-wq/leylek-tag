@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
   // Live Indicator
   liveIndicator: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 160,
     right: 10,
     backgroundColor: '#22C55E',
     borderRadius: 20,
