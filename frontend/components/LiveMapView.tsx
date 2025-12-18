@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
   // Legend
   legend: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 160,
     left: 10,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: 12,
