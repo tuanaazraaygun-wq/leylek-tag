@@ -1045,9 +1045,13 @@ function PassengerDashboard({
   
   // Gelen arama polling
   useEffect(() => {
-    if (!user?.id || !activeTag) return;
+    // Zaten aramadaysa veya gelen arama gösteriliyorsa polling yapma
+    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall) return;
     
     const checkIncomingCall = async () => {
+      // Çift kontrol - state değişmiş olabilir
+      if (showVoiceCall || showIncomingCall) return;
+      
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         
@@ -1084,11 +1088,11 @@ function PassengerDashboard({
       }
     };
     
-    const interval = setInterval(checkIncomingCall, 3000); // 2 saniyeden 3 saniyeye çıkardık
+    const interval = setInterval(checkIncomingCall, 3000);
     checkIncomingCall();
     
     return () => clearInterval(interval);
-  }, [user?.id, activeTag, showVoiceCall]);
+  }, [user?.id, activeTag, showVoiceCall, showIncomingCall]);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
