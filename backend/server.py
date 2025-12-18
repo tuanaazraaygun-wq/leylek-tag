@@ -1446,6 +1446,12 @@ async def get_call_status(tag_id: str, user_id: str):
     try:
         db = db_instance.db
         
+        # Önce eski/tamamlanmış aramaları temizle
+        await db.call_requests.delete_many({
+            "tag_id": tag_id,
+            "status": {"$in": ["ended", "rejected", "missed"]}
+        })
+        
         # Aktif arama var mı?
         call = await db.call_requests.find_one({
             "tag_id": tag_id
@@ -1455,20 +1461,26 @@ async def get_call_status(tag_id: str, user_id: str):
             status = call.get("status", "unknown")
             is_caller = call.get("caller_id") == user_id
             
-            return {
-                "success": True,
-                "has_active_call": status in ["ringing", "active", "accepted"],
-                "status": status,
-                "call_type": call.get("call_type"),
-                "caller_id": call.get("caller_id"),
-                "receiver_id": call.get("receiver_id"),
-                "is_caller": is_caller
-            }
+            # Aktif durumlar
+            if status in ["ringing", "active", "accepted"]:
+                return {
+                    "success": True,
+                    "has_active_call": True,
+                    "status": status,
+                    "call_type": call.get("call_type"),
+                    "caller_id": call.get("caller_id"),
+                    "receiver_id": call.get("receiver_id"),
+                    "is_caller": is_caller
+                }
+            else:
+                # Aktif değil, sil
+                await db.call_requests.delete_one({"_id": call["_id"]})
         
         # Arama yok - belki reddedildi veya sonlandırıldı
-        # Son call_history'ye bak
+        # Son 10 saniye içindeki call_history'ye bak
+        ten_seconds_ago = datetime.utcnow() - timedelta(seconds=10)
         recent_history = await db.call_history.find_one(
-            {"tag_id": tag_id},
+            {"tag_id": tag_id, "ended_at": {"$gt": ten_seconds_ago}},
             sort=[("ended_at", -1)]
         )
         
