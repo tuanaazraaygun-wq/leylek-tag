@@ -552,6 +552,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
   },
+  watchingInfo: {
+    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  watchingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+  },
   // Action Row - 4 sütun simetrik
   actionRow: {
     flexDirection: 'row',
