@@ -1686,10 +1686,15 @@ function PassengerDashboard({
         visible={showIncomingCall && !showVoiceCall}
         callerName={incomingCallInfo?.callerName || 'Arayan'}
         callType={incomingCallInfo?.callType || 'audio'}
-        onAccept={() => {
+        onAccept={async () => {
           setShowIncomingCall(false);
           setSelectedDriverName(incomingCallInfo?.callerName || 'Arayan');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
+          setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
+          // Backend'e kabul bildirimi gönder
+          try {
+            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
           setShowVoiceCall(true);
         }}
         onReject={async () => {
