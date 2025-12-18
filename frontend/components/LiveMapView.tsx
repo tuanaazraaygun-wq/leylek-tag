@@ -139,13 +139,16 @@ export default function LiveMapView({
           setStreetName(leg.start_address.split(',')[0]);
         }
       } else {
-        console.log('⚠️ API hatası, fallback kullanılıyor');
-        // Fallback: Düz çizgi mesafe
-        const dist = calculateDistance(
+        console.log('⚠️ API hatası, fallback kullanılıyor. Status:', data.status);
+        // Fallback: Düz çizgi mesafe x 1.4 (yol katsayısı)
+        const straightDist = calculateDistance(
           userLocation.latitude, userLocation.longitude,
           otherLocation.latitude, otherLocation.longitude
         );
-        const dur = Math.round((dist / 40) * 60);
+        // Şehir içi yollar genelde düz çizginin 1.3-1.5 katı
+        const dist = straightDist * 1.4;
+        // Ortalama 30 km/h şehir içi hız
+        const dur = Math.round((dist / 30) * 60);
         setLocalDistance(dist);
         setLocalDuration(dur);
         setRouteCoordinates([
