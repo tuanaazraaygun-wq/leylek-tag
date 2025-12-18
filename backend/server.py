@@ -372,6 +372,24 @@ async def accept_offer(user_id: str, request: AcceptOfferRequest):
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
     
+    # Şoförün konumunu al
+    driver = await db_instance.find_one("users", {"_id": ObjectId(offer["driver_id"])})
+    driver_location = None
+    if driver and driver.get("location") and "coordinates" in driver.get("location", {}):
+        driver_location = {
+            "latitude": driver["location"]["coordinates"][1],
+            "longitude": driver["location"]["coordinates"][0]
+        }
+    
+    # Yolcunun konumunu al
+    passenger = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
+    passenger_location = None
+    if passenger and passenger.get("location") and "coordinates" in passenger.get("location", {}):
+        passenger_location = {
+            "latitude": passenger["location"]["coordinates"][1],
+            "longitude": passenger["location"]["coordinates"][0]
+        }
+    
     # TAG güncelle
     await db_instance.update_one(
         "tags",
@@ -382,7 +400,9 @@ async def accept_offer(user_id: str, request: AcceptOfferRequest):
             "driver_name": offer["driver_name"],
             "accepted_offer_id": request.offer_id,
             "final_price": offer["price"],
-            "matched_at": datetime.utcnow()
+            "matched_at": datetime.utcnow(),
+            "driver_location": driver_location,
+            "passenger_location": passenger_location
         }}
     )
     
