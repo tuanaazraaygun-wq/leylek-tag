@@ -1710,9 +1710,16 @@ function PassengerDashboard({
           channelName={activeTag.id}
           userId={user.id}
           isVideoCall={isVideoCall}
+          isCaller={isCallCaller}
           onEnd={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
+            setIsCallCaller(false);
+          }}
+          onRejected={() => {
+            setShowVoiceCall(false);
+            setIsVideoCall(false);
+            setIsCallCaller(false);
           }}
         />
       )}
