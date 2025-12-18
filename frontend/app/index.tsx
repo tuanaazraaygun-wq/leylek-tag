@@ -1517,205 +1517,103 @@ function PassengerDashboard({
           </View>
         )}
 
-            {/* CANLI HARİTA - Tam Ekran */}
+            {/* CANLI HARİTA - Tam Ekran (Yolcu) */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
-                {/* CANLI HARİTA */}
-                <View style={styles.mapView}>
-                  <LiveMapView
-                    userLocation={userLocation}
-                    otherLocation={driverLocation || activeTag?.driver_location}
-                    isDriver={false}
-                    userName={user.name}
-                    otherUserName={activeTag?.driver_name || 'Şoför'}
-                  />
-                </View>
-
-                {/* İsim Overlay - Haritanın Üstünde */}
-                <View style={styles.nameOverlay}>
-                  <Text style={styles.nameOverlayText}>{user.name}</Text>
-                </View>
-
-                {/* Üst Bilgi - Mesafeler ve Süre */}
-                <View style={styles.mapTopInfo}>
-                  <View style={styles.mapStatsContainer}>
-                    {/* Mesafe Bilgisi */}
-                    <View style={styles.mapStatBox}>
-                      <Ionicons name="locate" size={20} color="#FFF" />
-                      <Text style={styles.mapStatLabel}>Mesafe</Text>
-                      <Text style={styles.mapStatValue}>{realDistance > 0 ? `${realDistance} km` : '...'}</Text>
-                    </View>
-                    
-                    {/* Süre Bilgisi */}
-                    <View style={styles.mapStatBoxMain}>
-                      <Ionicons name="time" size={24} color="#FFF" />
-                      <Text style={styles.mapStatTimeText}>{estimatedTime > 0 ? `${estimatedTime} dk` : '...'}</Text>
-                      <Text style={styles.mapStatSubtext}>sonra buluşacaksınız</Text>
-                    </View>
-                    
-                    {/* Fiyat - Gizli Sekmeden Gösterilebilir */}
-                    <TouchableOpacity 
-                      style={styles.mapStatBox}
-                      onPress={() => Alert.alert('Kabul Edilen Teklif', `Fiyat: ₺${activeTag.final_price}`)}
-                    >
-                      <Ionicons name="eye-outline" size={20} color="#FFF" />
-                      <Text style={styles.mapStatLabel}>Fiyat</Text>
-                      <Text style={styles.mapStatValue}>Gör</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Alt Butonlar - Sol: Tamamla, Sağ: Ara */}
-                <View style={styles.matchedBottomButtons}>
-                  {/* Sol: Kırmızı Tamamla Butonu */}
-                  <TouchableOpacity 
-                    style={styles.completeButton}
-                    onPress={() => {
-                      Alert.alert(
-                        'Yolculuğu Tamamla',
-                        'Sürücü ile buluştunuz mu?',
-                        [
-                          { 
-                            text: 'Hayır, Buluşmadık',
-                            style: 'destructive',
-                            onPress: () => {
-                              Alert.alert(
-                                '⚠️ Uyarı: Ceza Uygulanacak',
-                                'Karşı taraf onaylamadan bitirirseniz puanınız düşecek. Devam etmek istiyor musunuz?',
-                                [
-                                  { text: 'İptal', style: 'cancel' },
-                                  {
-                                    text: 'Evet, Bitir',
-                                    style: 'destructive',
-                                    onPress: async () => {
-                                      try {
-                                        const response = await fetch(
-                                          `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=false`,
-                                          { method: 'POST' }
-                                        );
-                                        const data = await response.json();
-                                        if (data.success) {
-                                          Alert.alert('Tamamlandı', data.message);
-                                          setActiveTag(null);
-                                          loadActiveTag();
-                                        }
-                                      } catch (error) {
-                                        Alert.alert('Hata', 'İşlem başarısız');
-                                      }
-                                    }
-                                  }
-                                ]
+                <LiveMapView
+                  userLocation={userLocation}
+                  otherLocation={driverLocation || activeTag?.driver_location}
+                  isDriver={false}
+                  userName={user.name}
+                  otherUserName={activeTag?.driver_name || 'Şoför'}
+                  otherUserId={activeTag?.driver_id}
+                  price={activeTag?.final_price}
+                  onCall={async (type) => {
+                    const driverName = activeTag?.driver_name || 'Sürücü';
+                    try {
+                      await fetch(`${API_URL}/voice/start-call`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          tag_id: activeTag?.id,
+                          caller_id: user.id,
+                          caller_name: user.name,
+                          call_type: type
+                        })
+                      });
+                    } catch (error) {
+                      console.error('Arama bildirimi hatası:', error);
+                    }
+                    setSelectedDriverName(driverName);
+                    setIsVideoCall(type === 'video');
+                    setShowVoiceCall(true);
+                  }}
+                  onComplete={() => {
+                    Alert.alert(
+                      'Yolculuğu Tamamla',
+                      'Sürücü ile buluştunuz mu?',
+                      [
+                        { text: 'İptal', style: 'cancel' },
+                        {
+                          text: 'Evet, Tamamla',
+                          onPress: async () => {
+                            try {
+                              const response = await fetch(
+                                `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
+                                { method: 'POST' }
                               );
-                            }
-                          },
-                          {
-                            text: 'Evet, Tamamla',
-                            onPress: async () => {
-                              try {
-                                const response = await fetch(
-                                  `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
-                                  { method: 'POST' }
-                                );
-                                const data = await response.json();
-                                if (data.success) {
-                                  Alert.alert('Başarılı', 'Yolculuk tamamlandı!');
-                                  setActiveTag(null);
-                                  loadActiveTag();
-                                }
-                              } catch (error) {
-                                Alert.alert('Hata', 'İşlem başarısız');
+                              const data = await response.json();
+                              if (data.success) {
+                                Alert.alert('Başarılı', 'Yolculuk tamamlandı!');
+                                setActiveTag(null);
+                                loadActiveTag();
                               }
+                            } catch (error) {
+                              Alert.alert('Hata', 'İşlem başarısız');
                             }
                           }
-                        ]
+                        }
+                      ]
+                    );
+                  }}
+                  onBlock={async () => {
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/user/block?user_id=${user.id}&blocked_user_id=${activeTag?.driver_id}`,
+                        { method: 'POST' }
                       );
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.completeButtonCircle}>
-                      <Ionicons name="checkmark-done" size={32} color="#FFF" />
-                    </View>
-                    <Text style={styles.buttonLabelRed}>BİTİR</Text>
-                  </TouchableOpacity>
-
-                  {/* Sağ: Sesli Arama Butonu */}
-                  <TouchableOpacity 
-                    style={styles.callButton}
-                    onPress={async () => {
-                      const driverName = activeTag?.driver_name || 'Sürücü';
-                      console.log('📞 Sesli arama başlatılıyor:', driverName);
-                      
+                      const data = await response.json();
+                      Alert.alert(data.success ? '✅ Engellendi' : '❌ Hata', data.message);
+                    } catch (error) {
+                      Alert.alert('Hata', 'Engelleme başarısız');
+                    }
+                  }}
+                  onReport={() => {
+                    Alert.alert(
+                      '⚠️ Şikayet Et',
+                      'Şikayet sebebinizi seçin:',
+                      [
+                        { text: 'İptal', style: 'cancel' },
+                        { text: 'Kötü Davranış', onPress: () => reportUser('bad_behavior') },
+                        { text: 'Güvensiz Sürüş', onPress: () => reportUser('unsafe_driving') },
+                        { text: 'Diğer', onPress: () => reportUser('other') },
+                      ]
+                    );
+                    
+                    async function reportUser(reason: string) {
                       try {
-                        await fetch(`${API_URL}/voice/start-call`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            tag_id: activeTag?.id,
-                            caller_id: user.id,
-                            caller_name: user.name,
-                            call_type: 'audio'
-                          })
-                        });
+                        const response = await fetch(
+                          `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.driver_id}&reason=${reason}`,
+                          { method: 'POST' }
+                        );
+                        const data = await response.json();
+                        Alert.alert('📩 Şikayet Alındı', data.message);
                       } catch (error) {
-                        console.error('Arama bildirimi hatası:', error);
+                        Alert.alert('Hata', 'Şikayet gönderilemedi');
                       }
-                      
-                      setSelectedDriverName(driverName);
-                      setIsVideoCall(false);
-                      setShowVoiceCall(true);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <LinearGradient
-                      colors={['#10B981', '#059669', '#047857']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.callButtonCircle}
-                    >
-                      <Ionicons name="call" size={28} color="#FFF" />
-                    </LinearGradient>
-                    <Text style={styles.buttonLabelGreen}>SESLİ</Text>
-                  </TouchableOpacity>
-
-                  {/* En Sağ: Görüntülü Arama Butonu */}
-                  <TouchableOpacity 
-                    style={styles.callButton}
-                    onPress={async () => {
-                      const driverName = activeTag?.driver_name || 'Sürücü';
-                      console.log('📹 Görüntülü arama başlatılıyor:', driverName);
-                      
-                      try {
-                        await fetch(`${API_URL}/voice/start-call`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            tag_id: activeTag?.id,
-                            caller_id: user.id,
-                            caller_name: user.name,
-                            call_type: 'video'
-                          })
-                        });
-                      } catch (error) {
-                        console.error('Arama bildirimi hatası:', error);
-                      }
-                      
-                      setSelectedDriverName(driverName);
-                      setIsVideoCall(true);
-                      setShowVoiceCall(true);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <LinearGradient
-                      colors={['#3B82F6', '#2563EB', '#1D4ED8']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.callButtonCircle}
-                    >
-                      <Ionicons name="videocam" size={28} color="#FFF" />
-                    </LinearGradient>
-                    <Text style={styles.buttonLabelBlue}>VİDEO</Text>
-                  </TouchableOpacity>
-                </View>
+                    }
+                  }}
+                />
               </View>
             ) : null}
       </ScrollView>
