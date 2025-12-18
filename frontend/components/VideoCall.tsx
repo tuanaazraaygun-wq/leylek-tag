@@ -81,6 +81,59 @@ export default function VideoCall({
     };
   }, [visible]);
 
+  // ARAYAN İÇİN: Arama durumu takibi - reddedildi mi kontrol et
+  useEffect(() => {
+    if (!visible || !isCaller || !channelName || !userId) return;
+    
+    const checkCallStatus = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/voice/call-status?tag_id=${channelName}&user_id=${userId}`);
+        const data = await response.json();
+        
+        console.log('📞 Arayan call-status:', data);
+        
+        // Arama reddedildiyse veya sonlandırıldıysa
+        if (data.success && !data.has_active_call) {
+          if (data.was_rejected || data.status === 'rejected') {
+            console.log('❌ Arama reddedildi!');
+            setCallRejected(true);
+            Alert.alert('Arama Reddedildi', 'Karşı taraf aramayı reddetti.');
+            
+            // Cleanup ve çıkış
+            if (callStatusIntervalRef.current) {
+              clearInterval(callStatusIntervalRef.current);
+              callStatusIntervalRef.current = null;
+            }
+            
+            onRejected?.();
+            onEnd?.();
+          } else if (data.status === 'ended' || data.status === 'none') {
+            // Arama sonlandı
+            console.log('📞 Arama sonlandı');
+            if (callStatusIntervalRef.current) {
+              clearInterval(callStatusIntervalRef.current);
+              callStatusIntervalRef.current = null;
+            }
+            onEnd?.();
+          }
+        }
+      } catch (error) {
+        console.log('Call status check error:', error);
+      }
+    };
+    
+    // Her 2 saniyede kontrol et
+    callStatusIntervalRef.current = setInterval(checkCallStatus, 2000);
+    checkCallStatus(); // İlk kontrol
+    
+    return () => {
+      if (callStatusIntervalRef.current) {
+        clearInterval(callStatusIntervalRef.current);
+        callStatusIntervalRef.current = null;
+      }
+    };
+  }, [visible, isCaller, channelName, userId]);
+
   const startTimer = () => {
     if (durationIntervalRef.current) return;
     
