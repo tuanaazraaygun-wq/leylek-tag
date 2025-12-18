@@ -716,12 +716,27 @@ async def get_driver_active_tag(user_id: str):
     if not tag:
         return {"success": True, "tag": None}
     
+    # Yolcunun güncel konumunu al
+    passenger_location = tag.get("passenger_location")
+    if tag.get("passenger_id"):
+        passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
+        if passenger and passenger.get("location") and "coordinates" in passenger.get("location", {}):
+            passenger_location = {
+                "latitude": passenger["location"]["coordinates"][1],
+                "longitude": passenger["location"]["coordinates"][0]
+            }
+    
+    tag_data = TagResponse(
+        id=str(tag["_id"]),
+        **{k: v for k, v in tag.items() if k != "_id"}
+    ).dict()
+    
+    # Yolcu konumunu ekle
+    tag_data["passenger_location"] = passenger_location
+    
     return {
         "success": True,
-        "tag": TagResponse(
-            id=str(tag["_id"]),
-            **{k: v for k, v in tag.items() if k != "_id"}
-        ).dict()
+        "tag": tag_data
     }
 
 @api_router.post("/driver/start-tag/{tag_id}")
