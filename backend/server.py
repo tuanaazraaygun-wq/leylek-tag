@@ -80,7 +80,7 @@ async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, 
         else:
             # API hatası - fallback (yol katsayısı ile)
             straight_dist = calculate_distance(origin_lat, origin_lng, dest_lat, dest_lng)
-            dist = straight_dist * 1.4  # Şehir içi yollar düz çizginin ~1.4 katı
+            dist = straight_dist * 1.8  # Şehir içi yollar düz çizginin ~1.8 katı
             dur = round((dist / 30) * 60)  # Şehir içi ortalama 30 km/h
             return {"distance_km": round(dist, 1), "duration_min": dur, "source": "estimated"}
             
