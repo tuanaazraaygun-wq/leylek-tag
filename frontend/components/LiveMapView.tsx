@@ -121,42 +121,31 @@ export default function LiveMapView({
         showsCompass={true}
         mapType="standard"
       >
-        {/* Şoför Marker - Araba */}
-        {isDriver && userLocation && (
+        {/* KULLANICI - Ben (isDriver true ise araba, false ise insan) */}
+        {userLocation && (
           <Marker
             coordinate={userLocation}
-            title={userName}
+            title={`${userName} (Sen)`}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={styles.carMarker}>
-              <Text style={styles.carEmoji}>🚗</Text>
+            <View style={isDriver ? styles.carMarker : styles.personMarker}>
+              <Text style={isDriver ? styles.carEmoji : styles.personEmoji}>
+                {isDriver ? '🚗' : '🧍'}
+              </Text>
             </View>
           </Marker>
         )}
 
-        {/* Yolcu Marker - İnsan */}
-        {!isDriver && userLocation && (
-          <Marker
-            coordinate={userLocation}
-            title={userName}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={styles.personMarker}>
-              <Text style={styles.personEmoji}>🧍</Text>
-            </View>
-          </Marker>
-        )}
-
-        {/* Karşı Taraf - Şoför ise Araba, Yolcu ise İnsan */}
+        {/* KARŞI TARAF - (isDriver true ise karşı yolcu, false ise karşı şoför) */}
         {otherLocation && (
           <Marker
             coordinate={otherLocation}
             title={otherUserName}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={isDriver ? styles.personMarker : styles.carMarker}>
-              <Text style={isDriver ? styles.personEmoji : styles.carEmoji}>
-                {isDriver ? '🧍' : '🚗'}
+            <View style={!isDriver ? styles.carMarker : styles.personMarker}>
+              <Text style={!isDriver ? styles.carEmoji : styles.personEmoji}>
+                {!isDriver ? '🚗' : '🧍'}
               </Text>
             </View>
           </Marker>
