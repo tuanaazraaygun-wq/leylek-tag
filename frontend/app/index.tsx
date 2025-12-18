@@ -2065,7 +2065,7 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
             onCall={async (type) => {
               const passengerName = activeTag.passenger_name || 'Yolcu';
               try {
-                await fetch(`${API_URL}/voice/start-call`, {
+                const response = await fetch(`${API_URL}/voice/start-call`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -2075,11 +2075,19 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
                     call_type: type
                   })
                 });
+                const data = await response.json();
+                if (!data.success) {
+                  Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
+                  return;
+                }
               } catch (error) {
                 console.error('Arama bildirimi hatası:', error);
+                Alert.alert('Hata', 'Arama başlatılamadı');
+                return;
               }
               setSelectedPassengerName(passengerName);
               setIsVideoCall(type === 'video');
+              setIsCallCaller(true); // BEN ARIYORUM
               setShowVoiceCall(true);
             }}
             onComplete={() => {
