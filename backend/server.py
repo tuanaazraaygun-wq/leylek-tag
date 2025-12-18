@@ -583,6 +583,17 @@ async def get_passenger_active_tag(user_id: str):
     
     # Eşleşme varsa şoförün güncel konumunu al
     driver_location = tag.get("driver_location")
+    passenger_location = None
+    route_info = None
+    
+    # Yolcunun konumunu al
+    passenger = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
+    if passenger and passenger.get("location") and "coordinates" in passenger.get("location", {}):
+        passenger_location = {
+            "latitude": passenger["location"]["coordinates"][1],
+            "longitude": passenger["location"]["coordinates"][0]
+        }
+    
     if tag.get("driver_id") and tag.get("status") in [TagStatus.MATCHED, TagStatus.IN_PROGRESS]:
         driver = await db_instance.find_one("users", {"_id": ObjectId(tag["driver_id"])})
         if driver and driver.get("location") and "coordinates" in driver.get("location", {}):
@@ -590,14 +601,23 @@ async def get_passenger_active_tag(user_id: str):
                 "latitude": driver["location"]["coordinates"][1],
                 "longitude": driver["location"]["coordinates"][0]
             }
+            
+            # ROTA BİLGİSİ HESAPLA - Şoförden yolcuya
+            if passenger_location:
+                route_info = await get_route_info(
+                    driver_location["latitude"], driver_location["longitude"],
+                    passenger_location["latitude"], passenger_location["longitude"]
+                )
+                logger.info(f"📍 Rota hesaplandı (yolcu): {route_info}")
     
     tag_data = TagResponse(
         id=str(tag["_id"]),
         **{k: v for k, v in tag.items() if k != "_id"}
     ).dict()
     
-    # Şoför konumunu ekle
+    # Şoför konumunu ve rota bilgisini ekle
     tag_data["driver_location"] = driver_location
+    tag_data["route_info"] = route_info
     
     return {
         "success": True,
