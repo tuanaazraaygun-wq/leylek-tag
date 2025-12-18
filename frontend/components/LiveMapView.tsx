@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, Dimensions, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -32,7 +32,7 @@ interface LiveMapViewProps {
   destinationLocation?: { latitude: number; longitude: number; address?: string } | null;
 }
 
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw';
+const GOOGLE_MAPS_API_KEY = 'AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw';
 
 export default function LiveMapView({
   userLocation,
@@ -46,8 +46,102 @@ export default function LiveMapView({
   const [distance, setDistance] = useState<number | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
 
-  // Haversine formülü ile mesafe hesapla
+  // Polyline decode fonksiyonu
+  const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
+    const points: {latitude: number, longitude: number}[] = [];
+    let index = 0, lat = 0, lng = 0;
+
+    while (index < encoded.length) {
+      let b, shift = 0, result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+
+      points.push({
+        latitude: lat / 1e5,
+        longitude: lng / 1e5,
+      });
+    }
+    return points;
+  };
+
+  // Google Directions API ile EN KISA YOL rotası al
+  const fetchRoute = async () => {
+    if (!userLocation || !otherLocation) return;
+
+    try {
+      const origin = `${userLocation.latitude},${userLocation.longitude}`;
+      const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
+      
+      console.log('🗺️ Rota hesaplanıyor:', origin, '->', destination);
+      
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr&alternatives=false`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const route = data.routes[0];
+        const leg = route.legs[0];
+        
+        // Mesafe ve süre (en kısa yol)
+        const distKm = leg.distance.value / 1000;
+        const durMin = Math.round(leg.duration.value / 60);
+        
+        setDistance(distKm);
+        setDuration(durMin);
+        setIsConnected(true);
+        
+        console.log('✅ Rota bulundu:', distKm.toFixed(1), 'km,', durMin, 'dakika');
+        
+        // Polyline decode - yeşil çizgi için
+        const points = decodePolyline(route.overview_polyline.points);
+        setRouteCoordinates(points);
+      } else {
+        console.log('⚠️ Rota bulunamadı, düz çizgi kullanılıyor');
+        // Fallback: Düz çizgi mesafe
+        const dist = calculateDistance(
+          userLocation.latitude, userLocation.longitude,
+          otherLocation.latitude, otherLocation.longitude
+        );
+        setDistance(dist);
+        setDuration(Math.round((dist / 40) * 60));
+        setRouteCoordinates([userLocation, otherLocation]);
+        setIsConnected(true);
+      }
+    } catch (error) {
+      console.error('Rota hatası:', error);
+      // Fallback
+      if (userLocation && otherLocation) {
+        const dist = calculateDistance(
+          userLocation.latitude, userLocation.longitude,
+          otherLocation.latitude, otherLocation.longitude
+        );
+        setDistance(dist);
+        setDuration(Math.round((dist / 40) * 60));
+        setRouteCoordinates([userLocation, otherLocation]);
+        setIsConnected(true);
+      }
+    }
+  };
+
+  // Haversine formülü
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -60,18 +154,10 @@ export default function LiveMapView({
     return R * c;
   };
 
-  // Rota ve mesafe hesapla
+  // Konum değiştiğinde rota güncelle
   useEffect(() => {
     if (userLocation && otherLocation) {
-      const dist = calculateDistance(
-        userLocation.latitude, userLocation.longitude,
-        otherLocation.latitude, otherLocation.longitude
-      );
-      setDistance(dist);
-      setDuration(Math.round((dist / 40) * 60)); // 40 km/h ortalama
-      
-      // Basit rota (düz çizgi)
-      setRouteCoordinates([userLocation, otherLocation]);
+      fetchRoute();
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
@@ -79,20 +165,30 @@ export default function LiveMapView({
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
-        mapRef.current?.fitToCoordinates([userLocation, otherLocation], {
-          edgePadding: { top: 80, right: 50, bottom: 80, left: 50 },
+        const coordinates = [userLocation, otherLocation];
+        if (destinationLocation) {
+          coordinates.push(destinationLocation);
+        }
+        mapRef.current?.fitToCoordinates(coordinates, {
+          edgePadding: { top: 120, right: 60, bottom: 200, left: 60 },
           animated: true,
         });
       }, 500);
     }
-  }, [userLocation, otherLocation]);
+  }, [userLocation, otherLocation, destinationLocation]);
 
   // Web placeholder
   if (Platform.OS === 'web' || !MapView) {
     return (
       <View style={styles.webPlaceholder}>
-        <Ionicons name="map" size={60} color="#00A67E" />
+        <Ionicons name="map" size={60} color="#22C55E" />
         <Text style={styles.webText}>Harita (Mobil Uygulamada)</Text>
+        {distance && (
+          <View style={styles.webInfo}>
+            <Text style={styles.webInfoText}>📍 {distance.toFixed(1)} km</Text>
+            <Text style={styles.webInfoText}>⏱️ {duration} dk</Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -121,67 +217,125 @@ export default function LiveMapView({
         showsCompass={true}
         mapType="standard"
       >
-        {/* KULLANICI - Ben (isDriver true ise araba, false ise insan) */}
+        {/* YEŞİL ROTA ÇİZGİSİ - EN KISA YOL */}
+        {routeCoordinates.length >= 2 && (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#22C55E"
+            strokeWidth={5}
+            lineDashPattern={[0]}
+          />
+        )}
+
+        {/* KULLANICI - Ben */}
         {userLocation && (
           <Marker
             coordinate={userLocation}
             title={`${userName} (Sen)`}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={isDriver ? styles.carMarker : styles.personMarker}>
-              <Text style={isDriver ? styles.carEmoji : styles.personEmoji}>
+            <View style={[
+              styles.markerContainer,
+              isDriver ? styles.driverMarker : styles.passengerMarker,
+              isConnected && styles.connectedMarker
+            ]}>
+              <Text style={styles.markerEmoji}>
                 {isDriver ? '🚗' : '🧍'}
               </Text>
             </View>
           </Marker>
         )}
 
-        {/* KARŞI TARAF - (isDriver true ise karşı yolcu, false ise karşı şoför) */}
+        {/* KARŞI TARAF */}
         {otherLocation && (
           <Marker
             coordinate={otherLocation}
             title={otherUserName}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={!isDriver ? styles.carMarker : styles.personMarker}>
-              <Text style={!isDriver ? styles.carEmoji : styles.personEmoji}>
+            <View style={[
+              styles.markerContainer,
+              !isDriver ? styles.driverMarker : styles.passengerMarker,
+              isConnected && styles.connectedMarker
+            ]}>
+              <Text style={styles.markerEmoji}>
                 {!isDriver ? '🚗' : '🧍'}
               </Text>
             </View>
           </Marker>
         )}
 
-        {/* Rota Çizgisi */}
-        {routeCoordinates.length >= 2 && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#00A67E"
-            strokeWidth={4}
-          />
+        {/* HEDEF NOKTASI */}
+        {destinationLocation && (
+          <Marker
+            coordinate={destinationLocation}
+            title="Hedef"
+            description={destinationLocation.address}
+          >
+            <View style={styles.destinationMarker}>
+              <Ionicons name="flag" size={24} color="#FFF" />
+            </View>
+          </Marker>
         )}
       </MapView>
 
-      {/* Üst Bilgi Bandı - Sadece Mesafe ve Süre */}
-      <View style={styles.topBanner}>
-        <View style={styles.bannerItem}>
-          <Ionicons name="navigate" size={20} color="#00A67E" />
-          <Text style={styles.bannerValue}>
-            {distance ? `${distance.toFixed(1)} km` : '--'}
+      {/* ÜST BİLGİ BANDI - YEŞİL TEMA */}
+      <View style={[styles.topBanner, isConnected && styles.topBannerConnected]}>
+        {/* Bağlantı Durumu */}
+        <View style={styles.connectionStatus}>
+          <View style={[styles.connectionDot, isConnected && styles.connectionDotActive]} />
+          <Text style={[styles.connectionText, isConnected && styles.connectionTextActive]}>
+            {isConnected ? 'Bağlantı Aktif' : 'Bağlanıyor...'}
           </Text>
         </View>
-        <View style={styles.bannerDivider} />
-        <View style={styles.bannerItem}>
-          <Ionicons name="time" size={20} color="#FF6B35" />
-          <Text style={styles.bannerValue}>
-            {duration ? `${duration} dk sonra buluşacaksınız` : 'Hesaplanıyor...'}
+
+        {/* Mesafe ve Süre */}
+        <View style={styles.infoRow}>
+          <View style={styles.infoItem}>
+            <Ionicons name="navigate" size={22} color="#22C55E" />
+            <Text style={styles.infoValue}>
+              {distance ? `${distance.toFixed(1)} km` : '--'}
+            </Text>
+          </View>
+          
+          <View style={styles.infoDivider} />
+          
+          <View style={styles.infoItem}>
+            <Ionicons name="time" size={22} color="#22C55E" />
+            <Text style={styles.infoValue}>
+              {duration ? `${duration} dk` : '--'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Buluşma Mesajı */}
+        {duration && (
+          <Text style={styles.meetingText}>
+            🤝 {duration} dakika sonra buluşacaksınız!
           </Text>
+        )}
+      </View>
+
+      {/* LEGEND - Sol Alt */}
+      <View style={styles.legend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
+          <Text style={styles.legendText}>Şoför 🚗</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} />
+          <Text style={styles.legendText}>Yolcu 🧍</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
+          <Text style={styles.legendText}>Rota</Text>
         </View>
       </View>
 
-      {/* Canlı Takip İndikatörü */}
+      {/* CANLI GÖSTERGE - Sağ Alt */}
       <View style={styles.liveIndicator}>
-        <View style={styles.liveDot} />
-        <Text style={styles.liveText}>Canlı</Text>
+        <View style={styles.livePulse} />
+        <Text style={styles.liveText}>CANLI</Text>
       </View>
     </View>
   );
@@ -205,11 +359,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
+  webInfo: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  webInfoText: {
+    fontSize: 18,
+    color: '#333',
+    marginVertical: 4,
+  },
   // Marker Styles
-  carMarker: {
+  markerContainer: {
     width: 50,
     height: 50,
-    backgroundColor: '#E74C3C',
     borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
@@ -221,26 +383,28 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
-  carEmoji: {
-    fontSize: 28,
+  driverMarker: {
+    backgroundColor: '#EF4444',
   },
-  personMarker: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#3498DB',
-    borderRadius: 25,
+  passengerMarker: {
+    backgroundColor: '#3B82F6',
+  },
+  connectedMarker: {
+    borderColor: '#22C55E',
+    borderWidth: 4,
+  },
+  markerEmoji: {
+    fontSize: 24,
+  },
+  destinationMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F59E0B',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  personEmoji: {
-    fontSize: 28,
   },
   // Top Banner
   topBanner: {
@@ -249,55 +413,128 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 4,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
   },
-  bannerItem: {
+  topBannerConnected: {
+    borderColor: '#22C55E',
+    borderWidth: 2,
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  connectionDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#9CA3AF',
+    marginRight: 6,
+  },
+  connectionDotActive: {
+    backgroundColor: '#22C55E',
+  },
+  connectionText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  connectionTextActive: {
+    color: '#22C55E',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 16,
   },
-  bannerValue: {
-    fontSize: 14,
-    fontWeight: '600',
+  infoValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#333',
   },
-  bannerDivider: {
+  infoDivider: {
     width: 1,
-    height: 20,
-    backgroundColor: '#E0E0E0',
-    marginHorizontal: 12,
+    height: 24,
+    backgroundColor: '#E5E7EB',
+  },
+  meetingText: {
+    textAlign: 'center',
+    marginTop: 10,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#22C55E',
+  },
+  // Legend
+  legend: {
+    position: 'absolute',
+    bottom: 20,
+    left: 10,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 3,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#666',
   },
   // Live Indicator
   liveIndicator: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    bottom: 20,
+    right: 10,
+    backgroundColor: '#22C55E',
     borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  liveDot: {
+  livePulse: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#FFF',
   },
   liveText: {
     fontSize: 12,
-    color: '#22C55E',
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: '#FFF',
   },
 });
