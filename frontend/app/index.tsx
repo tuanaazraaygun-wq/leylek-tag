@@ -1780,6 +1780,9 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     if (!user?.id || !activeTag || showVoiceCall || showIncomingCall) return;
     
     const checkIncomingCall = async () => {
+      // Çift kontrol - state değişmiş olabilir
+      if (showVoiceCall || showIncomingCall) return;
+      
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         
@@ -1808,8 +1811,8 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     
     // İlk kontrolü hemen yap
     checkIncomingCall();
-    // Sonra her 2 saniyede bir kontrol et
-    const interval = setInterval(checkIncomingCall, 2000);
+    // Sonra her 3 saniyede bir kontrol et
+    const interval = setInterval(checkIncomingCall, 3000);
     
     return () => clearInterval(interval);
   }, [user?.id, activeTag, showVoiceCall, showIncomingCall]);
