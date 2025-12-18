@@ -1161,28 +1161,41 @@ function PassengerDashboard({
     }
   }, [activeTag, userLocation]);
 
-  // GELEN ARAMA KONTROLÜ - Polling
+  // GELEN ARAMA KONTROLÜ - Polling (Yolcu için)
   useEffect(() => {
-    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
+    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') && !showVoiceCall && !showIncomingCall) {
       const checkIncoming = async () => {
         try {
           const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-          const data = await response.json();
           
-          if (data.success && data.has_incoming) {
+          if (!response.ok) return;
+          
+          const text = await response.text();
+          if (!text || text.trim() === '') return;
+          
+          const data = JSON.parse(text);
+          
+          if (data.success && data.has_incoming && data.call) {
             console.log('📞 GELEN ARAMA!', data.call.caller_name);
-            setSelectedDriverName(data.call.caller_name);
-            setShowVoiceCall(true);
+            setIncomingCallInfo({
+              callerName: data.call.caller_name,
+              callType: data.call.call_type || 'audio',
+              channelName: data.call.channel_name
+            });
+            setShowIncomingCall(true);
           }
         } catch (error) {
-          console.log('Gelen arama kontrolü hatası:', error);
+          // JSON parse hatası için sessiz kal
+          if (!(error instanceof SyntaxError)) {
+            console.log('Gelen arama kontrolü hatası:', error);
+          }
         }
       };
 
-      const interval = setInterval(checkIncoming, 3000); // 3 saniyede bir kontrol
+      const interval = setInterval(checkIncoming, 3000);
       return () => clearInterval(interval);
     }
-  }, [activeTag, user.id, showVoiceCall]);
+  }, [activeTag, user.id, showVoiceCall, showIncomingCall]);
 
   useEffect(() => {
     loadActiveTag();
