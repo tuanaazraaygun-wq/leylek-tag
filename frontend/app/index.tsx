@@ -1772,6 +1772,12 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   const [showIncomingCall, setShowIncomingCall] = useState(false);
   const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
   
+  // Refs for polling (closure problem fix)
+  const callStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
+  useEffect(() => {
+    callStateRef.current = { showVoiceCall, showIncomingCall, isCallCaller };
+  }, [showVoiceCall, showIncomingCall, isCallCaller]);
+  
   // Animation
   const buttonPulse = useRef(new Animated.Value(1)).current;
 
@@ -1783,17 +1789,18 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   
   // Gelen arama polling - Şoför için
   useEffect(() => {
-    // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
-    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall || isCallCaller) return;
-    
-    // Sadece matched/in_progress durumunda polling yap
+    // Başlangıç kontrolü
+    if (!user?.id || !activeTag) return;
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
     
     let isActive = true;
     
     const checkIncomingCall = async () => {
-      // Çift kontrol - state değişmiş olabilir
-      if (!isActive || showVoiceCall || showIncomingCall || isCallCaller) return;
+      // Güncel state'leri ref'ten oku (closure fix)
+      const { showVoiceCall: inCall, showIncomingCall: hasIncoming, isCallCaller: isCaller } = callStateRef.current;
+      
+      // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
+      if (!isActive || inCall || hasIncoming || isCaller) return;
       
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
@@ -1806,8 +1813,9 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
         
         const data = JSON.parse(text);
         
-        // Son kontrol
-        if (!isActive || showVoiceCall || showIncomingCall) return;
+        // Son kontrol - ref'ten güncel değerleri al
+        const currentState = callStateRef.current;
+        if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
           console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
@@ -1825,14 +1833,14 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     
     // İlk kontrolü hemen yap
     checkIncomingCall();
-    // Sonra her 3 saniyede bir kontrol et
-    const interval = setInterval(checkIncomingCall, 3000);
+    // Sonra her 2 saniyede bir kontrol et
+    const interval = setInterval(checkIncomingCall, 2000);
     
     return () => {
       isActive = false;
       clearInterval(interval);
     };
-  }, [user?.id, activeTag, showVoiceCall, showIncomingCall, isCallCaller]);
+  }, [user?.id, activeTag?.id, activeTag?.status]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
