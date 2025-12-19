@@ -198,7 +198,7 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'role-select' | 'dashboard'>('login');
+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard'>('login');
 
   // Auth states
   const [phone, setPhone] = useState('');
@@ -207,6 +207,15 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState('');
   const [cities, setCities] = useState<string[]>([]);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  
+  // Yeni Auth states
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
+  const [userExists, setUserExists] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
   
   // Role Selection (Dinamik - Her girişte seçilir)
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
