@@ -2677,6 +2677,23 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
               setIsCallCaller(true); // BEN ARIYORUM
               setShowVoiceCall(true);
             }}
+            onRequestTripEnd={async () => {
+              // Karşılıklı iptal isteği gönder - ŞOFÖR
+              try {
+                const response = await fetch(
+                  `${API_URL}/trip/request-end?tag_id=${activeTag.id}&user_id=${user.id}&user_type=driver`,
+                  { method: 'POST' }
+                );
+                const data = await response.json();
+                if (data.success) {
+                  Alert.alert('✅ İstek Gönderildi', 'Yolcunun onayı bekleniyor...');
+                } else {
+                  Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                }
+              } catch (error) {
+                Alert.alert('Hata', 'İstek gönderilemedi');
+              }
+            }}
             onComplete={() => {
               Alert.alert(
                 'Yolculuğu Tamamla',
