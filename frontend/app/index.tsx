@@ -1455,6 +1455,10 @@ function PassengerDashboard({
   const [showIncomingCall, setShowIncomingCall] = useState(false);
   const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
   
+  // Karşılıklı iptal sistemi state'leri
+  const [showTripEndModal, setShowTripEndModal] = useState(false);
+  const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
+  
   // Refs for polling (closure problem fix) - YOLCU
   const passengerCallStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
   useEffect(() => {
