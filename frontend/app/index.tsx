@@ -716,6 +716,198 @@ export default function App() {
   }
 
   // ==================== PREMIUM ROLE SELECTION SCREEN ====================
+  // PIN Belirleme Ekranı
+  if (screen === 'set-pin') {
+    const handleSetPin = async () => {
+      if (pin.length !== 6) {
+        Alert.alert('Hata', 'Şifre 6 haneli olmalıdır');
+        return;
+      }
+      if (pin !== confirmPin) {
+        Alert.alert('Hata', 'Şifreler eşleşmiyor');
+        return;
+      }
+
+      try {
+        // Önce kullanıcıyı kaydet
+        const registerResponse = await fetch(`${API_URL}/auth/register?phone=${encodeURIComponent(phone)}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&city=${encodeURIComponent(selectedCity)}&pin=${encodeURIComponent(pin)}`, {
+          method: 'POST',
+        });
+        const registerData = await registerResponse.json();
+        
+        if (registerData.success) {
+          Alert.alert(
+            '✅ Kayıt Başarılı',
+            'Şifrenizi kimseyle paylaşmayın, göstermeyin, söylemeyin!',
+            [{ text: 'Tamam', onPress: () => {
+              setUser(registerData.user);
+              saveUser(registerData.user);
+              setScreen('role-select');
+            }}]
+          );
+        } else {
+          Alert.alert('Hata', registerData.detail || 'Kayıt yapılamadı');
+        }
+      } catch (error) {
+        Alert.alert('Hata', 'Bir sorun oluştu');
+      }
+    };
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.logoContainer}>
+            <View style={styles.pinIconContainer}>
+              <Ionicons name="lock-closed" size={45} color="#3FA9F5" />
+            </View>
+            <Text style={styles.pinTitle}>Şifre Belirle</Text>
+            <Text style={styles.heroSubtitle}>6 haneli güvenlik şifrenizi oluşturun</Text>
+          </View>
+
+          <View style={styles.modernFormContainer}>
+            {/* PIN Girişi */}
+            <Text style={styles.modernLabel}>Şifreniz (6 Hane)</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="• • • • • •"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="number-pad"
+                secureTextEntry={!showPin}
+                value={pin}
+                onChangeText={setPin}
+                maxLength={6}
+              />
+              <TouchableOpacity onPress={() => setShowPin(!showPin)}>
+                <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
+              </TouchableOpacity>
+            </View>
+
+            {/* PIN Onay */}
+            <Text style={styles.modernLabel}>Şifre Tekrar</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="• • • • • •"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="number-pad"
+                secureTextEntry={!showPin}
+                value={confirmPin}
+                onChangeText={setConfirmPin}
+                maxLength={6}
+              />
+            </View>
+
+            {/* Uyarı */}
+            <View style={styles.pinWarningContainer}>
+              <Ionicons name="warning" size={20} color="#F59E0B" />
+              <Text style={styles.pinWarningText}>
+                Şifrenizi kimseyle paylaşmayın, göstermeyin, söylemeyin!
+              </Text>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.modernPrimaryButton, (pin.length !== 6 || confirmPin.length !== 6) && styles.buttonDisabled]} 
+              onPress={handleSetPin}
+              disabled={pin.length !== 6 || confirmPin.length !== 6}
+            >
+              <Text style={styles.modernPrimaryButtonText}>KAYDI TAMAMLA</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('register')}>
+              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // PIN Giriş Ekranı (Mevcut kullanıcı için)
+  if (screen === 'enter-pin') {
+    const handleEnterPin = async () => {
+      if (pin.length !== 6) {
+        Alert.alert('Hata', 'Şifre 6 haneli olmalıdır');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/auth/verify-pin?phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}`, {
+          method: 'POST',
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+          setUser(data.user);
+          saveUser(data.user);
+          setScreen('role-select');
+        } else {
+          Alert.alert('Hata', data.detail || 'Yanlış şifre');
+          setPin('');
+        }
+      } catch (error) {
+        Alert.alert('Hata', 'Bir sorun oluştu');
+      }
+    };
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.logoContainer}>
+            <View style={styles.pinIconContainer}>
+              <Ionicons name="lock-closed" size={45} color="#3FA9F5" />
+            </View>
+            <Text style={styles.pinTitle}>Şifre Giriş</Text>
+            <Text style={styles.heroSubtitle}>6 haneli güvenlik şifrenizi girin</Text>
+          </View>
+
+          <View style={styles.modernFormContainer}>
+            <Text style={styles.modernLabel}>Şifreniz</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="• • • • • •"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="number-pad"
+                secureTextEntry={!showPin}
+                value={pin}
+                onChangeText={setPin}
+                maxLength={6}
+              />
+              <TouchableOpacity onPress={() => setShowPin(!showPin)}>
+                <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.modernPrimaryButton, pin.length !== 6 && styles.buttonDisabled]} 
+              onPress={handleEnterPin}
+              disabled={pin.length !== 6}
+            >
+              <Text style={styles.modernPrimaryButtonText}>GİRİŞ YAP</Text>
+              <Ionicons name="log-in" size={20} color="#FFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
+              setPin('');
+              setScreen('login');
+            }}>
+              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   if (screen === 'role-select') {
     const handleRoleSelect = (role: 'passenger' | 'driver') => {
       setSelectedRole(role);
