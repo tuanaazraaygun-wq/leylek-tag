@@ -54,6 +54,7 @@ export default function LiveMapView({
   onReport,
   onCall,
   onComplete,
+  onRequestTripEnd,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
