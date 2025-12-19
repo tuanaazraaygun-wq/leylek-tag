@@ -1102,7 +1102,7 @@ function PassengerDashboard({
       isActive = false;
       clearInterval(interval);
     };
-  }, [user?.id, activeTag, showVoiceCall, showIncomingCall, isCallCaller]);
+  }, [user?.id, activeTag?.id, activeTag?.status]);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
