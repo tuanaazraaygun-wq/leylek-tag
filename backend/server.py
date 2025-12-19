@@ -164,6 +164,53 @@ async def update_location(user_id: str, latitude: float, longitude: float):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@api_router.post("/auth/check-user")
+async def check_user(request: SendOTPRequest):
+    """
+    Kullanıcı kayıtlı mı kontrol et
+    Kayıtlıysa: OTP gönder ve giriş akışına yönlendir
+    Kayıtlı değilse: Kayıt ol ekranına yönlendir
+    """
+    try:
+        db = db_instance.db
+        phone = request.phone.replace(" ", "").replace("-", "")
+        
+        # Kullanıcıyı bul
+        user = await db.users.find_one({"phone": phone})
+        
+        if user:
+            # Kullanıcı kayıtlı - OTP gönder (NetGSM sonra)
+            # TODO: NetGSM entegrasyonu
+            logger.info(f"📱 GİRİŞ OTP gönderildi: {phone} -> 123456 (MOCK)")
+            
+            # Giriş denemesi logla
+            await db.login_attempts.insert_one({
+                "phone": phone,
+                "user_id": str(user["_id"]),
+                "device_id": getattr(request, 'device_id', None),
+                "attempt_type": "login",
+                "timestamp": datetime.utcnow(),
+                "ip_address": None  # Request'ten alınabilir
+            })
+            
+            return {
+                "success": True,
+                "user_exists": True,
+                "has_pin": user.get("pin_hash") is not None,
+                "message": "OTP gönderildi (Test: 123456)",
+                "user_name": user.get("name", "")
+            }
+        else:
+            # Kullanıcı kayıtlı değil - Kayıt ol ekranına yönlendir
+            return {
+                "success": True,
+                "user_exists": False,
+                "message": "Kayıtlı kullanıcı bulunamadı. Lütfen kayıt olun."
+            }
+    except Exception as e:
+        logger.error(f"Check user hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
 @api_router.post("/auth/send-otp")
 async def send_otp(request: SendOTPRequest):
     """
@@ -177,6 +224,185 @@ async def send_otp(request: SendOTPRequest):
         "message": "OTP gönderildi (Test: 123456)",
         "phone": request.phone
     }
+
+@api_router.post("/auth/register")
+async def register_user(
+    phone: str,
+    first_name: str,
+    last_name: str,
+    city: str,
+    pin: str,
+    device_id: str = None
+):
+    """
+    Yeni kullanıcı kaydı
+    """
+    try:
+        db = db_instance.db
+        phone = phone.replace(" ", "").replace("-", "")
+        
+        # Telefon zaten kayıtlı mı?
+        existing = await db.users.find_one({"phone": phone})
+        if existing:
+            return {"success": False, "detail": "Bu telefon numarası zaten kayıtlı"}
+        
+        # PIN hash'le (basit hash - production'da bcrypt kullanılmalı)
+        import hashlib
+        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+        
+        # Kullanıcı oluştur
+        user_data = {
+            "phone": phone,
+            "name": f"{first_name} {last_name}",
+            "first_name": first_name,
+            "last_name": last_name,
+            "city": city,
+            "pin_hash": pin_hash,
+            "device_ids": [device_id] if device_id else [],
+            "created_at": datetime.utcnow(),
+            "last_login": datetime.utcnow(),
+            "is_active": True,
+            "blocked_users": []
+        }
+        
+        result = await db.users.insert_one(user_data)
+        user_data["id"] = str(result.inserted_id)
+        user_data.pop("_id", None)
+        user_data.pop("pin_hash", None)
+        
+        logger.info(f"✅ Yeni kullanıcı kaydı: {phone} - {first_name} {last_name}")
+        
+        return {
+            "success": True,
+            "message": "Kayıt başarılı",
+            "user": user_data
+        }
+    except Exception as e:
+        logger.error(f"Register hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/auth/verify-pin")
+async def verify_pin(phone: str, pin: str, device_id: str = None):
+    """
+    6 haneli PIN doğrulama
+    """
+    try:
+        db = db_instance.db
+        phone = phone.replace(" ", "").replace("-", "")
+        
+        user = await db.users.find_one({"phone": phone})
+        if not user:
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        # PIN kontrolü
+        import hashlib
+        pin_hash = hashlib.sha256(pin.encode()).hexdigest()
+        
+        if user.get("pin_hash") != pin_hash:
+            # Yanlış PIN - logla
+            await db.login_attempts.insert_one({
+                "phone": phone,
+                "user_id": str(user["_id"]),
+                "device_id": device_id,
+                "attempt_type": "wrong_pin",
+                "timestamp": datetime.utcnow()
+            })
+            return {"success": False, "detail": "Yanlış şifre"}
+        
+        # Cihaz kontrolü
+        user_devices = user.get("device_ids", [])
+        is_new_device = device_id and device_id not in user_devices
+        
+        if is_new_device:
+            # Yeni cihazı kaydet
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$addToSet": {"device_ids": device_id}}
+            )
+            logger.info(f"🔐 Yeni cihaz eklendi: {phone} - {device_id}")
+        
+        # Son giriş güncelle
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"last_login": datetime.utcnow()}}
+        )
+        
+        # Başarılı giriş logla
+        await db.login_attempts.insert_one({
+            "phone": phone,
+            "user_id": str(user["_id"]),
+            "device_id": device_id,
+            "attempt_type": "success",
+            "is_new_device": is_new_device,
+            "timestamp": datetime.utcnow()
+        })
+        
+        user_data = {
+            "id": str(user["_id"]),
+            "phone": user["phone"],
+            "name": user.get("name", ""),
+            "first_name": user.get("first_name", ""),
+            "last_name": user.get("last_name", ""),
+            "city": user.get("city", "")
+        }
+        
+        return {
+            "success": True,
+            "message": "Giriş başarılı",
+            "user": user_data,
+            "is_new_device": is_new_device
+        }
+    except Exception as e:
+        logger.error(f"Verify PIN hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/auth/set-pin")
+async def set_pin(phone: str, new_pin: str):
+    """
+    6 haneli PIN belirleme/değiştirme
+    """
+    try:
+        db = db_instance.db
+        phone = phone.replace(" ", "").replace("-", "")
+        
+        if len(new_pin) != 6 or not new_pin.isdigit():
+            return {"success": False, "detail": "PIN 6 haneli rakam olmalıdır"}
+        
+        import hashlib
+        pin_hash = hashlib.sha256(new_pin.encode()).hexdigest()
+        
+        result = await db.users.update_one(
+            {"phone": phone},
+            {"$set": {"pin_hash": pin_hash}}
+        )
+        
+        if result.modified_count == 0:
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        logger.info(f"🔐 PIN güncellendi: {phone}")
+        return {"success": True, "message": "Şifre başarıyla belirlendi"}
+    except Exception as e:
+        logger.error(f"Set PIN hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.get("/auth/login-attempts")
+async def get_login_attempts(phone: str, limit: int = 10):
+    """
+    Giriş denemelerini getir (güvenlik için)
+    """
+    try:
+        db = db_instance.db
+        attempts = await db.login_attempts.find(
+            {"phone": phone}
+        ).sort("timestamp", -1).limit(limit).to_list(limit)
+        
+        for a in attempts:
+            a["id"] = str(a.pop("_id"))
+            a["timestamp"] = a["timestamp"].isoformat()
+        
+        return {"success": True, "attempts": attempts}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(request: VerifyOTPRequest):
