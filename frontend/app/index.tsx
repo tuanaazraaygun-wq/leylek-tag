@@ -432,7 +432,7 @@ export default function App() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color="#00A67E" />
+        <ActivityIndicator size="large" color="#3FA9F5" />
       </SafeAreaView>
     );
   }
@@ -972,7 +972,7 @@ export default function App() {
           {/* Başlık Alanı */}
           <View style={styles.roleHeader}>
             <View style={styles.roleHeaderIcon}>
-              <Ionicons name="people-circle" size={48} color="#2ECC71" />
+              <Ionicons name="people-circle" size={48} color="#3FA9F5" />
             </View>
             <Text style={styles.roleHeaderTitle}>Rol Seçimi</Text>
             <Text style={styles.roleHeaderSubtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
@@ -994,12 +994,12 @@ export default function App() {
                   <Ionicons 
                     name="person-outline" 
                     size={40} 
-                    color={selectedRole === 'passenger' ? '#2ECC71' : '#7F8C8D'} 
+                    color={selectedRole === 'passenger' ? '#3FA9F5' : '#7F8C8D'} 
                   />
                   <Ionicons 
                     name="location" 
                     size={24} 
-                    color={selectedRole === 'passenger' ? '#2ECC71' : '#7F8C8D'}
+                    color={selectedRole === 'passenger' ? '#3FA9F5' : '#7F8C8D'}
                     style={styles.roleCardIconOverlay}
                   />
                 </View>
@@ -1014,7 +1014,7 @@ export default function App() {
                 </Text>
                 {selectedRole === 'passenger' && (
                   <View style={styles.roleCardCheckmark}>
-                    <Ionicons name="checkmark-circle" size={28} color="#2ECC71" />
+                    <Ionicons name="checkmark-circle" size={28} color="#3FA9F5" />
                   </View>
                 )}
               </View>
@@ -1034,12 +1034,12 @@ export default function App() {
                   <Ionicons 
                     name="car-sport-outline" 
                     size={40} 
-                    color={selectedRole === 'driver' ? '#2ECC71' : '#7F8C8D'} 
+                    color={selectedRole === 'driver' ? '#3FA9F5' : '#7F8C8D'} 
                   />
                   <Ionicons 
                     name="options" 
                     size={24} 
-                    color={selectedRole === 'driver' ? '#2ECC71' : '#7F8C8D'}
+                    color={selectedRole === 'driver' ? '#3FA9F5' : '#7F8C8D'}
                     style={styles.roleCardIconOverlay}
                   />
                 </View>
@@ -1054,7 +1054,7 @@ export default function App() {
                 </Text>
                 {selectedRole === 'driver' && (
                   <View style={styles.roleCardCheckmark}>
-                    <Ionicons name="checkmark-circle" size={28} color="#2ECC71" />
+                    <Ionicons name="checkmark-circle" size={28} color="#3FA9F5" />
                   </View>
                 )}
               </View>
@@ -1072,7 +1072,7 @@ export default function App() {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={selectedRole ? ['#2ECC71', '#27AE60'] : ['#BDC3C7', '#95A5A6']}
+              colors={selectedRole ? ['#3FA9F5', '#3FA9F5'] : ['#BDC3C7', '#95A5A6']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.roleContinueGradient}
@@ -1914,7 +1914,7 @@ function PassengerDashboard({
               </View>
 
               <View style={styles.locationRow}>
-                <Ionicons name="location" size={20} color="#00A67E" />
+                <Ionicons name="location" size={20} color="#3FA9F5" />
                 <Text style={styles.locationText}>{activeTag.pickup_location}</Text>
               </View>
 
@@ -2683,7 +2683,7 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
 
                   {/* Lokasyon Bilgileri */}
                   <View style={styles.locationRow}>
-                    <Ionicons name="location" size={18} color="#00A67E" />
+                    <Ionicons name="location" size={18} color="#3FA9F5" />
                     <Text style={styles.requestLocation}>Başlangıç: {request.pickup_location}</Text>
                   </View>
 
@@ -2695,7 +2695,7 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
                   {/* Teklif Gönder / Gönderildi */}
                   {request.has_offered ? (
                     <View style={styles.offeredBadge}>
-                      <Ionicons name="checkmark-circle" size={20} color="#00A67E" />
+                      <Ionicons name="checkmark-circle" size={20} color="#3FA9F5" />
                       <Text style={styles.offeredText}>Teklif Gönderildi</Text>
                     </View>
                   ) : (
@@ -2972,7 +2972,7 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#00A67E',
+    color: '#3FA9F5',
     marginTop: 10
   },
   subtitle: {
@@ -3060,7 +3060,7 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   primaryButton: {
-    backgroundColor: '#00A67E',
+    backgroundColor: '#3FA9F5',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -3078,10 +3078,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#00A67E'
+    borderColor: '#3FA9F5'
   },
   secondaryButtonText: {
-    color: '#00A67E',
+    color: '#3FA9F5',
     fontSize: 16,
     fontWeight: 'bold'
   },
@@ -3101,14 +3101,14 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0'
   },
   roleButtonActive: {
-    backgroundColor: '#00A67E',
-    borderColor: '#00A67E'
+    backgroundColor: '#3FA9F5',
+    borderColor: '#3FA9F5'
   },
   roleButtonText: {
     marginTop: 8,
     fontSize: 16,
     fontWeight: '600',
-    color: '#00A67E'
+    color: '#3FA9F5'
   },
   roleButtonTextActive: {
     color: '#FFF'
@@ -3120,7 +3120,7 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   header: {
-    backgroundColor: '#00A67E',
+    backgroundColor: '#3FA9F5',
     padding: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -3168,7 +3168,7 @@ const styles = StyleSheet.create({
   tagStatusText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#00A67E'
+    color: '#3FA9F5'
   },
   locationRow: {
     flexDirection: 'row',
@@ -3190,7 +3190,7 @@ const styles = StyleSheet.create({
   driverPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#00A67E',
+    color: '#3FA9F5',
     marginTop: 4
   },
   offerCard: {
@@ -3217,7 +3217,7 @@ const styles = StyleSheet.create({
   offerPrice: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#00A67E'
+    color: '#3FA9F5'
   },
   offerTime: {
     fontSize: 14,
@@ -3395,7 +3395,7 @@ const styles = StyleSheet.create({
     marginTop: 12
   },
   offeredText: {
-    color: '#00A67E',
+    color: '#3FA9F5',
     fontSize: 14,
     fontWeight: '600'
   },
@@ -3408,7 +3408,7 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#00A67E',
+    color: '#3FA9F5',
     marginTop: 12,
     marginBottom: 12
   },
@@ -4781,9 +4781,9 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1 }],
   },
   roleCardPremiumSelected: {
-    borderColor: '#2ECC71',
+    borderColor: '#3FA9F5',
     backgroundColor: '#F8FFF9',
-    shadowColor: '#2ECC71',
+    shadowColor: '#3FA9F5',
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 8,
@@ -4812,7 +4812,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   roleCardTitleSelected: {
-    color: '#2ECC71',
+    color: '#3FA9F5',
   },
   roleCardDescription: {
     fontSize: 14,
@@ -4827,7 +4827,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 2,
-    shadowColor: '#2ECC71',
+    shadowColor: '#3FA9F5',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -4838,7 +4838,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#2ECC71',
+    shadowColor: '#3FA9F5',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
