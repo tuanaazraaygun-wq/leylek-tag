@@ -417,9 +417,6 @@ export default function App() {
     );
   }
 
-  // KVKK checkbox state
-  const [kvkkAccepted, setKvkkAccepted] = useState(false);
-
   if (screen === 'login') {
     return (
       <SafeAreaView style={styles.container}>
