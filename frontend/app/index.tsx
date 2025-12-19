@@ -2621,6 +2621,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#A0C4E8',
     shadowOpacity: 0.15,
   },
+  // Doğrulama ekranı stilleri
+  verifyIconContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  verifyTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#10B981',
+    marginBottom: 8,
+    letterSpacing: 1,
+  },
+  // Modern secondary button
+  modernSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  modernSecondaryButtonText: {
+    color: '#3FA9F5',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   logoText: {
     fontSize: 36,
     fontWeight: 'bold',
