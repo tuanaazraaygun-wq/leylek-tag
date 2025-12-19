@@ -1630,6 +1630,30 @@ function PassengerDashboard({
     }
   }, [activeTag, user.id, showVoiceCall, showIncomingCall]);
 
+  // Karşılıklı iptal isteği polling - YOLCU için
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+    
+    const checkTripEndRequest = async () => {
+      try {
+        const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
+        const data = await response.json();
+        
+        if (data.success && data.has_request && !showTripEndModal) {
+          setTripEndRequesterType(data.request.requester_type);
+          setShowTripEndModal(true);
+        }
+      } catch (error) {
+        // Sessiz kal
+      }
+    };
+    
+    checkTripEndRequest();
+    const interval = setInterval(checkTripEndRequest, 3000);
+    return () => clearInterval(interval);
+  }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
+
   useEffect(() => {
     loadActiveTag();
     const interval = setInterval(loadActiveTag, 5000); // Her 5 saniyede bir kontrol et
