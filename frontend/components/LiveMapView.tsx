@@ -289,7 +289,7 @@ export default function LiveMapView({
           <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={styles.markerOuter}>
               <View style={[styles.markerInner, isDriver ? styles.driverMarker : styles.passengerMarker]}>
-                <Ionicons name={isDriver ? "car" : "person"} size={30} color="#FFF" />
+                <Text style={styles.markerEmoji}>{isDriver ? '🚗' : '👤'}</Text>
               </View>
             </View>
           </Marker>
@@ -300,7 +300,7 @@ export default function LiveMapView({
           <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={styles.markerOuter}>
               <View style={[styles.markerInner, !isDriver ? styles.driverMarker : styles.passengerMarker]}>
-                <Ionicons name={!isDriver ? "car" : "person"} size={30} color="#FFF" />
+                <Text style={styles.markerEmoji}>{!isDriver ? '🚗' : '👤'}</Text>
               </View>
             </View>
           </Marker>
