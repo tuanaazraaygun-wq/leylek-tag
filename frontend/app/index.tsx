@@ -2282,6 +2282,10 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
   const [showIncomingCall, setShowIncomingCall] = useState(false);
   const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
   
+  // Karşılıklı iptal sistemi state'leri - ŞOFÖR
+  const [showTripEndModal, setShowTripEndModal] = useState(false);
+  const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
+  
   // Refs for polling (closure problem fix)
   const callStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
   useEffect(() => {
