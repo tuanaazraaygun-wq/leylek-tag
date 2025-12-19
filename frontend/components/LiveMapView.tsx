@@ -486,6 +486,10 @@ const styles = StyleSheet.create({
   passengerMarker: {
     backgroundColor: '#2563EB', // Daha koyu mavi
   },
+  markerEmoji: {
+    fontSize: 24,
+    textAlign: 'center',
+  },
   // Üst Kart
   topCard: {
     position: 'absolute',
