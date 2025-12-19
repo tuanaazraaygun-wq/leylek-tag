@@ -2412,6 +2412,30 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
     }
   }, [activeTag, user.id, showVoiceCall]);
 
+  // Karşılıklı iptal isteği polling - ŞOFÖR için
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+    
+    const checkTripEndRequest = async () => {
+      try {
+        const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
+        const data = await response.json();
+        
+        if (data.success && data.has_request && !showTripEndModal) {
+          setTripEndRequesterType(data.request.requester_type);
+          setShowTripEndModal(true);
+        }
+      } catch (error) {
+        // Sessiz kal
+      }
+    };
+    
+    checkTripEndRequest();
+    const interval = setInterval(checkTripEndRequest, 3000);
+    return () => clearInterval(interval);
+  }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
+
   // GPS konum güncellemesi
   useEffect(() => {
     const updateLocation = async () => {
