@@ -323,10 +323,18 @@ export default function App() {
       const data = await response.json();
       if (data.success) {
         if (data.user_exists && data.user) {
-          await saveUser(data.user);
-          setScreen('role-select'); // Her girişte rol seçimi
+          // Kayıtlı kullanıcı - PIN girişi
+          if (data.user.pin_hash || hasPin) {
+            await saveUser(data.user);
+            setScreen('enter-pin');
+          } else {
+            // PIN yok - PIN oluşturması lazım
+            await saveUser(data.user);
+            setScreen('set-pin');
+          }
         } else {
-          setScreen('register'); // Yeni kullanıcı
+          // Yeni kullanıcı - Kayıt ekranı
+          setScreen('register');
         }
       } else {
         Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
