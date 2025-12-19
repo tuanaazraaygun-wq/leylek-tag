@@ -406,8 +406,19 @@ export default function LiveMapView({
             <Text style={styles.actionBtnLabel}>Video</Text>
           </TouchableOpacity>
 
-          {/* Bitir */}
-          <TouchableOpacity style={styles.actionBtn} onPress={onComplete} activeOpacity={0.8}>
+          {/* Bitir - Karşılıklı onay ile */}
+          <TouchableOpacity 
+            style={styles.actionBtn} 
+            onPress={() => {
+              // Karşılıklı onay sistemi: önce onRequestTripEnd varsa onu dene
+              if (onRequestTripEnd) {
+                onRequestTripEnd();
+              } else if (onComplete) {
+                onComplete();
+              }
+            }} 
+            activeOpacity={0.8}
+          >
             <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
               <Ionicons name="checkmark-done" size={26} color="#FFF" />
             </LinearGradient>
