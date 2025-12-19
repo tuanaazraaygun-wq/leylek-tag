@@ -738,18 +738,27 @@ export default function App() {
 
       try {
         // Önce kullanıcıyı kaydet
-        const registerResponse = await fetch(`${API_URL}/auth/register?phone=${encodeURIComponent(phone)}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&city=${encodeURIComponent(selectedCity)}&pin=${encodeURIComponent(pin)}`, {
+        const registerResponse = await fetch(`${API_URL}/auth/register`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: phone,
+            first_name: firstName,
+            last_name: lastName,
+            city: selectedCity,
+            pin: pin
+          })
         });
         const registerData = await registerResponse.json();
         
         if (registerData.success) {
+          // Kullanıcıyı kaydet ve rol seçimine git
+          setUser(registerData.user);
+          await saveUser(registerData.user);
           Alert.alert(
             '✅ Kayıt Başarılı',
             'Şifrenizi kimseyle paylaşmayın, göstermeyin, söylemeyin!',
             [{ text: 'Tamam', onPress: () => {
-              setUser(registerData.user);
-              saveUser(registerData.user);
               setScreen('role-select');
             }}]
           );
@@ -757,6 +766,7 @@ export default function App() {
           Alert.alert('Hata', registerData.detail || 'Kayıt yapılamadı');
         }
       } catch (error) {
+        console.error('Register error:', error);
         Alert.alert('Hata', 'Bir sorun oluştu');
       }
     };
