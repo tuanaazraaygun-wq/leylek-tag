@@ -2494,7 +2494,23 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 40
+    marginBottom: 40,
+    zIndex: 1,
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#3FA9F5',
+    marginTop: 20,
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    color: '#6C757D',
+    marginTop: 8,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   logoText: {
     fontSize: 36,
@@ -2510,6 +2526,66 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     width: '100%'
+  },
+  // Modern Form Stilleri
+  modernFormContainer: {
+    width: '100%',
+    paddingHorizontal: 10,
+    zIndex: 1,
+  },
+  modernLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1B1B1E',
+    marginBottom: 12,
+    letterSpacing: 0.5,
+  },
+  modernInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderWidth: 2,
+    borderColor: '#3FA9F5',
+    marginBottom: 24,
+    shadowColor: '#3FA9F5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  modernInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1B1B1E',
+    paddingVertical: 14,
+    letterSpacing: 1,
+  },
+  modernPrimaryButton: {
+    backgroundColor: '#3FA9F5',
+    borderRadius: 16,
+    paddingVertical: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3FA9F5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  modernPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginRight: 10,
   },
   label: {
     fontSize: 14,
