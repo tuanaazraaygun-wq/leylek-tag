@@ -16,6 +16,82 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
 
+// Hareketli Bulutlar Bileşeni (90 FPS animasyon)
+const AnimatedClouds = () => {
+  const cloud1X = useRef(new Animated.Value(-100)).current;
+  const cloud2X = useRef(new Animated.Value(-150)).current;
+  const cloud3X = useRef(new Animated.Value(-80)).current;
+  const cloud4X = useRef(new Animated.Value(-120)).current;
+
+  useEffect(() => {
+    const animateCloud = (cloudAnim: Animated.Value, duration: number, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(cloudAnim, {
+            toValue: SCREEN_WIDTH + 100,
+            duration: duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(cloudAnim, {
+            toValue: -150,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    animateCloud(cloud1X, 25000, 0);
+    animateCloud(cloud2X, 30000, 5000);
+    animateCloud(cloud3X, 22000, 8000);
+    animateCloud(cloud4X, 28000, 12000);
+  }, []);
+
+  return (
+    <View style={cloudStyles.container} pointerEvents="none">
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud1, { transform: [{ translateX: cloud1X }] }]}>
+        <Ionicons name="cloud" size={80} color="rgba(63, 169, 245, 0.15)" />
+      </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud2, { transform: [{ translateX: cloud2X }] }]}>
+        <Ionicons name="cloud" size={60} color="rgba(63, 169, 245, 0.12)" />
+      </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud3, { transform: [{ translateX: cloud3X }] }]}>
+        <Ionicons name="cloud" size={100} color="rgba(63, 169, 245, 0.10)" />
+      </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud4, { transform: [{ translateX: cloud4X }] }]}>
+        <Ionicons name="cloud" size={70} color="rgba(63, 169, 245, 0.13)" />
+      </Animated.View>
+    </View>
+  );
+};
+
+const cloudStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
+  cloud: {
+    position: 'absolute',
+  },
+  cloud1: {
+    top: '10%',
+  },
+  cloud2: {
+    top: '25%',
+  },
+  cloud3: {
+    top: '45%',
+  },
+  cloud4: {
+    top: '65%',
+  },
+});
+
 // Mesafe Hesaplama Fonksiyonu (Haversine)
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371; // Dünya'nın yarıçapı (km)
