@@ -417,6 +417,9 @@ export default function App() {
     );
   }
 
+  // KVKK checkbox state
+  const [kvkkAccepted, setKvkkAccepted] = useState(false);
+
   if (screen === 'login') {
     return (
       <SafeAreaView style={styles.container}>
@@ -426,7 +429,7 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
             <Logo size="large" showSlogan={false} />
-            <Text style={styles.heroTitle}>YOLCULUK EŞLEŞTİRME</Text>
+            <Text style={styles.heroTitle}>Yolculuk Eşleştirme</Text>
             <Text style={styles.heroSubtitle}>Güvenli ve hızlı yolculuk deneyimi</Text>
           </View>
 
@@ -445,7 +448,25 @@ export default function App() {
               />
             </View>
 
-            <TouchableOpacity style={styles.modernPrimaryButton} onPress={handleSendOTP}>
+            {/* KVKK Checkbox */}
+            <TouchableOpacity 
+              style={styles.kvkkContainer} 
+              onPress={() => setKvkkAccepted(!kvkkAccepted)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
+                {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
+              </View>
+              <Text style={styles.kvkkText}>
+                Aydınlatma Metni ve KVKK'yı okudum, anladım, kabul ediyorum.
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
+              onPress={handleSendOTP}
+              disabled={!kvkkAccepted}
+            >
               <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
             </TouchableOpacity>
