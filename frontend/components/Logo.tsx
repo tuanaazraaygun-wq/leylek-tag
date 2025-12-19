@@ -25,9 +25,8 @@ export default function Logo({ size = 'medium', showText = true, showSlogan = fa
           style={{
             width: currentSize.icon,
             height: currentSize.icon,
-            borderRadius: currentSize.icon / 2,
           }}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       </View>
       
