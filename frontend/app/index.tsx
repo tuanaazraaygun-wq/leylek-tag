@@ -2016,6 +2016,23 @@ function PassengerDashboard({
                     setIsCallCaller(true); // BEN ARIYORUM
                     setShowVoiceCall(true);
                   }}
+                  onRequestTripEnd={async () => {
+                    // Karşılıklı iptal isteği gönder - YOLCU
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/request-end?tag_id=${activeTag.id}&user_id=${user.id}&user_type=passenger`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        Alert.alert('✅ İstek Gönderildi', 'Şoförün onayı bekleniyor...');
+                      } else {
+                        Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İstek gönderilemedi');
+                    }
+                  }}
                   onComplete={() => {
                     Alert.alert(
                       'Yolculuğu Tamamla',
