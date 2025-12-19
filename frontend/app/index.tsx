@@ -2276,9 +2276,10 @@ function PassengerDashboard({
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
+  setScreen: (screen: string) => void;
 }
 
-function DriverDashboard({ user, logout }: DriverDashboardProps) {
+function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
