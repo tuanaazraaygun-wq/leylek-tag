@@ -1423,7 +1423,8 @@ function PassengerDashboard({
   setDestination,
   userLocation,
   showDestinationPicker,
-  setShowDestinationPicker
+  setShowDestinationPicker,
+  setScreen
 }: { 
   user: User; 
   logout: () => void;
@@ -1432,6 +1433,7 @@ function PassengerDashboard({
   userLocation: any;
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
+  setScreen: (screen: string) => void;
 }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
