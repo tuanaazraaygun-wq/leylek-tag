@@ -1097,9 +1097,10 @@ export default function App() {
         userLocation={userLocation}
         showDestinationPicker={showDestinationPicker}
         setShowDestinationPicker={setShowDestinationPicker}
+        setScreen={setScreen}
       />
     ) : (
-      <DriverDashboard user={user} logout={logout} />
+      <DriverDashboard user={user} logout={logout} setScreen={setScreen} />
     );
   }
 
