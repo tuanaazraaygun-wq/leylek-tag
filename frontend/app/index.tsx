@@ -1849,15 +1849,17 @@ function PassengerDashboard({
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Üst Header - Sadece Matched Değilse Göster */}
+      {/* Üst Header - Modern Mavi */}
       {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Yolcu Paneli</Text>
-            <Text style={styles.headerSubtitle}>{user.name}</Text>
+        <View style={styles.modernHeader}>
+          <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.backButtonHeader}>
+            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.modernHeaderTitle}>{user.name}</Text>
           </View>
-          <TouchableOpacity onPress={logout}>
-            <Ionicons name="log-out" size={28} color="#FFF" />
+          <TouchableOpacity onPress={logout} style={styles.logoutButtonHeader}>
+            <Ionicons name="log-out-outline" size={24} color="#EF4444" />
           </TouchableOpacity>
         </View>
       )}
