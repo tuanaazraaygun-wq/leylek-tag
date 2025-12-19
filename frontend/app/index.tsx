@@ -307,25 +307,34 @@ export default function App() {
   if (screen === 'login') {
     return (
       <SafeAreaView style={styles.container}>
+        {/* Hareketli Bulutlar Arka Plan */}
+        <AnimatedClouds />
+        
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Logo size="large" showSlogan={true} />
+            <Logo size="large" showSlogan={false} />
+            <Text style={styles.heroTitle}>YOLCULUK EŞLEŞTİRME</Text>
+            <Text style={styles.heroSubtitle}>Güvenli ve hızlı yolculuk deneyimi</Text>
           </View>
 
-          <View style={styles.formContainer}>
-            <Text style={styles.label}>Telefon Numarası</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="5XX XXX XX XX"
-              placeholderTextColor="#999"
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={setPhone}
-              maxLength={11}
-            />
+          <View style={styles.modernFormContainer}>
+            <Text style={styles.modernLabel}>Telefon Numaranız</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="5XX XXX XX XX"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+                maxLength={11}
+              />
+            </View>
 
-            <TouchableOpacity style={styles.primaryButton} onPress={handleSendOTP}>
-              <Text style={styles.primaryButtonText}>OTP Gönder</Text>
+            <TouchableOpacity style={styles.modernPrimaryButton} onPress={handleSendOTP}>
+              <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
         </ScrollView>
