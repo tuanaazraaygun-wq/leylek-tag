@@ -2627,15 +2627,18 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Üst Header - Sadece Matched Değilse Göster */}
+      {/* Üst Header - Modern Mavi (Sadece Matched Değilse Göster) */}
       {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Sürücü Paneli</Text>
-            <Text style={styles.headerSubtitle}>{user.name} ⭐ {user.rating}</Text>
+        <View style={styles.modernHeader}>
+          <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.backButtonHeader}>
+            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.modernHeaderTitle}>{user.name}</Text>
+            <Text style={styles.modernHeaderSubtitle}>⭐ {user.rating || '5.0'}</Text>
           </View>
-          <TouchableOpacity onPress={logout}>
-            <Ionicons name="log-out" size={28} color="#FFF" />
+          <TouchableOpacity onPress={logout} style={styles.logoutButtonHeader}>
+            <Ionicons name="log-out-outline" size={24} color="#EF4444" />
           </TouchableOpacity>
         </View>
       )}
