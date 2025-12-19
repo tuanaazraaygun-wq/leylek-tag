@@ -225,6 +225,9 @@ export default function App() {
     longitude: number;
   } | null>(null);
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
+  
+  // KVKK checkbox state
+  const [kvkkAccepted, setKvkkAccepted] = useState(false);
 
   useEffect(() => {
     loadUser();
