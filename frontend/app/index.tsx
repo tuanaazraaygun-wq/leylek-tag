@@ -488,31 +488,39 @@ export default function App() {
   if (screen === 'otp') {
     return (
       <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Ionicons name="shield-checkmark" size={60} color="#00A67E" />
-            <Text style={styles.logoText}>Doğrulama</Text>
-            <Text style={styles.subtitle}>{phone} numarasına gönderilen kodu girin</Text>
+            <View style={styles.verifyIconContainer}>
+              <Ionicons name="shield-checkmark" size={50} color="#10B981" />
+            </View>
+            <Text style={styles.verifyTitle}>Doğrulama</Text>
+            <Text style={styles.heroSubtitle}>{phone} numarasına gönderilen kodu girin</Text>
           </View>
 
-          <View style={styles.formContainer}>
-            <Text style={styles.label}>OTP Kodu</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="123456"
-              placeholderTextColor="#999"
-              keyboardType="number-pad"
-              value={otp}
-              onChangeText={setOtp}
-              maxLength={6}
-            />
+          <View style={styles.modernFormContainer}>
+            <Text style={styles.modernLabel}>Doğrulama Kodunu Giriniz</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="• • • • • •"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="number-pad"
+                value={otp}
+                onChangeText={setOtp}
+                maxLength={6}
+              />
+            </View>
 
-            <TouchableOpacity style={styles.primaryButton} onPress={handleVerifyOTP}>
-              <Text style={styles.primaryButtonText}>Doğrula</Text>
+            <TouchableOpacity style={styles.modernPrimaryButton} onPress={handleVerifyOTP}>
+              <Text style={styles.modernPrimaryButtonText}>DOĞRULA</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => setScreen('login')}>
-              <Text style={styles.secondaryButtonText}>Geri Dön</Text>
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('login')}>
+              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
