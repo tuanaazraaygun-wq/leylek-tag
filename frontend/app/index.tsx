@@ -2925,6 +2925,70 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           }}
         />
       )}
+
+      {/* Karşılıklı İptal Onay Modalı - ŞOFÖR */}
+      <Modal
+        visible={showTripEndModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTripEndModal(false)}
+      >
+        <View style={styles.tripEndModalOverlay}>
+          <View style={styles.tripEndModalContainer}>
+            <View style={styles.tripEndModalHeader}>
+              <Ionicons name="alert-circle" size={50} color="#3FA9F5" />
+              <Text style={styles.tripEndModalTitle}>Yolculuk Sonlandırma</Text>
+            </View>
+            
+            <Text style={styles.tripEndModalMessage}>
+              {tripEndRequesterType === 'passenger' 
+                ? 'Yolcu yolculuğu bitirmek istiyor. Onaylıyor musunuz?'
+                : 'Şoför yolculuğu bitirmek istiyor. Onaylıyor musunuz?'
+              }
+            </Text>
+            
+            <View style={styles.tripEndModalButtons}>
+              <TouchableOpacity
+                style={styles.tripEndApproveButton}
+                onPress={async () => {
+                  try {
+                    const response = await fetch(
+                      `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=true`,
+                      { method: 'POST' }
+                    );
+                    const data = await response.json();
+                    if (data.success && data.approved) {
+                      Alert.alert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
+                      setActiveTag(null);
+                      loadRequests();
+                    }
+                  } catch (error) {
+                    Alert.alert('Hata', 'İşlem başarısız');
+                  }
+                  setShowTripEndModal(false);
+                }}
+              >
+                <Text style={styles.tripEndApproveButtonText}>Onaylıyorum</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.tripEndRejectButton}
+                onPress={async () => {
+                  try {
+                    await fetch(
+                      `${API_URL}/trip/respond-end-request?tag_id=${activeTag?.id}&user_id=${user.id}&approved=false`,
+                      { method: 'POST' }
+                    );
+                  } catch (error) {}
+                  setShowTripEndModal(false);
+                }}
+              >
+                <Text style={styles.tripEndRejectButtonText}>Onaylamıyorum</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       </>
     </SafeAreaView>
   );
