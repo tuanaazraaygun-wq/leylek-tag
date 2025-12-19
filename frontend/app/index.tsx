@@ -2971,6 +2971,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
   },
+  // Modern Header Stilleri
+  modernHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButtonHeader: {
+    padding: 8,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  modernHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#3FA9F5',
+    letterSpacing: 0.5,
+  },
+  logoutButtonHeader: {
+    padding: 8,
+  },
   logoText: {
     fontSize: 36,
     fontWeight: 'bold',
