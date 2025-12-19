@@ -479,38 +479,6 @@ async def verify_otp(request: VerifyOTPRequest):
         ).dict() if user else None
     }
 
-@api_router.post("/auth/register")
-async def register(request: RegisterRequest):
-    """Kullanıcı kaydı + Şehir validasyonu (ROL YOK)"""
-    # Şehir kontrolü
-    if request.city not in TURKIYE_SEHIRLERI:
-        raise HTTPException(status_code=400, detail="Geçersiz şehir seçimi")
-    
-    existing = await db_instance.find_one("users", {"phone": request.phone})
-    if existing:
-        raise HTTPException(status_code=400, detail="Bu telefon numarası zaten kayıtlı")
-    
-    user_data = User(**request.dict()).dict()
-    user_id = await db_instance.insert_one("users", user_data)
-    
-    logger.info(f"✅ Yeni kullanıcı: {request.name} - {request.city}")
-    
-    return {
-        "success": True,
-        "message": "Kayıt başarılı",
-        "user": UserResponse(
-            id=user_id,
-            phone=user_data["phone"],
-            name=user_data["name"],
-            city=user_data["city"],
-            profile_photo=user_data.get("profile_photo"),
-            rating=user_data["rating"],
-            total_ratings=user_data["total_ratings"],
-            total_trips=user_data["total_trips"],
-            driver_details=user_data.get("driver_details")
-        ).dict()
-    }
-
 @api_router.get("/auth/user/{user_id}")
 async def get_user(user_id: str):
     """Kullanıcı bilgisi"""
