@@ -3220,6 +3220,11 @@ const styles = StyleSheet.create({
     color: '#3FA9F5',
     letterSpacing: 0.5,
   },
+  modernHeaderSubtitle: {
+    fontSize: 13,
+    color: '#888',
+    marginTop: 2,
+  },
   logoutButtonHeader: {
     padding: 8,
   },
