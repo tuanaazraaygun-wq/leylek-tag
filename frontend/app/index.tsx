@@ -1043,42 +1043,44 @@ function PassengerDashboard({
   const [showIncomingCall, setShowIncomingCall] = useState(false);
   const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
   
-  // Gelen arama polling
+  // Refs for polling (closure problem fix) - YOLCU
+  const passengerCallStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
   useEffect(() => {
-    // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
-    if (!user?.id || !activeTag || showVoiceCall || showIncomingCall || isCallCaller) return;
-    
-    // Sadece matched/in_progress durumunda polling yap
+    passengerCallStateRef.current = { showVoiceCall, showIncomingCall, isCallCaller };
+  }, [showVoiceCall, showIncomingCall, isCallCaller]);
+  
+  // Gelen arama polling - YOLCU için
+  useEffect(() => {
+    // Başlangıç kontrolü
+    if (!user?.id || !activeTag) return;
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
     
     let isActive = true;
     
     const checkIncomingCall = async () => {
-      // Çift kontrol - state değişmiş olabilir
-      if (!isActive || showVoiceCall || showIncomingCall || isCallCaller) return;
+      // Güncel state'leri ref'ten oku (closure fix)
+      const { showVoiceCall: inCall, showIncomingCall: hasIncoming, isCallCaller: isCaller } = passengerCallStateRef.current;
+      
+      // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
+      if (!isActive || inCall || hasIncoming || isCaller) return;
       
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         
         if (!isActive) return;
-        
-        // Response kontrolü
-        if (!response.ok) {
-          return;
-        }
+        if (!response.ok) return;
         
         const text = await response.text();
-        if (!text || text.trim() === '') {
-          return;
-        }
+        if (!text || text.trim() === '') return;
         
         const data = JSON.parse(text);
         
-        // Son kontrol
-        if (!isActive || showVoiceCall || showIncomingCall) return;
+        // Son kontrol - ref'ten güncel değerleri al
+        const currentState = passengerCallStateRef.current;
+        if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
-          console.log('📞 Gelen arama var:', data.call);
+          console.log('📞 YOLCU - GELEN ARAMA!', data.call.caller_name);
           setIncomingCallInfo({
             callerName: data.call.caller_name,
             callType: data.call.call_type || 'audio',
@@ -1091,8 +1093,10 @@ function PassengerDashboard({
       }
     };
     
-    const interval = setInterval(checkIncomingCall, 3000);
+    // İlk kontrolü hemen yap
     checkIncomingCall();
+    // Sonra her 2 saniyede bir kontrol et
+    const interval = setInterval(checkIncomingCall, 2000);
     
     return () => {
       isActive = false;
