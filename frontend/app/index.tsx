@@ -536,39 +536,81 @@ export default function App() {
 
     return (
       <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Ionicons name="person-add" size={60} color="#00A67E" />
-            <Text style={styles.logoText}>Kayıt Ol</Text>
-            <Text style={styles.subtitle}>Hesabınızı oluşturun</Text>
+            <View style={styles.registerIconContainer}>
+              <Ionicons name="person-add" size={45} color="#3FA9F5" />
+            </View>
+            <Text style={styles.registerTitle}>Kayıt Ol</Text>
+            <Text style={styles.heroSubtitle}>Hesabınızı oluşturun</Text>
           </View>
 
-          <View style={styles.formContainer}>
-            <Text style={styles.label}>Adınız</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Adınızı girin"
-              placeholderTextColor="#999"
-              value={name}
-              onChangeText={setName}
-            />
+          <View style={styles.modernFormContainer}>
+            {/* Ad */}
+            <Text style={styles.modernLabel}>Adınız</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="person-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="Adınızı girin"
+                placeholderTextColor="#A0A0A0"
+                value={firstName}
+                onChangeText={setFirstName}
+              />
+            </View>
 
-            <Text style={[styles.label, { marginTop: 20 }]}>Şehir</Text>
+            {/* Soyad */}
+            <Text style={styles.modernLabel}>Soyadınız</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="person-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="Soyadınızı girin"
+                placeholderTextColor="#A0A0A0"
+                value={lastName}
+                onChangeText={setLastName}
+              />
+            </View>
+
+            {/* Şehir */}
+            <Text style={styles.modernLabel}>Şehir</Text>
             <TouchableOpacity
-              style={styles.input}
+              style={styles.modernInputContainer}
               onPress={() => setShowCityPicker(true)}
             >
-              <Text style={selectedCity ? styles.inputText : styles.placeholderText}>
+              <Ionicons name="location-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <Text style={selectedCity ? styles.modernInputText : styles.modernPlaceholder}>
                 {selectedCity || 'Şehir seçin'}
               </Text>
+              <Ionicons name="chevron-down" size={20} color="#A0A0A0" />
             </TouchableOpacity>
 
-            <Text style={[styles.label, { marginTop: 20, textAlign: 'center', fontSize: 14, color: '#666' }]}>
-              📍 Telefon: {phone}
-            </Text>
+            {/* Telefon Numarası (Readonly) */}
+            <Text style={styles.modernLabel}>Telefon Numarası</Text>
+            <View style={[styles.modernInputContainer, { backgroundColor: '#F5F5F5' }]}>
+              <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <Text style={styles.modernInputText}>{phone}</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+            </View>
 
-            <TouchableOpacity style={styles.primaryButton} onPress={handleRegister}>
-              <Text style={styles.primaryButtonText}>Kayıt Ol</Text>
+            <TouchableOpacity 
+              style={[styles.modernPrimaryButton, (!firstName || !lastName || !selectedCity) && styles.buttonDisabled]} 
+              onPress={() => {
+                if (firstName && lastName && selectedCity) {
+                  setName(`${firstName} ${lastName}`);
+                  setScreen('set-pin');
+                }
+              }}
+              disabled={!firstName || !lastName || !selectedCity}
+            >
+              <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('login')}>
+              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
           </View>
 
@@ -594,12 +636,12 @@ export default function App() {
                       }}
                     >
                       <Text style={styles.cityItemText}>{item}</Text>
-                      {selectedCity === item && <Ionicons name="checkmark" size={24} color="#00A67E" />}
+                      {selectedCity === item && <Ionicons name="checkmark" size={24} color="#3FA9F5" />}
                     </TouchableOpacity>
                   )}
                 />
                 <TouchableOpacity
-                  style={styles.modalCloseButton}
+                  style={[styles.modalCloseButton, { backgroundColor: '#3FA9F5' }]}
                   onPress={() => setShowCityPicker(false)}
                 >
                   <Text style={styles.modalCloseButtonText}>Kapat</Text>
