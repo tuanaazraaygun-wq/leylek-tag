@@ -16,12 +16,16 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
 
-// Hareketli Bulutlar Bileşeni (90 FPS animasyon)
+// Hareketli Bulutlar Bileşeni (90 FPS animasyon) - Daha fazla bulut
 const AnimatedClouds = () => {
   const cloud1X = useRef(new Animated.Value(-100)).current;
   const cloud2X = useRef(new Animated.Value(-150)).current;
   const cloud3X = useRef(new Animated.Value(-80)).current;
   const cloud4X = useRef(new Animated.Value(-120)).current;
+  const cloud5X = useRef(new Animated.Value(-90)).current;
+  const cloud6X = useRef(new Animated.Value(-130)).current;
+  const cloud7X = useRef(new Animated.Value(-70)).current;
+  const cloud8X = useRef(new Animated.Value(-110)).current;
 
   useEffect(() => {
     const animateCloud = (cloudAnim: Animated.Value, duration: number, delay: number) => {
@@ -42,25 +46,45 @@ const AnimatedClouds = () => {
       ).start();
     };
 
-    animateCloud(cloud1X, 25000, 0);
-    animateCloud(cloud2X, 30000, 5000);
-    animateCloud(cloud3X, 22000, 8000);
-    animateCloud(cloud4X, 28000, 12000);
+    // Üst taraf bulutları (logo bölgesi)
+    animateCloud(cloud1X, 20000, 0);
+    animateCloud(cloud2X, 25000, 3000);
+    animateCloud(cloud5X, 18000, 6000);
+    animateCloud(cloud6X, 22000, 9000);
+    // Alt taraf bulutları
+    animateCloud(cloud3X, 28000, 4000);
+    animateCloud(cloud4X, 24000, 7000);
+    animateCloud(cloud7X, 26000, 10000);
+    animateCloud(cloud8X, 30000, 2000);
   }, []);
 
   return (
     <View style={cloudStyles.container} pointerEvents="none">
+      {/* Üst bölge - Logo etrafı (daha fazla bulut) */}
       <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud1, { transform: [{ translateX: cloud1X }] }]}>
-        <Ionicons name="cloud" size={80} color="rgba(63, 169, 245, 0.15)" />
+        <Ionicons name="cloud" size={70} color="rgba(63, 169, 245, 0.18)" />
       </Animated.View>
       <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud2, { transform: [{ translateX: cloud2X }] }]}>
-        <Ionicons name="cloud" size={60} color="rgba(63, 169, 245, 0.12)" />
+        <Ionicons name="cloud" size={55} color="rgba(63, 169, 245, 0.15)" />
       </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud5, { transform: [{ translateX: cloud5X }] }]}>
+        <Ionicons name="cloud" size={65} color="rgba(63, 169, 245, 0.12)" />
+      </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud6, { transform: [{ translateX: cloud6X }] }]}>
+        <Ionicons name="cloud" size={50} color="rgba(63, 169, 245, 0.16)" />
+      </Animated.View>
+      {/* Orta ve alt bölge */}
       <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud3, { transform: [{ translateX: cloud3X }] }]}>
-        <Ionicons name="cloud" size={100} color="rgba(63, 169, 245, 0.10)" />
+        <Ionicons name="cloud" size={80} color="rgba(63, 169, 245, 0.10)" />
       </Animated.View>
       <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud4, { transform: [{ translateX: cloud4X }] }]}>
-        <Ionicons name="cloud" size={70} color="rgba(63, 169, 245, 0.13)" />
+        <Ionicons name="cloud" size={60} color="rgba(63, 169, 245, 0.12)" />
+      </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud7, { transform: [{ translateX: cloud7X }] }]}>
+        <Ionicons name="cloud" size={75} color="rgba(63, 169, 245, 0.08)" />
+      </Animated.View>
+      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud8, { transform: [{ translateX: cloud8X }] }]}>
+        <Ionicons name="cloud" size={45} color="rgba(63, 169, 245, 0.14)" />
       </Animated.View>
     </View>
   );
@@ -79,16 +103,29 @@ const cloudStyles = StyleSheet.create({
     position: 'absolute',
   },
   cloud1: {
-    top: '10%',
+    top: '5%',
   },
   cloud2: {
-    top: '25%',
+    top: '12%',
+  },
+  cloud5: {
+    top: '18%',
+  },
+  cloud6: {
+    top: '8%',
+    left: '30%',
   },
   cloud3: {
-    top: '45%',
+    top: '35%',
   },
   cloud4: {
-    top: '65%',
+    top: '50%',
+  },
+  cloud7: {
+    top: '60%',
+  },
+  cloud8: {
+    top: '70%',
   },
 });
 
