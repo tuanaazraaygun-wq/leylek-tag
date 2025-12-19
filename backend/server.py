@@ -1115,6 +1115,139 @@ async def complete_tag(tag_id: str, user_id: str, approved: bool = True):
     
     return {"success": True, "message": message, "penalty_applied": penalty_applied}
 
+# ==================== KARŞILIKLI İPTAL SİSTEMİ ====================
+@api_router.post("/trip/request-end")
+async def request_trip_end(tag_id: str, user_id: str, user_type: str):
+    """
+    Yolculuğu bitirmek için istek gönder
+    user_type: 'passenger' veya 'driver'
+    Karşı tarafın onayı beklenir
+    """
+    try:
+        db = db_instance.db
+        
+        tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+        if not tag:
+            return {"success": False, "detail": "TAG bulunamadı"}
+        
+        if tag.get("status") not in ["matched", "in_progress"]:
+            return {"success": False, "detail": "Bu yolculuk henüz aktif değil"}
+        
+        # İsteği oluştur
+        end_request = {
+            "tag_id": tag_id,
+            "requester_id": user_id,
+            "requester_type": user_type,
+            "status": "pending",
+            "created_at": datetime.utcnow()
+        }
+        
+        # Eski istekleri temizle
+        await db.trip_end_requests.delete_many({"tag_id": tag_id})
+        
+        # Yeni istek oluştur
+        await db.trip_end_requests.insert_one(end_request)
+        
+        logger.info(f"🔴 Yolculuk bitirme isteği: {user_type} -> TAG {tag_id}")
+        
+        return {"success": True, "message": "Bitirme isteği gönderildi"}
+    except Exception as e:
+        logger.error(f"Trip end request hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@api_router.get("/trip/check-end-request")
+async def check_trip_end_request(tag_id: str, user_id: str):
+    """
+    Karşı taraftan gelen bitirme isteğini kontrol et
+    """
+    try:
+        db = db_instance.db
+        
+        # Bu kullanıcıya gelen bekleyen istek var mı?
+        # (İsteği gönderen kişi DEĞİL, karşı taraf olmalı)
+        pending_request = await db.trip_end_requests.find_one({
+            "tag_id": tag_id,
+            "requester_id": {"$ne": user_id},  # Kendisi değil
+            "status": "pending"
+        })
+        
+        if pending_request:
+            return {
+                "success": True,
+                "has_request": True,
+                "request": {
+                    "requester_type": pending_request.get("requester_type", ""),
+                    "requester_id": pending_request.get("requester_id", ""),
+                    "created_at": pending_request.get("created_at", "").isoformat() if pending_request.get("created_at") else ""
+                }
+            }
+        
+        return {"success": True, "has_request": False}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
+
+@api_router.post("/trip/respond-end-request")
+async def respond_trip_end_request(tag_id: str, user_id: str, approved: bool):
+    """
+    Bitirme isteğine yanıt ver
+    approved=True: Onayladı, yolculuk biter
+    approved=False: Reddetti, yolculuk devam eder
+    """
+    try:
+        db = db_instance.db
+        
+        # İsteği bul
+        pending_request = await db.trip_end_requests.find_one({
+            "tag_id": tag_id,
+            "status": "pending"
+        })
+        
+        if not pending_request:
+            return {"success": False, "detail": "Bekleyen istek bulunamadı"}
+        
+        if approved:
+            # ONAYLANDI - Yolculuğu bitir
+            tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+            if tag:
+                await db.tags.update_one(
+                    {"_id": ObjectId(tag_id)},
+                    {"$set": {
+                        "status": TagStatus.COMPLETED,
+                        "completed_at": datetime.utcnow(),
+                        "mutual_end": True  # Karşılıklı onay ile bitti
+                    }}
+                )
+                
+                # Trip sayılarını artır
+                await db.users.update_one(
+                    {"_id": ObjectId(tag.get("passenger_id"))},
+                    {"$inc": {"total_trips": 1}}
+                )
+                await db.users.update_one(
+                    {"_id": ObjectId(tag.get("driver_id"))},
+                    {"$inc": {"total_trips": 1}}
+                )
+            
+            # İsteği sil
+            await db.trip_end_requests.delete_many({"tag_id": tag_id})
+            
+            logger.info(f"✅ Yolculuk karşılıklı onay ile bitti: TAG {tag_id}")
+            
+            return {"success": True, "approved": True, "message": "Yolculuk karşılıklı onay ile tamamlandı"}
+        else:
+            # REDDEDİLDİ - İsteği sil, yolculuk devam
+            await db.trip_end_requests.delete_many({"tag_id": tag_id})
+            
+            logger.info(f"❌ Bitirme isteği reddedildi: TAG {tag_id}")
+            
+            return {"success": True, "approved": False, "message": "İstek reddedildi, yolculuk devam ediyor"}
+    except Exception as e:
+        logger.error(f"Trip end respond hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
 @api_router.get("/driver/history")
 async def get_driver_history(user_id: str):
     """Geçmiş yolculuklar"""
