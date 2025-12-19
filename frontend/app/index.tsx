@@ -1403,7 +1403,7 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
           ) : (
             <>
               <Ionicons name="call" size={60} color="#FFF" />
-              <Text style={styles.callButtonText}>ÇAĞRI</Text>
+              <Text style={styles.callButtonText}>TEKLİF İSTE</Text>
             </>
           )}
         </LinearGradient>
@@ -1699,12 +1699,12 @@ function PassengerDashboard({
       const data = await response.json();
       if (data.success) {
         setActiveTag(data.tag);
-        Alert.alert('✅ Çağrı Gönderildi', `Yakındaki sürücüler "${destination.address}" için tekliflerini gönderiyor...`);
+        Alert.alert('✅ Teklif İsteği Gönderildi', `Yakındaki sürücüler "${destination.address}" için tekliflerini gönderiyor...`);
       } else {
-        Alert.alert('Hata', data.detail || 'Çağrı gönderilemedi');
+        Alert.alert('Hata', data.detail || 'Teklif isteği gönderilemedi');
       }
     } catch (error) {
-      Alert.alert('Hata', 'Çağrı gönderilemedi');
+      Alert.alert('Hata', 'Teklif isteği gönderilemedi');
     } finally {
       setLoading(false);
     }
@@ -1757,8 +1757,8 @@ function PassengerDashboard({
     if (!activeTag) return;
 
     Alert.alert(
-      'Çağrıyı İptal Et',
-      'Çağrınızı iptal etmek istediğinizden emin misiniz? Sürücülere bildirim gönderilecek.',
+      'İptal Et',
+      'İsteğinizi iptal etmek istediğinizden emin misiniz? Sürücülere bildirim gönderilecek.',
       [
         { text: 'Vazgeç', style: 'cancel' },
         {
@@ -1774,14 +1774,14 @@ function PassengerDashboard({
 
               const data = await response.json();
               if (data.success) {
-                Alert.alert('✅ İptal Edildi', 'Çağrınız başarıyla iptal edildi.');
+                Alert.alert('✅ İptal Edildi', 'İsteğiniz başarıyla iptal edildi.');
                 setActiveTag(null);
                 setOffers([]);
               } else {
-                Alert.alert('Hata', data.detail || 'Çağrı iptal edilemedi');
+                Alert.alert('Hata', data.detail || 'İptal edilemedi');
               }
             } catch (error) {
-              Alert.alert('Hata', 'Çağrı iptal edilemedi');
+              Alert.alert('Hata', 'İptal edilemedi');
             }
           }
         }
@@ -1923,7 +1923,7 @@ function PassengerDashboard({
                 <Text style={styles.locationText}>{activeTag.dropoff_location}</Text>
               </View>
 
-              {/* Hedef Düzenle ve Çağrıyı İptal Et Butonları */}
+              {/* Hedef Düzenle ve İptal Et Butonları */}
               {(activeTag.status === 'pending' || activeTag.status === 'offers_received') && (
                 <View style={styles.tagActionsContainer}>
                   <TouchableOpacity
@@ -1939,7 +1939,7 @@ function PassengerDashboard({
                     onPress={handleCancelTag}
                   >
                     <Ionicons name="close-circle-outline" size={18} color="#FF5A5F" />
-                    <Text style={styles.cancelTagButtonText}>Çağrıyı İptal Et</Text>
+                    <Text style={styles.cancelTagButtonText}>İptal Et</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -2610,12 +2610,12 @@ function DriverDashboard({ user, logout }: DriverDashboardProps) {
           {requests.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="car-sport" size={80} color={COLORS.primary} />
-              <Text style={styles.emptyStateText}>Henüz çağrı yok</Text>
-              <Text style={styles.emptyStateSubtext}>Yeni çağrılar burada görünecek</Text>
+              <Text style={styles.emptyStateText}>Henüz teklif yok</Text>
+              <Text style={styles.emptyStateSubtext}>Yeni teklifler burada görünecek</Text>
             </View>
           ) : (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>📍 Yakındaki Çağrılar ({requests.length})</Text>
+              <Text style={styles.cardTitle}>📍 Yakındaki Talepler ({requests.length})</Text>
             
               {requests.map((request: any, index: number) => {
                 // Mesafe ve süre hesaplama
