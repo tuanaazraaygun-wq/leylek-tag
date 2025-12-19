@@ -225,21 +225,27 @@ async def send_otp(request: SendOTPRequest):
         "phone": request.phone
     }
 
-@api_router.post("/auth/register")
-async def register_user(
-    phone: str,
-    first_name: str,
-    last_name: str,
-    city: str,
-    pin: str,
+class RegisterRequest(BaseModel):
+    phone: str
+    first_name: str
+    last_name: str
+    city: str
+    pin: str
     device_id: str = None
-):
+
+@api_router.post("/auth/register")
+async def register_user(request: RegisterRequest):
     """
     Yeni kullanıcı kaydı
     """
     try:
         db = db_instance.db
-        phone = phone.replace(" ", "").replace("-", "")
+        phone = request.phone.replace(" ", "").replace("-", "")
+        first_name = request.first_name
+        last_name = request.last_name
+        city = request.city
+        pin = request.pin
+        device_id = request.device_id
         
         # Telefon zaten kayıtlı mı?
         existing = await db.users.find_one({"phone": phone})
