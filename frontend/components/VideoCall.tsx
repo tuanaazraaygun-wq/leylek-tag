@@ -295,7 +295,22 @@ export default function VideoCall({
         engine.muteLocalVideoStream(false);
       }
       
-      // Kanala katıl
+      // Kanala katıl - TOKEN İLE
+      console.log('📞 Token alınıyor...');
+      let token = '';
+      try {
+        const tokenResponse = await fetch(`${BACKEND_URL}/api/agora/token?channel_name=${channelName}&uid=${localUidRef.current}`);
+        const tokenData = await tokenResponse.json();
+        if (tokenData.success && tokenData.token) {
+          token = tokenData.token;
+          console.log('🔑 Token alındı!');
+        } else {
+          console.log('⚠️ Token alınamadı, boş token ile devam ediliyor');
+        }
+      } catch (e) {
+        console.log('⚠️ Token API hatası, boş token ile devam ediliyor:', e);
+      }
+      
       console.log('📞 Kanala katılınıyor...');
       const options = {
         clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
@@ -305,7 +320,7 @@ export default function VideoCall({
         autoSubscribeVideo: isVideoCall,
       };
       
-      await engine.joinChannel('', channelName, localUidRef.current, options);
+      await engine.joinChannel(token, channelName, localUidRef.current, options);
       console.log('📞 joinChannel çağrıldı!');
       
     } catch (error) {
