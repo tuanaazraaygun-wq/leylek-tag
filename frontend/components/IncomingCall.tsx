@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, Animated, Vibration, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
 
 interface IncomingCallProps {
   visible: boolean;
@@ -20,12 +21,56 @@ export default function IncomingCall({
 }: IncomingCallProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ringAnim = useRef(new Animated.Value(0)).current;
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  // Zil sesi başlat
+  const playRingtone = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: false,
+        playThroughEarpieceAndroid: false,
+      });
+      
+      // Varsayılan sistem zil sesi kullan
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://www.soundjay.com/phone/sounds/telephone-ring-04.mp3' },
+        { isLooping: true, volume: 1.0 }
+      );
+      soundRef.current = sound;
+      await sound.playAsync();
+      console.log('🔔 Zil sesi başlatıldı');
+    } catch (error) {
+      console.log('Zil sesi hatası:', error);
+    }
+  };
+
+  // Zil sesini durdur
+  const stopRingtone = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+        console.log('🔕 Zil sesi durduruldu');
+      }
+    } catch (error) {
+      console.log('Zil durdurma hatası:', error);
+    }
+  };
 
   useEffect(() => {
     if (visible) {
+      // Zil sesi çal
+      if (Platform.OS !== 'web') {
+        playRingtone();
+      }
+      
       // Titreşim
       if (Platform.OS !== 'web') {
-        const pattern = [0, 500, 200, 500, 200, 500];
+        const pattern = [0, 500, 200, 500, 200, 500, 200, 500, 200, 500];
         Vibration.vibrate(pattern, true);
       }
 
