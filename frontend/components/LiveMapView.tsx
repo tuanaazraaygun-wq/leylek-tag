@@ -429,7 +429,7 @@ export default function LiveMapView({
             <Text style={styles.actionBtnLabel}>Bitir</Text>
           </TouchableOpacity>
 
-          {/* Diğer (Engelle/Şikayet) */}
+          {/* Diğer (Engelle/Şikayet/Zorla Bitir) */}
           <TouchableOpacity 
             style={styles.actionBtn} 
             activeOpacity={0.8}
@@ -441,6 +441,24 @@ export default function LiveMapView({
                   { text: 'İptal', style: 'cancel' },
                   { text: '🚫 Engelle', style: 'destructive', onPress: onBlock },
                   { text: '⚠️ Şikayet Et', onPress: onReport },
+                  { 
+                    text: '⛔ Zorla Bitir (-1 puan)', 
+                    style: 'destructive', 
+                    onPress: () => {
+                      Alert.alert(
+                        '⚠️ Zorla Bitir',
+                        'Yolculuğu zorla bitirmek istediğinize emin misiniz?\n\nBu işlem puanınızı -1 düşürür.',
+                        [
+                          { text: 'Vazgeç', style: 'cancel' },
+                          { 
+                            text: 'Zorla Bitir', 
+                            style: 'destructive',
+                            onPress: onForceEnd
+                          }
+                        ]
+                      );
+                    }
+                  },
                 ]
               );
             }}
