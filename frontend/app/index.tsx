@@ -1251,7 +1251,7 @@ function FullScreenOfferCard({
                     <Text style={styles.timeEmoji}>📍</Text>
                     <View style={styles.timeTextContainer}>
                       <Text style={styles.timeTextLarge}>
-                        {offer.estimated_time || 5} dakikada
+                        {offer.estimated_time || offer.distance_to_passenger_km ? Math.ceil((offer.distance_to_passenger_km || 5) / 0.7) : 5} dakikada
                       </Text>
                       <Text style={styles.timeTextSubLarge}>gelirim</Text>
                     </View>
@@ -1263,9 +1263,11 @@ function FullScreenOfferCard({
                     <Text style={styles.timeEmoji}>🚗</Text>
                     <View style={styles.timeTextContainer}>
                       <Text style={styles.timeTextLarge}>
-                        {Math.round((offer.estimated_time || 5) * 3)} dakikada
+                        {offer.trip_duration_min || Math.ceil((offer.trip_distance_km || 10) * 2)} dakikada
                       </Text>
-                      <Text style={styles.timeTextSubLarge}>gideriz</Text>
+                      <Text style={styles.timeTextSubLarge}>
+                        {offer.trip_distance_km ? `(${offer.trip_distance_km} km)` : ''} gideriz
+                      </Text>
                     </View>
                   </View>
                 </View>
