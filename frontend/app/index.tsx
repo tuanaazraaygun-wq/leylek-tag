@@ -1146,7 +1146,32 @@ export default function App() {
               <Ionicons name="arrow-forward" size={24} color="#FFF" />
             </LinearGradient>
           </TouchableOpacity>
+          
+          {/* Admin Butonu - Sadece adminler için */}
+          {isAdmin && (
+            <TouchableOpacity
+              style={styles.adminButton}
+              onPress={() => setShowAdminPanel(true)}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#F59E0B', '#D97706']}
+                style={styles.adminButtonGradient}
+              >
+                <Ionicons name="shield-checkmark" size={22} color="#FFF" />
+                <Text style={styles.adminButtonText}>Admin Paneli</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
         </SafeAreaView>
+        
+        {/* Admin Panel Modal */}
+        {showAdminPanel && (
+          <AdminPanel 
+            adminPhone={user?.phone?.replace(/\D/g, '') || ''} 
+            onClose={() => setShowAdminPanel(false)} 
+          />
+        )}
       </View>
     );
   }
