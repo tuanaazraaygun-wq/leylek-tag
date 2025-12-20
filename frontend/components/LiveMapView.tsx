@@ -472,7 +472,52 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  // Marker Outer - Geniş alan (tüm telefonlarda taşma önler)
+  // YENİ Modern Marker Stilleri
+  markerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markerCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 10,
+  },
+  driverCircle: {
+    backgroundColor: '#DC2626', // Kırmızı - Şoför
+  },
+  passengerCircle: {
+    backgroundColor: '#2563EB', // Mavi - Yolcu
+  },
+  markerIcon: {
+    fontSize: 22,
+    textAlign: 'center',
+  },
+  markerArrow: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -2,
+  },
+  driverArrow: {
+    borderTopColor: '#DC2626',
+  },
+  passengerArrow: {
+    borderTopColor: '#2563EB',
+  },
+  // Eski stilleri tutuyorum - yedek olarak
   markerOuter: {
     width: 90,
     height: 90,
@@ -480,7 +525,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
-  // Marker Inner - Tam yuvarlak daire (iPhone dahil tüm cihazlar)
   markerInner: {
     width: 56,
     height: 56,
@@ -496,10 +540,10 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   driverMarker: {
-    backgroundColor: '#DC2626', // Daha koyu kırmızı
+    backgroundColor: '#DC2626',
   },
   passengerMarker: {
-    backgroundColor: '#2563EB', // Daha koyu mavi
+    backgroundColor: '#2563EB',
   },
   markerEmoji: {
     fontSize: 24,
