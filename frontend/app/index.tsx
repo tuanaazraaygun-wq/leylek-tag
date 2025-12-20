@@ -1167,6 +1167,173 @@ function AnimatedOfferButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+// ==================== TIKTOK TARZI TAM EKRAN TEKLİF KARTI ====================
+function TikTokOfferCard({ 
+  offer, 
+  index, 
+  total, 
+  onAccept,
+  isPassenger = true
+}: { 
+  offer: any; 
+  index: number; 
+  total: number; 
+  onAccept: () => void;
+  isPassenger?: boolean;
+}) {
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  return (
+    <View style={styles.tikTokCard}>
+      <LinearGradient
+        colors={['#0F172A', '#1E293B', '#334155']}
+        style={styles.tikTokGradient}
+      >
+        {/* Üst Kısım - Sürücü/Yolcu Bilgisi */}
+        <Animated.View style={[styles.tikTokHeader, { opacity: fadeAnim }]}>
+          {/* Sayfa Göstergesi */}
+          <View style={styles.tikTokPageIndicator}>
+            <Text style={styles.tikTokPageText}>{index + 1} / {total}</Text>
+          </View>
+          
+          {/* Profil */}
+          <View style={styles.tikTokProfile}>
+            <LinearGradient
+              colors={['#3FA9F5', '#2563EB']}
+              style={styles.tikTokAvatar}
+            >
+              <Text style={styles.tikTokAvatarText}>
+                {isPassenger ? offer.driver_name?.charAt(0) : offer.passenger_name?.charAt(0) || '?'}
+              </Text>
+            </LinearGradient>
+            
+            <View style={styles.tikTokProfileInfo}>
+              <Text style={styles.tikTokName}>
+                {isPassenger ? offer.driver_name : offer.passenger_name}
+              </Text>
+              <View style={styles.tikTokRating}>
+                <Ionicons name="star" size={16} color="#FFD700" />
+                <Text style={styles.tikTokRatingText}>
+                  {isPassenger ? (offer.driver_rating || 5.0).toFixed(1) : '5.0'}
+                </Text>
+                {offer.is_premium && (
+                  <View style={styles.tikTokPremiumBadge}>
+                    <Text style={styles.tikTokPremiumText}>⭐ VIP</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Orta Kısım - Fiyat */}
+        <Animated.View style={[styles.tikTokPriceSection, { transform: [{ scale: scaleAnim }] }]}>
+          <Text style={styles.tikTokPriceLabel}>
+            {isPassenger ? 'Teklif Fiyatı' : 'Tahmini Ücret'}
+          </Text>
+          <Text style={styles.tikTokPrice}>₺{offer.price || offer.estimated_price || '?'}</Text>
+          
+          {/* Araç Bilgisi */}
+          {isPassenger && offer.vehicle_model && (
+            <View style={styles.tikTokVehicle}>
+              <Ionicons name="car-sport" size={20} color="#60A5FA" />
+              <Text style={styles.tikTokVehicleText}>
+                {offer.vehicle_color} {offer.vehicle_model}
+              </Text>
+            </View>
+          )}
+        </Animated.View>
+
+        {/* Mesafe/Süre Bilgisi */}
+        <View style={styles.tikTokStats}>
+          <View style={styles.tikTokStatItem}>
+            <Ionicons name="navigate" size={24} color="#10B981" />
+            <Text style={styles.tikTokStatValue}>
+              {offer.distance_to_passenger_km || offer.trip_distance_km || '?'} km
+            </Text>
+            <Text style={styles.tikTokStatLabel}>Mesafe</Text>
+          </View>
+          
+          <View style={styles.tikTokStatDivider} />
+          
+          <View style={styles.tikTokStatItem}>
+            <Ionicons name="time" size={24} color="#F59E0B" />
+            <Text style={styles.tikTokStatValue}>
+              {offer.estimated_time || offer.trip_duration_min || '?'} dk
+            </Text>
+            <Text style={styles.tikTokStatLabel}>Süre</Text>
+          </View>
+        </View>
+
+        {/* Lokasyon Bilgileri */}
+        {!isPassenger && (
+          <View style={styles.tikTokLocationCard}>
+            <View style={styles.tikTokLocationRow}>
+              <View style={styles.tikTokLocationDot} />
+              <Text style={styles.tikTokLocationText} numberOfLines={1}>
+                {offer.pickup_location}
+              </Text>
+            </View>
+            <View style={styles.tikTokLocationLine} />
+            <View style={styles.tikTokLocationRow}>
+              <View style={[styles.tikTokLocationDot, { backgroundColor: '#EF4444' }]} />
+              <Text style={styles.tikTokLocationText} numberOfLines={1}>
+                {offer.dropoff_location}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Not varsa */}
+        {offer.notes && (
+          <View style={styles.tikTokNotes}>
+            <Ionicons name="chatbubble-ellipses" size={16} color="#94A3B8" />
+            <Text style={styles.tikTokNotesText}>"{offer.notes}"</Text>
+          </View>
+        )}
+
+        {/* Alt Kısım - Aksiyon Butonları */}
+        <View style={styles.tikTokActions}>
+          <TouchableOpacity style={styles.tikTokAcceptButton} onPress={onAccept}>
+            <LinearGradient
+              colors={['#10B981', '#059669']}
+              style={styles.tikTokAcceptGradient}
+            >
+              <Ionicons name="checkmark-circle" size={28} color="#FFF" />
+              <Text style={styles.tikTokAcceptText}>
+                {isPassenger ? 'Teklifi Kabul Et' : 'Teklif Gönder'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Alt İpucu */}
+        <View style={styles.tikTokSwipeHint}>
+          <Ionicons name="chevron-up" size={24} color="rgba(255,255,255,0.5)" />
+          <Text style={styles.tikTokSwipeText}>Diğer teklifleri görmek için kaydır</Text>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+}
+
 // ==================== TRAFIK LAMBASI ANIMASYONU ====================
 function TrafficLightBorder({ children }: { children: React.ReactNode }) {
   // Basitleştirildi - Android hatası düzeltildi
