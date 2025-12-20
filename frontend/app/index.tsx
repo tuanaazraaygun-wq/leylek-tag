@@ -239,6 +239,19 @@ export default function App() {
   
   // KVKK checkbox state
   const [kvkkAccepted, setKvkkAccepted] = useState(false);
+  
+  // Admin Panel state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  
+  // Legal Consent state
+  const [showLegalConsent, setShowLegalConsent] = useState(false);
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  
+  // Legal Pages (Gizlilik, Kullanım Şartları, KVKK)
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showKvkk, setShowKvkk] = useState(false);
 
   useEffect(() => {
     loadUser();
