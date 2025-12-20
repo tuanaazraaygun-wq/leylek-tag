@@ -2796,3 +2796,50 @@ async def mark_notification_read(user_id: str, notification_id: str):
     
     return {"success": True}
 
+
+
+# ==================== AGORA TOKEN SYSTEM ====================
+from agora_token_builder import RtcTokenBuilder, Role_Publisher
+
+AGORA_APP_ID = os.getenv("AGORA_APP_ID", "a7bf6a31f42d47f681fbddf47bb802e5")
+AGORA_APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "32b612f5a7c7469188a17a3c3a2efd73")
+
+@app.get("/api/agora/token")
+async def get_agora_token(channel_name: str, uid: int = 0):
+    """
+    Agora RTC Token oluştur
+    - Secure Mode için gerekli
+    - Token 24 saat geçerli
+    """
+    try:
+        import time
+        
+        # Token geçerlilik süresi (24 saat)
+        expiration_time_in_seconds = 86400
+        current_timestamp = int(time.time())
+        privilege_expired_ts = current_timestamp + expiration_time_in_seconds
+        
+        # Token oluştur
+        token = RtcTokenBuilder.buildTokenWithUid(
+            AGORA_APP_ID,
+            AGORA_APP_CERTIFICATE,
+            channel_name,
+            uid,
+            Role_Publisher,
+            privilege_expired_ts
+        )
+        
+        logger.info(f"🔑 Agora Token oluşturuldu: channel={channel_name}, uid={uid}")
+        
+        return {
+            "success": True,
+            "token": token,
+            "app_id": AGORA_APP_ID,
+            "channel": channel_name,
+            "uid": uid,
+            "expires_in": expiration_time_in_seconds
+        }
+    except Exception as e:
+        logger.error(f"Agora token hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
