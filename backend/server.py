@@ -1688,20 +1688,24 @@ async def start_voice_call(request: StartCallRequest):
 
 @app.get("/api/voice/check-incoming")
 async def check_incoming_call(user_id: str):
-    """Gelen arama kontrolü - sadece aktif ringing aramalar"""
+    """
+    Gelen arama kontrolü
+    - Sadece aktif ringing aramalar
+    - İptal edilmiş aramaları hemen temizle
+    - Arayan kapattıysa zil çalmayı kes
+    """
     try:
         db = db_instance.db
         
-        # 20 saniyeden eski ringing aramaları sil (daha agresif)
+        # 20 saniyeden eski ringing aramaları sil (timeout)
         twenty_seconds_ago = datetime.utcnow() - timedelta(seconds=20)
         await db.call_requests.delete_many(
             {"status": "ringing", "created_at": {"$lt": twenty_seconds_ago}}
         )
         
-        # Tamamlanmış aramaları temizle (ended, rejected, missed, accepted)
-        # Accepted de sil çünkü Agora bağlantısı kuruldu, artık call_requests'e ihtiyaç yok
+        # Tamamlanmış/iptal edilmiş aramaları temizle
         await db.call_requests.delete_many(
-            {"status": {"$in": ["ended", "rejected", "missed", "accepted"]}}
+            {"status": {"$in": ["ended", "rejected", "missed", "accepted", "cancelled"]}}
         )
         
         # Bu kullanıcıya gelen SADECE "ringing" durumundaki arama var mı?
@@ -1710,10 +1714,29 @@ async def check_incoming_call(user_id: str):
             "status": "ringing"
         })
         
+        # ARAMA İPTAL EDİLDİ Mİ KONTROLÜ
+        # Son 5 saniye içinde cancelled arama history var mı?
+        five_seconds_ago = datetime.utcnow() - timedelta(seconds=5)
+        cancelled_call = await db.call_history.find_one({
+            "receiver_id": user_id,
+            "status": "cancelled",
+            "ended_at": {"$gt": five_seconds_ago}
+        })
+        
+        if cancelled_call:
+            # Arayan kapattı - karşı taraf bilgilendirilmeli
+            return {
+                "success": True,
+                "has_incoming": False,
+                "call_cancelled": True,
+                "message": "Arayan aramayı kapattı"
+            }
+        
         if incoming_call:
             return {
                 "success": True,
                 "has_incoming": True,
+                "call_cancelled": False,
                 "call": {
                     "call_id": str(incoming_call.get("_id", "")),
                     "caller_name": incoming_call.get("caller_name", "Arayan"),
@@ -1724,7 +1747,7 @@ async def check_incoming_call(user_id: str):
                 }
             }
         
-        return {"success": True, "has_incoming": False}
+        return {"success": True, "has_incoming": False, "call_cancelled": False}
     except Exception as e:
         logger.error(f"Gelen arama kontrolü hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
