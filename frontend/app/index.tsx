@@ -1887,6 +1887,21 @@ function PassengerDashboard({
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Toast Notification - Otomatik Kaybolan */}
+      {showToast && (
+        <Animated.View style={styles.toastContainer}>
+          <LinearGradient
+            colors={['#3FA9F5', '#2196F3']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.toastGradient}
+          >
+            <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </LinearGradient>
+        </Animated.View>
+      )}
+      
       {/* Üst Header - Modern Mavi */}
       {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
         <View style={styles.modernHeader}>
