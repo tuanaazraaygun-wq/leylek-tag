@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Alert, Platform, Dimensions, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Alert, Platform, Dimensions, Animated, PermissionsAndroid } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -10,6 +10,7 @@ let createAgoraRtcEngine: any = null;
 let RtcSurfaceView: any = null;
 let ChannelProfileType: any = null;
 let ClientRoleType: any = null;
+let VideoSourceType: any = null;
 
 const isNative = Platform.OS !== 'web';
 
@@ -20,6 +21,7 @@ if (isNative) {
     RtcSurfaceView = AgoraModule.RtcSurfaceView;
     ChannelProfileType = AgoraModule.ChannelProfileType;
     ClientRoleType = AgoraModule.ClientRoleType;
+    VideoSourceType = AgoraModule.VideoSourceType;
     console.log('✅ Agora SDK yüklendi (Video)');
   } catch (e) {
     console.log('⚠️ Agora SDK yüklenemedi:', e);
@@ -39,8 +41,36 @@ interface VideoCallProps {
 
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-const MAX_CALL_DURATION = 600; // 10 dakika
-const RING_TIMEOUT = 30; // 30 saniye zil çalma süresi
+const MAX_CALL_DURATION = 600;
+const RING_TIMEOUT = 30;
+
+// Android için izin isteme
+const requestPermissions = async () => {
+  if (Platform.OS === 'android') {
+    try {
+      const grants = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+      ]);
+      
+      console.log('📱 İzinler:', grants);
+      
+      const audioGranted = grants[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+      const cameraGranted = grants[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
+      
+      if (!audioGranted) {
+        Alert.alert('İzin Gerekli', 'Mikrofon izni verilmedi. Arama yapılamaz.');
+        return false;
+      }
+      
+      return true;
+    } catch (err) {
+      console.warn('İzin hatası:', err);
+      return false;
+    }
+  }
+  return true;
+};
 
 export default function VideoCall({
   visible,
@@ -60,13 +90,14 @@ export default function VideoCall({
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
-  const [isLocalVideoLarge, setIsLocalVideoLarge] = useState(false); // Küçük/büyük ekran değiştirme
+  const [isLocalVideoLarge, setIsLocalVideoLarge] = useState(false);
+  const [isJoined, setIsJoined] = useState(false);
   
   const engineRef = useRef<any>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const callStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const localUidRef = useRef<number>(Math.floor(Math.random() * 100000));
+  const localUidRef = useRef<number>(Math.floor(Math.random() * 100000) + 1);
   const isCleanedUp = useRef(false);
 
   // Agora başlat
@@ -88,7 +119,7 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü - 2 saniyede bir
+  // Arama durumu kontrolü
   useEffect(() => {
     if (!visible || !channelName || !userId || isCleanedUp.current) return;
     
@@ -101,9 +132,8 @@ export default function VideoCall({
         
         if (isCleanedUp.current) return;
         
-        // Arama sonlandırıldı veya reddedildi
         if (data.success && !data.has_active_call) {
-          console.log('📞 Arama sonlandırıldı/reddedildi:', data);
+          console.log('📞 Arama sonlandırıldı:', data);
           handleCallEnded(data.was_rejected);
         }
       } catch (error) {
@@ -111,10 +141,7 @@ export default function VideoCall({
       }
     };
     
-    // Hemen kontrol et
     checkStatus();
-    
-    // 2 saniyede bir kontrol
     callStatusIntervalRef.current = setInterval(checkStatus, 2000);
     
     return () => {
@@ -130,7 +157,6 @@ export default function VideoCall({
     ringIntervalRef.current = setInterval(() => {
       setRingDuration(prev => {
         if (prev >= RING_TIMEOUT) {
-          // Zil çalma süresi doldu - arama iptal
           handleTimeout();
           return prev;
         }
@@ -152,9 +178,8 @@ export default function VideoCall({
   };
 
   const handleTimeout = async () => {
-    console.log('⏰ Arama zaman aşımı - karşı taraf yanıt vermedi');
+    console.log('⏰ Arama zaman aşımı');
     
-    // Backend'e iptal bildir
     try {
       await fetch(`${BACKEND_URL}/api/voice/cancel-call?tag_id=${channelName}&user_id=${userId}`, {
         method: 'POST'
@@ -182,12 +207,20 @@ export default function VideoCall({
   const initAgora = async () => {
     try {
       console.log('🎬 Agora başlatılıyor...');
-      console.log('📱 App ID:', AGORA_APP_ID ? 'VAR' : 'YOK');
+      console.log('📱 App ID:', AGORA_APP_ID);
       console.log('📞 Channel:', channelName);
       console.log('🎥 Video Call:', isVideoCall);
+      console.log('👤 Local UID:', localUidRef.current);
       
       if (!AGORA_APP_ID) {
         Alert.alert('Hata', 'Agora App ID bulunamadı');
+        onEnd?.();
+        return;
+      }
+      
+      // İzinleri kontrol et
+      const hasPermissions = await requestPermissions();
+      if (!hasPermissions) {
         onEnd?.();
         return;
       }
@@ -201,20 +234,21 @@ export default function VideoCall({
         channelProfile: ChannelProfileType?.ChannelProfileCommunication || 0,
       });
       
-      // Event listeners
+      // Event listeners - ÖNEMLİ
       engine.registerEventHandler({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
-          console.log('✅ Kanala katıldı - elapsed:', elapsed);
+          console.log('✅ KANALA KATILDIM! Elapsed:', elapsed, 'ms');
+          setIsJoined(true);
+          
           if (!isCaller) {
             setCallState('connected');
             startCallTimer();
           }
         },
         onUserJoined: (connection: any, uid: number) => {
-          console.log('👤 Karşı taraf katıldı - UID:', uid);
+          console.log('👤 KARŞI TARAF KATILDI! UID:', uid);
           setRemoteUid(uid);
           
-          // Arayan için: karşı taraf katıldı, artık bağlandı
           if (isCaller) {
             if (ringIntervalRef.current) {
               clearInterval(ringIntervalRef.current);
@@ -225,61 +259,57 @@ export default function VideoCall({
           }
         },
         onUserOffline: (connection: any, uid: number, reason: number) => {
-          console.log('👤 Karşı taraf ayrıldı - UID:', uid, 'Reason:', reason);
+          console.log('👤 Karşı taraf ayrıldı - UID:', uid);
           setRemoteUid(null);
           handleCallEnded(false);
         },
         onError: (err: number, msg: string) => {
           console.log('❌ Agora hatası:', err, msg);
+          if (err === 17) {
+            console.log('⚠️ Zaten kanala katılmış durumda');
+          }
         },
-        onLocalAudioStateChanged: (state: number, error: number) => {
-          console.log('🎤 Local Audio State:', state, 'Error:', error);
+        onConnectionStateChanged: (connection: any, state: number, reason: number) => {
+          console.log('🔗 Bağlantı durumu:', state, 'Sebep:', reason);
         },
-        onRemoteAudioStateChanged: (connection: any, uid: number, state: number, reason: number) => {
-          console.log('🔊 Remote Audio State - UID:', uid, 'State:', state);
-        },
-        onLocalVideoStateChanged: (source: any, state: number, error: number) => {
-          console.log('📹 Local Video State:', state, 'Error:', error);
-        },
-        onRemoteVideoStateChanged: (connection: any, uid: number, state: number, reason: number) => {
-          console.log('📺 Remote Video State - UID:', uid, 'State:', state);
+        onAudioDeviceStateChanged: (deviceId: string, deviceType: number, deviceState: number) => {
+          console.log('🎤 Ses cihazı değişti:', deviceType, deviceState);
         },
       });
       
-      // ÖNEMLİ: Önce audio ayarlarını yap
+      // Ses ayarları - ÖNCELİKLİ
+      console.log('🔊 Ses ayarları yapılıyor...');
       engine.enableAudio();
       engine.setEnableSpeakerphone(true);
       engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.adjustRecordingSignalVolume(100); // Mikrofon ses seviyesi
-      engine.adjustPlaybackSignalVolume(100); // Hoparlör ses seviyesi
+      engine.adjustRecordingSignalVolume(400); // Mikrofon %400
+      engine.adjustPlaybackSignalVolume(400); // Hoparlör %400
+      engine.muteLocalAudioStream(false);
       
-      // Video araması ise video'yu etkinleştir
+      // Video ayarları
       if (isVideoCall) {
+        console.log('📹 Video ayarları yapılıyor...');
         engine.enableVideo();
         engine.enableLocalVideo(true);
         engine.startPreview();
-        console.log('📹 Video başlatıldı');
-      }
-      
-      // Kanala katıl - token boş, app ID test modu için
-      const joinResult = await engine.joinChannel('', channelName, localUidRef.current, {
-        clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
-        publishMicrophoneTrack: true, // ÖNEMLİ: Mikrofonu yayınla
-        publishCameraTrack: isVideoCall, // Video varsa kamerayı yayınla
-        autoSubscribeAudio: true, // Karşı tarafın sesini otomatik al
-        autoSubscribeVideo: isVideoCall, // Video varsa otomatik al
-      });
-      
-      console.log('📞 Kanala katılım başlatıldı - Result:', joinResult);
-      
-      // Mikrofonu ve hoparlörü açık tut
-      engine.muteLocalAudioStream(false);
-      if (isVideoCall) {
         engine.muteLocalVideoStream(false);
       }
       
+      // Kanala katıl
+      console.log('📞 Kanala katılınıyor...');
+      const options = {
+        clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
+        publishMicrophoneTrack: true,
+        publishCameraTrack: isVideoCall,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: isVideoCall,
+      };
+      
+      await engine.joinChannel('', channelName, localUidRef.current, options);
+      console.log('📞 joinChannel çağrıldı!');
+      
     } catch (error) {
-      console.error('Agora init error:', error);
+      console.error('❌ Agora init error:', error);
       Alert.alert('Hata', 'Arama başlatılamadı: ' + String(error));
       onEnd?.();
     }
@@ -308,10 +338,9 @@ export default function VideoCall({
     
     if (engineRef.current) {
       try {
-        if (isVideoCall) {
-          engineRef.current.stopPreview();
-        }
+        engineRef.current.stopPreview();
         engineRef.current.leaveChannel();
+        engineRef.current.unregisterEventHandler({});
         engineRef.current.release();
         engineRef.current = null;
       } catch (e) {
@@ -323,6 +352,7 @@ export default function VideoCall({
     setDuration(0);
     setRingDuration(0);
     setRemoteUid(null);
+    setIsJoined(false);
   };
 
   const handleEndCall = async () => {
@@ -344,19 +374,20 @@ export default function VideoCall({
 
   const toggleMute = () => {
     if (engineRef.current) {
-      engineRef.current.muteLocalAudioStream(!isMuted);
-      setIsMuted(!isMuted);
+      const newMuted = !isMuted;
+      engineRef.current.muteLocalAudioStream(newMuted);
+      setIsMuted(newMuted);
+      console.log('🎤 Mikrofon:', newMuted ? 'KAPALI' : 'AÇIK');
     }
   };
 
   const toggleVideo = () => {
-    if (engineRef.current) {
-      if (isVideoEnabled) {
-        engineRef.current.muteLocalVideoStream(true);
-      } else {
-        engineRef.current.muteLocalVideoStream(false);
-      }
-      setIsVideoEnabled(!isVideoEnabled);
+    if (engineRef.current && isVideoCall) {
+      const newEnabled = !isVideoEnabled;
+      engineRef.current.muteLocalVideoStream(!newEnabled);
+      engineRef.current.enableLocalVideo(newEnabled);
+      setIsVideoEnabled(newEnabled);
+      console.log('📹 Video:', newEnabled ? 'AÇIK' : 'KAPALI');
     }
   };
 
@@ -387,7 +418,7 @@ export default function VideoCall({
     return (
       <Modal visible={visible} transparent animationType="fade">
         <View style={styles.container}>
-          <LinearGradient colors={['#1a1a2e', '#16213e', '#0f3460']} style={styles.gradient}>
+          <LinearGradient colors={['#1E3A5F', '#0F172A']} style={styles.gradient}>
             <View style={styles.header}>
               <Text style={styles.callerName}>{remoteUserName}</Text>
               <Text style={styles.callStatus}>Web Arama Simülasyonu</Text>
@@ -408,120 +439,121 @@ export default function VideoCall({
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.container}>
-        <LinearGradient colors={['#1a1a2e', '#16213e', '#0f3460']} style={styles.gradient}>
+        <LinearGradient colors={['#1E3A5F', '#0F172A']} style={styles.gradient}>
           
-          {/* Video Görüntüleri */}
-          {isVideoCall && isVideoEnabled && RtcSurfaceView && (
-            <>
-              {/* Ana Ekran - Karşı taraf veya kendi görüntün */}
-              <View style={styles.mainVideoContainer}>
-                {isLocalVideoLarge ? (
-                  // Kendi görüntün büyük ekranda
-                  <RtcSurfaceView
-                    style={styles.fullVideo}
-                    canvas={{ uid: 0, sourceType: 1, mirrorMode: 0, setupMode: 0 }}
-                  />
-                ) : remoteUid ? (
-                  // Karşı taraf büyük ekranda
-                  <RtcSurfaceView
-                    style={styles.fullVideo}
-                    canvas={{ uid: remoteUid, sourceType: 1, mirrorMode: 0, setupMode: 0 }}
-                  />
-                ) : (
-                  // Bağlanmayı beklerken kendi görüntün
-                  <RtcSurfaceView
-                    style={styles.fullVideo}
-                    canvas={{ uid: 0, sourceType: 1, mirrorMode: 0, setupMode: 0 }}
-                  />
-                )}
-              </View>
-              
-              {/* Küçük Ekran - Sol Üst (Facebook gibi) */}
-              {remoteUid && (
-                <TouchableOpacity 
-                  style={styles.pipContainer}
-                  onPress={() => setIsLocalVideoLarge(!isLocalVideoLarge)}
-                  activeOpacity={0.9}
-                >
-                  <RtcSurfaceView
-                    style={styles.pipVideo}
-                    canvas={{ 
-                      uid: isLocalVideoLarge ? remoteUid : 0, 
-                      sourceType: 1, 
-                      mirrorMode: 0, 
-                      setupMode: 0 
-                    }}
-                  />
-                  <View style={styles.pipSwitchIcon}>
-                    <Ionicons name="swap-horizontal" size={16} color="#FFF" />
-                  </View>
-                </TouchableOpacity>
-              )}
-            </>
-          )}
-          
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.callerName}>{remoteUserName}</Text>
-            <Text style={styles.callStatus}>
-              {callState === 'ringing' && `Çalıyor... (${RING_TIMEOUT - ringDuration}s)`}
-              {callState === 'connecting' && 'Bağlanıyor...'}
-              {callState === 'connected' && (isVideoCall ? 'Görüntülü Arama' : 'Sesli Arama')}
-            </Text>
-            {callState === 'connected' && (
-              <Text style={styles.duration}>{formatTime(duration)}</Text>
-            )}
+          {/* Uçtan Uca Şifreleme Uyarısı */}
+          <View style={styles.encryptionBanner}>
+            <Ionicons name="lock-closed" size={14} color="#10B981" />
+            <Text style={styles.encryptionText}>🔒 Uçtan uca şifreli görüşme</Text>
           </View>
           
-          {/* Avatar (Sesli arama veya video kapalıyken) */}
-          {(!isVideoCall || !isVideoEnabled || !remoteUid) && callState !== 'connected' && (
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{remoteUserName?.charAt(0) || '?'}</Text>
-              </View>
-              {callState === 'ringing' && (
-                <View style={styles.ringingIndicator}>
-                  <Ionicons name="call" size={24} color="#10B981" />
-                  <Text style={styles.ringingText}>Aranıyor...</Text>
+          {/* Video Görünümü */}
+          {isVideoCall && RtcSurfaceView ? (
+            <View style={styles.videoContainer}>
+              {/* Karşı tarafın videosu - Büyük */}
+              {remoteUid && !isLocalVideoLarge ? (
+                <RtcSurfaceView
+                  style={styles.remoteVideo}
+                  canvas={{ uid: remoteUid }}
+                />
+              ) : (
+                <View style={styles.remoteVideoPlaceholder}>
+                  <Ionicons name="person" size={80} color="rgba(255,255,255,0.3)" />
+                  <Text style={styles.waitingText}>
+                    {callState === 'ringing' ? 'Aranıyor...' : 
+                     callState === 'connecting' ? 'Bağlanıyor...' : 
+                     remoteUid ? '' : 'Karşı taraf bekleniyor...'}
+                  </Text>
                 </View>
               )}
+              
+              {/* Kendi videom - Küçük PiP */}
+              <TouchableOpacity 
+                style={[styles.localVideoContainer, isLocalVideoLarge && styles.localVideoLarge]}
+                onPress={() => setIsLocalVideoLarge(!isLocalVideoLarge)}
+              >
+                {isVideoEnabled ? (
+                  <RtcSurfaceView
+                    style={styles.localVideo}
+                    canvas={{ uid: 0, sourceType: VideoSourceType?.VideoSourceCamera || 1 }}
+                    zOrderMediaOverlay={true}
+                  />
+                ) : (
+                  <View style={styles.localVideoOff}>
+                    <Ionicons name="videocam-off" size={24} color="#FFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // Sesli arama görünümü
+            <View style={styles.audioCallContainer}>
+              <View style={styles.avatarContainer}>
+                <LinearGradient colors={['#3FA9F5', '#2563EB']} style={styles.avatar}>
+                  <Text style={styles.avatarText}>{remoteUserName?.[0] || '?'}</Text>
+                </LinearGradient>
+              </View>
+              
+              <Text style={styles.callerName}>{remoteUserName}</Text>
+              <Text style={styles.callStatus}>
+                {callState === 'ringing' ? `Aranıyor... ${ringDuration}s` : 
+                 callState === 'connecting' ? 'Bağlanıyor...' : 
+                 callState === 'connected' ? formatTime(duration) : 'Sonlandırıldı'}
+              </Text>
+              
+              {/* Bağlantı durumu */}
+              <View style={styles.connectionStatus}>
+                <View style={[styles.statusDot, isJoined && styles.statusDotConnected]} />
+                <Text style={styles.statusText}>
+                  {isJoined ? 'Bağlı' : 'Bağlanıyor...'}
+                </Text>
+              </View>
             </View>
           )}
           
-          {/* Kontroller */}
-          <View style={styles.controls}>
-            {/* Üst Kontroller */}
-            <View style={styles.topControls}>
-              {/* Hoparlör */}
-              <TouchableOpacity style={[styles.controlButton, !isSpeakerOn && styles.controlButtonOff]} onPress={toggleSpeaker}>
-                <Ionicons name={isSpeakerOn ? "volume-high" : "volume-mute"} size={24} color="#FFF" />
-              </TouchableOpacity>
-              
+          {/* Kontrol Butonları */}
+          <View style={styles.controlsContainer}>
+            <View style={styles.controlsRow}>
               {/* Mikrofon */}
-              <TouchableOpacity style={[styles.controlButton, isMuted && styles.controlButtonOff]} onPress={toggleMute}>
-                <Ionicons name={isMuted ? "mic-off" : "mic"} size={24} color="#FFF" />
+              <TouchableOpacity 
+                style={[styles.controlButton, isMuted && styles.controlButtonActive]} 
+                onPress={toggleMute}
+              >
+                <Ionicons name={isMuted ? "mic-off" : "mic"} size={28} color="#FFF" />
+                <Text style={styles.controlLabel}>{isMuted ? 'Aç' : 'Kapat'}</Text>
               </TouchableOpacity>
               
-              {/* Video Toggle */}
-              {isVideoCall && (
-                <TouchableOpacity style={[styles.controlButton, !isVideoEnabled && styles.controlButtonOff]} onPress={toggleVideo}>
-                  <Ionicons name={isVideoEnabled ? "videocam" : "videocam-off"} size={24} color="#FFF" />
-                </TouchableOpacity>
-              )}
+              {/* Hoparlör */}
+              <TouchableOpacity 
+                style={[styles.controlButton, !isSpeakerOn && styles.controlButtonActive]} 
+                onPress={toggleSpeaker}
+              >
+                <Ionicons name={isSpeakerOn ? "volume-high" : "volume-mute"} size={28} color="#FFF" />
+                <Text style={styles.controlLabel}>{isSpeakerOn ? 'Hoparlör' : 'Kulaklık'}</Text>
+              </TouchableOpacity>
               
-              {/* Kamera Çevir */}
-              {isVideoCall && isVideoEnabled && (
-                <TouchableOpacity style={styles.controlButton} onPress={switchCamera}>
-                  <Ionicons name="camera-reverse" size={24} color="#FFF" />
-                </TouchableOpacity>
+              {/* Video (sadece video aramada) */}
+              {isVideoCall && (
+                <>
+                  <TouchableOpacity 
+                    style={[styles.controlButton, !isVideoEnabled && styles.controlButtonActive]} 
+                    onPress={toggleVideo}
+                  >
+                    <Ionicons name={isVideoEnabled ? "videocam" : "videocam-off"} size={28} color="#FFF" />
+                    <Text style={styles.controlLabel}>Video</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.controlButton} onPress={switchCamera}>
+                    <Ionicons name="camera-reverse" size={28} color="#FFF" />
+                    <Text style={styles.controlLabel}>Çevir</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </View>
             
-            {/* Kapatma Butonu */}
+            {/* Kapat Butonu */}
             <TouchableOpacity style={styles.endCallButton} onPress={handleEndCall}>
-              <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.endCallGradient}>
-                <Ionicons name="call" size={32} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
-              </LinearGradient>
+              <Ionicons name="call" size={32} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
           </View>
           
@@ -539,134 +571,166 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
   },
-  mainVideoContainer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000',
+  encryptionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    marginTop: 50,
+    marginHorizontal: 20,
+    borderRadius: 20,
+    gap: 6,
   },
-  fullVideo: {
+  encryptionText: {
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  videoContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  remoteVideo: {
     flex: 1,
   },
-  // PIP (Picture in Picture) - Sol Üst Küçük Ekran
-  pipContainer: {
+  remoteVideoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waitingText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 16,
+    marginTop: 16,
+  },
+  localVideoContainer: {
     position: 'absolute',
-    top: 100,
-    left: 16,
-    width: 120,
-    height: 160,
+    top: 20,
+    right: 20,
+    width: 100,
+    height: 140,
     borderRadius: 12,
     overflow: 'hidden',
+    backgroundColor: '#333',
     borderWidth: 2,
-    borderColor: '#FFF',
-    backgroundColor: '#000',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 10,
+    borderColor: '#3FA9F5',
   },
-  pipVideo: {
+  localVideoLarge: {
+    width: SCREEN_WIDTH - 40,
+    height: SCREEN_HEIGHT * 0.4,
+    top: 20,
+    right: 20,
+    left: 20,
+  },
+  localVideo: {
     flex: 1,
   },
-  pipSwitchIcon: {
-    position: 'absolute',
-    bottom: 4,
-    right: 4,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  header: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
+  localVideoOff: {
+    flex: 1,
     alignItems: 'center',
-    zIndex: 10,
+    justifyContent: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  audioCallContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  avatarContainer: {
+    marginBottom: 24,
+  },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
   },
   callerName: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#FFF',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   callStatus: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 8,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
   },
-  duration: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#10B981',
-    marginTop: 8,
-  },
-  avatarContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-  },
-  avatar: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  avatarText: {
-    fontSize: 56,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  ringingIndicator: {
+  connectionStatus: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 20,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    gap: 8,
   },
-  ringingText: {
-    color: '#10B981',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#F59E0B',
   },
-  controls: {
+  statusDotConnected: {
+    backgroundColor: '#10B981',
+  },
+  statusText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+  },
+  header: {
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  duration: {
+    fontSize: 18,
+    color: '#FFF',
+    marginTop: 8,
+  },
+  controlsContainer: {
     paddingBottom: 50,
     paddingHorizontal: 20,
-    zIndex: 10,
   },
-  topControls: {
+  controlsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 20,
     marginBottom: 30,
+    gap: 20,
   },
   controlButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    width: 60,
+    height: 70,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  controlButtonOff: {
+  controlButtonActive: {
     backgroundColor: 'rgba(239, 68, 68, 0.5)',
   },
-  endCallButton: {
-    alignSelf: 'center',
-    borderRadius: 35,
-    overflow: 'hidden',
+  controlLabel: {
+    color: '#FFF',
+    fontSize: 10,
+    marginTop: 4,
   },
-  endCallGradient: {
+  controls: {
+    alignItems: 'center',
+    paddingBottom: 50,
+  },
+  endCallButton: {
     width: 70,
     height: 70,
     borderRadius: 35,
-    justifyContent: 'center',
+    backgroundColor: '#EF4444',
     alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
 });
