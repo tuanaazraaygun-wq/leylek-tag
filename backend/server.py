@@ -1251,8 +1251,8 @@ async def check_trip_end_request(tag_id: str, user_id: str):
 async def respond_trip_end_request(tag_id: str, user_id: str, approved: bool):
     """
     Bitirme isteğine yanıt ver
-    approved=True: Onayladı, yolculuk biter
-    approved=False: Reddetti, yolculuk devam eder
+    approved=True: Onayladı, yolculuk karşılıklı onay ile biter
+    approved=False: Reddetti AMA yolculuk yine biter, istek gönderene CEZA!
     """
     try:
         db = db_instance.db
@@ -1266,42 +1266,72 @@ async def respond_trip_end_request(tag_id: str, user_id: str, approved: bool):
         if not pending_request:
             return {"success": False, "detail": "Bekleyen istek bulunamadı"}
         
+        requester_id = pending_request.get("requester_id")
+        requester_type = pending_request.get("requester_type")
+        
+        tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+        if not tag:
+            return {"success": False, "detail": "TAG bulunamadı"}
+        
+        penalty_applied = False
+        
         if approved:
-            # ONAYLANDI - Yolculuğu bitir
-            tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
-            if tag:
-                await db.tags.update_one(
-                    {"_id": ObjectId(tag_id)},
-                    {"$set": {
-                        "status": TagStatus.COMPLETED,
-                        "completed_at": datetime.utcnow(),
-                        "mutual_end": True  # Karşılıklı onay ile bitti
-                    }}
-                )
-                
-                # Trip sayılarını artır
-                await db.users.update_one(
-                    {"_id": ObjectId(tag.get("passenger_id"))},
-                    {"$inc": {"total_trips": 1}}
-                )
-                await db.users.update_one(
-                    {"_id": ObjectId(tag.get("driver_id"))},
-                    {"$inc": {"total_trips": 1}}
-                )
+            # ONAYLANDI - Yolculuğu karşılıklı onay ile bitir
+            await db.tags.update_one(
+                {"_id": ObjectId(tag_id)},
+                {"$set": {
+                    "status": TagStatus.COMPLETED,
+                    "completed_at": datetime.utcnow(),
+                    "mutual_end": True,  # Karşılıklı onay ile bitti
+                    "penalty_applied": False
+                }}
+            )
             
-            # İsteği sil
-            await db.trip_end_requests.delete_many({"tag_id": tag_id})
-            
+            message = "Yolculuk karşılıklı onay ile tamamlandı"
             logger.info(f"✅ Yolculuk karşılıklı onay ile bitti: TAG {tag_id}")
             
-            return {"success": True, "approved": True, "message": "Yolculuk karşılıklı onay ile tamamlandı"}
         else:
-            # REDDEDİLDİ - İsteği sil, yolculuk devam
-            await db.trip_end_requests.delete_many({"tag_id": tag_id})
+            # REDDEDİLDİ AMA YİNE DE BİTİYOR + İSTEK GÖNDERENİN PUANI DÜŞÜYOR
+            await db.tags.update_one(
+                {"_id": ObjectId(tag_id)},
+                {"$set": {
+                    "status": TagStatus.COMPLETED,
+                    "completed_at": datetime.utcnow(),
+                    "mutual_end": False,  # Tek taraflı bitti
+                    "penalty_applied": True,
+                    "penalty_user_id": requester_id
+                }}
+            )
             
-            logger.info(f"❌ Bitirme isteği reddedildi: TAG {tag_id}")
+            # İSTEK GÖNDERENİN PUANINI DÜŞ (onaysız bitirenin)
+            await db.users.update_one(
+                {"_id": ObjectId(requester_id)},
+                {"$inc": {"penalty_points": 1, "rating": -0.5}}  # -0.5 puan ceza
+            )
             
-            return {"success": True, "approved": False, "message": "İstek reddedildi, yolculuk devam ediyor"}
+            penalty_applied = True
+            message = "Yolculuk bitti. Onaysız bitiren kişiye puan cezası uygulandı."
+            logger.warning(f"⚠️ CEZA: {requester_id} onaysız bitirdi - Puan -0.5")
+        
+        # Trip sayılarını artır (her durumda)
+        await db.users.update_one(
+            {"_id": ObjectId(tag.get("passenger_id"))},
+            {"$inc": {"total_trips": 1}}
+        )
+        await db.users.update_one(
+            {"_id": ObjectId(tag.get("driver_id"))},
+            {"$inc": {"total_trips": 1}}
+        )
+        
+        # İsteği sil
+        await db.trip_end_requests.delete_many({"tag_id": tag_id})
+        
+        return {
+            "success": True, 
+            "approved": approved, 
+            "message": message,
+            "penalty_applied": penalty_applied
+        }
     except Exception as e:
         logger.error(f"Trip end respond hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
