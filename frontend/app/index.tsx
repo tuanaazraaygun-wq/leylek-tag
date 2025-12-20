@@ -1173,16 +1173,21 @@ function TikTokOfferCard({
   index, 
   total, 
   onAccept,
-  isPassenger = true
+  isPassenger = true,
+  driverArrivalMin = 0,
+  tripDurationMin = 0
 }: { 
   offer: any; 
   index: number; 
   total: number; 
   onAccept: () => void;
   isPassenger?: boolean;
+  driverArrivalMin?: number;
+  tripDurationMin?: number;
 }) {
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -1198,7 +1203,27 @@ function TikTokOfferCard({
         useNativeDriver: true,
       }),
     ]).start();
+    
+    // Pulse animation for accept button
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.05,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
+
+  // Hesapla: Şoförün yolcuya varış süresi ve yolculuk süresi
+  const arrivalTime = driverArrivalMin || offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
+  const tripTime = tripDurationMin || offer.estimated_time || offer.trip_duration_min || Math.round((offer.trip_distance_km || 10) / 50 * 60);
 
   return (
     <View style={styles.tikTokCard}>
@@ -1206,9 +1231,8 @@ function TikTokOfferCard({
         colors={['#0F172A', '#1E293B', '#334155']}
         style={styles.tikTokGradient}
       >
-        {/* Üst Kısım - Sürücü/Yolcu Bilgisi */}
+        {/* Üst Kısım - Sayfa Göstergesi */}
         <Animated.View style={[styles.tikTokHeader, { opacity: fadeAnim }]}>
-          {/* Sayfa Göstergesi */}
           <View style={styles.tikTokPageIndicator}>
             <Text style={styles.tikTokPageText}>{index + 1} / {total}</Text>
           </View>
@@ -1243,6 +1267,35 @@ function TikTokOfferCard({
           </View>
         </Animated.View>
 
+        {/* YOLCU İÇİN: Varış ve Yolculuk Süreleri - BÜYÜK YAZILI */}
+        {isPassenger && (
+          <View style={styles.tikTokTimeCards}>
+            {/* Şoför Varış Süresi */}
+            <View style={styles.tikTokTimeCard}>
+              <LinearGradient
+                colors={['#10B981', '#059669']}
+                style={styles.tikTokTimeGradient}
+              >
+                <Ionicons name="car-sport" size={32} color="#FFF" />
+                <Text style={styles.tikTokTimeValue}>{arrivalTime} dk</Text>
+                <Text style={styles.tikTokTimeLabel}>içinde geliyorum</Text>
+              </LinearGradient>
+            </View>
+            
+            {/* Yolculuk Süresi */}
+            <View style={styles.tikTokTimeCard}>
+              <LinearGradient
+                colors={['#3B82F6', '#2563EB']}
+                style={styles.tikTokTimeGradient}
+              >
+                <Ionicons name="navigate" size={32} color="#FFF" />
+                <Text style={styles.tikTokTimeValue}>{tripTime} dk</Text>
+                <Text style={styles.tikTokTimeLabel}>da gideriz</Text>
+              </LinearGradient>
+            </View>
+          </View>
+        )}
+
         {/* Orta Kısım - Fiyat */}
         <Animated.View style={[styles.tikTokPriceSection, { transform: [{ scale: scaleAnim }] }]}>
           <Text style={styles.tikTokPriceLabel}>
@@ -1261,28 +1314,7 @@ function TikTokOfferCard({
           )}
         </Animated.View>
 
-        {/* Mesafe/Süre Bilgisi */}
-        <View style={styles.tikTokStats}>
-          <View style={styles.tikTokStatItem}>
-            <Ionicons name="navigate" size={24} color="#10B981" />
-            <Text style={styles.tikTokStatValue}>
-              {offer.distance_to_passenger_km || offer.trip_distance_km || '?'} km
-            </Text>
-            <Text style={styles.tikTokStatLabel}>Mesafe</Text>
-          </View>
-          
-          <View style={styles.tikTokStatDivider} />
-          
-          <View style={styles.tikTokStatItem}>
-            <Ionicons name="time" size={24} color="#F59E0B" />
-            <Text style={styles.tikTokStatValue}>
-              {offer.estimated_time || offer.trip_duration_min || '?'} dk
-            </Text>
-            <Text style={styles.tikTokStatLabel}>Süre</Text>
-          </View>
-        </View>
-
-        {/* Lokasyon Bilgileri */}
+        {/* Lokasyon Bilgileri - Sadece Şoför İçin */}
         {!isPassenger && (
           <View style={styles.tikTokLocationCard}>
             <View style={styles.tikTokLocationRow}>
@@ -1311,23 +1343,27 @@ function TikTokOfferCard({
 
         {/* Alt Kısım - Aksiyon Butonları */}
         <View style={styles.tikTokActions}>
-          <TouchableOpacity style={styles.tikTokAcceptButton} onPress={onAccept}>
-            <LinearGradient
-              colors={['#10B981', '#059669']}
-              style={styles.tikTokAcceptGradient}
-            >
-              <Ionicons name="checkmark-circle" size={28} color="#FFF" />
-              <Text style={styles.tikTokAcceptText}>
-                {isPassenger ? 'Teklifi Kabul Et' : 'Teklif Gönder'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <TouchableOpacity style={styles.tikTokAcceptButton} onPress={onAccept}>
+              <LinearGradient
+                colors={['#10B981', '#059669']}
+                style={styles.tikTokAcceptGradient}
+              >
+                <Ionicons name="checkmark-circle" size={28} color="#FFF" />
+                <Text style={styles.tikTokAcceptText}>
+                  {isPassenger ? 'HEMEN GEL!' : 'TEKLİF GÖNDER'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
 
         {/* Alt İpucu */}
         <View style={styles.tikTokSwipeHint}>
           <Ionicons name="chevron-up" size={24} color="rgba(255,255,255,0.5)" />
-          <Text style={styles.tikTokSwipeText}>Diğer teklifleri görmek için kaydır</Text>
+          <Text style={styles.tikTokSwipeText}>
+            {isPassenger ? 'Diğer teklifleri görmek için yukarı kaydır' : 'Diğer talepleri görmek için yukarı kaydır'}
+          </Text>
         </View>
       </LinearGradient>
     </View>
