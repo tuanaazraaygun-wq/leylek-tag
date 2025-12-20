@@ -2805,7 +2805,7 @@ from agora_token_builder import RtcTokenBuilder
 ROLE_PUBLISHER = 1
 ROLE_SUBSCRIBER = 2
 
-AGORA_APP_ID = os.getenv("AGORA_APP_ID", "a7bf6a31f42d47f681fbddf47bb802e5")
+AGORA_APP_ID = os.getenv("AGORA_APP_ID", "43c07f0cef814fd4a5ae3283c8bd77de")
 AGORA_APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "32b612f5a7c7469188a17a3c3a2efd73")
 
 @app.get("/api/agora/token")
