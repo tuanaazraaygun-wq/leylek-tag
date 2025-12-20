@@ -2847,3 +2847,57 @@ async def get_agora_token(channel_name: str, uid: int = 0):
         logger.error(f"Agora token hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
 
+
+
+# ==================== ZORLA BİTİR ====================
+@api_router.post("/trip/force-end")
+async def force_end_trip(tag_id: str, user_id: str):
+    """
+    Yolculuğu ZORLA bitir
+    - Onay beklemeden bitirir
+    - Zorla bitiren kişinin puanı düşer (-1 puan)
+    """
+    try:
+        db = db_instance.db
+        
+        tag = await db.tags.find_one({"_id": ObjectId(tag_id)})
+        if not tag:
+            return {"success": False, "detail": "TAG bulunamadı"}
+        
+        # Kullanıcı bu TAG'ın parçası mı?
+        is_passenger = tag.get("passenger_id") == user_id
+        is_driver = tag.get("driver_id") == user_id
+        
+        if not is_passenger and not is_driver:
+            return {"success": False, "detail": "Bu yolculuğa erişim yetkiniz yok"}
+        
+        # TAG'ı zorla bitir
+        await db.tags.update_one(
+            {"_id": ObjectId(tag_id)},
+            {"$set": {
+                "status": "completed",
+                "completed_at": datetime.utcnow(),
+                "force_ended": True,
+                "force_ended_by": user_id
+            }}
+        )
+        
+        # Zorla bitiren kişinin puanını düşür
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$inc": {"penalty_points": 1, "rating": -1.0}}
+        )
+        
+        # Bekleyen istekleri temizle
+        await db.trip_end_requests.delete_many({"tag_id": tag_id})
+        
+        logger.warning(f"⚠️ ZORLA BİTİRİLDİ: TAG {tag_id} by {user_id} (-1 puan cezası)")
+        
+        return {
+            "success": True,
+            "message": "Yolculuk zorla bitirildi. -1 puan cezası uygulandı."
+        }
+    except Exception as e:
+        logger.error(f"Force end error: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
