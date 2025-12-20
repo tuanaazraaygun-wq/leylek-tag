@@ -6172,4 +6172,36 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     marginTop: 4,
   },
+  // YENİ: TikTok Time Cards Styles
+  tikTokTimeCards: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 16,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  tikTokTimeCard: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  tikTokTimeGradient: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+  },
+  tikTokTimeValue: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 8,
+  },
+  tikTokTimeLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 4,
+    fontWeight: '500',
+  },
 });
