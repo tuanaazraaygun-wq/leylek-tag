@@ -279,10 +279,15 @@ export default function App() {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
         
-        // Admin kontrolü
+        // Admin kontrolü - 5326497412 ana admin
         const cleanPhone = parsedUser.phone?.replace(/\D/g, '');
-        if (cleanPhone === '5321111111' || cleanPhone === '05321111111') {
+        const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
+        
+        if (isMainAdmin) {
           setIsAdmin(true);
+          // Admin direkt admin paneline gitsin
+          setShowAdminPanel(true);
+          setScreen('role-select');
         } else {
           // API'den admin kontrolü
           try {
@@ -290,8 +295,10 @@ export default function App() {
             const data = await res.json();
             if (data.success && data.is_admin) {
               setIsAdmin(true);
+              setShowAdminPanel(true); // Diğer adminler de direkt panele
             }
           } catch (e) {}
+          setScreen('role-select');
         }
         
         // Legal consent kontrolü
@@ -300,8 +307,6 @@ export default function App() {
         } else {
           setLegalAccepted(true);
         }
-        
-        setScreen('role-select'); // Her girişte rol seçimi
       }
     } catch (error) {
       console.error('Kullanıcı yüklenemedi:', error);
