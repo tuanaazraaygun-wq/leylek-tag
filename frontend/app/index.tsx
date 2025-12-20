@@ -2731,42 +2731,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     }
   }, [activeTag, userLocation]);
 
-  // GELEN ARAMA KONTROLÜ - Polling
-  useEffect(() => {
-    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
-      const checkIncoming = async () => {
-        // Zaten aramadaysak veya gelen arama modalı açıksa kontrol etme
-        const currentState = callStateRef.current;
-        if (currentState.showVoiceCall || currentState.showIncomingCall) {
-          return;
-        }
-        
-        try {
-          const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-          const data = await response.json();
-          
-          if (data.success && data.has_incoming) {
-            console.log('📞 SÜRÜCÜYE GELEN ARAMA!', data.call.caller_name, data.call.call_type);
-            // Gelen Arama Modalını göster - OTOMATİK BAĞLANMA!
-            setIncomingCallInfo({
-              callerName: data.call.caller_name || 'Yolcu',
-              callType: data.call.call_type || 'audio',
-              channelName: activeTag.id
-            });
-            setSelectedPassengerName(data.call.caller_name || 'Yolcu');
-            setIsVideoCall(data.call.call_type === 'video');
-            setShowIncomingCall(true); // ÖNEMLİ: IncomingCall modalını göster, direkt bağlanma!
-          }
-        } catch (error) {
-          console.log('Gelen arama kontrolü hatası:', error);
-        }
-      };
-
-      const interval = setInterval(checkIncoming, 3000); // 3 saniyede bir kontrol
-      return () => clearInterval(interval);
-    }
-  }, [activeTag, user.id, showVoiceCall, showIncomingCall]);
-
   // Karşılıklı iptal isteği polling - ŞOFÖR için
   useEffect(() => {
     if (!user?.id || !activeTag) return;
