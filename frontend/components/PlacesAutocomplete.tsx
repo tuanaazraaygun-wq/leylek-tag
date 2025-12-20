@@ -13,6 +13,30 @@ import { Ionicons } from '@expo/vector-icons';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw';
 
+// Türkiye şehirlerinin koordinatları
+const CITY_COORDINATES: { [key: string]: { lat: number; lng: number } } = {
+  'İstanbul': { lat: 41.0082, lng: 28.9784 },
+  'Ankara': { lat: 39.9334, lng: 32.8597 },
+  'İzmir': { lat: 38.4237, lng: 27.1428 },
+  'Bursa': { lat: 40.1885, lng: 29.0610 },
+  'Antalya': { lat: 36.8969, lng: 30.7133 },
+  'Adana': { lat: 37.0000, lng: 35.3213 },
+  'Konya': { lat: 37.8746, lng: 32.4932 },
+  'Gaziantep': { lat: 37.0662, lng: 37.3833 },
+  'Şanlıurfa': { lat: 37.1591, lng: 38.7969 },
+  'Kocaeli': { lat: 40.8533, lng: 29.8815 },
+  'Mersin': { lat: 36.8000, lng: 34.6333 },
+  'Diyarbakır': { lat: 37.9144, lng: 40.2306 },
+  'Hatay': { lat: 36.4018, lng: 36.3498 },
+  'Manisa': { lat: 38.6191, lng: 27.4289 },
+  'Kayseri': { lat: 38.7312, lng: 35.4787 },
+  'Samsun': { lat: 41.2867, lng: 36.3300 },
+  'Balıkesir': { lat: 39.6484, lng: 27.8826 },
+  'Kahramanmaraş': { lat: 37.5858, lng: 36.9371 },
+  'Van': { lat: 38.4891, lng: 43.4089 },
+  'Aydın': { lat: 37.8560, lng: 27.8416 },
+};
+
 interface PlacePrediction {
   place_id: string;
   description: string;
@@ -32,12 +56,14 @@ interface PlacesAutocompleteProps {
   placeholder?: string;
   onPlaceSelected: (place: PlaceDetails) => void;
   initialValue?: string;
+  city?: string; // Kullanıcının şehri - sonuçları filtrele
 }
 
 export default function PlacesAutocomplete({
   placeholder = 'Nereye gitmek istiyorsunuz?',
   onPlaceSelected,
   initialValue = '',
+  city = '',
 }: PlacesAutocompleteProps) {
   const [query, setQuery] = useState(initialValue);
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -71,10 +97,37 @@ export default function PlacesAutocomplete({
   const searchPlaces = async (input: string) => {
     setLoading(true);
     try {
+      // Şehir koordinatlarını al
+      const cityCoords = city ? CITY_COORDINATES[city] : null;
+      
+      // Arama sorgusuna şehri ekle
+      const searchQuery = city ? `${input}, ${city}, Türkiye` : `${input} Türkiye`;
+      
       // Places API (New) Text Search kullanımı
       const url = `https://places.googleapis.com/v1/places:searchText`;
       
-      console.log('🔍 Places API (New) çağrılıyor:', input);
+      console.log('🔍 Places API çağrılıyor:', searchQuery, cityCoords ? `(${city} odaklı)` : '');
+      
+      // Request body oluştur
+      const requestBody: any = {
+        textQuery: searchQuery,
+        languageCode: 'tr',
+        regionCode: 'TR',
+        maxResultCount: 8
+      };
+      
+      // Şehir varsa location bias ekle
+      if (cityCoords) {
+        requestBody.locationBias = {
+          circle: {
+            center: {
+              latitude: cityCoords.lat,
+              longitude: cityCoords.lng
+            },
+            radius: 50000.0 // 50 km yarıçap
+          }
+        };
+      }
       
       const response = await fetch(url, {
         method: 'POST',
@@ -83,20 +136,31 @@ export default function PlacesAutocomplete({
           'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
           'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location'
         },
-        body: JSON.stringify({
-          textQuery: input + ' Türkiye',
-          languageCode: 'tr',
-          regionCode: 'TR',
-          maxResultCount: 5
-        })
+        body: JSON.stringify(requestBody)
       });
       
       const data = await response.json();
       
-      console.log('📍 Places API yanıt:', data);
+      console.log('📍 Places API yanıt:', data?.places?.length || 0, 'sonuç');
       
       if (data.places && data.places.length > 0) {
-        const formattedPredictions = data.places.map((place: any) => ({
+        // Şehir filtresi uygula - sadece o şehirdeki sonuçları göster
+        let filteredPlaces = data.places;
+        
+        if (city) {
+          filteredPlaces = data.places.filter((place: any) => {
+            const address = place.formattedAddress || '';
+            // Şehir adını içeriyorsa göster
+            return address.toLowerCase().includes(city.toLowerCase());
+          });
+          
+          // Filtreleme sonucu boşsa tüm sonuçları göster
+          if (filteredPlaces.length === 0) {
+            filteredPlaces = data.places;
+          }
+        }
+        
+        const formattedPredictions = filteredPlaces.map((place: any) => ({
           place_id: place.id,
           description: place.formattedAddress || place.displayName?.text,
           structured_formatting: {
@@ -109,12 +173,28 @@ export default function PlacesAutocomplete({
         setShowPredictions(true);
       } else {
         // Fallback: Eski API dene
-        const oldUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&language=tr&components=country:tr`;
+        let oldUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(searchQuery)}&key=${GOOGLE_MAPS_API_KEY}&language=tr&components=country:tr`;
+        
+        // Şehir varsa location bias ekle
+        if (cityCoords) {
+          oldUrl += `&location=${cityCoords.lat},${cityCoords.lng}&radius=50000`;
+        }
+        
         const oldResponse = await fetch(oldUrl);
         const oldData = await oldResponse.json();
         
         if (oldData.status === 'OK' && oldData.predictions) {
-          setPredictions(oldData.predictions);
+          // Şehir filtresi
+          let filteredPredictions = oldData.predictions;
+          if (city) {
+            filteredPredictions = oldData.predictions.filter((p: any) => 
+              p.description.toLowerCase().includes(city.toLowerCase())
+            );
+            if (filteredPredictions.length === 0) {
+              filteredPredictions = oldData.predictions;
+            }
+          }
+          setPredictions(filteredPredictions);
           setShowPredictions(true);
         } else {
           setPredictions([]);
