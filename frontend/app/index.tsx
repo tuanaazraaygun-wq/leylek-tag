@@ -2232,13 +2232,16 @@ function PassengerDashboard({
             <Text style={styles.modalTitle}>🎯 Nereye Gitmek İstiyorsunuz?</Text>
             
             <PlacesAutocomplete
-              placeholder="Nereye gitmek istiyorsunuz?"
+              placeholder="Adres, sokak veya mekan ara..."
+              city={user?.city || ''}
               onPlaceSelected={(place) => {
                 handleDestinationSelect(place.address, place.latitude, place.longitude);
               }}
             />
             
-            <Text style={[styles.popularTitle, { marginTop: 20 }]}>Popüler Konumlar:</Text>
+            <Text style={[styles.popularTitle, { marginTop: 20 }]}>
+              {user?.city ? `${user.city} - Popüler Konumlar:` : 'Popüler Konumlar:'}
+            </Text>
             <ScrollView style={styles.popularList}>
               {[
                 { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
@@ -2247,7 +2250,7 @@ function PassengerDashboard({
                 { name: 'Ulus, Ankara', lat: 39.9420, lng: 32.8647 },
                 { name: 'Konak, İzmir', lat: 38.4189, lng: 27.1287 },
                 { name: 'Alsancak, İzmir', lat: 38.4361, lng: 27.1428 },
-              ].map((place, index) => (
+              ].filter(place => !user?.city || place.name.includes(user.city)).map((place, index) => (
                 <TouchableOpacity
                   key={index}
                   style={styles.popularItem}
