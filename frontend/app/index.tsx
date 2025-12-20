@@ -1734,7 +1734,10 @@ function PassengerDashboard({
       const data = await response.json();
       if (data.success) {
         setActiveTag(data.tag);
-        Alert.alert('✅ Teklif İsteği Gönderildi', `Yakındaki sürücüler "${destination.address}" için tekliflerini gönderiyor...`);
+        // Toast notification göster - otomatik kaybolur
+        setToastMessage('Teklif isteği gönderildi ✓');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2500);
       } else {
         Alert.alert('Hata', data.detail || 'Teklif isteği gönderilemedi');
       }
