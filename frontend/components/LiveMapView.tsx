@@ -289,10 +289,11 @@ export default function LiveMapView({
         {/* BEN */}
         {userLocation && (
           <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.markerOuter}>
-              <View style={[styles.markerInner, isDriver ? styles.driverMarker : styles.passengerMarker]}>
-                <Text style={styles.markerEmoji}>{isDriver ? '🚗' : '👤'}</Text>
+            <View style={styles.markerContainer}>
+              <View style={[styles.markerCircle, isDriver ? styles.driverCircle : styles.passengerCircle]}>
+                <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
               </View>
+              <View style={[styles.markerArrow, isDriver ? styles.driverArrow : styles.passengerArrow]} />
             </View>
           </Marker>
         )}
@@ -300,10 +301,11 @@ export default function LiveMapView({
         {/* KARŞI TARAF */}
         {otherLocation && (
           <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.markerOuter}>
-              <View style={[styles.markerInner, !isDriver ? styles.driverMarker : styles.passengerMarker]}>
-                <Text style={styles.markerEmoji}>{!isDriver ? '🚗' : '👤'}</Text>
+            <View style={styles.markerContainer}>
+              <View style={[styles.markerCircle, !isDriver ? styles.driverCircle : styles.passengerCircle]}>
+                <Text style={styles.markerIcon}>{!isDriver ? '🚗' : '👤'}</Text>
               </View>
+              <View style={[styles.markerArrow, !isDriver ? styles.driverArrow : styles.passengerArrow]} />
             </View>
           </Marker>
         )}
