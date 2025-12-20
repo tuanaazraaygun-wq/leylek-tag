@@ -959,6 +959,37 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     
     from datetime import datetime, timedelta
     
+    # Sürücü konumu al
+    driver_location = user.get("location")
+    driver_lat = driver_location.get("latitude", 41.0082) if driver_location else 41.0082
+    driver_lng = driver_location.get("longitude", 28.9784) if driver_location else 28.9784
+    
+    # Mesafe hesapla: Sürücü -> Yolcu
+    distance_to_passenger = 0.0
+    arrival_time_min = request.estimated_time or 5
+    
+    if tag.get("pickup_lat") and tag.get("pickup_lng"):
+        distance_to_passenger = calculate_distance(
+            driver_lat, driver_lng,
+            tag["pickup_lat"], tag["pickup_lng"]
+        )
+        # Ortalama hız 40 km/saat ile tahmini varış süresi
+        if distance_to_passenger > 0:
+            arrival_time_min = max(1, int((distance_to_passenger / 40) * 60))
+    
+    # Mesafe hesapla: Pickup -> Dropoff (yolculuk mesafesi)
+    trip_distance_km = 0.0
+    trip_duration_min = 0
+    
+    if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
+        trip_distance_km = calculate_distance(
+            tag["pickup_lat"], tag["pickup_lng"],
+            tag["dropoff_lat"], tag["dropoff_lng"]
+        )
+        # Ortalama hız 30 km/saat ile tahmini yolculuk süresi
+        if trip_distance_km > 0:
+            trip_duration_min = max(1, int((trip_distance_km / 30) * 60))
+    
     offer_data = Offer(
         tag_id=request.tag_id,
         driver_id=user_id,
@@ -966,7 +997,7 @@ async def send_offer(user_id: str, request: SendOfferRequest):
         driver_rating=user.get("rating", 5.0),
         driver_photo=user.get("profile_photo"),
         price=request.price,
-        estimated_time=request.estimated_time,
+        estimated_time=arrival_time_min,  # Hesaplanan varış süresi
         notes=request.notes
     ).dict()
     
@@ -975,6 +1006,11 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     offer_data["vehicle_color"] = vehicle_color
     offer_data["vehicle_photo"] = vehicle_photo
     offer_data["is_premium"] = is_premium
+    
+    # Mesafe bilgilerini ekle
+    offer_data["distance_to_passenger_km"] = round(distance_to_passenger, 1)
+    offer_data["trip_distance_km"] = round(trip_distance_km, 1)
+    offer_data["trip_duration_min"] = trip_duration_min
     
     # 10 dakika sonra expire olacak
     offer_data["expires_at"] = datetime.utcnow() + timedelta(minutes=OFFER_EXPIRY_MINUTES)
