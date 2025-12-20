@@ -170,7 +170,7 @@ export default function IncomingCall({
         {/* Alt Kısım - Butonlar */}
         <View style={styles.buttonsContainer}>
           {/* Reddet Butonu */}
-          <TouchableOpacity style={styles.buttonWrapper} onPress={onReject}>
+          <TouchableOpacity style={styles.buttonWrapper} onPress={handleReject}>
             <View style={styles.rejectButton}>
               <Ionicons name="close" size={36} color="#FFF" />
             </View>
