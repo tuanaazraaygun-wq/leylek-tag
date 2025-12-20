@@ -3102,132 +3102,49 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             }}
           />
         </View>
+      ) : requests.length > 0 ? (
+        // TİKTOK TARZI TAM EKRAN TALEP LİSTESİ - ŞOFÖR
+        <View style={styles.tikTokContainer}>
+          <FlatList
+            data={requests}
+            keyExtractor={(item, index) => item.id || index.toString()}
+            renderItem={({ item, index }) => {
+              // Mesafe ve süre hesaplama
+              const distanceToPassenger = item.distance_to_passenger_km || 0;
+              const timeToPassenger = Math.round((distanceToPassenger / 40) * 60);
+              const tripDistance = item.trip_distance_km || 0;
+              const tripTime = Math.round((tripDistance / 50) * 60);
+              
+              return (
+                <TikTokOfferCard
+                  offer={{
+                    ...item,
+                    estimated_arrival_min: timeToPassenger,
+                    trip_duration_min: tripTime
+                  }}
+                  index={index}
+                  total={requests.length}
+                  onAccept={() => handleSendOffer(item.id)}
+                  isPassenger={false}
+                  driverArrivalMin={timeToPassenger}
+                  tripDurationMin={tripTime}
+                />
+              );
+            }}
+            pagingEnabled={true}
+            showsVerticalScrollIndicator={false}
+            snapToInterval={SCREEN_HEIGHT}
+            decelerationRate="fast"
+            bounces={false}
+          />
+        </View>
       ) : (
         <ScrollView style={styles.content}>
-          {requests.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="car-sport" size={80} color={COLORS.primary} />
-              <Text style={styles.emptyStateText}>Henüz teklif yok</Text>
-              <Text style={styles.emptyStateSubtext}>Yeni teklifler burada görünecek</Text>
-            </View>
-          ) : (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>📍 Yakındaki Talepler ({requests.length})</Text>
-            
-              {requests.map((request: any, index: number) => {
-                // Mesafe ve süre hesaplama
-                const distanceToPassenger = request.distance_to_passenger_km || 0;
-                const timeToPassenger = Math.round((distanceToPassenger / 40) * 60); // 40 km/h ortalama
-                
-                const tripDistance = request.trip_distance_km || 0;
-                const tripTime = Math.round((tripDistance / 50) * 60); // 50 km/h ortalama şehir içi
-                
-                return (
-                <View key={request.id} style={styles.requestCard}>
-                  {/* TEK TİP GÖK MAVİSİ KART */}
-                  <View style={styles.requestCardSky}>
-                    {/* Yolcu Bilgileri */}
-                    <View style={styles.requestHeader}>
-                      {request.is_premium && request.profile_photo ? (
-                        <Image 
-                          source={{ uri: request.profile_photo }}
-                          style={styles.premiumPassengerPhoto}
-                        />
-                      ) : (
-                        <View style={styles.modernPassengerAvatar}>
-                          <LinearGradient
-                            colors={['#3FA9F5', '#2563EB']}
-                            style={styles.avatarGradient}
-                          >
-                            <Text style={styles.passengerAvatarText}>
-                              {request.passenger_name?.charAt(0) || '?'}
-                            </Text>
-                          </LinearGradient>
-                        </View>
-                      )}
-                      <View style={styles.passengerInfo}>
-                        <View style={styles.passengerNameContainer}>
-                          <Text style={styles.passengerName}>{request.passenger_name}</Text>
-                          {request.is_premium && (
-                            <View style={styles.premiumBadgeModern}>
-                              <Text style={styles.premiumBadgeText}>⭐ PREMIUM</Text>
-                            </View>
-                          )}
-                        </View>
-                        <View style={styles.ratingContainer}>
-                          <Ionicons name="star" size={14} color="#FFD700" />
-                          <Text style={styles.ratingText}>5.0</Text>
-                        </View>
-                      </View>
-                    </View>
-                  
-                  {/* Mesafe ve Süre Bilgileri - Modern Card */}
-                  <View style={styles.modernDistanceCard}>
-                    <View style={styles.modernDistanceItem}>
-                      <View style={styles.distanceIconCircle}>
-                        <Ionicons name="car-sport" size={18} color="#3FA9F5" />
-                      </View>
-                      <View style={styles.distanceTextContainer}>
-                        <Text style={styles.distanceLabelModern}>Yolcuya Mesafe</Text>
-                        <Text style={styles.distanceValueModern}>
-                          {distanceToPassenger > 0 ? `${distanceToPassenger} km` : '...'}
-                          {timeToPassenger > 0 ? ` • ${timeToPassenger} dk` : ''}
-                        </Text>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.modernDistanceDivider} />
-                    
-                    <View style={styles.modernDistanceItem}>
-                      <View style={[styles.distanceIconCircle, { backgroundColor: '#EBF5FF' }]}>
-                        <Ionicons name="navigate" size={18} color="#3FA9F5" />
-                      </View>
-                      <View style={styles.distanceTextContainer}>
-                        <Text style={styles.distanceLabelModern}>Yolculuk</Text>
-                        <Text style={styles.distanceValueModern}>
-                          {tripDistance > 0 ? `${tripDistance} km` : '...'}
-                          {tripTime > 0 ? ` • ${tripTime} dk` : ''}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Lokasyon Bilgileri - Modern */}
-                  <View style={styles.modernLocationCard}>
-                    <View style={styles.modernLocationRow}>
-                      <View style={styles.locationDotGreen} />
-                      <View style={styles.locationTextWrapper}>
-                        <Text style={styles.locationLabelSmall}>Başlangıç</Text>
-                        <Text style={styles.locationTextModern} numberOfLines={1}>{request.pickup_location}</Text>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.locationConnectorLine} />
-                    
-                    <View style={styles.modernLocationRow}>
-                      <View style={styles.locationDotRed} />
-                      <View style={styles.locationTextWrapper}>
-                        <Text style={styles.locationLabelSmall}>Hedef</Text>
-                        <Text style={styles.locationTextModern} numberOfLines={1}>{request.dropoff_location}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Teklif Gönder / Gönderildi - Modern */}
-                  {request.has_offered ? (
-                    <View style={styles.modernOfferedBadge}>
-                      <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-                      <Text style={styles.modernOfferedText}>Teklif Gönderildi ✓</Text>
-                    </View>
-                  ) : (
-                    <AnimatedOfferButton onPress={() => handleSendOffer(request.id)} />
-                  )}
-                  </View>
-                </View>
-                );
-              })}
-            </View>
-          )}
+          <View style={styles.emptyState}>
+            <Ionicons name="car-sport" size={80} color={COLORS.primary} />
+            <Text style={styles.emptyStateText}>Henüz teklif yok</Text>
+            <Text style={styles.emptyStateSubtext}>Yeni teklifler burada görünecek</Text>
+          </View>
         </ScrollView>
       )}
 
