@@ -182,10 +182,20 @@ export default function VideoCall({
   const initAgora = async () => {
     try {
       console.log('🎬 Agora başlatılıyor...');
+      console.log('📱 App ID:', AGORA_APP_ID ? 'VAR' : 'YOK');
+      console.log('📞 Channel:', channelName);
+      console.log('🎥 Video Call:', isVideoCall);
+      
+      if (!AGORA_APP_ID) {
+        Alert.alert('Hata', 'Agora App ID bulunamadı');
+        onEnd?.();
+        return;
+      }
       
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
       
+      // Engine'i başlat
       engine.initialize({
         appId: AGORA_APP_ID,
         channelProfile: ChannelProfileType?.ChannelProfileCommunication || 0,
@@ -194,14 +204,14 @@ export default function VideoCall({
       // Event listeners
       engine.registerEventHandler({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
-          console.log('✅ Kanala katıldı');
+          console.log('✅ Kanala katıldı - elapsed:', elapsed);
           if (!isCaller) {
             setCallState('connected');
             startCallTimer();
           }
         },
         onUserJoined: (connection: any, uid: number) => {
-          console.log('👤 Karşı taraf katıldı:', uid);
+          console.log('👤 Karşı taraf katıldı - UID:', uid);
           setRemoteUid(uid);
           
           // Arayan için: karşı taraf katıldı, artık bağlandı
@@ -214,35 +224,63 @@ export default function VideoCall({
             startCallTimer();
           }
         },
-        onUserOffline: (connection: any, uid: number) => {
-          console.log('👤 Karşı taraf ayrıldı:', uid);
+        onUserOffline: (connection: any, uid: number, reason: number) => {
+          console.log('👤 Karşı taraf ayrıldı - UID:', uid, 'Reason:', reason);
           setRemoteUid(null);
           handleCallEnded(false);
         },
         onError: (err: number, msg: string) => {
           console.log('❌ Agora hatası:', err, msg);
         },
+        onLocalAudioStateChanged: (state: number, error: number) => {
+          console.log('🎤 Local Audio State:', state, 'Error:', error);
+        },
+        onRemoteAudioStateChanged: (connection: any, uid: number, state: number, reason: number) => {
+          console.log('🔊 Remote Audio State - UID:', uid, 'State:', state);
+        },
+        onLocalVideoStateChanged: (source: any, state: number, error: number) => {
+          console.log('📹 Local Video State:', state, 'Error:', error);
+        },
+        onRemoteVideoStateChanged: (connection: any, uid: number, state: number, reason: number) => {
+          console.log('📺 Remote Video State - UID:', uid, 'State:', state);
+        },
       });
       
-      // Ses ve video ayarları
+      // ÖNEMLİ: Önce audio ayarlarını yap
       engine.enableAudio();
       engine.setEnableSpeakerphone(true);
+      engine.setDefaultAudioRouteToSpeakerphone(true);
+      engine.adjustRecordingSignalVolume(100); // Mikrofon ses seviyesi
+      engine.adjustPlaybackSignalVolume(100); // Hoparlör ses seviyesi
       
+      // Video araması ise video'yu etkinleştir
       if (isVideoCall) {
         engine.enableVideo();
+        engine.enableLocalVideo(true);
         engine.startPreview();
+        console.log('📹 Video başlatıldı');
       }
       
-      // Kanala katıl
-      await engine.joinChannel('', channelName, localUidRef.current, {
+      // Kanala katıl - token boş, app ID test modu için
+      const joinResult = await engine.joinChannel('', channelName, localUidRef.current, {
         clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
+        publishMicrophoneTrack: true, // ÖNEMLİ: Mikrofonu yayınla
+        publishCameraTrack: isVideoCall, // Video varsa kamerayı yayınla
+        autoSubscribeAudio: true, // Karşı tarafın sesini otomatik al
+        autoSubscribeVideo: isVideoCall, // Video varsa otomatik al
       });
       
-      console.log('📞 Kanala katılım başlatıldı');
+      console.log('📞 Kanala katılım başlatıldı - Result:', joinResult);
+      
+      // Mikrofonu ve hoparlörü açık tut
+      engine.muteLocalAudioStream(false);
+      if (isVideoCall) {
+        engine.muteLocalVideoStream(false);
+      }
       
     } catch (error) {
       console.error('Agora init error:', error);
-      Alert.alert('Hata', 'Arama başlatılamadı');
+      Alert.alert('Hata', 'Arama başlatılamadı: ' + String(error));
       onEnd?.();
     }
   };
