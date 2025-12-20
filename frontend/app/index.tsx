@@ -1922,26 +1922,31 @@ function PassengerDashboard({
   };
 
   // TEKLİFLER VARSA TAM EKRAN GÖS TER
+  // TikTok tarzı tam ekran teklif listesi - YOLCU
   if (offers.length > 0 && activeTag && activeTag.status !== 'matched' && activeTag.status !== 'in_progress') {
     return (
-      <View style={styles.fullScreenContainer}>
-        <FullScreenOfferCard
-          offer={offers[currentOfferIndex]}
-          onSwipeUp={() => {
-            if (currentOfferIndex < offers.length - 1) {
-              setCurrentOfferIndex(currentOfferIndex + 1);
-            }
+      <View style={styles.tikTokContainer}>
+        <FlatList
+          data={offers}
+          keyExtractor={(item, index) => item.id || index.toString()}
+          renderItem={({ item, index }) => (
+            <TikTokOfferCard
+              offer={item}
+              index={index}
+              total={offers.length}
+              onAccept={() => handleAcceptOffer(item.id)}
+              isPassenger={true}
+            />
+          )}
+          pagingEnabled={true}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={SCREEN_HEIGHT}
+          decelerationRate="fast"
+          bounces={false}
+          onMomentumScrollEnd={(e) => {
+            const index = Math.round(e.nativeEvent.contentOffset.y / SCREEN_HEIGHT);
+            setCurrentOfferIndex(index);
           }}
-          onSwipeDown={() => {
-            if (currentOfferIndex > 0) {
-              setCurrentOfferIndex(currentOfferIndex - 1);
-            }
-          }}
-          onAccept={() => handleAcceptOffer(offers[currentOfferIndex].id)}
-          isFirst={currentOfferIndex === 0}
-          isLast={currentOfferIndex === offers.length - 1}
-          currentIndex={currentOfferIndex}
-          totalOffers={offers.length}
         />
       </View>
     );
