@@ -1776,6 +1776,7 @@ async def end_call(tag_id: str, user_id: str):
                 "caller_id": call.get("caller_id"),
                 "receiver_id": call.get("receiver_id"),
                 "call_type": call.get("call_type"),
+                "status": "ended",
                 "ended_at": datetime.utcnow()
             })
         
@@ -1787,6 +1788,40 @@ async def end_call(tag_id: str, user_id: str):
         return {"success": True, "message": "Arama sonlandırıldı"}
     except Exception as e:
         logger.error(f"Arama sonlandırma hatası: {str(e)}")
+        return {"success": False, "detail": str(e)}
+
+
+@app.post("/api/voice/cancel-call")
+async def cancel_call(tag_id: str, user_id: str):
+    """
+    Arayan aramayı iptal etti (henüz bağlanmadan vazgeçti)
+    Bu, karşı tarafın "gelen arama" modalını kapatır
+    """
+    try:
+        db = db_instance.db
+        
+        # Mevcut aramayı bul
+        call = await db.call_requests.find_one({"tag_id": tag_id, "caller_id": user_id})
+        
+        if call:
+            # Arama geçmişine kaydet
+            await db.call_history.insert_one({
+                "tag_id": tag_id,
+                "caller_id": call.get("caller_id"),
+                "receiver_id": call.get("receiver_id"),
+                "call_type": call.get("call_type"),
+                "status": "cancelled",
+                "ended_at": datetime.utcnow()
+            })
+        
+        # Tüm aramaları bu TAG için sil
+        await db.call_requests.delete_many({"tag_id": tag_id})
+        
+        logger.info(f"📞 Arama iptal edildi (arayan vazgeçti): TAG {tag_id}")
+        
+        return {"success": True, "message": "Arama iptal edildi"}
+    except Exception as e:
+        logger.error(f"Arama iptal hatası: {str(e)}")
         return {"success": False, "detail": str(e)}
 
 
