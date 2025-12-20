@@ -846,7 +846,14 @@ async def get_passenger_history(user_id: str):
 # ==================== DRIVER ENDPOINTS ====================
 @api_router.get("/driver/requests")
 async def get_driver_requests(user_id: str):
-    """Aktif talepleri listele - SADECE AYNI ŞEHİRDEKİLER + ENGELLİ KULLANICILAR HARİÇ"""
+    """
+    Aktif talepleri listele
+    FİLTRELEME:
+    - Sadece aynı şehirdeki yolcular
+    - Maksimum 20 km mesafedeki yolcular
+    - Engelli kullanıcılar hariç
+    SIRALAMA: En yakından uzağa
+    """
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
@@ -865,7 +872,7 @@ async def get_driver_requests(user_id: str):
     
     blocked_ids = set([b["blocked_user_id"] for b in blocked_by_me] + [b["user_id"] for b in blocked_me])
     
-    # Sadece aynı şehirdeki TAGleri getir
+    # Sadece pending veya offers_received TAGleri getir
     tags = await db_instance.find_many("tags", {
         "status": {"$in": [TagStatus.PENDING, TagStatus.OFFERS_RECEIVED]}
     })
@@ -890,6 +897,11 @@ async def get_driver_requests(user_id: str):
         if not passenger:
             continue  # Yolcu bulunamadı, atla
         
+        # ŞEHİR FİLTRESİ: Sadece aynı şehirdeki yolcular
+        passenger_city = passenger.get("city", "")
+        if passenger_city != driver_city:
+            continue  # Farklı şehir, atla
+        
         # Mesafe hesaplamaları
         distance_to_passenger = 0.0
         trip_distance = 0.0
@@ -901,9 +913,9 @@ async def get_driver_requests(user_id: str):
                 tag["pickup_lat"], tag["pickup_lng"]
             )
             
-            # 50 KM FİLTRE: Sadece 50 km içindeki yolcular
-            if distance_to_passenger > MAX_DISTANCE_KM:
-                continue  # 50 km'den uzak, atla
+            # 20 KM FİLTRE: Sadece 20 km içindeki yolcular
+            if distance_to_passenger > 20:
+                continue  # 20 km'den uzak, atla
         
         # Yolcunun gideceği mesafe (pickup -> dropoff)
         if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
@@ -927,7 +939,10 @@ async def get_driver_requests(user_id: str):
             "trip_distance_km": round(trip_distance, 2)  # Yolculuğun kendisi
         })
     
-    logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı")
+    # EN YAKINA GÖRE SIRALA (mesafe artan sıra)
+    tag_responses.sort(key=lambda x: x.get("distance_to_passenger_km", 999))
+    
+    logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı (şehir + 20km filtreli, yakınlık sıralı)")
     return {"success": True, "requests": tag_responses}
 
 @api_router.post("/driver/send-offer")
