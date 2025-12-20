@@ -2799,7 +2799,11 @@ async def mark_notification_read(user_id: str, notification_id: str):
 
 
 # ==================== AGORA TOKEN SYSTEM ====================
-from agora_token_builder import RtcTokenBuilder, Role_Publisher
+from agora_token_builder import RtcTokenBuilder
+
+# Role değerleri
+ROLE_PUBLISHER = 1
+ROLE_SUBSCRIBER = 2
 
 AGORA_APP_ID = os.getenv("AGORA_APP_ID", "a7bf6a31f42d47f681fbddf47bb802e5")
 AGORA_APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "32b612f5a7c7469188a17a3c3a2efd73")
@@ -2825,7 +2829,7 @@ async def get_agora_token(channel_name: str, uid: int = 0):
             AGORA_APP_CERTIFICATE,
             channel_name,
             uid,
-            Role_Publisher,
+            ROLE_PUBLISHER,
             privilege_expired_ts
         )
         
