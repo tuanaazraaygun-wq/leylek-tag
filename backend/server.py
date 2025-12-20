@@ -2139,7 +2139,7 @@ async def check_if_blocked(user_id: str, other_user_id: str):
 
 
 # ==================== ADMIN PANEL ENDPOINTS ====================
-ADMIN_PHONE_NUMBERS = ["5321111111"]  # Admin telefon numaraları
+ADMIN_PHONE_NUMBERS = ["5326497412", "05326497412"]  # Admin telefon numaraları
 
 @api_router.get("/admin/check")
 async def check_admin(phone: str):
