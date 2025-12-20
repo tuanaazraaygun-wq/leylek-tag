@@ -412,12 +412,17 @@ export default function VideoCall({
     
     const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
     
-    // Backend'e aramayı sonlandır - karşı taraf da çıksın
+    // Eğer arayan ve henüz bağlanmadıysa (remoteUid yok) cancel-call kullan
+    // Yoksa end-call kullan
+    const endpoint = (isCaller && !remoteUid) 
+      ? `/api/voice/cancel-call?tag_id=${channelName}&user_id=${userId}`
+      : `/api/voice/end-call?tag_id=${channelName}&user_id=${userId}`;
+    
     try {
-      await fetch(`${BACKEND_URL}/api/voice/end-call?tag_id=${channelName}&user_id=${userId}`, {
+      await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST'
       });
-      console.log('✅ Backend arama sonlandırıldı');
+      console.log('✅ Backend arama sonlandırıldı:', endpoint);
     } catch (error) {
       console.log('End call hatası:', error);
     }
