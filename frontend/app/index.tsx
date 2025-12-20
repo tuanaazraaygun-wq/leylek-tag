@@ -1444,6 +1444,10 @@ function PassengerDashboard({
   const [showArrowHint, setShowArrowHint] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
   
+  // Toast notification state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  
   // Mesafe ve süre state'leri
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
