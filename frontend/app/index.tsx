@@ -1107,6 +1107,63 @@ export default function App() {
   return null;
 }
 
+// ==================== YANIP SÖNEN TEKLİF GÖNDER BUTONU ====================
+function AnimatedOfferButton({ onPress }: { onPress: () => void }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    // Pulse animasyonu
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.05,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Glow animasyonu
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 0.8,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0.3,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+      <Animated.View style={[styles.animatedOfferButton, { transform: [{ scale: pulseAnim }] }]}>
+        <LinearGradient
+          colors={['#3FA9F5', '#2563EB', '#1D4ED8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.offerButtonGradient}
+        >
+          <Animated.View style={[styles.offerButtonGlow, { opacity: glowAnim }]} />
+          <Ionicons name="send" size={22} color="#FFF" />
+          <Text style={styles.animatedOfferButtonText}>Teklif Gönder</Text>
+        </LinearGradient>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
 // ==================== TRAFIK LAMBASI ANIMASYONU ====================
 function TrafficLightBorder({ children }: { children: React.ReactNode }) {
   // Basitleştirildi - Android hatası düzeltildi
