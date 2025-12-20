@@ -178,7 +178,7 @@ export default function IncomingCall({
           </TouchableOpacity>
 
           {/* Kabul Et Butonu */}
-          <TouchableOpacity style={styles.buttonWrapper} onPress={onAccept}>
+          <TouchableOpacity style={styles.buttonWrapper} onPress={handleAccept}>
             <Animated.View style={[styles.acceptButton, { transform: [{ scale: pulseAnim }] }]}>
               <Ionicons name={callType === 'video' ? 'videocam' : 'call'} size={36} color="#FFF" />
             </Animated.View>
