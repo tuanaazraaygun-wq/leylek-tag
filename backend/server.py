@@ -582,7 +582,11 @@ async def create_request(user_id: str, request: CreateTagRequest):
 
 @api_router.get("/passenger/offers/{tag_id}")
 async def get_offers(tag_id: str, user_id: str):
-    """Teklifleri listele - Expire olanları filtrele"""
+    """
+    Teklifleri listele
+    - Expire olanları filtrele
+    - EN DÜŞÜK FİYATTAN YÜKSEĞE SIRALA
+    """
     from datetime import datetime, timedelta
     
     tag = await db_instance.find_one("tags", {"_id": ObjectId(tag_id)})
@@ -610,9 +614,13 @@ async def get_offers(tag_id: str, user_id: str):
             **{k: v for k, v in offer.items() if k != "_id"}
         ))
     
+    # EN DÜŞÜK FİYATA GÖRE SIRALA
+    offer_list = [o.dict() for o in offer_responses]
+    offer_list.sort(key=lambda x: x.get("price", 999999))
+    
     return {
         "success": True,
-        "offers": [o.dict() for o in offer_responses]
+        "offers": offer_list
     }
 
 @api_router.post("/passenger/accept-offer")
