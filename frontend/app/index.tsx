@@ -2854,75 +2854,93 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                           style={styles.premiumPassengerPhoto}
                         />
                       ) : (
-                        <View style={styles.passengerAvatar}>
-                          <Text style={styles.passengerAvatarText}>
-                            {request.passenger_name?.charAt(0) || '?'}
-                          </Text>
+                        <View style={styles.modernPassengerAvatar}>
+                          <LinearGradient
+                            colors={['#3FA9F5', '#2563EB']}
+                            style={styles.avatarGradient}
+                          >
+                            <Text style={styles.passengerAvatarText}>
+                              {request.passenger_name?.charAt(0) || '?'}
+                            </Text>
+                          </LinearGradient>
                         </View>
                       )}
                       <View style={styles.passengerInfo}>
                         <View style={styles.passengerNameContainer}>
                           <Text style={styles.passengerName}>{request.passenger_name}</Text>
                           {request.is_premium && (
-                            <Text style={styles.premiumBadgeSmall}>⭐ PREMIUM</Text>
+                            <View style={styles.premiumBadgeModern}>
+                              <Text style={styles.premiumBadgeText}>⭐ PREMIUM</Text>
+                            </View>
                           )}
                         </View>
-                        <Text style={styles.passengerRating}>⭐ 5.0</Text>
+                        <View style={styles.ratingContainer}>
+                          <Ionicons name="star" size={14} color="#FFD700" />
+                          <Text style={styles.ratingText}>5.0</Text>
+                        </View>
                       </View>
                     </View>
                   
-                  {/* Mesafe ve Süre Bilgileri - ÖNEMLİ! */}
-                  <View style={styles.distanceContainer}>
-                    <View style={styles.distanceBox}>
-                      <Ionicons name="car" size={20} color="#FFF" />
-                      <Text style={styles.distanceLabel}>Sürücü → Yolcu</Text>
-                      <Text style={styles.distanceValue}>
-                        {distanceToPassenger > 0 ? `${distanceToPassenger} km` : 'Hesaplanıyor...'}
-                      </Text>
-                      <Text style={styles.timeValue}>
-                        {timeToPassenger > 0 ? `${timeToPassenger} dk` : ''}
-                      </Text>
+                  {/* Mesafe ve Süre Bilgileri - Modern Card */}
+                  <View style={styles.modernDistanceCard}>
+                    <View style={styles.modernDistanceItem}>
+                      <View style={styles.distanceIconCircle}>
+                        <Ionicons name="car-sport" size={18} color="#3FA9F5" />
+                      </View>
+                      <View style={styles.distanceTextContainer}>
+                        <Text style={styles.distanceLabelModern}>Yolcuya Mesafe</Text>
+                        <Text style={styles.distanceValueModern}>
+                          {distanceToPassenger > 0 ? `${distanceToPassenger} km` : '...'}
+                          {timeToPassenger > 0 ? ` • ${timeToPassenger} dk` : ''}
+                        </Text>
+                      </View>
                     </View>
                     
-                    <View style={styles.distanceDivider} />
+                    <View style={styles.modernDistanceDivider} />
                     
-                    <View style={styles.distanceBox}>
-                      <Ionicons name="navigate" size={20} color="#FFF" />
-                      <Text style={styles.distanceLabel}>Yolculuk Mesafesi</Text>
-                      <Text style={styles.distanceValue}>
-                        {tripDistance > 0 ? `${tripDistance} km` : 'Hesaplanıyor...'}
-                      </Text>
-                      <Text style={styles.timeValue}>
-                        {tripTime > 0 ? `${tripTime} dk` : ''}
-                      </Text>
+                    <View style={styles.modernDistanceItem}>
+                      <View style={[styles.distanceIconCircle, { backgroundColor: '#EBF5FF' }]}>
+                        <Ionicons name="navigate" size={18} color="#3FA9F5" />
+                      </View>
+                      <View style={styles.distanceTextContainer}>
+                        <Text style={styles.distanceLabelModern}>Yolculuk</Text>
+                        <Text style={styles.distanceValueModern}>
+                          {tripDistance > 0 ? `${tripDistance} km` : '...'}
+                          {tripTime > 0 ? ` • ${tripTime} dk` : ''}
+                        </Text>
+                      </View>
                     </View>
                   </View>
 
-                  {/* Lokasyon Bilgileri */}
-                  <View style={styles.locationRow}>
-                    <Ionicons name="location" size={18} color="#3FA9F5" />
-                    <Text style={styles.requestLocation}>Başlangıç: {request.pickup_location}</Text>
+                  {/* Lokasyon Bilgileri - Modern */}
+                  <View style={styles.modernLocationCard}>
+                    <View style={styles.modernLocationRow}>
+                      <View style={styles.locationDotGreen} />
+                      <View style={styles.locationTextWrapper}>
+                        <Text style={styles.locationLabelSmall}>Başlangıç</Text>
+                        <Text style={styles.locationTextModern} numberOfLines={1}>{request.pickup_location}</Text>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.locationConnectorLine} />
+                    
+                    <View style={styles.modernLocationRow}>
+                      <View style={styles.locationDotRed} />
+                      <View style={styles.locationTextWrapper}>
+                        <Text style={styles.locationLabelSmall}>Hedef</Text>
+                        <Text style={styles.locationTextModern} numberOfLines={1}>{request.dropoff_location}</Text>
+                      </View>
+                    </View>
                   </View>
 
-                  <View style={styles.locationRow}>
-                    <Ionicons name="flag" size={18} color="#FF5A5F" />
-                    <Text style={styles.requestLocation}>Hedef: {request.dropoff_location}</Text>
-                  </View>
-
-                  {/* Teklif Gönder / Gönderildi */}
+                  {/* Teklif Gönder / Gönderildi - Modern */}
                   {request.has_offered ? (
-                    <View style={styles.offeredBadge}>
-                      <Ionicons name="checkmark-circle" size={20} color="#3FA9F5" />
-                      <Text style={styles.offeredText}>Teklif Gönderildi</Text>
+                    <View style={styles.modernOfferedBadge}>
+                      <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+                      <Text style={styles.modernOfferedText}>Teklif Gönderildi ✓</Text>
                     </View>
                   ) : (
-                    <TouchableOpacity
-                      style={styles.sendOfferButton}
-                      onPress={() => handleSendOffer(request.id)}
-                    >
-                      <Ionicons name="cash-outline" size={20} color="#FFF" />
-                      <Text style={styles.sendOfferButtonText}>Teklif Gönder</Text>
-                    </TouchableOpacity>
+                    <AnimatedOfferButton onPress={() => handleSendOffer(request.id)} />
                   )}
                   </View>
                 </View>
@@ -2933,41 +2951,80 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </ScrollView>
       )}
 
-      {/* Modal for offer submission */}
+      {/* Modern Teklif Modal */}
       <Modal
         visible={offerModalVisible}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setOfferModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>💰 Teklif Gönder</Text>
-            <Text style={styles.modalSubtitle}>Fiyat teklifinizi girin</Text>
+        <View style={styles.modernModalOverlay}>
+          <View style={styles.modernModalContent}>
+            {/* Modal Header */}
+            <View style={styles.modernModalHeader}>
+              <LinearGradient
+                colors={['#3FA9F5', '#2563EB']}
+                style={styles.modalIconCircle}
+              >
+                <Ionicons name="cash" size={32} color="#FFF" />
+              </LinearGradient>
+              <Text style={styles.modernModalTitle}>Teklif Gönder</Text>
+              <Text style={styles.modernModalSubtitle}>Fiyat teklifinizi belirleyin</Text>
+            </View>
             
-            <TextInput
-              style={styles.priceInput}
-              placeholder="Fiyat (₺)"
-              placeholderTextColor="#999"
-              keyboardType="numeric"
-              value={offerPrice}
-              onChangeText={setOfferPrice}
-              autoFocus={true}
-            />
+            {/* Price Input */}
+            <View style={styles.modernPriceInputContainer}>
+              <Text style={styles.currencySymbol}>₺</Text>
+              <TextInput
+                style={styles.modernPriceInput}
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+                value={offerPrice}
+                onChangeText={setOfferPrice}
+                autoFocus={true}
+              />
+            </View>
             
-            <View style={styles.modalButtons}>
+            {/* Quick Price Buttons */}
+            <View style={styles.quickPriceContainer}>
+              {[50, 100, 150, 200].map((price) => (
+                <TouchableOpacity
+                  key={price}
+                  style={[
+                    styles.quickPriceButton,
+                    offerPrice === String(price) && styles.quickPriceButtonActive
+                  ]}
+                  onPress={() => setOfferPrice(String(price))}
+                >
+                  <Text style={[
+                    styles.quickPriceText,
+                    offerPrice === String(price) && styles.quickPriceTextActive
+                  ]}>₺{price}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            {/* Action Buttons */}
+            <View style={styles.modernModalButtons}>
               <TouchableOpacity
-                style={styles.modalCancelButton}
+                style={styles.modernCancelButton}
                 onPress={() => setOfferModalVisible(false)}
               >
-                <Text style={styles.modalCancelButtonText}>İptal</Text>
+                <Text style={styles.modernCancelButtonText}>Vazgeç</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={styles.modalSubmitButton}
+                style={styles.modernSubmitButton}
                 onPress={submitOffer}
               >
-                <Text style={styles.modalSubmitButtonText}>Gönder</Text>
+                <LinearGradient
+                  colors={['#3FA9F5', '#2563EB']}
+                  style={styles.submitButtonGradient}
+                >
+                  <Ionicons name="send" size={20} color="#FFF" />
+                  <Text style={styles.modernSubmitButtonText}>Gönder</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
