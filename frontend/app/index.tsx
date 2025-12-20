@@ -2526,6 +2526,24 @@ function PassengerDashboard({
                       }
                     }
                   }}
+                  onForceEnd={async () => {
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        Alert.alert('⚠️ Yolculuk Bitirildi', data.message);
+                        setActiveTag(null);
+                        loadActiveTag();
+                      } else {
+                        Alert.alert('Hata', data.detail);
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İşlem başarısız');
+                    }
+                  }}
                 />
               </View>
             ) : null}
