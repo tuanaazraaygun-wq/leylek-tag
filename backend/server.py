@@ -2136,3 +2136,663 @@ async def check_if_blocked(user_id: str, other_user_id: str):
         return {"success": False, "is_blocked": False}
 
 
+
+
+# ==================== ADMIN PANEL ENDPOINTS ====================
+ADMIN_PHONE_NUMBERS = ["5321111111"]  # Admin telefon numaraları
+
+@api_router.get("/admin/check")
+async def check_admin(phone: str):
+    """Kullanıcının admin olup olmadığını kontrol et"""
+    db = db_instance.db
+    
+    # Sabit admin numaraları
+    if phone in ADMIN_PHONE_NUMBERS:
+        return {"success": True, "is_admin": True}
+    
+    # Veritabanındaki admin listesi
+    admin = await db.admins.find_one({"phone": phone, "is_active": True})
+    return {"success": True, "is_admin": admin is not None}
+
+@api_router.get("/admin/dashboard")
+async def admin_dashboard(admin_phone: str):
+    """Admin dashboard istatistikleri"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    # İstatistikler
+    total_users = await db.users.count_documents({})
+    active_trips = await db.tags.count_documents({"status": {"$in": ["matched", "in_progress"]}})
+    pending_requests = await db.tags.count_documents({"status": {"$in": ["pending", "offers_received"]}})
+    total_trips = await db.tags.count_documents({"status": "completed"})
+    
+    # Bugünkü istatistikler
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_users = await db.users.count_documents({"created_at": {"$gte": today}})
+    today_trips = await db.tags.count_documents({"created_at": {"$gte": today}})
+    
+    # Bu haftaki istatistikler
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_users = await db.users.count_documents({"created_at": {"$gte": week_ago}})
+    week_trips = await db.tags.count_documents({"created_at": {"$gte": week_ago}})
+    
+    # Bu ayki istatistikler
+    month_ago = datetime.utcnow() - timedelta(days=30)
+    month_users = await db.users.count_documents({"created_at": {"$gte": month_ago}})
+    month_trips = await db.tags.count_documents({"created_at": {"$gte": month_ago}})
+    
+    # Toplam arama
+    total_calls = await db.call_logs.count_documents({})
+    
+    # Şikayetler
+    pending_reports = await db.reports.count_documents({"status": "pending"})
+    
+    return {
+        "success": True,
+        "stats": {
+            "total_users": total_users,
+            "active_trips": active_trips,
+            "pending_requests": pending_requests,
+            "total_completed_trips": total_trips,
+            "total_calls": total_calls,
+            "pending_reports": pending_reports,
+            "today": {
+                "users": today_users,
+                "trips": today_trips
+            },
+            "this_week": {
+                "users": week_users,
+                "trips": week_trips
+            },
+            "this_month": {
+                "users": month_users,
+                "trips": month_trips
+            }
+        }
+    }
+
+@api_router.get("/admin/users")
+async def admin_get_users(admin_phone: str, page: int = 1, limit: int = 20):
+    """Tüm kullanıcıları listele"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    skip = (page - 1) * limit
+    
+    users = await db.users.find({}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    total = await db.users.count_documents({})
+    
+    user_list = []
+    for user in users:
+        user_list.append({
+            "id": str(user["_id"]),
+            "phone": user.get("phone"),
+            "name": f"{user.get('first_name', '')} {user.get('last_name', '')}",
+            "city": user.get("city"),
+            "is_active": user.get("is_active", True),
+            "is_premium": user.get("is_premium", False),
+            "created_at": user.get("created_at"),
+            "last_login": user.get("last_login"),
+            "total_trips": user.get("total_trips", 0),
+            "rating": user.get("rating", 5.0),
+            "penalty_points": user.get("penalty_points", 0),
+            "device_info": user.get("device_info"),
+            "last_ip": user.get("last_ip")
+        })
+    
+    return {
+        "success": True,
+        "users": user_list,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit
+    }
+
+@api_router.post("/admin/user/toggle-status")
+async def admin_toggle_user_status(admin_phone: str, user_id: str):
+    """Kullanıcıyı aktif/pasif yap"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    new_status = not user.get("is_active", True)
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"is_active": new_status}}
+    )
+    
+    # Log kaydet
+    await db.admin_logs.insert_one({
+        "admin_phone": admin_phone,
+        "action": "toggle_user_status",
+        "target_user_id": user_id,
+        "new_status": new_status,
+        "timestamp": datetime.utcnow()
+    })
+    
+    return {"success": True, "is_active": new_status}
+
+@api_router.post("/admin/user/toggle-premium")
+async def admin_toggle_premium(admin_phone: str, user_id: str):
+    """Premium üyelik aç/kapat"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    new_premium = not user.get("is_premium", False)
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"is_premium": new_premium}}
+    )
+    
+    return {"success": True, "is_premium": new_premium}
+
+@api_router.get("/admin/calls")
+async def admin_get_calls(admin_phone: str, page: int = 1, limit: int = 50):
+    """Arama kayıtlarını listele (metadata)"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    skip = (page - 1) * limit
+    
+    calls = await db.call_logs.find({}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    total = await db.call_logs.count_documents({})
+    
+    call_list = []
+    for call in calls:
+        # Kullanıcı adlarını al
+        user = await db.users.find_one({"_id": ObjectId(call.get("user_id"))})
+        other_user = await db.users.find_one({"_id": ObjectId(call.get("other_user_id"))})
+        
+        call_list.append({
+            "id": str(call["_id"]),
+            "caller_name": f"{user.get('first_name', '')} {user.get('last_name', '')}" if user else "Bilinmiyor",
+            "receiver_name": f"{other_user.get('first_name', '')} {other_user.get('last_name', '')}" if other_user else "Bilinmiyor",
+            "duration_seconds": call.get("duration_seconds", 0),
+            "call_type": call.get("call_type", "audio"),
+            "timestamp": call.get("timestamp")
+        })
+    
+    return {
+        "success": True,
+        "calls": call_list,
+        "total": total,
+        "page": page
+    }
+
+@api_router.get("/admin/reports")
+async def admin_get_reports(admin_phone: str, status: str = "all"):
+    """Şikayetleri listele"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {}
+    if status != "all":
+        query["status"] = status
+    
+    reports = await db.reports.find(query).sort("created_at", -1).to_list(100)
+    
+    report_list = []
+    for report in reports:
+        reporter = await db.users.find_one({"_id": ObjectId(report.get("reporter_id"))})
+        reported = await db.users.find_one({"_id": ObjectId(report.get("reported_user_id"))})
+        
+        report_list.append({
+            "id": str(report["_id"]),
+            "reporter_name": f"{reporter.get('first_name', '')} {reporter.get('last_name', '')}" if reporter else "Bilinmiyor",
+            "reported_name": f"{reported.get('first_name', '')} {reported.get('last_name', '')}" if reported else "Bilinmiyor",
+            "reason": report.get("reason"),
+            "description": report.get("description"),
+            "status": report.get("status"),
+            "created_at": report.get("created_at")
+        })
+    
+    return {"success": True, "reports": report_list}
+
+@api_router.post("/admin/report/update-status")
+async def admin_update_report_status(admin_phone: str, report_id: str, status: str):
+    """Şikayet durumunu güncelle"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    await db.reports.update_one(
+        {"_id": ObjectId(report_id)},
+        {"$set": {"status": status, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"success": True}
+
+@api_router.get("/admin/logs")
+async def admin_get_logs(admin_phone: str, page: int = 1, limit: int = 100):
+    """Admin işlem logları"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    skip = (page - 1) * limit
+    logs = await db.admin_logs.find({}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    
+    log_list = []
+    for log in logs:
+        log_list.append({
+            "id": str(log["_id"]),
+            "admin_phone": log.get("admin_phone"),
+            "action": log.get("action"),
+            "target_user_id": log.get("target_user_id"),
+            "details": log.get("details"),
+            "timestamp": log.get("timestamp")
+        })
+    
+    return {"success": True, "logs": log_list}
+
+@api_router.post("/admin/add-admin")
+async def admin_add_new_admin(admin_phone: str, new_admin_phone: str, new_admin_name: str):
+    """Yeni admin ekle"""
+    db = db_instance.db
+    
+    # Sadece ana admin ekleyebilir
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin yeni admin ekleyebilir")
+    
+    # Zaten var mı kontrol et
+    existing = await db.admins.find_one({"phone": new_admin_phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu numara zaten admin")
+    
+    await db.admins.insert_one({
+        "phone": new_admin_phone,
+        "name": new_admin_name,
+        "is_active": True,
+        "added_by": admin_phone,
+        "created_at": datetime.utcnow()
+    })
+    
+    return {"success": True, "message": f"{new_admin_name} admin olarak eklendi"}
+
+@api_router.get("/admin/admins")
+async def admin_list_admins(admin_phone: str):
+    """Admin listesi"""
+    db = db_instance.db
+    
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin görebilir")
+    
+    admins = await db.admins.find({}).to_list(100)
+    
+    admin_list = [{
+        "phone": "5321111111",
+        "name": "Ana Admin",
+        "is_active": True,
+        "is_main": True
+    }]
+    
+    for admin in admins:
+        admin_list.append({
+            "id": str(admin["_id"]),
+            "phone": admin.get("phone"),
+            "name": admin.get("name"),
+            "is_active": admin.get("is_active", True),
+            "is_main": False,
+            "created_at": admin.get("created_at")
+        })
+    
+    return {"success": True, "admins": admin_list}
+
+
+# ==================== YASAL SAYFALAR ====================
+@api_router.get("/legal/privacy")
+async def get_privacy_policy():
+    """Gizlilik Politikası"""
+    return {
+        "success": True,
+        "title": "Gizlilik Politikası",
+        "company": "KAREKOD TEKNOLOJİ VE YAZILIM AŞ",
+        "last_updated": "2025-01-01",
+        "content": """
+LEYLEK TAG GİZLİLİK POLİTİKASI
+
+Son Güncelleme: Ocak 2025
+
+KAREKOD TEKNOLOJİ VE YAZILIM AŞ olarak kişisel verilerinizin güvenliği hakkında azami hassasiyet göstermekteyiz. Bu Gizlilik Politikası, Leylek TAG uygulaması üzerinden toplanan kişisel verilerinizin işlenmesine ilişkin esasları açıklamaktadır.
+
+1. TOPLANAN VERİLER
+- Telefon numarası (doğrulama için)
+- Ad ve Soyad
+- Konum bilgisi (yolculuk sırasında)
+- Cihaz bilgileri (güvenlik için)
+- IP adresi (güvenlik için)
+
+2. VERİLERİN KULLANIM AMACI
+- Hizmet sunumu
+- Kullanıcı doğrulama
+- Güvenlik ve dolandırıcılık önleme
+- Müşteri desteği
+
+3. VERİ GÜVENLİĞİ
+- Tüm veriler şifrelenmiş olarak saklanır
+- Aramalar uçtan uca şifrelidir
+- Ses/görüntü kayıtları YAPILMAZ
+- Sadece metadata (süre, tarih) saklanır
+
+4. VERİ PAYLAŞIMI
+Verileriniz üçüncü taraflarla paylaşılmaz. Ancak yasal zorunluluk halinde yetkili makamlarla paylaşılabilir.
+
+5. HAKLARINIZ
+6698 sayılı KVKK kapsamında:
+- Verilerinize erişim hakkı
+- Düzeltme hakkı
+- Silme hakkı (Hesap silme)
+- İtiraz hakkı
+
+6. İLETİŞİM
+KAREKOD TEKNOLOJİ VE YAZILIM AŞ
+E-posta: info@karekodteknoloji.com
+Telefon: 0850 307 80 29
+Adres: Karanfil Mah. Konur Sokak No:23
+"""
+    }
+
+@api_router.get("/legal/terms")
+async def get_terms_of_service():
+    """Kullanım Şartları"""
+    return {
+        "success": True,
+        "title": "Kullanım Şartları",
+        "company": "KAREKOD TEKNOLOJİ VE YAZILIM AŞ",
+        "last_updated": "2025-01-01",
+        "content": """
+LEYLEK TAG KULLANIM ŞARTLARI
+
+Son Güncelleme: Ocak 2025
+
+1. GENEL ŞARTLAR
+Leylek TAG uygulamasını kullanarak aşağıdaki şartları kabul etmiş olursunuz.
+
+2. HİZMET TANIMI
+Leylek TAG, yolcular ve sürücüler arasında bağlantı kuran bir platformdur. Platform yalnızca aracılık hizmeti sunmaktadır.
+
+3. SORUMLULUK REDDİ
+⚠️ ÖNEMLİ: KAREKOD TEKNOLOJİ VE YAZILIM AŞ:
+- Kullanıcılar arası anlaşmazlıklardan sorumlu değildir
+- Yolculuk sırasında oluşabilecek kaza, hasar veya kayıplardan sorumlu değildir
+- Sürücülerin davranışlarından sorumlu değildir
+- Platform SADECE ARACIDIR
+
+4. KULLANICI YÜKÜMLÜLÜKLERİ
+- 18 yaşından büyük olmak
+- Doğru bilgi vermek
+- Yasalara uygun davranmak
+- Diğer kullanıcılara saygılı olmak
+
+5. YASAKLI DAVRANIŞLAR
+- Sahte hesap oluşturma
+- Taciz veya tehdit
+- Yasadışı faaliyetler
+- Platformu kötüye kullanma
+
+6. HESAP ASKIYA ALMA
+Kurallara uymayan hesaplar geçici veya kalıcı olarak askıya alınabilir.
+
+7. ÜCRETLER
+Şu an için hizmet ÜCRETSİZDİR. İleride premium özellikler eklenebilir.
+
+8. DEĞİŞİKLİKLER
+Bu şartlar önceden haber verilmeksizin değiştirilebilir.
+
+9. İLETİŞİM
+KAREKOD TEKNOLOJİ VE YAZILIM AŞ
+E-posta: info@leylekpazar.com
+Telefon: 0850 307 80 29
+Adres: Karanfil Mah. Konur Sokak No:23
+"""
+    }
+
+@api_router.get("/legal/kvkk")
+async def get_kvkk_consent():
+    """KVKK Aydınlatma Metni"""
+    return {
+        "success": True,
+        "title": "Kişisel Verilerin İşlenmesi Hakkında Aydınlatma Metni",
+        "company": "KAREKOD TEKNOLOJİ VE YAZILIM AŞ",
+        "content": """
+KİŞİSEL VERİLERİN İŞLENMESİ HAKKINDA AYDINLATMA METNİ
+
+6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") uyarınca, KAREKOD TEKNOLOJİ VE YAZILIM AŞ olarak kişisel verilerinizi aşağıda açıklanan amaçlarla işlemekteyiz.
+
+VERİ SORUMLUSU
+KAREKOD TEKNOLOJİ VE YAZILIM AŞ
+Karanfil Mah. Konur Sokak No:23
+
+İŞLENEN KİŞİSEL VERİLER
+✓ Kimlik bilgileri (Ad, Soyad)
+✓ İletişim bilgileri (Telefon numarası)
+✓ Konum bilgileri
+✓ Cihaz bilgileri
+✓ IP adresi
+
+İŞLEME AMAÇLARI
+✓ Hizmet sunumu
+✓ Kullanıcı doğrulama
+✓ Güvenlik sağlama
+✓ Yasal yükümlülüklerin yerine getirilmesi
+
+VERİ SAKLAMA SÜRESİ
+Veriler, hizmet sunumu süresince ve yasal yükümlülükler kapsamında saklanır.
+
+HAKLARINIZ
+KVKK'nın 11. maddesi kapsamında:
+- Kişisel verilerinizin işlenip işlenmediğini öğrenme
+- İşlenmişse buna ilişkin bilgi talep etme
+- İşlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenme
+- Yurt içinde/yurt dışında aktarıldığı üçüncü kişileri bilme
+- Eksik/yanlış işlenmişse düzeltilmesini isteme
+- Silinmesini veya yok edilmesini isteme
+- İtiraz etme
+
+ONAY
+Bu uygulamayı kullanarak yukarıda belirtilen şartları kabul etmiş olursunuz.
+"""
+    }
+
+
+# ==================== HESAP SİLME ====================
+@api_router.post("/user/delete-account")
+async def delete_user_account(user_id: str, confirmation: str):
+    """
+    Hesabı kalıcı olarak sil
+    confirmation: "HESABIMI SIL" yazılmalı
+    """
+    if confirmation != "HESABIMI SIL":
+        raise HTTPException(status_code=400, detail="Onay metni hatalı. 'HESABIMI SIL' yazın.")
+    
+    db = db_instance.db
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    # Aktif yolculuk var mı kontrol et
+    active_tag = await db.tags.find_one({
+        "$or": [
+            {"passenger_id": user_id, "status": {"$in": ["pending", "offers_received", "matched", "in_progress"]}},
+            {"driver_id": user_id, "status": {"$in": ["matched", "in_progress"]}}
+        ]
+    })
+    
+    if active_tag:
+        raise HTTPException(status_code=400, detail="Aktif yolculuğunuz var. Önce yolculuğu tamamlayın.")
+    
+    # Verileri sil
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    await db.tags.delete_many({"passenger_id": user_id})
+    await db.offers.delete_many({"driver_id": user_id})
+    await db.blocked_users.delete_many({"$or": [{"user_id": user_id}, {"blocked_user_id": user_id}]})
+    await db.call_logs.delete_many({"$or": [{"user_id": user_id}, {"other_user_id": user_id}]})
+    
+    # Log kaydet (anonim)
+    await db.deleted_accounts.insert_one({
+        "deleted_at": datetime.utcnow(),
+        "reason": "user_requested"
+    })
+    
+    logger.info(f"🗑️ Hesap silindi: {user_id}")
+    
+    return {"success": True, "message": "Hesabınız kalıcı olarak silindi."}
+
+
+# ==================== KULLANICI AKTİVİTE LOGLARI ====================
+@api_router.post("/user/log-activity")
+async def log_user_activity(user_id: str, activity_type: str, details: str = ""):
+    """Kullanıcı aktivitesi logla"""
+    db = db_instance.db
+    
+    await db.user_activities.insert_one({
+        "user_id": user_id,
+        "activity_type": activity_type,
+        "details": details,
+        "timestamp": datetime.utcnow()
+    })
+    
+    return {"success": True}
+
+@api_router.post("/user/update-device-info")
+async def update_device_info(user_id: str, device_model: str = "", os_version: str = "", app_version: str = ""):
+    """Cihaz bilgilerini güncelle"""
+    from fastapi import Request
+    
+    db = db_instance.db
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "device_info": {
+                "model": device_model,
+                "os_version": os_version,
+                "app_version": app_version,
+                "updated_at": datetime.utcnow()
+            }
+        }}
+    )
+    
+    return {"success": True}
+
+
+# ==================== BİLDİRİM SİSTEMİ ====================
+@api_router.post("/admin/send-notification")
+async def admin_send_notification(admin_phone: str, title: str, message: str, user_ids: list = None):
+    """
+    Bildirim gönder
+    user_ids: None ise herkese, liste ise sadece o kullanıcılara
+    """
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    notification = {
+        "title": title,
+        "message": message,
+        "target_users": user_ids,  # None = herkese
+        "sent_by": admin_phone,
+        "created_at": datetime.utcnow(),
+        "read_by": []
+    }
+    
+    result = await db.notifications.insert_one(notification)
+    
+    return {"success": True, "notification_id": str(result.inserted_id)}
+
+@api_router.get("/user/notifications")
+async def get_user_notifications(user_id: str):
+    """Kullanıcının bildirimlerini al"""
+    db = db_instance.db
+    
+    # Tüm bildirimleri veya kullanıcıya özel bildirimleri al
+    notifications = await db.notifications.find({
+        "$or": [
+            {"target_users": None},  # Herkese
+            {"target_users": user_id}  # Bu kullanıcıya
+        ]
+    }).sort("created_at", -1).limit(50).to_list(50)
+    
+    notif_list = []
+    for notif in notifications:
+        notif_list.append({
+            "id": str(notif["_id"]),
+            "title": notif.get("title"),
+            "message": notif.get("message"),
+            "created_at": notif.get("created_at"),
+            "is_read": user_id in notif.get("read_by", [])
+        })
+    
+    return {"success": True, "notifications": notif_list}
+
+@api_router.post("/user/mark-notification-read")
+async def mark_notification_read(user_id: str, notification_id: str):
+    """Bildirimi okundu işaretle"""
+    db = db_instance.db
+    
+    await db.notifications.update_one(
+        {"_id": ObjectId(notification_id)},
+        {"$addToSet": {"read_by": user_id}}
+    )
+    
+    return {"success": True}
+
