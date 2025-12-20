@@ -112,12 +112,27 @@ export default function IncomingCall({
       ).start();
     } else {
       Vibration.cancel();
+      stopRingtone();
     }
 
     return () => {
       Vibration.cancel();
+      stopRingtone();
     };
   }, [visible]);
+
+  // Accept ve Reject'te zil sesini durdur
+  const handleAccept = () => {
+    stopRingtone();
+    Vibration.cancel();
+    onAccept();
+  };
+
+  const handleReject = () => {
+    stopRingtone();
+    Vibration.cancel();
+    onReject();
+  };
 
   const ringRotate = ringAnim.interpolate({
     inputRange: [-1, 0, 1],
