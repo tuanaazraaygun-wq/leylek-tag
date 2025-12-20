@@ -232,41 +232,45 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      Implemented calling system fixes (P0):
+      YENI DEĞİŞİKLİKLER - 2025:
       
-      ## Backend Changes:
-      1. Enhanced /api/voice/call-status endpoint to track call state properly
-         - Returns was_rejected flag when call is rejected
-         - Returns call status from call_history when active call doesn't exist
+      ## Backend Değişiklikleri:
       
-      ## Frontend Changes (VideoCall.tsx):
-      1. Added isCaller prop to differentiate between caller and receiver
-      2. Added onRejected callback for handling call rejection
-      3. Caller now polls /api/voice/call-status every 2 seconds
-         - If call is rejected, shows "Arama Reddedildi" alert and closes
-         - If call ends, closes VideoCall properly
-      4. Added callStatusIntervalRef for proper cleanup
+      ### 1. Sürücü Talepleri Filtreleme ve Sıralama (/api/driver/requests)
+      - Sadece AYNI ŞEHİRDEKİ yolcuları göster
+      - Maksimum 20 km mesafedeki yolcuları göster (50 km'den düşürüldü)
+      - EN YAKINA GÖRE SIRALA (mesafe artan sıra)
       
-      ## Frontend Changes (index.tsx - both Passenger and Driver):
-      1. Added isCallCaller state to track who initiated the call
-      2. When initiating call: setIsCallCaller(true)
-      3. When accepting incoming call: setIsCallCaller(false)
-      4. Added answer-call API call when accepting incoming calls
-      5. Added extra guards in check-incoming polling (showVoiceCall || showIncomingCall)
-      6. VideoCall now receives isCaller and onRejected props
+      ### 2. Yolcu Teklifleri Sıralama (/api/passenger/offers/{tag_id})
+      - EN DÜŞÜK FİYATTAN YÜKSEĞE sıralı teklif listesi
       
-      ## Map Marker Icon Fix (LiveMapView.tsx):
-      1. Increased markerOuter from 80x80 to 90x90
-      2. Increased markerInner from 50x50 to 56x56
-      3. Increased icon size from 26 to 30
-      4. Enhanced shadow and elevation for better visibility
-      5. Darkened marker colors (DC2626 red, 2563EB blue)
+      ### 3. Arama Senkronizasyonu (/api/voice/check-incoming)
+      - Arayan kapattığında `call_cancelled: true` döner
+      - Karşı taraf hemen bilgilendirilir
       
-      NEEDS MANUAL TESTING: Test the following scenarios:
-      1. Passenger calls driver → Driver should see IncomingCall screen (not auto-connect)
-      2. Driver rejects → Passenger should see "Arama Reddedildi" alert and close
-      3. Either party hangs up → Both should exit call properly
-      4. Map markers should be visible on all devices
+      ### 4. Trip Bitirme Sistemi (/api/trip/respond-end-request)
+      - Onaysız bitirme durumunda YİNE DE BİTER
+      - AMA isteği gönderene CEZA uygulanır (-0.5 puan)
+      - penalty_points sayacı artırılır
+      
+      ## Frontend Değişiklikleri (index.tsx):
+      
+      ### 1. Yolcu - Gelen Arama Polling
+      - Arayan kapattığında IncomingCall modalı otomatik kapanır
+      - `call_cancelled` veya `has_incoming=false` kontrolü eklendi
+      - Polling süresi 1.5 saniyeye düşürüldü (daha hızlı senkronizasyon)
+      
+      ### 2. Şoför - Gelen Arama Polling  
+      - Aynı değişiklikler şoför tarafına da uygulandı
+      - Çakışan polling kodu kaldırıldı
+      
+      ## Test Edilmesi Gerekenler:
+      1. Yolcu aradığında şoför IncomingCall görmeli
+      2. Yolcu aramayı kapatınca şoförün IncomingCall kapanmalı
+      3. Şoför aradığında aynı senaryo tersten test edilmeli
+      4. Sürücü sadece kendi şehrindeki ve 20km içindeki talepleri görmeli
+      5. Yolcu teklifleri en düşük fiyattan başlamalı
+      6. Trip bitirme onaylanmazsa bile bitiyor mu ve ceza uygulanıyor mu?
 
   - agent: "testing"
     message: |
