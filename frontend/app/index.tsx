@@ -1713,8 +1713,8 @@ function PassengerDashboard({
       // Güncel state'leri ref'ten oku (closure fix)
       const { showVoiceCall: inCall, showIncomingCall: hasIncoming, isCallCaller: isCaller } = passengerCallStateRef.current;
       
-      // Aramadaysa, gelen arama gösteriliyorsa, veya ben arıyorsam polling yapma
-      if (!isActive || inCall || hasIncoming || isCaller) return;
+      // Aramadaysa veya ben arıyorsam polling yapma
+      if (!isActive || inCall || isCaller) return;
       
       try {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
@@ -1726,6 +1726,22 @@ function PassengerDashboard({
         if (!text || text.trim() === '') return;
         
         const data = JSON.parse(text);
+        
+        // ARAYAN KAPATTI MI KONTROLÜ - IncomingCall açıkken
+        if (hasIncoming && data.success && data.call_cancelled) {
+          console.log('📞 YOLCU - Arayan aramayı kapattı, modal kapatılıyor');
+          setShowIncomingCall(false);
+          setIncomingCallInfo(null);
+          return;
+        }
+        
+        // Gelen arama yoksa ve modal açıksa kapat (arayan vazgeçti)
+        if (hasIncoming && data.success && !data.has_incoming && !data.call_cancelled) {
+          console.log('📞 YOLCU - Arama artık yok, modal kapatılıyor');
+          setShowIncomingCall(false);
+          setIncomingCallInfo(null);
+          return;
+        }
         
         // Son kontrol - ref'ten güncel değerleri al
         const currentState = passengerCallStateRef.current;
@@ -1747,8 +1763,8 @@ function PassengerDashboard({
     
     // İlk kontrolü hemen yap
     checkIncomingCall();
-    // Sonra her 2 saniyede bir kontrol et
-    const interval = setInterval(checkIncomingCall, 2000);
+    // Sonra her 1.5 saniyede bir kontrol et (daha hızlı senkronizasyon)
+    const interval = setInterval(checkIncomingCall, 1500);
     
     return () => {
       isActive = false;
