@@ -273,8 +273,34 @@ export default function App() {
   const loadUser = async () => {
     try {
       const userData = await AsyncStorage.getItem('user');
+      const legalAcceptedStorage = await AsyncStorage.getItem('legal_accepted');
+      
       if (userData) {
-        setUser(JSON.parse(userData));
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        
+        // Admin kontrolü
+        const cleanPhone = parsedUser.phone?.replace(/\D/g, '');
+        if (cleanPhone === '5321111111' || cleanPhone === '05321111111') {
+          setIsAdmin(true);
+        } else {
+          // API'den admin kontrolü
+          try {
+            const res = await fetch(`${API_URL}/admin/check?phone=${cleanPhone}`);
+            const data = await res.json();
+            if (data.success && data.is_admin) {
+              setIsAdmin(true);
+            }
+          } catch (e) {}
+        }
+        
+        // Legal consent kontrolü
+        if (legalAcceptedStorage !== 'true') {
+          setShowLegalConsent(true);
+        } else {
+          setLegalAccepted(true);
+        }
+        
         setScreen('role-select'); // Her girişte rol seçimi
       }
     } catch (error) {
@@ -282,6 +308,22 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Legal consent kabul
+  const handleLegalAccept = async () => {
+    await AsyncStorage.setItem('legal_accepted', 'true');
+    setLegalAccepted(true);
+    setShowLegalConsent(false);
+  };
+  
+  // Legal consent red
+  const handleLegalDecline = async () => {
+    Alert.alert(
+      'Uyarı',
+      'Kullanım şartlarını kabul etmeden devam edemezsiniz.',
+      [{ text: 'Tamam' }]
+    );
   };
 
   const saveUser = async (userData: User) => {
