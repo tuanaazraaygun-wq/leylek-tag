@@ -3867,10 +3867,11 @@ const styles = StyleSheet.create({
   },
   callButtonText: {
     color: '#FFF',
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
-    marginTop: 12,
-    letterSpacing: 3,
+    marginTop: 10,
+    letterSpacing: 2,
+    textAlign: 'center',
   },
   pulseRing: {
     position: 'absolute',
