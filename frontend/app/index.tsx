@@ -670,7 +670,8 @@ export default function App() {
                 <Text style={styles.modalTitle}>🎯 Nereye Gitmek İstiyorsunuz?</Text>
                 
                 <PlacesAutocomplete
-                  placeholder="Nereye gitmek istiyorsunuz?"
+                  placeholder="Adres, sokak veya mekan ara..."
+                  city={user?.city || ''}
                   onPlaceSelected={(place) => {
                     setDestination({
                       address: place.address,
@@ -681,7 +682,9 @@ export default function App() {
                   }}
                 />
                 
-                <Text style={[styles.popularTitle, { marginTop: 20 }]}>Popüler Konumlar:</Text>
+                <Text style={[styles.popularTitle, { marginTop: 20 }]}>
+                  {user?.city ? `${user.city} - Popüler Konumlar:` : 'Popüler Konumlar:'}
+                </Text>
                 <ScrollView style={styles.popularList}>
                   {[
                     { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
