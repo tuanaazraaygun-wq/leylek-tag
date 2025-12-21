@@ -2898,3 +2898,7 @@ async def force_end_trip(tag_id: str, user_id: str):
         logger.error(f"Force end error: {str(e)}")
         return {"success": False, "detail": str(e)}
 
+
+# ==================== ROUTER INCLUDE - TÜM ENDPOINT'LERDEN SONRA ====================
+app.include_router(api_router)
+
