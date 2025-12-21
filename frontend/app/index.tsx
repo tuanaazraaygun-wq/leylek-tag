@@ -6870,6 +6870,74 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     fontWeight: '600',
   },
+  // Teklifi Geç / Başka Yolcu Seç Butonları
+  skipOfferBtn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  skipOfferText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  skipPassengerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  skipPassengerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(63, 169, 245, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  skipPassengerText: {
+    fontSize: 13,
+    color: '#3FA9F5',
+    fontWeight: '600',
+  },
+  passengerCountText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  // Araç Kartı Stili (Üstte)
+  vehicleCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  vehicleIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: 'rgba(63, 169, 245, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vehicleInfoBox: {
+    flex: 1,
+  },
+  vehicleModelText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  vehicleColorText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
+  },
+    fontWeight: '600',
+  },
   // ŞOFÖR TAM EKRAN STİLLER
   driverFullScreen: {
     flex: 1,
