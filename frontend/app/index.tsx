@@ -1404,17 +1404,50 @@ function TikTokOfferCard({
         {/* Lokasyon Bilgileri - Sadece Şoför İçin */}
         {!isPassenger && (
           <View style={styles.tikTokLocationCard}>
+            {/* Mesafe ve Süre */}
+            <View style={styles.tikTokDistanceRow}>
+              <View style={styles.tikTokDistanceItem}>
+                <Ionicons name="car" size={18} color="#10B981" />
+                <Text style={styles.tikTokDistanceText}>
+                  {offer.distance_to_passenger_km?.toFixed(1) || '?'} km uzakta
+                </Text>
+              </View>
+              <View style={styles.tikTokDistanceItem}>
+                <Ionicons name="time" size={18} color="#F59E0B" />
+                <Text style={styles.tikTokDistanceText}>
+                  ~{arrivalTime} dk
+                </Text>
+              </View>
+            </View>
+            
+            {/* Nereden */}
             <View style={styles.tikTokLocationRow}>
               <View style={styles.tikTokLocationDot} />
-              <Text style={styles.tikTokLocationText} numberOfLines={1}>
-                {offer.pickup_location}
-              </Text>
+              <View style={styles.tikTokLocationInfo}>
+                <Text style={styles.tikTokLocationLabel}>📍 Nereden (Yolcu burada)</Text>
+                <Text style={styles.tikTokLocationText} numberOfLines={2}>
+                  {offer.pickup_location || 'Konum belirtilmedi'}
+                </Text>
+              </View>
             </View>
+            
             <View style={styles.tikTokLocationLine} />
+            
+            {/* Nereye */}
             <View style={styles.tikTokLocationRow}>
               <View style={[styles.tikTokLocationDot, { backgroundColor: '#EF4444' }]} />
-              <Text style={styles.tikTokLocationText} numberOfLines={1}>
-                {offer.dropoff_location}
+              <View style={styles.tikTokLocationInfo}>
+                <Text style={styles.tikTokLocationLabel}>🎯 Nereye (Hedef)</Text>
+                <Text style={styles.tikTokLocationText} numberOfLines={2}>
+                  {offer.dropoff_location || 'Hedef belirtilmedi'}
+                </Text>
+              </View>
+            </View>
+            
+            {/* Yolculuk Bilgisi */}
+            <View style={styles.tikTokTripInfo}>
+              <Text style={styles.tikTokTripText}>
+                🚗 Yolculuk: {offer.trip_distance_km?.toFixed(1) || '?'} km • ~{tripTime} dk
               </Text>
             </View>
           </View>
