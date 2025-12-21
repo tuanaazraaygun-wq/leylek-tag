@@ -466,6 +466,7 @@ async def verify_otp(request: VerifyOTPRequest):
         "success": True,
         "message": "OTP doğrulandı",
         "user_exists": user is not None,
+        "has_pin": user.get("pin_hash") is not None if user else False,
         "user": UserResponse(
             id=str(user["_id"]),
             phone=user["phone"],
