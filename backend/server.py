@@ -2493,6 +2493,202 @@ async def admin_toggle_premium(admin_phone: str, user_id: str):
     
     return {"success": True, "is_premium": new_premium}
 
+@api_router.delete("/admin/user/delete")
+async def admin_delete_user(admin_phone: str, user_id: str):
+    """Kullanıcıyı tamamen sil"""
+    db = db_instance.db
+    
+    # Sadece ana admin silebilir
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin kullanıcı silebilir")
+    
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    
+    # Kullanıcıyı sil
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    
+    # Kullanıcının verilerini de temizle (opsiyonel - log olarak tutulabilir)
+    # await db.tags.delete_many({"passenger_id": user_id})
+    # await db.offers.delete_many({"driver_id": user_id})
+    
+    # Log kaydet
+    await db.admin_logs.insert_one({
+        "admin_phone": admin_phone,
+        "action": "delete_user",
+        "target_user_id": user_id,
+        "deleted_user_phone": user.get("phone"),
+        "deleted_user_name": user.get("name"),
+        "timestamp": datetime.utcnow()
+    })
+    
+    logger.info(f"🗑️ Kullanıcı silindi: {user.get('phone')} - {user.get('name')}")
+    
+    return {"success": True, "message": "Kullanıcı silindi"}
+
+@api_router.get("/admin/trips")
+async def admin_get_trips(
+    admin_phone: str, 
+    page: int = 1, 
+    limit: int = 50,
+    status: str = None
+):
+    """Tüm yolculukları listele - detaylı"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {}
+    if status:
+        query["status"] = status
+    
+    skip = (page - 1) * limit
+    total = await db.tags.count_documents(query)
+    tags = await db.tags.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    trips = []
+    for tag in tags:
+        # Yolcu ve şoför bilgilerini al
+        passenger = await db.users.find_one({"_id": ObjectId(tag.get("passenger_id"))}) if tag.get("passenger_id") else None
+        driver = None
+        if tag.get("driver_id"):
+            driver = await db.users.find_one({"_id": ObjectId(tag.get("driver_id"))})
+        
+        trips.append({
+            "id": str(tag["_id"]),
+            "passenger_name": passenger.get("name") if passenger else "Bilinmiyor",
+            "passenger_phone": passenger.get("phone") if passenger else "?",
+            "driver_name": driver.get("name") if driver else "Henüz yok",
+            "driver_phone": driver.get("phone") if driver else "?",
+            "pickup_location": tag.get("pickup_location", "?"),
+            "pickup_lat": tag.get("pickup_lat"),
+            "pickup_lng": tag.get("pickup_lng"),
+            "dropoff_location": tag.get("dropoff_location", "?"),
+            "dropoff_lat": tag.get("dropoff_lat"),
+            "dropoff_lng": tag.get("dropoff_lng"),
+            "status": tag.get("status"),
+            "price": tag.get("final_price", tag.get("price")),
+            "distance_km": tag.get("trip_distance_km"),
+            "duration_min": tag.get("trip_duration_min"),
+            "created_at": tag.get("created_at"),
+            "started_at": tag.get("started_at"),
+            "completed_at": tag.get("completed_at")
+        })
+    
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "trips": trips
+    }
+
+@api_router.get("/admin/settings")
+async def admin_get_settings(admin_phone: str):
+    """Admin ayarlarını getir"""
+    db = db_instance.db
+    
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin ayarlara erişebilir")
+    
+    settings = await db.app_settings.find_one({"type": "global"})
+    if not settings:
+        # Varsayılan ayarlar
+        settings = {
+            "max_call_duration_minutes": 30,
+            "min_call_duration_seconds": 10,
+            "max_trip_distance_km": 100,
+            "commission_percentage": 10,
+            "driver_radius_km": 20
+        }
+    
+    return {"success": True, "settings": settings}
+
+@api_router.post("/admin/settings")
+async def admin_update_settings(
+    admin_phone: str,
+    max_call_duration_minutes: int = None,
+    min_call_duration_seconds: int = None,
+    max_trip_distance_km: int = None,
+    commission_percentage: int = None,
+    driver_radius_km: int = None
+):
+    """Admin ayarlarını güncelle"""
+    db = db_instance.db
+    
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin ayarları değiştirebilir")
+    
+    update_data = {}
+    if max_call_duration_minutes is not None:
+        update_data["max_call_duration_minutes"] = max_call_duration_minutes
+    if min_call_duration_seconds is not None:
+        update_data["min_call_duration_seconds"] = min_call_duration_seconds
+    if max_trip_distance_km is not None:
+        update_data["max_trip_distance_km"] = max_trip_distance_km
+    if commission_percentage is not None:
+        update_data["commission_percentage"] = commission_percentage
+    if driver_radius_km is not None:
+        update_data["driver_radius_km"] = driver_radius_km
+    
+    if update_data:
+        update_data["updated_at"] = datetime.utcnow()
+        await db.app_settings.update_one(
+            {"type": "global"},
+            {"$set": update_data},
+            upsert=True
+        )
+        
+        logger.info(f"⚙️ Ayarlar güncellendi: {update_data}")
+    
+    return {"success": True, "message": "Ayarlar güncellendi"}
+
+@api_router.get("/admin/pending-requests")
+async def admin_get_pending_requests(admin_phone: str, page: int = 1, limit: int = 50):
+    """Bekleyen talepleri listele"""
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {"status": "pending"}
+    
+    skip = (page - 1) * limit
+    total = await db.tags.count_documents(query)
+    tags = await db.tags.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    requests = []
+    for tag in tags:
+        passenger = await db.users.find_one({"_id": ObjectId(tag.get("passenger_id"))}) if tag.get("passenger_id") else None
+        
+        requests.append({
+            "id": str(tag["_id"]),
+            "passenger_name": passenger.get("name") if passenger else "Bilinmiyor",
+            "passenger_phone": passenger.get("phone") if passenger else "?",
+            "pickup_location": tag.get("pickup_location", "?"),
+            "dropoff_location": tag.get("dropoff_location", "?"),
+            "distance_km": tag.get("trip_distance_km"),
+            "created_at": tag.get("created_at")
+        })
+    
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "requests": requests
+    }
+
 @api_router.get("/admin/calls")
 async def admin_get_calls(admin_phone: str, page: int = 1, limit: int = 50):
     """Arama kayıtlarını listele (metadata)"""
