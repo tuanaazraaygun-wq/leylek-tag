@@ -3,238 +3,238 @@
 **original_problem_statement:**
 The user wants to build Leylek TAG, a full-featured mobile ride-sharing application for Android.
 
-The latest user requests are to fix critical bugs in the calling system, implement a full Admin Panel within the app, add legal compliance features, and refine the UI/UX.
+The latest user requests are to fix critical bugs in the calling system, implement a full Admin Panel with comprehensive metadata logging, and significantly overhaul the UI/UX for both drivers and passengers, focusing on a full-screen, TikTok-style interface and improved clarity on trip details (km, duration).
 
 **PRODUCT REQUIREMENTS (LATEST):**
 - **Calling System Overhaul (P0 - CRITICAL):**
-    - **Video Call Broken:** Video calls fail to connect or the screen closes immediately.
-    - **Driver Cannot Call:** The driver-side call initiation buttons are not working.
-    - **Persistent Ringtone:** When a call is received and the user closes the app or ignores it, the ringtone continues to play until the app is force-stopped.
-    - **Call In-progress Lock:** A user who is already in a call should not be able to receive another call.
-    - **Call Sync Issue:** A previously reported issue where the call does not end for the receiver if the caller hangs up before it's answered. The agent has attempted multiple fixes for this.
-- **Admin Panel (In-App) (P0):**
-    - A full admin panel accessible within the app for the admin user ().
-    - Admin users should be redirected directly to the admin panel after login, bypassing the role-selection screen.
-    - **Features:** Dashboard (stats), User Management (list, details, block/unblock, add new admins), Call Logs (metadata only, no voice recording), Activity/Error Logs, and a Push Notification system.
-- **UI/UX Refinements (P1):**
-    - **Driver Request Card:** The TikTok-style card for drivers should clearly display the passenger's pickup location and destination.
-    - **Modern Alerts:** All system alerts should be replaced with modern, blue-themed modals consistent with the app's design (Not Started).
-- **Legal & Compliance (P1):**
-    - Implement pages/modals for Privacy Policy, Terms of Service, and KVKK consent during registration.
-    - Add an Account Deletion feature.
-    - Display an End-to-End Encrypted warning on the call screen.
-    - Add a Platform is just an intermediary disclaimer and an 18+ age confirmation.
-- **Trip Management (P1):**
-    - Implement a Force End Trip feature, accessible from the map screen, which allows a user to end a trip unilaterally but incurs a point penalty (-1 point). This is to resolve situations where a user is stuck in a trip that was not properly terminated.
+    - **Driver Cannot Call:** Driver-side call initiation (both voice and video) is not working.
+    - **Video Call Broken:** When a video call is initiated, the other party's screen opens and closes immediately. The caller's self-view (Picture-in-Picture) in the top-right corner does not display their camera feed.
+    - **Audio Call Partially Working:** Passenger can initiate audio calls, but driver cannot.
+- **UI/UX Overhaul (P0):**
+    - **Driver Offer Card:**
+        - Make the card full-screen, removing the top header.
+        - Clearly and largely display two separate metrics:
+            1.  Distance/time to the passenger's pickup location (e.g., Yolcuyla Buluşma: 5.3 km ~8 dk).
+            2.  Distance/time for the passenger's actual trip (e.g., Yolcunun Gideceği: 21.3 km ~21 dk).
+        - Add a button for the driver to switch to viewing other available passenger requests.
+    - **Passenger Offer Card:**
+        - The card should correctly display the trip distance in KM, not just the duration in minutes (e.g., show 21.3 km instead of 7 dk gideriz).
+        - The driver's offer card should include their vehicle's photo.
+    - **Passenger Home Screen:**
+        - Remove the Hoşgeldiniz Emirhan Yolcu header.
+        - Make the screen full-screen.
+        - Display the user's name (Adı Soyadı) prominently.
+        - The Nereye gitmek istiyorsunuz? input should be styled better and move up with the keyboard to avoid being obscured.
+    - **Map View:**
+        - When a driver is en route to a passenger, the map should show the route in green.
+        - For the passenger's actual trip (from their pickup to destination), the route should be shown in **orange**.
+- **Admin Panel Enhancements (P1):**
+    - **Comprehensive Metadata Logging:** For legal compliance, the system must log and display:
+        - **Call Logs:** Caller/receiver (ID, phone), call type (video/voice), start/end times, duration, status (answered, missed), IP addresses.
+        - **Trip Logs:** Passenger/driver details, pickup/dropoff locations, times, price, distance.
+        - **Auth Logs:** User ID, phone, device ID, IP address, action (login, logout), timestamp.
+    - **Admin Features:**
+        - Add a Delete User feature.
+        - Make the dashboard statistics (Total Users, Active Trips) clickable to navigate to the relevant lists.
+        - Allow admins to view pending ride requests.
+        - Add a settings page for admins to configure parameters like maximum call duration.
+- **General Functionality (P1):**
+    - **Role Selection Screen:** Add a Back or Logout button.
+    - **Force End Trip:** A user (driver or passenger) stuck on the map screen should have a Force End Trip option in a 3-dot menu to exit the trip, accepting a point penalty.
 
 **User's preferred language**: Turkish. The next agent MUST respond in Turkish.
 
 **what currently exists?**
-A full-stack application with a FastAPI/MongoDB backend and a monolithic React Native (Expo) frontend (). The app now features a secure, token-based calling system using Agora. A TikTok-style swipeable UI for both drivers and passengers has been implemented. The backend and frontend have been updated with the foundational code for a full in-app Admin Panel and stubs for legal pages, but these are not fully implemented or verified. The  file has grown significantly and is now over 6,000 lines, with new UI components (, ) being created but still heavily orchestrated by .
+A full-stack application with a FastAPI/MongoDB backend and a monolithic React Native (Expo) frontend in . The app features a PIN and device-ID-based authentication system. The calling system uses Agora with secure tokens. A TikTok-style swipeable UI is implemented for both drivers and passengers. A comprehensive backend metadata logging system has been built, and backend endpoints for advanced admin features (user deletion, settings) have been created. However, the frontend for these new admin features is not yet implemented. The  file has grown to over 6,800 lines and is a significant source of technical debt, making changes difficult and error-prone.
 
 **Last working item**:
-    - **Last item agent was working:** The agent was performing a multi-pronged fix based on the user's latest feedback. This involved:
-        1.  Fixing the video call functionality in .
-        2.  Fixing the persistent ringtone bug in .
-        3.  Debugging why the driver cannot initiate calls from their dashboard in .
-        4.  Adding passenger location/destination details to the driver's request card ( in ).
+    - **Last item agent was working:** Implementing a major UI/UX overhaul based on detailed user feedback. This included:
+        1. Redesigning the passenger home screen to be full-screen and keyboard-aware.
+        2. Adding user deletion and advanced settings endpoints to the backend for the admin panel.
+        3. Attempting to fix discrepancies in distance/time display on passenger vs. driver cards.
     - **Status:** IN PROGRESS
-    - **Agent Testing Done:** N
-    - **Which testing method agent to use?** Manual testing by building a new APK is required as the issues span both UI and core functionality. Backend testing via curl can verify token generation.
-    - **User Testing Done:** N
+    - **Agent Testing Done:** N (Agent built an APK but user feedback indicates the goals were not fully met).
+    - **Which testing method agent to use?** Manual testing by the user with a new APK is required. The issues are a mix of frontend UI and data flow logic.
+    - **User Testing Done:** Y (User tested the last APK and provided a new list of issues and requests).
 
 **All Pending/In progress Issue list**:
--   Issue 1: Critical Calling System Malfunctions (P0)
--   Issue 2: Unstable/Unreliable APK for User Testing (P1)
--   Issue 3: Admin Login Flow (P1)
-
-**Issues Detail:**
--   **Issue 1: Critical Calling System Malfunctions**
-    -   **Description:** The calling system is fundamentally broken despite multiple rewrites and a migration to a secure token-based system. The user's latest feedback confirms:
-        1.  Video calls close immediately.
-        2.  Drivers cannot initiate any calls.
-        3.  The ringtone persists after a call is missed/ignored, requiring an app restart.
-        4.  There is no lock to prevent a user from being called while already in another call.
-    -   **Attempted fixes:** The agent completely rewrote  to use Agora's token-based authentication, fetched from a new backend endpoint. The  function was updated to enable video and set up tracks. The agent also reviewed . These fixes were insufficient. The Invalid Token (error 110) logs suggest a persistent configuration mismatch between the frontend, backend, and the Agora Console.
-    -   **Next debug checklist:**
-        1.  **Verify Agora Config:** Double-check that the  and  in the backend  match the *active primary certificate* in the Agora Console.
-        2.  **Video Call ():** Review the  function again. Ensure  is called correctly and that  is working as intended. Add extensive logging around the  and event handler methods to see where it fails.
-        3.  **Driver Call ():** Debug the  function within the  component. Check if  and  data are correctly passed and if the  update is being triggered.
-        4.  **Persistent Ringtone ():** The  cleanup function should be stopping the sound. Investigate if the component is unmounting correctly when the call is canceled or missed. The polling in  should set the state that causes  to unmount.
-        5.  **Call Locking:** Implement a state variable (e.g., ) in the backend  collection. Before starting a call, check this flag. When a call starts, set it to ; when it ends, set it to .
-    -   **Why fix this issue and what will be achieved with the fix?** Calling is a core feature and is currently unusable. Fixing it is critical for the app's viability.
-    -   **Status:** IN PROGRESS
-    -   **Is recurring issue?** Y
-    -   **Should Test frontend/backend/both after fix?** Both.
-
--   **Issue 2: Unstable/Unreliable APK for User Testing**
-    -   **Description:** The user consistently struggles to use the  APKs provided. They require entering a Metro URL, which often fails to connect. Attempts to create standalone  builds have also failed. This severely hinders the feedback loop.
-    -   **Attempted fixes:** The agent has tried providing the correct URL, restarting services, and attempting  builds which timed out or errored. The issue seems to be environmental.
-    -   **Next debug checklist:**
-        1.  Prioritize creating a stable  or  build. Debug the An Expo user account is required to proceed.
-
-Log in to EAS with email or username (exit and run eas login --help to see other login options)
-Input is required, but stdin is not readable. Failed to display prompt: Email or username failure. Check the build logs on the Expo website for the root cause (e.g., build ).
-        2.  As a temporary measure, ensure the  APK instructions are crystal clear, including a screenshot of where to enter the URL.
-    -   **Why fix this issue and what will be achieved with the fix?** A stable testing method is essential for making progress. Without it, the user cannot verify any fixes.
-    -   **Status:** BLOCKED
-    -   **Is recurring issue?** Y
-    -   **Should Test frontend/backend/both after fix?** N/A (Deployment issue).
-
--   **Issue 3: Admin Login Flow**
-    -   **Description:** The user reported being unable to log in with the initial admin number, getting a user already exists error.
-    -   **Attempted fixes:** The agent debugged the backend auth flow, checked the DB (which was initially confusing due to multiple databases), and correctly concluded the issue was likely stale data in the app's . The agent then hardcoded a new admin number () and implemented a direct redirect to the admin panel.
-    -   **Next debug checklist:**
-        1.  Confirm with the user if clearing app data and using the new admin number () with OTP  resolved the login issue.
-        2.  Verify the redirect to the Admin Panel works as expected.
-    -   **Why fix this issue and what will be achieved with the fix?** The user needs to be able to access the admin panel they requested.
-    -   **Status:** USER VERIFICATION PENDING
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Frontend.
+  - Issue 1: Critical Calling System Malfunctions (P0)
+  - Issue 2: Incorrect Trip Details on Offer Cards (P0)
+  - Issue 3: Map Route Visualization (P1)
+  
+  **Issues Detail:**
+  - **Issue 1: Critical Calling System Malfunctions**
+     - **Description:** The calling system remains highly unstable.
+        1. **Driver Cannot Call:** Drivers are unable to initiate voice or video calls.
+        2. **Video Call Fails:** Calls connect briefly and then drop.
+        3. **Picture-in-Picture (PiP) Broken:** The user's own video feed does not appear in the top-right corner during a video call; it's a blank box.
+     - **Attempted fixes:** The agent has made numerous changes to , including: adding a 5-second delay to status checks to prevent race conditions, removing the  check for rendering the local view, and adding . These have not resolved the core issue. The problem is likely in the Agora engine initialization, the sequence of publishing/subscribing to tracks, or a fundamental logic error in state management within  or .
+     - **Next debug checklist:**
+        1. In , review the  function. Ensure , , and  are called in the correct order.
+        2. Verify that the local video track is being created and published successfully. Add extensive logging.
+        3. Debug the  function for the driver in . Trace the state flow from the button press to the  component being rendered. Check if  and user data are correctly passed.
+     - **Why fix this issue and what will be achieved with the fix?** Calling is a core, user-facing feature that is currently broken. Fixing it is critical for app usability.
+     - **Status:** IN PROGRESS
+     - **Is recurring issue?** Y
+     - **Should Test frontend/backend/both after fix?** Frontend (primarily), but backend call initiation endpoints should be verified.
+     - **Blocked on other issue:** None.
+  - **Issue 2: Incorrect Trip Details on Offer Cards**
+     - **Description:** There is a data mismatch between the driver's view and the passenger's view. The passenger's offer card shows trip duration in minutes (e.g., 7 dk gideriz) instead of the correct total trip distance in kilometers (e.g., 21.3 km gideriz).
+     - **Attempted fixes:** The agent modified the  for the passenger. However, the logic for calculating or passing the  is still incorrect.
+     - **Next debug checklist:**
+        1. Review the  endpoint in  to ensure it returns both  and .
+        2. In , trace the data from the API call that loads offers/requests to the props passed to  for both the passenger and driver roles.
+        3. Modify the  component to correctly display the trip distance () for the passenger, not the duration.
+     - **Why fix this issue and what will be achieved with the fix?** This provides clarity to the passenger about the trip they are accepting.
+     - **Status:** IN PROGRESS
+     - **Is recurring issue?** Y
+     - **Should Test frontend/backend/both after fix?** Frontend.
+     - **Blocked on other issue:** None.
 
 **In progress Task List**:
--   **Task 1: Complete Admin Panel & Legal Pages (P0)**
-    -   **Where to resume:** The foundational components (, ) and backend endpoints exist. The next steps are:
-        1.  Flesh out the UI for each section of the Admin Panel (Dashboard, User List, Call Logs).
-        2.  Implement the functionality for each admin action (e.g., blocking a user, sending a notification).
-        3.  Integrate the  component into the registration flow with checkboxes for consent.
-        4.  Implement the Account Deletion button and corresponding backend endpoint.
-        5.  Style all new screens to match the app's blue theme.
-    -   **What will be achieved with this?** A key feature set requested by the user, providing administrative control and legal compliance.
-    -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** Both.
-
--   **Task 2: Refine Driver Request Card UI (P1)**
-    -   **Where to resume:** Edit the  component inside .
-    -   The component should be updated to prominently display the passenger's pickup location name and destination name.
-    -   **What will be achieved with this?** Improves usability for the driver, allowing them to make quicker decisions.
-    -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** Frontend.
+  - **Task 1: Complete UI/UX Overhaul (P0)**
+     - **Description:** Implement the remaining UI/UX changes from the user's latest request.
+     - **Where to resume:**
+        1. **Driver Offer Card:** It has been redesigned but needs a switch to another passenger button.
+        2. **Passenger Offer Card:** Needs to show the driver's vehicle photo. This requires adding a  field to the user profile and updating the offer data structure.
+        3. **Map Route:** The  component needs to be modified to draw a second polyline (in orange) for the passenger's destination route, in addition to the existing green polyline for the driver-to-passenger route.
+     - **What will be achieved with this?** A more intuitive and user-friendly interface that meets the user's specific design requirements.
+     - **Status:** IN PROGRESS
+     - **Should Test frontend/backend/both after fix?** Frontend.
+     - **Blocked on something:** None.
+  - **Task 2: Build Admin Panel Frontend (P1)**
+     - **Description:** The backend is ready with extensive metadata logging and new admin features, but the frontend  is still basic.
+     - **Where to resume:**
+        1. In , create UI for the new features: User Deletion, clickable stats, and viewing detailed Trip/Call/Auth logs.
+        2. Create a new Settings tab in the admin panel and build a form to  and  to the  endpoint.
+        3. Implement pagination and search for all log views.
+     - **What will be achieved with this?** A fully functional admin panel as requested by the user for monitoring and managing the app.
+     - **Status:** NOT STARTED (Backend is done, Frontend is pending).
+     - **Should Test frontend/backend/both after fix?** Both.
+     - **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
--   **Upcoming Tasks:**
-    -   **Modern Blue Alerts (P2):** Systematically replace all  calls with a custom, reusable blue-themed modal component.
-    -   **Push Notification Integration (P2):** The user has expressed a preference for Supabase for notifications. This will require setting up the Supabase client and integrating it for push notifications sent from the Admin Panel.
--   **Future Tasks:**
-    -   **Premium Membership:** Implement the backend logic and frontend UI for a premium subscription model (currently on hold by user).
-    -   **Full Supabase Migration:** Plan and execute the migration from MongoDB to Supabase (major task, post-MVP).
+    - **Upcoming Tasks:**
+        - **Legal Pages (P1):** Integrate  into the registration flow with checkboxes for Privacy Policy, ToS, and KVKK consent.
+        - **Account Deletion (P1):** Implement a button in the user's profile that calls the backend logic for account deletion.
+        - **Modern Blue Alerts (P2):** Systematically replace all  calls with a custom, reusable blue-themed modal.
+    - **Future Tasks:**
+        - **Push Notifications (Supabase):** Integrate Supabase for push notifications.
+        - **Real SMS OTP (NetGSM):** Replace the hardcoded OTP '123456'.
+        - **Premium Membership:** On hold by user.
 
 **Completed work in this session**
--   **Agora Secure Mode:** Migrated from testing mode to a secure, token-based authentication system for calls.
--   **Admin Panel Foundation:** Created backend endpoints and frontend components for a full in-app admin panel.
--   **Legal Pages Foundation:** Created backend stubs and a frontend component for legal pages (Privacy, ToS).
--   **Force End Trip Feature:** Implemented a Zorla Bitir button and backend logic with a point penalty.
--   **Backend Sorting/Filtering:**
-    -   Drivers now see requests from their city, within 20km, sorted by distance.
-    -   Passengers now see offers sorted by the lowest price.
--   **TikTok-style UI:** Implemented a full-screen, vertical swipe  for both passenger offers and driver requests.
--   **Database Cleanup:** Wrote and executed a script to clear over 80 stuck/old  from the database to unblock the user.
+- **Advanced Auth System:** Implemented a new authentication flow using a 6-haneli (6-digit) PIN and a unique  stored in  to bypass OTP on trusted devices.
+- **Admin Backend Foundation:**
+    - Created a comprehensive metadata logging system (for calls, trips, locations, auth) for legal compliance.
+    - Added backend endpoints for user deletion, viewing detailed trip logs, and configuring app settings (e.g., max call duration).
+- **UI Improvements:**
+    - Redesigned the passenger's home screen to be full-screen, removing the header and improving the input field's keyboard behavior.
+    - Added a Logout button to the role selection screen.
+    - Redesigned the driver's TikTok offer card to be full-screen and show separate distance/time metrics for approaching the passenger and for the passenger's trip.
+- **APK Generation:** Successfully logged into the user's Expo account and generated multiple  APKs for testing.
 
 **Earlier issues found/mentioned but not fixed**
--   **Monolithic Architecture:**  is the most critical technical debt. It has grown even larger in this session, now orchestrating the Admin Panel and Legal Pages. While the agent correctly created separate component files, the state management and rendering logic remain centralized and unmanageable in . A refactor using Expo Router to split screens into separate files is urgently needed.
+   - **Monolithic Architecture:**  is now over 6,800 lines. It is the single largest risk to the project's stability and maintainability. The agent has not addressed this technical debt. A major refactor using Expo Router is critical.
 
 **Known issue recurrence from previous fork**
--   **Issue recurrence in previous fork:** Yes.
-    -   **Calling System Bugs:** This is a chronic issue, recurring in every session despite multiple complete rewrites.
-    -   **APK Build/Connection Issues:** This is also a chronic problem preventing the user from reliably testing changes.
--   **Recurrence count:** Calling System (5+), APK Issues (4+).
--   **Status:** Both are IN PROGRESS and are the main blockers.
+  - **Issue recurrence in previous fork:** Yes.
+    - **Calling System Bugs:** This is a chronic, unresolved issue that has persisted across multiple sessions and rewrites.
+    - **APK Build/Connection Issues:** The agent was able to resolve the build issues in this session by using the user's Expo token.
+  - **Recurrence count:** Calling System (6+).
+  - **Status:** Calling System is IN PROGRESS.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Backend:** FastAPI, MongoDB (),  for token generation.
--   **Frontend:** React Native, Expo.  with  for TikTok UI.
--   **Real-time Communication:** Agora RTC SDK with Secure Mode (App ID + Token).
--   **State Management:**  hooks within the monolithic . The lack of a global state manager is a major source of complexity.
--   **Deployment:** An Expo user account is required to proceed.
+- **Backend:** FastAPI, MongoDB ().
+- **Frontend:** React Native, Expo.
+- **Authentication:** Custom PIN +  flow. The  is generated via  and stored in .
+- **Real-time Communication:** Agora RTC SDK with Secure Mode (App ID + Token).
+- **State Management:**  hooks within the monolithic .
+- **Deployment:** An Expo user account is required to proceed.
 
 Log in to EAS with email or username (exit and run eas login --help to see other login options)
-Input is required, but stdin is not readable. Failed to display prompt: Email or username for creating development APKs. The process is flaky.
+Input is required, but stdin is not readable. Failed to display prompt: Email or username using a user-provided Expo token.
 
 **key DB schema**
--   **users**:  (schema has been expanded).
--   **tags**:  (no major changes).
--   **calls**:  (no major changes).
--   **activity_logs**:  (new collection for admin panel).
--   **reports**:  (new collection for admin panel).
+- **users**: 
+- **app_settings**: (New)  (e.g., ).
+- **metadata_calls**: (New) 
+- **metadata_locations**: (New) 
+- **metadata_trips**: (New) 
+- **metadata_auth**: (New) 
 
 **changes in tech stack**
--    added to the backend .
+-  is used on the frontend to get a unique  for the device-based auth flow.
 
 **All files of reference**
--   : **Most critical file.** All new features (Admin, Legal, Force End) and bug fixes are wired through here.
--   : **Heavily modified.** Contains all new backend logic for tokens, admin, and legal features.
--   : **Completely rewritten again.** Central to the current calling bugs.
--   : **New file.** Contains the UI structure for the admin panel.
--   : **New file.** Contains the UI for legal agreements.
--   , : Updated with new Agora credentials.
+- : The most critical and most modified file. All UI, state, and navigation logic is here.
+- : All backend logic, including the new auth flow and metadata logging.
+- : The source of the persistent calling bugs.
+- : Needs to be edited for the orange route feature.
 
 **Areas that need refactoring**:
--   ** MUST be refactored.** The current monolithic structure is unsustainable. The agent should be instructed to use Expo Router to break the app into file-based routes (e.g.,  for login/splash, , , ). This is the highest priority for long-term project health.
+- ** MUST be refactored.** It is unmanageably large. The next agent should strongly propose a migration to a file-based routing structure using Expo Router to improve stability and development velocity.
 
 **key api endpoints**
--   : (NEW) Generates a temporary token for joining an Agora call.
--   : (NEW) Ends a trip unilaterally and applies a penalty.
--   : (NEW) A new suite of endpoints for admin functionality (e.g., , , ).
+- : (Modified) Now accepts , returns .
+- , : (Modified) Now registers the  upon success.
+- : (New) Deletes a user and their associated data.
+- : (New) / to manage application-wide settings.
+- : (New) Suite of endpoints to retrieve the new metadata logs.
 
 **Critical Info for New Agent**
--   **The calling system is the user's #1 priority.** Do not work on other features until the user can make a successful video call from both driver and passenger sides.
--   **Agora Configuration is critical.** The agent and user went back and forth multiple times. The correct, final credentials are  and . Ensure these are used correctly and the Agora project is in Secure Mode.
--   **User Testing is a major bottleneck.** Find a reliable way to get a working APK to the user. Prioritize fixing the An Expo user account is required to proceed.
-
-Log in to EAS with email or username (exit and run eas login --help to see other login options)
-Input is required, but stdin is not readable. Failed to display prompt: Email or username process.
--   **Propose a major refactor of **. After fixing the critical call bugs, you must explain to the user the necessity of refactoring the frontend to ensure future stability and speed of development.
+- **Priorities are clear:** 1. Fix calling. 2. Fix UI/data bugs. 3. Implement remaining UI features. 4. Build out the Admin Panel frontend.
+- **The auth flow is now complex:** It's no longer just OTP. A user is checked via . If the device is known, it prompts for a PIN. If it's a new device, it forces OTP verification before asking for the PIN.
+- **Backend Metadata is ready:** A lot of work was done on the backend to create a compliant logging system. The next step is to make this data visible on the .
+- **Propose the  refactor:** After fixing the user's immediate critical issues (calling, UI bugs), the agent must explain the risk of the monolithic  and propose a refactoring task.
 
 **documents created in this job**
--   None.
+-  was updated with testing notes.
 
 **Last 10 User Messages and any pending user messages**
-1.  **User:** Asks for Admin Panel. (Status: **IN PROGRESS**)
-2.  **User:** Confirms they want a large feature set for the admin panel and legal pages, provides company details, and re-iterates that calling is still broken. (Status: **IN PROGRESS**)
-3.  **User:** Provides Agora App ID. (Status: **RESOLVED**)
-4.  **User:** Provides an image of their Agora console and asks for help with token/secure mode. (Status: **RESOLVED**)
-5.  **User:** Provides an App Certificate and confirms they want to proceed with Secure Mode. (Status: **RESOLVED**)
-6.  **User:** Cannot log in as the new admin user. (Status: **IN PROGRESS**, agent provided troubleshooting steps)
-7.  **User:** Is stuck in an old trip, requests a Force End feature, and reports video calls and self-view are still broken. Asks for the admin number to be changed. (Status: **IN PROGRESS**)
-8.  **User:** Is still confused about Agora credentials and provides a screenshot, asking for help. (Status: **RESOLVED**)
-9.  **User:** Confirms the new Agora App ID. (Status: **RESOLVED**)
-10. **User:** **(PENDING)** Reports the latest APK's status: Voice call from passenger works, but video calls fail, driver can't call, ringtone gets stuck, and there's no call-in-progress lock. Also requests UI improvement for the driver card. (Status: **IN PROGRESS**)
+1. **User:** Asks for  (Force End Trip) feature for a stuck trip. (Status: **RESOLVED**, feature was already present).
+2. **User:** Reports calling is still broken: call drops, PiP doesn't show self-view, driver can't initiate calls. (Status: **IN PROGRESS**).
+3. **User:** (Ignored start work prompt from agent).
+4. **User:** Provides very detailed UI/UX feedback: redesign driver card, fix km/min display, add car photos to offers, make passenger screen full-screen and keyboard-aware. (Status: **IN PROGRESS**).
+5. **User:** Asks for confirmation that the agent will implement all UI changes. (Status: **CONFIRMED**).
+6. **User:** Reports web preview error after agent made UI changes. (Status: **RESOLVED**, was a temporary syntax error).
+7. **User:** Asks about legal metadata requirements for government authorities. (Status: **ADDRESSED**).
+8. **User:** Confirms they want the full metadata logging system. Reports PiP is still broken (sends photo). Reports map icons are sometimes broken. Re-iterates  request. (Status: **IN PROGRESS**).
+9. **User:** Reports driver screen issues persist, calling is still broken, requests km/dk on both cards, and a back button on the role-selection screen. (Status: **IN PROGRESS**).
+10. **User:** **(PENDING)** Provides final, detailed list of UI changes needed, including full-screen cards, separate meet passenger and passenger trip details, orange route on map, and switch passenger/offer buttons. (Status: **IN PROGRESS**, this is the current work item).
 
 **Project Health Check:**
--   **Broken:**
-    -   Core Calling Functionality (Video, Driver-side calls, Ringtone).
-    -   APK Build/Delivery process for user testing.
--   **Mocked:**
-    -   OTP system is hardcoded to .
--   **In Progress / Unverified:**
-    -   Admin Panel.
-    -   Legal Pages integration.
--   **Needs Refactoring:**
-    -    is a critical liability and must be refactored into smaller, routed screen components.
+- **Broken:**
+    - Core Calling Functionality (Driver-side initiation, Video PiP).
+- **Mocked:**
+    - OTP is hardcoded to .
+- **In Progress / Unverified:**
+    - The entire UI/UX for driver and passenger offer cards.
+    - Admin Panel frontend for new metadata and settings features.
+- **Needs Refactoring:**
+    -  is a critical liability.
 
 **3rd Party Integrations**
--   **MongoDB:** Primary database.
--   **Google Maps Platform:** Used for Maps, Directions, and Places.
--   **Agora:** User-provided App ID & Certificate for real-time communication (voice/video) in **Secure Mode**.
--   **NetGSM (Future):** SMS service for OTP.
--   **Supabase (Future):** Planned for push notifications.
+- **MongoDB:** Primary database.
+- **Google Maps Platform:** Used for Maps, Directions, and Places. User provided an API key.
+- **Agora:** User-provided App ID & Certificate for real-time communication (voice/video) in Secure Mode.
 
 **Testing status**
--   **Testing agent used after significant changes:** NO
--   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** []
--   **Known regressions:** The calling system's reliability has regressed. Video calls were previously working but are now broken again.
+  - **Testing agent used after significant changes:** NO
+  - **Troubleshoot agent used after agent stuck in loop:** NO
+  - **Test files created:** []
+  - **Known regressions:** Calling features remain unstable and have regressed at times. The core functionality is not reliable.
 
 **Credentials to test flow:**
--   **Admin User:** Phone , OTP .
--   **Regular User:** Any other phone number, OTP .
+- **Admin User:** Phone , PIN .
+- **Regular User:** Any other phone number, OTP , then set a PIN.
 
 **What agent forgot to execute**
--   **Modern Blue-themed Alerts:** This UI modernization task was requested but has not been started.
--   **Call In-progress Lock:** The agent did not implement a mechanism to prevent a user from being called while already in another call, as requested in the user's last message.
--   The agent is actively working on the other pending items from the user's last message, but they are not yet complete.
+- **Map Route Visualization:** The user repeatedly asked for the passenger's destination route to be shown in **orange** on the map. This has not been implemented in .
+- **Driver Vehicle Photo:** The user asked for the driver's vehicle photo to appear on the passenger's offer card. The agent has not implemented the necessary DB schema change ( on user) or the frontend logic to display it.
+- **Clickable Admin Stats:** The user asked for the stats on the admin dashboard to be clickable. This has not been implemented.
 
 </analysis>
