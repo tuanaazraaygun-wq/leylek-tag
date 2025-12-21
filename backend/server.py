@@ -374,9 +374,9 @@ async def verify_pin(phone: str, pin: str, device_id: str = None):
         return {"success": False, "detail": str(e)}
 
 @api_router.post("/auth/set-pin")
-async def set_pin(phone: str, new_pin: str):
+async def set_pin(phone: str, new_pin: str, device_id: str = None):
     """
-    6 haneli PIN belirleme/değiştirme
+    6 haneli PIN belirleme/değiştirme + Cihaz doğrulama
     """
     try:
         db = db_instance.db
@@ -388,15 +388,26 @@ async def set_pin(phone: str, new_pin: str):
         import hashlib
         pin_hash = hashlib.sha256(new_pin.encode()).hexdigest()
         
+        # PIN'i güncelle ve cihazı doğrulanmış olarak kaydet
+        update_data = {"pin_hash": pin_hash}
+        if device_id:
+            # Cihazı verified_devices listesine ekle
+            user = await db.users.find_one({"phone": phone})
+            if user:
+                verified_devices = user.get("verified_devices", [])
+                if device_id not in verified_devices:
+                    verified_devices.append(device_id)
+                update_data["verified_devices"] = verified_devices
+        
         result = await db.users.update_one(
             {"phone": phone},
-            {"$set": {"pin_hash": pin_hash}}
+            {"$set": update_data}
         )
         
         if result.modified_count == 0:
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
         
-        logger.info(f"🔐 PIN güncellendi: {phone}")
+        logger.info(f"🔐 PIN güncellendi ve cihaz doğrulandı: {phone} -> {device_id}")
         return {"success": True, "message": "Şifre başarıyla belirlendi"}
     except Exception as e:
         logger.error(f"Set PIN hatası: {e}")
