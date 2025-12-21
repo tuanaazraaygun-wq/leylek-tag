@@ -2451,26 +2451,27 @@ function PassengerDashboard({
         </Animated.View>
       )}
       
-      {/* Üst Header - Modern Mavi */}
-      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
-        <View style={styles.modernHeader}>
-          <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.backButtonHeader}>
-            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.modernHeaderTitle}>{user.name}</Text>
-          </View>
-          <TouchableOpacity onPress={logout} style={styles.logoutButtonHeader}>
-            <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <ScrollView style={styles.content}>
+      {/* Üst Header - KALDIRILDI - TAM EKRAN */}
+      
+      <ScrollView 
+        style={styles.contentFullScreen}
+        keyboardShouldPersistTaps="handled"
+      >
         {!activeTag ? (
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.welcomeTitleSky}>Hoş Geldiniz</Text>
-            <Text style={styles.welcomeSubtitle}>Nereye gitmek istiyorsunuz?</Text>
+          <View style={styles.emptyStateContainerFull}>
+            {/* Geri ve Çıkış Butonları */}
+            <View style={styles.fullScreenTopBar}>
+              <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.fullScreenBackBtn}>
+                <Ionicons name="chevron-back" size={26} color="#3FA9F5" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={logout} style={styles.fullScreenLogoutBtn}>
+                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Kişi Adı */}
+            <Text style={styles.welcomeNameBig}>{user.name}</Text>
+            <Text style={styles.welcomeQuestion}>Nereye Gitmek İstiyorsunuz?</Text>
             
             {/* Hedef Seçme Alanı - GÖK MAVİSİ, BÜYÜK */}
             <TouchableOpacity
@@ -2498,7 +2499,7 @@ function PassengerDashboard({
             {destination && (
               <View style={styles.destinationInfo}>
                 <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-                <Text style={styles.destinationConfirm}>Hedef belirlendi</Text>
+                <Text style={styles.destinationConfirm}>Hedef: {destination.address.substring(0, 30)}...</Text>
               </View>
             )}
             
