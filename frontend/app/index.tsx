@@ -3096,6 +3096,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             price={activeTag?.final_price}
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
+              // Aktif arama varsa engelle
+              if (showVoiceCall || showIncomingCall) {
+                Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+                return;
+              }
+              
               const passengerName = activeTag.passenger_name || 'Yolcu';
               try {
                 const response = await fetch(`${API_URL}/voice/start-call`, {
@@ -3122,6 +3128,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               setIsVideoCall(type === 'video');
               setIsCallCaller(true); // BEN ARIYORUM
               setShowVoiceCall(true);
+            }}
+            onForceEnd={async () => {
+              try {
+                const response = await fetch(
+                  `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}`,
+                  { method: 'POST' }
+                );
+                const data = await response.json();
+                if (data.success) {
+                  Alert.alert('⚠️ Yolculuk Bitirildi', data.message);
+                  setActiveTag(null);
+                  loadActiveTag();
+                } else {
+                  Alert.alert('Hata', data.detail);
+                }
+              } catch (error) {
+                Alert.alert('Hata', 'İşlem başarısız');
+              }
             }}
             onRequestTripEnd={async () => {
               // Karşılıklı iptal isteği gönder - ŞOFÖR
