@@ -353,19 +353,51 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/auth/send-otp`, {
+      // Önce kullanıcı kontrolü yap
+      const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone })
       });
 
-      const data = await response.json();
-      if (data.success) {
-        Alert.alert('Başarılı', 'OTP gönderildi. Test için: 123456');
-        setScreen('otp');
+      const checkData = await checkResponse.json();
+      
+      if (checkData.success && checkData.user_exists) {
+        // Kullanıcı kayıtlı
+        setHasPin(checkData.has_pin || false);
+        
+        if (checkData.has_pin) {
+          // PIN var - direkt PIN ekranına git
+          Alert.alert('Hoş Geldiniz', `${checkData.user_name || 'Kullanıcı'}, 6 haneli şifrenizi girin`);
+          setScreen('enter-pin');
+        } else {
+          // PIN yok - OTP doğrula ve PIN oluştur
+          const response = await fetch(`${API_URL}/auth/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone })
+          });
+          const data = await response.json();
+          if (data.success) {
+            Alert.alert('Doğrulama', 'SMS ile gönderilen kodu girin. Test: 123456');
+            setScreen('otp');
+          }
+        }
+      } else {
+        // Yeni kullanıcı - OTP gönder
+        const response = await fetch(`${API_URL}/auth/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone })
+        });
+        const data = await response.json();
+        if (data.success) {
+          Alert.alert('Kayıt', 'Telefon doğrulaması için SMS kodu gönderildi. Test: 123456');
+          setScreen('otp');
+        }
       }
     } catch (error) {
-      Alert.alert('Hata', 'OTP gönderilemedi');
+      Alert.alert('Hata', 'Bağlantı hatası');
     }
   };
 
@@ -385,13 +417,14 @@ export default function App() {
       const data = await response.json();
       if (data.success) {
         if (data.user_exists && data.user) {
-          // Kayıtlı kullanıcı - PIN girişi
-          if (data.user.pin_hash || hasPin) {
-            await saveUser(data.user);
+          // Kayıtlı kullanıcı
+          await saveUser(data.user);
+          
+          if (data.has_pin) {
+            // PIN var - PIN girişi
             setScreen('enter-pin');
           } else {
             // PIN yok - PIN oluşturması lazım
-            await saveUser(data.user);
             setScreen('set-pin');
           }
         } else {
