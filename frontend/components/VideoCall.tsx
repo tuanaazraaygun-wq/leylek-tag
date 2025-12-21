@@ -119,32 +119,39 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü
+  // Arama durumu kontrolü - İLK 5 SANİYE KONTROL YAPMA (race condition önleme)
   useEffect(() => {
     if (!visible || !channelName || !userId || isCleanedUp.current) return;
     
-    const checkStatus = async () => {
+    // İlk 5 saniye bekle - arama başlangıç senkronizasyonu için
+    const initialDelay = setTimeout(() => {
       if (isCleanedUp.current) return;
       
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/voice/call-status?tag_id=${channelName}&user_id=${userId}`);
-        const data = await response.json();
-        
+      const checkStatus = async () => {
         if (isCleanedUp.current) return;
         
-        if (data.success && !data.has_active_call) {
-          console.log('📞 Arama sonlandırıldı:', data);
-          handleCallEnded(data.was_rejected);
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/voice/call-status?tag_id=${channelName}&user_id=${userId}`);
+          const data = await response.json();
+          
+          if (isCleanedUp.current) return;
+          
+          // Sadece kesin sonlandırma durumlarında kapat
+          if (data.success && !data.has_active_call && data.status !== 'none') {
+            console.log('📞 Arama sonlandırıldı:', data);
+            handleCallEnded(data.was_rejected);
+          }
+        } catch (error) {
+          console.log('Call status check error:', error);
         }
-      } catch (error) {
-        console.log('Call status check error:', error);
-      }
-    };
-    
-    checkStatus();
-    callStatusIntervalRef.current = setInterval(checkStatus, 2000);
+      };
+      
+      checkStatus();
+      callStatusIntervalRef.current = setInterval(checkStatus, 3000); // 3 saniyede bir kontrol
+    }, 5000); // 5 saniye bekle
     
     return () => {
+      clearTimeout(initialDelay);
       if (callStatusIntervalRef.current) {
         clearInterval(callStatusIntervalRef.current);
         callStatusIntervalRef.current = null;
