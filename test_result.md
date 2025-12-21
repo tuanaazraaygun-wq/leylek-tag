@@ -223,8 +223,8 @@ metadata:
 
 test_plan:
   current_focus:
+    - "Admin Panel functionality"
     - "Voice/video calling system fixes"
-    - "Map marker icon visibility"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -232,46 +232,47 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      YENI DEĞİŞİKLİKLER - 2025:
+      ## SON DEĞİŞİKLİKLER - Haziran 2025
       
-      ## Backend Değişiklikleri:
+      ### 1. IncomingCall.tsx - ZİL SESİ TAKINTI SORUNU DÜZELTİLDİ
+      - AppState listener eklendi: Arka plana geçince zil durur
+      - fullCleanup fonksiyonu: Ses, animasyon ve titreşim tamamen temizlenir
+      - isCleanedUp ref: Temizlik durumu takip edilir
+      - visible false olduğunda da cleanup çalışır
+      - Sound ref'i hemen null yapılıp race condition önlendi
       
-      ### 1. Sürücü Talepleri Filtreleme ve Sıralama (/api/driver/requests)
-      - Sadece AYNI ŞEHİRDEKİ yolcuları göster
-      - Maksimum 20 km mesafedeki yolcuları göster (50 km'den düşürüldü)
-      - EN YAKINA GÖRE SIRALA (mesafe artan sıra)
+      ### 2. VideoCall.tsx - VIDEO ARAMA İYİLEŞTİRMELERİ
+      - Daha detaylı logging eklendi
+      - enableVideo() çağrısından ÖNCE enableLocalVideo() yapılıyor
+      - Video encoder config ayarlandı (640x480, 15fps)
+      - startPreview join sonrası tekrar çağrılıyor
+      - onFirstLocalVideoFrame, onFirstRemoteVideoFrame event'leri eklendi
+      - Engine temizlemeden ÖNCE 500ms bekleme eklendi
       
-      ### 2. Yolcu Teklifleri Sıralama (/api/passenger/offers/{tag_id})
-      - EN DÜŞÜK FİYATTAN YÜKSEĞE sıralı teklif listesi
+      ### 3. AdminPanel.tsx - API URL DÜZELTİLDİ
+      - API_URL'ye /api suffix eklendi
+      - BACKEND_URL ve API_URL ayrıldı
       
-      ### 3. Arama Senkronizasyonu (/api/voice/check-incoming)
-      - Arayan kapattığında `call_cancelled: true` döner
-      - Karşı taraf hemen bilgilendirilir
+      ### 4. Backend server.py - ROUTER FIX
+      - app.include_router(api_router) dosyanın SONUNA taşındı
+      - Admin endpoint'leri artık çalışıyor
       
-      ### 4. Trip Bitirme Sistemi (/api/trip/respond-end-request)
-      - Onaysız bitirme durumunda YİNE DE BİTER
-      - AMA isteği gönderene CEZA uygulanır (-0.5 puan)
-      - penalty_points sayacı artırılır
-      
-      ## Frontend Değişiklikleri (index.tsx):
-      
-      ### 1. Yolcu - Gelen Arama Polling
-      - Arayan kapattığında IncomingCall modalı otomatik kapanır
-      - `call_cancelled` veya `has_incoming=false` kontrolü eklendi
-      - Polling süresi 1.5 saniyeye düşürüldü (daha hızlı senkronizasyon)
-      
-      ### 2. Şoför - Gelen Arama Polling  
-      - Aynı değişiklikler şoför tarafına da uygulandı
-      - Çakışan polling kodu kaldırıldı
+      ### Tüm Admin Endpoint'leri Test Edildi:
+      - GET /api/admin/check ✅
+      - GET /api/admin/dashboard ✅
+      - GET /api/admin/users ✅
+      - POST /api/admin/user/toggle-status ✅
+      - POST /api/admin/user/toggle-premium ✅
+      - GET /api/admin/calls ✅
+      - GET /api/admin/reports ✅
+      - POST /api/admin/send-notification ✅
       
       ## Test Edilmesi Gerekenler:
-      1. Yolcu aradığında şoför IncomingCall görmeli
-      2. Yolcu aramayı kapatınca şoförün IncomingCall kapanmalı
-      3. Şoför aradığında aynı senaryo tersten test edilmeli
-      4. Sürücü sadece kendi şehrindeki ve 20km içindeki talepleri görmeli
-      5. Yolcu teklifleri en düşük fiyattan başlamalı
-      6. Trip bitirme onaylanmazsa bile bitiyor mu ve ceza uygulanıyor mu?
-
+      1. Zil sesi artık takılıyor mu?
+      2. Video arama açılıp kapanıyor mu?
+      3. Admin panel düzgün yükleniyor mu?
+      4. Sürücü arama butonları çalışıyor mu?
+      
   - agent: "testing"
     message: |
       BACKEND TESTING COMPLETED - ALL CRITICAL ISSUES RESOLVED!
