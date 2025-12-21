@@ -1554,10 +1554,7 @@ async def get_user_stats(user_id: str):
         }
     }
 
-# Include router
-app.include_router(api_router)
-
-# CORS
+# CORS - Router include'dan ÖNCE olmalı
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
