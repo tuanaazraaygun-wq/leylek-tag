@@ -1550,6 +1550,17 @@ function TikTokOfferCard({
         {/* ŞOFÖR İÇİN: Tam Ekran Mesafe Gösterimi */}
         {!isPassenger && (
           <View style={styles.driverFullScreen}>
+            {/* Başka Yolcu Seç Butonu */}
+            {total > 1 && (
+              <View style={styles.skipPassengerRow}>
+                <TouchableOpacity style={styles.skipPassengerBtn}>
+                  <Ionicons name="swap-vertical" size={18} color="#3FA9F5" />
+                  <Text style={styles.skipPassengerText}>Başka Yolcu Seç</Text>
+                </TouchableOpacity>
+                <Text style={styles.passengerCountText}>{index + 1}/{total} yolcu</Text>
+              </View>
+            )}
+            
             {/* BÜYÜK MESAFE KARTLARI */}
             <View style={styles.driverBigDistanceCards}>
               {/* Yolcuyla Buluşma */}
