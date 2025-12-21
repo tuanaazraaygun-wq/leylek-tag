@@ -1494,40 +1494,56 @@ function TikTokOfferCard({
               </Text>
             </View>
           </View>
+          
+          {/* Teklifi Geç Butonu */}
+          {isPassenger && total > 1 && (
+            <TouchableOpacity style={styles.skipOfferBtn}>
+              <Ionicons name="chevron-up" size={20} color="#94A3B8" />
+              <Text style={styles.skipOfferText}>Geç</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* YOLCU İÇİN: Fiyat ve Varış Bilgisi */}
+        {/* YOLCU İÇİN: Araç Bilgisi + Fiyat + Mesafe */}
         {isPassenger && (
           <>
+            {/* Araç Bilgisi - Üstte */}
+            {offer.vehicle_model && (
+              <View style={styles.vehicleCardTop}>
+                <View style={styles.vehicleIconBox}>
+                  <Ionicons name="car-sport" size={40} color="#3FA9F5" />
+                </View>
+                <View style={styles.vehicleInfoBox}>
+                  <Text style={styles.vehicleModelText}>{offer.vehicle_model}</Text>
+                  <Text style={styles.vehicleColorText}>{offer.vehicle_color || 'Renk belirtilmedi'}</Text>
+                </View>
+              </View>
+            )}
+            
+            {/* Teklif Fiyatı */}
             <View style={styles.tikTokPriceSectionNew}>
               <Text style={styles.tikTokPriceLabelNew}>Teklif Fiyatı</Text>
               <Text style={styles.tikTokPriceNew}>₺{offer.price || '?'}</Text>
             </View>
             
+            {/* Varış ve Mesafe Kartları - KM OLARAK */}
             <View style={styles.tikTokTimeCardsNew}>
               <View style={styles.tikTokTimeCardNew}>
-                <LinearGradient colors={['#3FA9F5', '#2563EB']} style={styles.tikTokTimeGradientNew}>
+                <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.tikTokTimeGradientNew}>
                   <Ionicons name="car-sport" size={28} color="#FFF" />
                   <Text style={styles.tikTokTimeValueNew}>{arrivalTime} dk</Text>
-                  <Text style={styles.tikTokTimeLabelNew}>içinde geliyorum</Text>
+                  <Text style={styles.tikTokTimeLabelNew}>içinde gelir</Text>
                 </LinearGradient>
               </View>
               
               <View style={styles.tikTokTimeCardNew}>
-                <LinearGradient colors={['#3FA9F5', '#1D4ED8']} style={styles.tikTokTimeGradientNew}>
+                <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.tikTokTimeGradientNew}>
                   <Ionicons name="navigate" size={28} color="#FFF" />
-                  <Text style={styles.tikTokTimeValueNew}>{tripTime} dk</Text>
-                  <Text style={styles.tikTokTimeLabelNew}>da gideriz</Text>
+                  <Text style={styles.tikTokTimeValueNew}>{tripDistanceKm} km</Text>
+                  <Text style={styles.tikTokTimeLabelNew}>yolculuk</Text>
                 </LinearGradient>
               </View>
             </View>
-            
-            {offer.vehicle_model && (
-              <View style={styles.tikTokVehicleNew}>
-                <Ionicons name="car-sport" size={20} color="#60A5FA" />
-                <Text style={styles.tikTokVehicleTextNew}>{offer.vehicle_color} {offer.vehicle_model}</Text>
-              </View>
-            )}
           </>
         )}
 
