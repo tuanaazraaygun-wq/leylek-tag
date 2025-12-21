@@ -562,20 +562,28 @@ export default function VideoCall({
                 </View>
               )}
               
-              {/* Kendi videom - Küçük PiP */}
+              {/* Kendi videom - Küçük PiP (Sağ Üst) */}
               <TouchableOpacity 
                 style={[styles.localVideoContainer, isLocalVideoLarge && styles.localVideoLarge]}
                 onPress={() => setIsLocalVideoLarge(!isLocalVideoLarge)}
+                activeOpacity={0.9}
               >
-                {isVideoEnabled ? (
+                {isVideoEnabled && isJoined ? (
                   <RtcSurfaceView
                     style={styles.localVideo}
-                    canvas={{ uid: 0, sourceType: VideoSourceType?.VideoSourceCamera || 1 }}
+                    canvas={{ 
+                      uid: 0,
+                      sourceType: VideoSourceType?.VideoSourceCameraPrimary || VideoSourceType?.VideoSourceCamera || 1,
+                      mirrorMode: 1, // Video aynala (selfie kamera için)
+                    }}
                     zOrderMediaOverlay={true}
                   />
                 ) : (
                   <View style={styles.localVideoOff}>
                     <Ionicons name="videocam-off" size={24} color="#FFF" />
+                    <Text style={styles.localVideoOffText}>
+                      {!isJoined ? 'Bağlanıyor...' : 'Kamera Kapalı'}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
