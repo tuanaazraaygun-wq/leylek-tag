@@ -423,10 +423,11 @@ async def get_login_attempts(phone: str, limit: int = 10):
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(request: VerifyOTPRequest):
-    """OTP doğrulama + IP ban kontrolü"""
+    """OTP doğrulama + IP ban kontrolü + Cihaz doğrulama"""
     # TODO: Gerçek IP adresi almak için: request.client.host
     # Şimdilik mock IP kullanacağız
     client_ip = "127.0.0.1"  # request.client.host  
+    device_id = getattr(request, 'device_id', None)
     
     # IP ban kontrolü
     failed_attempt = await db_instance.find_one("failed_login_attempts", {"ip_address": client_ip})
@@ -471,7 +472,19 @@ async def verify_otp(request: VerifyOTPRequest):
     if failed_attempt:
         await db_instance.delete_one("failed_login_attempts", {"ip_address": client_ip})
     
-    user = await db_instance.find_one("users", {"phone": request.phone})
+    db = db_instance.db
+    user = await db.users.find_one({"phone": request.phone})
+    
+    # OTP doğrulandı - Cihazı kaydet (varsa)
+    if user and device_id:
+        verified_devices = user.get("verified_devices", [])
+        if device_id not in verified_devices:
+            verified_devices.append(device_id)
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$set": {"verified_devices": verified_devices}}
+            )
+            logger.info(f"📱 Yeni cihaz doğrulandı: {request.phone} -> {device_id}")
     
     return {
         "success": True,
