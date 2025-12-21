@@ -569,21 +569,23 @@ export default function VideoCall({
                 </View>
               )}
               
-              {/* Kendi videom - Küçük PiP (Sağ Üst) */}
+              {/* Kendi videom - Küçük PiP (Sağ Üst) - HER ZAMAN GÖRÜN */}
               <TouchableOpacity 
                 style={[styles.localVideoContainer, isLocalVideoLarge && styles.localVideoLarge]}
                 onPress={() => setIsLocalVideoLarge(!isLocalVideoLarge)}
                 activeOpacity={0.9}
               >
-                {isVideoEnabled && isJoined ? (
+                {isVideoEnabled ? (
                   <RtcSurfaceView
                     style={styles.localVideo}
                     canvas={{ 
                       uid: 0,
-                      sourceType: VideoSourceType?.VideoSourceCameraPrimary || VideoSourceType?.VideoSourceCamera || 1,
+                      sourceType: VideoSourceType?.VideoSourceCameraPrimary || VideoSourceType?.VideoSourceCamera || 0,
                       mirrorMode: 1, // Video aynala (selfie kamera için)
+                      renderMode: 1, // Hidden (fit)
                     }}
                     zOrderMediaOverlay={true}
+                    zOrderOnTop={true}
                   />
                 ) : (
                   <View style={styles.localVideoOff}>
