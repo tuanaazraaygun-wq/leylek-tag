@@ -889,6 +889,8 @@ export default function App() {
       }
 
       try {
+        const currentDeviceId = deviceId || await getOrCreateDeviceId();
+        
         // Önce kullanıcıyı kaydet
         const registerResponse = await fetch(`${API_URL}/auth/register`, {
           method: 'POST',
@@ -898,7 +900,8 @@ export default function App() {
             first_name: firstName,
             last_name: lastName,
             city: selectedCity,
-            pin: pin
+            pin: pin,
+            device_id: currentDeviceId  // Cihaz ID ekle
           })
         });
         const registerData = await registerResponse.json();
