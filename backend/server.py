@@ -119,6 +119,148 @@ def get_city_from_coords(lat: float, lng: float) -> str:
     return closest_city if min_distance < 50 else "Diğer"
 
 
+# ==================== METADATA LOGGING SYSTEM ====================
+async def log_call_metadata(
+    caller_id: str,
+    caller_phone: str,
+    receiver_id: str,
+    receiver_phone: str,
+    call_type: str,  # 'voice' or 'video'
+    tag_id: str,
+    status: str,  # 'initiated', 'answered', 'missed', 'rejected', 'ended'
+    duration_seconds: int = 0,
+    caller_ip: str = None,
+    receiver_ip: str = None,
+    caller_location: dict = None,
+    receiver_location: dict = None
+):
+    """Arama metadata'sını kaydet - İçerik değil, sadece metadata"""
+    try:
+        db = db_instance.db
+        log_entry = {
+            "type": "call",
+            "caller_id": caller_id,
+            "caller_phone": caller_phone,
+            "receiver_id": receiver_id,
+            "receiver_phone": receiver_phone,
+            "call_type": call_type,
+            "tag_id": tag_id,
+            "status": status,
+            "duration_seconds": duration_seconds,
+            "caller_ip": caller_ip,
+            "receiver_ip": receiver_ip,
+            "caller_location": caller_location,
+            "receiver_location": receiver_location,
+            "timestamp": datetime.utcnow(),
+            "created_at": datetime.utcnow()
+        }
+        await db.metadata_logs.insert_one(log_entry)
+        logger.info(f"📞 Call metadata logged: {caller_phone} -> {receiver_phone} ({call_type}, {status})")
+    except Exception as e:
+        logger.error(f"Call metadata log error: {e}")
+
+async def log_location_metadata(
+    user_id: str,
+    user_phone: str,
+    latitude: float,
+    longitude: float,
+    trip_id: str = None,
+    action: str = "update"  # 'update', 'trip_start', 'trip_end'
+):
+    """Konum metadata'sını kaydet"""
+    try:
+        db = db_instance.db
+        log_entry = {
+            "type": "location",
+            "user_id": user_id,
+            "user_phone": user_phone,
+            "latitude": latitude,
+            "longitude": longitude,
+            "trip_id": trip_id,
+            "action": action,
+            "timestamp": datetime.utcnow()
+        }
+        await db.metadata_logs.insert_one(log_entry)
+    except Exception as e:
+        logger.error(f"Location metadata log error: {e}")
+
+async def log_trip_metadata(
+    trip_id: str,
+    passenger_id: str,
+    passenger_phone: str,
+    driver_id: str,
+    driver_phone: str,
+    pickup_lat: float,
+    pickup_lng: float,
+    pickup_address: str,
+    dropoff_lat: float,
+    dropoff_lng: float,
+    dropoff_address: str,
+    status: str,  # 'started', 'completed', 'cancelled', 'force_ended'
+    price: float = 0,
+    distance_km: float = 0,
+    duration_minutes: int = 0
+):
+    """Yolculuk metadata'sını kaydet"""
+    try:
+        db = db_instance.db
+        log_entry = {
+            "type": "trip",
+            "trip_id": trip_id,
+            "passenger_id": passenger_id,
+            "passenger_phone": passenger_phone,
+            "driver_id": driver_id,
+            "driver_phone": driver_phone,
+            "pickup_location": {
+                "latitude": pickup_lat,
+                "longitude": pickup_lng,
+                "address": pickup_address
+            },
+            "dropoff_location": {
+                "latitude": dropoff_lat,
+                "longitude": dropoff_lng,
+                "address": dropoff_address
+            },
+            "status": status,
+            "price": price,
+            "distance_km": distance_km,
+            "duration_minutes": duration_minutes,
+            "timestamp": datetime.utcnow()
+        }
+        await db.metadata_logs.insert_one(log_entry)
+        logger.info(f"🚗 Trip metadata logged: {passenger_phone} - {driver_phone} ({status})")
+    except Exception as e:
+        logger.error(f"Trip metadata log error: {e}")
+
+async def log_auth_metadata(
+    user_id: str,
+    phone: str,
+    device_id: str,
+    ip_address: str,
+    action: str,  # 'login', 'logout', 'register', 'pin_verify', 'otp_verify'
+    success: bool = True,
+    details: str = None
+):
+    """Kimlik doğrulama metadata'sını kaydet"""
+    try:
+        db = db_instance.db
+        log_entry = {
+            "type": "auth",
+            "user_id": user_id,
+            "phone": phone,
+            "device_id": device_id,
+            "ip_address": ip_address,
+            "action": action,
+            "success": success,
+            "details": details,
+            "timestamp": datetime.utcnow()
+        }
+        await db.metadata_logs.insert_one(log_entry)
+        logger.info(f"🔐 Auth metadata logged: {phone} ({action}, {'✓' if success else '✗'})")
+    except Exception as e:
+        logger.error(f"Auth metadata log error: {e}")
+
+
 # Create app
 app = FastAPI(title="Leylek TAG API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
