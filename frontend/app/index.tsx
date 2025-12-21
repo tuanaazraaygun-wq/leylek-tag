@@ -6729,7 +6729,156 @@ const styles = StyleSheet.create({
     color: '#FFF',
     letterSpacing: 0.5,
   },
-  // ŞOFÖR İÇİN YENİ STİLLER
+  // TAM EKRAN TEMİZ STİLLER
+  tikTokHeaderClean: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingTop: 10,
+  },
+  tikTokBackBtnClean: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tikTokPageIndicatorClean: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  tikTokPageTextClean: {
+    fontSize: 13,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  tikTokProfileCardClean: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  tikTokAvatarClean: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  tikTokAvatarTextClean: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  tikTokProfileInfoClean: {
+    flex: 1,
+  },
+  tikTokNameClean: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 3,
+  },
+  tikTokRatingClean: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tikTokRatingTextClean: {
+    fontSize: 14,
+    color: '#FFD700',
+    fontWeight: '600',
+  },
+  // ŞOFÖR TAM EKRAN STİLLER
+  driverFullScreen: {
+    flex: 1,
+    paddingTop: 8,
+  },
+  driverBigDistanceCards: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  driverBigCard: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  driverBigCardGradient: {
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 10,
+  },
+  driverBigCardTitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  driverBigCardValue: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop: 4,
+  },
+  driverBigCardSub: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  driverAddressCard: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 16,
+    padding: 14,
+  },
+  driverAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  driverAddressDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  driverAddressInfo: {
+    flex: 1,
+  },
+  driverAddressLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  driverAddressText: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '500',
+  },
+  driverAddressTextBig: {
+    fontSize: 15,
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  driverAddressLine: {
+    paddingLeft: 5,
+    marginVertical: 8,
+  },
+  driverAddressLineDashed: {
+    width: 2,
+    height: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  // ESKİ ŞOFÖR STİLLERİ
   driverInfoCard: {
     flex: 1,
   },
