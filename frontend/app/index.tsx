@@ -382,23 +382,41 @@ export default function App() {
     }
 
     try {
-      // Önce kullanıcı kontrolü yap
+      // Cihaz ID'yi al
+      const currentDeviceId = deviceId || await getOrCreateDeviceId();
+      
+      // Kullanıcı kontrolü yap (cihaz ID ile)
       const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone })
+        body: JSON.stringify({ phone, device_id: currentDeviceId })
       });
 
       const checkData = await checkResponse.json();
+      console.log('🔍 Check user response:', checkData);
       
       if (checkData.success && checkData.user_exists) {
         // Kullanıcı kayıtlı
         setHasPin(checkData.has_pin || false);
+        setUserExists(true);
+        setIsDeviceVerified(checkData.device_verified || false);
         
-        if (checkData.has_pin) {
-          // PIN var - direkt PIN ekranına git
-          Alert.alert('Hoş Geldiniz', `${checkData.user_name || 'Kullanıcı'}, 6 haneli şifrenizi girin`);
+        if (checkData.has_pin && checkData.device_verified) {
+          // PIN var VE cihaz doğrulanmış - direkt PIN ekranına git
+          Alert.alert('Hoş Geldiniz! 👋', `${checkData.user_name || 'Kullanıcı'}, 6 haneli şifrenizi girin`);
           setScreen('enter-pin');
+        } else if (checkData.has_pin && !checkData.device_verified) {
+          // PIN var AMA yeni cihaz - OTP doğrula sonra PIN iste
+          const response = await fetch(`${API_URL}/auth/send-otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone })
+          });
+          const data = await response.json();
+          if (data.success) {
+            Alert.alert('Yeni Cihaz Doğrulaması 📱', 'Bu cihazdan ilk giriş. SMS ile gönderilen kodu girin.\n\nTest: 123456');
+            setScreen('otp');
+          }
         } else {
           // PIN yok - OTP doğrula ve PIN oluştur
           const response = await fetch(`${API_URL}/auth/send-otp`, {
@@ -408,12 +426,13 @@ export default function App() {
           });
           const data = await response.json();
           if (data.success) {
-            Alert.alert('Doğrulama', 'SMS ile gönderilen kodu girin. Test: 123456');
+            Alert.alert('Şifre Oluşturma 🔐', 'Hesabınız için şifre belirlemeniz gerekiyor. SMS kodunu girin.\n\nTest: 123456');
             setScreen('otp');
           }
         }
       } else {
         // Yeni kullanıcı - OTP gönder
+        setUserExists(false);
         const response = await fetch(`${API_URL}/auth/send-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -421,11 +440,12 @@ export default function App() {
         });
         const data = await response.json();
         if (data.success) {
-          Alert.alert('Kayıt', 'Telefon doğrulaması için SMS kodu gönderildi. Test: 123456');
+          Alert.alert('Kayıt 📝', 'Telefon doğrulaması için SMS kodu gönderildi.\n\nTest: 123456');
           setScreen('otp');
         }
       }
     } catch (error) {
+      console.error('handleSendOTP error:', error);
       Alert.alert('Hata', 'Bağlantı hatası');
     }
   };
@@ -437,17 +457,41 @@ export default function App() {
     }
 
     try {
+      const currentDeviceId = deviceId || await getOrCreateDeviceId();
+      
       const response = await fetch(`${API_URL}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, otp })
+        body: JSON.stringify({ phone, otp, device_id: currentDeviceId })
       });
 
       const data = await response.json();
+      console.log('🔐 Verify OTP response:', data);
+      
       if (data.success) {
         if (data.user_exists && data.user) {
           // Kayıtlı kullanıcı
           await saveUser(data.user);
+          
+          if (data.has_pin) {
+            // PIN var - PIN girişi
+            setScreen('enter-pin');
+          } else {
+            // PIN yok - PIN oluşturması lazım
+            setScreen('set-pin');
+          }
+        } else {
+          // Yeni kullanıcı - Kayıt ekranı
+          setScreen('register');
+        }
+      } else {
+        Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
+      }
+    } catch (error) {
+      console.error('handleVerifyOTP error:', error);
+      Alert.alert('Hata', 'OTP doğrulanamadı');
+    }
+  };
           
           if (data.has_pin) {
             // PIN var - PIN girişi
