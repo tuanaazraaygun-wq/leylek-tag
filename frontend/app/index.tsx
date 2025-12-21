@@ -1134,6 +1134,47 @@ export default function App() {
     return (
       <View style={styles.roleSelectionContainer}>
         <SafeAreaView style={styles.roleSelectionSafe}>
+          {/* Üst Bar - Geri ve Çıkış */}
+          <View style={styles.roleTopBar}>
+            <TouchableOpacity 
+              style={styles.roleBackButton}
+              onPress={() => {
+                Alert.alert(
+                  'Çıkış',
+                  'Oturumu kapatmak istiyor musunuz?',
+                  [
+                    { text: 'İptal', style: 'cancel' },
+                    { 
+                      text: 'Çıkış Yap', 
+                      style: 'destructive',
+                      onPress: async () => {
+                        await AsyncStorage.removeItem('user');
+                        setUser(null);
+                        setScreen('login');
+                        setPhone('');
+                        setPin('');
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+              <Text style={styles.roleBackText}>Çıkış</Text>
+            </TouchableOpacity>
+            
+            {/* Admin Panel Butonu */}
+            {isAdmin && (
+              <TouchableOpacity 
+                style={styles.roleAdminButton}
+                onPress={() => setShowAdminPanel(true)}
+              >
+                <Ionicons name="settings" size={24} color="#3FA9F5" />
+                <Text style={styles.roleAdminText}>Admin</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           {/* Başlık Alanı */}
           <View style={styles.roleHeader}>
             <View style={styles.roleHeaderIcon}>
