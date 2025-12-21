@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Animated, Vibration, Platform } from 'react-native';
+import React, { useEffect, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Animated, Vibration, Platform, AppState, AppStateStatus } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
@@ -22,14 +22,28 @@ export default function IncomingCall({
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ringAnim = useRef(new Animated.Value(0)).current;
   const soundRef = useRef<Audio.Sound | null>(null);
+  const isCleanedUp = useRef(false);
+  const pulseAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const ringAnimRef = useRef<Animated.CompositeAnimation | null>(null);
 
   // Zil sesi başlat
   const playRingtone = async () => {
+    if (isCleanedUp.current) return;
+    
     try {
+      // Önceki sesi temizle
+      if (soundRef.current) {
+        try {
+          await soundRef.current.stopAsync();
+          await soundRef.current.unloadAsync();
+        } catch (e) {}
+        soundRef.current = null;
+      }
+      
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
+        staysActiveInBackground: false, // Background'da çalmayı kapat
         shouldDuckAndroid: false,
         playThroughEarpieceAndroid: false,
       });
@@ -39,6 +53,14 @@ export default function IncomingCall({
         { uri: 'https://www.soundjay.com/phone/sounds/telephone-ring-04.mp3' },
         { isLooping: true, volume: 1.0 }
       );
+      
+      if (isCleanedUp.current) {
+        // Temizleme sırasında oluşturulduysa hemen kapat
+        await sound.stopAsync();
+        await sound.unloadAsync();
+        return;
+      }
+      
       soundRef.current = sound;
       await sound.playAsync();
       console.log('🔔 Zil sesi başlatıldı');
@@ -47,22 +69,85 @@ export default function IncomingCall({
     }
   };
 
-  // Zil sesini durdur
-  const stopRingtone = async () => {
+  // Zil sesini durdur - daha güçlü temizlik
+  const stopRingtone = useCallback(async () => {
+    console.log('🔕 Zil sesi durduruluyor...');
+    
     try {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-        console.log('🔕 Zil sesi durduruldu');
+      const sound = soundRef.current;
+      soundRef.current = null; // Hemen null yap
+      
+      if (sound) {
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded) {
+            await sound.stopAsync();
+          }
+        } catch (e) {
+          console.log('Stop hatası (önemsiz):', e);
+        }
+        
+        try {
+          await sound.unloadAsync();
+        } catch (e) {
+          console.log('Unload hatası (önemsiz):', e);
+        }
+        
+        console.log('🔕 Zil sesi DURDURULDU');
       }
     } catch (error) {
       console.log('Zil durdurma hatası:', error);
     }
-  };
+  }, []);
+
+  // Tüm animasyonları durdur
+  const stopAnimations = useCallback(() => {
+    if (pulseAnimRef.current) {
+      pulseAnimRef.current.stop();
+      pulseAnimRef.current = null;
+    }
+    if (ringAnimRef.current) {
+      ringAnimRef.current.stop();
+      ringAnimRef.current = null;
+    }
+    pulseAnim.setValue(1);
+    ringAnim.setValue(0);
+  }, []);
+
+  // Tam temizlik fonksiyonu
+  const fullCleanup = useCallback(async () => {
+    console.log('🧹 IncomingCall FULL CLEANUP');
+    isCleanedUp.current = true;
+    
+    // Animasyonları durdur
+    stopAnimations();
+    
+    // Titreşimi durdur
+    try {
+      Vibration.cancel();
+    } catch (e) {}
+    
+    // Sesi durdur
+    await stopRingtone();
+  }, [stopAnimations, stopRingtone]);
+
+  // App state değişikliğini dinle (arka plana atılınca durdur)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        console.log('📱 Uygulama arka plana gitti, zil durduruluyor');
+        fullCleanup();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [fullCleanup]);
 
   useEffect(() => {
     if (visible) {
+      isCleanedUp.current = false;
+      
       // Zil sesi çal
       if (Platform.OS !== 'web') {
         playRingtone();
@@ -75,7 +160,7 @@ export default function IncomingCall({
       }
 
       // Pulse animasyonu
-      Animated.loop(
+      pulseAnimRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1.2,
@@ -88,10 +173,11 @@ export default function IncomingCall({
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      pulseAnimRef.current.start();
 
       // Ring animasyonu
-      Animated.loop(
+      ringAnimRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(ringAnim, {
             toValue: 1,
@@ -109,28 +195,27 @@ export default function IncomingCall({
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      ringAnimRef.current.start();
     } else {
-      Vibration.cancel();
-      stopRingtone();
+      // Visible false olduğunda temizlik yap
+      fullCleanup();
     }
 
     return () => {
-      Vibration.cancel();
-      stopRingtone();
+      // Unmount temizliği
+      fullCleanup();
     };
-  }, [visible]);
+  }, [visible, fullCleanup]);
 
   // Accept ve Reject'te zil sesini durdur
-  const handleAccept = () => {
-    stopRingtone();
-    Vibration.cancel();
+  const handleAccept = async () => {
+    await fullCleanup();
     onAccept();
   };
 
-  const handleReject = () => {
-    stopRingtone();
-    Vibration.cancel();
+  const handleReject = async () => {
+    await fullCleanup();
     onReject();
   };
 
