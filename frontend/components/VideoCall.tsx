@@ -207,7 +207,7 @@ export default function VideoCall({
   const initAgora = async () => {
     try {
       console.log('🎬 Agora başlatılıyor...');
-      console.log('📱 App ID:', AGORA_APP_ID);
+      console.log('📱 App ID:', AGORA_APP_ID ? 'VAR' : 'YOK');
       console.log('📞 Channel:', channelName);
       console.log('🎥 Video Call:', isVideoCall);
       console.log('👤 Local UID:', localUidRef.current);
@@ -221,8 +221,18 @@ export default function VideoCall({
       // İzinleri kontrol et
       const hasPermissions = await requestPermissions();
       if (!hasPermissions) {
+        Alert.alert('İzin Gerekli', 'Mikrofon ve kamera izni verilmedi');
         onEnd?.();
         return;
+      }
+      
+      // Önceki engine varsa temizle
+      if (engineRef.current) {
+        try {
+          engineRef.current.leaveChannel();
+          engineRef.current.release();
+        } catch (e) {}
+        engineRef.current = null;
       }
       
       const engine = createAgoraRtcEngine();
@@ -234,7 +244,7 @@ export default function VideoCall({
         channelProfile: ChannelProfileType?.ChannelProfileCommunication || 0,
       });
       
-      // Event listeners - ÖNEMLİ
+      // Event listeners
       engine.registerEventHandler({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
           console.log('✅ KANALA KATILDIM! Elapsed:', elapsed, 'ms');
@@ -265,37 +275,41 @@ export default function VideoCall({
         },
         onError: (err: number, msg: string) => {
           console.log('❌ Agora hatası:', err, msg);
-          if (err === 17) {
-            console.log('⚠️ Zaten kanala katılmış durumda');
+          // Token hatası - tekrar dene
+          if (err === 110 || err === 109) {
+            console.log('⚠️ Token hatası, yeniden deneniyor...');
           }
         },
         onConnectionStateChanged: (connection: any, state: number, reason: number) => {
           console.log('🔗 Bağlantı durumu:', state, 'Sebep:', reason);
         },
-        onAudioDeviceStateChanged: (deviceId: string, deviceType: number, deviceState: number) => {
-          console.log('🎤 Ses cihazı değişti:', deviceType, deviceState);
-        },
       });
       
-      // Ses ayarları - ÖNCELİKLİ
+      // ÖNCELİKLE SES AYARLARI
       console.log('🔊 Ses ayarları yapılıyor...');
       engine.enableAudio();
       engine.setEnableSpeakerphone(true);
       engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.adjustRecordingSignalVolume(400); // Mikrofon %400
-      engine.adjustPlaybackSignalVolume(400); // Hoparlör %400
+      engine.adjustRecordingSignalVolume(400);
+      engine.adjustPlaybackSignalVolume(400);
       engine.muteLocalAudioStream(false);
       
-      // Video ayarları
+      // VIDEO AYARLARI - Ayrı kontrol
       if (isVideoCall) {
         console.log('📹 Video ayarları yapılıyor...');
-        engine.enableVideo();
-        engine.enableLocalVideo(true);
-        engine.startPreview();
-        engine.muteLocalVideoStream(false);
+        try {
+          engine.enableVideo();
+          engine.enableLocalVideo(true);
+          engine.muteLocalVideoStream(false);
+          engine.startPreview();
+          console.log('📹 Video başlatıldı!');
+        } catch (videoError) {
+          console.error('📹 Video başlatma hatası:', videoError);
+          // Video hatası olsa bile sesli arama devam etsin
+        }
       }
       
-      // Kanala katıl - TOKEN İLE
+      // TOKEN AL
       console.log('📞 Token alınıyor...');
       let token = '';
       try {
@@ -304,13 +318,12 @@ export default function VideoCall({
         if (tokenData.success && tokenData.token) {
           token = tokenData.token;
           console.log('🔑 Token alındı!');
-        } else {
-          console.log('⚠️ Token alınamadı, boş token ile devam ediliyor');
         }
       } catch (e) {
-        console.log('⚠️ Token API hatası, boş token ile devam ediliyor:', e);
+        console.log('⚠️ Token alınamadı:', e);
       }
       
+      // KANALA KATIL
       console.log('📞 Kanala katılınıyor...');
       const options = {
         clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
