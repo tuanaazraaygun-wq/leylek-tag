@@ -2668,6 +2668,317 @@ async def admin_list_admins(admin_phone: str):
     return {"success": True, "admins": admin_list}
 
 
+# ==================== METADATA LOG ENDPOİNTLERİ (DEVLET YETKİLİLERİ İÇİN) ====================
+@api_router.get("/admin/metadata/calls")
+async def admin_get_call_metadata(
+    admin_phone: str, 
+    page: int = 1, 
+    limit: int = 100,
+    user_phone: str = None,
+    start_date: str = None,
+    end_date: str = None
+):
+    """
+    Arama metadata kayıtları - Kim kimle, ne zaman, ne kadar, sesli/görüntülü
+    İçerik yok, sadece metadata
+    """
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {"type": "call"}
+    
+    if user_phone:
+        query["$or"] = [
+            {"caller_phone": {"$regex": user_phone}},
+            {"receiver_phone": {"$regex": user_phone}}
+        ]
+    
+    if start_date:
+        query["timestamp"] = {"$gte": datetime.fromisoformat(start_date)}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = datetime.fromisoformat(end_date)
+        else:
+            query["timestamp"] = {"$lte": datetime.fromisoformat(end_date)}
+    
+    skip = (page - 1) * limit
+    total = await db.metadata_logs.count_documents(query)
+    logs = await db.metadata_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    
+    call_logs = []
+    for log in logs:
+        call_logs.append({
+            "id": str(log["_id"]),
+            "caller_phone": log.get("caller_phone"),
+            "receiver_phone": log.get("receiver_phone"),
+            "call_type": log.get("call_type"),
+            "status": log.get("status"),
+            "duration_seconds": log.get("duration_seconds", 0),
+            "caller_ip": log.get("caller_ip"),
+            "receiver_ip": log.get("receiver_ip"),
+            "caller_location": log.get("caller_location"),
+            "receiver_location": log.get("receiver_location"),
+            "timestamp": log.get("timestamp")
+        })
+    
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "calls": call_logs
+    }
+
+@api_router.get("/admin/metadata/locations")
+async def admin_get_location_metadata(
+    admin_phone: str,
+    user_phone: str = None,
+    page: int = 1,
+    limit: int = 100,
+    start_date: str = None,
+    end_date: str = None
+):
+    """
+    Konum metadata kayıtları - Kullanıcı neredeydi, hangi saatte
+    """
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {"type": "location"}
+    
+    if user_phone:
+        query["user_phone"] = {"$regex": user_phone}
+    
+    if start_date:
+        query["timestamp"] = {"$gte": datetime.fromisoformat(start_date)}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = datetime.fromisoformat(end_date)
+        else:
+            query["timestamp"] = {"$lte": datetime.fromisoformat(end_date)}
+    
+    skip = (page - 1) * limit
+    total = await db.metadata_logs.count_documents(query)
+    logs = await db.metadata_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    
+    location_logs = []
+    for log in logs:
+        location_logs.append({
+            "id": str(log["_id"]),
+            "user_phone": log.get("user_phone"),
+            "latitude": log.get("latitude"),
+            "longitude": log.get("longitude"),
+            "trip_id": log.get("trip_id"),
+            "action": log.get("action"),
+            "timestamp": log.get("timestamp")
+        })
+    
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "locations": location_logs
+    }
+
+@api_router.get("/admin/metadata/trips")
+async def admin_get_trip_metadata(
+    admin_phone: str,
+    user_phone: str = None,
+    page: int = 1,
+    limit: int = 100,
+    start_date: str = None,
+    end_date: str = None
+):
+    """
+    Yolculuk metadata kayıtları - Tüm yolculuk detayları
+    """
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {"type": "trip"}
+    
+    if user_phone:
+        query["$or"] = [
+            {"passenger_phone": {"$regex": user_phone}},
+            {"driver_phone": {"$regex": user_phone}}
+        ]
+    
+    if start_date:
+        query["timestamp"] = {"$gte": datetime.fromisoformat(start_date)}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = datetime.fromisoformat(end_date)
+        else:
+            query["timestamp"] = {"$lte": datetime.fromisoformat(end_date)}
+    
+    skip = (page - 1) * limit
+    total = await db.metadata_logs.count_documents(query)
+    logs = await db.metadata_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    
+    trip_logs = []
+    for log in logs:
+        trip_logs.append({
+            "id": str(log["_id"]),
+            "passenger_phone": log.get("passenger_phone"),
+            "driver_phone": log.get("driver_phone"),
+            "pickup_location": log.get("pickup_location"),
+            "dropoff_location": log.get("dropoff_location"),
+            "status": log.get("status"),
+            "price": log.get("price"),
+            "distance_km": log.get("distance_km"),
+            "duration_minutes": log.get("duration_minutes"),
+            "timestamp": log.get("timestamp")
+        })
+    
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "trips": trip_logs
+    }
+
+@api_router.get("/admin/metadata/auth")
+async def admin_get_auth_metadata(
+    admin_phone: str,
+    user_phone: str = None,
+    page: int = 1,
+    limit: int = 100,
+    start_date: str = None,
+    end_date: str = None
+):
+    """
+    Kimlik doğrulama metadata kayıtları - Kim ne zaman hangi cihazdan giriş yaptı
+    """
+    db = db_instance.db
+    
+    # Admin kontrolü
+    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    if not is_admin:
+        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        if not admin:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    query = {"type": "auth"}
+    
+    if user_phone:
+        query["phone"] = {"$regex": user_phone}
+    
+    if start_date:
+        query["timestamp"] = {"$gte": datetime.fromisoformat(start_date)}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = datetime.fromisoformat(end_date)
+        else:
+            query["timestamp"] = {"$lte": datetime.fromisoformat(end_date)}
+    
+    skip = (page - 1) * limit
+    total = await db.metadata_logs.count_documents(query)
+    logs = await db.metadata_logs.find(query).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    
+    auth_logs = []
+    for log in logs:
+        auth_logs.append({
+            "id": str(log["_id"]),
+            "phone": log.get("phone"),
+            "device_id": log.get("device_id"),
+            "ip_address": log.get("ip_address"),
+            "action": log.get("action"),
+            "success": log.get("success"),
+            "timestamp": log.get("timestamp")
+        })
+    
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "auth_logs": auth_logs
+    }
+
+@api_router.get("/admin/metadata/export")
+async def admin_export_metadata(
+    admin_phone: str,
+    log_type: str = "all",  # 'call', 'location', 'trip', 'auth', 'all'
+    user_phone: str = None,
+    start_date: str = None,
+    end_date: str = None
+):
+    """
+    Metadata'yı dışa aktar (JSON formatında)
+    Devlet yetkilileri için tüm logları indir
+    """
+    db = db_instance.db
+    
+    # Sadece ana admin export yapabilir
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin export yapabilir")
+    
+    query = {}
+    
+    if log_type != "all":
+        query["type"] = log_type
+    
+    if user_phone:
+        query["$or"] = [
+            {"phone": {"$regex": user_phone}},
+            {"caller_phone": {"$regex": user_phone}},
+            {"receiver_phone": {"$regex": user_phone}},
+            {"user_phone": {"$regex": user_phone}},
+            {"passenger_phone": {"$regex": user_phone}},
+            {"driver_phone": {"$regex": user_phone}}
+        ]
+    
+    if start_date:
+        query["timestamp"] = {"$gte": datetime.fromisoformat(start_date)}
+    if end_date:
+        if "timestamp" in query:
+            query["timestamp"]["$lte"] = datetime.fromisoformat(end_date)
+        else:
+            query["timestamp"] = {"$lte": datetime.fromisoformat(end_date)}
+    
+    logs = await db.metadata_logs.find(query).sort("timestamp", -1).to_list(10000)
+    
+    export_data = []
+    for log in logs:
+        log["_id"] = str(log["_id"])
+        if log.get("timestamp"):
+            log["timestamp"] = log["timestamp"].isoformat()
+        export_data.append(log)
+    
+    return {
+        "success": True,
+        "total_records": len(export_data),
+        "export_date": datetime.utcnow().isoformat(),
+        "filter": {
+            "log_type": log_type,
+            "user_phone": user_phone,
+            "start_date": start_date,
+            "end_date": end_date
+        },
+        "data": export_data
+    }
+
+
 # ==================== YASAL SAYFALAR ====================
 @api_router.get("/legal/privacy")
 async def get_privacy_policy():
