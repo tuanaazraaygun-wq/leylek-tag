@@ -164,47 +164,58 @@ async def update_location(user_id: str, latitude: float, longitude: float):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+class CheckUserRequest(BaseModel):
+    phone: str
+    device_id: str = None
+
 @api_router.post("/auth/check-user")
-async def check_user(request: SendOTPRequest):
+async def check_user(request: CheckUserRequest):
     """
     Kullanıcı kayıtlı mı kontrol et
-    Kayıtlıysa: OTP gönder ve giriş akışına yönlendir
-    Kayıtlı değilse: Kayıt ol ekranına yönlendir
+    Cihaz doğrulanmış mı kontrol et
     """
     try:
         db = db_instance.db
         phone = request.phone.replace(" ", "").replace("-", "")
+        device_id = request.device_id
         
         # Kullanıcıyı bul
         user = await db.users.find_one({"phone": phone})
         
         if user:
-            # Kullanıcı kayıtlı - OTP gönder (NetGSM sonra)
-            # TODO: NetGSM entegrasyonu
-            logger.info(f"📱 GİRİŞ OTP gönderildi: {phone} -> 123456 (MOCK)")
+            # Kullanıcı kayıtlı
+            has_pin = user.get("pin_hash") is not None
+            
+            # Cihaz doğrulanmış mı kontrol et
+            verified_devices = user.get("verified_devices", [])
+            device_verified = device_id in verified_devices if device_id else False
+            
+            logger.info(f"📱 Kullanıcı bulundu: {phone}, PIN: {has_pin}, Cihaz doğrulanmış: {device_verified}")
             
             # Giriş denemesi logla
             await db.login_attempts.insert_one({
                 "phone": phone,
                 "user_id": str(user["_id"]),
-                "device_id": getattr(request, 'device_id', None),
-                "attempt_type": "login",
+                "device_id": device_id,
+                "device_verified": device_verified,
+                "attempt_type": "check",
                 "timestamp": datetime.utcnow(),
-                "ip_address": None  # Request'ten alınabilir
             })
             
             return {
                 "success": True,
                 "user_exists": True,
-                "has_pin": user.get("pin_hash") is not None,
-                "message": "OTP gönderildi (Test: 123456)",
+                "has_pin": has_pin,
+                "device_verified": device_verified,
+                "message": "Kullanıcı bulundu",
                 "user_name": user.get("name", "")
             }
         else:
-            # Kullanıcı kayıtlı değil - Kayıt ol ekranına yönlendir
+            # Kullanıcı kayıtlı değil
             return {
                 "success": True,
                 "user_exists": False,
+                "device_verified": False,
                 "message": "Kayıtlı kullanıcı bulunamadı. Lütfen kayıt olun."
             }
     except Exception as e:
