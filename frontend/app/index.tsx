@@ -492,25 +492,6 @@ export default function App() {
       Alert.alert('Hata', 'OTP doğrulanamadı');
     }
   };
-          
-          if (data.has_pin) {
-            // PIN var - PIN girişi
-            setScreen('enter-pin');
-          } else {
-            // PIN yok - PIN oluşturması lazım
-            setScreen('set-pin');
-          }
-        } else {
-          // Yeni kullanıcı - Kayıt ekranı
-          setScreen('register');
-        }
-      } else {
-        Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
-      }
-    } catch (error) {
-      Alert.alert('Hata', 'OTP doğrulanamadı');
-    }
-  };
 
   const loadCities = async () => {
     try {
