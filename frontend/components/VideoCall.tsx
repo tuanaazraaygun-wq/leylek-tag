@@ -569,33 +569,29 @@ export default function VideoCall({
                 </View>
               )}
               
-              {/* Kendi videom - Küçük PiP (Sağ Üst) - HER ZAMAN GÖRÜN */}
-              <TouchableOpacity 
-                style={[styles.localVideoContainer, isLocalVideoLarge && styles.localVideoLarge]}
-                onPress={() => setIsLocalVideoLarge(!isLocalVideoLarge)}
-                activeOpacity={0.9}
-              >
-                {isVideoEnabled ? (
+              {/* Kendi videom - Küçük PiP (Sağ Üst) */}
+              <View style={[styles.localVideoContainer, isLocalVideoLarge && styles.localVideoLarge]}>
+                {isVideoEnabled && engineRef.current ? (
                   <RtcSurfaceView
                     style={styles.localVideo}
                     canvas={{ 
                       uid: 0,
-                      sourceType: VideoSourceType?.VideoSourceCameraPrimary || VideoSourceType?.VideoSourceCamera || 0,
-                      mirrorMode: 1, // Video aynala (selfie kamera için)
-                      renderMode: 1, // Hidden (fit)
+                      setupMode: 1, // VideoViewSetupMode.VideoViewSetupReplace
                     }}
                     zOrderMediaOverlay={true}
                     zOrderOnTop={true}
                   />
                 ) : (
                   <View style={styles.localVideoOff}>
-                    <Ionicons name="videocam-off" size={24} color="#FFF" />
-                    <Text style={styles.localVideoOffText}>
-                      {!isJoined ? 'Bağlanıyor...' : 'Kamera Kapalı'}
-                    </Text>
+                    <LinearGradient colors={['#3FA9F5', '#2563EB']} style={styles.localVideoPlaceholder}>
+                      <Ionicons name="person" size={32} color="#FFF" />
+                      <Text style={styles.localVideoOffText}>
+                        {!isJoined ? 'Bağlanıyor...' : 'Kamera'}
+                      </Text>
+                    </LinearGradient>
                   </View>
                 )}
-              </TouchableOpacity>
+              </View>
             </View>
           ) : (
             // Sesli arama görünümü
