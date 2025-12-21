@@ -747,6 +747,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+  localVideoPlaceholder: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
   audioCallContainer: {
     flex: 1,
     alignItems: 'center',
