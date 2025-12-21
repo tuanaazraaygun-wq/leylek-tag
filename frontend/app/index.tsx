@@ -4894,6 +4894,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 40,
   },
+  // TAM EKRAN STİLLER
+  contentFullScreen: {
+    flex: 1,
+    backgroundColor: '#F7F9FB',
+  },
+  emptyStateContainerFull: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  fullScreenTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  fullScreenBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(63, 169, 245, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenLogoutBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  welcomeNameBig: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  welcomeQuestion: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#3FA9F5',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
   welcomeTitle: {
     fontSize: 32,
     fontWeight: 'bold',
