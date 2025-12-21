@@ -1461,44 +1461,37 @@ function TikTokOfferCard({
         colors={['#0A1628', '#1E3A5F', '#0F2744']}
         style={styles.tikTokGradient}
       >
-        {/* Üst Kısım - Sayfa Göstergesi ve Geri Butonu */}
-        <Animated.View style={[styles.tikTokHeader, { opacity: fadeAnim }]}>
-          <TouchableOpacity style={styles.tikTokBackBtn}>
-            <Ionicons name="chevron-back" size={28} color="#FFF" />
+        {/* Üst Kısım - Sadece Geri Butonu ve Sayfa Göstergesi */}
+        <Animated.View style={[styles.tikTokHeaderClean, { opacity: fadeAnim }]}>
+          <TouchableOpacity style={styles.tikTokBackBtnClean} onPress={() => {}}>
+            <Ionicons name="close" size={28} color="#FFF" />
           </TouchableOpacity>
           
-          <View style={styles.tikTokPageIndicator}>
-            <Text style={styles.tikTokPageText}>{index + 1} / {total}</Text>
+          <View style={styles.tikTokPageIndicatorClean}>
+            <Text style={styles.tikTokPageTextClean}>{index + 1} / {total}</Text>
           </View>
-          
-          <View style={{ width: 40 }} />
         </Animated.View>
 
-        {/* Profil Kartı */}
-        <View style={styles.tikTokProfileCard}>
+        {/* Profil Kartı - Kompakt */}
+        <View style={styles.tikTokProfileCardClean}>
           <LinearGradient
             colors={['#3FA9F5', '#2563EB']}
-            style={styles.tikTokAvatarLarge}
+            style={styles.tikTokAvatarClean}
           >
-            <Text style={styles.tikTokAvatarTextLarge}>
+            <Text style={styles.tikTokAvatarTextClean}>
               {isPassenger ? offer.driver_name?.charAt(0) : offer.passenger_name?.charAt(0) || '?'}
             </Text>
           </LinearGradient>
           
-          <View style={styles.tikTokProfileInfo}>
-            <Text style={styles.tikTokNameLarge}>
+          <View style={styles.tikTokProfileInfoClean}>
+            <Text style={styles.tikTokNameClean}>
               {isPassenger ? offer.driver_name : offer.passenger_name}
             </Text>
-            <View style={styles.tikTokRating}>
-              <Ionicons name="star" size={18} color="#FFD700" />
-              <Text style={styles.tikTokRatingTextLarge}>
+            <View style={styles.tikTokRatingClean}>
+              <Ionicons name="star" size={16} color="#FFD700" />
+              <Text style={styles.tikTokRatingTextClean}>
                 {isPassenger ? (offer.driver_rating || 5.0).toFixed(1) : '5.0'}
               </Text>
-              {offer.is_premium && (
-                <View style={styles.tikTokPremiumBadge}>
-                  <Text style={styles.tikTokPremiumText}>⭐ VIP</Text>
-                </View>
-              )}
             </View>
           </View>
         </View>
@@ -1538,56 +1531,58 @@ function TikTokOfferCard({
           </>
         )}
 
-        {/* ŞOFÖR İÇİN: Büyük Mesafe/Süre Kartı */}
+        {/* ŞOFÖR İÇİN: Tam Ekran Mesafe Gösterimi */}
         {!isPassenger && (
-          <View style={styles.driverInfoCard}>
-            {/* Mesafe ve Süre - BÜYÜK */}
-            <View style={styles.driverDistanceBox}>
-              <View style={styles.driverDistanceItem}>
-                <Ionicons name="person" size={32} color="#3FA9F5" />
-                <Text style={styles.driverDistanceValue}>{distanceKm} km</Text>
-                <Text style={styles.driverDistanceLabel}>uzaklıkta</Text>
+          <View style={styles.driverFullScreen}>
+            {/* BÜYÜK MESAFE KARTLARI */}
+            <View style={styles.driverBigDistanceCards}>
+              {/* Yolcuyla Buluşma */}
+              <View style={styles.driverBigCard}>
+                <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.driverBigCardGradient}>
+                  <Ionicons name="walk" size={36} color="#FFF" />
+                  <Text style={styles.driverBigCardTitle}>Yolcuyla Buluşma</Text>
+                  <Text style={styles.driverBigCardValue}>{distanceKm} km</Text>
+                  <Text style={styles.driverBigCardSub}>~{arrivalTime} dakika</Text>
+                </LinearGradient>
               </View>
-              <View style={styles.driverDistanceDivider} />
-              <View style={styles.driverDistanceItem}>
-                <Ionicons name="time" size={32} color="#F59E0B" />
-                <Text style={styles.driverDistanceValue}>~{arrivalTime} dk</Text>
-                <Text style={styles.driverDistanceLabel}>varış süresi</Text>
+              
+              {/* Yolcunun Gideceği */}
+              <View style={styles.driverBigCard}>
+                <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.driverBigCardGradient}>
+                  <Ionicons name="flag" size={36} color="#FFF" />
+                  <Text style={styles.driverBigCardTitle}>Yolcunun Gideceği</Text>
+                  <Text style={styles.driverBigCardValue}>{tripDistanceKm} km</Text>
+                  <Text style={styles.driverBigCardSub}>~{tripTime} dakika</Text>
+                </LinearGradient>
               </View>
             </View>
             
-            {/* Nereden - Nereye */}
-            <View style={styles.driverRouteCard}>
-              <View style={styles.driverRouteRow}>
-                <View style={[styles.driverRouteDot, { backgroundColor: '#22C55E' }]} />
-                <Ionicons name="person" size={20} color="#22C55E" />
-                <View style={styles.driverRouteInfo}>
-                  <Text style={styles.driverRouteLabel}>Nereden (Yolcu burada)</Text>
-                  <Text style={styles.driverRouteText} numberOfLines={2}>
-                    {offer.pickup_location || 'Konum belirtilmedi'}
+            {/* Adres Bilgileri */}
+            <View style={styles.driverAddressCard}>
+              <View style={styles.driverAddressRow}>
+                <View style={[styles.driverAddressDot, { backgroundColor: '#22C55E' }]} />
+                <Ionicons name="location" size={18} color="#22C55E" />
+                <View style={styles.driverAddressInfo}>
+                  <Text style={styles.driverAddressLabel}>YOLCU BURADA</Text>
+                  <Text style={styles.driverAddressText} numberOfLines={2}>
+                    {offer.pickup_location || 'Mevcut Konumu'}
                   </Text>
                 </View>
               </View>
               
-              <View style={styles.driverRouteLine} />
+              <View style={styles.driverAddressLine}>
+                <View style={styles.driverAddressLineDashed} />
+              </View>
               
-              <View style={styles.driverRouteRow}>
-                <View style={[styles.driverRouteDot, { backgroundColor: '#EF4444' }]} />
-                <Ionicons name="flag" size={20} color="#EF4444" />
-                <View style={styles.driverRouteInfo}>
-                  <Text style={styles.driverRouteLabelBig}>Nereye (Hedef)</Text>
-                  <Text style={styles.driverRouteTextBig} numberOfLines={2}>
+              <View style={styles.driverAddressRow}>
+                <View style={[styles.driverAddressDot, { backgroundColor: '#F59E0B' }]} />
+                <Ionicons name="flag" size={18} color="#F59E0B" />
+                <View style={styles.driverAddressInfo}>
+                  <Text style={styles.driverAddressLabel}>HEDEF ADRES</Text>
+                  <Text style={styles.driverAddressTextBig} numberOfLines={2}>
                     {offer.dropoff_location || 'Hedef belirtilmedi'}
                   </Text>
                 </View>
-              </View>
-              
-              {/* Yolculuk Bilgisi */}
-              <View style={styles.driverTripInfo}>
-                <Ionicons name="car" size={22} color="#3FA9F5" />
-                <Text style={styles.driverTripText}>
-                  Yolculuk: {tripDistanceKm} km • ~{tripTime} dk
-                </Text>
               </View>
             </View>
           </View>
