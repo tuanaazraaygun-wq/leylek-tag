@@ -255,9 +255,36 @@ export default function App() {
   const [showTerms, setShowTerms] = useState(false);
   const [showKvkk, setShowKvkk] = useState(false);
 
+  // Device ID oluştur veya al
+  const getOrCreateDeviceId = async (): Promise<string> => {
+    try {
+      let storedDeviceId = await AsyncStorage.getItem('device_id');
+      if (!storedDeviceId) {
+        // Yeni cihaz ID oluştur
+        storedDeviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        await AsyncStorage.setItem('device_id', storedDeviceId);
+        console.log('🆔 Yeni cihaz ID oluşturuldu:', storedDeviceId);
+      } else {
+        console.log('🆔 Mevcut cihaz ID:', storedDeviceId);
+      }
+      return storedDeviceId;
+    } catch (error) {
+      console.error('Device ID hatası:', error);
+      return 'device_' + Date.now();
+    }
+  };
+
   useEffect(() => {
-    loadUser();
+    initializeApp();
   }, []);
+
+  const initializeApp = async () => {
+    // Önce cihaz ID'yi al
+    const dId = await getOrCreateDeviceId();
+    setDeviceId(dId);
+    // Sonra kullanıcıyı yükle
+    await loadUser();
+  };
 
   useEffect(() => {
     if (user && screen === 'dashboard') {
