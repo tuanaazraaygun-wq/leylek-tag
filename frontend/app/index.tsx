@@ -218,6 +218,8 @@ export default function App() {
   const [showPin, setShowPin] = useState(false);
   const [userExists, setUserExists] = useState(false);
   const [hasPin, setHasPin] = useState(false);
+  const [deviceId, setDeviceId] = useState<string>(''); // Cihaz ID
+  const [isDeviceVerified, setIsDeviceVerified] = useState(false); // Cihaz doğrulanmış mı?
   
   // Role Selection (Dinamik - Her girişte seçilir)
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
