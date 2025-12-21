@@ -1010,7 +1010,9 @@ export default function App() {
       }
 
       try {
-        const response = await fetch(`${API_URL}/auth/verify-pin?phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}`, {
+        const currentDeviceId = deviceId || await getOrCreateDeviceId();
+        
+        const response = await fetch(`${API_URL}/auth/verify-pin?phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}&device_id=${encodeURIComponent(currentDeviceId)}`, {
           method: 'POST',
         });
         const data = await response.json();
@@ -1018,6 +1020,14 @@ export default function App() {
         if (data.success) {
           setUser(data.user);
           saveUser(data.user);
+          
+          // Admin kontrolü
+          const cleanPhone = phone.replace(/\D/g, '');
+          if (cleanPhone === '5326497412' || cleanPhone === '05326497412') {
+            setIsAdmin(true);
+            setShowAdminPanel(true);
+          }
+          
           setScreen('role-select');
         } else {
           Alert.alert('Hata', data.detail || 'Yanlış şifre');
