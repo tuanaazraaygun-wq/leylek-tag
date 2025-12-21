@@ -247,7 +247,7 @@ class RegisterRequest(BaseModel):
 @api_router.post("/auth/register")
 async def register_user(request: RegisterRequest):
     """
-    Yeni kullanıcı kaydı
+    Yeni kullanıcı kaydı - İlk cihaz otomatik doğrulanır
     """
     try:
         db = db_instance.db
@@ -267,7 +267,7 @@ async def register_user(request: RegisterRequest):
         import hashlib
         pin_hash = hashlib.sha256(pin.encode()).hexdigest()
         
-        # Kullanıcı oluştur
+        # Kullanıcı oluştur - İlk cihaz otomatik doğrulanmış olarak kaydet
         user_data = {
             "phone": phone,
             "name": f"{first_name} {last_name}",
@@ -276,6 +276,7 @@ async def register_user(request: RegisterRequest):
             "city": city,
             "pin_hash": pin_hash,
             "device_ids": [device_id] if device_id else [],
+            "verified_devices": [device_id] if device_id else [],  # İlk cihaz doğrulanmış
             "created_at": datetime.utcnow(),
             "last_login": datetime.utcnow(),
             "is_active": True,
@@ -287,7 +288,7 @@ async def register_user(request: RegisterRequest):
         user_data.pop("_id", None)
         user_data.pop("pin_hash", None)
         
-        logger.info(f"✅ Yeni kullanıcı kaydı: {phone} - {first_name} {last_name}")
+        logger.info(f"✅ Yeni kullanıcı kaydı: {phone} - {first_name} {last_name} (Cihaz: {device_id})")
         
         return {
             "success": True,
