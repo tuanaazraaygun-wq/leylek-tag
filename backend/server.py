@@ -1167,8 +1167,10 @@ async def get_driver_requests(user_id: str):
                 **{k: v for k, v in tag.items() if k != "_id"}
             ).dict(),
             "has_offered": driver_offer is not None,
-            "distance_to_passenger_km": round(distance_to_passenger, 2),  # Sürücü -> Yolcu
-            "trip_distance_km": round(trip_distance, 2)  # Yolculuğun kendisi
+            "distance_to_passenger_km": round(distance_to_passenger, 1),  # Sürücü -> Yolcu
+            "time_to_passenger_min": time_to_passenger,  # Google API'den gelen süre
+            "trip_distance_km": round(trip_distance, 1),  # Yolculuğun kendisi
+            "trip_duration_min": trip_duration  # Google API'den gelen yolculuk süresi
         })
     
     # EN YAKINA GÖRE SIRALA (mesafe artan sıra)
