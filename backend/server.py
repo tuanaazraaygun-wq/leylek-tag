@@ -2445,9 +2445,18 @@ async def admin_dashboard(admin_phone: str):
     
     # İstatistikler
     total_users = await db.users.count_documents({})
+    total_drivers = await db.users.count_documents({"role": "driver"})
+    total_passengers = await db.users.count_documents({"role": "passenger"})
     active_trips = await db.tags.count_documents({"status": {"$in": ["matched", "in_progress"]}})
     pending_requests = await db.tags.count_documents({"status": {"$in": ["pending", "offers_received"]}})
     total_trips = await db.tags.count_documents({"status": "completed"})
+    
+    # Takılı eşleşmeler (24 saatten eski)
+    cutoff_time = datetime.utcnow() - timedelta(hours=24)
+    stuck_tags = await db.tags.count_documents({
+        "status": {"$in": ["matched", "in_progress"]},
+        "updated_at": {"$lt": cutoff_time}
+    })
     
     # Bugünkü istatistikler
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2465,7 +2474,7 @@ async def admin_dashboard(admin_phone: str):
     month_trips = await db.tags.count_documents({"created_at": {"$gte": month_ago}})
     
     # Toplam arama
-    total_calls = await db.call_logs.count_documents({})
+    total_calls = await db.metadata_calls.count_documents({})
     
     # Şikayetler
     pending_reports = await db.reports.count_documents({"status": "pending"})
@@ -2474,10 +2483,13 @@ async def admin_dashboard(admin_phone: str):
         "success": True,
         "stats": {
             "total_users": total_users,
+            "total_drivers": total_drivers,
+            "total_passengers": total_passengers,
             "active_trips": active_trips,
             "pending_requests": pending_requests,
             "total_completed_trips": total_trips,
             "total_calls": total_calls,
+            "stuck_tags": stuck_tags,
             "pending_reports": pending_reports,
             "today": {
                 "users": today_users,
