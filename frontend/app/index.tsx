@@ -2266,7 +2266,7 @@ function PassengerDashboard({
           text: 'Aramayı Sonlandır',
           onPress: () => {
             setCalling(false);
-            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+            
           }
         }
       ]
@@ -3264,7 +3264,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           text: 'Aramayı Sonlandır',
           onPress: () => {
             setCalling(false);
-            Alert.alert('📞 Arama Sonlandırıldı', 'Arama başarıyla sonlandırıldı.');
+            
           }
         }
       ]
