@@ -2,27 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
   TextInput, Alert, Modal, FlatList, Dimensions, ActivityIndicator,
-  RefreshControl
+  RefreshControl, Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
 
-// Mavi tema renkleri
 const COLORS = {
   primary: '#3FA9F5',
   primaryDark: '#1E3A5F',
   secondary: '#2563EB',
   background: '#0F172A',
   card: '#1E293B',
+  cardLight: '#334155',
   text: '#FFFFFF',
   textSecondary: 'rgba(255,255,255,0.7)',
   success: '#10B981',
   danger: '#EF4444',
   warning: '#F59E0B',
+  info: '#3B82F6',
 };
 
 interface AdminPanelProps {
@@ -30,33 +31,40 @@ interface AdminPanelProps {
   onClose: () => void;
 }
 
+type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'auth' | 'notifications' | 'settings';
+
 export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'calls' | 'reports' | 'notifications' | 'admins'>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Dashboard stats
+  // Dashboard
   const [stats, setStats] = useState<any>(null);
   
   // Users
   const [users, setUsers] = useState<any[]>([]);
-  const [userPage, setUserPage] = useState(1);
-  const [userTotal, setUserTotal] = useState(0);
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
   
-  // Calls
+  // Trips (Metadata)
+  const [trips, setTrips] = useState<any[]>([]);
+  
+  // Calls (Metadata)
   const [calls, setCalls] = useState<any[]>([]);
   
-  // Reports
-  const [reports, setReports] = useState<any[]>([]);
+  // Auth Logs (Metadata)
+  const [authLogs, setAuthLogs] = useState<any[]>([]);
   
   // Notifications
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
+  const [notifTarget, setNotifTarget] = useState<'all' | 'drivers' | 'passengers' | 'user'>('all');
+  const [notifUserId, setNotifUserId] = useState('');
   
-  // Admins
-  const [admins, setAdmins] = useState<any[]>([]);
-  const [newAdminPhone, setNewAdminPhone] = useState('');
-  const [newAdminName, setNewAdminName] = useState('');
+  // Settings
+  const [settings, setSettings] = useState<any>({});
+  const [driverRadius, setDriverRadius] = useState('50');
+  const [maxCallDuration, setMaxCallDuration] = useState('30');
   
   useEffect(() => {
     loadData();
@@ -66,21 +74,12 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     setLoading(true);
     try {
       switch(activeTab) {
-        case 'dashboard':
-          await loadDashboard();
-          break;
-        case 'users':
-          await loadUsers();
-          break;
-        case 'calls':
-          await loadCalls();
-          break;
-        case 'reports':
-          await loadReports();
-          break;
-        case 'admins':
-          await loadAdmins();
-          break;
+        case 'dashboard': await loadDashboard(); break;
+        case 'users': await loadUsers(); break;
+        case 'trips': await loadTrips(); break;
+        case 'calls': await loadCalls(); break;
+        case 'auth': await loadAuthLogs(); break;
+        case 'settings': await loadSettings(); break;
       }
     } catch (e) {
       console.error('Veri yükleme hatası:', e);
@@ -90,65 +89,125 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   };
   
   const loadDashboard = async () => {
-    const res = await fetch(`${API_URL}/admin/dashboard?admin_phone=${adminPhone}`);
-    const data = await res.json();
-    if (data.success) setStats(data.stats);
+    try {
+      const res = await fetch(`${API_URL}/admin/dashboard?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) setStats(data.stats);
+    } catch (e) { console.error(e); }
   };
   
   const loadUsers = async () => {
-    const res = await fetch(`${API_URL}/admin/users?admin_phone=${adminPhone}&page=${userPage}`);
-    const data = await res.json();
-    if (data.success) {
-      setUsers(data.users);
-      setUserTotal(data.total);
-    }
+    try {
+      const res = await fetch(`${API_URL}/admin/users?admin_phone=${adminPhone}&limit=100`);
+      const data = await res.json();
+      if (data.success) setUsers(data.users || []);
+    } catch (e) { console.error(e); }
+  };
+  
+  const loadTrips = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/metadata/trips?admin_phone=${adminPhone}&limit=50`);
+      const data = await res.json();
+      if (data.success) setTrips(data.trips || []);
+    } catch (e) { console.error(e); }
   };
   
   const loadCalls = async () => {
-    const res = await fetch(`${API_URL}/admin/calls?admin_phone=${adminPhone}`);
-    const data = await res.json();
-    if (data.success) setCalls(data.calls);
+    try {
+      const res = await fetch(`${API_URL}/admin/metadata/calls?admin_phone=${adminPhone}&limit=50`);
+      const data = await res.json();
+      if (data.success) setCalls(data.calls || []);
+    } catch (e) { console.error(e); }
   };
   
-  const loadReports = async () => {
-    const res = await fetch(`${API_URL}/admin/reports?admin_phone=${adminPhone}`);
-    const data = await res.json();
-    if (data.success) setReports(data.reports);
+  const loadAuthLogs = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/metadata/auth?admin_phone=${adminPhone}&limit=50`);
+      const data = await res.json();
+      if (data.success) setAuthLogs(data.logs || []);
+    } catch (e) { console.error(e); }
   };
   
-  const loadAdmins = async () => {
-    const res = await fetch(`${API_URL}/admin/admins?admin_phone=${adminPhone}`);
-    const data = await res.json();
-    if (data.success) setAdmins(data.admins);
+  const loadSettings = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/settings?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) {
+        setSettings(data.settings || {});
+        setDriverRadius(String(data.settings?.driver_radius_km || 50));
+        setMaxCallDuration(String(data.settings?.max_call_duration_min || 30));
+      }
+    } catch (e) { console.error(e); }
   };
   
-  const toggleUserStatus = async (userId: string) => {
-    const res = await fetch(`${API_URL}/admin/user/toggle-status?admin_phone=${adminPhone}&user_id=${userId}`, {
-      method: 'POST'
-    });
-    const data = await res.json();
-    if (data.success) {
-      Alert.alert('Başarılı', `Kullanıcı ${data.is_active ? 'aktif' : 'pasif'} yapıldı`);
-      loadUsers();
-    }
+  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/user/toggle-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_phone: adminPhone, user_id: userId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadUsers();
+      }
+    } catch (e) { console.error(e); }
   };
   
-  const togglePremium = async (userId: string) => {
-    const res = await fetch(`${API_URL}/admin/user/toggle-premium?admin_phone=${adminPhone}&user_id=${userId}`, {
-      method: 'POST'
-    });
-    const data = await res.json();
-    if (data.success) {
-      Alert.alert('Başarılı', `Premium ${data.is_premium ? 'açıldı' : 'kapandı'}`);
-      loadUsers();
-    }
+  const deleteUser = async (userId: string) => {
+    Alert.alert(
+      'Kullanıcı Sil',
+      'Bu kullanıcıyı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { 
+          text: 'Sil', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/admin/user/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ admin_phone: adminPhone, user_id: userId })
+              });
+              const data = await res.json();
+              if (data.success) {
+                loadUsers();
+              }
+            } catch (e) { console.error(e); }
+          }
+        }
+      ]
+    );
   };
   
-  const updateReportStatus = async (reportId: string, status: string) => {
-    const res = await fetch(`${API_URL}/admin/report/update-status?admin_phone=${adminPhone}&report_id=${reportId}&status=${status}`, {
-      method: 'POST'
-    });
-    if ((await res.json()).success) loadReports();
+  const cleanupStuckTags = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/cleanup-stuck-tags?admin_phone=${adminPhone}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      Alert.alert('Temizlendi', `${data.cleaned_count || 0} takılı eşleşme temizlendi`);
+      loadDashboard();
+    } catch (e) { console.error(e); }
+  };
+  
+  const saveSettings = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_phone: adminPhone,
+          driver_radius_km: parseInt(driverRadius),
+          max_call_duration_min: parseInt(maxCallDuration)
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Kaydedildi', 'Ayarlar başarıyla güncellendi');
+      }
+    } catch (e) { console.error(e); }
   };
   
   const sendNotification = async () => {
@@ -157,388 +216,390 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       return;
     }
     
-    const res = await fetch(`${API_URL}/admin/send-notification?admin_phone=${adminPhone}&title=${encodeURIComponent(notifTitle)}&message=${encodeURIComponent(notifMessage)}`, {
-      method: 'POST'
-    });
-    const data = await res.json();
-    if (data.success) {
-      Alert.alert('Başarılı', 'Bildirim gönderildi');
-      setNotifTitle('');
-      setNotifMessage('');
-    }
-  };
-  
-  const addAdmin = async () => {
-    if (!newAdminPhone || !newAdminName) {
-      Alert.alert('Hata', 'Telefon ve ad gerekli');
-      return;
-    }
-    
-    const res = await fetch(`${API_URL}/admin/add-admin?admin_phone=${adminPhone}&new_admin_phone=${newAdminPhone}&new_admin_name=${encodeURIComponent(newAdminName)}`, {
-      method: 'POST'
-    });
-    const data = await res.json();
-    if (data.success) {
-      Alert.alert('Başarılı', data.message);
-      setNewAdminPhone('');
-      setNewAdminName('');
-      loadAdmins();
-    } else {
-      Alert.alert('Hata', data.detail);
+    try {
+      const res = await fetch(`${API_URL}/admin/send-notification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_phone: adminPhone,
+          title: notifTitle,
+          message: notifMessage,
+          target: notifTarget,
+          user_id: notifTarget === 'user' ? notifUserId : null
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Gönderildi', `${data.sent_count || 0} kişiye bildirim gönderildi`);
+        setNotifTitle('');
+        setNotifMessage('');
+      }
+    } catch (e) { 
+      Alert.alert('Hata', 'Bildirim gönderilemedi');
     }
   };
   
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleString('tr-TR');
+    const d = new Date(dateStr);
+    return d.toLocaleString('tr-TR');
   };
   
-  // Dashboard Tab
+  const renderTab = (tab: TabType, icon: string, label: string) => (
+    <TouchableOpacity
+      style={[styles.tab, activeTab === tab && styles.tabActive]}
+      onPress={() => setActiveTab(tab)}
+    >
+      <Ionicons name={icon as any} size={20} color={activeTab === tab ? COLORS.primary : COLORS.textSecondary} />
+      <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+  
+  // ========== DASHBOARD ==========
   const renderDashboard = () => (
-    <ScrollView style={styles.tabContent}>
-      {stats ? (
-        <>
-          {/* Özet Kartları */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <LinearGradient colors={[COLORS.primary, COLORS.secondary]} style={styles.statGradient}>
-                <Ionicons name="people" size={32} color="#FFF" />
-                <Text style={styles.statValue}>{stats.total_users}</Text>
-                <Text style={styles.statLabel}>Toplam Kullanıcı</Text>
-              </LinearGradient>
-            </View>
-            
-            <View style={styles.statCard}>
-              <LinearGradient colors={[COLORS.success, '#059669']} style={styles.statGradient}>
-                <Ionicons name="car" size={32} color="#FFF" />
-                <Text style={styles.statValue}>{stats.active_trips}</Text>
-                <Text style={styles.statLabel}>Aktif Yolculuk</Text>
-              </LinearGradient>
-            </View>
-            
-            <View style={styles.statCard}>
-              <LinearGradient colors={[COLORS.warning, '#D97706']} style={styles.statGradient}>
-                <Ionicons name="time" size={32} color="#FFF" />
-                <Text style={styles.statValue}>{stats.pending_requests}</Text>
-                <Text style={styles.statLabel}>Bekleyen Talep</Text>
-              </LinearGradient>
-            </View>
-            
-            <View style={styles.statCard}>
-              <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.statGradient}>
-                <Ionicons name="call" size={32} color="#FFF" />
-                <Text style={styles.statValue}>{stats.total_calls}</Text>
-                <Text style={styles.statLabel}>Toplam Arama</Text>
-              </LinearGradient>
-            </View>
-          </View>
-          
-          {/* Dönemsel İstatistikler */}
-          <View style={styles.periodStats}>
-            <Text style={styles.sectionTitle}>📊 Dönemsel İstatistikler</Text>
-            
-            <View style={styles.periodCard}>
-              <Text style={styles.periodLabel}>Bugün</Text>
-              <View style={styles.periodRow}>
-                <Text style={styles.periodValue}>👥 {stats.today.users} Yeni Kullanıcı</Text>
-                <Text style={styles.periodValue}>🚗 {stats.today.trips} Yolculuk</Text>
-              </View>
-            </View>
-            
-            <View style={styles.periodCard}>
-              <Text style={styles.periodLabel}>Bu Hafta</Text>
-              <View style={styles.periodRow}>
-                <Text style={styles.periodValue}>👥 {stats.this_week.users} Kullanıcı</Text>
-                <Text style={styles.periodValue}>🚗 {stats.this_week.trips} Yolculuk</Text>
-              </View>
-            </View>
-            
-            <View style={styles.periodCard}>
-              <Text style={styles.periodLabel}>Bu Ay</Text>
-              <View style={styles.periodRow}>
-                <Text style={styles.periodValue}>👥 {stats.this_month.users} Kullanıcı</Text>
-                <Text style={styles.periodValue}>🚗 {stats.this_month.trips} Yolculuk</Text>
-              </View>
-            </View>
-          </View>
-          
-          {/* Şikayetler */}
-          {stats.pending_reports > 0 && (
-            <TouchableOpacity style={styles.alertCard} onPress={() => setActiveTab('reports')}>
-              <Ionicons name="warning" size={24} color={COLORS.danger} />
-              <Text style={styles.alertText}>{stats.pending_reports} bekleyen şikayet var!</Text>
-              <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </>
-      ) : (
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      )}
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <Text style={styles.sectionTitle}>Genel Bakış</Text>
+      
+      <View style={styles.statsGrid}>
+        <View style={[styles.statCard, { backgroundColor: COLORS.info }]}>
+          <Ionicons name="people" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.total_users || 0}</Text>
+          <Text style={styles.statLabel}>Toplam Kullanıcı</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: COLORS.success }]}>
+          <Ionicons name="car" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.total_drivers || 0}</Text>
+          <Text style={styles.statLabel}>Şoför</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: COLORS.warning }]}>
+          <Ionicons name="person" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.total_passengers || 0}</Text>
+          <Text style={styles.statLabel}>Yolcu</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: COLORS.primary }]}>
+          <Ionicons name="navigate" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.active_trips || 0}</Text>
+          <Text style={styles.statLabel}>Aktif Yolculuk</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: '#8B5CF6' }]}>
+          <Ionicons name="call" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.total_calls || 0}</Text>
+          <Text style={styles.statLabel}>Toplam Arama</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: COLORS.danger }]}>
+          <Ionicons name="warning" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.stuck_tags || 0}</Text>
+          <Text style={styles.statLabel}>Takılı Eşleşme</Text>
+        </View>
+      </View>
+      
+      <TouchableOpacity style={styles.actionButton} onPress={cleanupStuckTags}>
+        <Ionicons name="trash" size={20} color="#FFF" />
+        <Text style={styles.actionButtonText}>Takılı Eşleşmeleri Temizle</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
   
-  // Users Tab
+  // ========== USERS ==========
   const renderUsers = () => (
-    <FlatList
-      data={users}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <View style={styles.userCard}>
-          <View style={styles.userHeader}>
-            <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>{item.name?.[0] || '?'}</Text>
-            </View>
+    <View style={styles.content}>
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Kullanıcı ara (isim veya telefon)..."
+        placeholderTextColor={COLORS.textSecondary}
+        value={userSearch}
+        onChangeText={setUserSearch}
+      />
+      
+      <FlatList
+        data={users.filter(u => 
+          u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+          u.phone?.includes(userSearch)
+        )}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.userCard}>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{item.name}</Text>
-              <Text style={styles.userPhone}>{item.phone}</Text>
-              <Text style={styles.userCity}>{item.city || 'Şehir yok'}</Text>
-            </View>
-            <View style={styles.userBadges}>
-              {item.is_premium && (
-                <View style={styles.premiumBadge}>
-                  <Text style={styles.badgeText}>⭐ VIP</Text>
+              <View style={styles.userAvatar}>
+                <Text style={styles.userAvatarText}>{item.name?.charAt(0) || '?'}</Text>
+              </View>
+              <View style={styles.userDetails}>
+                <Text style={styles.userName}>{item.name}</Text>
+                <Text style={styles.userPhone}>{item.phone}</Text>
+                <View style={styles.userMeta}>
+                  <Text style={styles.userMetaText}>
+                    {item.role === 'driver' ? '🚗 Şoför' : '👤 Yolcu'} • {item.city || 'Şehir yok'}
+                  </Text>
+                  <Text style={styles.userMetaText}>
+                    📱 {item.device_count || 0} cihaz • IP: {item.last_ip || '-'}
+                  </Text>
                 </View>
-              )}
-              {!item.is_active && (
-                <View style={styles.inactiveBadge}>
-                  <Text style={styles.badgeText}>PASİF</Text>
-                </View>
-              )}
+              </View>
             </View>
-          </View>
-          
-          <View style={styles.userStats}>
-            <Text style={styles.userStatItem}>⭐ {item.rating?.toFixed(1) || '5.0'}</Text>
-            <Text style={styles.userStatItem}>🚗 {item.total_trips || 0} yolculuk</Text>
-            <Text style={styles.userStatItem}>⚠️ {item.penalty_points || 0} ceza</Text>
-          </View>
-          
-          <View style={styles.userActions}>
-            <TouchableOpacity 
-              style={[styles.userActionBtn, !item.is_active && styles.userActionBtnActive]}
-              onPress={() => toggleUserStatus(item.id)}
-            >
-              <Ionicons name={item.is_active ? "ban" : "checkmark-circle"} size={18} color="#FFF" />
-              <Text style={styles.userActionText}>{item.is_active ? 'Engelle' : 'Aktif Et'}</Text>
-            </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={[styles.userActionBtn, styles.userActionBtnPremium]}
-              onPress={() => togglePremium(item.id)}
-            >
-              <Ionicons name="star" size={18} color="#FFF" />
-              <Text style={styles.userActionText}>{item.is_premium ? 'VIP Kaldır' : 'VIP Yap'}</Text>
-            </TouchableOpacity>
+            <View style={styles.userActions}>
+              <TouchableOpacity
+                style={[styles.userActionBtn, item.is_active ? styles.btnDanger : styles.btnSuccess]}
+                onPress={() => toggleUserStatus(item.id, item.is_active)}
+              >
+                <Ionicons name={item.is_active ? "ban" : "checkmark"} size={16} color="#FFF" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.userActionBtn, styles.btnDanger]}
+                onPress={() => deleteUser(item.id)}
+              >
+                <Ionicons name="trash" size={16} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        showsVerticalScrollIndicator={false}
+      />
+    </View>
+  );
+  
+  // ========== TRIPS (Metadata) ==========
+  const renderTrips = () => (
+    <FlatList
+      style={styles.content}
+      data={trips}
+      keyExtractor={(item, index) => item.id || index.toString()}
+      renderItem={({ item }) => (
+        <View style={styles.logCard}>
+          <View style={styles.logHeader}>
+            <Ionicons name="navigate" size={20} color={COLORS.primary} />
+            <Text style={styles.logTitle}>Yolculuk #{item.id?.slice(-6)}</Text>
+            <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+          </View>
+          <View style={styles.logBody}>
+            <Text style={styles.logText}>👤 Yolcu: {item.passenger_name} ({item.passenger_phone})</Text>
+            <Text style={styles.logText}>🚗 Şoför: {item.driver_name} ({item.driver_phone})</Text>
+            <Text style={styles.logText}>📍 Başlangıç: {item.pickup_address || '-'}</Text>
+            <Text style={styles.logText}>🎯 Hedef: {item.dropoff_address || '-'}</Text>
+            <Text style={styles.logText}>📏 Mesafe: {item.distance_km || 0} km • Süre: {item.duration_min || 0} dk</Text>
+            <Text style={styles.logText}>💰 Fiyat: ₺{item.price || 0}</Text>
+            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
           </View>
         </View>
       )}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadUsers(); }} />}
-      ListEmptyComponent={<Text style={styles.emptyText}>Kullanıcı bulunamadı</Text>}
+      showsVerticalScrollIndicator={false}
+      ListEmptyComponent={<Text style={styles.emptyText}>Henüz yolculuk kaydı yok</Text>}
     />
   );
   
-  // Calls Tab
+  // ========== CALLS (Metadata) ==========
   const renderCalls = () => (
     <FlatList
+      style={styles.content}
       data={calls}
-      keyExtractor={(item) => item.id}
+      keyExtractor={(item, index) => item.id || index.toString()}
       renderItem={({ item }) => (
-        <View style={styles.callCard}>
-          <View style={styles.callHeader}>
-            <Ionicons name={item.call_type === 'video' ? 'videocam' : 'call'} size={24} color={COLORS.primary} />
-            <View style={styles.callInfo}>
-              <Text style={styles.callNames}>{item.caller_name} → {item.receiver_name}</Text>
-              <Text style={styles.callDate}>{formatDate(item.timestamp)}</Text>
-            </View>
-            <View style={styles.callDuration}>
-              <Text style={styles.callDurationText}>
-                {Math.floor(item.duration_seconds / 60)}:{(item.duration_seconds % 60).toString().padStart(2, '0')}
-              </Text>
-            </View>
+        <View style={styles.logCard}>
+          <View style={styles.logHeader}>
+            <Ionicons name={item.call_type === 'video' ? 'videocam' : 'call'} size={20} color={COLORS.success} />
+            <Text style={styles.logTitle}>{item.call_type === 'video' ? 'Görüntülü' : 'Sesli'} Arama</Text>
+            <Text style={styles.logTime}>{formatDate(item.start_time)}</Text>
+          </View>
+          <View style={styles.logBody}>
+            <Text style={styles.logText}>📞 Arayan: {item.caller_name} ({item.caller_phone})</Text>
+            <Text style={styles.logText}>📱 Aranan: {item.receiver_name} ({item.receiver_phone})</Text>
+            <Text style={styles.logText}>⏱️ Süre: {item.duration_seconds || 0} saniye</Text>
+            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
+            <Text style={styles.logText}>🌐 Arayan IP: {item.caller_ip || '-'}</Text>
+            <Text style={styles.logText}>🌐 Aranan IP: {item.receiver_ip || '-'}</Text>
           </View>
         </View>
       )}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadCalls(); }} />}
-      ListEmptyComponent={<Text style={styles.emptyText}>Arama kaydı yok</Text>}
+      showsVerticalScrollIndicator={false}
+      ListEmptyComponent={<Text style={styles.emptyText}>Henüz arama kaydı yok</Text>}
     />
   );
   
-  // Reports Tab
-  const renderReports = () => (
+  // ========== AUTH LOGS (Metadata) ==========
+  const renderAuthLogs = () => (
     <FlatList
-      data={reports}
-      keyExtractor={(item) => item.id}
+      style={styles.content}
+      data={authLogs}
+      keyExtractor={(item, index) => item.id || index.toString()}
       renderItem={({ item }) => (
-        <View style={styles.reportCard}>
-          <View style={styles.reportHeader}>
-            <View style={[styles.reportStatus, { backgroundColor: item.status === 'pending' ? COLORS.warning : COLORS.success }]}>
-              <Text style={styles.reportStatusText}>{item.status === 'pending' ? 'Bekliyor' : item.status}</Text>
-            </View>
-            <Text style={styles.reportDate}>{formatDate(item.created_at)}</Text>
+        <View style={styles.logCard}>
+          <View style={styles.logHeader}>
+            <Ionicons 
+              name={item.action === 'login' ? 'log-in' : item.action === 'logout' ? 'log-out' : 'key'} 
+              size={20} 
+              color={item.success ? COLORS.success : COLORS.danger} 
+            />
+            <Text style={styles.logTitle}>{item.action?.toUpperCase()}</Text>
+            <Text style={styles.logTime}>{formatDate(item.timestamp)}</Text>
           </View>
-          
-          <Text style={styles.reportNames}>{item.reporter_name} ➜ {item.reported_name}</Text>
-          <Text style={styles.reportReason}>Sebep: {item.reason}</Text>
-          {item.description && <Text style={styles.reportDesc}>{item.description}</Text>}
-          
-          {item.status === 'pending' && (
-            <View style={styles.reportActions}>
-              <TouchableOpacity style={styles.reportActionBtn} onPress={() => updateReportStatus(item.id, 'reviewed')}>
-                <Text style={styles.reportActionText}>İncelendi</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.reportActionBtn, styles.reportActionBtnDanger]} onPress={() => updateReportStatus(item.id, 'dismissed')}>
-                <Text style={styles.reportActionText}>Reddet</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={styles.logBody}>
+            <Text style={styles.logText}>👤 Kullanıcı: {item.user_name} ({item.phone})</Text>
+            <Text style={styles.logText}>📱 Cihaz ID: {item.device_id?.slice(0, 20)}...</Text>
+            <Text style={styles.logText}>🌐 IP Adresi: {item.ip_address || '-'}</Text>
+            <Text style={styles.logText}>📊 Sonuç: {item.success ? '✅ Başarılı' : '❌ Başarısız'}</Text>
+            {item.failure_reason && <Text style={styles.logText}>⚠️ Sebep: {item.failure_reason}</Text>}
+          </View>
         </View>
       )}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadReports(); }} />}
-      ListEmptyComponent={<Text style={styles.emptyText}>Şikayet yok</Text>}
+      showsVerticalScrollIndicator={false}
+      ListEmptyComponent={<Text style={styles.emptyText}>Henüz auth kaydı yok</Text>}
     />
   );
   
-  // Notifications Tab
+  // ========== NOTIFICATIONS ==========
   const renderNotifications = () => (
-    <ScrollView style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>📢 Bildirim Gönder</Text>
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <Text style={styles.sectionTitle}>Bildirim Gönder</Text>
       
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Başlık</Text>
+      <Text style={styles.inputLabel}>Hedef Kitle</Text>
+      <View style={styles.targetButtons}>
+        {[
+          { key: 'all', label: 'Herkese', icon: 'people' },
+          { key: 'drivers', label: 'Şoförlere', icon: 'car' },
+          { key: 'passengers', label: 'Yolculara', icon: 'person' },
+          { key: 'user', label: 'Kişiye Özel', icon: 'person-circle' },
+        ].map((t) => (
+          <TouchableOpacity
+            key={t.key}
+            style={[styles.targetBtn, notifTarget === t.key && styles.targetBtnActive]}
+            onPress={() => setNotifTarget(t.key as any)}
+          >
+            <Ionicons name={t.icon as any} size={18} color={notifTarget === t.key ? '#FFF' : COLORS.textSecondary} />
+            <Text style={[styles.targetBtnText, notifTarget === t.key && styles.targetBtnTextActive]}>
+              {t.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      
+      {notifTarget === 'user' && (
         <TextInput
           style={styles.input}
-          placeholder="Bildirim başlığı"
+          placeholder="Kullanıcı ID veya Telefon"
           placeholderTextColor={COLORS.textSecondary}
-          value={notifTitle}
-          onChangeText={setNotifTitle}
+          value={notifUserId}
+          onChangeText={setNotifUserId}
         />
-      </View>
+      )}
       
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Mesaj</Text>
-        <TextInput
-          style={[styles.input, styles.inputMulti]}
-          placeholder="Bildirim mesajı"
-          placeholderTextColor={COLORS.textSecondary}
-          value={notifMessage}
-          onChangeText={setNotifMessage}
-          multiline
-          numberOfLines={4}
-        />
-      </View>
+      <Text style={styles.inputLabel}>Başlık</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Bildirim başlığı"
+        placeholderTextColor={COLORS.textSecondary}
+        value={notifTitle}
+        onChangeText={setNotifTitle}
+      />
+      
+      <Text style={styles.inputLabel}>Mesaj</Text>
+      <TextInput
+        style={[styles.input, styles.inputMultiline]}
+        placeholder="Bildirim mesajı"
+        placeholderTextColor={COLORS.textSecondary}
+        value={notifMessage}
+        onChangeText={setNotifMessage}
+        multiline
+        numberOfLines={4}
+      />
       
       <TouchableOpacity style={styles.sendButton} onPress={sendNotification}>
-        <LinearGradient colors={[COLORS.primary, COLORS.secondary]} style={styles.sendButtonGradient}>
-          <Ionicons name="send" size={20} color="#FFF" />
-          <Text style={styles.sendButtonText}>Herkese Gönder</Text>
-        </LinearGradient>
+        <Ionicons name="send" size={20} color="#FFF" />
+        <Text style={styles.sendButtonText}>Bildirim Gönder</Text>
       </TouchableOpacity>
     </ScrollView>
   );
   
-  // Admins Tab
-  const renderAdmins = () => (
-    <ScrollView style={styles.tabContent}>
-      <Text style={styles.sectionTitle}>👑 Admin Listesi</Text>
+  // ========== SETTINGS ==========
+  const renderSettings = () => (
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <Text style={styles.sectionTitle}>Uygulama Ayarları</Text>
       
-      {admins.map((admin, index) => (
-        <View key={index} style={styles.adminCard}>
-          <View style={styles.adminInfo}>
-            <Text style={styles.adminName}>{admin.name}</Text>
-            <Text style={styles.adminPhone}>{admin.phone}</Text>
-          </View>
-          {admin.is_main && (
-            <View style={styles.mainAdminBadge}>
-              <Text style={styles.badgeText}>ANA ADMİN</Text>
-            </View>
-          )}
+      <View style={styles.settingCard}>
+        <View style={styles.settingHeader}>
+          <Ionicons name="locate" size={24} color={COLORS.primary} />
+          <Text style={styles.settingTitle}>Şoför Görme Mesafesi</Text>
         </View>
-      ))}
-      
-      <Text style={[styles.sectionTitle, { marginTop: 30 }]}>➕ Yeni Admin Ekle</Text>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Telefon Numarası</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="5xxxxxxxxx"
-          placeholderTextColor={COLORS.textSecondary}
-          value={newAdminPhone}
-          onChangeText={setNewAdminPhone}
-          keyboardType="phone-pad"
-        />
+        <Text style={styles.settingDesc}>Şoförlerin kaç km uzaklıktaki yolcuları görebileceği</Text>
+        <View style={styles.settingInput}>
+          <TextInput
+            style={styles.settingTextInput}
+            value={driverRadius}
+            onChangeText={setDriverRadius}
+            keyboardType="numeric"
+          />
+          <Text style={styles.settingUnit}>km</Text>
+        </View>
       </View>
       
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Ad Soyad</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Admin adı"
-          placeholderTextColor={COLORS.textSecondary}
-          value={newAdminName}
-          onChangeText={setNewAdminName}
-        />
+      <View style={styles.settingCard}>
+        <View style={styles.settingHeader}>
+          <Ionicons name="call" size={24} color={COLORS.success} />
+          <Text style={styles.settingTitle}>Maksimum Arama Süresi</Text>
+        </View>
+        <Text style={styles.settingDesc}>Bir aramanın maksimum süresi</Text>
+        <View style={styles.settingInput}>
+          <TextInput
+            style={styles.settingTextInput}
+            value={maxCallDuration}
+            onChangeText={setMaxCallDuration}
+            keyboardType="numeric"
+          />
+          <Text style={styles.settingUnit}>dakika</Text>
+        </View>
       </View>
       
-      <TouchableOpacity style={styles.sendButton} onPress={addAdmin}>
-        <LinearGradient colors={[COLORS.success, '#059669']} style={styles.sendButtonGradient}>
-          <Ionicons name="person-add" size={20} color="#FFF" />
-          <Text style={styles.sendButtonText}>Admin Ekle</Text>
-        </LinearGradient>
+      <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
+        <Ionicons name="save" size={20} color="#FFF" />
+        <Text style={styles.saveButtonText}>Ayarları Kaydet</Text>
       </TouchableOpacity>
     </ScrollView>
   );
-
+  
   return (
-    <Modal visible={true} animationType="slide">
-      <View style={styles.container}>
-        {/* Header */}
-        <LinearGradient colors={[COLORS.primaryDark, COLORS.background]} style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#FFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>👑 Admin Paneli</Text>
-          <View style={{ width: 28 }} />
-        </LinearGradient>
-        
-        {/* Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
-          {[
-            { key: 'dashboard', icon: 'stats-chart', label: 'Dashboard' },
-            { key: 'users', icon: 'people', label: 'Kullanıcılar' },
-            { key: 'calls', icon: 'call', label: 'Aramalar' },
-            { key: 'reports', icon: 'warning', label: 'Şikayetler' },
-            { key: 'notifications', icon: 'notifications', label: 'Bildirim' },
-            { key: 'admins', icon: 'shield', label: 'Adminler' },
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-              onPress={() => setActiveTab(tab.key as any)}
-            >
-              <Ionicons name={tab.icon as any} size={20} color={activeTab === tab.key ? COLORS.primary : COLORS.textSecondary} />
-              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        
-        {/* Content */}
-        <View style={styles.content}>
-          {loading && !refreshing ? (
-            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 50 }} />
-          ) : (
-            <>
-              {activeTab === 'dashboard' && renderDashboard()}
-              {activeTab === 'users' && renderUsers()}
-              {activeTab === 'calls' && renderCalls()}
-              {activeTab === 'reports' && renderReports()}
-              {activeTab === 'notifications' && renderNotifications()}
-              {activeTab === 'admins' && renderAdmins()}
-            </>
-          )}
+    <View style={styles.container}>
+      {/* Header */}
+      <LinearGradient colors={[COLORS.primaryDark, COLORS.background]} style={styles.header}>
+        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <Ionicons name="close" size={28} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Admin Panel</Text>
+        <View style={{ width: 40 }} />
+      </LinearGradient>
+      
+      {/* Tabs */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
+        {renderTab('dashboard', 'grid', 'Panel')}
+        {renderTab('users', 'people', 'Kullanıcılar')}
+        {renderTab('trips', 'navigate', 'Yolculuklar')}
+        {renderTab('calls', 'call', 'Aramalar')}
+        {renderTab('auth', 'key', 'Girişler')}
+        {renderTab('notifications', 'notifications', 'Bildirim')}
+        {renderTab('settings', 'settings', 'Ayarlar')}
+      </ScrollView>
+      
+      {/* Content */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      </View>
-    </Modal>
+      ) : (
+        <>
+          {activeTab === 'dashboard' && renderDashboard()}
+          {activeTab === 'users' && renderUsers()}
+          {activeTab === 'trips' && renderTrips()}
+          {activeTab === 'calls' && renderCalls()}
+          {activeTab === 'auth' && renderAuthLogs()}
+          {activeTab === 'notifications' && renderNotifications()}
+          {activeTab === 'settings' && renderSettings()}
+        </>
+      )}
+    </View>
   );
 }
 
@@ -551,12 +612,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 50,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 40,
+    paddingBottom: 15,
+    paddingHorizontal: 15,
   },
-  closeButton: {
-    padding: 4,
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 20,
@@ -564,25 +630,26 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   tabBar: {
-    maxHeight: 60,
     backgroundColor: COLORS.card,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 5,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     marginHorizontal: 4,
-    borderRadius: 8,
-    gap: 6,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
   },
   tabActive: {
-    backgroundColor: 'rgba(63, 169, 245, 0.2)',
+    backgroundColor: 'rgba(63,169,245,0.2)',
   },
   tabText: {
     color: COLORS.textSecondary,
     fontSize: 13,
+    marginLeft: 6,
   },
   tabTextActive: {
     color: COLORS.primary,
@@ -590,29 +657,33 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    padding: 15,
   },
-  tabContent: {
+  loadingContainer: {
     flex: 1,
-    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  // Stats
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 15,
+  },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
+    justifyContent: 'space-between',
   },
   statCard: {
-    width: (SCREEN_WIDTH - 44) / 2,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  statGradient: {
-    padding: 16,
+    width: '48%',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#FFF',
     marginTop: 8,
@@ -622,312 +693,237 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     marginTop: 4,
   },
-  // Period Stats
-  periodStats: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 16,
-  },
-  periodCard: {
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  periodLabel: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  periodRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  periodValue: {
-    color: '#FFF',
-    fontSize: 14,
-  },
-  // Alert
-  alertCard: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    padding: 16,
+    justifyContent: 'center',
+    backgroundColor: COLORS.danger,
+    padding: 15,
     borderRadius: 12,
-    gap: 12,
+    marginTop: 10,
   },
-  alertText: {
-    flex: 1,
-    color: COLORS.danger,
+  actionButtonText: {
+    color: '#FFF',
     fontWeight: '600',
+    marginLeft: 8,
   },
-  // Users
+  searchInput: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 12,
+    color: '#FFF',
+    marginBottom: 15,
+  },
   userCard: {
     backgroundColor: COLORS.card,
-    margin: 8,
-    padding: 16,
     borderRadius: 12,
-  },
-  userHeader: {
+    padding: 12,
+    marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 45,
+    height: 45,
+    borderRadius: 23,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   userAvatarText: {
-    color: '#FFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#FFF',
   },
-  userInfo: {
-    flex: 1,
+  userDetails: {
     marginLeft: 12,
+    flex: 1,
   },
   userName: {
-    color: '#FFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
+    color: '#FFF',
   },
   userPhone: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  userCity: {
-    color: COLORS.primary,
-    fontSize: 12,
-  },
-  userBadges: {
-    gap: 4,
-  },
-  premiumBadge: {
-    backgroundColor: COLORS.warning,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  inactiveBadge: {
-    backgroundColor: COLORS.danger,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  badgeText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  userStats: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 16,
-  },
-  userStatItem: {
-    color: COLORS.textSecondary,
     fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  userMeta: {
+    marginTop: 4,
+  },
+  userMetaText: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
   },
   userActions: {
     flexDirection: 'row',
-    marginTop: 12,
-    gap: 8,
   },
   userActionBtn: {
-    flex: 1,
-    flexDirection: 'row',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.danger,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
+    marginLeft: 8,
   },
-  userActionBtnActive: {
+  btnSuccess: {
     backgroundColor: COLORS.success,
   },
-  userActionBtnPremium: {
-    backgroundColor: COLORS.warning,
+  btnDanger: {
+    backgroundColor: COLORS.danger,
   },
-  userActionText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  // Calls
-  callCard: {
+  logCard: {
     backgroundColor: COLORS.card,
-    margin: 8,
-    padding: 16,
     borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
   },
-  callHeader: {
+  logHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.cardLight,
+    paddingBottom: 8,
   },
-  callInfo: {
+  logTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+    marginLeft: 8,
     flex: 1,
   },
-  callNames: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  callDate: {
+  logTime: {
+    fontSize: 11,
     color: COLORS.textSecondary,
+  },
+  logBody: {
+  },
+  logText: {
     fontSize: 12,
-    marginTop: 4,
-  },
-  callDuration: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  callDurationText: {
-    color: '#FFF',
-    fontWeight: 'bold',
-  },
-  // Reports
-  reportCard: {
-    backgroundColor: COLORS.card,
-    margin: 8,
-    padding: 16,
-    borderRadius: 12,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  reportStatus: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  reportStatusText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  reportDate: {
     color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  reportNames: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
     marginBottom: 4,
   },
-  reportReason: {
-    color: COLORS.warning,
-    fontSize: 13,
-  },
-  reportDesc: {
+  emptyText: {
+    textAlign: 'center',
     color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  reportActions: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 8,
-  },
-  reportActionBtn: {
-    flex: 1,
-    backgroundColor: COLORS.success,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  reportActionBtnDanger: {
-    backgroundColor: COLORS.danger,
-  },
-  reportActionText: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  // Form
-  inputGroup: {
-    marginBottom: 16,
+    marginTop: 50,
   },
   inputLabel: {
-    color: COLORS.textSecondary,
-    marginBottom: 8,
     fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+    marginBottom: 8,
+    marginTop: 15,
   },
   input: {
     backgroundColor: COLORS.card,
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     color: '#FFF',
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.3)',
   },
-  inputMulti: {
+  inputMultiline: {
     height: 100,
     textAlignVertical: 'top',
   },
-  sendButton: {
-    marginTop: 8,
-    borderRadius: 12,
-    overflow: 'hidden',
+  targetButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
-  sendButtonGradient: {
+  targetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: COLORS.card,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  targetBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  targetBtnText: {
+    color: COLORS.textSecondary,
+    marginLeft: 6,
+    fontSize: 13,
+  },
+  targetBtnTextActive: {
+    color: '#FFF',
+  },
+  sendButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 8,
+    backgroundColor: COLORS.primary,
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 20,
   },
   sendButtonText: {
     color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    marginLeft: 8,
   },
-  // Admins
-  adminCard: {
+  settingCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+  },
+  settingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
     marginBottom: 8,
   },
-  adminInfo: {
-    flex: 1,
-  },
-  adminName: {
+  settingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#FFF',
+    marginLeft: 10,
+  },
+  settingDesc: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 12,
+  },
+  settingInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingTextInput: {
+    backgroundColor: COLORS.cardLight,
+    borderRadius: 8,
+    padding: 10,
+    color: '#FFF',
+    width: 80,
+    textAlign: 'center',
     fontSize: 16,
     fontWeight: '600',
   },
-  adminPhone: {
+  settingUnit: {
     color: COLORS.textSecondary,
+    marginLeft: 10,
     fontSize: 14,
   },
-  mainAdminBadge: {
-    backgroundColor: COLORS.warning,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.success,
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 10,
   },
-  emptyText: {
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 50,
-    fontSize: 16,
+  saveButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
