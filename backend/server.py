@@ -1,8 +1,8 @@
 """
 Leylek TAG - Full Featured Backend
-MongoDB (Supabase'e geçiş için hazır)
+MongoDB + Supabase Hybrid (Storage & Realtime)
 """
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -18,6 +18,10 @@ from geopy.distance import geodesic
 # Import models
 from models import *
 from database import db_instance
+from supabase_client import (
+    init_supabase, get_supabase_admin, 
+    upload_file_to_storage, delete_file_from_storage
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
