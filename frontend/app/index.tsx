@@ -1401,6 +1401,7 @@ function TikTokOfferCard({
   index, 
   total, 
   onAccept,
+  onDismiss,
   isPassenger = true,
   driverArrivalMin = 0,
   tripDurationMin = 0
@@ -1409,6 +1410,7 @@ function TikTokOfferCard({
   index: number; 
   total: number; 
   onAccept: () => void;
+  onDismiss?: () => void;
   isPassenger?: boolean;
   driverArrivalMin?: number;
   tripDurationMin?: number;
@@ -1455,15 +1457,23 @@ function TikTokOfferCard({
   const distanceKm = offer.distance_to_passenger_km?.toFixed(1) || '?';
   const tripDistanceKm = offer.trip_distance_km?.toFixed(1) || '?';
 
+  // İsim ve avatar bilgisi
+  const personName = isPassenger ? offer.driver_name : offer.passenger_name;
+  const personRating = isPassenger ? (offer.driver_rating || 5.0) : 5.0;
+  const avatarLetter = personName?.charAt(0) || '?';
+
   return (
-    <View style={styles.tikTokCard}>
+    <View style={styles.tikTokCardFull}>
       <LinearGradient
         colors={['#0A1628', '#1E3A5F', '#0F2744']}
-        style={styles.tikTokGradient}
+        style={styles.tikTokGradientFull}
       >
-        {/* Üst Kısım - Sadece Geri Butonu ve Sayfa Göstergesi */}
+        {/* Üst Kısım - Çarpı Butonu ve Sayfa Göstergesi */}
         <Animated.View style={[styles.tikTokHeaderClean, { opacity: fadeAnim }]}>
-          <TouchableOpacity style={styles.tikTokBackBtnClean} onPress={() => {}}>
+          <TouchableOpacity 
+            style={styles.tikTokBackBtnClean} 
+            onPress={onDismiss}
+          >
             <Ionicons name="close" size={28} color="#FFF" />
           </TouchableOpacity>
           
@@ -1472,148 +1482,65 @@ function TikTokOfferCard({
           </View>
         </Animated.View>
 
-        {/* Profil Kartı - Kompakt */}
+        {/* Profil Kartı */}
         <View style={styles.tikTokProfileCardClean}>
           <LinearGradient
             colors={['#3FA9F5', '#2563EB']}
             style={styles.tikTokAvatarClean}
           >
-            <Text style={styles.tikTokAvatarTextClean}>
-              {isPassenger ? offer.driver_name?.charAt(0) : offer.passenger_name?.charAt(0) || '?'}
-            </Text>
+            <Text style={styles.tikTokAvatarTextClean}>{avatarLetter}</Text>
           </LinearGradient>
           
           <View style={styles.tikTokProfileInfoClean}>
-            <Text style={styles.tikTokNameClean}>
-              {isPassenger ? offer.driver_name : offer.passenger_name}
-            </Text>
+            <Text style={styles.tikTokNameClean}>{personName}</Text>
             <View style={styles.tikTokRatingClean}>
               <Ionicons name="star" size={16} color="#FFD700" />
-              <Text style={styles.tikTokRatingTextClean}>
-                {isPassenger ? (offer.driver_rating || 5.0).toFixed(1) : '5.0'}
-              </Text>
+              <Text style={styles.tikTokRatingTextClean}>{personRating.toFixed(1)}</Text>
             </View>
           </View>
-          
-          {/* Teklifi Geç Butonu */}
-          {isPassenger && total > 1 && (
-            <TouchableOpacity style={styles.skipOfferBtn}>
-              <Ionicons name="chevron-up" size={20} color="#94A3B8" />
-              <Text style={styles.skipOfferText}>Geç</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
-        {/* YOLCU İÇİN: Araç Bilgisi + Fiyat + Mesafe */}
+        {/* Araç Bilgisi - Her iki rol için de göster */}
+        <View style={styles.vehicleCardTop}>
+          <View style={styles.vehicleIconBox}>
+            <Ionicons name="car-sport" size={40} color="#3FA9F5" />
+          </View>
+          <View style={styles.vehicleInfoBox}>
+            <Text style={styles.vehicleModelText}>
+              {isPassenger ? (offer.vehicle_model || 'Araç Bilgisi Yok') : 'Yolcu Talebi'}
+            </Text>
+            <Text style={styles.vehicleColorText}>
+              {isPassenger ? (offer.vehicle_color || 'Renk belirtilmedi') : (offer.dropoff_location || 'Hedef belirtilmedi')}
+            </Text>
+          </View>
+        </View>
+        
+        {/* Fiyat - Yolcu için teklif fiyatı, Şoför için teklif girişi */}
         {isPassenger && (
-          <>
-            {/* Araç Bilgisi - Üstte */}
-            {offer.vehicle_model && (
-              <View style={styles.vehicleCardTop}>
-                <View style={styles.vehicleIconBox}>
-                  <Ionicons name="car-sport" size={40} color="#3FA9F5" />
-                </View>
-                <View style={styles.vehicleInfoBox}>
-                  <Text style={styles.vehicleModelText}>{offer.vehicle_model}</Text>
-                  <Text style={styles.vehicleColorText}>{offer.vehicle_color || 'Renk belirtilmedi'}</Text>
-                </View>
-              </View>
-            )}
-            
-            {/* Teklif Fiyatı */}
-            <View style={styles.tikTokPriceSectionNew}>
-              <Text style={styles.tikTokPriceLabelNew}>Teklif Fiyatı</Text>
-              <Text style={styles.tikTokPriceNew}>₺{offer.price || '?'}</Text>
-            </View>
-            
-            {/* Varış ve Mesafe Kartları - KM OLARAK */}
-            <View style={styles.tikTokTimeCardsNew}>
-              <View style={styles.tikTokTimeCardNew}>
-                <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.tikTokTimeGradientNew}>
-                  <Ionicons name="car-sport" size={28} color="#FFF" />
-                  <Text style={styles.tikTokTimeValueNew}>{arrivalTime} dk</Text>
-                  <Text style={styles.tikTokTimeLabelNew}>içinde gelir</Text>
-                </LinearGradient>
-              </View>
-              
-              <View style={styles.tikTokTimeCardNew}>
-                <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.tikTokTimeGradientNew}>
-                  <Ionicons name="navigate" size={28} color="#FFF" />
-                  <Text style={styles.tikTokTimeValueNew}>{tripDistanceKm} km</Text>
-                  <Text style={styles.tikTokTimeLabelNew}>yolculuk</Text>
-                </LinearGradient>
-              </View>
-            </View>
-          </>
-        )}
-
-        {/* ŞOFÖR İÇİN: Tam Ekran Mesafe Gösterimi */}
-        {!isPassenger && (
-          <View style={styles.driverFullScreen}>
-            {/* Başka Yolcu Seç Butonu */}
-            {total > 1 && (
-              <View style={styles.skipPassengerRow}>
-                <TouchableOpacity style={styles.skipPassengerBtn}>
-                  <Ionicons name="swap-vertical" size={18} color="#3FA9F5" />
-                  <Text style={styles.skipPassengerText}>Başka Yolcu Seç</Text>
-                </TouchableOpacity>
-                <Text style={styles.passengerCountText}>{index + 1}/{total} yolcu</Text>
-              </View>
-            )}
-            
-            {/* BÜYÜK MESAFE KARTLARI */}
-            <View style={styles.driverBigDistanceCards}>
-              {/* Yolcuyla Buluşma */}
-              <View style={styles.driverBigCard}>
-                <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.driverBigCardGradient}>
-                  <Ionicons name="walk" size={36} color="#FFF" />
-                  <Text style={styles.driverBigCardTitle}>Yolcuyla Buluşma</Text>
-                  <Text style={styles.driverBigCardValue}>{distanceKm} km</Text>
-                  <Text style={styles.driverBigCardSub}>~{arrivalTime} dakika</Text>
-                </LinearGradient>
-              </View>
-              
-              {/* Yolcunun Gideceği */}
-              <View style={styles.driverBigCard}>
-                <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.driverBigCardGradient}>
-                  <Ionicons name="flag" size={36} color="#FFF" />
-                  <Text style={styles.driverBigCardTitle}>Yolcunun Gideceği</Text>
-                  <Text style={styles.driverBigCardValue}>{tripDistanceKm} km</Text>
-                  <Text style={styles.driverBigCardSub}>~{tripTime} dakika</Text>
-                </LinearGradient>
-              </View>
-            </View>
-            
-            {/* Adres Bilgileri */}
-            <View style={styles.driverAddressCard}>
-              <View style={styles.driverAddressRow}>
-                <View style={[styles.driverAddressDot, { backgroundColor: '#22C55E' }]} />
-                <Ionicons name="location" size={18} color="#22C55E" />
-                <View style={styles.driverAddressInfo}>
-                  <Text style={styles.driverAddressLabel}>YOLCU BURADA</Text>
-                  <Text style={styles.driverAddressText} numberOfLines={2}>
-                    {offer.pickup_location || 'Mevcut Konumu'}
-                  </Text>
-                </View>
-              </View>
-              
-              <View style={styles.driverAddressLine}>
-                <View style={styles.driverAddressLineDashed} />
-              </View>
-              
-              <View style={styles.driverAddressRow}>
-                <View style={[styles.driverAddressDot, { backgroundColor: '#F59E0B' }]} />
-                <Ionicons name="flag" size={18} color="#F59E0B" />
-                <View style={styles.driverAddressInfo}>
-                  <Text style={styles.driverAddressLabel}>HEDEF ADRES</Text>
-                  <Text style={styles.driverAddressTextBig} numberOfLines={2}>
-                    {offer.dropoff_location || 'Hedef belirtilmedi'}
-                  </Text>
-                </View>
-              </View>
-            </View>
+          <View style={styles.tikTokPriceSectionNew}>
+            <Text style={styles.tikTokPriceLabelNew}>Teklif Fiyatı</Text>
+            <Text style={styles.tikTokPriceNew}>₺{offer.price || '?'}</Text>
           </View>
         )}
+        
+        {/* Varış ve Mesafe Kartları - AYNI TASARIM HER İKİ ROL İÇİN */}
+        <View style={styles.tikTokTimeCardsNew}>
+          <View style={styles.tikTokTimeCardNew}>
+            <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.tikTokTimeGradientNew}>
+              <Ionicons name="car-sport" size={28} color="#FFF" />
+              <Text style={styles.tikTokTimeValueNew}>{arrivalTime} dk</Text>
+              <Text style={styles.tikTokTimeLabelNew}>içinde gelir</Text>
+            </LinearGradient>
+          </View>
+          
+          <View style={styles.tikTokTimeCardNew}>
+            <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.tikTokTimeGradientNew}>
+              <Ionicons name="navigate" size={28} color="#FFF" />
+              <Text style={styles.tikTokTimeValueNew}>{tripDistanceKm} km</Text>
+              <Text style={styles.tikTokTimeLabelNew}>yolculuk</Text>
+            </LinearGradient>
+          </View>
+        </View>
 
         {/* Not varsa */}
         {offer.notes && (
@@ -1623,7 +1550,7 @@ function TikTokOfferCard({
           </View>
         )}
 
-        {/* Alt Kısım - Aksiyon Butonu - MAVİ */}
+        {/* Alt Kısım - Aksiyon Butonu */}
         <View style={styles.tikTokActionsNew}>
           <Animated.View style={{ transform: [{ scale: pulseAnim }], width: '100%' }}>
             <TouchableOpacity style={styles.tikTokAcceptButtonNew} onPress={onAccept}>
@@ -1640,13 +1567,26 @@ function TikTokOfferCard({
           </Animated.View>
         </View>
 
-        {/* Alt İpucu */}
-        <View style={styles.tikTokSwipeHintNew}>
-          <Ionicons name="chevron-up" size={24} color="rgba(255,255,255,0.5)" />
-          <Text style={styles.tikTokSwipeTextNew}>
-            {isPassenger ? 'Diğer teklifleri görmek için yukarı kaydır' : 'Diğer talepleri görmek için yukarı kaydır'}
-          </Text>
+        {/* Alt İpucu ve Şifreleme Notu */}
+        <View style={styles.tikTokBottomInfo}>
+          <View style={styles.tikTokSwipeHintNew}>
+            <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.5)" />
+            <Text style={styles.tikTokSwipeTextNew}>
+              Diğer {isPassenger ? 'teklifleri' : 'yolcuları'} görmek için yukarı kaydır
+            </Text>
+          </View>
+          
+          <View style={styles.tikTokSecurityNote}>
+            <Ionicons name="lock-closed" size={14} color="rgba(255,255,255,0.4)" />
+            <Text style={styles.tikTokSecurityText}>Görüşmeler uçtan uca şifrelidir</Text>
+          </View>
+          
+          <Text style={styles.tikTokCompanyNote}>Karekod Teknoloji ve Yazılım AŞ</Text>
         </View>
+      </LinearGradient>
+    </View>
+  );
+}
 
         {/* Footer - Şifreli Mesaj ve Şirket Bilgisi */}
         <View style={styles.tikTokFooter}>
