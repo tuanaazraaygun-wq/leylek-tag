@@ -3237,8 +3237,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Üst Header - Modern Mavi (Sadece Matched Değilse Göster) */}
-      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
+      {/* Üst Header - Modern Mavi (Sadece Matched Değilse ve Teklif Listesi Boşsa Göster) */}
+      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && requests.length === 0 && (
         <View style={styles.modernHeader}>
           <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.backButtonHeader}>
             <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
