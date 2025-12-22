@@ -764,6 +764,7 @@ async def get_offers(tag_id: str, user_id: str):
     """
     Teklifleri listele
     - Expire olanları filtrele
+    - Engelli şoförlerin tekliflerini filtrele
     - EN DÜŞÜK FİYATTAN YÜKSEĞE SIRALA
     """
     from datetime import datetime, timedelta
@@ -773,6 +774,12 @@ async def get_offers(tag_id: str, user_id: str):
         raise HTTPException(status_code=404, detail="TAG bulunamadı")
     if tag["passenger_id"] != user_id:
         raise HTTPException(status_code=403, detail="Bu TAG size ait değil")
+    
+    # Engellenen kullanıcıları al (iki yönlü)
+    db = db_instance.db
+    blocked_by_me = await db.blocked_users.find({"user_id": user_id}).to_list(100)
+    blocked_me = await db.blocked_users.find({"blocked_user_id": user_id}).to_list(100)
+    blocked_ids = set([b["blocked_user_id"] for b in blocked_by_me] + [b["user_id"] for b in blocked_me])
     
     # Önce expire olanları sil
     await db_instance.db.offers.delete_many({
@@ -788,6 +795,9 @@ async def get_offers(tag_id: str, user_id: str):
     
     offer_responses = []
     for offer in offers:
+        # Engelli şoförlerin tekliflerini atla
+        if offer.get("driver_id") in blocked_ids:
+            continue
         offer_responses.append(OfferResponse(
             id=str(offer["_id"]),
             **{k: v for k, v in offer.items() if k != "_id"}
