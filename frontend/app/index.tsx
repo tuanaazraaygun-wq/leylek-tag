@@ -7052,4 +7052,36 @@ const styles = StyleSheet.create({
     color: '#3FA9F5',
     fontWeight: '600',
   },
+  // TAM EKRAN TİKTOK STİLLERİ
+  tikTokCardFull: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  tikTokGradientFull: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 50,
+    paddingBottom: 20,
+    justifyContent: 'space-between',
+  },
+  tikTokBottomInfo: {
+    alignItems: 'center',
+    paddingBottom: 10,
+  },
+  tikTokSecurityNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  tikTokSecurityText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.4)',
+  },
+  tikTokCompanyNote: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.3)',
+    marginTop: 6,
+  },
 });
