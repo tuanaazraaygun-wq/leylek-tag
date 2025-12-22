@@ -2375,7 +2375,7 @@ function PassengerDashboard({
 
         const data = await response.json();
         if (data.success) {
-          Alert.alert('✅ Güncellendi', 'Hedef adresiniz başarıyla güncellendi.');
+          
           loadActiveTag(); // TAG'i yeniden yükle
         } else {
           Alert.alert('Hata', data.detail || 'Hedef güncellenemedi');
