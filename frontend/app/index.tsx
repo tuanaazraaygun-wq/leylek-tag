@@ -807,16 +807,28 @@ export default function App() {
             </View>
           </Modal>
 
-          {/* Hedef Seçme Modal */}
-          <Modal
-            visible={showDestinationPicker}
-            transparent={true}
-            animationType="slide"
-            onRequestClose={() => setShowDestinationPicker(false)}
-          >
-            <View style={styles.modalContainer}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>🎯 Nereye Gitmek İstiyorsunuz?</Text>
+          {/* Hedef Seçme Modal - ÜSTTEN AÇILAN */}
+          {showDestinationPicker && (
+            <View style={styles.topSheetFullOverlay}>
+              {/* Arka plan - tıklayınca kapat */}
+              <TouchableOpacity 
+                style={styles.topSheetBackdropFull}
+                activeOpacity={1}
+                onPress={() => setShowDestinationPicker(false)}
+              />
+              
+              {/* Üstten açılan panel */}
+              <View style={styles.topSheetPanelFromTop}>
+                {/* Üst Bar - Kapat */}
+                <View style={styles.topSheetHeader}>
+                  <Text style={styles.topSheetTitle}>Nereye Gidiyorsunuz?</Text>
+                  <TouchableOpacity 
+                    onPress={() => setShowDestinationPicker(false)}
+                    style={styles.topSheetCloseBtn}
+                  >
+                    <Ionicons name="close" size={24} color="#666" />
+                  </TouchableOpacity>
+                </View>
                 
                 <PlacesAutocomplete
                   placeholder="Adres, sokak veya mekan ara..."
@@ -831,10 +843,10 @@ export default function App() {
                   }}
                 />
                 
-                <Text style={[styles.popularTitle, { marginTop: 20 }]}>
-                  {user?.city ? `${user.city} - Popüler Konumlar:` : 'Popüler Konumlar:'}
+                <Text style={styles.topSheetPopularTitle}>
+                  {user?.city ? `${user.city} Popüler` : 'Popüler Konumlar'}
                 </Text>
-                <ScrollView style={styles.popularList}>
+                <ScrollView style={styles.topSheetPopularScroll} showsVerticalScrollIndicator={false}>
                   {[
                     { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
                     { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.0230 },
@@ -842,10 +854,10 @@ export default function App() {
                     { name: 'Ulus, Ankara', lat: 39.9420, lng: 32.8647 },
                     { name: 'Konak, İzmir', lat: 38.4189, lng: 27.1287 },
                     { name: 'Alsancak, İzmir', lat: 38.4361, lng: 27.1428 },
-                  ].map((place, index) => (
+                  ].filter(place => !user?.city || place.name.includes(user.city)).map((place, index) => (
                     <TouchableOpacity
                       key={index}
-                      style={styles.popularItem}
+                      style={styles.topSheetPopularItem}
                       onPress={() => {
                         setDestination({
                           address: place.name,
@@ -855,21 +867,17 @@ export default function App() {
                         setShowDestinationPicker(false);
                       }}
                     >
-                      <Ionicons name="location-outline" size={20} color={COLORS.primary} />
-                      <Text style={styles.popularItemText}>{place.name}</Text>
+                      <Ionicons name="location" size={18} color="#3FA9F5" />
+                      <Text style={styles.topSheetPopularText}>{place.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
                 
-                <TouchableOpacity
-                  style={styles.modalCloseButton}
-                  onPress={() => setShowDestinationPicker(false)}
-                >
-                  <Text style={styles.modalCloseButtonText}>İptal</Text>
-                </TouchableOpacity>
+                {/* Alt Çizgi */}
+                <View style={styles.topSheetHandle} />
               </View>
             </View>
-          </Modal>
+          )}
         </ScrollView>
       </SafeAreaView>
     );
