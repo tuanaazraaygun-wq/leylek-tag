@@ -3180,9 +3180,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
       const data = await response.json();
       if (data.success) {
-        Alert.alert('Başarılı', 'Teklifiniz gönderildi');
-        setOfferModalVisible(false);
-        loadRequests();
+        // Buton yeşile dönsün, alert yok
+        setOfferSent(true);
+        // 1.5 saniye sonra otomatik kapat
+        setTimeout(() => {
+          setOfferModalVisible(false);
+          setOfferSent(false);
+          loadRequests();
+        }, 1500);
       } else {
         Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
       }
