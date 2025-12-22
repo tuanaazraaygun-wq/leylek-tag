@@ -191,6 +191,16 @@ class OfferResponse(BaseModel):
     notes: Optional[str] = None
     status: OfferStatus
     created_at: datetime
+    # Mesafe bilgileri - harita ile senkronize
+    distance_to_passenger_km: Optional[float] = None  # Şoför -> Yolcu mesafesi
+    trip_distance_km: Optional[float] = None  # Yolculuk mesafesi (pickup -> dropoff)
+    trip_duration_min: Optional[int] = None  # Tahmini yolculuk süresi
+    estimated_arrival_min: Optional[int] = None  # Şoförün yolcuya varış süresi
+    # Araç bilgileri
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_photo: Optional[str] = None
+    is_premium: Optional[bool] = False
 
 class AcceptOfferRequest(BaseModel):
     tag_id: str
