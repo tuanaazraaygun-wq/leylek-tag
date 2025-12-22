@@ -2638,7 +2638,7 @@ function PassengerDashboard({
                               );
                               const data = await response.json();
                               if (data.success) {
-                                Alert.alert('Başarılı', 'Yolculuk tamamlandı!');
+                                
                                 setActiveTag(null);
                                 loadActiveTag();
                               }
