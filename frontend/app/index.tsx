@@ -3131,6 +3131,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     setOfferModalVisible(true);
   };
 
+  // Şoför için talebi 10 dakikalığına gizle (çarpı butonu)
+  const handleDismissRequest = async (tagId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/driver/dismiss-request?user_id=${user.id}&tag_id=${tagId}`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Talebi listeden kaldır
+        setRequests(prev => prev.filter(r => r.id !== tagId));
+        // Toast göster
+        Alert.alert('Gizlendi', 'Bu talep 10 dakika boyunca görünmeyecek');
+      }
+    } catch (error) {
+      console.log('Dismiss error:', error);
+    }
+  };
+
   const submitOffer = async () => {
     if (!offerPrice || isNaN(Number(offerPrice))) {
       Alert.alert('Hata', 'Geçerli bir fiyat girin');
