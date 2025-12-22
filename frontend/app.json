@@ -28,17 +28,9 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.CAMERA",
-        "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.BLUETOOTH",
-        "android.permission.ACCESS_WIFI_STATE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_PHONE_STATE",
-        "android.permission.WAKE_LOCK",
+        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.CAMERA"
       ],
       "config": {
         "googleMaps": {
@@ -53,37 +45,28 @@
     },
     "plugins": [
       "expo-router",
-      "expo-dev-client",
+      "expo-secure-store",
       [
-        "expo-splash-screen",
+        "expo-location",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "locationAlwaysAndWhenInUsePermission": "Konumunuzu şoförlere göstermek için konum izni gereklidir."
         }
       ],
       [
-        "expo-build-properties",
+        "expo-camera",
         {
-          "android": {
-            "minSdkVersion": 24,
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35
-          }
+          "cameraPermission": "Profil fotoğrafı çekmek için kamera izni gereklidir."
         }
       ],
-      "expo-font",
-      "expo-web-browser"
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Sesli görüşme için mikrofon izni gereklidir."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "--non-interactive"
-      }
     }
   }
 }
