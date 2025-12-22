@@ -12,7 +12,8 @@ import IncomingCall from '../components/IncomingCall';
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
-import { usePushNotifications } from '../hooks/usePushNotifications';
+// Push notifications şimdilik devre dışı (FCM yapılandırması gerekiyor)
+// import { usePushNotifications } from '../hooks/usePushNotifications';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
