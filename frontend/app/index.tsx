@@ -2702,16 +2702,29 @@ function PassengerDashboard({
             ) : null}
       </ScrollView>
 
-      {/* Hedef Seçme Modal - PassengerDashboard içinde */}
+      {/* Hedef Seçme Modal - PassengerDashboard içinde - TAM EKRAN ÜSTTEN */}
       <Modal
         visible={showDestinationPicker}
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowDestinationPicker(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🎯 Nereye Gitmek İstiyorsunuz?</Text>
+        <View style={styles.fullScreenModalContainer}>
+          <View style={styles.fullScreenModalContent}>
+            {/* Üst Bar - İsim ve Kapat */}
+            <View style={styles.fullScreenModalHeader}>
+              <TouchableOpacity 
+                onPress={() => setShowDestinationPicker(false)}
+                style={styles.fullScreenModalBackBtn}
+              >
+                <Ionicons name="chevron-back" size={28} color="#3FA9F5" />
+              </TouchableOpacity>
+              <Text style={styles.fullScreenModalTitle}>{user.name}</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            
+            {/* Soru */}
+            <Text style={styles.fullScreenModalQuestion}>Nereye Gitmek İstiyorsunuz?</Text>
             
             <PlacesAutocomplete
               placeholder="Adres, sokak veya mekan ara..."
@@ -2745,13 +2758,6 @@ function PassengerDashboard({
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            
-            <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => setShowDestinationPicker(false)}
-            >
-              <Text style={styles.modalCloseButtonText}>İptal</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
