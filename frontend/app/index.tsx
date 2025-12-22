@@ -1529,7 +1529,7 @@ function TikTokOfferCard({
             <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.tikTokTimeGradientNew}>
               <Ionicons name="car-sport" size={28} color="#FFF" />
               <Text style={styles.tikTokTimeValueNew}>{arrivalTime} dk</Text>
-              <Text style={styles.tikTokTimeLabelNew}>içinde gelir</Text>
+              <Text style={styles.tikTokTimeLabelNew}>{isPassenger ? 'içinde gelir' : 'içinde giderim'}</Text>
             </LinearGradient>
           </View>
           
