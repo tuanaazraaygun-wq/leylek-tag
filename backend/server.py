@@ -1069,6 +1069,13 @@ async def get_driver_requests(user_id: str):
     
     blocked_ids = set([b["blocked_user_id"] for b in blocked_by_me] + [b["user_id"] for b in blocked_me])
     
+    # Gizlenmiş talepleri al (10 dakika süreli)
+    dismissed = await db.dismissed_requests.find({
+        "user_id": user_id,
+        "expires_at": {"$gt": datetime.utcnow()}
+    }).to_list(100)
+    dismissed_tag_ids = set([d["tag_id"] for d in dismissed])
+    
     # Admin ayarından maksimum mesafeyi al (varsayılan 50km)
     settings = await db.app_settings.find_one({"type": "global"})
     max_distance = settings.get("driver_radius_km", MAX_DISTANCE_KM) if settings else MAX_DISTANCE_KM
@@ -1092,6 +1099,10 @@ async def get_driver_requests(user_id: str):
         # Engelli kullanıcı kontrolü
         if tag["passenger_id"] in blocked_ids:
             continue  # Engelli kullanıcı, atla
+        
+        # Gizlenmiş talep kontrolü
+        if str(tag["_id"]) in dismissed_tag_ids:
+            continue  # Gizlenmiş talep, atla
         
         # Yolcu bilgisini al
         passenger = await db_instance.find_one("users", {"_id": ObjectId(tag["passenger_id"])})
