@@ -1140,6 +1140,9 @@ export default function App() {
           const updatedUser = { ...user, role: selectedRole };
           setUser(updatedUser);
           setScreen('dashboard');
+          
+          // Push token'ı backend'e kaydet
+          registerPushToken(user.id);
         }
       } catch (error) {
         console.error('Role kaydedilemedi:', error);
@@ -1147,6 +1150,9 @@ export default function App() {
           const updatedUser = { ...user, role: selectedRole };
           setUser(updatedUser);
           setScreen('dashboard');
+          
+          // Push token'ı backend'e kaydet
+          registerPushToken(user.id);
         }
       }
     };
