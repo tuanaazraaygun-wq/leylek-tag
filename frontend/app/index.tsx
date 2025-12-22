@@ -3138,6 +3138,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const handleSendOffer = (tagId: string) => {
     setSelectedTagForOffer(tagId);
     setOfferPrice('');
+    setOfferSent(false); // Reset
     setOfferModalVisible(true);
   };
 
