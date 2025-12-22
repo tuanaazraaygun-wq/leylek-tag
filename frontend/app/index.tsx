@@ -3133,6 +3133,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [offerModalVisible, setOfferModalVisible] = useState(false);
   const [selectedTagForOffer, setSelectedTagForOffer] = useState<string | null>(null);
   const [offerPrice, setOfferPrice] = useState('');
+  const [offerSent, setOfferSent] = useState(false); // Teklif gönderildi mi?
 
   const handleSendOffer = (tagId: string) => {
     setSelectedTagForOffer(tagId);
