@@ -2404,6 +2404,7 @@ function PassengerDashboard({
               index={index}
               total={offers.length}
               onAccept={() => handleAcceptOffer(item.id)}
+              onDismiss={() => handleDismissOffer(item.id)}
               isPassenger={true}
             />
           )}
