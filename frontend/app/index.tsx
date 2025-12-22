@@ -3484,7 +3484,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             <Text style={styles.emptyStateSubtext}>Yeni teklifler burada görünecek</Text>
           </View>
         </ScrollView>
-      )}
+      ) : null}
 
       {/* Modern Teklif Modal */}
       <Modal
