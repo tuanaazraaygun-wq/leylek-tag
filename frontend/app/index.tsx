@@ -3541,15 +3541,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={styles.modernSubmitButton}
+                style={[styles.modernSubmitButton, offerSent && styles.modernSubmitButtonSuccess]}
                 onPress={submitOffer}
+                disabled={offerSent}
               >
                 <LinearGradient
-                  colors={['#3FA9F5', '#2563EB']}
+                  colors={offerSent ? ['#22C55E', '#16A34A'] : ['#3FA9F5', '#2563EB']}
                   style={styles.submitButtonGradient}
                 >
-                  <Ionicons name="send" size={20} color="#FFF" />
-                  <Text style={styles.modernSubmitButtonText}>Gönder</Text>
+                  <Ionicons name={offerSent ? "checkmark-circle" : "send"} size={20} color="#FFF" />
+                  <Text style={styles.modernSubmitButtonText}>{offerSent ? 'Gönderildi!' : 'Gönder'}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
