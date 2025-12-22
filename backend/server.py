@@ -325,7 +325,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         
         user = result.data[0]
         
-        if not verify_pin(pin, user.get("pin_hash", "")):
+        if not verify_pin(pin_val, user.get("pin_hash", "")):
             raise HTTPException(status_code=401, detail="Yanlış PIN")
         
         # Son giriş güncelle
@@ -334,7 +334,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user["id"]).execute()
         
-        is_admin = phone in ADMIN_PHONE_NUMBERS
+        is_admin = phone_val in ADMIN_PHONE_NUMBERS
         
         return {
             "success": True,
