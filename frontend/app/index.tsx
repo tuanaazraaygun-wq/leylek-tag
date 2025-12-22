@@ -2702,30 +2702,38 @@ function PassengerDashboard({
             ) : null}
       </ScrollView>
 
-      {/* Hedef Seçme Modal - PassengerDashboard içinde - TAM EKRAN ÜSTTEN */}
+      {/* Hedef Seçme Modal - ÜSTTEN AÇILAN YARIM SAYFA */}
       <Modal
         visible={showDestinationPicker}
         transparent={true}
         animationType="slide"
         onRequestClose={() => setShowDestinationPicker(false)}
       >
-        <View style={styles.fullScreenModalContainer}>
-          <View style={styles.fullScreenModalContent}>
-            {/* Üst Bar - İsim ve Kapat */}
-            <View style={styles.fullScreenModalHeader}>
+        <View style={styles.topSheetOverlay}>
+          <View style={styles.topSheetContainer}>
+            {/* Üst Bar - Kapat */}
+            <View style={styles.topSheetHeader}>
+              <Text style={styles.topSheetTitle}>Nereye Gidiyorsunuz?</Text>
               <TouchableOpacity 
                 onPress={() => setShowDestinationPicker(false)}
-                style={styles.fullScreenModalBackBtn}
+                style={styles.topSheetCloseBtn}
               >
-                <Ionicons name="chevron-back" size={28} color="#3FA9F5" />
+                <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
-              <Text style={styles.fullScreenModalTitle}>{user.name}</Text>
-              <View style={{ width: 40 }} />
             </View>
             
-            {/* Soru */}
-            <Text style={styles.fullScreenModalQuestion}>Nereye Gitmek İstiyorsunuz?</Text>
+            {/* Seçilen Hedef - BÜYÜK VE BELİRGİN */}
+            {destination && (
+              <View style={styles.selectedDestinationBig}>
+                <Ionicons name="navigate" size={32} color="#3FA9F5" />
+                <View style={styles.selectedDestinationTextBox}>
+                  <Text style={styles.selectedDestinationLabel}>HEDEF</Text>
+                  <Text style={styles.selectedDestinationName}>{destination.address}</Text>
+                </View>
+              </View>
+            )}
             
+            {/* Arama */}
             <PlacesAutocomplete
               placeholder="Adres, sokak veya mekan ara..."
               city={user?.city || ''}
@@ -2734,10 +2742,11 @@ function PassengerDashboard({
               }}
             />
             
-            <Text style={[styles.popularTitle, { marginTop: 20 }]}>
-              {user?.city ? `${user.city} - Popüler Konumlar:` : 'Popüler Konumlar:'}
+            {/* Popüler Konumlar */}
+            <Text style={styles.topSheetPopularTitle}>
+              {user?.city ? `${user.city} Popüler` : 'Popüler Konumlar'}
             </Text>
-            <ScrollView style={styles.popularList}>
+            <View style={styles.topSheetPopularList}>
               {[
                 { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
                 { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.0230 },
@@ -2748,16 +2757,29 @@ function PassengerDashboard({
               ].filter(place => !user?.city || place.name.includes(user.city)).map((place, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={styles.popularItem}
+                  style={styles.topSheetPopularItem}
                   onPress={() => {
                     handleDestinationSelect(place.name, place.lat, place.lng);
                   }}
                 >
-                  <Ionicons name="location-outline" size={20} color={COLORS.primary} />
-                  <Text style={styles.popularItemText}>{place.name}</Text>
+                  <Ionicons name="location" size={18} color="#3FA9F5" />
+                  <Text style={styles.topSheetPopularText}>{place.name}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
+            
+            {/* Alt Çizgi - Kapatma için sürükle */}
+            <View style={styles.topSheetHandle} />
+          </View>
+          
+          {/* Arka plan tıklama ile kapat */}
+          <TouchableOpacity 
+            style={styles.topSheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowDestinationPicker(false)}
+          />
+        </View>
+      </Modal>
           </View>
         </View>
       </Modal>
