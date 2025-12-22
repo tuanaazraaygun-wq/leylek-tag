@@ -1100,9 +1100,9 @@ async def get_driver_requests(user_id: str):
                 tag["pickup_lat"], tag["pickup_lng"]
             )
             
-            # 20 KM FİLTRE: Sadece 20 km içindeki yolcular
-            if distance_to_passenger > 20:
-                continue  # 20 km'den uzak, atla
+            # MESAFE FİLTRE: Admin tarafından ayarlanabilir (varsayılan 50km)
+            if distance_to_passenger > MAX_DISTANCE_KM:
+                continue  # Maksimum mesafeden uzak, atla
         
         # Yolcunun gideceği mesafe (pickup -> dropoff)
         if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
