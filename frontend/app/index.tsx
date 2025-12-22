@@ -3214,7 +3214,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
       const data = await response.json();
       if (data.success) {
-        Alert.alert('Başarılı', 'Yolculuk başlatıldı');
+        
         loadActiveTag();
       }
     } catch (error) {
