@@ -1037,7 +1037,7 @@ async def get_driver_requests(user_id: str):
     Aktif talepleri listele
     FİLTRELEME:
     - Sadece aynı şehirdeki yolcular
-    - Maksimum 20 km mesafedeki yolcular
+    - Admin ayarındaki maksimum mesafe (varsayılan 50 km)
     - Engelli kullanıcılar hariç
     SIRALAMA: En yakından uzağa
     """
@@ -1058,6 +1058,10 @@ async def get_driver_requests(user_id: str):
     blocked_me = await db.blocked_users.find({"blocked_user_id": user_id}).to_list(100)
     
     blocked_ids = set([b["blocked_user_id"] for b in blocked_by_me] + [b["user_id"] for b in blocked_me])
+    
+    # Admin ayarından maksimum mesafeyi al (varsayılan 50km)
+    settings = await db.app_settings.find_one({"type": "global"})
+    max_distance = settings.get("driver_radius_km", MAX_DISTANCE_KM) if settings else MAX_DISTANCE_KM
     
     # Sadece pending veya offers_received TAGleri getir
     tags = await db_instance.find_many("tags", {
