@@ -3437,6 +3437,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   index={index}
                   total={requests.length}
                   onAccept={() => handleSendOffer(item.id)}
+                  onDismiss={() => handleDismissRequest(item.id)}
                   isPassenger={false}
                   driverArrivalMin={timeToPassenger}
                   tripDurationMin={tripTime}
