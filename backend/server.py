@@ -351,11 +351,14 @@ async def get_user(user_id: str):
 async def update_location(user_id: str, latitude: float, longitude: float):
     """Kullanıcı konumunu güncelle"""
     try:
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(user_id)
+        
         supabase.table("users").update({
             "latitude": latitude,
             "longitude": longitude,
             "last_location_update": datetime.utcnow().isoformat()
-        }).eq("id", user_id).execute()
+        }).eq("id", resolved_id).execute()
         
         return {"success": True}
     except Exception as e:
