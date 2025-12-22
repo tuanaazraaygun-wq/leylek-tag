@@ -182,21 +182,16 @@ async def check_user_query(phone: str, device_id: str = None):
 async def send_otp(request: SendOtpRequest = None, phone: str = None):
     """OTP gönder (şimdilik mock)"""
     # Body veya query param'dan al
-    phone_number = request.phone if request else phone
+    phone_number = None
+    if request and request.phone:
+        phone_number = request.phone
+    elif phone:
+        phone_number = phone
+    
     if not phone_number:
         raise HTTPException(status_code=422, detail="Phone gerekli")
     
     logger.info(f"📱 OTP gönderildi (mock): {phone_number} -> 123456")
-    return {"success": True, "message": "OTP gönderildi", "dev_otp": "123456"}
-    except Exception as e:
-        logger.error(f"Check user error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/auth/send-otp")
-async def send_otp(phone: str):
-    """OTP gönder (şimdilik mock)"""
-    # TODO: NetGSM entegrasyonu
-    logger.info(f"📱 OTP gönderildi (mock): {phone} -> 123456")
     return {"success": True, "message": "OTP gönderildi", "dev_otp": "123456"}
 
 @api_router.post("/auth/verify-otp")
