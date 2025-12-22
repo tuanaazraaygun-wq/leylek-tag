@@ -2277,6 +2277,26 @@ function PassengerDashboard({
     );
   };
 
+  // Teklifi 10 dakikalığına gizle (çarpı butonu)
+  const handleDismissOffer = async (offerId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/passenger/dismiss-offer?user_id=${user.id}&offer_id=${offerId}`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Teklifi listeden kaldır
+        setOffers(prev => prev.filter(o => o.id !== offerId));
+        // Toast göster
+        setToastMessage('Teklif 10 dakika boyunca gizlendi');
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+      }
+    } catch (error) {
+      console.log('Dismiss error:', error);
+    }
+  };
+
   const handleAcceptOffer = async (offerId: string) => {
     if (!activeTag) return;
 
