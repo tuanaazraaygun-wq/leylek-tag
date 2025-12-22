@@ -3439,8 +3439,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           />
         </View>
       ) : requests.length > 0 ? (
-        // TİKTOK TARZI TAM EKRAN TALEP LİSTESİ - ŞOFÖR
-        <View style={styles.tikTokContainer}>
+        // TİKTOK TARZI TAM EKRAN TALEP LİSTESİ - ŞOFÖR (HEADER YOK)
+        <View style={styles.tikTokContainerFullScreen}>
           <FlatList
             data={requests}
             keyExtractor={(item, index) => item.id || index.toString()}
