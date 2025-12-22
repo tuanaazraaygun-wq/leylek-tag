@@ -274,38 +274,51 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
             # Güncelle
             supabase.table("users").update({
                 "pin_hash": pin_hash,
-                "first_name": first_name,
-                "last_name": last_name,
-                "city": city,
-                "name": f"{first_name or ''} {last_name or ''}".strip(),
+                "first_name": first_name_val,
+                "last_name": last_name_val,
+                "city": city_val,
+                "name": f"{first_name_val or ''} {last_name_val or ''}".strip(),
                 "updated_at": datetime.utcnow().isoformat()
-            }).eq("phone", phone).execute()
+            }).eq("phone", phone_val).execute()
         else:
             # Yeni kullanıcı oluştur
             supabase.table("users").insert({
-                "phone": phone,
+                "phone": phone_val,
                 "pin_hash": pin_hash,
-                "first_name": first_name,
-                "last_name": last_name,
-                "city": city,
-                "name": f"{first_name or ''} {last_name or ''}".strip(),
+                "first_name": first_name_val,
+                "last_name": last_name_val,
+                "city": city_val,
+                "name": f"{first_name_val or ''} {last_name_val or ''}".strip(),
                 "rating": 5.0,
                 "total_ratings": 0,
                 "total_trips": 0,
                 "is_active": True
             }).execute()
         
-        logger.info(f"✅ PIN ayarlandı: {phone}")
+        logger.info(f"✅ PIN ayarlandı: {phone_val}")
         return {"success": True, "message": "PIN ayarlandı"}
     except Exception as e:
         logger.error(f"Set PIN error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class LoginRequest(BaseModel):
+    phone: str
+    pin: str
+    device_id: Optional[str] = None
+
 @api_router.post("/auth/login")
-async def login(phone: str, pin: str, device_id: str = None):
+async def login(request: LoginRequest = None, phone: str = None, pin: str = None, device_id: str = None):
     """PIN ile giriş"""
     try:
-        result = supabase.table("users").select("*").eq("phone", phone).execute()
+        # Body veya query param'dan al
+        phone_val = request.phone if request else phone
+        pin_val = request.pin if request else pin
+        device_val = request.device_id if request else device_id
+        
+        if not phone_val or not pin_val:
+            raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
+        
+        result = supabase.table("users").select("*").eq("phone", phone_val).execute()
         
         if not result.data:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
