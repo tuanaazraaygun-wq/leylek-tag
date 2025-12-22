@@ -1105,7 +1105,7 @@ async def get_driver_requests(user_id: str):
             )
             
             # MESAFE FİLTRE: Admin tarafından ayarlanabilir (varsayılan 50km)
-            if distance_to_passenger > MAX_DISTANCE_KM:
+            if distance_to_passenger > max_distance:
                 continue  # Maksimum mesafeden uzak, atla
         
         # Yolcunun gideceği mesafe (pickup -> dropoff)
