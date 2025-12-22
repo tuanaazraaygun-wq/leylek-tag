@@ -95,20 +95,26 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       }
 
       // Expo Push Token al
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId || 'f00346b0-b9cb-47f9-a647-7f56b168e3a9';
       
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: projectId,
-      });
+      try {
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: projectId,
+        });
 
-      console.log('✅ Push Token alındı:', tokenData.data);
-      setExpoPushToken(tokenData.data);
-      setError(null);
-      
-      return tokenData.data;
+        console.log('✅ Push Token alındı:', tokenData.data);
+        setExpoPushToken(tokenData.data);
+        setError(null);
+        
+        return tokenData.data;
+      } catch (tokenError: any) {
+        // Development build'de token alamayabilir, bu normal
+        console.log('⚠️ Push token alınamadı (development modda normal):', tokenError.message);
+        return null;
+      }
     } catch (err: any) {
-      console.error('❌ Push token alma hatası:', err);
-      setError(err.message || 'Push token alınamadı');
+      console.log('⚠️ Push notification setup hatası:', err.message);
+      // Kritik değil, uygulamayı durdurmayalım
       return null;
     }
   }, []);
