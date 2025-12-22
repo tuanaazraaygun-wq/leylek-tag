@@ -123,6 +123,14 @@ async def get_cities():
     """Türkiye şehirlerini getir"""
     return {"success": True, "cities": sorted(TURKEY_CITIES)}
 
+# Frontend compatibility alias
+@api_router.post("/auth/check-user")
+async def check_user_alias(phone: str = None, device_id: str = None):
+    """Kullanıcı var mı kontrol et (frontend uyumluluğu için alias)"""
+    if not phone:
+        raise HTTPException(status_code=422, detail="Phone gerekli")
+    return await check_user(phone, device_id)
+
 @api_router.post("/auth/check")
 async def check_user(phone: str, device_id: str = None):
     """Kullanıcı var mı kontrol et"""
