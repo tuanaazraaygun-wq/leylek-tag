@@ -2,7 +2,7 @@
   "expo": {
     "name": "Leylek TAG",
     "slug": "leylektag-app",
-    "owner": "leylektag-app",
+    "owner": "leylektagapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
