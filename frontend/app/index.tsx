@@ -2311,7 +2311,7 @@ function PassengerDashboard({
         // Sadece sürücü adını kaydet, arama başlatma
         setSelectedDriverName(selectedOffer.driver_name);
         loadActiveTag();
-        Alert.alert('Başarılı', 'Eşleşme sağlandı! Haritada konumları görebilirsiniz.');
+        
       }
     } catch (error) {
       Alert.alert('Hata', 'Teklif kabul edilemedi');
