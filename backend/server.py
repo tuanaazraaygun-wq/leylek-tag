@@ -3959,6 +3959,221 @@ async def force_end_trip(tag_id: str, user_id: str):
         return {"success": False, "detail": str(e)}
 
 
+# ==================== SUPABASE STORAGE ENDPOINTS ====================
+
+@api_router.post("/storage/upload-profile-photo")
+async def upload_profile_photo(
+    user_id: str,
+    file: UploadFile = File(...)
+):
+    """
+    Profil fotoğrafı yükle (Supabase Storage)
+    """
+    try:
+        # Dosya boyutu kontrolü (max 5MB)
+        contents = await file.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Dosya boyutu 5MB'dan büyük olamaz")
+        
+        # Dosya türü kontrolü
+        content_type = file.content_type or "image/jpeg"
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Sadece resim dosyaları yüklenebilir")
+        
+        # Dosya uzantısını belirle
+        ext = "jpg"
+        if "png" in content_type:
+            ext = "png"
+        elif "webp" in content_type:
+            ext = "webp"
+        
+        # Supabase'e yükle
+        file_path = f"{user_id}/profile.{ext}"
+        result = await upload_file_to_storage(
+            bucket="profile-photos",
+            file_path=file_path,
+            file_data=contents,
+            content_type=content_type
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Yükleme hatası"))
+        
+        # MongoDB'de profil fotoğrafı URL'ini güncelle
+        db = db_instance.db
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "profile_photo": result["url"],
+                "profile_photo_updated_at": datetime.utcnow()
+            }}
+        )
+        
+        logger.info(f"📸 Profil fotoğrafı yüklendi: {user_id}")
+        return {
+            "success": True,
+            "url": result["url"],
+            "message": "Profil fotoğrafı yüklendi"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Profil fotoğrafı yükleme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/storage/upload-vehicle-photo")
+async def upload_vehicle_photo(
+    user_id: str,
+    file: UploadFile = File(...)
+):
+    """
+    Araç fotoğrafı yükle (Supabase Storage) - Sadece şoförler için
+    """
+    try:
+        # Kullanıcının şoför olduğunu kontrol et
+        db = db_instance.db
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        # Dosya boyutu kontrolü (max 5MB)
+        contents = await file.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Dosya boyutu 5MB'dan büyük olamaz")
+        
+        # Dosya türü kontrolü
+        content_type = file.content_type or "image/jpeg"
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Sadece resim dosyaları yüklenebilir")
+        
+        # Dosya uzantısını belirle
+        ext = "jpg"
+        if "png" in content_type:
+            ext = "png"
+        elif "webp" in content_type:
+            ext = "webp"
+        
+        # Supabase'e yükle
+        file_path = f"{user_id}/vehicle.{ext}"
+        result = await upload_file_to_storage(
+            bucket="vehicle-photos",
+            file_path=file_path,
+            file_data=contents,
+            content_type=content_type
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Yükleme hatası"))
+        
+        # MongoDB'de araç fotoğrafı URL'ini güncelle (driver_details içinde)
+        driver_details = user.get("driver_details", {})
+        driver_details["vehicle_photo"] = result["url"]
+        driver_details["vehicle_photo_updated_at"] = datetime.utcnow()
+        
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"driver_details": driver_details}}
+        )
+        
+        logger.info(f"🚗 Araç fotoğrafı yüklendi: {user_id}")
+        return {
+            "success": True,
+            "url": result["url"],
+            "message": "Araç fotoğrafı yüklendi"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Araç fotoğrafı yükleme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.delete("/storage/delete-profile-photo")
+async def delete_profile_photo(user_id: str):
+    """Profil fotoğrafını sil"""
+    try:
+        # Supabase'den sil
+        result = await delete_file_from_storage(
+            bucket="profile-photos",
+            file_path=f"{user_id}/profile.jpg"
+        )
+        
+        # MongoDB'den URL'i kaldır
+        db = db_instance.db
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$unset": {"profile_photo": "", "profile_photo_updated_at": ""}}
+        )
+        
+        return {"success": True, "message": "Profil fotoğrafı silindi"}
+        
+    except Exception as e:
+        logger.error(f"Profil fotoğrafı silme hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+
+@api_router.delete("/storage/delete-vehicle-photo")
+async def delete_vehicle_photo(user_id: str):
+    """Araç fotoğrafını sil"""
+    try:
+        # Supabase'den sil
+        result = await delete_file_from_storage(
+            bucket="vehicle-photos",
+            file_path=f"{user_id}/vehicle.jpg"
+        )
+        
+        # MongoDB'den URL'i kaldır
+        db = db_instance.db
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+        if user and user.get("driver_details"):
+            driver_details = user["driver_details"]
+            driver_details.pop("vehicle_photo", None)
+            driver_details.pop("vehicle_photo_updated_at", None)
+            await db.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"driver_details": driver_details}}
+            )
+        
+        return {"success": True, "message": "Araç fotoğrafı silindi"}
+        
+    except Exception as e:
+        logger.error(f"Araç fotoğrafı silme hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+
+# ==================== SUPABASE REALTIME HELPERS ====================
+
+@api_router.get("/realtime/channel-info")
+async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
+    """
+    Realtime kanal bilgilerini döndür
+    Frontend bu bilgiyle Supabase'e bağlanır
+    """
+    import os
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "")
+    
+    if not supabase_url or not supabase_anon_key:
+        return {"success": False, "detail": "Supabase yapılandırılmamış"}
+    
+    channels = {}
+    
+    if trip_id:
+        channels["trip"] = f"leylek_trip_{trip_id}"
+    
+    if user_id:
+        channels["location"] = f"leylek_location_{user_id}"
+    
+    return {
+        "success": True,
+        "supabase_url": supabase_url,
+        "channels": channels
+    }
+
+
 # ==================== ROUTER INCLUDE - TÜM ENDPOINT'LERDEN SONRA ====================
 app.include_router(api_router)
 
