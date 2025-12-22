@@ -44,7 +44,7 @@ import httpx
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
 async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
-    """Google Directions API ile gerçek mesafe ve süre hesapla"""
+    """Google Directions API ile gerçek mesafe ve süre hesapla (TRAFİK DAHİL)"""
     try:
         if not GOOGLE_MAPS_API_KEY:
             # API key yoksa düz çizgi mesafe hesapla
@@ -58,7 +58,9 @@ async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, 
             "destination": f"{dest_lat},{dest_lng}",
             "key": GOOGLE_MAPS_API_KEY,
             "mode": "driving",
-            "language": "tr"
+            "language": "tr",
+            "departure_time": "now",  # TRAFİK DAHİL - şu anki trafik durumu
+            "traffic_model": "best_guess"  # En iyi tahmin
         }
         
         async with httpx.AsyncClient() as client:
@@ -70,7 +72,12 @@ async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, 
             leg = route["legs"][0]
             
             distance_km = leg["distance"]["value"] / 1000
-            duration_min = round(leg["duration"]["value"] / 60)
+            
+            # TRAFİK DAHİL süre (duration_in_traffic varsa kullan)
+            if "duration_in_traffic" in leg:
+                duration_min = round(leg["duration_in_traffic"]["value"] / 60)
+            else:
+                duration_min = round(leg["duration"]["value"] / 60)
             
             return {
                 "distance_km": round(distance_km, 1),
@@ -80,7 +87,7 @@ async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, 
         else:
             # API hatası - fallback (yol katsayısı ile)
             straight_dist = calculate_distance(origin_lat, origin_lng, dest_lat, dest_lng)
-            dist = straight_dist * 1.8  # Şehir içi yollar düz çizginin ~1.8 katı
+            dist = straight_dist * 1.4  # Şehir içi yollar düz çizginin ~1.4 katı
             dur = round((dist / 30) * 60)  # Şehir içi ortalama 30 km/h
             return {"distance_km": round(dist, 1), "duration_min": dur, "source": "estimated"}
             
