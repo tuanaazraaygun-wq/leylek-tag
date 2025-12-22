@@ -194,14 +194,13 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const saveSettings = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/settings`, {
+      const params = new URLSearchParams({
+        admin_phone: adminPhone,
+        driver_radius_km: driverRadius,
+        max_call_duration_minutes: maxCallDuration
+      });
+      const res = await fetch(`${API_URL}/admin/settings?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_phone: adminPhone,
-          driver_radius_km: parseInt(driverRadius),
-          max_call_duration_min: parseInt(maxCallDuration)
-        })
       });
       const data = await res.json();
       if (data.success) {
