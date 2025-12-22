@@ -281,6 +281,9 @@ api_router = APIRouter(prefix="/api")
 async def startup_db():
     await db_instance.connect()
     logger.info("✅ Database connected")
+    
+    # Supabase'i başlat
+    init_supabase()
 
 @app.on_event("shutdown")
 async def shutdown_db():
