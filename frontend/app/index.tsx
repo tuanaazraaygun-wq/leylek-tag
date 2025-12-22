@@ -2339,7 +2339,7 @@ function PassengerDashboard({
 
               const data = await response.json();
               if (data.success) {
-                Alert.alert('✅ İptal Edildi', 'İsteğiniz başarıyla iptal edildi.');
+                
                 setActiveTag(null);
                 setOffers([]);
               } else {
