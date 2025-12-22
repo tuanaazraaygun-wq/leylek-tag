@@ -224,23 +224,51 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     logger.info(f"📱 OTP gönderildi (mock): {phone_number} -> 123456")
     return {"success": True, "message": "OTP gönderildi", "dev_otp": "123456"}
 
+class VerifyOtpRequest(BaseModel):
+    phone: str
+    otp: str
+
 @api_router.post("/auth/verify-otp")
-async def verify_otp(phone: str, otp: str):
+async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: str = None):
     """OTP doğrula"""
+    # Body veya query param'dan al
+    phone_number = request.phone if request else phone
+    otp_code = request.otp if request else otp
+    
+    if not phone_number or not otp_code:
+        raise HTTPException(status_code=422, detail="Phone ve OTP gerekli")
+    
     # Mock OTP kontrolü
-    if otp != "123456":
+    if otp_code != "123456":
         raise HTTPException(status_code=400, detail="Geçersiz OTP")
     
     return {"success": True, "message": "OTP doğrulandı"}
 
+class SetPinRequest(BaseModel):
+    phone: str
+    pin: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    city: Optional[str] = None
+
 @api_router.post("/auth/set-pin")
-async def set_pin(phone: str, pin: str, first_name: str = None, last_name: str = None, city: str = None):
+async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = None, first_name: str = None, last_name: str = None, city: str = None):
     """PIN oluştur veya güncelle"""
     try:
-        pin_hash = hash_pin(pin)
+        # Body veya query param'dan al
+        phone_val = request.phone if request else phone
+        pin_val = request.pin if request else pin
+        first_name_val = request.first_name if request else first_name
+        last_name_val = request.last_name if request else last_name
+        city_val = request.city if request else city
+        
+        if not phone_val or not pin_val:
+            raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
+        
+        pin_hash = hash_pin(pin_val)
         
         # Kullanıcı var mı?
-        result = supabase.table("users").select("id").eq("phone", phone).execute()
+        result = supabase.table("users").select("id").eq("phone", phone_val).execute()
         
         if result.data:
             # Güncelle
