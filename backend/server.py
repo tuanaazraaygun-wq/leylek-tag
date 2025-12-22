@@ -2693,6 +2693,59 @@ async def admin_get_settings(admin_phone: str):
     
     return {"success": True, "settings": settings}
 
+@api_router.post("/admin/cleanup-stuck-tags")
+async def admin_cleanup_stuck_tags(admin_phone: str):
+    """Takılı kalmış (24 saatten eski matched/in_progress) eşleşmeleri temizle"""
+    db = db_instance.db
+    
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin bu işlemi yapabilir")
+    
+    # 24 saatten eski matched/in_progress TAG'leri completed yap
+    cutoff_time = datetime.utcnow() - timedelta(hours=24)
+    
+    result = await db.tags.update_many(
+        {
+            "status": {"$in": ["matched", "in_progress"]},
+            "updated_at": {"$lt": cutoff_time}
+        },
+        {
+            "$set": {
+                "status": "completed",
+                "updated_at": datetime.utcnow(),
+                "completed_reason": "admin_cleanup"
+            }
+        }
+    )
+    
+    logger.info(f"🧹 Admin {admin_phone} takılı {result.modified_count} TAG temizledi")
+    return {"success": True, "cleaned_count": result.modified_count}
+
+@api_router.post("/admin/force-complete-tag")
+async def admin_force_complete_tag(admin_phone: str, tag_id: str):
+    """Belirli bir TAG'i zorla tamamla (admin)"""
+    db = db_instance.db
+    
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Sadece ana admin bu işlemi yapabilir")
+    
+    result = await db.tags.update_one(
+        {"_id": ObjectId(tag_id)},
+        {
+            "$set": {
+                "status": "completed",
+                "updated_at": datetime.utcnow(),
+                "completed_reason": "admin_force"
+            }
+        }
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="TAG bulunamadı")
+    
+    logger.info(f"🧹 Admin {admin_phone} TAG {tag_id} zorla tamamladı")
+    return {"success": True, "message": "TAG tamamlandı olarak işaretlendi"}
+
 @api_router.post("/admin/settings")
 async def admin_update_settings(
     admin_phone: str,
