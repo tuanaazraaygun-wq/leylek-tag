@@ -7118,4 +7118,39 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.3)',
     marginTop: 6,
   },
+  // TAM EKRAN MODAL STİLLERİ
+  fullScreenModalContainer: {
+    flex: 1,
+    backgroundColor: '#0A1628',
+  },
+  fullScreenModalContent: {
+    flex: 1,
+    paddingTop: 50,
+    paddingHorizontal: 20,
+  },
+  fullScreenModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 30,
+  },
+  fullScreenModalBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(63,169,245,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  fullScreenModalQuestion: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
 });
