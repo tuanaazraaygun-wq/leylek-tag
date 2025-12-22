@@ -781,6 +781,13 @@ async def get_offers(tag_id: str, user_id: str):
     blocked_me = await db.blocked_users.find({"blocked_user_id": user_id}).to_list(100)
     blocked_ids = set([b["blocked_user_id"] for b in blocked_by_me] + [b["user_id"] for b in blocked_me])
     
+    # Gizlenmiş teklifleri al (10 dakika süreli)
+    dismissed = await db.dismissed_offers.find({
+        "user_id": user_id,
+        "expires_at": {"$gt": datetime.utcnow()}
+    }).to_list(100)
+    dismissed_offer_ids = set([d["offer_id"] for d in dismissed])
+    
     # Önce expire olanları sil
     await db_instance.db.offers.delete_many({
         "tag_id": tag_id,
@@ -797,6 +804,9 @@ async def get_offers(tag_id: str, user_id: str):
     for offer in offers:
         # Engelli şoförlerin tekliflerini atla
         if offer.get("driver_id") in blocked_ids:
+            continue
+        # Gizlenmiş teklifleri atla
+        if str(offer["_id"]) in dismissed_offer_ids:
             continue
         offer_responses.append(OfferResponse(
             id=str(offer["_id"]),
