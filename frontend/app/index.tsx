@@ -1588,18 +1588,6 @@ function TikTokOfferCard({
   );
 }
 
-        {/* Footer - Şifreli Mesaj ve Şirket Bilgisi */}
-        <View style={styles.tikTokFooter}>
-          <Text style={styles.tikTokFooterEncrypted}>🔒 Görüşmeler uçtan uca şifrelidir</Text>
-          <View style={styles.tikTokFooterCompany}>
-            <Text style={styles.tikTokFooterCompanyText}>Karekod Teknoloji ve Yazılım AŞ</Text>
-          </View>
-        </View>
-      </LinearGradient>
-    </View>
-  );
-}
-
 // ==================== TRAFIK LAMBASI ANIMASYONU ====================
 function TrafficLightBorder({ children }: { children: React.ReactNode }) {
   // Basitleştirildi - Android hatası düzeltildi
