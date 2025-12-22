@@ -2780,9 +2780,6 @@ function PassengerDashboard({
           />
         </View>
       </Modal>
-          </View>
-        </View>
-      </Modal>
 
       {/* Gelen Arama Modal */}
       <IncomingCall
