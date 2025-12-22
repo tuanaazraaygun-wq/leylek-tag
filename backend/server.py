@@ -1129,7 +1129,7 @@ async def get_driver_requests(user_id: str):
     # EN YAKINA GÖRE SIRALA (mesafe artan sıra)
     tag_responses.sort(key=lambda x: x.get("distance_to_passenger_km", 999))
     
-    logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı (şehir + 20km filtreli, yakınlık sıralı)")
+    logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı (şehir + {MAX_DISTANCE_KM}km filtreli, yakınlık sıralı)")
     return {"success": True, "requests": tag_responses}
 
 @api_router.post("/driver/send-offer")
