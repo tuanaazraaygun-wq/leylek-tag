@@ -6936,8 +6936,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     marginTop: 2,
   },
-    fontWeight: '600',
-  },
   // ŞOFÖR TAM EKRAN STİLLER
   driverFullScreen: {
     flex: 1,
