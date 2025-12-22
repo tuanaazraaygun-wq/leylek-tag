@@ -120,15 +120,7 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
 
 # ==================== AUTH ENDPOINTS ====================
 
-@api_router.get("/cities")
-async def get_cities():
-    """Türkiye şehirlerini getir"""
-    return {"success": True, "cities": sorted(TURKEY_CITIES)}
-
-# Frontend compatibility alias - body'den oku
-from pydantic import BaseModel
-from typing import Optional
-
+# Pydantic modelleri
 class CheckUserRequest(BaseModel):
     phone: str
     device_id: Optional[str] = None
@@ -136,15 +128,14 @@ class CheckUserRequest(BaseModel):
 class SendOtpRequest(BaseModel):
     phone: str
 
-@api_router.post("/auth/check-user")
-async def check_user_alias(request: CheckUserRequest):
-    """Kullanıcı var mı kontrol et (frontend uyumluluğu için alias)"""
-    return await check_user(request.phone, request.device_id)
+@api_router.get("/cities")
+async def get_cities():
+    """Türkiye şehirlerini getir"""
+    return {"success": True, "cities": sorted(TURKEY_CITIES)}
 
-@api_router.post("/auth/check")
-async def check_user(phone: str, device_id: str = None):
-async def check_user(phone: str, device_id: str = None):
-    """Kullanıcı var mı kontrol et"""
+# Yardımcı fonksiyon
+async def _check_user_logic(phone: str, device_id: str = None):
+    """Kullanıcı var mı kontrol et - iç mantık"""
     try:
         result = supabase.table("users").select("*").eq("phone", phone).execute()
         
@@ -160,14 +151,43 @@ async def check_user(phone: str, device_id: str = None):
             
             return {
                 "success": True,
+                "user_exists": True,  # Frontend bunu bekliyor
                 "exists": True,
                 "has_pin": has_pin,
+                "device_verified": is_verified,  # Frontend bunu bekliyor
                 "is_device_verified": is_verified,
                 "user_id": user["id"],
                 "is_admin": phone in ADMIN_PHONE_NUMBERS
             }
         
-        return {"success": True, "exists": False, "has_pin": False}
+        return {"success": True, "user_exists": False, "exists": False, "has_pin": False}
+    except Exception as e:
+        logger.error(f"Check user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Frontend body'den okuyan endpoint
+@api_router.post("/auth/check-user")
+async def check_user_body(request: CheckUserRequest):
+    """Kullanıcı var mı kontrol et (body JSON)"""
+    return await _check_user_logic(request.phone, request.device_id)
+
+# Query param ile çalışan endpoint
+@api_router.post("/auth/check")
+async def check_user_query(phone: str, device_id: str = None):
+    """Kullanıcı var mı kontrol et (query param)"""
+    return await _check_user_logic(phone, device_id)
+
+# Send OTP - body'den oku
+@api_router.post("/auth/send-otp")
+async def send_otp(request: SendOtpRequest = None, phone: str = None):
+    """OTP gönder (şimdilik mock)"""
+    # Body veya query param'dan al
+    phone_number = request.phone if request else phone
+    if not phone_number:
+        raise HTTPException(status_code=422, detail="Phone gerekli")
+    
+    logger.info(f"📱 OTP gönderildi (mock): {phone_number} -> 123456")
+    return {"success": True, "message": "OTP gönderildi", "dev_otp": "123456"}
     except Exception as e:
         logger.error(f"Check user error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
