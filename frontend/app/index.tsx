@@ -3445,18 +3445,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             data={requests}
             keyExtractor={(item, index) => item.id || index.toString()}
             renderItem={({ item, index }) => {
-              // Mesafe ve süre hesaplama
-              const distanceToPassenger = item.distance_to_passenger_km || 0;
-              const timeToPassenger = Math.round((distanceToPassenger / 40) * 60);
-              const tripDistance = item.trip_distance_km || 0;
-              const tripTime = Math.round((tripDistance / 50) * 60);
+              // Backend'den gelen Google API değerlerini kullan
+              const timeToPassenger = item.time_to_passenger_min || Math.round((item.distance_to_passenger_km || 5) / 40 * 60);
+              const tripDuration = item.trip_duration_min || Math.round((item.trip_distance_km || 10) / 50 * 60);
               
               return (
                 <TikTokOfferCard
                   offer={{
                     ...item,
                     estimated_arrival_min: timeToPassenger,
-                    trip_duration_min: tripTime
+                    trip_duration_min: tripDuration
                   }}
                   index={index}
                   total={requests.length}
@@ -3464,7 +3462,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   onDismiss={() => handleDismissRequest(item.id)}
                   isPassenger={false}
                   driverArrivalMin={timeToPassenger}
-                  tripDurationMin={tripTime}
+                  tripDurationMin={tripDuration}
                 />
               );
             }}
