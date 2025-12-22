@@ -3674,9 +3674,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           </View>
         </View>
       </Modal>
-      </>
     </SafeAreaView>
-    </>
   );
 }
 
