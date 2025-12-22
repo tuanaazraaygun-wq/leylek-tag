@@ -3580,33 +3580,234 @@ async def update_device_info(user_id: str, device_model: str = "", os_version: s
 
 
 # ==================== BİLDİRİM SİSTEMİ ====================
-@api_router.post("/admin/send-notification")
-async def admin_send_notification(admin_phone: str, title: str, message: str, user_ids: list = None):
+
+# ========== EXPO PUSH NOTIFICATION SERVICE ==========
+class ExpoPushService:
+    """Expo Push Notification Service"""
+    
+    EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+    
+    @staticmethod
+    def is_valid_expo_token(token: str) -> bool:
+        """Expo token formatını doğrula"""
+        if not token or not isinstance(token, str):
+            return False
+        return token.startswith("ExponentPushToken[") and token.endswith("]")
+    
+    @staticmethod
+    async def send_push_notifications(tokens: list, title: str, body: str, data: dict = None) -> dict:
+        """
+        Expo Push Service üzerinden bildirim gönder
+        Returns: {"sent": int, "failed": int, "tickets": list}
+        """
+        if not tokens:
+            return {"sent": 0, "failed": 0, "tickets": []}
+        
+        # Geçerli tokenları filtrele
+        valid_tokens = [t for t in tokens if ExpoPushService.is_valid_expo_token(t)]
+        
+        if not valid_tokens:
+            logger.warning(f"⚠️ Geçerli Expo Push Token bulunamadı ({len(tokens)} token kontrol edildi)")
+            return {"sent": 0, "failed": len(tokens), "tickets": []}
+        
+        # Mesajları oluştur
+        messages = []
+        for token in valid_tokens:
+            message = {
+                "to": token,
+                "sound": "default",
+                "title": title,
+                "body": body,
+                "data": data or {},
+                "priority": "high",
+                "channelId": "default"
+            }
+            messages.append(message)
+        
+        # Expo API'ye gönder (100'lük batch'ler halinde)
+        all_tickets = []
+        failed_count = 0
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                for i in range(0, len(messages), 100):
+                    batch = messages[i:i+100]
+                    
+                    response = await client.post(
+                        ExpoPushService.EXPO_PUSH_URL,
+                        json=batch,
+                        headers={
+                            "Accept": "application/json",
+                            "Accept-Encoding": "gzip, deflate",
+                            "Content-Type": "application/json"
+                        },
+                        timeout=30.0
+                    )
+                    
+                    result = response.json()
+                    
+                    if "data" in result:
+                        for ticket in result["data"]:
+                            all_tickets.append(ticket)
+                            if ticket.get("status") == "error":
+                                failed_count += 1
+                    
+                    if "errors" in result:
+                        logger.error(f"❌ Expo Push Error: {result['errors']}")
+                        failed_count += len(batch)
+        
+        except Exception as e:
+            logger.error(f"❌ Expo Push gönderim hatası: {e}")
+            return {"sent": 0, "failed": len(valid_tokens), "tickets": [], "error": str(e)}
+        
+        sent_count = len(all_tickets) - failed_count
+        logger.info(f"📨 Push bildirimi gönderildi: {sent_count} başarılı, {failed_count} başarısız")
+        
+        return {
+            "sent": sent_count,
+            "failed": failed_count,
+            "tickets": all_tickets
+        }
+
+expo_push_service = ExpoPushService()
+
+
+@api_router.post("/user/register-push-token")
+async def register_push_token(user_id: str, push_token: str):
     """
-    Bildirim gönder
-    user_ids: None ise herkese, liste ise sadece o kullanıcılara
+    Kullanıcının Expo Push Token'ını kaydet
+    Bu token ile push bildirimi gönderilebilir
+    """
+    db = db_instance.db
+    
+    if not ExpoPushService.is_valid_expo_token(push_token):
+        return {"success": False, "detail": "Geçersiz Expo Push Token formatı"}
+    
+    # Token'ı kullanıcıya kaydet
+    result = await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {
+            "$set": {
+                "push_token": push_token,
+                "push_token_updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    if result.modified_count > 0:
+        logger.info(f"📱 Push token kaydedildi: {user_id}")
+        return {"success": True, "message": "Push token kaydedildi"}
+    else:
+        return {"success": False, "detail": "Kullanıcı bulunamadı"}
+
+
+@api_router.delete("/user/remove-push-token")
+async def remove_push_token(user_id: str):
+    """Kullanıcının push token'ını sil (logout sırasında)"""
+    db = db_instance.db
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$unset": {"push_token": "", "push_token_updated_at": ""}}
+    )
+    
+    logger.info(f"📱 Push token silindi: {user_id}")
+    return {"success": True}
+
+
+class SendNotificationRequest(BaseModel):
+    admin_phone: str
+    title: str
+    message: str
+    target: str = "all"  # "all", "drivers", "passengers", "user"
+    user_id: str = None  # target="user" ise gerekli
+    data: dict = None  # Ek veri
+
+
+@api_router.post("/admin/send-notification")
+async def admin_send_notification(request: SendNotificationRequest):
+    """
+    Push bildirim gönder
+    target: "all" (herkese), "drivers" (şoförlere), "passengers" (yolculara), "user" (tek kişiye)
     """
     db = db_instance.db
     
     # Admin kontrolü
-    is_admin = admin_phone in ADMIN_PHONE_NUMBERS
+    is_admin = request.admin_phone in ADMIN_PHONE_NUMBERS
     if not is_admin:
-        admin = await db.admins.find_one({"phone": admin_phone, "is_active": True})
+        admin = await db.admins.find_one({"phone": request.admin_phone, "is_active": True})
         if not admin:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
+    # Hedef kullanıcıları belirle
+    push_tokens = []
+    target_user_ids = []
+    
+    if request.target == "all":
+        # Tüm kullanıcılar
+        users = await db.users.find({"push_token": {"$exists": True, "$ne": None}}).to_list(10000)
+        push_tokens = [u["push_token"] for u in users if u.get("push_token")]
+        target_user_ids = [str(u["_id"]) for u in users]
+        
+    elif request.target == "drivers":
+        # Sadece şoförler (driver_details olan kullanıcılar)
+        users = await db.users.find({
+            "push_token": {"$exists": True, "$ne": None},
+            "driver_details": {"$exists": True}
+        }).to_list(10000)
+        push_tokens = [u["push_token"] for u in users if u.get("push_token")]
+        target_user_ids = [str(u["_id"]) for u in users]
+        
+    elif request.target == "passengers":
+        # Sadece yolcular (driver_details olmayan kullanıcılar)
+        users = await db.users.find({
+            "push_token": {"$exists": True, "$ne": None},
+            "driver_details": {"$exists": False}
+        }).to_list(10000)
+        push_tokens = [u["push_token"] for u in users if u.get("push_token")]
+        target_user_ids = [str(u["_id"]) for u in users]
+        
+    elif request.target == "user" and request.user_id:
+        # Tek bir kullanıcı
+        user = await db.users.find_one({"_id": ObjectId(request.user_id)})
+        if user and user.get("push_token"):
+            push_tokens = [user["push_token"]]
+            target_user_ids = [request.user_id]
+    
+    # Push bildirimi gönder
+    push_result = {"sent": 0, "failed": 0}
+    if push_tokens:
+        push_result = await ExpoPushService.send_push_notifications(
+            tokens=push_tokens,
+            title=request.title,
+            body=request.message,
+            data=request.data
+        )
+    
+    # Bildirim kaydını veritabanına kaydet
     notification = {
-        "title": title,
-        "message": message,
-        "target_users": user_ids,  # None = herkese
-        "sent_by": admin_phone,
+        "title": request.title,
+        "message": request.message,
+        "target": request.target,
+        "target_users": target_user_ids if request.target != "all" else None,
+        "sent_by": request.admin_phone,
         "created_at": datetime.utcnow(),
-        "read_by": []
+        "read_by": [],
+        "push_sent": push_result.get("sent", 0),
+        "push_failed": push_result.get("failed", 0)
     }
     
     result = await db.notifications.insert_one(notification)
     
-    return {"success": True, "notification_id": str(result.inserted_id)}
+    logger.info(f"📢 Bildirim gönderildi: {request.title} -> {request.target} ({push_result.get('sent', 0)} kişi)")
+    
+    return {
+        "success": True,
+        "notification_id": str(result.inserted_id),
+        "sent_count": push_result.get("sent", 0),
+        "failed_count": push_result.get("failed", 0),
+        "total_targets": len(target_user_ids)
+    }
 
 @api_router.get("/user/notifications")
 async def get_user_notifications(user_id: str):
