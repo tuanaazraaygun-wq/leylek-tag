@@ -168,7 +168,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const scheduleLocalNotification = useCallback(async (
     title: string,
     body: string,
-    data?: object
+    data?: Record<string, unknown>
   ): Promise<void> => {
     try {
       await Notifications.scheduleNotificationAsync({
@@ -223,10 +223,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     // Cleanup
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
       subscription.remove();
     };
