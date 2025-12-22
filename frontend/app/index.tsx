@@ -6402,6 +6402,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     zIndex: 100,
   },
+  absoluteFullScreen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#0A1628',
+    zIndex: 9999,
+  },
   tikTokCard: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
