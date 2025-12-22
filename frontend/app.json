@@ -15,8 +15,8 @@
         "googleMapsApiKey": "AIzaSyAKqhXyi2cUC3GHLxjom4R_tQ3UfR5auUw"
       },
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "S\u00fcr\u00fcc\u00fc ve yolcu aras\u0131nda sesli g\u00f6r\u00fc\u015fme yapmak i\u00e7in mikrofon izni gereklidir.",
-        "NSCameraUsageDescription": "Profil foto\u011fraf\u0131 \u00e7ekmek i\u00e7in kamera izni gereklidir."
+        "NSMicrophoneUsageDescription": "Sürücü ve yolcu arasında sesli görüşme yapmak için mikrofon izni gereklidir.",
+        "NSCameraUsageDescription": "Profil fotoğrafı çekmek için kamera izni gereklidir."
       }
     },
     "android": {
@@ -80,7 +80,10 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "--non-interactive"
+      }
     }
   }
 }
