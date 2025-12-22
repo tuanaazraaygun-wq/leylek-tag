@@ -2702,15 +2702,18 @@ function PassengerDashboard({
             ) : null}
       </ScrollView>
 
-      {/* Hedef Seçme Modal - ÜSTTEN AÇILAN YARIM SAYFA */}
-      <Modal
-        visible={showDestinationPicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowDestinationPicker(false)}
-      >
-        <View style={styles.topSheetOverlay}>
-          <View style={styles.topSheetContainer}>
+      {/* Hedef Seçme - ÜSTTEN AÇILAN YARIM SAYFA (Modal yerine Animated View) */}
+      {showDestinationPicker && (
+        <View style={styles.topSheetFullOverlay}>
+          {/* Arka plan - tıklayınca kapat */}
+          <TouchableOpacity 
+            style={styles.topSheetBackdropFull}
+            activeOpacity={1}
+            onPress={() => setShowDestinationPicker(false)}
+          />
+          
+          {/* Üstten açılan panel */}
+          <View style={styles.topSheetPanelFromTop}>
             {/* Üst Bar - Kapat */}
             <View style={styles.topSheetHeader}>
               <Text style={styles.topSheetTitle}>Nereye Gidiyorsunuz?</Text>
@@ -2746,7 +2749,7 @@ function PassengerDashboard({
             <Text style={styles.topSheetPopularTitle}>
               {user?.city ? `${user.city} Popüler` : 'Popüler Konumlar'}
             </Text>
-            <View style={styles.topSheetPopularList}>
+            <ScrollView style={styles.topSheetPopularScroll} showsVerticalScrollIndicator={false}>
               {[
                 { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
                 { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.0230 },
@@ -2766,20 +2769,13 @@ function PassengerDashboard({
                   <Text style={styles.topSheetPopularText}>{place.name}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
             
-            {/* Alt Çizgi - Kapatma için sürükle */}
+            {/* Alt Çizgi */}
             <View style={styles.topSheetHandle} />
           </View>
-          
-          {/* Arka plan tıklama ile kapat */}
-          <TouchableOpacity 
-            style={styles.topSheetBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowDestinationPicker(false)}
-          />
         </View>
-      </Modal>
+      )}
 
       {/* Gelen Arama Modal */}
       <IncomingCall
