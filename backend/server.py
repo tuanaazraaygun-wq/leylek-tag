@@ -205,8 +205,11 @@ async def check_user_query(phone: str, device_id: str = None):
     return await _check_user_logic(phone, device_id)
 
 # Send OTP - body'den oku
+class SendOtpBodyRequest(BaseModel):
+    phone: str
+
 @api_router.post("/auth/send-otp")
-async def send_otp(request: SendOtpRequest = None, phone: str = None):
+async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     """OTP gönder (şimdilik mock)"""
     # Body veya query param'dan al
     phone_number = None
