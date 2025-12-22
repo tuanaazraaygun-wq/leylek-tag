@@ -378,6 +378,10 @@ export default function App() {
   };
 
   const logout = async () => {
+    // Logout sırasında push token'ı sil
+    if (user?.id) {
+      await removePushToken(user.id);
+    }
     await AsyncStorage.removeItem('user');
     setUser(null);
     setScreen('login');
