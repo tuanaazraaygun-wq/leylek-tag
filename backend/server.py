@@ -1128,23 +1128,33 @@ async def get_driver_requests(user_id: str):
         distance_to_passenger = 0.0
         trip_distance = 0.0
         
-        # Sürücü -> Yolcu mesafesi (GPS BAZLI FİLTRELEME)
+        # Sürücü -> Yolcu mesafesi (GOOGLE API İLE GERÇEK YOL MESAFESİ)
+        distance_to_passenger = 0.0
+        time_to_passenger = 0
+        trip_distance = 0.0
+        trip_duration = 0
+        
         if tag.get("pickup_lat") and tag.get("pickup_lng"):
-            distance_to_passenger = calculate_distance(
+            # Google API ile gerçek yol mesafesi
+            route_to_passenger = await get_route_info(
                 driver_lat, driver_lng,
                 tag["pickup_lat"], tag["pickup_lng"]
             )
+            distance_to_passenger = route_to_passenger["distance_km"]
+            time_to_passenger = route_to_passenger["duration_min"]
             
             # MESAFE FİLTRE: Admin tarafından ayarlanabilir (varsayılan 50km)
             if distance_to_passenger > max_distance:
                 continue  # Maksimum mesafeden uzak, atla
         
-        # Yolcunun gideceği mesafe (pickup -> dropoff)
+        # Yolcunun gideceği mesafe (pickup -> dropoff) - GOOGLE API
         if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
-            trip_distance = calculate_distance(
+            route_trip = await get_route_info(
                 tag["pickup_lat"], tag["pickup_lng"],
                 tag["dropoff_lat"], tag["dropoff_lng"]
             )
+            trip_distance = route_trip["distance_km"]
+            trip_duration = route_trip["duration_min"]
         
         driver_offer = await db_instance.find_one("offers", {
             "tag_id": str(tag["_id"]),
