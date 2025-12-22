@@ -3272,15 +3272,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   };
 
   return (
-    <>
-      {/* TAM EKRAN TİKTOK KARTI - SafeAreaView DIŞINDA */}
+    <SafeAreaView style={styles.container}>
+      {/* TAM EKRAN TİKTOK KARTI - SafeAreaView ÜZERİNDE */}
       {requests.length > 0 && !(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
         <View style={styles.absoluteFullScreen}>
           <FlatList
             data={requests}
             keyExtractor={(item, index) => item.id || index.toString()}
             renderItem={({ item, index }) => {
-              // Backend'den gelen Google API değerlerini kullan
               const timeToPassenger = item.time_to_passenger_min || Math.round((item.distance_to_passenger_km || 5) / 40 * 60);
               const tripDuration = item.trip_duration_min || Math.round((item.trip_distance_km || 10) / 50 * 60);
               
@@ -3310,8 +3309,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </View>
       )}
       
-    <SafeAreaView style={styles.container}>
-      {/* Üst Header - Modern Mavi (Sadece Matched Değilse ve Teklif Listesi Boşsa Göster) */}
+      {/* Üst Header - Modern Mavi (Sadece Teklif Listesi Boşsa VE Eşleşme Yoksa Göster) */}
       {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && requests.length === 0 && (
         <View style={styles.modernHeader}>
           <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.backButtonHeader}>
@@ -3327,7 +3325,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </View>
       )}
 
-      <>
       {/* CANLI HARİTA - Tam Ekran (Şoför) */}
       {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
         <View style={styles.fullScreenMapContainer}>
