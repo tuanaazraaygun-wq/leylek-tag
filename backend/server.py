@@ -487,10 +487,18 @@ async def create_tag(
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/passenger/active-tag")
-async def get_active_tag(passenger_id: str):
+async def get_active_tag(passenger_id: str = None, user_id: str = None):
     """Aktif TAG getir"""
     try:
-        result = supabase.table("tags").select("*").eq("passenger_id", passenger_id).in_("status", ["pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
+        # passenger_id veya user_id kabul et
+        uid = passenger_id or user_id
+        if not uid:
+            return {"success": False, "tag": None, "detail": "user_id gerekli"}
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(uid)
+        
+        result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
         
         if result.data:
             return {"success": True, "tag": result.data[0]}
