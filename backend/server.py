@@ -85,6 +85,33 @@ def verify_pin(pin: str, pin_hash: str) -> bool:
     """PIN doğrula"""
     return hash_pin(pin) == pin_hash
 
+async def resolve_user_id(user_id: str) -> str:
+    """
+    MongoDB ID'yi Supabase UUID'ye dönüştür
+    Eğer zaten UUID ise olduğu gibi döndür
+    """
+    if not user_id:
+        return None
+    
+    # UUID formatı kontrolü (8-4-4-4-12)
+    import re
+    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+    
+    if uuid_pattern.match(user_id):
+        # Zaten UUID formatında
+        return user_id
+    
+    # MongoDB ID olabilir, mongo_id ile ara
+    try:
+        result = supabase.table("users").select("id").eq("mongo_id", user_id).execute()
+        if result.data:
+            return result.data[0]["id"]
+    except Exception as e:
+        logger.warning(f"User ID resolve error: {e}")
+    
+    # Bulunamadıysa orijinal değeri döndür
+    return user_id
+
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     """Google Directions API ile rota bilgisi al"""
     if not GOOGLE_MAPS_API_KEY:
