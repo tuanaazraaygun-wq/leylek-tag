@@ -1146,6 +1146,54 @@ async def get_driver_requests(user_id: str):
     logger.info(f"📍 Şoför {user['name']} ({driver_city}): {len(tag_responses)} çağrı (şehir + {max_distance}km filtreli, yakınlık sıralı)")
     return {"success": True, "requests": tag_responses}
 
+@api_router.post("/driver/dismiss-request")
+async def dismiss_request(user_id: str, tag_id: str):
+    """
+    Şoför bir yolcu talebini 10 dakikalığına gizler (çarpıya bastığında)
+    """
+    db = db_instance.db
+    
+    # Gizleme kaydı oluştur (10 dakika süreyle)
+    await db.dismissed_requests.update_one(
+        {"user_id": user_id, "tag_id": tag_id},
+        {
+            "$set": {
+                "user_id": user_id,
+                "tag_id": tag_id,
+                "dismissed_at": datetime.utcnow(),
+                "expires_at": datetime.utcnow() + timedelta(minutes=10)
+            }
+        },
+        upsert=True
+    )
+    
+    logger.info(f"❌ Şoför {user_id} talebi {tag_id} 10 dakikalığına gizledi")
+    return {"success": True, "message": "Talep 10 dakika boyunca gizlendi"}
+
+@api_router.post("/passenger/dismiss-offer")
+async def dismiss_offer(user_id: str, offer_id: str):
+    """
+    Yolcu bir teklifi 10 dakikalığına gizler (çarpıya bastığında)
+    """
+    db = db_instance.db
+    
+    # Gizleme kaydı oluştur (10 dakika süreyle)
+    await db.dismissed_offers.update_one(
+        {"user_id": user_id, "offer_id": offer_id},
+        {
+            "$set": {
+                "user_id": user_id,
+                "offer_id": offer_id,
+                "dismissed_at": datetime.utcnow(),
+                "expires_at": datetime.utcnow() + timedelta(minutes=10)
+            }
+        },
+        upsert=True
+    )
+    
+    logger.info(f"❌ Yolcu {user_id} teklifi {offer_id} 10 dakikalığına gizledi")
+    return {"success": True, "message": "Teklif 10 dakika boyunca gizlendi"}
+
 @api_router.post("/driver/send-offer")
 async def send_offer(user_id: str, request: SendOfferRequest):
     """Teklif gönder"""
