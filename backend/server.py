@@ -1236,7 +1236,7 @@ async def dismiss_offer(user_id: str, offer_id: str):
 
 @api_router.post("/driver/send-offer")
 async def send_offer(user_id: str, request: SendOfferRequest):
-    """Teklif gönder"""
+    """Teklif gönder - GOOGLE API İLE GERÇEK MESAFE/SÜRE"""
     user = await db_instance.find_one("users", {"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
@@ -1268,31 +1268,29 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     driver_lat = driver_location.get("latitude", 41.0082) if driver_location else 41.0082
     driver_lng = driver_location.get("longitude", 28.9784) if driver_location else 28.9784
     
-    # Mesafe hesapla: Sürücü -> Yolcu
-    distance_to_passenger = 0.0
+    # GOOGLE API İLE GERÇEK MESAFE/SÜRE: Sürücü -> Yolcu
+    distance_to_passenger_km = 0.0
     arrival_time_min = request.estimated_time or 5
     
     if tag.get("pickup_lat") and tag.get("pickup_lng"):
-        distance_to_passenger = calculate_distance(
+        route_to_passenger = await get_route_info(
             driver_lat, driver_lng,
             tag["pickup_lat"], tag["pickup_lng"]
         )
-        # Ortalama hız 40 km/saat ile tahmini varış süresi
-        if distance_to_passenger > 0:
-            arrival_time_min = max(1, int((distance_to_passenger / 40) * 60))
+        distance_to_passenger_km = route_to_passenger["distance_km"]
+        arrival_time_min = route_to_passenger["duration_min"]
     
-    # Mesafe hesapla: Pickup -> Dropoff (yolculuk mesafesi)
+    # GOOGLE API İLE GERÇEK MESAFE/SÜRE: Pickup -> Dropoff (yolculuk mesafesi)
     trip_distance_km = 0.0
     trip_duration_min = 0
     
     if tag.get("pickup_lat") and tag.get("pickup_lng") and tag.get("dropoff_lat") and tag.get("dropoff_lng"):
-        trip_distance_km = calculate_distance(
+        route_trip = await get_route_info(
             tag["pickup_lat"], tag["pickup_lng"],
             tag["dropoff_lat"], tag["dropoff_lng"]
         )
-        # Ortalama hız 30 km/saat ile tahmini yolculuk süresi
-        if trip_distance_km > 0:
-            trip_duration_min = max(1, int((trip_distance_km / 30) * 60))
+        trip_distance_km = route_trip["distance_km"]
+        trip_duration_min = route_trip["duration_min"]
     
     offer_data = Offer(
         tag_id=request.tag_id,
@@ -1301,7 +1299,7 @@ async def send_offer(user_id: str, request: SendOfferRequest):
         driver_rating=user.get("rating", 5.0),
         driver_photo=user.get("profile_photo"),
         price=request.price,
-        estimated_time=arrival_time_min,  # Hesaplanan varış süresi
+        estimated_time=arrival_time_min,  # Google API'den gelen varış süresi
         notes=request.notes
     ).dict()
     
@@ -1311,10 +1309,11 @@ async def send_offer(user_id: str, request: SendOfferRequest):
     offer_data["vehicle_photo"] = vehicle_photo
     offer_data["is_premium"] = is_premium
     
-    # Mesafe bilgilerini ekle
-    offer_data["distance_to_passenger_km"] = round(distance_to_passenger, 1)
+    # GOOGLE API'DEN GELEN GERÇEK MESAFE/SÜRE BİLGİLERİ
+    offer_data["distance_to_passenger_km"] = round(distance_to_passenger_km, 1)
+    offer_data["estimated_arrival_min"] = arrival_time_min  # Şoförün yolcuya varış süresi
     offer_data["trip_distance_km"] = round(trip_distance_km, 1)
-    offer_data["trip_duration_min"] = trip_duration_min
+    offer_data["trip_duration_min"] = trip_duration_min  # Yolculuk süresi
     
     # 10 dakika sonra expire olacak
     offer_data["expires_at"] = datetime.utcnow() + timedelta(minutes=OFFER_EXPIRY_MINUTES)
