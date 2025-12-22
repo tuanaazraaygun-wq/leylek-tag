@@ -256,6 +256,17 @@ export default function App() {
   const [showTerms, setShowTerms] = useState(false);
   const [showKvkk, setShowKvkk] = useState(false);
 
+  // Push Notifications Hook
+  const { registerPushToken, removePushToken, notification } = usePushNotifications();
+
+  // Push notification geldiğinde işle
+  useEffect(() => {
+    if (notification) {
+      console.log('📬 Yeni bildirim:', notification.request.content.title);
+      // Bildirim içeriğine göre işlem yapılabilir
+    }
+  }, [notification]);
+
   // Device ID oluştur veya al
   const getOrCreateDeviceId = async (): Promise<string> => {
     try {
