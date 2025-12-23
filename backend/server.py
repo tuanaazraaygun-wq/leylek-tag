@@ -855,19 +855,47 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         logger.error(f"Get driver requests error: {e}")
         return {"success": False, "requests": []}
 
+class SendOfferRequest(BaseModel):
+    tag_id: str
+    price: float
+    notes: Optional[str] = None
+    estimated_time: Optional[int] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
 @api_router.post("/driver/send-offer")
 async def send_offer(
-    driver_id: str,
-    tag_id: str,
-    price: float,
+    request: SendOfferRequest = None,
+    user_id: str = None,
+    driver_id: str = None,
+    tag_id: str = None,
+    price: float = None,
     notes: str = None,
     latitude: float = None,
     longitude: float = None
 ):
     """Teklif gönder"""
     try:
+        # Body veya query param'dan al
+        did = user_id or driver_id
+        tid = request.tag_id if request else tag_id
+        p = request.price if request else price
+        n = request.notes if request else notes
+        lat = request.latitude if request else latitude
+        lng = request.longitude if request else longitude
+        
+        if not did:
+            raise HTTPException(status_code=422, detail="user_id veya driver_id gerekli")
+        if not tid:
+            raise HTTPException(status_code=422, detail="tag_id gerekli")
+        if not p:
+            raise HTTPException(status_code=422, detail="price gerekli")
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(did)
+        
         # Şoför bilgisi
-        driver_result = supabase.table("users").select("name, rating, profile_photo, driver_details").eq("id", driver_id).execute()
+        driver_result = supabase.table("users").select("name, rating, profile_photo, driver_details").eq("id", resolved_id).execute()
         if not driver_result.data:
             raise HTTPException(status_code=404, detail="Şoför bulunamadı")
         
