@@ -258,22 +258,20 @@ export default function App() {
   const [showTerms, setShowTerms] = useState(false);
   const [showKvkk, setShowKvkk] = useState(false);
 
-  // Push Notifications Hook - Şimdilik devre dışı (FCM gerekiyor)
-  // const { registerPushToken, removePushToken, notification } = usePushNotifications();
-  
-  // Push notification geçici olarak devre dışı
-  const registerPushToken = async (userId: string) => {
-    console.log('⚠️ Push notifications şu an devre dışı (FCM yapılandırması gerekiyor)');
-    return false;
-  };
-  const removePushToken = async (userId: string) => {};
+  // Push Notifications Hook - Expo Push ile (Firebase olmadan)
+  const { registerPushToken, removePushToken, notification } = usePushNotifications();
 
-  // Push notification geldiğinde işle - devre dışı
-  // useEffect(() => {
-  //   if (notification) {
-  //     console.log('📬 Yeni bildirim:', notification.request.content.title);
-  //   }
-  // }, [notification]);
+  // Push notification geldiğinde işle
+  useEffect(() => {
+    if (notification) {
+      console.log('📬 Yeni bildirim:', notification.request.content.title);
+      // Bildirim geldiğinde aktif tag'i yeniden yükle
+      if (screen === 'dashboard' && user) {
+        // Dashboard'daki loadActiveTag fonksiyonunu tetiklemek için
+        // event emitter veya state güncellemesi yapılabilir
+      }
+    }
+  }, [notification]);
 
   // Device ID oluştur veya al
   const getOrCreateDeviceId = async (): Promise<string> => {
