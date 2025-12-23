@@ -119,27 +119,31 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü - İLK 5 SANİYE KONTROL YAPMA (race condition önleme)
+  // Arama durumu kontrolü - ARAYAN İÇİN
   useEffect(() => {
-    if (!visible || !channelName || !userId || isCleanedUp.current) return;
+    if (!visible || !channelName || !userId || isCleanedUp.current || !isCaller) return;
     
-    // İlk 5 saniye bekle - arama başlangıç senkronizasyonu için
+    // Sadece arayan taraf için kontrol - 3 saniye bekle başlangıçta
     const initialDelay = setTimeout(() => {
       if (isCleanedUp.current) return;
       
       const checkStatus = async () => {
-        if (isCleanedUp.current) return;
+        if (isCleanedUp.current || callState === 'connected') return;
         
         try {
-          const response = await fetch(`${BACKEND_URL}/api/voice/call-status?tag_id=${channelName}&user_id=${userId}`);
+          // call_id'yi channelName'den çıkar
+          const call_id = channelName.replace('leylek_', '');
+          const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${call_id}`);
           const data = await response.json();
           
           if (isCleanedUp.current) return;
           
-          // Sadece kesin sonlandırma durumlarında kapat
-          if (data.success && !data.has_active_call && data.status !== 'none') {
-            console.log('📞 Arama sonlandırıldı:', data);
-            handleCallEnded(data.was_rejected);
+          console.log('📞 Arama durumu:', data);
+          
+          // Karşı taraf reddetti veya kapattı
+          if (data.should_close) {
+            console.log('📵 Karşı taraf aramayı sonlandırdı');
+            handleCallEnded(data.status === 'rejected');
           }
         } catch (error) {
           console.log('Call status check error:', error);
@@ -147,8 +151,8 @@ export default function VideoCall({
       };
       
       checkStatus();
-      callStatusIntervalRef.current = setInterval(checkStatus, 3000); // 3 saniyede bir kontrol
-    }, 5000); // 5 saniye bekle
+      callStatusIntervalRef.current = setInterval(checkStatus, 2000); // 2 saniyede bir kontrol
+    }, 3000); // 3 saniye bekle
     
     return () => {
       clearTimeout(initialDelay);
@@ -157,7 +161,7 @@ export default function VideoCall({
         callStatusIntervalRef.current = null;
       }
     };
-  }, [visible, channelName, userId]);
+  }, [visible, channelName, userId, isCaller, callState]);
 
   const startRingTimer = () => {
     setRingDuration(0);
