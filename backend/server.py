@@ -241,7 +241,6 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
     # Body veya query param'dan al
     phone_number = request.phone if request else phone
     otp_code = request.otp if request else otp
-    dev_id = request.device_id if request and request.device_id else device_id
     
     if not phone_number or not otp_code:
         raise HTTPException(status_code=422, detail="Phone ve OTP gerekli")
@@ -257,15 +256,13 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
         user = result.data[0]
         has_pin = bool(user.get("pin_hash"))
         
-        # Cihaz ID'yi kaydet (yeni cihaz doğrulaması)
-        if dev_id:
-            current_devices = user.get("verified_devices") or []
-            if dev_id not in current_devices:
-                current_devices.append(dev_id)
-                supabase.table("users").update({
-                    "verified_devices": current_devices,
-                    "last_login": datetime.utcnow().isoformat()
-                }).eq("id", user["id"]).execute()
+        # Last login güncelle
+        try:
+            supabase.table("users").update({
+                "last_login": datetime.utcnow().isoformat()
+            }).eq("id", user["id"]).execute()
+        except:
+            pass
         
         return {
             "success": True,
