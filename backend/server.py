@@ -1486,6 +1486,203 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
         "channels": channels
     }
 
+# ==================== VOICE/VIDEO CALL ENDPOINTS ====================
+
+# Aktif aramalar için in-memory store
+active_calls = {}
+
+class StartCallRequest(BaseModel):
+    caller_id: str
+    receiver_id: str
+    call_type: str = "voice"  # voice veya video
+    tag_id: Optional[str] = None
+
+@api_router.post("/voice/start-call")
+async def start_call(request: StartCallRequest):
+    """Arama başlat"""
+    try:
+        call_id = f"call_{secrets.token_urlsafe(8)}"
+        channel_name = f"leylek_{call_id}"
+        
+        # Aktif aramaya ekle
+        active_calls[request.receiver_id] = {
+            "call_id": call_id,
+            "caller_id": request.caller_id,
+            "receiver_id": request.receiver_id,
+            "call_type": request.call_type,
+            "channel_name": channel_name,
+            "tag_id": request.tag_id,
+            "status": "ringing",
+            "started_at": datetime.utcnow().isoformat()
+        }
+        
+        # Arayan bilgisi
+        caller_result = supabase.table("users").select("name, phone, profile_photo").eq("id", request.caller_id).execute()
+        caller_info = caller_result.data[0] if caller_result.data else {}
+        
+        logger.info(f"📞 Arama başlatıldı: {request.caller_id} -> {request.receiver_id}")
+        
+        return {
+            "success": True,
+            "call_id": call_id,
+            "channel_name": channel_name,
+            "agora_app_id": os.getenv("AGORA_APP_ID", ""),
+            "caller_name": caller_info.get("name", "Kullanıcı")
+        }
+    except Exception as e:
+        logger.error(f"Start call error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/voice/check-incoming")
+async def check_incoming_call(user_id: str):
+    """Gelen arama var mı kontrol et"""
+    try:
+        call = active_calls.get(user_id)
+        
+        if call and call.get("status") == "ringing":
+            # Arayan bilgisi
+            caller_result = supabase.table("users").select("name, phone, profile_photo").eq("id", call["caller_id"]).execute()
+            caller_info = caller_result.data[0] if caller_result.data else {}
+            
+            return {
+                "success": True,
+                "has_incoming": True,
+                "call": {
+                    "call_id": call["call_id"],
+                    "caller_id": call["caller_id"],
+                    "caller_name": caller_info.get("name", "Kullanıcı"),
+                    "caller_photo": caller_info.get("profile_photo"),
+                    "call_type": call["call_type"],
+                    "channel_name": call["channel_name"],
+                    "agora_app_id": os.getenv("AGORA_APP_ID", "")
+                }
+            }
+        
+        return {"success": True, "has_incoming": False, "call": None}
+    except Exception as e:
+        logger.error(f"Check incoming call error: {e}")
+        return {"success": False, "has_incoming": False, "call": None}
+
+@api_router.post("/voice/accept-call")
+async def accept_call(user_id: str, call_id: str):
+    """Aramayı kabul et"""
+    try:
+        call = active_calls.get(user_id)
+        if call and call.get("call_id") == call_id:
+            call["status"] = "connected"
+            return {
+                "success": True,
+                "channel_name": call["channel_name"],
+                "agora_app_id": os.getenv("AGORA_APP_ID", "")
+            }
+        return {"success": False, "detail": "Arama bulunamadı"}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/voice/reject-call")
+async def reject_call(user_id: str, call_id: str):
+    """Aramayı reddet"""
+    try:
+        if user_id in active_calls:
+            del active_calls[user_id]
+        return {"success": True}
+    except Exception as e:
+        return {"success": False}
+
+@api_router.post("/voice/end-call")
+async def end_call(user_id: str, call_id: str = None):
+    """Aramayı sonlandır"""
+    try:
+        # Her iki taraf için de temizle
+        to_remove = []
+        for uid, call in active_calls.items():
+            if call.get("caller_id") == user_id or call.get("receiver_id") == user_id:
+                to_remove.append(uid)
+        
+        for uid in to_remove:
+            del active_calls[uid]
+        
+        return {"success": True}
+    except Exception as e:
+        return {"success": False}
+
+# ==================== DRIVER LOCATION TRACKING ====================
+
+@api_router.get("/passenger/driver-location/{driver_id}")
+async def get_driver_location(driver_id: str):
+    """Şoför konumunu getir"""
+    try:
+        result = supabase.table("users").select("latitude, longitude, last_location_update, name").eq("id", driver_id).execute()
+        
+        if result.data:
+            user = result.data[0]
+            return {
+                "success": True,
+                "location": {
+                    "latitude": float(user["latitude"]) if user.get("latitude") else None,
+                    "longitude": float(user["longitude"]) if user.get("longitude") else None,
+                    "updated_at": user.get("last_location_update"),
+                    "driver_name": user.get("name")
+                }
+            }
+        
+        return {"success": False, "location": None}
+    except Exception as e:
+        logger.error(f"Get driver location error: {e}")
+        return {"success": False, "location": None}
+
+# ==================== TRIP END REQUEST ====================
+
+# Aktif trip sonlandırma istekleri
+trip_end_requests = {}
+
+@api_router.post("/trip/request-end")
+async def request_trip_end(tag_id: str, requester_id: str):
+    """Yolculuk sonlandırma isteği"""
+    try:
+        trip_end_requests[tag_id] = {
+            "requester_id": requester_id,
+            "requested_at": datetime.utcnow().isoformat(),
+            "status": "pending"
+        }
+        return {"success": True, "message": "Sonlandırma isteği gönderildi"}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
+@api_router.get("/trip/check-end-request")
+async def check_end_request(tag_id: str, user_id: str):
+    """Sonlandırma isteği var mı kontrol et"""
+    try:
+        request = trip_end_requests.get(tag_id)
+        
+        if request and request.get("status") == "pending" and request.get("requester_id") != user_id:
+            return {
+                "success": True,
+                "has_request": True,
+                "requester_id": request["requester_id"]
+            }
+        
+        return {"success": True, "has_request": False}
+    except Exception as e:
+        return {"success": False, "has_request": False}
+
+@api_router.post("/trip/approve-end")
+async def approve_trip_end(tag_id: str, user_id: str):
+    """Sonlandırma isteğini onayla"""
+    try:
+        if tag_id in trip_end_requests:
+            del trip_end_requests[tag_id]
+        
+        # Trip'i tamamla
+        supabase.table("tags").update({
+            "status": "completed",
+            "completed_at": datetime.utcnow().isoformat()
+        }).eq("id", tag_id).execute()
+        
+        return {"success": True, "message": "Yolculuk tamamlandı"}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
 # ==================== CORS & ROUTER ====================
 
 app.add_middleware(
