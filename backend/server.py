@@ -991,6 +991,18 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                     if distance_km > radius_km:
                         continue
             
+            # Yolculuk mesafesi (pickup -> dropoff)
+            trip_distance_km = None
+            trip_duration_min = None
+            if tag.get("pickup_lat") and tag.get("dropoff_lat"):
+                trip_route = await get_route_info(
+                    float(tag["pickup_lat"]), float(tag["pickup_lng"]),
+                    float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
+                )
+                if trip_route:
+                    trip_distance_km = trip_route["distance_km"]
+                    trip_duration_min = trip_route["duration_min"]
+            
             passenger_info = tag.get("users", {}) or {}
             requests.append({
                 "id": tag["id"],
@@ -1006,6 +1018,13 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
                 "notes": tag.get("notes"),
                 "status": tag["status"],
+                # Şoför -> Yolcu mesafesi
+                "distance_to_passenger_km": round(distance_km, 1) if distance_km else None,
+                "time_to_passenger_min": round(duration_min) if duration_min else None,
+                # Yolculuk mesafesi (pickup -> dropoff)
+                "trip_distance_km": round(trip_distance_km, 1) if trip_distance_km else None,
+                "trip_duration_min": round(trip_duration_min) if trip_duration_min else None,
+                # Eski alan adları da (geriye uyumluluk)
                 "distance_km": round(distance_km, 1) if distance_km else None,
                 "duration_min": round(duration_min) if duration_min else None,
                 "created_at": tag["created_at"]
