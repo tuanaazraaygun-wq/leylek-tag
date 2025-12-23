@@ -22,17 +22,25 @@ import time
 # Supabase
 from supabase import create_client, Client
 
-# Agora Token Builder
-try:
-    from agora_token_builder import RtcTokenBuilder, Role_Publisher
-    AGORA_TOKEN_AVAILABLE = True
-except ImportError:
-    AGORA_TOKEN_AVAILABLE = False
-    logger = logging.getLogger("server")
-    logger.warning("⚠️ agora_token_builder yüklü değil - token üretimi devre dışı")
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Logger setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("server")
+
+# Agora Token Builder - import sonra yap
+AGORA_TOKEN_AVAILABLE = False
+RtcTokenBuilder = None
+Role_Publisher = None
+try:
+    from agora_token_builder import RtcTokenBuilder as _RtcTokenBuilder, Role_Publisher as _Role_Publisher
+    RtcTokenBuilder = _RtcTokenBuilder
+    Role_Publisher = _Role_Publisher
+    AGORA_TOKEN_AVAILABLE = True
+    logger.info("✅ Agora token builder yüklendi")
+except ImportError as e:
+    logger.warning(f"⚠️ agora_token_builder yüklenemedi: {e}")
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
