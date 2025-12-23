@@ -3156,7 +3156,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   const loadRequests = async () => {
     try {
-      const response = await fetch(`${API_URL}/driver/requests?user_id=${user.id}`);
+      // Şoför konumunu da gönder (mesafe hesaplaması için)
+      let url = `${API_URL}/driver/requests?user_id=${user.id}`;
+      if (userLocation) {
+        url += `&latitude=${userLocation.latitude}&longitude=${userLocation.longitude}`;
+      }
+      const response = await fetch(url);
       const data = await response.json();
       if (data.success) {
         setRequests(data.requests);
