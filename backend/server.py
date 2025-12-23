@@ -564,36 +564,47 @@ async def get_blocked_list(user_id: str):
 
 # ==================== PASSENGER ENDPOINTS ====================
 
+class CreateTagRequest(BaseModel):
+    passenger_id: Optional[str] = None
+    user_id: Optional[str] = None
+    pickup_location: str
+    pickup_lat: float
+    pickup_lng: float
+    dropoff_location: str
+    dropoff_lat: float
+    dropoff_lng: float
+    notes: Optional[str] = None
+    destination: Optional[str] = None  # alias for dropoff_location
+
 @api_router.post("/passenger/create-tag")
-async def create_tag(
-    passenger_id: str,
-    pickup_location: str,
-    pickup_lat: float,
-    pickup_lng: float,
-    dropoff_location: str,
-    dropoff_lat: float,
-    dropoff_lng: float,
-    notes: str = None
-):
+async def create_tag(request: CreateTagRequest):
     """Yolcu TAG oluştur"""
     try:
+        # passenger_id veya user_id kabul et
+        pid = request.passenger_id or request.user_id
+        if not pid:
+            raise HTTPException(status_code=422, detail="passenger_id veya user_id gerekli")
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(pid)
+        
         # Kullanıcı bilgisi
-        user_result = supabase.table("users").select("name, city").eq("id", passenger_id).execute()
+        user_result = supabase.table("users").select("name, city").eq("id", resolved_id).execute()
         user = user_result.data[0] if user_result.data else {}
         
         # Share link oluştur
         share_link = f"leylek://trip/{secrets.token_urlsafe(8)}"
         
         tag_data = {
-            "passenger_id": passenger_id,
+            "passenger_id": resolved_id,
             "passenger_name": user.get("name"),
-            "pickup_location": pickup_location,
-            "pickup_lat": pickup_lat,
-            "pickup_lng": pickup_lng,
-            "dropoff_location": dropoff_location,
-            "dropoff_lat": dropoff_lat,
-            "dropoff_lng": dropoff_lng,
-            "notes": notes,
+            "pickup_location": request.pickup_location,
+            "pickup_lat": request.pickup_lat,
+            "pickup_lng": request.pickup_lng,
+            "dropoff_location": request.dropoff_location or request.destination,
+            "dropoff_lat": request.dropoff_lat,
+            "dropoff_lng": request.dropoff_lng,
+            "notes": request.notes,
             "city": user.get("city"),
             "status": "pending",
             "share_link": share_link
@@ -615,6 +626,12 @@ async def create_tag(
     except Exception as e:
         logger.error(f"Create tag error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Frontend uyumluluğu için alias
+@api_router.post("/passenger/create-request")
+async def create_request_alias(request: CreateTagRequest):
+    """Yolcu TAG oluştur (alias)"""
+    return await create_tag(request)
 
 @api_router.get("/passenger/active-tag")
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
