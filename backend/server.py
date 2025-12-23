@@ -1703,19 +1703,22 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 
 # ==================== VOICE/VIDEO CALL ENDPOINTS ====================
 
-# Aktif aramalar için in-memory store
+# Aktif aramalar için in-memory store - basit ve güvenilir
+# Key: receiver_id, Value: call info
 active_calls = {}
+# Arama sonuçları - arayan için (kabul/red bilgisi)
+call_results = {}
 
 class StartCallRequest(BaseModel):
     caller_id: str
     receiver_id: Optional[str] = None
-    call_type: str = "voice"  # voice veya video
+    call_type: str = "voice"
     tag_id: Optional[str] = None
     caller_name: Optional[str] = None
 
 @api_router.post("/voice/start-call")
 async def start_call(request: StartCallRequest):
-    """Arama başlat"""
+    """Arama başlat - Basit ve güvenilir"""
     try:
         call_id = f"call_{secrets.token_urlsafe(8)}"
         channel_name = f"leylek_{call_id}"
@@ -1723,11 +1726,9 @@ async def start_call(request: StartCallRequest):
         # receiver_id yoksa tag_id'den bul
         receiver_id = request.receiver_id
         if not receiver_id and request.tag_id:
-            # TAG'den karşı tarafı bul
             tag_result = supabase.table("tags").select("passenger_id, driver_id").eq("id", request.tag_id).execute()
             if tag_result.data:
                 tag = tag_result.data[0]
-                # Arayan yolcu ise şoförü, şoför ise yolcuyu al
                 if tag.get("passenger_id") == request.caller_id:
                     receiver_id = tag.get("driver_id")
                 else:
@@ -1736,7 +1737,13 @@ async def start_call(request: StartCallRequest):
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
         
-        # Aktif aramaya ekle
+        # Önceki aramaları temizle
+        if receiver_id in active_calls:
+            del active_calls[receiver_id]
+        if request.caller_id in call_results:
+            del call_results[request.caller_id]
+        
+        # Yeni arama oluştur
         active_calls[receiver_id] = {
             "call_id": call_id,
             "caller_id": request.caller_id,
@@ -1747,6 +1754,190 @@ async def start_call(request: StartCallRequest):
             "status": "ringing",
             "started_at": datetime.utcnow().isoformat()
         }
+        
+        # Arayan bilgisi
+        caller_name = request.caller_name
+        if not caller_name:
+            try:
+                caller_result = supabase.table("users").select("name").eq("id", request.caller_id).execute()
+                caller_name = caller_result.data[0]["name"] if caller_result.data else "Kullanıcı"
+            except:
+                caller_name = "Kullanıcı"
+        
+        logger.info(f"📞 Arama başlatıldı: {request.caller_id} -> {receiver_id} ({request.call_type})")
+        
+        return {
+            "success": True,
+            "call_id": call_id,
+            "channel_name": channel_name,
+            "agora_app_id": os.getenv("AGORA_APP_ID", ""),
+            "caller_name": caller_name,
+            "receiver_id": receiver_id
+        }
+    except Exception as e:
+        logger.error(f"Start call error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.get("/voice/check-incoming")
+async def check_incoming_call(user_id: str):
+    """Gelen arama var mı kontrol et"""
+    try:
+        call = active_calls.get(user_id)
+        
+        if call and call.get("status") == "ringing":
+            # Arayan bilgisi
+            caller_name = "Kullanıcı"
+            caller_photo = None
+            try:
+                caller_result = supabase.table("users").select("name, profile_photo").eq("id", call["caller_id"]).execute()
+                if caller_result.data:
+                    caller_name = caller_result.data[0].get("name", "Kullanıcı")
+                    caller_photo = caller_result.data[0].get("profile_photo")
+            except:
+                pass
+            
+            return {
+                "success": True,
+                "has_incoming": True,
+                "call": {
+                    "call_id": call["call_id"],
+                    "caller_id": call["caller_id"],
+                    "caller_name": caller_name,
+                    "caller_photo": caller_photo,
+                    "call_type": call["call_type"],
+                    "channel_name": call["channel_name"],
+                    "agora_app_id": os.getenv("AGORA_APP_ID", "")
+                }
+            }
+        
+        return {"success": True, "has_incoming": False, "call": None}
+    except Exception as e:
+        logger.error(f"Check incoming call error: {e}")
+        return {"success": True, "has_incoming": False, "call": None}
+
+@api_router.post("/voice/accept-call")
+async def accept_call(user_id: str, call_id: str):
+    """Aramayı kabul et"""
+    try:
+        call = active_calls.get(user_id)
+        if call and call.get("call_id") == call_id:
+            # Durumu güncelle
+            call["status"] = "connected"
+            
+            # Arayana bildir
+            call_results[call["caller_id"]] = {
+                "call_id": call_id,
+                "status": "accepted",
+                "channel_name": call["channel_name"]
+            }
+            
+            logger.info(f"✅ Arama kabul edildi: {call_id}")
+            return {
+                "success": True,
+                "channel_name": call["channel_name"],
+                "agora_app_id": os.getenv("AGORA_APP_ID", "")
+            }
+        return {"success": False, "detail": "Arama bulunamadı"}
+    except Exception as e:
+        logger.error(f"Accept call error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/voice/reject-call")
+async def reject_call(user_id: str, call_id: str):
+    """Aramayı reddet"""
+    try:
+        call = active_calls.get(user_id)
+        if call and call.get("call_id") == call_id:
+            # Arayana bildir
+            call_results[call["caller_id"]] = {
+                "call_id": call_id,
+                "status": "rejected"
+            }
+            # Aramayı sil
+            del active_calls[user_id]
+            logger.info(f"📵 Arama reddedildi: {call_id}")
+        
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Reject call error: {e}")
+        return {"success": False}
+
+@api_router.get("/voice/check-call-status")
+async def check_call_status(user_id: str, call_id: str):
+    """Arayan için arama durumunu kontrol et"""
+    try:
+        # Sonuç var mı kontrol et (kabul/red)
+        result = call_results.get(user_id)
+        if result and result.get("call_id") == call_id:
+            status = result.get("status")
+            # Sonucu temizle
+            del call_results[user_id]
+            
+            if status == "accepted":
+                return {
+                    "success": True,
+                    "status": "accepted",
+                    "should_close": False,
+                    "channel_name": result.get("channel_name")
+                }
+            elif status == "rejected":
+                return {
+                    "success": True,
+                    "status": "rejected",
+                    "should_close": True
+                }
+            elif status == "ended":
+                return {
+                    "success": True,
+                    "status": "ended",
+                    "should_close": True
+                }
+        
+        # Arama hala aktif mi kontrol et
+        for uid, call in active_calls.items():
+            if call.get("call_id") == call_id:
+                return {
+                    "success": True,
+                    "status": call.get("status", "ringing"),
+                    "should_close": False
+                }
+        
+        # Arama bulunamadı ama sonuç da yok = hala ringing olabilir
+        return {
+            "success": True,
+            "status": "ringing",
+            "should_close": False
+        }
+    except Exception as e:
+        logger.error(f"Check call status error: {e}")
+        return {"success": True, "status": "ringing", "should_close": False}
+
+@api_router.post("/voice/end-call")
+async def end_call(user_id: str, call_id: str = None):
+    """Aramayı sonlandır - HER İKİ TARAF İÇİN"""
+    try:
+        # Bu kullanıcının dahil olduğu tüm aramaları bul
+        to_remove = []
+        for uid, call in list(active_calls.items()):
+            if call.get("caller_id") == user_id or call.get("receiver_id") == user_id:
+                # Karşı tarafa bildir
+                other_id = call["receiver_id"] if call["caller_id"] == user_id else call["caller_id"]
+                call_results[other_id] = {
+                    "call_id": call.get("call_id"),
+                    "status": "ended"
+                }
+                to_remove.append(uid)
+        
+        # Aramaları sil
+        for uid in to_remove:
+            if uid in active_calls:
+                del active_calls[uid]
+        
+        logger.info(f"📴 Arama sonlandırıldı: user={user_id}")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"End call error: {e}")
+        return {"success": False}
         
         # Arayan bilgisi
         caller_name = request.caller_name
