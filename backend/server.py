@@ -1692,9 +1692,10 @@ active_calls = {}
 
 class StartCallRequest(BaseModel):
     caller_id: str
-    receiver_id: str
+    receiver_id: Optional[str] = None
     call_type: str = "voice"  # voice veya video
     tag_id: Optional[str] = None
+    caller_name: Optional[str] = None
 
 @api_router.post("/voice/start-call")
 async def start_call(request: StartCallRequest):
@@ -1703,11 +1704,27 @@ async def start_call(request: StartCallRequest):
         call_id = f"call_{secrets.token_urlsafe(8)}"
         channel_name = f"leylek_{call_id}"
         
+        # receiver_id yoksa tag_id'den bul
+        receiver_id = request.receiver_id
+        if not receiver_id and request.tag_id:
+            # TAG'den karşı tarafı bul
+            tag_result = supabase.table("tags").select("passenger_id, driver_id").eq("id", request.tag_id).execute()
+            if tag_result.data:
+                tag = tag_result.data[0]
+                # Arayan yolcu ise şoförü, şoför ise yolcuyu al
+                if tag.get("passenger_id") == request.caller_id:
+                    receiver_id = tag.get("driver_id")
+                else:
+                    receiver_id = tag.get("passenger_id")
+        
+        if not receiver_id:
+            return {"success": False, "detail": "Alıcı bulunamadı"}
+        
         # Aktif aramaya ekle
-        active_calls[request.receiver_id] = {
+        active_calls[receiver_id] = {
             "call_id": call_id,
             "caller_id": request.caller_id,
-            "receiver_id": request.receiver_id,
+            "receiver_id": receiver_id,
             "call_type": request.call_type,
             "channel_name": channel_name,
             "tag_id": request.tag_id,
@@ -1716,21 +1733,24 @@ async def start_call(request: StartCallRequest):
         }
         
         # Arayan bilgisi
-        caller_result = supabase.table("users").select("name, phone, profile_photo").eq("id", request.caller_id).execute()
-        caller_info = caller_result.data[0] if caller_result.data else {}
+        caller_name = request.caller_name
+        if not caller_name:
+            caller_result = supabase.table("users").select("name").eq("id", request.caller_id).execute()
+            caller_name = caller_result.data[0]["name"] if caller_result.data else "Kullanıcı"
         
-        logger.info(f"📞 Arama başlatıldı: {request.caller_id} -> {request.receiver_id}")
+        logger.info(f"📞 Arama başlatıldı: {request.caller_id} -> {receiver_id} ({request.call_type})")
         
         return {
             "success": True,
             "call_id": call_id,
             "channel_name": channel_name,
             "agora_app_id": os.getenv("AGORA_APP_ID", ""),
-            "caller_name": caller_info.get("name", "Kullanıcı")
+            "caller_name": caller_name,
+            "receiver_id": receiver_id
         }
     except Exception as e:
         logger.error(f"Start call error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "detail": str(e)}
 
 @api_router.get("/voice/check-incoming")
 async def check_incoming_call(user_id: str):
