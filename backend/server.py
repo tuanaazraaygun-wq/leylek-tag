@@ -613,8 +613,11 @@ async def report_user(user_id: str, reported_user_id: str, reason: str = "other"
         reporter_info = reporter_result.data[0] if reporter_result.data else {}
         
         # Şikayet edilen kullanıcı bilgisi
-        reported_result = supabase.table("users").select("name, phone, role").eq("id", reported_user_id).execute()
+        reported_result = supabase.table("users").select("name, phone, driver_details").eq("id", reported_user_id).execute()
         reported_info = reported_result.data[0] if reported_result.data else {}
+        
+        # Role belirleme
+        reported_role = "driver" if reported_info.get("driver_details") else "passenger"
         
         # Şikayeti kaydet
         report_data = {
@@ -624,7 +627,7 @@ async def report_user(user_id: str, reported_user_id: str, reason: str = "other"
             "reported_user_id": reported_user_id,
             "reported_user_name": reported_info.get("name", "Bilinmeyen"),
             "reported_user_phone": reported_info.get("phone", ""),
-            "reported_user_role": reported_info.get("role", "unknown"),
+            "reported_user_role": reported_role,
             "reason": reason,
             "details": details,
             "tag_id": tag_id,
