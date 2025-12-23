@@ -788,7 +788,7 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
 
 @api_router.get("/passenger/offers")
 async def get_offers_for_passenger(passenger_id: str = None, user_id: str = None, tag_id: str = None):
-    """TAG için gelen teklifleri getir"""
+    """TAG için gelen teklifleri getir - mesafe ve süre bilgileriyle birlikte"""
     try:
         pid = passenger_id or user_id
         if not pid or not tag_id:
@@ -829,6 +829,12 @@ async def get_offers_for_passenger(passenger_id: str = None, user_id: str = None
                 "status": offer["status"],
                 "vehicle_model": driver_info.get("driver_details", {}).get("vehicle_model") if driver_info.get("driver_details") else None,
                 "vehicle_color": driver_info.get("driver_details", {}).get("vehicle_color") if driver_info.get("driver_details") else None,
+                # Mesafe ve süre bilgileri - ŞOFÖRÜN GÖNDERDİĞİ DEĞERLERİ KULLAN
+                "distance_to_passenger_km": float(offer.get("distance_to_passenger_km")) if offer.get("distance_to_passenger_km") else None,
+                "estimated_arrival_min": int(offer.get("estimated_arrival_min")) if offer.get("estimated_arrival_min") else None,
+                "trip_distance_km": float(offer.get("trip_distance_km")) if offer.get("trip_distance_km") else None,
+                "trip_duration_min": int(offer.get("trip_duration_min")) if offer.get("trip_duration_min") else None,
+                "notes": offer.get("notes"),
                 "created_at": offer["created_at"]
             })
         
