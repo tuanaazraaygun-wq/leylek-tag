@@ -598,6 +598,9 @@ async def get_blocked_list(user_id: str):
         result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", user_id).execute()
         blocked_ids = [r["blocked_user_id"] for r in result.data]
         return {"success": True, "blocked_users": blocked_ids}
+    except Exception as e:
+        logger.error(f"Get blocked list error: {e}")
+        return {"success": False, "blocked_users": []}
 
 # ==================== REPORT (ŞİKAYET) SYSTEM ====================
 
