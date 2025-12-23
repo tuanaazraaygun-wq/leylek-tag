@@ -2018,6 +2018,15 @@ function PassengerDashboard({
         
         const data = JSON.parse(text);
         
+        // ARAMA BİTTİ/İPTAL EDİLDİ KONTROLÜ
+        if (data.call_ended) {
+          console.log('📞 YOLCU - Arama bitti/iptal edildi:', data.end_reason);
+          setShowIncomingCall(false);
+          setShowVoiceCall(false);
+          setIncomingCallInfo(null);
+          return;
+        }
+        
         // ARAYAN KAPATTI MI KONTROLÜ - IncomingCall açıkken
         if (hasIncoming && data.success && data.call_cancelled) {
           console.log('📞 YOLCU - Arayan aramayı kapattı, modal kapatılıyor');
@@ -2027,7 +2036,7 @@ function PassengerDashboard({
         }
         
         // Gelen arama yoksa ve modal açıksa kapat (arayan vazgeçti)
-        if (hasIncoming && data.success && !data.has_incoming && !data.call_cancelled) {
+        if (hasIncoming && data.success && !data.has_incoming) {
           console.log('📞 YOLCU - Arama artık yok, modal kapatılıyor');
           setShowIncomingCall(false);
           setIncomingCallInfo(null);
