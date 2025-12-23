@@ -1149,7 +1149,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         # driver_id veya user_id kabul et
         did = driver_id or user_id
         if not did:
-            return {"success": True, "trip": None}
+            return {"success": True, "trip": None, "tag": None}
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
@@ -1160,26 +1160,33 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
             tag = result.data[0]
             passenger_info = tag.get("users", {}) or {}
             
+            tag_data = {
+                "id": tag["id"],
+                "passenger_id": tag["passenger_id"],
+                "passenger_name": passenger_info.get("name"),
+                "passenger_phone": passenger_info.get("phone"),
+                "passenger_rating": float(passenger_info.get("rating", 5.0)),
+                "passenger_photo": passenger_info.get("profile_photo"),
+                "pickup_location": tag["pickup_location"],
+                "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
+                "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
+                "dropoff_location": tag["dropoff_location"],
+                "dropoff_lat": float(tag["dropoff_lat"]) if tag.get("dropoff_lat") else None,
+                "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
+                "status": tag["status"],
+                "final_price": float(tag["final_price"]) if tag.get("final_price") else None
+            }
+            
             return {
                 "success": True,
-                "trip": {
-                    "id": tag["id"],
-                    "passenger_id": tag["passenger_id"],
-                    "passenger_name": passenger_info.get("name"),
-                    "passenger_phone": passenger_info.get("phone"),
-                    "passenger_rating": float(passenger_info.get("rating", 5.0)),
-                    "passenger_photo": passenger_info.get("profile_photo"),
-                    "pickup_location": tag["pickup_location"],
-                    "dropoff_location": tag["dropoff_location"],
-                    "status": tag["status"],
-                    "final_price": float(tag["final_price"]) if tag.get("final_price") else None
-                }
+                "trip": tag_data,
+                "tag": tag_data  # Frontend uyumluluğu için
             }
         
-        return {"success": True, "trip": None}
+        return {"success": True, "trip": None, "tag": None}
     except Exception as e:
         logger.error(f"Get driver active trip error: {e}")
-        return {"success": False, "trip": None}
+        return {"success": False, "trip": None, "tag": None}
 
 # Frontend uyumluluğu için alias
 @api_router.get("/driver/active-tag")
