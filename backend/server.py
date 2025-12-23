@@ -233,13 +233,15 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
 class VerifyOtpRequest(BaseModel):
     phone: str
     otp: str
+    device_id: Optional[str] = None
 
 @api_router.post("/auth/verify-otp")
-async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: str = None):
-    """OTP doğrula"""
+async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: str = None, device_id: str = None):
+    """OTP doğrula ve kullanıcı bilgilerini döndür"""
     # Body veya query param'dan al
     phone_number = request.phone if request else phone
     otp_code = request.otp if request else otp
+    dev_id = request.device_id if request and request.device_id else device_id
     
     if not phone_number or not otp_code:
         raise HTTPException(status_code=422, detail="Phone ve OTP gerekli")
@@ -248,7 +250,47 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
     if otp_code != "123456":
         raise HTTPException(status_code=400, detail="Geçersiz OTP")
     
-    return {"success": True, "message": "OTP doğrulandı"}
+    # Kullanıcı var mı kontrol et
+    result = supabase.table("users").select("*").eq("phone", phone_number).execute()
+    
+    if result.data:
+        user = result.data[0]
+        has_pin = bool(user.get("pin_hash"))
+        
+        # Cihaz ID'yi kaydet (yeni cihaz doğrulaması)
+        if dev_id:
+            current_devices = user.get("verified_devices") or []
+            if dev_id not in current_devices:
+                current_devices.append(dev_id)
+                supabase.table("users").update({
+                    "verified_devices": current_devices,
+                    "last_login": datetime.utcnow().isoformat()
+                }).eq("id", user["id"]).execute()
+        
+        return {
+            "success": True,
+            "message": "OTP doğrulandı",
+            "user_exists": True,
+            "has_pin": has_pin,
+            "user": {
+                "id": user["id"],
+                "phone": user["phone"],
+                "name": user.get("name", ""),
+                "role": user.get("role", "passenger"),
+                "rating": float(user.get("rating", 5.0)),
+                "total_ratings": user.get("total_ratings", 0),
+                "is_admin": user.get("is_admin", False)
+            }
+        }
+    else:
+        # Yeni kullanıcı
+        return {
+            "success": True,
+            "message": "OTP doğrulandı",
+            "user_exists": False,
+            "has_pin": False,
+            "user": None
+        }
 
 class SetPinRequest(BaseModel):
     phone: str
