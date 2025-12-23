@@ -762,16 +762,62 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         logger.error(f"Accept offer error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class CancelTagRequest(BaseModel):
+    tag_id: str
+
 @api_router.delete("/passenger/cancel-tag")
-async def cancel_tag(tag_id: str, passenger_id: str):
-    """TAG iptal et"""
+async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str = None):
+    """TAG iptal et (DELETE)"""
     try:
-        supabase.table("tags").update({
+        pid = passenger_id or user_id
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(pid) if pid else None
+        
+        update_query = supabase.table("tags").update({
             "status": "cancelled",
             "cancelled_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("passenger_id", passenger_id).execute()
+        }).eq("id", tag_id)
+        
+        if resolved_id:
+            update_query = update_query.eq("passenger_id", resolved_id)
+        
+        update_query.execute()
         
         return {"success": True, "message": "TAG iptal edildi"}
+    except Exception as e:
+        logger.error(f"Cancel tag error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# POST method için alias (frontend uyumluluğu)
+@api_router.post("/passenger/cancel-tag")
+async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, passenger_id: str = None, user_id: str = None):
+    """TAG iptal et (POST)"""
+    try:
+        tid = request.tag_id if request else tag_id
+        pid = passenger_id or user_id
+        
+        if not tid:
+            raise HTTPException(status_code=422, detail="tag_id gerekli")
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(pid) if pid else None
+        
+        update_query = supabase.table("tags").update({
+            "status": "cancelled",
+            "cancelled_at": datetime.utcnow().isoformat()
+        }).eq("id", tid)
+        
+        if resolved_id:
+            update_query = update_query.eq("passenger_id", resolved_id)
+        
+        update_query.execute()
+        
+        # Aktif teklifleri de iptal et
+        supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tid).eq("status", "pending").execute()
+        
+        return {"success": True, "message": "TAG iptal edildi"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Cancel tag error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
