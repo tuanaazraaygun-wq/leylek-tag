@@ -757,19 +757,27 @@ async def cancel_tag(tag_id: str, passenger_id: str):
 # ==================== DRIVER ENDPOINTS ====================
 
 @api_router.get("/driver/requests")
-async def get_driver_requests(driver_id: str, latitude: float = None, longitude: float = None):
+async def get_driver_requests(driver_id: str = None, user_id: str = None, latitude: float = None, longitude: float = None):
     """Şoför için yakındaki istekleri getir"""
     try:
+        # driver_id veya user_id kabul et
+        did = driver_id or user_id
+        if not did:
+            return {"success": False, "requests": [], "detail": "driver_id veya user_id gerekli"}
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(did)
+        
         # Ayarlardan radius al
         settings_result = supabase.table("app_settings").select("driver_radius_km").eq("type", "global").execute()
         radius_km = settings_result.data[0]["driver_radius_km"] if settings_result.data else 50
         
         # Engellenen kullanıcıları al
-        blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", driver_id).execute()
+        blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
         blocked_ids = [r["blocked_user_id"] for r in blocked_result.data]
         
         # Beni engelleyenleri al
-        blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", driver_id).execute()
+        blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", resolved_id).execute()
         blocked_by_ids = [r["user_id"] for r in blocked_by_result.data]
         
         all_blocked = list(set(blocked_ids + blocked_by_ids))
