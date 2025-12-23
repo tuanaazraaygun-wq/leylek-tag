@@ -1713,6 +1713,51 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 
 # ==================== VOICE/VIDEO CALL ENDPOINTS ====================
 
+# Agora credentials
+AGORA_APP_ID = os.getenv("AGORA_APP_ID", "")
+AGORA_APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "")
+
+def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: int = 3600) -> str:
+    """Agora RTC token üret"""
+    if not AGORA_TOKEN_AVAILABLE or not AGORA_APP_CERTIFICATE:
+        logger.warning("⚠️ Agora token üretilemiyor - certificate eksik veya library yok")
+        return ""
+    
+    try:
+        # Token süresi (Unix timestamp)
+        privilege_expired_ts = int(time.time()) + expiration_seconds
+        
+        # Token üret
+        token = RtcTokenBuilder.buildTokenWithUid(
+            AGORA_APP_ID,
+            AGORA_APP_CERTIFICATE,
+            channel_name,
+            uid,
+            Role_Publisher,
+            privilege_expired_ts
+        )
+        logger.info(f"🎫 Agora token üretildi: {channel_name}")
+        return token
+    except Exception as e:
+        logger.error(f"Agora token üretme hatası: {e}")
+        return ""
+
+@api_router.get("/voice/get-token")
+async def get_agora_token(channel_name: str, uid: int = 0):
+    """Agora RTC token al"""
+    try:
+        token = generate_agora_token(channel_name, uid)
+        return {
+            "success": True,
+            "token": token,
+            "app_id": AGORA_APP_ID,
+            "channel_name": channel_name,
+            "uid": uid
+        }
+    except Exception as e:
+        logger.error(f"Get token error: {e}")
+        return {"success": False, "token": "", "detail": str(e)}
+
 # Aktif aramalar için in-memory store - basit ve güvenilir
 # Key: receiver_id, Value: call info
 active_calls = {}
