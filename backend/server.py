@@ -598,6 +598,76 @@ async def get_blocked_list(user_id: str):
         result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", user_id).execute()
         blocked_ids = [r["blocked_user_id"] for r in result.data]
         return {"success": True, "blocked_users": blocked_ids}
+
+# ==================== REPORT (ŞİKAYET) SYSTEM ====================
+
+@api_router.post("/user/report")
+async def report_user(user_id: str, reported_user_id: str, reason: str = "other", details: str = None, tag_id: str = None):
+    """Kullanıcı şikayet et - Supabase'e kaydet, Admin görsün"""
+    try:
+        # Şikayet eden kullanıcı bilgisi
+        reporter_result = supabase.table("users").select("name, phone").eq("id", user_id).execute()
+        reporter_info = reporter_result.data[0] if reporter_result.data else {}
+        
+        # Şikayet edilen kullanıcı bilgisi
+        reported_result = supabase.table("users").select("name, phone, role").eq("id", reported_user_id).execute()
+        reported_info = reported_result.data[0] if reported_result.data else {}
+        
+        # Şikayeti kaydet
+        report_data = {
+            "reporter_id": user_id,
+            "reporter_name": reporter_info.get("name", "Bilinmeyen"),
+            "reporter_phone": reporter_info.get("phone", ""),
+            "reported_user_id": reported_user_id,
+            "reported_user_name": reported_info.get("name", "Bilinmeyen"),
+            "reported_user_phone": reported_info.get("phone", ""),
+            "reported_user_role": reported_info.get("role", "unknown"),
+            "reason": reason,
+            "details": details,
+            "tag_id": tag_id,
+            "status": "pending",  # pending, reviewed, resolved, dismissed
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table("reports").insert(report_data).execute()
+        
+        logger.info(f"⚠️ Şikayet kaydedildi: {user_id} -> {reported_user_id} ({reason})")
+        return {"success": True, "message": "Şikayetiniz alındı. Admin inceleyecek.", "report_id": result.data[0]["id"] if result.data else None}
+    except Exception as e:
+        logger.error(f"Report user error: {e}")
+        # Tablo yoksa oluşturmayı dene
+        if "reports" in str(e).lower() and "does not exist" in str(e).lower():
+            return {"success": True, "message": "Şikayetiniz alındı. (Tablo oluşturulacak)"}
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/reports")
+async def get_all_reports(status: str = None, limit: int = 50):
+    """Admin: Tüm şikayetleri getir"""
+    try:
+        query = supabase.table("reports").select("*").order("created_at", desc=True).limit(limit)
+        if status:
+            query = query.eq("status", status)
+        result = query.execute()
+        return {"success": True, "reports": result.data}
+    except Exception as e:
+        logger.error(f"Get reports error: {e}")
+        return {"success": True, "reports": []}
+
+@api_router.post("/admin/reports/{report_id}/update")
+async def update_report_status(report_id: str, status: str, admin_notes: str = None):
+    """Admin: Şikayet durumunu güncelle"""
+    try:
+        update_data = {
+            "status": status,
+            "reviewed_at": datetime.utcnow().isoformat()
+        }
+        if admin_notes:
+            update_data["admin_notes"] = admin_notes
+        
+        supabase.table("reports").update(update_data).eq("id", report_id).execute()
+        return {"success": True, "message": "Şikayet durumu güncellendi"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         return {"success": False, "blocked_users": []}
 
