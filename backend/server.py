@@ -160,6 +160,12 @@ async def get_cities():
     """Türkiye şehirlerini getir"""
     return {"success": True, "cities": sorted(TURKEY_CITIES)}
 
+# Frontend uyumluluğu için alias
+@api_router.get("/auth/cities")
+async def get_cities_alias():
+    """Türkiye şehirlerini getir (alias)"""
+    return {"success": True, "cities": sorted(TURKEY_CITIES)}
+
 # Yardımcı fonksiyon
 async def _check_user_logic(phone: str, device_id: str = None):
     """Kullanıcı var mı kontrol et - iç mantık"""
