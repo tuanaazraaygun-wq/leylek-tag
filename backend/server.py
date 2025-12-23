@@ -1054,28 +1054,50 @@ async def get_driver_active_tag(driver_id: str = None, user_id: str = None):
     return await get_driver_active_trip(driver_id, user_id)
 
 @api_router.post("/driver/start-trip")
-async def start_trip(driver_id: str, tag_id: str):
+async def start_trip(driver_id: str = None, user_id: str = None, tag_id: str = None):
     """Yolculuğu başlat"""
     try:
+        did = driver_id or user_id
+        if not did or not tag_id:
+            raise HTTPException(status_code=422, detail="user_id ve tag_id gerekli")
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(did)
+        
         supabase.table("tags").update({
             "status": "in_progress",
             "started_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("driver_id", driver_id).execute()
+        }).eq("id", tag_id).eq("driver_id", resolved_id).execute()
         
         return {"success": True, "message": "Yolculuk başladı"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Start trip error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Path param ile start-tag (frontend uyumluluğu)
+@api_router.post("/driver/start-tag/{tag_id}")
+async def start_tag_path(tag_id: str, driver_id: str = None, user_id: str = None):
+    """Yolculuğu başlat (path param)"""
+    return await start_trip(driver_id, user_id, tag_id)
+
 @api_router.post("/driver/complete-trip")
-async def complete_trip(driver_id: str, tag_id: str):
+async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str = None):
     """Yolculuğu tamamla"""
     try:
+        did = driver_id or user_id
+        if not did or not tag_id:
+            raise HTTPException(status_code=422, detail="user_id ve tag_id gerekli")
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(did)
+        
         # TAG'i güncelle
         supabase.table("tags").update({
             "status": "completed",
             "completed_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("driver_id", driver_id).execute()
+        }).eq("id", tag_id).eq("driver_id", resolved_id).execute()
         
         # TAG bilgisini al
         tag_result = supabase.table("tags").select("passenger_id").eq("id", tag_id).execute()
@@ -1083,7 +1105,7 @@ async def complete_trip(driver_id: str, tag_id: str):
             passenger_id = tag_result.data[0]["passenger_id"]
             
             # Her iki kullanıcının trip sayısını artır
-            for uid in [driver_id, passenger_id]:
+            for uid in [resolved_id, passenger_id]:
                 user_result = supabase.table("users").select("total_trips").eq("id", uid).execute()
                 if user_result.data:
                     current = user_result.data[0].get("total_trips", 0) or 0
