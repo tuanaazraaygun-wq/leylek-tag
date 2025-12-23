@@ -1767,6 +1767,24 @@ async def get_agora_token(channel_name: str, uid: int = 0):
         logger.error(f"Get token error: {e}")
         return {"success": False, "token": "", "detail": str(e)}
 
+# Frontend uyumluluğu için alias - /api/agora/token
+@api_router.get("/agora/token")
+async def get_agora_token_alias(channel_name: str, uid: int = 0):
+    """Agora RTC token al (alias endpoint)"""
+    try:
+        token = generate_agora_token(channel_name, uid)
+        logger.info(f"🎫 Token istendi: channel={channel_name}, uid={uid}, token_length={len(token) if token else 0}")
+        return {
+            "success": True,
+            "token": token,
+            "app_id": AGORA_APP_ID,
+            "channel_name": channel_name,
+            "uid": uid
+        }
+    except Exception as e:
+        logger.error(f"Get token error: {e}")
+        return {"success": False, "token": "", "detail": str(e)}
+
 # Aktif aramalar için in-memory store - basit ve güvenilir
 # Key: receiver_id, Value: call info
 active_calls = {}
