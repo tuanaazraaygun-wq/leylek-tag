@@ -1830,11 +1830,15 @@ async def start_call(request: StartCallRequest):
         
         logger.info(f"📞 Arama başlatıldı: {request.caller_id} -> {receiver_id} ({request.call_type})")
         
+        # Agora token üret
+        token = generate_agora_token(channel_name, 0)
+        
         return {
             "success": True,
             "call_id": call_id,
             "channel_name": channel_name,
-            "agora_app_id": os.getenv("AGORA_APP_ID", ""),
+            "agora_app_id": AGORA_APP_ID,
+            "agora_token": token,
             "caller_name": caller_name,
             "receiver_id": receiver_id
         }
