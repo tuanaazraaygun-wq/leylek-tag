@@ -410,6 +410,28 @@ export default function LiveMapView({
             <Text style={styles.actionBtnLabel}>Video</Text>
           </TouchableOpacity>
 
+          {/* Navigasyon - Yolcuya/Şoföre Git */}
+          <TouchableOpacity 
+            style={styles.actionBtn} 
+            onPress={() => {
+              if (otherLocation) {
+                const url = Platform.select({
+                  ios: `maps://app?daddr=${otherLocation.latitude},${otherLocation.longitude}`,
+                  android: `google.navigation:q=${otherLocation.latitude},${otherLocation.longitude}`
+                });
+                Linking.openURL(url || `https://www.google.com/maps/dir/?api=1&destination=${otherLocation.latitude},${otherLocation.longitude}`);
+              } else {
+                Alert.alert('Konum Yok', 'Karşı tarafın konumu henüz alınamadı');
+              }
+            }} 
+            activeOpacity={0.8}
+          >
+            <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
+              <Ionicons name="navigate" size={26} color="#FFF" />
+            </LinearGradient>
+            <Text style={styles.actionBtnLabel}>{isDriver ? 'Yolcuya Git' : 'Şoföre Git'}</Text>
+          </TouchableOpacity>
+
           {/* Bitir - Karşılıklı onay ile */}
           <TouchableOpacity 
             style={styles.actionBtn} 
