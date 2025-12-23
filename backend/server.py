@@ -978,10 +978,26 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             distance_km = None
             duration_min = None
             
-            if latitude and longitude and tag.get("pickup_lat") and tag.get("pickup_lng"):
+            # Yolcunun güncel konumunu al (eğer varsa)
+            passenger_current_lat = None
+            passenger_current_lng = None
+            if tag.get("passenger_id"):
+                try:
+                    passenger_loc = supabase.table("users").select("latitude, longitude").eq("id", tag["passenger_id"]).execute()
+                    if passenger_loc.data and passenger_loc.data[0].get("latitude"):
+                        passenger_current_lat = float(passenger_loc.data[0]["latitude"])
+                        passenger_current_lng = float(passenger_loc.data[0]["longitude"])
+                except:
+                    pass
+            
+            # Yolcunun güncel konumu varsa onu kullan, yoksa pickup konumunu kullan
+            target_lat = passenger_current_lat or (float(tag["pickup_lat"]) if tag.get("pickup_lat") else None)
+            target_lng = passenger_current_lng or (float(tag["pickup_lng"]) if tag.get("pickup_lng") else None)
+            
+            if latitude and longitude and target_lat and target_lng:
                 route_info = await get_route_info(
                     latitude, longitude,
-                    float(tag["pickup_lat"]), float(tag["pickup_lng"])
+                    target_lat, target_lng
                 )
                 if route_info:
                     distance_km = route_info["distance_km"]
