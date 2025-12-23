@@ -193,7 +193,9 @@ export default function VideoCall({
     console.log('⏰ Arama zaman aşımı');
     
     try {
-      await fetch(`${BACKEND_URL}/api/voice/cancel-call?tag_id=${channelName}&user_id=${userId}`, {
+      // call_id'yi channelName'den çıkar
+      const call_id = channelName.replace('leylek_', '');
+      await fetch(`${BACKEND_URL}/api/voice/cancel-call?call_id=${call_id}&user_id=${userId}`, {
         method: 'POST'
       });
     } catch (e) {}
