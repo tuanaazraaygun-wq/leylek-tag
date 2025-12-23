@@ -1580,47 +1580,144 @@ async def admin_update_settings(admin_phone: str, driver_radius_km: int = None, 
 
 @api_router.post("/admin/send-notification")
 async def admin_send_notification(admin_phone: str, title: str, message: str, target: str = "all", user_id: str = None):
-    """Push bildirim gönder"""
+    """Push bildirim gönder ve kaydet"""
     try:
         if admin_phone not in ADMIN_PHONE_NUMBERS:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         tokens = []
+        target_count = 0
         
         if target == "all":
-            result = supabase.table("users").select("push_token").not_.is_("push_token", "null").execute()
+            result = supabase.table("users").select("id, push_token").execute()
+            target_count = len(result.data)
             tokens = [r["push_token"] for r in result.data if r.get("push_token")]
         elif target == "drivers":
-            result = supabase.table("users").select("push_token, driver_details").not_.is_("push_token", "null").execute()
-            tokens = [r["push_token"] for r in result.data if r.get("push_token") and r.get("driver_details")]
+            result = supabase.table("users").select("id, push_token, driver_details").execute()
+            drivers = [r for r in result.data if r.get("driver_details")]
+            target_count = len(drivers)
+            tokens = [r["push_token"] for r in drivers if r.get("push_token")]
         elif target == "passengers":
-            result = supabase.table("users").select("push_token, driver_details").not_.is_("push_token", "null").execute()
-            tokens = [r["push_token"] for r in result.data if r.get("push_token") and not r.get("driver_details")]
+            result = supabase.table("users").select("id, push_token, driver_details").execute()
+            passengers = [r for r in result.data if not r.get("driver_details")]
+            target_count = len(passengers)
+            tokens = [r["push_token"] for r in passengers if r.get("push_token")]
         elif target == "user" and user_id:
-            result = supabase.table("users").select("push_token").eq("id", user_id).execute()
+            result = supabase.table("users").select("id, push_token").eq("id", user_id).execute()
+            target_count = 1
             if result.data and result.data[0].get("push_token"):
                 tokens = [result.data[0]["push_token"]]
         
-        # Bildirim gönder
-        push_result = await ExpoPushService.send(tokens, title, message)
+        sent_count = 0
+        failed_count = 0
         
-        # Kaydet
-        supabase.table("notifications").insert({
-            "title": title,
-            "message": message,
-            "target": target,
-            "push_sent": push_result["sent"],
-            "push_failed": push_result["failed"]
-        }).execute()
+        # Push bildirim gönder (token varsa)
+        if tokens:
+            try:
+                push_result = await ExpoPushService.send(tokens, title, message)
+                sent_count = push_result.get("sent", 0)
+                failed_count = push_result.get("failed", 0)
+            except Exception as e:
+                logger.error(f"Push notification error: {e}")
+                failed_count = len(tokens)
+        
+        # Admin bilgisini al
+        admin_result = supabase.table("users").select("id").eq("phone", admin_phone).execute()
+        admin_id = admin_result.data[0]["id"] if admin_result.data else None
+        
+        # Bildirimi veritabanına kaydet
+        try:
+            supabase.table("notifications").insert({
+                "title": title,
+                "message": message,
+                "target_type": target,
+                "target_user_id": user_id if target == "user" else None,
+                "sent_by": admin_id,
+                "sent_by_phone": admin_phone,
+                "status": "sent",
+                "metadata": {
+                    "target_count": target_count,
+                    "push_sent": sent_count,
+                    "push_failed": failed_count,
+                    "tokens_available": len(tokens)
+                }
+            }).execute()
+        except Exception as e:
+            logger.error(f"Notification save error: {e}")
+        
+        logger.info(f"📢 Bildirim gönderildi: {title} -> {target} ({sent_count} başarılı)")
         
         return {
             "success": True,
-            "sent_count": push_result["sent"],
-            "failed_count": push_result["failed"]
+            "target_count": target_count,
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "message": f"{target_count} kişiye bildirim gönderildi"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Admin send notification error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/notifications")
+async def admin_get_notifications(admin_phone: str, limit: int = 50):
+    """Gönderilen bildirimleri listele"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        result = supabase.table("notifications").select("*").order("created_at", desc=True).limit(limit).execute()
+        
+        return {"success": True, "notifications": result.data, "total": len(result.data)}
+    except Exception as e:
+        logger.error(f"Admin get notifications error: {e}")
+        return {"success": False, "notifications": []}
+
+@api_router.post("/admin/cleanup-inactive-tags")
+async def admin_cleanup_inactive_tags(admin_phone: str = None, max_inactive_minutes: int = 30):
+    """30 dakikadan fazla inaktif TAG'leri otomatik bitir"""
+    try:
+        # Admin değilse de çalışabilir (cron job için)
+        if admin_phone and admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        cutoff_time = (datetime.utcnow() - timedelta(minutes=max_inactive_minutes)).isoformat()
+        
+        # Aktif TAG'leri bul (matched veya in_progress)
+        result = supabase.table("tags").select("id, passenger_id, driver_id, status, last_activity").in_("status", ["matched", "in_progress"]).execute()
+        
+        cleaned_count = 0
+        for tag in result.data:
+            last_activity = tag.get("last_activity") or tag.get("matched_at") or tag.get("created_at")
+            
+            if last_activity:
+                try:
+                    activity_time = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+                    now = datetime.now(activity_time.tzinfo)
+                    
+                    if (now - activity_time).total_seconds() > max_inactive_minutes * 60:
+                        # TAG'i iptal et
+                        supabase.table("tags").update({
+                            "status": "cancelled",
+                            "cancelled_at": datetime.utcnow().isoformat()
+                        }).eq("id", tag["id"]).execute()
+                        
+                        cleaned_count += 1
+                        logger.info(f"🧹 İnaktif TAG temizlendi: {tag['id']}")
+                except Exception as e:
+                    logger.error(f"TAG cleanup error for {tag['id']}: {e}")
+        
+        return {
+            "success": True,
+            "cleaned_count": cleaned_count,
+            "message": f"{cleaned_count} inaktif TAG temizlendi"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cleanup inactive tags error: {e}")
+        return {"success": False, "cleaned_count": 0}
 
 @api_router.post("/admin/toggle-user")
 async def admin_toggle_user(admin_phone: str, user_id: str, is_active: bool):
