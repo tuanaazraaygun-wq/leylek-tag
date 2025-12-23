@@ -1980,6 +1980,7 @@ function PassengerDashboard({
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
   const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
+  const [currentCallChannelName, setCurrentCallChannelName] = useState<string | null>(null);
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
