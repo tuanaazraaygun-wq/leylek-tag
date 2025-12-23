@@ -119,40 +119,41 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü - ARAYAN İÇİN
+  // Arama durumu kontrolü - HEM ARAYAN HEM ARANAN İÇİN
   useEffect(() => {
-    if (!visible || !channelName || !userId || isCleanedUp.current || !isCaller) return;
+    if (!visible || !channelName || !userId || isCleanedUp.current) return;
     
-    // Sadece arayan taraf için kontrol - 3 saniye bekle başlangıçta
-    const initialDelay = setTimeout(() => {
+    // Hem bağlanmadan önce hem bağlandıktan sonra kontrol et
+    const checkStatus = async () => {
       if (isCleanedUp.current) return;
       
-      const checkStatus = async () => {
-        if (isCleanedUp.current || callState === 'connected') return;
+      try {
+        // call_id'yi channelName'den çıkar
+        const call_id = channelName.replace('leylek_', '');
+        const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${call_id}`);
+        const data = await response.json();
         
-        try {
-          // call_id'yi channelName'den çıkar
-          const call_id = channelName.replace('leylek_', '');
-          const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${call_id}`);
-          const data = await response.json();
-          
-          if (isCleanedUp.current) return;
-          
-          console.log('📞 Arama durumu:', data);
-          
-          // Karşı taraf reddetti veya kapattı
-          if (data.should_close) {
-            console.log('📵 Karşı taraf aramayı sonlandırdı');
-            handleCallEnded(data.status === 'rejected');
-          }
-        } catch (error) {
-          console.log('Call status check error:', error);
+        if (isCleanedUp.current) return;
+        
+        console.log('📞 Arama durumu kontrolü:', data, 'callState:', callState);
+        
+        // Karşı taraf reddetti veya kapattı
+        if (data.should_close) {
+          console.log('📵 Karşı taraf aramayı sonlandırdı, status:', data.status);
+          handleCallEnded(data.status === 'rejected');
+          return;
         }
-      };
-      
+      } catch (error) {
+        console.log('Call status check error:', error);
+      }
+    };
+    
+    // İlk kontrolü 2 saniye sonra yap, sonra her 2 saniyede bir tekrarla
+    const initialDelay = setTimeout(() => {
+      if (isCleanedUp.current) return;
       checkStatus();
-      callStatusIntervalRef.current = setInterval(checkStatus, 2000); // 2 saniyede bir kontrol
-    }, 3000); // 3 saniye bekle
+      callStatusIntervalRef.current = setInterval(checkStatus, 2000);
+    }, 2000);
     
     return () => {
       clearTimeout(initialDelay);
@@ -161,7 +162,7 @@ export default function VideoCall({
         callStatusIntervalRef.current = null;
       }
     };
-  }, [visible, channelName, userId, isCaller, callState]);
+  }, [visible, channelName, userId, callState]);
 
   const startRingTimer = () => {
     setRingDuration(0);
