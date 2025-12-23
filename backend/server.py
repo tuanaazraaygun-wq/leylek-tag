@@ -1850,6 +1850,29 @@ async def get_driver_location(driver_id: str):
         logger.error(f"Get driver location error: {e}")
         return {"success": False, "location": None}
 
+@api_router.get("/driver/passenger-location/{passenger_id}")
+async def get_passenger_location(passenger_id: str):
+    """Yolcu konumunu getir (şoför için)"""
+    try:
+        result = supabase.table("users").select("latitude, longitude, last_location_update, name").eq("id", passenger_id).execute()
+        
+        if result.data:
+            user = result.data[0]
+            return {
+                "success": True,
+                "location": {
+                    "latitude": float(user["latitude"]) if user.get("latitude") else None,
+                    "longitude": float(user["longitude"]) if user.get("longitude") else None,
+                    "updated_at": user.get("last_location_update"),
+                    "passenger_name": user.get("name")
+                }
+            }
+        
+        return {"success": False, "location": None}
+    except Exception as e:
+        logger.error(f"Get passenger location error: {e}")
+        return {"success": False, "location": None}
+
 # ==================== TRIP END REQUEST ====================
 
 # Aktif trip sonlandırma istekleri
