@@ -1734,15 +1734,23 @@ async def get_driver_location(driver_id: str):
 trip_end_requests = {}
 
 @api_router.post("/trip/request-end")
-async def request_trip_end(tag_id: str, requester_id: str):
+async def request_trip_end(tag_id: str, user_id: str = None, requester_id: str = None, user_type: str = None):
     """Yolculuk sonlandırma isteği"""
     try:
+        rid = user_id or requester_id
+        if not rid:
+            raise HTTPException(status_code=422, detail="user_id gerekli")
+        
         trip_end_requests[tag_id] = {
-            "requester_id": requester_id,
+            "requester_id": rid,
+            "user_type": user_type or "unknown",
             "requested_at": datetime.utcnow().isoformat(),
             "status": "pending"
         }
+        logger.info(f"🔚 Sonlandırma isteği: {tag_id} by {rid} ({user_type})")
         return {"success": True, "message": "Sonlandırma isteği gönderildi"}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "detail": str(e)}
 
@@ -1756,12 +1764,39 @@ async def check_end_request(tag_id: str, user_id: str):
             return {
                 "success": True,
                 "has_request": True,
-                "requester_id": request["requester_id"]
+                "requester_id": request["requester_id"],
+                "requester_type": request.get("user_type", "unknown")
             }
         
         return {"success": True, "has_request": False}
     except Exception as e:
         return {"success": False, "has_request": False}
+
+@api_router.post("/trip/respond-end-request")
+async def respond_end_request(tag_id: str, user_id: str, approved: bool = True):
+    """Sonlandırma isteğine cevap ver"""
+    try:
+        if approved:
+            # İsteği temizle
+            if tag_id in trip_end_requests:
+                del trip_end_requests[tag_id]
+            
+            # Trip'i tamamla
+            supabase.table("tags").update({
+                "status": "completed",
+                "completed_at": datetime.utcnow().isoformat()
+            }).eq("id", tag_id).execute()
+            
+            logger.info(f"✅ Yolculuk tamamlandı (karşılıklı): {tag_id}")
+            return {"success": True, "approved": True, "message": "Yolculuk tamamlandı"}
+        else:
+            # İsteği reddet
+            if tag_id in trip_end_requests:
+                trip_end_requests[tag_id]["status"] = "rejected"
+            return {"success": True, "approved": False, "message": "Sonlandırma isteği reddedildi"}
+    except Exception as e:
+        logger.error(f"Respond end request error: {e}")
+        return {"success": False, "detail": str(e)}
 
 @api_router.post("/trip/approve-end")
 async def approve_trip_end(tag_id: str, user_id: str):
