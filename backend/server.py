@@ -367,10 +367,12 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
 # Register endpoint - Yeni kullanıcı kaydı
 class RegisterRequest(BaseModel):
     phone: str
-    name: str
+    name: Optional[str] = None
     city: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    pin: Optional[str] = None
+    device_id: Optional[str] = None
 
 @api_router.post("/auth/register")
 async def register_user(request: RegisterRequest):
@@ -381,15 +383,29 @@ async def register_user(request: RegisterRequest):
         if existing.data:
             raise HTTPException(status_code=400, detail="Bu telefon numarası zaten kayıtlı")
         
-        # İsmi parçala
-        name_parts = request.name.split() if request.name else []
-        first_name = request.first_name or (name_parts[0] if name_parts else "")
-        last_name = request.last_name or (" ".join(name_parts[1:]) if len(name_parts) > 1 else "")
+        # İsmi oluştur
+        first_name = request.first_name or ""
+        last_name = request.last_name or ""
+        
+        if request.name:
+            name = request.name
+            name_parts = request.name.split()
+            if not first_name and name_parts:
+                first_name = name_parts[0]
+            if not last_name and len(name_parts) > 1:
+                last_name = " ".join(name_parts[1:])
+        else:
+            name = f"{first_name} {last_name}".strip() or "Kullanıcı"
+        
+        # PIN hash
+        pin_hash = None
+        if request.pin:
+            pin_hash = hash_pin(request.pin)
         
         # Yeni kullanıcı oluştur
         user_data = {
             "phone": request.phone,
-            "name": request.name,
+            "name": name,
             "first_name": first_name,
             "last_name": last_name,
             "city": request.city,
