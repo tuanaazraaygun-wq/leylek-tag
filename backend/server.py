@@ -1733,13 +1733,16 @@ def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: in
         # Token süresi (Unix timestamp)
         privilege_expired_ts = int(time.time()) + expiration_seconds
         
+        # Role = 1 (Publisher), 2 (Subscriber)
+        ROLE_PUBLISHER = 1
+        
         # Token üret
         token = RtcTokenBuilder.buildTokenWithUid(
             AGORA_APP_ID,
             AGORA_APP_CERTIFICATE,
             channel_name,
             uid,
-            Role_Publisher,
+            ROLE_PUBLISHER,
             privilege_expired_ts
         )
         logger.info(f"🎫 Agora token üretildi: {channel_name}")
