@@ -32,11 +32,9 @@ logger = logging.getLogger("server")
 # Agora Token Builder - import sonra yap
 AGORA_TOKEN_AVAILABLE = False
 RtcTokenBuilder = None
-Role_Publisher = None
 try:
-    from agora_token_builder import RtcTokenBuilder as _RtcTokenBuilder, Role_Publisher as _Role_Publisher
+    from agora_token_builder import RtcTokenBuilder as _RtcTokenBuilder
     RtcTokenBuilder = _RtcTokenBuilder
-    Role_Publisher = _Role_Publisher
     AGORA_TOKEN_AVAILABLE = True
     logger.info("✅ Agora token builder yüklendi")
 except ImportError as e:
