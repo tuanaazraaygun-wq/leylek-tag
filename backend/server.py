@@ -629,9 +629,9 @@ async def create_tag(request: CreateTagRequest, user_id: str = None):
 
 # Frontend uyumluluğu için alias
 @api_router.post("/passenger/create-request")
-async def create_request_alias(request: CreateTagRequest):
+async def create_request_alias(request: CreateTagRequest, user_id: str = None):
     """Yolcu TAG oluştur (alias)"""
-    return await create_tag(request)
+    return await create_tag(request, user_id)
 
 @api_router.get("/passenger/active-tag")
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
