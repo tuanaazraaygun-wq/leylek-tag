@@ -2855,7 +2855,7 @@ function PassengerDashboard({
         <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedDriverName}
-          channelName={activeTag.id}
+          channelName={currentCallChannelName || `leylek_${activeTag.id}`}
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
@@ -2863,11 +2863,13 @@ function PassengerDashboard({
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setCurrentCallChannelName(null);
           }}
           onRejected={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setCurrentCallChannelName(null);
           }}
         />
       )}
