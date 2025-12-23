@@ -913,10 +913,18 @@ async def send_offer(
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/driver/active-trip")
-async def get_driver_active_trip(driver_id: str):
+async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
     """Şoförün aktif yolculuğu"""
     try:
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo)").eq("driver_id", driver_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
+        # driver_id veya user_id kabul et
+        did = driver_id or user_id
+        if not did:
+            return {"success": True, "trip": None}
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(did)
+        
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo)").eq("driver_id", resolved_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
         
         if result.data:
             tag = result.data[0]
@@ -942,6 +950,12 @@ async def get_driver_active_trip(driver_id: str):
     except Exception as e:
         logger.error(f"Get driver active trip error: {e}")
         return {"success": False, "trip": None}
+
+# Frontend uyumluluğu için alias
+@api_router.get("/driver/active-tag")
+async def get_driver_active_tag(driver_id: str = None, user_id: str = None):
+    """Şoförün aktif TAG'i (alias)"""
+    return await get_driver_active_trip(driver_id, user_id)
 
 @api_router.post("/driver/start-trip")
 async def start_trip(driver_id: str, tag_id: str):
