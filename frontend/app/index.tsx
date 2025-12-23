@@ -2829,6 +2829,11 @@ function PassengerDashboard({
           setSelectedDriverName(incomingCallInfo?.callerName || 'Arayan');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
+          // Gelen aramadan channelName'i kaydet
+          if (incomingCallInfo?.channelName) {
+            setCurrentCallChannelName(incomingCallInfo.channelName);
+            console.log('📞 Gelen arama channel name:', incomingCallInfo.channelName);
+          }
           // Backend'e kabul bildirimi gönder
           try {
             await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
