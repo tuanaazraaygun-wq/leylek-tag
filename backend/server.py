@@ -577,11 +577,11 @@ class CreateTagRequest(BaseModel):
     destination: Optional[str] = None  # alias for dropoff_location
 
 @api_router.post("/passenger/create-tag")
-async def create_tag(request: CreateTagRequest):
+async def create_tag(request: CreateTagRequest, user_id: str = None):
     """Yolcu TAG oluştur"""
     try:
-        # passenger_id veya user_id kabul et
-        pid = request.passenger_id or request.user_id
+        # Query param, body veya request'ten user_id al
+        pid = user_id or request.passenger_id or request.user_id
         if not pid:
             raise HTTPException(status_code=422, detail="passenger_id veya user_id gerekli")
         
