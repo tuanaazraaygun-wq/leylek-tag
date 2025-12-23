@@ -409,6 +409,7 @@ async def register_user(request: RegisterRequest):
             "first_name": first_name,
             "last_name": last_name,
             "city": request.city,
+            "pin_hash": pin_hash,
             "rating": 5.0,
             "total_ratings": 0,
             "total_trips": 0,
