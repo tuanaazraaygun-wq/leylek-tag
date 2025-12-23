@@ -902,7 +902,7 @@ async def send_offer(
         driver = driver_result.data[0]
         
         # TAG bilgisi
-        tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        tag_result = supabase.table("tags").select("*").eq("id", tid).execute()
         if not tag_result.data:
             raise HTTPException(status_code=404, detail="TAG bulunamadı")
         
@@ -914,9 +914,9 @@ async def send_offer(
         trip_distance = None
         trip_duration = None
         
-        if latitude and longitude and tag.get("pickup_lat"):
+        if lat and lng and tag.get("pickup_lat"):
             # Şoför -> Yolcu
-            route1 = await get_route_info(latitude, longitude, float(tag["pickup_lat"]), float(tag["pickup_lng"]))
+            route1 = await get_route_info(lat, lng, float(tag["pickup_lat"]), float(tag["pickup_lng"]))
             if route1:
                 distance_to_passenger = route1["distance_km"]
                 estimated_arrival = route1["duration_min"]
@@ -930,13 +930,13 @@ async def send_offer(
         
         # Teklif oluştur
         offer_data = {
-            "tag_id": tag_id,
-            "driver_id": driver_id,
+            "tag_id": tid,
+            "driver_id": resolved_id,
             "driver_name": driver["name"],
             "driver_rating": float(driver.get("rating", 5.0)),
             "driver_photo": driver.get("profile_photo"),
-            "price": price,
-            "notes": notes,
+            "price": p,
+            "notes": n,
             "status": "pending",
             "distance_to_passenger_km": round(distance_to_passenger, 2) if distance_to_passenger else None,
             "estimated_arrival_min": round(estimated_arrival) if estimated_arrival else None,
@@ -952,9 +952,9 @@ async def send_offer(
         result = supabase.table("offers").insert(offer_data).execute()
         
         # TAG durumunu güncelle
-        supabase.table("tags").update({"status": "offers_received"}).eq("id", tag_id).execute()
+        supabase.table("tags").update({"status": "offers_received"}).eq("id", tid).execute()
         
-        logger.info(f"📤 Teklif gönderildi: {driver_id} -> {tag_id}")
+        logger.info(f"📤 Teklif gönderildi: {resolved_id} -> {tid}")
         return {"success": True, "offer_id": result.data[0]["id"]}
     except HTTPException:
         raise
