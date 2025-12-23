@@ -1791,13 +1791,9 @@ async def get_agora_token_alias(channel_name: str, uid: int = 0):
         logger.error(f"Get token error: {e}")
         return {"success": False, "token": "", "detail": str(e)}
 
-# Aktif aramalar için in-memory store - basit ve güvenilir
-# Key: call_id, Value: call info (tüm aramalar burada)
-active_calls = {}
-# Arama sonuçları - her kullanıcı için (kabul/red/bitiş bilgisi)
-call_results = {}
-# Cooldown - son arama zamanları
-call_cooldowns = {}
+# ==================== SUPABASE REALTIME ARAMA SİSTEMİ ====================
+# Tüm aramalar Supabase'de saklanır - in-memory yapı YOK
+# Backend sadece denetleyici, veriler tamamen Supabase'de
 
 class StartCallRequest(BaseModel):
     caller_id: str
@@ -1808,16 +1804,16 @@ class StartCallRequest(BaseModel):
 
 @api_router.post("/voice/start-call")
 async def start_call(request: StartCallRequest):
-    """Arama başlat - Basit ve güvenilir"""
+    """Arama başlat - Supabase'e kaydet"""
     try:
-        # 5 saniye cooldown kontrolü
-        last_call = call_cooldowns.get(request.caller_id, 0)
-        now = datetime.utcnow().timestamp()
-        if now - last_call < 5:
-            return {"success": False, "detail": "Lütfen 5 saniye bekleyin"}
-        
         call_id = f"call_{secrets.token_urlsafe(8)}"
         channel_name = f"leylek_{call_id}"
+        
+        # Son 5 saniyede arama yapılmış mı kontrol et (cooldown)
+        five_seconds_ago = (datetime.utcnow() - timedelta(seconds=5)).isoformat()
+        recent_call = supabase.table("calls").select("id").eq("caller_id", request.caller_id).gte("created_at", five_seconds_ago).execute()
+        if recent_call.data:
+            return {"success": False, "detail": "Lütfen 5 saniye bekleyin"}
         
         # receiver_id yoksa tag_id'den bul
         receiver_id = request.receiver_id
@@ -1833,26 +1829,15 @@ async def start_call(request: StartCallRequest):
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
         
-        # Önceki aramaları temizle
-        to_remove = [cid for cid, c in active_calls.items() 
-                     if c.get("caller_id") == request.caller_id or c.get("receiver_id") == request.caller_id]
-        for cid in to_remove:
-            del active_calls[cid]
+        # Önceki aktif aramaları iptal et (aynı kullanıcılar arasında)
+        supabase.table("calls").update({
+            "status": "cancelled",
+            "ended_at": datetime.utcnow().isoformat(),
+            "end_reason": "new_call"
+        }).eq("status", "ringing").or_(f"caller_id.eq.{request.caller_id},receiver_id.eq.{request.caller_id}").execute()
         
-        # Cooldown güncelle
-        call_cooldowns[request.caller_id] = now
-        
-        # Yeni arama oluştur
-        active_calls[call_id] = {
-            "call_id": call_id,
-            "caller_id": request.caller_id,
-            "receiver_id": receiver_id,
-            "call_type": request.call_type,
-            "channel_name": channel_name,
-            "tag_id": request.tag_id,
-            "status": "ringing",
-            "started_at": datetime.utcnow().isoformat()
-        }
+        # Agora token üret
+        token = generate_agora_token(channel_name, 0)
         
         # Arayan bilgisi
         caller_name = request.caller_name
@@ -1863,10 +1848,24 @@ async def start_call(request: StartCallRequest):
             except:
                 caller_name = "Kullanıcı"
         
-        logger.info(f"📞 Arama başlatıldı: {call_id} - {request.caller_id} -> {receiver_id} ({request.call_type})")
+        # Yeni arama kaydı oluştur - SUPABASE'E KAYDET
+        call_data = {
+            "call_id": call_id,
+            "channel_name": channel_name,
+            "caller_id": request.caller_id,
+            "receiver_id": receiver_id,
+            "tag_id": request.tag_id,
+            "call_type": request.call_type,
+            "status": "ringing",
+            "agora_token": token
+        }
         
-        # Agora token üret
-        token = generate_agora_token(channel_name, 0)
+        result = supabase.table("calls").insert(call_data).execute()
+        
+        if not result.data:
+            return {"success": False, "detail": "Arama kaydedilemedi"}
+        
+        logger.info(f"📞 SUPABASE: Arama başlatıldı: {call_id} - {request.caller_id} -> {receiver_id}")
         
         return {
             "success": True,
@@ -1883,48 +1882,68 @@ async def start_call(request: StartCallRequest):
 
 @api_router.get("/voice/check-incoming")
 async def check_incoming_call(user_id: str):
-    """Gelen arama var mı kontrol et"""
+    """Gelen arama var mı kontrol et - Supabase'den oku"""
     try:
-        # Bu kullanıcıya gelen aktif arama var mı?
-        for call_id, call in active_calls.items():
-            if call.get("receiver_id") == user_id and call.get("status") == "ringing":
-                # Arayan bilgisi
-                caller_name = "Kullanıcı"
-                caller_photo = None
-                try:
-                    caller_result = supabase.table("users").select("name, profile_photo").eq("id", call["caller_id"]).execute()
-                    if caller_result.data:
-                        caller_name = caller_result.data[0].get("name", "Kullanıcı")
-                        caller_photo = caller_result.data[0].get("profile_photo")
-                except:
-                    pass
-                
-                return {
-                    "success": True,
-                    "has_incoming": True,
-                    "call": {
-                        "call_id": call["call_id"],
-                        "caller_id": call["caller_id"],
-                        "caller_name": caller_name,
-                        "caller_photo": caller_photo,
-                        "call_type": call["call_type"],
-                        "channel_name": call["channel_name"],
-                        "agora_app_id": os.getenv("AGORA_APP_ID", "")
-                    }
-                }
+        # Bu kullanıcıya gelen aktif (ringing) arama var mı?
+        result = supabase.table("calls").select("*").eq("receiver_id", user_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
         
-        # Arama sonucu var mı kontrol et (bitiş bildirimi)
-        result = call_results.get(user_id)
-        if result:
-            # Sonucu al ve sil
-            del call_results[user_id]
+        if result.data:
+            call = result.data[0]
+            
+            # 60 saniyeden eski aramayı otomatik "missed" yap
+            created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
+            if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=60):
+                supabase.table("calls").update({
+                    "status": "missed",
+                    "ended_at": datetime.utcnow().isoformat(),
+                    "end_reason": "timeout"
+                }).eq("call_id", call["call_id"]).execute()
+                return {"success": True, "has_incoming": False, "call": None}
+            
+            # Arayan bilgisi
+            caller_name = "Kullanıcı"
+            caller_photo = None
+            try:
+                caller_result = supabase.table("users").select("name, profile_photo").eq("id", call["caller_id"]).execute()
+                if caller_result.data:
+                    caller_name = caller_result.data[0].get("name", "Kullanıcı")
+                    caller_photo = caller_result.data[0].get("profile_photo")
+            except:
+                pass
+            
             return {
                 "success": True,
-                "has_incoming": False,
-                "call": None,
-                "call_ended": True,
-                "end_reason": result.get("status", "ended")
+                "has_incoming": True,
+                "call": {
+                    "call_id": call["call_id"],
+                    "caller_id": call["caller_id"],
+                    "caller_name": caller_name,
+                    "caller_photo": caller_photo,
+                    "call_type": call["call_type"],
+                    "channel_name": call["channel_name"],
+                    "agora_app_id": AGORA_APP_ID,
+                    "agora_token": call.get("agora_token")
+                }
             }
+        
+        # Son biten/iptal edilen aramayı kontrol et (bildirim için)
+        ended_result = supabase.table("calls").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ended", "rejected", "cancelled"]).order("ended_at", desc=True).limit(1).execute()
+        
+        if ended_result.data:
+            ended_call = ended_result.data[0]
+            ended_at = ended_call.get("ended_at")
+            if ended_at:
+                ended_time = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
+                # Son 10 saniye içinde bitmiş aramayı bildir
+                if datetime.now(ended_time.tzinfo) - ended_time < timedelta(seconds=10):
+                    return {
+                        "success": True,
+                        "has_incoming": False,
+                        "call": None,
+                        "call_ended": True,
+                        "end_reason": ended_call.get("status"),
+                        "call_id": ended_call.get("call_id")
+                    }
         
         return {"success": True, "has_incoming": False, "call": None}
     except Exception as e:
@@ -1933,45 +1952,42 @@ async def check_incoming_call(user_id: str):
 
 @api_router.post("/voice/accept-call")
 async def accept_call(user_id: str, call_id: str):
-    """Aramayı kabul et"""
+    """Aramayı kabul et - Supabase'de güncelle"""
     try:
-        call = active_calls.get(call_id)
-        if call and call.get("receiver_id") == user_id:
-            # Durumu güncelle
-            call["status"] = "connected"
-            
-            # Arayana bildir
-            call_results[call["caller_id"]] = {
-                "call_id": call_id,
-                "status": "accepted",
-                "channel_name": call["channel_name"]
-            }
-            
-            logger.info(f"✅ Arama kabul edildi: {call_id}")
+        # Aramayı bul ve güncelle
+        result = supabase.table("calls").update({
+            "status": "connected",
+            "answered_at": datetime.utcnow().isoformat()
+        }).eq("call_id", call_id).eq("receiver_id", user_id).eq("status", "ringing").execute()
+        
+        if result.data:
+            call = result.data[0]
+            logger.info(f"✅ SUPABASE: Arama kabul edildi: {call_id}")
             return {
                 "success": True,
                 "channel_name": call["channel_name"],
-                "agora_app_id": os.getenv("AGORA_APP_ID", "")
+                "agora_app_id": AGORA_APP_ID,
+                "agora_token": call.get("agora_token")
             }
-        return {"success": False, "detail": "Arama bulunamadı"}
+        
+        return {"success": False, "detail": "Arama bulunamadı veya zaten cevaplanmış"}
     except Exception as e:
         logger.error(f"Accept call error: {e}")
         return {"success": False, "detail": str(e)}
 
 @api_router.post("/voice/reject-call")
 async def reject_call(user_id: str, call_id: str):
-    """Aramayı reddet"""
+    """Aramayı reddet - Supabase'de güncelle"""
     try:
-        call = active_calls.get(call_id)
-        if call and call.get("receiver_id") == user_id:
-            # Arayana bildir
-            call_results[call["caller_id"]] = {
-                "call_id": call_id,
-                "status": "rejected"
-            }
-            # Aramayı sil
-            del active_calls[call_id]
-            logger.info(f"📵 Arama reddedildi: {call_id}")
+        result = supabase.table("calls").update({
+            "status": "rejected",
+            "ended_at": datetime.utcnow().isoformat(),
+            "ended_by": user_id,
+            "end_reason": "rejected"
+        }).eq("call_id", call_id).eq("receiver_id", user_id).execute()
+        
+        if result.data:
+            logger.info(f"📵 SUPABASE: Arama reddedildi: {call_id}")
         
         return {"success": True}
     except Exception as e:
@@ -1980,129 +1996,157 @@ async def reject_call(user_id: str, call_id: str):
 
 @api_router.get("/voice/check-call-status")
 async def check_call_status(user_id: str, call_id: str):
-    """Arayan için arama durumunu kontrol et"""
+    """Arayan için arama durumunu kontrol et - Supabase'den oku"""
     try:
-        # Sonuç var mı kontrol et (kabul/red/bitiş)
-        result = call_results.get(user_id)
-        if result and result.get("call_id") == call_id:
-            status = result.get("status")
-            # Sonucu temizle
-            del call_results[user_id]
-            
-            if status == "accepted":
-                return {
-                    "success": True,
-                    "status": "accepted",
-                    "should_close": False,
-                    "channel_name": result.get("channel_name")
-                }
-            elif status == "rejected":
-                return {
-                    "success": True,
-                    "status": "rejected",
-                    "should_close": True
-                }
-            elif status == "ended":
-                return {
-                    "success": True,
-                    "status": "ended",
-                    "should_close": True
-                }
+        result = supabase.table("calls").select("*").eq("call_id", call_id).execute()
         
-        # Arama hala aktif mi kontrol et
-        call = active_calls.get(call_id)
-        if call:
+        if not result.data:
+            return {"success": True, "status": "ended", "should_close": True}
+        
+        call = result.data[0]
+        status = call.get("status")
+        
+        if status == "connected":
             return {
                 "success": True,
-                "status": call.get("status", "ringing"),
+                "status": "accepted",
+                "should_close": False,
+                "channel_name": call["channel_name"]
+            }
+        elif status == "rejected":
+            return {
+                "success": True,
+                "status": "rejected",
+                "should_close": True
+            }
+        elif status in ["ended", "cancelled", "missed"]:
+            return {
+                "success": True,
+                "status": "ended",
+                "should_close": True,
+                "end_reason": call.get("end_reason")
+            }
+        elif status == "ringing":
+            # 60 saniyeden fazla çalıyorsa timeout
+            created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
+            if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=60):
+                # Timeout - missed olarak işaretle
+                supabase.table("calls").update({
+                    "status": "missed",
+                    "ended_at": datetime.utcnow().isoformat(),
+                    "end_reason": "timeout"
+                }).eq("call_id", call_id).execute()
+                return {"success": True, "status": "ended", "should_close": True}
+            
+            return {
+                "success": True,
+                "status": "ringing",
                 "should_close": False
             }
         
-        # Arama yok = iptal edilmiş veya bitirilmiş
-        return {
-            "success": True,
-            "status": "ended",
-            "should_close": True
-        }
+        return {"success": True, "status": status, "should_close": False}
     except Exception as e:
         logger.error(f"Check call status error: {e}")
         return {"success": True, "status": "ended", "should_close": True}
 
 @api_router.post("/voice/end-call")
 async def end_call(user_id: str, call_id: str = None):
-    """Aramayı sonlandır - HER İKİ TARAF İÇİN"""
+    """Aramayı sonlandır - Supabase'de güncelle"""
     try:
-        ended_calls = []
-        
-        # call_id verilmişse direkt o aramayı bul
-        if call_id and call_id in active_calls:
-            call = active_calls[call_id]
-            # Karşı tarafa bildir
-            other_id = call["receiver_id"] if call["caller_id"] == user_id else call["caller_id"]
-            call_results[other_id] = {
-                "call_id": call_id,
-                "status": "ended"
-            }
-            del active_calls[call_id]
-            ended_calls.append(call_id)
-            logger.info(f"📴 Arama sonlandırıldı: {call_id} by {user_id}")
-        else:
-            # Bu kullanıcının dahil olduğu tüm aramaları bul
-            for cid, call in list(active_calls.items()):
-                if call.get("caller_id") == user_id or call.get("receiver_id") == user_id:
-                    # Karşı tarafa bildir
-                    other_id = call["receiver_id"] if call["caller_id"] == user_id else call["caller_id"]
-                    call_results[other_id] = {
-                        "call_id": cid,
-                        "status": "ended"
-                    }
-                    del active_calls[cid]
-                    ended_calls.append(cid)
+        if call_id:
+            # Belirli aramayı sonlandır
+            result = supabase.table("calls").update({
+                "status": "ended",
+                "ended_at": datetime.utcnow().isoformat(),
+                "ended_by": user_id,
+                "end_reason": "ended"
+            }).eq("call_id", call_id).in_("status", ["ringing", "connected"]).execute()
             
-            if ended_calls:
-                logger.info(f"📴 Aramalar sonlandırıldı: {ended_calls} by {user_id}")
+            if result.data:
+                logger.info(f"📴 SUPABASE: Arama sonlandırıldı: {call_id} by {user_id}")
+        else:
+            # Bu kullanıcının tüm aktif aramalarını sonlandır
+            supabase.table("calls").update({
+                "status": "ended",
+                "ended_at": datetime.utcnow().isoformat(),
+                "ended_by": user_id,
+                "end_reason": "ended"
+            }).or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ringing", "connected"]).execute()
+            
+            logger.info(f"📴 SUPABASE: Kullanıcının tüm aramaları sonlandırıldı: {user_id}")
         
-        return {"success": True, "ended_calls": ended_calls}
+        return {"success": True}
     except Exception as e:
         logger.error(f"End call error: {e}")
         return {"success": False}
 
 @api_router.post("/voice/cancel-call")
 async def cancel_call(user_id: str, call_id: str = None):
-    """Aramayı iptal et (henüz cevaplanmadan) - Arayan için"""
+    """Aramayı iptal et (henüz cevaplanmadan) - Supabase'de güncelle"""
     try:
-        # call_id verilmişse direkt o aramayı bul
         if call_id:
-            # call_id "call_xxx" formatındaysa direkt kullan, değilse düzelt
+            # call_id "call_xxx" formatındaysa düzelt
             if not call_id.startswith("call_"):
                 call_id = f"call_{call_id}"
             
-            call = active_calls.get(call_id)
-            if call and call.get("caller_id") == user_id:
-                # Alıcıya bildir
-                call_results[call["receiver_id"]] = {
-                    "call_id": call_id,
-                    "status": "cancelled"
-                }
-                del active_calls[call_id]
-                logger.info(f"📵 Arama iptal edildi: {call_id}")
-                return {"success": True}
-        
-        # Kullanıcının aktif aramasını bul ve iptal et
-        for cid, call in list(active_calls.items()):
-            if call.get("caller_id") == user_id and call.get("status") == "ringing":
-                call_results[call["receiver_id"]] = {
-                    "call_id": cid,
-                    "status": "cancelled"
-                }
-                del active_calls[cid]
-                logger.info(f"📵 Arama iptal edildi: {cid}")
-                return {"success": True}
+            result = supabase.table("calls").update({
+                "status": "cancelled",
+                "ended_at": datetime.utcnow().isoformat(),
+                "ended_by": user_id,
+                "end_reason": "cancelled"
+            }).eq("call_id", call_id).eq("caller_id", user_id).eq("status", "ringing").execute()
+            
+            if result.data:
+                logger.info(f"📵 SUPABASE: Arama iptal edildi: {call_id}")
+        else:
+            # Kullanıcının aktif ringing aramalarını iptal et
+            supabase.table("calls").update({
+                "status": "cancelled",
+                "ended_at": datetime.utcnow().isoformat(),
+                "ended_by": user_id,
+                "end_reason": "cancelled"
+            }).eq("caller_id", user_id).eq("status", "ringing").execute()
         
         return {"success": True}
     except Exception as e:
         logger.error(f"Cancel call error: {e}")
         return {"success": False}
+
+# Arama geçmişi endpoint'i
+@api_router.get("/voice/history")
+async def get_call_history(user_id: str, limit: int = 20):
+    """Kullanıcının arama geçmişini getir"""
+    try:
+        result = supabase.table("calls").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").order("created_at", desc=True).limit(limit).execute()
+        
+        calls = []
+        for call in result.data:
+            # Karşı tarafın bilgisini al
+            other_id = call["receiver_id"] if call["caller_id"] == user_id else call["caller_id"]
+            other_name = "Kullanıcı"
+            try:
+                other_result = supabase.table("users").select("name").eq("id", other_id).execute()
+                if other_result.data:
+                    other_name = other_result.data[0].get("name", "Kullanıcı")
+            except:
+                pass
+            
+            calls.append({
+                "call_id": call["call_id"],
+                "other_user_id": other_id,
+                "other_user_name": other_name,
+                "call_type": call["call_type"],
+                "status": call["status"],
+                "is_outgoing": call["caller_id"] == user_id,
+                "created_at": call["created_at"],
+                "ended_at": call.get("ended_at"),
+                "duration_seconds": None  # Hesaplanabilir
+            })
+        
+        return {"success": True, "calls": calls}
+    except Exception as e:
+        logger.error(f"Get call history error: {e}")
+        return {"success": False, "calls": []}
 
 # ==================== DRIVER LOCATION TRACKING ====================
 
