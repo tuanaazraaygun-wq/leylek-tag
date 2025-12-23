@@ -364,6 +364,69 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Register endpoint - Yeni kullanıcı kaydı
+class RegisterRequest(BaseModel):
+    phone: str
+    name: str
+    city: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+@api_router.post("/auth/register")
+async def register_user(request: RegisterRequest):
+    """Yeni kullanıcı kaydı"""
+    try:
+        # Kullanıcı var mı kontrol et
+        existing = supabase.table("users").select("id").eq("phone", request.phone).execute()
+        if existing.data:
+            raise HTTPException(status_code=400, detail="Bu telefon numarası zaten kayıtlı")
+        
+        # İsmi parçala
+        name_parts = request.name.split() if request.name else []
+        first_name = request.first_name or (name_parts[0] if name_parts else "")
+        last_name = request.last_name or (" ".join(name_parts[1:]) if len(name_parts) > 1 else "")
+        
+        # Yeni kullanıcı oluştur
+        user_data = {
+            "phone": request.phone,
+            "name": request.name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "city": request.city,
+            "rating": 5.0,
+            "total_ratings": 0,
+            "total_trips": 0,
+            "is_active": True
+        }
+        
+        result = supabase.table("users").insert(user_data).execute()
+        
+        if result.data:
+            user = result.data[0]
+            logger.info(f"✅ Yeni kullanıcı kaydedildi: {request.phone}")
+            
+            return {
+                "success": True,
+                "user": {
+                    "id": user["id"],
+                    "phone": user["phone"],
+                    "name": user["name"],
+                    "first_name": user.get("first_name"),
+                    "last_name": user.get("last_name"),
+                    "city": user.get("city"),
+                    "rating": 5.0,
+                    "total_trips": 0,
+                    "is_admin": request.phone in ADMIN_PHONE_NUMBERS
+                }
+            }
+        
+        raise HTTPException(status_code=500, detail="Kayıt oluşturulamadı")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Register error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==================== USER ENDPOINTS ====================
 
 @api_router.get("/user/{user_id}")
