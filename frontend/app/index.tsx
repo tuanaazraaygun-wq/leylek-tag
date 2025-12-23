@@ -3626,6 +3626,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           setSelectedPassengerName(incomingCallInfo?.callerName || 'Yolcu');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
+          // Gelen aramadan channelName'i kaydet
+          if (incomingCallInfo?.channelName) {
+            setCurrentCallChannelName(incomingCallInfo.channelName);
+            console.log('📞 ŞOFÖR - Gelen arama channel name:', incomingCallInfo.channelName);
+          }
           // Backend'e kabul bildirimi gönder
           try {
             await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
@@ -3646,7 +3651,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedPassengerName}
-          channelName={activeTag.id}
+          channelName={currentCallChannelName || `leylek_${activeTag.id}`}
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
@@ -3654,11 +3659,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setCurrentCallChannelName(null);
           }}
           onRejected={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setCurrentCallChannelName(null);
           }}
         />
       )}
