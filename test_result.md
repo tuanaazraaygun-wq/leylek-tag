@@ -223,8 +223,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Admin Panel functionality"
-    - "Voice/video calling system fixes"
+    - "Voice/Video Call - Agora Token Integration"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -232,46 +231,49 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      ## SON DEĞİŞİKLİKLER - Haziran 2025
+      ## AGORA TOKEN ENTEGRASİYONU TAMAMLANDI - Haziran 2025
       
-      ### 1. IncomingCall.tsx - ZİL SESİ TAKINTI SORUNU DÜZELTİLDİ
-      - AppState listener eklendi: Arka plana geçince zil durur
-      - fullCleanup fonksiyonu: Ses, animasyon ve titreşim tamamen temizlenir
-      - isCleanedUp ref: Temizlik durumu takip edilir
-      - visible false olduğunda da cleanup çalışır
-      - Sound ref'i hemen null yapılıp race condition önlendi
+      ### SORUN:
+      Sesli/görüntülü aramalar bağlanıyor ama ses/görüntü yok.
+      Sebep: Agora token eksikliği. Frontend "/api/agora/token" endpoint'ini çağırıyordu ama backend'de bu endpoint yoktu.
       
-      ### 2. VideoCall.tsx - VIDEO ARAMA İYİLEŞTİRMELERİ
-      - Daha detaylı logging eklendi
-      - enableVideo() çağrısından ÖNCE enableLocalVideo() yapılıyor
-      - Video encoder config ayarlandı (640x480, 15fps)
-      - startPreview join sonrası tekrar çağrılıyor
-      - onFirstLocalVideoFrame, onFirstRemoteVideoFrame event'leri eklendi
-      - Engine temizlemeden ÖNCE 500ms bekleme eklendi
+      ### YAPILAN DÜZELTMELER:
       
-      ### 3. AdminPanel.tsx - API URL DÜZELTİLDİ
-      - API_URL'ye /api suffix eklendi
-      - BACKEND_URL ve API_URL ayrıldı
+      #### 1. Backend - /api/agora/token endpoint eklendi (server.py)
+      - generate_agora_token fonksiyonu zaten vardı
+      - /api/voice/get-token endpoint'i vardı 
+      - /api/agora/token alias endpoint'i EKLENDİ (frontend uyumluluğu için)
+      - Token başarıyla üretiliyor ve döndürülüyor ✅
       
-      ### 4. Backend server.py - ROUTER FIX
-      - app.include_router(api_router) dosyanın SONUNA taşındı
-      - Admin endpoint'leri artık çalışıyor
+      #### 2. Frontend - Channel Name Senkronizasyonu (index.tsx)
+      - SORUN: VideoCall bileşenine yanlış channelName gönderiliyordu
+        - `channelName={activeTag.id}` yerine backend'den dönen `channel_name` kullanılmalı
       
-      ### Tüm Admin Endpoint'leri Test Edildi:
-      - GET /api/admin/check ✅
-      - GET /api/admin/dashboard ✅
-      - GET /api/admin/users ✅
-      - POST /api/admin/user/toggle-status ✅
-      - POST /api/admin/user/toggle-premium ✅
-      - GET /api/admin/calls ✅
-      - GET /api/admin/reports ✅
-      - POST /api/admin/send-notification ✅
+      - ÇÖZÜM:
+        a) `currentCallChannelName` state'i eklendi (hem yolcu hem şoför için)
+        b) Arama başlatıldığında backend'den dönen `data.channel_name` kaydediliyor
+        c) Gelen arama kabul edildiğinde `incomingCallInfo.channelName` kaydediliyor
+        d) VideoCall bileşenine `currentCallChannelName || leylek_${activeTag.id}` gönderiliyor
+        e) Arama bitince state temizleniyor
       
-      ## Test Edilmesi Gerekenler:
-      1. Zil sesi artık takılıyor mu?
-      2. Video arama açılıp kapanıyor mu?
-      3. Admin panel düzgün yükleniyor mu?
-      4. Sürücü arama butonları çalışıyor mu?
+      ### DEĞİŞEN DOSYALAR:
+      - /app/backend/server.py (Satır ~1770: /api/agora/token endpoint)
+      - /app/frontend/app/index.tsx (Yolcu ve Şoför Dashboard'larında arama mantığı)
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. Backend token endpoint testi: curl "http://localhost:8001/api/agora/token?channel_name=test&uid=123"
+         ✅ Token döndürülüyor (139 karakter)
+      
+      2. start-call testi: Token ile birlikte döndürülüyor ✅
+      
+      3. GERÇEK CİHAZDA TEST:
+         - Arama başlat
+         - Her iki cihaz da aynı channel'a katılmalı
+         - Ses/görüntü akışı başlamalı
+      
+      ### NOT:
+      Bu değişiklik sadece backend'e endpoint eklemek ve frontend'de doğru channelName kullanmaktı.
+      VideoCall.tsx zaten token'ı doğru şekilde alıp kullanıyordu (satır 384).
       
   - agent: "testing"
     message: |
