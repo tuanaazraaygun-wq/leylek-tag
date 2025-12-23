@@ -1794,7 +1794,7 @@ async def get_agora_token_alias(channel_name: str, uid: int = 0):
 # ==================== SUPABASE REALTIME ARAMA SİSTEMİ ====================
 # Tüm aramalar Supabase'de saklanır - in-memory yapı YOK
 # Backend sadece denetleyici, veriler tamamen Supabase'de
-# Tablo adı: call_logs (mevcut tablo kullanılıyor)
+# Tablo adı: calls
 
 class StartCallRequest(BaseModel):
     caller_id: str
@@ -1812,9 +1812,12 @@ async def start_call(request: StartCallRequest):
         
         # Son 5 saniyede arama yapılmış mı kontrol et (cooldown)
         five_seconds_ago = (datetime.utcnow() - timedelta(seconds=5)).isoformat()
-        recent_call = supabase.table("call_logs").select("id").eq("caller_id", request.caller_id).gte("created_at", five_seconds_ago).execute()
-        if recent_call.data:
-            return {"success": False, "detail": "Lütfen 5 saniye bekleyin"}
+        try:
+            recent_call = supabase.table("calls").select("id").eq("caller_id", request.caller_id).gte("created_at", five_seconds_ago).execute()
+            if recent_call.data:
+                return {"success": False, "detail": "Lütfen 5 saniye bekleyin"}
+        except:
+            pass  # Tablo yoksa devam et
         
         # receiver_id yoksa tag_id'den bul
         receiver_id = request.receiver_id
@@ -1832,7 +1835,7 @@ async def start_call(request: StartCallRequest):
         
         # Önceki aktif aramaları iptal et
         try:
-            supabase.table("call_logs").update({
+            supabase.table("calls").update({
                 "status": "cancelled",
                 "ended_at": datetime.utcnow().isoformat()
             }).eq("status", "ringing").or_(f"caller_id.eq.{request.caller_id},receiver_id.eq.{request.caller_id}").execute()
@@ -1863,7 +1866,7 @@ async def start_call(request: StartCallRequest):
             "agora_token": token
         }
         
-        result = supabase.table("call_logs").insert(call_data).execute()
+        result = supabase.table("calls").insert(call_data).execute()
         
         if not result.data:
             return {"success": False, "detail": "Arama kaydedilemedi"}
@@ -1888,7 +1891,7 @@ async def check_incoming_call(user_id: str):
     """Gelen arama var mı kontrol et - Supabase'den oku"""
     try:
         # Bu kullanıcıya gelen aktif (ringing) arama var mı?
-        result = supabase.table("call_logs").select("*").eq("receiver_id", user_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
+        result = supabase.table("calls").select("*").eq("receiver_id", user_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
         
         if result.data:
             call = result.data[0]
@@ -1896,7 +1899,7 @@ async def check_incoming_call(user_id: str):
             # 60 saniyeden eski aramayı otomatik "missed" yap
             created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
             if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=60):
-                supabase.table("call_logs").update({
+                supabase.table("calls").update({
                     "status": "missed",
                     "ended_at": datetime.utcnow().isoformat()
                 }).eq("call_id", call["call_id"]).execute()
@@ -1929,7 +1932,7 @@ async def check_incoming_call(user_id: str):
             }
         
         # Son biten/iptal edilen aramayı kontrol et (bildirim için)
-        ended_result = supabase.table("call_logs").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ended", "rejected", "cancelled"]).order("ended_at", desc=True).limit(1).execute()
+        ended_result = supabase.table("calls").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ended", "rejected", "cancelled"]).order("ended_at", desc=True).limit(1).execute()
         
         if ended_result.data:
             ended_call = ended_result.data[0]
@@ -1957,7 +1960,7 @@ async def accept_call(user_id: str, call_id: str):
     """Aramayı kabul et - Supabase'de güncelle"""
     try:
         # Aramayı bul ve güncelle
-        result = supabase.table("call_logs").update({
+        result = supabase.table("calls").update({
             "status": "connected",
             "answered_at": datetime.utcnow().isoformat()
         }).eq("call_id", call_id).eq("receiver_id", user_id).eq("status", "ringing").execute()
@@ -1981,7 +1984,7 @@ async def accept_call(user_id: str, call_id: str):
 async def reject_call(user_id: str, call_id: str):
     """Aramayı reddet - Supabase'de güncelle"""
     try:
-        result = supabase.table("call_logs").update({
+        result = supabase.table("calls").update({
             "status": "rejected",
             "ended_at": datetime.utcnow().isoformat(),
             "ended_by": user_id
@@ -1999,7 +2002,7 @@ async def reject_call(user_id: str, call_id: str):
 async def check_call_status(user_id: str, call_id: str):
     """Arayan için arama durumunu kontrol et - Supabase'den oku"""
     try:
-        result = supabase.table("call_logs").select("*").eq("call_id", call_id).execute()
+        result = supabase.table("calls").select("*").eq("call_id", call_id).execute()
         
         if not result.data:
             return {"success": True, "status": "ended", "should_close": True}
@@ -2031,7 +2034,7 @@ async def check_call_status(user_id: str, call_id: str):
             created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
             if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=60):
                 # Timeout - missed olarak işaretle
-                supabase.table("call_logs").update({
+                supabase.table("calls").update({
                     "status": "missed",
                     "ended_at": datetime.utcnow().isoformat()
                 }).eq("call_id", call_id).execute()
@@ -2054,7 +2057,7 @@ async def end_call(user_id: str, call_id: str = None):
     try:
         if call_id:
             # Belirli aramayı sonlandır
-            result = supabase.table("call_logs").update({
+            result = supabase.table("calls").update({
                 "status": "ended",
                 "ended_at": datetime.utcnow().isoformat(),
                 "ended_by": user_id
@@ -2064,7 +2067,7 @@ async def end_call(user_id: str, call_id: str = None):
                 logger.info(f"📴 SUPABASE: Arama sonlandırıldı: {call_id} by {user_id}")
         else:
             # Bu kullanıcının tüm aktif aramalarını sonlandır
-            supabase.table("call_logs").update({
+            supabase.table("calls").update({
                 "status": "ended",
                 "ended_at": datetime.utcnow().isoformat(),
                 "ended_by": user_id
@@ -2086,7 +2089,7 @@ async def cancel_call(user_id: str, call_id: str = None):
             if not call_id.startswith("call_"):
                 call_id = f"call_{call_id}"
             
-            result = supabase.table("call_logs").update({
+            result = supabase.table("calls").update({
                 "status": "cancelled",
                 "ended_at": datetime.utcnow().isoformat(),
                 "ended_by": user_id
@@ -2096,7 +2099,7 @@ async def cancel_call(user_id: str, call_id: str = None):
                 logger.info(f"📵 SUPABASE: Arama iptal edildi: {call_id}")
         else:
             # Kullanıcının aktif ringing aramalarını iptal et
-            supabase.table("call_logs").update({
+            supabase.table("calls").update({
                 "status": "cancelled",
                 "ended_at": datetime.utcnow().isoformat(),
                 "ended_by": user_id
@@ -2112,7 +2115,7 @@ async def cancel_call(user_id: str, call_id: str = None):
 async def get_call_history(user_id: str, limit: int = 20):
     """Kullanıcının arama geçmişini getir"""
     try:
-        result = supabase.table("call_logs").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").order("created_at", desc=True).limit(limit).execute()
+        result = supabase.table("calls").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").order("created_at", desc=True).limit(limit).execute()
         
         calls = []
         for call in result.data:
