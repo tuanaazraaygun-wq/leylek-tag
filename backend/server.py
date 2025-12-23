@@ -1648,6 +1648,192 @@ async def admin_delete_user(admin_phone: str, user_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================== ADMIN - ARAMALAR ====================
+
+@api_router.get("/admin/calls")
+async def admin_get_calls(admin_phone: str, limit: int = 100):
+    """Tüm aramaları getir - Admin için"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        result = supabase.table("calls").select("*").order("created_at", desc=True).limit(limit).execute()
+        
+        calls = []
+        for call in result.data:
+            # Arayan ve aranan bilgisi
+            caller_name = "Bilinmiyor"
+            receiver_name = "Bilinmiyor"
+            
+            try:
+                if call.get("caller_id"):
+                    caller_result = supabase.table("users").select("name, phone").eq("id", call["caller_id"]).execute()
+                    if caller_result.data:
+                        caller_name = f"{caller_result.data[0].get('name', 'Bilinmiyor')} ({caller_result.data[0].get('phone', '')})"
+                
+                if call.get("receiver_id"):
+                    receiver_result = supabase.table("users").select("name, phone").eq("id", call["receiver_id"]).execute()
+                    if receiver_result.data:
+                        receiver_name = f"{receiver_result.data[0].get('name', 'Bilinmiyor')} ({receiver_result.data[0].get('phone', '')})"
+            except:
+                pass
+            
+            # Süre hesapla
+            duration = None
+            if call.get("answered_at") and call.get("ended_at"):
+                try:
+                    answered = datetime.fromisoformat(call["answered_at"].replace("Z", "+00:00"))
+                    ended = datetime.fromisoformat(call["ended_at"].replace("Z", "+00:00"))
+                    duration = int((ended - answered).total_seconds())
+                except:
+                    pass
+            
+            calls.append({
+                "id": call.get("id"),
+                "call_id": call.get("call_id"),
+                "caller_id": call.get("caller_id"),
+                "caller_name": caller_name,
+                "receiver_id": call.get("receiver_id"),
+                "receiver_name": receiver_name,
+                "call_type": call.get("call_type", "voice"),
+                "status": call.get("status"),
+                "duration_seconds": duration,
+                "created_at": call.get("created_at"),
+                "answered_at": call.get("answered_at"),
+                "ended_at": call.get("ended_at"),
+                "tag_id": call.get("tag_id")
+            })
+        
+        return {"success": True, "calls": calls, "total": len(calls)}
+    except Exception as e:
+        logger.error(f"Admin get calls error: {e}")
+        return {"success": False, "calls": [], "error": str(e)}
+
+@api_router.get("/admin/tags")
+async def admin_get_tags(admin_phone: str, limit: int = 100, status: str = None):
+    """Tüm TAG'leri (yolculukları) getir - Admin için"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        query = supabase.table("tags").select("*")
+        
+        if status:
+            query = query.eq("status", status)
+        
+        result = query.order("created_at", desc=True).limit(limit).execute()
+        
+        tags = []
+        for tag in result.data:
+            # Yolcu ve şoför bilgisi
+            passenger_name = "Bilinmiyor"
+            driver_name = "Bilinmiyor"
+            passenger_phone = ""
+            driver_phone = ""
+            
+            try:
+                if tag.get("passenger_id"):
+                    p_result = supabase.table("users").select("name, phone").eq("id", tag["passenger_id"]).execute()
+                    if p_result.data:
+                        passenger_name = p_result.data[0].get("name", "Bilinmiyor")
+                        passenger_phone = p_result.data[0].get("phone", "")
+                
+                if tag.get("driver_id"):
+                    d_result = supabase.table("users").select("name, phone").eq("id", tag["driver_id"]).execute()
+                    if d_result.data:
+                        driver_name = d_result.data[0].get("name", "Bilinmiyor")
+                        driver_phone = d_result.data[0].get("phone", "")
+            except:
+                pass
+            
+            tags.append({
+                "id": tag.get("id"),
+                "status": tag.get("status"),
+                "passenger_id": tag.get("passenger_id"),
+                "passenger_name": passenger_name,
+                "passenger_phone": passenger_phone,
+                "driver_id": tag.get("driver_id"),
+                "driver_name": driver_name,
+                "driver_phone": driver_phone,
+                "pickup_location": tag.get("pickup_location"),
+                "dropoff_location": tag.get("dropoff_location"),
+                "final_price": tag.get("final_price"),
+                "city": tag.get("city"),
+                "created_at": tag.get("created_at"),
+                "matched_at": tag.get("matched_at"),
+                "started_at": tag.get("started_at"),
+                "completed_at": tag.get("completed_at"),
+                "cancelled_at": tag.get("cancelled_at")
+            })
+        
+        return {"success": True, "tags": tags, "total": len(tags)}
+    except Exception as e:
+        logger.error(f"Admin get tags error: {e}")
+        return {"success": False, "tags": [], "error": str(e)}
+
+@api_router.get("/admin/user-detail")
+async def admin_get_user_detail(admin_phone: str, user_id: str):
+    """Kullanıcı detayı - tüm TAG'leri ve aramaları ile"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        # Kullanıcı bilgisi
+        user_result = supabase.table("users").select("*").eq("id", user_id).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = user_result.data[0]
+        
+        # Kullanıcının TAG'leri (yolcu veya şoför olarak)
+        tags_result = supabase.table("tags").select("*").or_(f"passenger_id.eq.{user_id},driver_id.eq.{user_id}").order("created_at", desc=True).limit(50).execute()
+        
+        # Kullanıcının aramaları
+        calls_result = supabase.table("calls").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").order("created_at", desc=True).limit(50).execute()
+        
+        # Kullanıcının şikayetleri (yapılan ve alınan)
+        reports_made = supabase.table("reports").select("*").eq("reporter_id", user_id).execute()
+        reports_received = supabase.table("reports").select("*").eq("reported_id", user_id).execute()
+        
+        # Engelleme bilgisi
+        blocked_by_user = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", user_id).execute()
+        blocked_user = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", user_id).execute()
+        
+        return {
+            "success": True,
+            "user": {
+                "id": user.get("id"),
+                "name": user.get("name"),
+                "phone": user.get("phone"),
+                "role": user.get("role"),
+                "city": user.get("city"),
+                "rating": user.get("rating"),
+                "total_ratings": user.get("total_ratings"),
+                "is_active": user.get("is_active"),
+                "is_premium": user.get("is_premium"),
+                "is_admin": user.get("is_admin"),
+                "created_at": user.get("created_at"),
+                "driver_details": user.get("driver_details")
+            },
+            "stats": {
+                "total_tags": len(tags_result.data),
+                "total_calls": len(calls_result.data),
+                "reports_made": len(reports_made.data),
+                "reports_received": len(reports_received.data),
+                "users_blocked": len(blocked_by_user.data),
+                "blocked_by_users": len(blocked_user.data)
+            },
+            "tags": tags_result.data,
+            "calls": calls_result.data,
+            "reports_made": reports_made.data,
+            "reports_received": reports_received.data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin get user detail error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==================== STORAGE ENDPOINTS ====================
 
 @api_router.post("/storage/upload-profile-photo")
