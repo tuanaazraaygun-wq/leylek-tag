@@ -1113,9 +1113,17 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
         
         logger.info(f"✅ Yolculuk tamamlandı: {tag_id}")
         return {"success": True, "message": "Yolculuk tamamlandı"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Complete trip error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Path param ile complete-tag (frontend uyumluluğu)
+@api_router.post("/driver/complete-tag/{tag_id}")
+async def complete_tag_path(tag_id: str, driver_id: str = None, user_id: str = None):
+    """Yolculuğu tamamla (path param)"""
+    return await complete_trip(driver_id, user_id, tag_id)
 
 # ==================== RATING SYSTEM ====================
 
