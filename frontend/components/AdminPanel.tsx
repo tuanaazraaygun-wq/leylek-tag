@@ -106,15 +106,15 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadTrips = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/metadata/trips?admin_phone=${adminPhone}&limit=50`);
+      const res = await fetch(`${API_URL}/admin/tags?admin_phone=${adminPhone}&limit=50`);
       const data = await res.json();
-      if (data.success) setTrips(data.trips || []);
+      if (data.success) setTrips(data.tags || []);
     } catch (e) { console.error(e); }
   };
   
   const loadCalls = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/metadata/calls?admin_phone=${adminPhone}&limit=50`);
+      const res = await fetch(`${API_URL}/admin/calls?admin_phone=${adminPhone}&limit=50`);
       const data = await res.json();
       if (data.success) setCalls(data.calls || []);
     } catch (e) { console.error(e); }
@@ -122,9 +122,10 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadAuthLogs = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/metadata/auth?admin_phone=${adminPhone}&limit=50`);
+      // Auth logs için reports kullanılabilir
+      const res = await fetch(`${API_URL}/admin/reports?admin_phone=${adminPhone}`);
       const data = await res.json();
-      if (data.success) setAuthLogs(data.logs || []);
+      if (data.success) setAuthLogs(data.reports || []);
     } catch (e) { console.error(e); }
   };
   
