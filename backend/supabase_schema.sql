@@ -376,3 +376,37 @@ CREATE TRIGGER update_users_updated_at
 -- =============================================
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('profile-photos', 'profile-photos', true);
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('vehicle-photos', 'vehicle-photos', true);
+
+-- Reports (Şikayetler) tablosu
+CREATE TABLE IF NOT EXISTS reports (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    reporter_id UUID REFERENCES users(id),
+    reporter_name TEXT,
+    reporter_phone TEXT,
+    reported_user_id UUID REFERENCES users(id),
+    reported_user_name TEXT,
+    reported_user_phone TEXT,
+    reported_user_role TEXT,
+    reason TEXT DEFAULT 'other',
+    details TEXT,
+    tag_id UUID,
+    status TEXT DEFAULT 'pending', -- pending, reviewed, resolved, dismissed
+    admin_notes TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS politikası
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+-- Admin tüm şikayetleri görebilir
+CREATE POLICY "Admin can view all reports" ON reports
+    FOR SELECT USING (true);
+
+-- Kullanıcılar şikayet oluşturabilir
+CREATE POLICY "Users can create reports" ON reports
+    FOR INSERT WITH CHECK (true);
+
+-- Admin şikayetleri güncelleyebilir
+CREATE POLICY "Admin can update reports" ON reports
+    FOR UPDATE USING (true);
