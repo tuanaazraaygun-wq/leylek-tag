@@ -2976,7 +2976,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [userLocation]); // userLocation değiştiğinde de loadData çalışsın
   
   // Gelen arama polling - Şoför için
   useEffect(() => {
