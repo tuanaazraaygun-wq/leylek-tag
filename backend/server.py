@@ -17,9 +17,19 @@ import base64
 import hashlib
 import httpx
 import json
+import time
 
 # Supabase
 from supabase import create_client, Client
+
+# Agora Token Builder
+try:
+    from agora_token_builder import RtcTokenBuilder, Role_Publisher
+    AGORA_TOKEN_AVAILABLE = True
+except ImportError:
+    AGORA_TOKEN_AVAILABLE = False
+    logger = logging.getLogger("server")
+    logger.warning("⚠️ agora_token_builder yüklü değil - token üretimi devre dışı")
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
