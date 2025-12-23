@@ -656,15 +656,22 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         return {"success": False, "tag": None}
 
 @api_router.get("/passenger/offers")
-async def get_offers_for_passenger(passenger_id: str, tag_id: str):
+async def get_offers_for_passenger(passenger_id: str = None, user_id: str = None, tag_id: str = None):
     """TAG için gelen teklifleri getir"""
     try:
+        pid = passenger_id or user_id
+        if not pid or not tag_id:
+            return {"success": False, "offers": [], "detail": "user_id ve tag_id gerekli"}
+        
+        # MongoDB ID'yi UUID'ye çevir
+        resolved_id = await resolve_user_id(pid)
+        
         # Engellenen kullanıcıları al
-        blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", passenger_id).execute()
+        blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
         blocked_ids = [r["blocked_user_id"] for r in blocked_result.data]
         
         # Beni engelleyenleri al
-        blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", passenger_id).execute()
+        blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", resolved_id).execute()
         blocked_by_ids = [r["user_id"] for r in blocked_by_result.data]
         
         all_blocked = list(set(blocked_ids + blocked_by_ids))
@@ -698,6 +705,12 @@ async def get_offers_for_passenger(passenger_id: str, tag_id: str):
     except Exception as e:
         logger.error(f"Get offers error: {e}")
         return {"success": False, "offers": []}
+
+# Path parameter ile offers endpoint'i (frontend uyumluluğu)
+@api_router.get("/passenger/offers/{tag_id}")
+async def get_offers_for_passenger_by_path(tag_id: str, passenger_id: str = None, user_id: str = None):
+    """TAG için gelen teklifleri getir (path param)"""
+    return await get_offers_for_passenger(passenger_id, user_id, tag_id)
 
 @api_router.post("/passenger/accept-offer")
 async def accept_offer(passenger_id: str, offer_id: str):
