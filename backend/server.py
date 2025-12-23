@@ -1827,37 +1827,43 @@ async def reject_call(user_id: str, call_id: str):
 async def check_call_status(user_id: str, call_id: str):
     """Arayan için arama durumunu kontrol et (kabul/red/devam)"""
     try:
-        # Önce status key'i kontrol et
+        # Önce status key'i kontrol et (karşı taraf kapattıysa buraya yazılır)
         status_key = user_id + "_status"
         if status_key in active_calls:
             status_info = active_calls[status_key]
             if status_info.get("call_id") == call_id:
                 status = status_info.get("status")
                 del active_calls[status_key]  # Temizle
+                logger.info(f"📞 Arama durumu: {call_id} -> {status}")
                 return {
                     "success": True,
                     "status": status,  # "rejected", "ended", "accepted"
                     "should_close": status in ["rejected", "ended"]
                 }
         
-        # Alıcının active_calls'ında ara
+        # Alıcının active_calls'ında ara (arama hala aktif mi?)
         for uid, call in active_calls.items():
-            if call.get("call_id") == call_id and call.get("caller_id") == user_id:
+            if "_status" in uid:
+                continue
+            if call.get("call_id") == call_id:
+                # Arama hala aktif
                 return {
                     "success": True,
                     "status": call.get("status", "ringing"),  # ringing, connected
                     "should_close": False
                 }
         
-        # Arama bulunamadı = karşı taraf kapattı
+        # Arama active_calls'da yok - ama bu her zaman "ended" anlamına gelmiyor
+        # Belki henüz eklenmemiş veya kısa süre önce silindi
+        # 5 saniye içinde başlatılan aramalar için "ringing" döndür
         return {
             "success": True,
-            "status": "ended",
-            "should_close": True
+            "status": "ringing",
+            "should_close": False
         }
     except Exception as e:
         logger.error(f"Check call status error: {e}")
-        return {"success": True, "status": "ended", "should_close": True}
+        return {"success": True, "status": "ringing", "should_close": False}
 
 @api_router.post("/voice/end-call")
 async def end_call(user_id: str, call_id: str = None):
