@@ -1861,19 +1861,31 @@ async def check_call_status(user_id: str, call_id: str):
 
 @api_router.post("/voice/end-call")
 async def end_call(user_id: str, call_id: str = None):
-    """Aramayı sonlandır"""
+    """Aramayı sonlandır - HER İKİ TARAF İÇİN"""
     try:
-        # Her iki taraf için de temizle
+        # Tüm ilgili aramaları bul ve temizle
         to_remove = []
-        for uid, call in active_calls.items():
+        for uid, call in list(active_calls.items()):
+            if "_status" in uid:
+                continue  # Status key'lerini atla
             if call.get("caller_id") == user_id or call.get("receiver_id") == user_id:
+                # Karşı tarafı bilgilendir
+                if call.get("caller_id") == user_id:
+                    # Ben arayanım, alıcıyı bilgilendir
+                    active_calls[call["receiver_id"] + "_status"] = {"status": "ended", "call_id": call.get("call_id")}
+                else:
+                    # Ben alıcıyım, arayanı bilgilendir
+                    active_calls[call["caller_id"] + "_status"] = {"status": "ended", "call_id": call.get("call_id")}
                 to_remove.append(uid)
         
         for uid in to_remove:
-            del active_calls[uid]
+            if uid in active_calls:
+                del active_calls[uid]
         
+        logger.info(f"📴 Arama sonlandırıldı: {user_id}")
         return {"success": True}
     except Exception as e:
+        logger.error(f"End call error: {e}")
         return {"success": False}
 
 # ==================== DRIVER LOCATION TRACKING ====================
