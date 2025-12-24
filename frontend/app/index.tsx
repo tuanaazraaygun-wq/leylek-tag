@@ -326,6 +326,16 @@ export default function App() {
     // Önce cihaz ID'yi al
     const dId = await getOrCreateDeviceId();
     setDeviceId(dId);
+    
+    // Cihazda daha önce KVKK onayı verilmiş mi kontrol et
+    const kvkkApproved = await AsyncStorage.getItem('device_kvkk_approved');
+    if (kvkkApproved === 'true') {
+      setDeviceKvkkApproved(true);
+      setTermsRead(true);
+      setKvkkRead(true);
+      console.log('✅ Bu cihazda daha önce KVKK onaylanmış');
+    }
+    
     // Sonra kullanıcıyı yükle
     await loadUser();
   };
