@@ -46,8 +46,53 @@ logger = logging.getLogger("server")
 
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50
-ADMIN_PHONE_NUMBERS = ["5326497412", "5551234567"]
+ADMIN_PHONE_NUMBERS = ["5326497412"]  # Ana admin numarası
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+# Sahte/geçersiz numara kalıpları
+FAKE_NUMBER_PATTERNS = [
+    "1111111111", "2222222222", "3333333333", "4444444444", "5555555555",
+    "6666666666", "7777777777", "8888888888", "9999999999", "0000000000",
+    "1234567890", "0987654321", "1122334455", "5544332211", "1212121212",
+    "1231231234", "1234512345", "1111122222", "1112223334", "1234554321",
+]
+
+def validate_turkish_phone(phone: str) -> tuple[bool, str]:
+    """
+    Türk telefon numarası doğrulama
+    Geçerli formatlar: 5XXXXXXXXX (10 hane, 5 ile başlar)
+    """
+    import re
+    
+    # Temizle: +90, 0, boşluk, tire kaldır
+    cleaned = re.sub(r'[\s\-\+]', '', phone)
+    if cleaned.startswith('90'):
+        cleaned = cleaned[2:]
+    if cleaned.startswith('0'):
+        cleaned = cleaned[1:]
+    
+    # 10 haneli olmalı
+    if len(cleaned) != 10:
+        return False, "Telefon numarası 10 haneli olmalı"
+    
+    # Sadece rakam olmalı
+    if not cleaned.isdigit():
+        return False, "Telefon numarası sadece rakamlardan oluşmalı"
+    
+    # 5 ile başlamalı (mobil)
+    if not cleaned.startswith('5'):
+        return False, "Geçerli bir mobil numara girin (5XX ile başlamalı)"
+    
+    # Sahte numara kontrolü
+    if cleaned in FAKE_NUMBER_PATTERNS:
+        return False, "Geçersiz telefon numarası"
+    
+    # Ardışık veya tekrarlayan kontrol
+    # Örn: 5000000000, 5111111111
+    if len(set(cleaned[1:])) <= 2:  # İlk rakam hariç çok az farklı rakam varsa
+        return False, "Geçersiz telefon numarası"
+    
+    return True, cleaned
 
 # Supabase Config
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
