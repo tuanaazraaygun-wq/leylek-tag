@@ -392,12 +392,12 @@ export default function LiveMapView({
           </View>
         )}
 
-        {/* Arama ve İşlem Butonları - 4 Sütun */}
+        {/* Arama ve İşlem Butonları - 5 Sütun */}
         <View style={styles.actionRow}>
           {/* Sesli Arama */}
           <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('audio')} activeOpacity={0.8}>
             <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
-              <Ionicons name="call" size={26} color="#FFF" />
+              <Ionicons name="call" size={22} color="#FFF" />
             </LinearGradient>
             <Text style={styles.actionBtnLabel}>Sesli</Text>
           </TouchableOpacity>
@@ -405,7 +405,7 @@ export default function LiveMapView({
           {/* Görüntülü Arama */}
           <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('video')} activeOpacity={0.8}>
             <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.actionBtnCircle}>
-              <Ionicons name="videocam" size={26} color="#FFF" />
+              <Ionicons name="videocam" size={22} color="#FFF" />
             </LinearGradient>
             <Text style={styles.actionBtnLabel}>Video</Text>
           </TouchableOpacity>
