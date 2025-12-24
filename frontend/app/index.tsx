@@ -2646,6 +2646,12 @@ function PassengerDashboard({
                     }
                   }}
                   onCall={async (type) => {
+                    // Cooldown kontrolü
+                    if (callCooldown) {
+                      Alert.alert('⏳ Lütfen Bekleyin', 'Yeni bir arama için birkaç saniye bekleyin.');
+                      return;
+                    }
+                    
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     try {
                       const response = await fetch(`${API_URL}/voice/start-call`, {
