@@ -19,14 +19,19 @@ export default function Logo({ size = 'medium', showText = true, showSlogan = fa
 
   return (
     <View style={styles.container}>
-      <View style={[styles.logoContainer, { width: currentSize.icon, height: currentSize.icon }]}>
+      <View style={[styles.logoContainer, { 
+        width: currentSize.icon, 
+        height: currentSize.icon,
+        borderRadius: currentSize.icon / 2, // Daire şeklinde
+      }]}>
         <Image
           source={require('../assets/images/logo.png')}
           style={{
             width: currentSize.icon,
             height: currentSize.icon,
+            borderRadius: currentSize.icon / 2, // Daire şeklinde resim
           }}
-          resizeMode="contain"
+          resizeMode="cover"
         />
       </View>
       
