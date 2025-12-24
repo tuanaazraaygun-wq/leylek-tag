@@ -3836,6 +3836,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
     zIndex: 1,
+    backgroundColor: 'transparent',
+    overflow: 'visible',
   },
   heroTitle: {
     fontSize: 16,
