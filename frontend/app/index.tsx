@@ -3612,7 +3612,7 @@ function PassengerDashboard({
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
-  setScreen: (screen: string) => void;
+  setScreen: React.Dispatch<React.SetStateAction<ScreenType>>;
 }
 
 function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
