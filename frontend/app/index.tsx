@@ -4056,7 +4056,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         <View style={styles.fullScreenMapContainer}>
           <LiveMapView
             userLocation={userLocation}
-            otherLocation={passengerLocation || activeTag?.passenger_location}
+            otherLocation={passengerLocation || activeTag?.passenger_location || null}
             destinationLocation={
               activeTag?.dropoff_lat && activeTag?.dropoff_lng 
                 ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng }
