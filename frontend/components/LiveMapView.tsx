@@ -362,12 +362,22 @@ export default function LiveMapView({
           }
         ]}
       >
-        {/* ROTA ÇİZGİSİ */}
+        {/* YEŞİL ROTA ÇİZGİSİ - Şoförden yolcuya */}
         {routeCoordinates.length >= 2 && (
           <Polyline
             coordinates={routeCoordinates}
             strokeColor="#22C55E"
             strokeWidth={5}
+          />
+        )}
+
+        {/* SARI ROTA ÇİZGİSİ - Yolcunun pickup'tan varış noktasına gideceği yol */}
+        {destinationRouteCoordinates.length >= 2 && (
+          <Polyline
+            coordinates={destinationRouteCoordinates}
+            strokeColor="#F59E0B"
+            strokeWidth={4}
+            strokeDasharray={[10, 5]}
           />
         )}
 
