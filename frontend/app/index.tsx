@@ -2943,7 +2943,7 @@ function PassengerDashboard({
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
-  setScreen: (screen: string) => void;
+  setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
 }
 
 function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
