@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "config": {
@@ -51,7 +51,7 @@
         "expo-build-properties",
         {
           "android": {
-            "newArchEnabled": true,
+            "newArchEnabled": false,
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "minSdkVersion": 24
