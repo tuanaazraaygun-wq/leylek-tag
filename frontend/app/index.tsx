@@ -170,6 +170,7 @@ interface User {
   role: 'passenger' | 'driver';
   rating: number;
   total_ratings: number;
+  city?: string;
 }
 
 interface Tag {
