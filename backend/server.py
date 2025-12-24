@@ -532,6 +532,114 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Şifremi Unuttum - OTP doğrulandıktan sonra yeni PIN belirleme
+class ResetPinRequest(BaseModel):
+    phone: str
+    new_pin: str
+
+@api_router.post("/auth/reset-pin")
+async def reset_pin(request: ResetPinRequest):
+    """Şifremi unuttum - Yeni PIN belirle (OTP doğrulandıktan sonra çağrılır)"""
+    try:
+        # TR numara doğrulama
+        is_valid, result = validate_turkish_phone(request.phone)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=result)
+        
+        cleaned_phone = result
+        
+        # PIN uzunluk kontrolü
+        if len(request.new_pin) != 6 or not request.new_pin.isdigit():
+            raise HTTPException(status_code=400, detail="PIN 6 haneli rakamlardan oluşmalı")
+        
+        # Kullanıcı var mı?
+        user_result = supabase.table("users").select("id, name").eq("phone", cleaned_phone).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = user_result.data[0]
+        pin_hash = hash_pin(request.new_pin)
+        
+        # PIN'i güncelle
+        supabase.table("users").update({
+            "pin_hash": pin_hash,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user["id"]).execute()
+        
+        logger.info(f"🔑 PIN sıfırlandı: {cleaned_phone}")
+        return {"success": True, "message": "Şifreniz başarıyla güncellendi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reset PIN error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Admin Ekleme endpoint
+class AddAdminRequest(BaseModel):
+    admin_phone: str  # İşlemi yapan admin
+    new_admin_phone: str  # Yeni admin olacak kişi
+
+@api_router.post("/admin/add-admin")
+async def add_admin(request: AddAdminRequest):
+    """Yeni admin ekle"""
+    try:
+        # İşlemi yapan admin mi?
+        if request.admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        # TR numara doğrulama
+        is_valid, result = validate_turkish_phone(request.new_admin_phone)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=result)
+        
+        cleaned_phone = result
+        
+        # Kullanıcı var mı?
+        user_result = supabase.table("users").select("id, name, phone").eq("phone", cleaned_phone).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı. Önce kayıt olmalı.")
+        
+        user = user_result.data[0]
+        
+        # is_admin true yap
+        supabase.table("users").update({
+            "is_admin": True,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user["id"]).execute()
+        
+        logger.info(f"👑 Yeni admin eklendi: {cleaned_phone} by {request.admin_phone}")
+        return {"success": True, "message": f"{user.get('name', cleaned_phone)} admin olarak eklendi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Add admin error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Admin Listesi
+@api_router.get("/admin/list-admins")
+async def list_admins(admin_phone: str):
+    """Tüm adminleri listele"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        # Veritabanındaki adminler
+        result = supabase.table("users").select("id, phone, name, created_at").eq("is_admin", True).execute()
+        
+        admins = result.data or []
+        
+        # Hardcoded adminleri de ekle
+        for phone in ADMIN_PHONE_NUMBERS:
+            if not any(a.get("phone") == phone for a in admins):
+                admins.append({"phone": phone, "name": "Sistem Admin", "is_hardcoded": True})
+        
+        return {"success": True, "admins": admins}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"List admins error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Register endpoint - Yeni kullanıcı kaydı
 class RegisterRequest(BaseModel):
     phone: str
