@@ -6251,6 +6251,12 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     fontWeight: '600',
   },
+  // Modal Container (Şehir seçici için)
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
   // Harita Stilleri
   mapContainer: {
     width: '100%',
