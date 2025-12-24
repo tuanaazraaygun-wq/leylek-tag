@@ -496,6 +496,13 @@ export default function App() {
       console.log('🔐 Verify OTP response:', data);
       
       if (data.success) {
+        // Şifremi unuttum akışı ise direkt şifre sıfırlama ekranına git
+        if (isForgotPassword) {
+          setOtp('');
+          setScreen('reset-pin');
+          return;
+        }
+        
         if (data.user_exists && data.user) {
           // Kayıtlı kullanıcı
           await saveUser(data.user);
