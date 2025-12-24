@@ -3039,16 +3039,25 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           return;
         }
         
+        // Arayan iptal ettiyse veya arama sonlandıysa UI'ı kapat
+        if (data.call_ended && data.end_reason) {
+          console.log('📵 ŞOFÖR - Arama sonlandı:', data.end_reason);
+          setShowIncomingCall(false);
+          setIncomingCallInfo(null);
+          return;
+        }
+        
         // Son kontrol - ref'ten güncel değerleri al
         const currentState = callStateRef.current;
         if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
-          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
+          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name, 'call_id:', data.call.call_id);
           setIncomingCallInfo({
             callerName: data.call.caller_name,
             callType: data.call.call_type || 'audio',
-            channelName: data.call.channel_name
+            channelName: data.call.channel_name,
+            callId: data.call.call_id
           });
           setShowIncomingCall(true);
         }
