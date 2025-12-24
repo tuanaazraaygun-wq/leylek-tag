@@ -3230,7 +3230,7 @@ function PassengerDashboard({
               <View style={styles.fullScreenMapContainer}>
                 <LiveMapView
                   userLocation={userLocation}
-                  otherLocation={driverLocation || activeTag?.driver_location}
+                  otherLocation={driverLocation || activeTag?.driver_location || null}
                   destinationLocation={
                     activeTag?.dropoff_lat && activeTag?.dropoff_lng 
                       ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng }
