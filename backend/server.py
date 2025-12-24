@@ -979,6 +979,100 @@ async def create_tag(request: CreateTagRequest, user_id: str = None):
         logger.error(f"Create tag error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Geçmiş Yolculuklar endpoint'i
+@api_router.get("/passenger/history")
+async def get_passenger_history(user_id: str, limit: int = 20):
+    """Yolcunun geçmiş yolculuklarını getir"""
+    try:
+        resolved_id = await resolve_user_id(user_id)
+        
+        result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["completed", "cancelled"]).order("created_at", desc=True).limit(limit).execute()
+        
+        trips = []
+        for tag in result.data:
+            trips.append({
+                "id": tag["id"],
+                "pickup": tag.get("pickup_location", ""),
+                "dropoff": tag.get("dropoff_location", ""),
+                "driver_name": tag.get("driver_name", "Bilinmiyor"),
+                "price": tag.get("final_price", 0),
+                "status": tag.get("status"),
+                "date": tag.get("completed_at") or tag.get("cancelled_at") or tag.get("created_at"),
+                "rating": tag.get("passenger_rating", 0)
+            })
+        
+        return {"success": True, "trips": trips}
+    except Exception as e:
+        logger.error(f"Get history error: {e}")
+        return {"success": False, "trips": []}
+
+@api_router.get("/driver/history")
+async def get_driver_history(user_id: str, limit: int = 20):
+    """Şoförün geçmiş yolculuklarını getir"""
+    try:
+        resolved_id = await resolve_user_id(user_id)
+        
+        result = supabase.table("tags").select("*").eq("driver_id", resolved_id).in_("status", ["completed", "cancelled"]).order("created_at", desc=True).limit(limit).execute()
+        
+        trips = []
+        for tag in result.data:
+            trips.append({
+                "id": tag["id"],
+                "pickup": tag.get("pickup_location", ""),
+                "dropoff": tag.get("dropoff_location", ""),
+                "passenger_name": tag.get("passenger_name", "Bilinmiyor"),
+                "price": tag.get("final_price", 0),
+                "status": tag.get("status"),
+                "date": tag.get("completed_at") or tag.get("cancelled_at") or tag.get("created_at"),
+                "rating": tag.get("driver_rating", 0)
+            })
+        
+        return {"success": True, "trips": trips}
+    except Exception as e:
+        logger.error(f"Get driver history error: {e}")
+        return {"success": False, "trips": []}
+
+# Profil Güncelleme endpoint'i
+class UpdateProfileRequest(BaseModel):
+    user_id: str
+    name: Optional[str] = None
+    city: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+@api_router.post("/user/update-profile")
+async def update_user_profile(request: UpdateProfileRequest):
+    """Kullanıcı profilini güncelle"""
+    try:
+        resolved_id = await resolve_user_id(request.user_id)
+        
+        update_data = {"updated_at": datetime.utcnow().isoformat()}
+        
+        if request.name:
+            update_data["name"] = request.name
+            # İsim-soyisim ayır
+            name_parts = request.name.split()
+            if len(name_parts) >= 2:
+                update_data["first_name"] = name_parts[0]
+                update_data["last_name"] = " ".join(name_parts[1:])
+            else:
+                update_data["first_name"] = request.name
+        
+        if request.first_name:
+            update_data["first_name"] = request.first_name
+        if request.last_name:
+            update_data["last_name"] = request.last_name
+        if request.city:
+            update_data["city"] = request.city
+        
+        supabase.table("users").update(update_data).eq("id", resolved_id).execute()
+        
+        logger.info(f"✅ Profil güncellendi: {resolved_id}")
+        return {"success": True, "message": "Profil güncellendi"}
+    except Exception as e:
+        logger.error(f"Update profile error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Frontend uyumluluğu için alias
 @api_router.post("/passenger/create-request")
 async def create_request_alias(request: CreateTagRequest, user_id: str = None):
