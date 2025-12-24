@@ -146,6 +146,39 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     } catch (e) { console.error(e); }
   };
   
+  const loadAdmins = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/list-admins?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) setAdmins(data.admins || []);
+    } catch (e) { console.error(e); }
+  };
+  
+  const addNewAdmin = async () => {
+    if (!newAdminPhone || newAdminPhone.length < 10) {
+      Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/admin/add-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_phone: adminPhone, new_admin_phone: newAdminPhone })
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Başarılı', data.message);
+        setNewAdminPhone('');
+        loadAdmins();
+      } else {
+        Alert.alert('Hata', data.detail || 'Admin eklenemedi');
+      }
+    } catch (e) { 
+      Alert.alert('Hata', 'Admin eklenemedi');
+    }
+  };
+  
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
       const res = await fetch(`${API_URL}/admin/user/toggle-status`, {
