@@ -42,7 +42,7 @@ interface VideoCallProps {
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const MAX_CALL_DURATION = 600;
-const RING_TIMEOUT = 30;
+const RING_TIMEOUT = 90; // 1.5 dakika = 90 saniye
 
 // Android için izin isteme
 const requestPermissions = async () => {
