@@ -5396,6 +5396,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  topBarRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  topBarIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(63, 169, 245, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   fullScreenBackBtn: {
     width: 44,
     height: 44,
@@ -5411,6 +5424,156 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Modal Stilleri
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  // Profil Form
+  profileForm: {
+    gap: 12,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginBottom: 4,
+  },
+  profileInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: '#1F2937',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  profileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 14,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+  },
+  profileInfoText: {
+    fontSize: 16,
+    color: '#4B5563',
+  },
+  saveProfileButton: {
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  saveProfileGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    gap: 8,
+  },
+  saveProfileText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Geçmiş Yolculuklar
+  historyList: {
+    maxHeight: 500,
+  },
+  emptyHistory: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyHistoryText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginTop: 12,
+  },
+  historyCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  historyCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  historyStatus: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  historyStatusText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  historyDate: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  historyRoute: {
+    gap: 6,
+    marginBottom: 10,
+  },
+  historyRouteItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyRouteText: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+  },
+  historyFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  historyDriver: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  historyPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#10B981',
   },
   welcomeNameBig: {
     fontSize: 28,
