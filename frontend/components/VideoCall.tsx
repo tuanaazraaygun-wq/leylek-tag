@@ -518,13 +518,17 @@ export default function VideoCall({
       call_id = `call_${call_id}`;
     }
     
-    const endpoint = (isCaller && !remoteUid) 
+    // Arayan ve henüz bağlantı kurulmamışsa = iptal
+    // Aranan veya bağlantı kurulmuşsa = sonlandır
+    const isCallerCancelling = isCaller && callState === 'ringing';
+    const endpoint = isCallerCancelling
       ? `/api/voice/cancel-call?call_id=${call_id}&user_id=${userId}`
       : `/api/voice/end-call?call_id=${call_id}&user_id=${userId}`;
     
     try {
-      await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
-      console.log('📞 Backend bilgilendirildi, call_id:', call_id);
+      const response = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
+      const data = await response.json();
+      console.log('📞 Backend bilgilendirildi:', endpoint, data);
     } catch (error) {
       console.log('End call error:', error);
     }
