@@ -679,55 +679,18 @@ export default function App() {
               />
             </View>
 
-            {/* KVKK ve Aydınlatma Okuma Durumu */}
-            <View style={styles.legalReadStatus}>
-              <TouchableOpacity 
-                style={[styles.legalReadItem, termsRead && styles.legalReadItemDone]}
-                onPress={() => {
-                  setTermsScrolledToEnd(false);
-                  setShowTermsModal(true);
-                }}
-              >
-                <Ionicons 
-                  name={termsRead ? "checkmark-circle" : "document-text-outline"} 
-                  size={20} 
-                  color={termsRead ? "#10B981" : "#3FA9F5"} 
-                />
-                <Text style={[styles.legalReadText, termsRead && styles.legalReadTextDone]}>
-                  Aydınlatma Metni {termsRead ? '✓' : '(Zorunlu)'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.legalReadItem, kvkkRead && styles.legalReadItemDone]}
-                onPress={() => {
-                  setKvkkScrolledToEnd(false);
-                  setShowKvkkModal(true);
-                }}
-              >
-                <Ionicons 
-                  name={kvkkRead ? "checkmark-circle" : "shield-outline"} 
-                  size={20} 
-                  color={kvkkRead ? "#10B981" : "#3FA9F5"} 
-                />
-                <Text style={[styles.legalReadText, kvkkRead && styles.legalReadTextDone]}>
-                  KVKK Metni {kvkkRead ? '✓' : '(Zorunlu)'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* KVKK Checkbox - Her iki metin okunduktan sonra aktif */}
+            {/* Basitleştirilmiş KVKK Onay Satırı */}
             <TouchableOpacity 
-              style={[styles.kvkkContainer, !(termsRead && kvkkRead) && styles.kvkkContainerDisabled]} 
+              style={styles.kvkkSimpleContainer} 
               onPress={() => {
-                if (termsRead && kvkkRead) {
+                // Cihazda daha önce onaylanmışsa sadece kutucuğu aç/kapa
+                if (deviceKvkkApproved) {
                   setKvkkAccepted(!kvkkAccepted);
                 } else {
-                  Alert.alert(
-                    '⚠️ Zorunlu Okuma',
-                    'Devam etmek için Aydınlatma Metni ve KVKK\'yı okumanız gerekmektedir.',
-                    [{ text: 'Tamam' }]
-                  );
+                  // Onaylanmamışsa modalı aç
+                  setCurrentLegalStep('terms');
+                  setTermsScrolledToEnd(false);
+                  setShowCombinedLegalModal(true);
                 }
               }}
               activeOpacity={0.7}
@@ -735,21 +698,23 @@ export default function App() {
               <View style={[
                 styles.checkbox, 
                 kvkkAccepted && styles.checkboxChecked,
-                !(termsRead && kvkkRead) && styles.checkboxDisabled
               ]}>
                 {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
               </View>
               <View style={styles.kvkkTextContainer}>
-                <Text style={[styles.kvkkText, !(termsRead && kvkkRead) && styles.kvkkTextDisabled]}>
-                  Aydınlatma Metni ve KVKK'yı okudum, anladım, kabul ediyorum.
+                <Text style={styles.kvkkSimpleText}>
+                  <Text style={styles.kvkkLinkText}>Aydınlatma Metni</Text>
+                  <Text> ve </Text>
+                  <Text style={styles.kvkkLinkText}>KVKK</Text>
+                  <Text>'yı okudum, anladım, kabul ediyorum.</Text>
                 </Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.modernPrimaryButton, (!kvkkAccepted || !termsRead || !kvkkRead) && styles.buttonDisabled]} 
+              style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
               onPress={handleSendOTP}
-              disabled={!kvkkAccepted || !termsRead || !kvkkRead}
+              disabled={!kvkkAccepted}
             >
               <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
@@ -773,34 +738,36 @@ export default function App() {
           </View>
         </ScrollView>
 
-        {/* AYDINLATMA METNİ MODAL - ZORUNLU OKUMA */}
-        <Modal visible={showTermsModal} animationType="slide" transparent={true}>
+        {/* BİRLEŞİK YASAL METİN MODALI */}
+        <Modal visible={showCombinedLegalModal} animationType="slide" transparent={true}>
           <View style={styles.legalModalOverlay}>
             <View style={styles.legalModalContent}>
               <View style={styles.legalModalHeader}>
-                <Text style={styles.legalModalTitle}>📋 Aydınlatma Metni</Text>
-                <TouchableOpacity onPress={() => {
-                  if (!termsRead) {
-                    Alert.alert('⚠️ Zorunlu Okuma', 'Metni sonuna kadar okumanız gerekmektedir.');
-                  } else {
-                    setShowTermsModal(false);
-                  }
-                }}>
-                  <Ionicons name="close-circle" size={32} color={termsRead ? "#10B981" : "#EF4444"} />
-                </TouchableOpacity>
+                <Text style={styles.legalModalTitle}>
+                  {currentLegalStep === 'terms' ? '📋 Aydınlatma Metni' : '🔒 KVKK Metni'}
+                </Text>
+                <Text style={styles.legalStepIndicator}>
+                  {currentLegalStep === 'terms' ? '1/2' : '2/2'}
+                </Text>
               </View>
+              
               <ScrollView 
                 style={styles.legalScrollView}
                 onScroll={({ nativeEvent }) => {
                   const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
                   const isAtEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
-                  if (isAtEnd && !termsScrolledToEnd) {
-                    setTermsScrolledToEnd(true);
+                  if (isAtEnd) {
+                    if (currentLegalStep === 'terms' && !termsScrolledToEnd) {
+                      setTermsScrolledToEnd(true);
+                    } else if (currentLegalStep === 'kvkk' && !kvkkScrolledToEnd) {
+                      setKvkkScrolledToEnd(true);
+                    }
                   }
                 }}
                 scrollEventThrottle={16}
               >
-                <Text style={styles.legalText}>
+                {currentLegalStep === 'terms' ? (
+                  <Text style={styles.legalText}>
 {`LEYLEK TAG YOLCULUK PAYLAŞIM PLATFORMU
 AYDINLATMA METNİ
 
@@ -810,74 +777,71 @@ Son Güncelleme: ${new Date().toLocaleDateString('tr-TR')}
 Leylek TAG Teknoloji A.Ş. ("Şirket") olarak, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") kapsamında veri sorumlusu sıfatıyla kişisel verilerinizi işlemekteyiz.
 
 2. HİZMETİN TANIMI
-Leylek TAG, yolcuları ve şoförleri güvenli bir şekilde eşleştiren bir yolculuk paylaşım platformudur. Platform üzerinden:
-• Yolculuk talebi oluşturabilir
-• Şoför tekliflerini değerlendirebilir
-• Sesli ve görüntülü iletişim kurabilir
-• Canlı konum takibi yapabilirsiniz
+Leylek TAG, yolcuları ve şoförleri güvenli bir şekilde eşleştiren bir yolculuk paylaşım platformudur.
 
 3. TOPLANAN KİŞİSEL VERİLER
 Platform hizmetlerinin sunulması için aşağıdaki veriler toplanmaktadır:
-
-a) Kimlik Verileri: Ad, soyad
-b) İletişim Verileri: Telefon numarası
-c) Konum Verileri: Anlık GPS konumu, yolculuk rotaları
-d) Cihaz Verileri: Cihaz kimliği, işletim sistemi
-e) Kullanım Verileri: Uygulama kullanım istatistikleri
-f) Görsel/İşitsel Veriler: Görüntülü/sesli arama kayıtları (sadece arama süresince)
+• Kimlik Verileri: Ad, soyad
+• İletişim Verileri: Telefon numarası
+• Konum Verileri: Anlık GPS konumu, yolculuk rotaları
+• Cihaz Verileri: Cihaz kimliği, işletim sistemi
 
 4. VERİ İŞLEME AMAÇLARI
 • Yolculuk eşleştirme hizmetinin sunulması
 • Kullanıcı hesabı oluşturulması ve yönetimi
 • Güvenlik ve doğrulama işlemleri
 • Konum tabanlı hizmetlerin sağlanması
-• Müşteri desteği ve iletişim
-• Yasal yükümlülüklerin yerine getirilmesi
-• Hizmet kalitesinin iyileştirilmesi
 
-5. VERİ İŞLEMENİN HUKUKİ SEBEBİ
-Kişisel verileriniz KVKK md. 5/2 kapsamında:
-• Sözleşmenin kurulması ve ifası
-• Hukuki yükümlülüklerin yerine getirilmesi
-• Meşru menfaatlerimiz doğrultusunda işlenmektedir
-
-6. VERİ AKTARIMI
-Kişisel verileriniz:
-• Yasal zorunluluklar çerçevesinde yetkili kamu kurumlarına
-• Hizmet sağlayıcılarımıza (sunucu, harita, iletişim servisleri)
-• Yurtiçi ve yurtdışı iş ortaklarımıza aktarılabilir
-
-7. VERİ GÜVENLİĞİ
+5. VERİ GÜVENLİĞİ
 • SSL/TLS şifreleme
 • Güvenli veri tabanı depolama
 • Erişim kontrolü ve yetkilendirme
-• Düzenli güvenlik denetimleri
 
-8. VERİ SAKLAMA SÜRESİ
-Kişisel verileriniz, hizmetin gerektirdiği süre ve yasal saklama süreleri boyunca muhafaza edilir. Hesap silme talebiniz halinde verileriniz yasal süreler içinde imha edilir.
+6. HAKLARINIZ
+KVKK md. 11 kapsamında verilerinizin işlenip işlenmediğini öğrenme, düzeltme isteme, silinmesini isteme haklarına sahipsiniz.
 
-9. HAKLARINIZ
-KVKK md. 11 kapsamında:
-• Verilerinizin işlenip işlenmediğini öğrenme
-• İşlenmişse bilgi talep etme
-• İşlenme amacını öğrenme
-• Yurtiçi/yurtdışı aktarımları öğrenme
-• Eksik/yanlış işleme halinde düzeltme isteme
-• Silinmesini veya yok edilmesini isteme
-• Otomatik sistemlerle analiz sonucu aleyhinize çıkan sonuca itiraz etme
-haklarına sahipsiniz.
+7. İLETİŞİM
+E-posta: kvkk@leylektag.com`}
+                  </Text>
+                ) : (
+                  <Text style={styles.legalText}>
+{`LEYLEK TAG KİŞİSEL VERİLERİN KORUNMASI VE İŞLENMESİNE İLİŞKİN AÇIK RIZA METNİ
 
-10. İLETİŞİM
-Haklarınızı kullanmak için:
-E-posta: kvkk@leylektag.com
-Adres: [Şirket Adresi]
+Son Güncelleme: ${new Date().toLocaleDateString('tr-TR')}
 
-Bu metni okuduğunuzu ve anladığınızı onaylayarak devam edebilirsiniz.`}
-                </Text>
+6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") kapsamında, kişisel verilerimin işlenmesine ilişkin aşağıdaki hususları anladığımı ve kabul ettiğimi beyan ederim:
+
+1. AÇIK RIZA BEYANI
+Aşağıda belirtilen kişisel verilerimin, belirtilen amaçlarla işlenmesine açık rızam bulunmaktadır:
+
+İşlenecek Veriler:
+• Kimlik bilgileri (ad, soyad)
+• İletişim bilgileri (telefon numarası)
+• Konum bilgileri (GPS verileri)
+• Cihaz bilgileri
+
+2. İŞLEME AMAÇLARI
+• Yolculuk hizmeti sunulması
+• Kullanıcı güvenliğinin sağlanması
+• Yasal yükümlülüklerin yerine getirilmesi
+
+3. VERİ AKTARIMI
+Kişisel verilerimin yurtiçindeki ve yurtdışındaki hizmet sağlayıcılara (sunucu, harita, iletişim hizmetleri) aktarılmasına onay veriyorum.
+
+4. SAKLAMA SÜRESİ
+Verilerimin hizmet süresi boyunca ve yasal zorunluluklar gereği gerekli süre kadar saklanacağını kabul ediyorum.
+
+5. GERİ ÇEKİLME HAKKI
+Bu onayı dilediğim zaman geri çekme hakkına sahip olduğumu biliyorum.
+
+İşbu açık rıza metnini okuduğumu, anladığımı ve kişisel verilerimin yukarıda belirtilen şekilde işlenmesine özgür iradem ile onay verdiğimi beyan ederim.`}
+                  </Text>
+                )}
               </ScrollView>
               
               {/* Scroll indicator */}
-              {!termsScrolledToEnd && (
+              {((currentLegalStep === 'terms' && !termsScrolledToEnd) || 
+                (currentLegalStep === 'kvkk' && !kvkkScrolledToEnd)) && (
                 <View style={styles.scrollHint}>
                   <Ionicons name="chevron-down" size={20} color="#3FA9F5" />
                   <Text style={styles.scrollHintText}>Sonuna kadar kaydırın</Text>
@@ -885,32 +849,47 @@ Bu metni okuduğunuzu ve anladığınızı onaylayarak devam edebilirsiniz.`}
               )}
               
               <TouchableOpacity 
-                style={[styles.legalAcceptButton, !termsScrolledToEnd && styles.legalAcceptButtonDisabled]}
-                onPress={() => {
-                  if (termsScrolledToEnd) {
-                    setTermsRead(true);
-                    setShowTermsModal(false);
+                style={[
+                  styles.legalAcceptButton, 
+                  ((currentLegalStep === 'terms' && !termsScrolledToEnd) ||
+                   (currentLegalStep === 'kvkk' && !kvkkScrolledToEnd)) && styles.legalAcceptButtonDisabled
+                ]}
+                onPress={async () => {
+                  if (currentLegalStep === 'terms') {
+                    if (termsScrolledToEnd) {
+                      setTermsRead(true);
+                      setCurrentLegalStep('kvkk');
+                      setKvkkScrolledToEnd(false);
+                    } else {
+                      Alert.alert('⚠️ Zorunlu Okuma', 'Lütfen metni sonuna kadar okuyun.');
+                    }
                   } else {
-                    Alert.alert('⚠️ Zorunlu Okuma', 'Lütfen metni sonuna kadar okuyun.');
+                    if (kvkkScrolledToEnd) {
+                      setKvkkRead(true);
+                      setKvkkAccepted(true);
+                      setDeviceKvkkApproved(true);
+                      // Cihaza KVKK onayını kaydet
+                      await AsyncStorage.setItem('device_kvkk_approved', 'true');
+                      setShowCombinedLegalModal(false);
+                    } else {
+                      Alert.alert('⚠️ Zorunlu Okuma', 'Lütfen metni sonuna kadar okuyun.');
+                    }
                   }
                 }}
               >
                 <Text style={styles.legalAcceptButtonText}>
-                  {termsScrolledToEnd ? '✓ Okudum, Anladım' : 'Metni Sonuna Kadar Okuyun'}
+                  {currentLegalStep === 'terms' 
+                    ? (termsScrolledToEnd ? '✓ Okudum, Devam Et' : 'Metni Sonuna Kadar Okuyun')
+                    : (kvkkScrolledToEnd ? '✓ Okudum, Kabul Ediyorum' : 'Metni Sonuna Kadar Okuyun')
+                  }
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
-
-        {/* KVKK MODAL - ZORUNLU OKUMA */}
-        <Modal visible={showKvkkModal} animationType="slide" transparent={true}>
-          <View style={styles.legalModalOverlay}>
-            <View style={styles.legalModalContent}>
-              <View style={styles.legalModalHeader}>
-                <Text style={styles.legalModalTitle}>🔒 KVKK Metni</Text>
-                <TouchableOpacity onPress={() => {
-                  if (!kvkkRead) {
+      </SafeAreaView>
+    );
+  }
                     Alert.alert('⚠️ Zorunlu Okuma', 'Metni sonuna kadar okumanız gerekmektedir.');
                   } else {
                     setShowKvkkModal(false);
