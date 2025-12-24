@@ -703,6 +703,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           {activeTab === 'auth' && renderAuthLogs()}
           {activeTab === 'notifications' && renderNotifications()}
           {activeTab === 'settings' && renderSettings()}
+          {activeTab === 'admins' && renderAdmins()}
         </>
       )}
     </View>
