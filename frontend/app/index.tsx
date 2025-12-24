@@ -773,7 +773,17 @@ export default function App() {
                   <Ionicons name="close-circle" size={32} color={termsRead ? "#10B981" : "#EF4444"} />
                 </TouchableOpacity>
               </View>
-              <ScrollView style={styles.legalScrollView}>
+              <ScrollView 
+                style={styles.legalScrollView}
+                onScroll={({ nativeEvent }) => {
+                  const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                  const isAtEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
+                  if (isAtEnd && !termsScrolledToEnd) {
+                    setTermsScrolledToEnd(true);
+                  }
+                }}
+                scrollEventThrottle={16}
+              >
                 <Text style={styles.legalText}>
 {`LEYLEK TAG YOLCULUK PAYLAŞIM PLATFORMU
 AYDINLATMA METNİ
