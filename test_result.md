@@ -223,12 +223,56 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Voice/Video Call - Agora Token Integration"
+    - "Voice/Video Call Synchronization"
+    - "Map UI Improvements"
+    - "Distance/Time Display"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      ## KAPSAMLI GÜNCELLEME - Aralık 2024
+      
+      ### YAPILAN DÜZELTMELER:
+      
+      #### 1. Harita Ekranı (LiveMapView.tsx)
+      - ✅ 4 sütunlu simetrik buton düzeni (Sesli, Video, Git, Diğer)
+      - ✅ "Diğer" menüsü: Bitir, Engelle, Şikayet, Zorla Bitir seçenekleri
+      - ✅ SARI ROTA ÇİZGİSİ: Yolcunun varış noktasına giden yol sarı çizgi ile gösterilir
+      - ✅ VARIŞ NOKTASI MARKER: Bayrak (🏁) ikonu ile hedef gösterilir
+      - ✅ 1KM OTOMATİK TAMAMLAMA: Hedefe 1km yaklaşınca uyarı ve otomatik tamamlama önerisi
+      
+      #### 2. Arama Senkronizasyonu (VideoCall.tsx)
+      - ✅ call_id prefix kontrolü düzeltildi (hem "leylek_" hem "call_" formatları)
+      - ✅ Daha hızlı polling (1.5 saniye)
+      - ✅ Aranan taraf kabul edince çalma durumu otomatik durur
+      - ✅ 5 SANİYE COOLDOWN: Reddedilen aramadan sonra yeni arama için bekleme
+      
+      #### 3. Backend İyileştirmeleri (server.py)
+      - ✅ 30 DAKİKA OTOMATİK CLEANUP: İnaktif TAG'ler otomatik iptal edilir
+      - ✅ auto_cleanup_inactive_tags() fonksiyonu /passenger/active-tag sırasında tetiklenir
+      
+      #### 4. Frontend (index.tsx)
+      - ✅ Tag interface'ine koordinat alanları eklendi (dropoff_lat, dropoff_lng, vb.)
+      - ✅ destinationLocation prop'u LiveMapView'e geçirildi
+      - ✅ callCooldown state ve ref eklendi
+      - ✅ onAutoComplete callback eklendi
+      
+      ### DEĞİŞEN DOSYALAR:
+      - /app/frontend/components/LiveMapView.tsx
+      - /app/frontend/components/VideoCall.tsx  
+      - /app/frontend/app/index.tsx
+      - /app/backend/server.py
+      
+      ### TEST GEREKLİ:
+      1. Harita ekranındaki butonlar simetrik görünüyor mu?
+      2. Sarı rota çizgisi varış noktasına doğru çiziliyor mu?
+      3. 1km içinde otomatik tamamlama uyarısı geliyor mu?
+      4. Arama reddedildikten sonra 5 saniye cooldown çalışıyor mu?
+      5. İki taraf arasında arama senkronize kapanıyor mu?
+      
   - agent: "main"
     message: |
       ## AGORA TOKEN ENTEGRASİYONU TAMAMLANDI - Haziran 2025
