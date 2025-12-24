@@ -664,9 +664,24 @@ export default function App() {
               <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
                 {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
               </View>
-              <Text style={styles.kvkkText}>
-                Aydınlatma Metni ve KVKK'yı okudum, anladım, kabul ediyorum.
-              </Text>
+              <View style={styles.kvkkTextContainer}>
+                <Text style={styles.kvkkText}>
+                  <Text 
+                    style={styles.kvkkLink}
+                    onPress={() => setShowTermsModal(true)}
+                  >
+                    Aydınlatma Metni
+                  </Text>
+                  {' ve '}
+                  <Text 
+                    style={styles.kvkkLink}
+                    onPress={() => setShowKvkkModal(true)}
+                  >
+                    KVKK
+                  </Text>
+                  {'\'yı okudum, kabul ediyorum.'}
+                </Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -695,6 +710,193 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* AYDINLATMA METNİ MODAL */}
+        <Modal visible={showTermsModal} animationType="slide" transparent={true}>
+          <View style={styles.legalModalOverlay}>
+            <View style={styles.legalModalContent}>
+              <View style={styles.legalModalHeader}>
+                <Text style={styles.legalModalTitle}>📋 Aydınlatma Metni</Text>
+                <TouchableOpacity onPress={() => setShowTermsModal(false)}>
+                  <Ionicons name="close-circle" size={32} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.legalScrollView}>
+                <Text style={styles.legalText}>
+{`LEYLEK TAG YOLCULUK PAYLAŞIM PLATFORMU
+AYDINLATMA METNİ
+
+Son Güncelleme: ${new Date().toLocaleDateString('tr-TR')}
+
+1. VERİ SORUMLUSU
+Leylek TAG Teknoloji A.Ş. ("Şirket") olarak, 6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") kapsamında veri sorumlusu sıfatıyla kişisel verilerinizi işlemekteyiz.
+
+2. HİZMETİN TANIMI
+Leylek TAG, yolcuları ve şoförleri güvenli bir şekilde eşleştiren bir yolculuk paylaşım platformudur. Platform üzerinden:
+• Yolculuk talebi oluşturabilir
+• Şoför tekliflerini değerlendirebilir
+• Sesli ve görüntülü iletişim kurabilir
+• Canlı konum takibi yapabilirsiniz
+
+3. TOPLANAN KİŞİSEL VERİLER
+Platform hizmetlerinin sunulması için aşağıdaki veriler toplanmaktadır:
+
+a) Kimlik Verileri: Ad, soyad
+b) İletişim Verileri: Telefon numarası
+c) Konum Verileri: Anlık GPS konumu, yolculuk rotaları
+d) Cihaz Verileri: Cihaz kimliği, işletim sistemi
+e) Kullanım Verileri: Uygulama kullanım istatistikleri
+f) Görsel/İşitsel Veriler: Görüntülü/sesli arama kayıtları (sadece arama süresince)
+
+4. VERİ İŞLEME AMAÇLARI
+• Yolculuk eşleştirme hizmetinin sunulması
+• Kullanıcı hesabı oluşturulması ve yönetimi
+• Güvenlik ve doğrulama işlemleri
+• Konum tabanlı hizmetlerin sağlanması
+• Müşteri desteği ve iletişim
+• Yasal yükümlülüklerin yerine getirilmesi
+• Hizmet kalitesinin iyileştirilmesi
+
+5. VERİ İŞLEMENİN HUKUKİ SEBEBİ
+Kişisel verileriniz KVKK md. 5/2 kapsamında:
+• Sözleşmenin kurulması ve ifası
+• Hukuki yükümlülüklerin yerine getirilmesi
+• Meşru menfaatlerimiz doğrultusunda işlenmektedir
+
+6. VERİ AKTARIMI
+Kişisel verileriniz:
+• Yasal zorunluluklar çerçevesinde yetkili kamu kurumlarına
+• Hizmet sağlayıcılarımıza (sunucu, harita, iletişim servisleri)
+• Yurtiçi ve yurtdışı iş ortaklarımıza aktarılabilir
+
+7. VERİ GÜVENLİĞİ
+• SSL/TLS şifreleme
+• Güvenli veri tabanı depolama
+• Erişim kontrolü ve yetkilendirme
+• Düzenli güvenlik denetimleri
+
+8. VERİ SAKLAMA SÜRESİ
+Kişisel verileriniz, hizmetin gerektirdiği süre ve yasal saklama süreleri boyunca muhafaza edilir. Hesap silme talebiniz halinde verileriniz yasal süreler içinde imha edilir.
+
+9. HAKLARINIZ
+KVKK md. 11 kapsamında:
+• Verilerinizin işlenip işlenmediğini öğrenme
+• İşlenmişse bilgi talep etme
+• İşlenme amacını öğrenme
+• Yurtiçi/yurtdışı aktarımları öğrenme
+• Eksik/yanlış işleme halinde düzeltme isteme
+• Silinmesini veya yok edilmesini isteme
+• Otomatik sistemlerle analiz sonucu aleyhinize çıkan sonuca itiraz etme
+haklarına sahipsiniz.
+
+10. İLETİŞİM
+Haklarınızı kullanmak için:
+E-posta: kvkk@leylektag.com
+Adres: [Şirket Adresi]
+
+Bu metni okuduğunuzu ve anladığınızı onaylayarak devam edebilirsiniz.`}
+                </Text>
+              </ScrollView>
+              <TouchableOpacity 
+                style={styles.legalAcceptButton}
+                onPress={() => setShowTermsModal(false)}
+              >
+                <Text style={styles.legalAcceptButtonText}>Okudum, Anladım</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* KVKK MODAL */}
+        <Modal visible={showKvkkModal} animationType="slide" transparent={true}>
+          <View style={styles.legalModalOverlay}>
+            <View style={styles.legalModalContent}>
+              <View style={styles.legalModalHeader}>
+                <Text style={styles.legalModalTitle}>🔒 KVKK Metni</Text>
+                <TouchableOpacity onPress={() => setShowKvkkModal(false)}>
+                  <Ionicons name="close-circle" size={32} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.legalScrollView}>
+                <Text style={styles.legalText}>
+{`KİŞİSEL VERİLERİN KORUNMASI VE İŞLENMESİNE İLİŞKİN
+AÇIK RIZA METNİ
+
+Son Güncelleme: ${new Date().toLocaleDateString('tr-TR')}
+
+Leylek TAG Teknoloji A.Ş. ("Şirket") tarafından sunulan yolculuk paylaşım hizmetlerinden faydalanabilmeniz için kişisel verilerinizin işlenmesi gerekmektedir.
+
+1. AÇIK RIZA BEYANINIZ
+
+6698 sayılı Kişisel Verilerin Korunması Kanunu uyarınca, aşağıda belirtilen kişisel verilerimin işlenmesine açık rıza veriyorum:
+
+✓ Kimlik Bilgileri (Ad, Soyad)
+✓ İletişim Bilgileri (Telefon Numarası)
+✓ Konum Bilgileri (GPS Verisi, Adres Bilgileri)
+✓ Cihaz Bilgileri (Cihaz Kimliği)
+✓ Kullanım Verileri (Uygulama Etkileşimleri)
+✓ Görsel ve İşitsel Veriler (Sesli/Görüntülü Arama)
+
+2. VERİ İŞLEME İZNİ
+
+Yukarıdaki kişisel verilerimin:
+• Yolculuk eşleştirme hizmeti için
+• Konum tabanlı hizmetler için
+• Sesli ve görüntülü iletişim için
+• Güvenlik ve kimlik doğrulama için
+• Hizmet iyileştirme için
+işlenmesine onay veriyorum.
+
+3. KONUM VERİSİ
+
+Konum verimin:
+• Yolculuk sırasında anlık takip için
+• Şoför/yolcu eşleştirmesi için
+• Güvenlik amacıyla
+toplanmasına ve işlenmesine onay veriyorum.
+
+4. SESLİ/GÖRÜNTÜLÜ İLETİŞİM
+
+Platform üzerinden gerçekleştirilen sesli ve görüntülü aramaların:
+• Yalnızca arama süresince işlenmesine
+• Kalite ve güvenlik amacıyla izlenmesine
+onay veriyorum.
+
+5. VERİ AKTARIMI
+
+Kişisel verilerimin:
+• Teknik altyapı sağlayıcılarına
+• Bulut depolama hizmetlerine
+• Harita ve navigasyon servislerine
+• Yasal zorunluluklar çerçevesinde yetkili kurumlara
+aktarılmasına onay veriyorum.
+
+6. RIZA GERİ ÇEKİMİ
+
+Bu rızamı dilediğim zaman geri çekebileceğimi, ancak rıza geri çekiminin hizmetlerin sunulmasını engelleyebileceğini biliyorum.
+
+7. YASAL UYARI
+
+Bu onay metni, 6698 sayılı KVKK ve ilgili mevzuat hükümlerine uygun olarak hazırlanmıştır. Onay vererek bu şartları kabul etmiş sayılırsınız.
+
+8. İLETİŞİM
+
+Sorularınız için:
+E-posta: kvkk@leylektag.com
+Telefon: [Şirket Telefonu]
+
+□ Yukarıdaki metni okudum, anladım ve kişisel verilerimin belirtilen şekilde işlenmesine açık rıza veriyorum.`}
+                </Text>
+              </ScrollView>
+              <TouchableOpacity 
+                style={styles.legalAcceptButton}
+                onPress={() => setShowKvkkModal(false)}
+              >
+                <Text style={styles.legalAcceptButtonText}>Okudum, Anladım</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
