@@ -6040,26 +6040,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 30,
   },
-  // Modal & Şehir Seçici Stilleri
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '70%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
+  // Şehir Seçici Stilleri (Modal stilleri yukarıda tanımlı)
   cityItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
