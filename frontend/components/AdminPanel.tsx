@@ -364,7 +364,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     </View>
   );
   
-  // ========== TRIPS (Metadata) ==========
+  // ========== TRIPS (Yolculuklar) ==========
   const renderTrips = () => (
     <FlatList
       style={styles.content}
@@ -373,18 +373,28 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       renderItem={({ item }) => (
         <View style={styles.logCard}>
           <View style={styles.logHeader}>
-            <Ionicons name="navigate" size={20} color={COLORS.primary} />
-            <Text style={styles.logTitle}>Yolculuk #{item.id?.slice(-6)}</Text>
+            <Ionicons name="car" size={20} color={COLORS.primary} />
+            <Text style={styles.logTitle}>TAG #{item.id?.slice(0, 8)}</Text>
             <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
           </View>
           <View style={styles.logBody}>
-            <Text style={styles.logText}>👤 Yolcu: {item.passenger_name} ({item.passenger_phone})</Text>
-            <Text style={styles.logText}>🚗 Şoför: {item.driver_name} ({item.driver_phone})</Text>
-            <Text style={styles.logText}>📍 Başlangıç: {item.pickup_address || '-'}</Text>
-            <Text style={styles.logText}>🎯 Hedef: {item.dropoff_address || '-'}</Text>
-            <Text style={styles.logText}>📏 Mesafe: {item.distance_km || 0} km • Süre: {item.duration_min || 0} dk</Text>
-            <Text style={styles.logText}>💰 Fiyat: ₺{item.price || 0}</Text>
-            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
+            <Text style={styles.logText}>👤 Yolcu: {item.passenger_name || 'Bilinmiyor'} ({item.passenger_phone || '-'})</Text>
+            <Text style={styles.logText}>🚗 Şoför: {item.driver_name || 'Atanmadı'} ({item.driver_phone || '-'})</Text>
+            <Text style={styles.logText}>📍 Başlangıç: {item.pickup_location || '-'}</Text>
+            <Text style={styles.logText}>🎯 Hedef: {item.dropoff_location || '-'}</Text>
+            <Text style={styles.logText}>🏙️ Şehir: {item.city || '-'}</Text>
+            <Text style={styles.logText}>💰 Fiyat: {item.final_price ? `₺${item.final_price}` : 'Belirlenmedi'}</Text>
+            <Text style={styles.logText}>📊 Durum: {
+              item.status === 'pending' ? '🟡 Bekliyor' :
+              item.status === 'matched' ? '🟢 Eşleşti' :
+              item.status === 'in_progress' ? '🚗 Devam Ediyor' :
+              item.status === 'completed' ? '✅ Tamamlandı' :
+              item.status === 'cancelled' ? '❌ İptal' :
+              item.status
+            }</Text>
+            {item.matched_at && <Text style={styles.logText}>🤝 Eşleşme: {formatDate(item.matched_at)}</Text>}
+            {item.completed_at && <Text style={styles.logText}>✅ Bitiş: {formatDate(item.completed_at)}</Text>}
+            {item.cancelled_at && <Text style={styles.logText}>❌ İptal: {formatDate(item.cancelled_at)}</Text>}
           </View>
         </View>
       )}
