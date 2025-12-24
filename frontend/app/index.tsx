@@ -2613,12 +2613,34 @@ function PassengerDashboard({
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location}
+                  destinationLocation={
+                    activeTag?.dropoff_lat && activeTag?.dropoff_lng 
+                      ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng }
+                      : null
+                  }
                   isDriver={false}
                   userName={user.name}
                   otherUserName={activeTag?.driver_name || 'Şoför'}
                   otherUserId={activeTag?.driver_id}
                   price={activeTag?.final_price}
                   routeInfo={activeTag?.route_info}
+                  onAutoComplete={async () => {
+                    // 1km içinde otomatik tamamlama
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        Alert.alert('✅ Yolculuk Tamamlandı', 'Hedefinize ulaştınız!');
+                        setActiveTag(null);
+                        loadActiveTag();
+                      }
+                    } catch (error) {
+                      console.log('Auto complete error:', error);
+                    }
+                  }}
                   onCall={async (type) => {
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     try {
