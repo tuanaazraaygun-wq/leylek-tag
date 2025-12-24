@@ -404,6 +404,17 @@ export default function LiveMapView({
             </View>
           </Marker>
         )}
+
+        {/* VARIŞ NOKTASI - Bayrak işareti */}
+        {destinationLocation && (
+          <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 0.9 }}>
+            <View style={styles.destinationMarker}>
+              <View style={styles.destinationCircle}>
+                <Text style={styles.destinationIcon}>🏁</Text>
+              </View>
+            </View>
+          </Marker>
+        )}
       </MapView>
 
       {/* ÜST BİLGİ KARTI - MAVİ GRADIENT */}
