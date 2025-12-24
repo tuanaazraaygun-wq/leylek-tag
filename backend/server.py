@@ -330,7 +330,7 @@ class SendOtpBodyRequest(BaseModel):
 
 @api_router.post("/auth/send-otp")
 async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
-    """OTP gönder (şimdilik mock)"""
+    """OTP gönder - TR numara kontrolü ile"""
     # Body veya query param'dan al
     phone_number = None
     if request and request.phone:
@@ -339,10 +339,25 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
         phone_number = phone
     
     if not phone_number:
-        raise HTTPException(status_code=422, detail="Phone gerekli")
+        raise HTTPException(status_code=422, detail="Telefon numarası gerekli")
     
-    logger.info(f"📱 OTP gönderildi (mock): {phone_number} -> 123456")
-    return {"success": True, "message": "OTP gönderildi", "dev_otp": "123456"}
+    # TR numara doğrulama
+    is_valid, result = validate_turkish_phone(phone_number)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=result)
+    
+    cleaned_phone = result  # Temizlenmiş numara
+    
+    # TODO: NetGSM entegrasyonu - şimdilik mock
+    # netgsm_api_key = os.getenv("NETGSM_API_KEY")
+    # if netgsm_api_key:
+    #     otp_code = str(random.randint(100000, 999999))
+    #     send_sms_via_netgsm(cleaned_phone, f"Leylek TAG doğrulama kodunuz: {otp_code}")
+    # else:
+    otp_code = "123456"  # Test modu
+    
+    logger.info(f"📱 OTP gönderildi: {cleaned_phone} -> {otp_code}")
+    return {"success": True, "message": "OTP gönderildi", "dev_otp": otp_code}
 
 class VerifyOtpRequest(BaseModel):
     phone: str
