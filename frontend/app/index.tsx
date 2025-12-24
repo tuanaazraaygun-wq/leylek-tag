@@ -984,11 +984,29 @@ Telefon: [Şirket Telefonu]
 □ Yukarıdaki metni okudum, anladım ve kişisel verilerimin belirtilen şekilde işlenmesine açık rıza veriyorum.`}
                 </Text>
               </ScrollView>
+              
+              {/* Scroll indicator */}
+              {!kvkkScrolledToEnd && (
+                <View style={styles.scrollHint}>
+                  <Ionicons name="chevron-down" size={20} color="#3FA9F5" />
+                  <Text style={styles.scrollHintText}>Sonuna kadar kaydırın</Text>
+                </View>
+              )}
+              
               <TouchableOpacity 
-                style={styles.legalAcceptButton}
-                onPress={() => setShowKvkkModal(false)}
+                style={[styles.legalAcceptButton, !kvkkScrolledToEnd && styles.legalAcceptButtonDisabled]}
+                onPress={() => {
+                  if (kvkkScrolledToEnd) {
+                    setKvkkRead(true);
+                    setShowKvkkModal(false);
+                  } else {
+                    Alert.alert('⚠️ Zorunlu Okuma', 'Lütfen metni sonuna kadar okuyun.');
+                  }
+                }}
               >
-                <Text style={styles.legalAcceptButtonText}>Okudum, Anladım</Text>
+                <Text style={styles.legalAcceptButtonText}>
+                  {kvkkScrolledToEnd ? '✓ Okudum, Kabul Ediyorum' : 'Metni Sonuna Kadar Okuyun'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
