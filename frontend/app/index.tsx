@@ -4606,6 +4606,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  legalAcceptButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
   legalAcceptButtonText: {
     color: '#FFF',
     fontSize: 16,
