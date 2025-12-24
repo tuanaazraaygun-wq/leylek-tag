@@ -485,8 +485,15 @@ export default function VideoCall({
   const handleEndCall = async () => {
     console.log('📞 Arama sonlandırılıyor...');
     
-    // call_id'yi channelName'den çıkar
-    const call_id = channelName.replace('leylek_', '');
+    // call_id'yi channelName'den çıkar - prefix kontrolü yap
+    let call_id = channelName;
+    if (call_id.startsWith('leylek_')) {
+      call_id = call_id.replace('leylek_', '');
+    }
+    // call_id hala "call_" ile başlamıyorsa, prefix ekle
+    if (!call_id.startsWith('call_')) {
+      call_id = `call_${call_id}`;
+    }
     
     const endpoint = (isCaller && !remoteUid) 
       ? `/api/voice/cancel-call?call_id=${call_id}&user_id=${userId}`
@@ -494,7 +501,7 @@ export default function VideoCall({
     
     try {
       await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
-      console.log('📞 Backend bilgilendirildi');
+      console.log('📞 Backend bilgilendirildi, call_id:', call_id);
     } catch (error) {
       console.log('End call error:', error);
     }
