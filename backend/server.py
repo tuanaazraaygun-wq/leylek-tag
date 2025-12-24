@@ -1323,7 +1323,7 @@ async def dismiss_request(user_id: str, tag_id: str):
 
 @api_router.post("/trip/force-end")
 async def force_end_trip(tag_id: str, user_id: str):
-    """Yolculuğu zorla bitir (-0.2 puan)"""
+    """Yolculuğu zorla bitir (-5 puan)"""
     try:
         # TAG'i getir
         tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
@@ -1341,11 +1341,11 @@ async def force_end_trip(tag_id: str, user_id: str):
             other_user_id = tag.get("passenger_id")
             user_type = "driver"
         
-        # Zorla bitiren kullanıcının puanını -0.2 düşür
+        # Zorla bitiren kullanıcının puanını -5 düşür (AĞIR CEZA)
         user_result = supabase.table("users").select("rating").eq("id", resolved_id).execute()
         if user_result.data:
             current_rating = float(user_result.data[0].get("rating", 5.0))
-            new_rating = max(1.0, current_rating - 0.2)  # Min 1.0
+            new_rating = max(1.0, current_rating - 5.0)  # Min 1.0, -5 puan ceza
             supabase.table("users").update({"rating": new_rating}).eq("id", resolved_id).execute()
         
         # TAG'i tamamla - sadece mevcut sütunları kullan
@@ -1354,9 +1354,9 @@ async def force_end_trip(tag_id: str, user_id: str):
             "cancelled_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id).execute()
         
-        logger.info(f"⚠️ Force end: TAG {tag_id} by {user_type} ({resolved_id})")
+        logger.info(f"⚠️ Force end: TAG {tag_id} by {user_type} ({resolved_id}) - 5 PUAN CEZA")
         
-        return {"success": True, "message": "Yolculuk zorla bitirildi. Puanınız -0.2 düştü."}
+        return {"success": True, "message": "Yolculuk zorla bitirildi. Puanınız -5 düştü."}
     except HTTPException:
         raise
     except Exception as e:
