@@ -2401,7 +2401,7 @@ function PassengerDashboard({
   userLocation: any;
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
-  setScreen: (screen: string) => void;
+  setScreen: React.Dispatch<React.SetStateAction<ScreenType>>;
 }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
