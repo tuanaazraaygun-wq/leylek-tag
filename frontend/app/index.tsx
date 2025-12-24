@@ -5531,6 +5531,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
+  modernSubmitButtonSuccess: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#10B981',
+  },
   submitButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
