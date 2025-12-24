@@ -2498,9 +2498,9 @@ async def check_incoming_call(user_id: str):
         if result.data:
             call = result.data[0]
             
-            # 60 saniyeden eski aramayı otomatik "missed" yap
+            # 90 saniyeden eski aramayı otomatik "missed" yap
             created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
-            if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=60):
+            if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=90):
                 supabase.table("calls").update({
                     "status": "missed",
                     "ended_at": datetime.utcnow().isoformat()
