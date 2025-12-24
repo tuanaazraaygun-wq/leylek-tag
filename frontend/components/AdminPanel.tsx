@@ -608,6 +608,64 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     </ScrollView>
   );
   
+  // Admin Yönetimi Tab
+  const renderAdmins = () => (
+    <ScrollView style={styles.tabContent}>
+      {/* Admin Ekle */}
+      <View style={styles.statCard}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="person-add" size={24} color={COLORS.primary} />
+          <Text style={styles.cardTitle}>Yeni Admin Ekle</Text>
+        </View>
+        <Text style={styles.settingDesc}>Kayıtlı bir kullanıcıyı admin yap</Text>
+        <View style={[styles.settingInput, { marginTop: 12 }]}>
+          <TextInput
+            style={[styles.settingTextInput, { flex: 1 }]}
+            value={newAdminPhone}
+            onChangeText={setNewAdminPhone}
+            placeholder="5XX XXX XX XX"
+            keyboardType="phone-pad"
+            maxLength={10}
+          />
+          <TouchableOpacity 
+            style={[styles.saveButton, { marginLeft: 8, paddingVertical: 10 }]} 
+            onPress={addNewAdmin}
+          >
+            <Ionicons name="add" size={20} color="#FFF" />
+            <Text style={styles.saveButtonText}>Ekle</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Mevcut Adminler */}
+      <View style={styles.statCard}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="shield-checkmark" size={24} color={COLORS.primary} />
+          <Text style={styles.cardTitle}>Mevcut Adminler ({admins.length})</Text>
+        </View>
+        
+        {admins.map((admin: any, index: number) => (
+          <View key={admin.id || index} style={styles.adminItem}>
+            <View style={styles.adminInfo}>
+              <Ionicons name="person-circle" size={40} color={COLORS.primary} />
+              <View style={{ marginLeft: 12 }}>
+                <Text style={styles.adminName}>{admin.name || 'İsimsiz'}</Text>
+                <Text style={styles.adminPhone}>{admin.phone}</Text>
+                {admin.is_hardcoded && (
+                  <Text style={styles.adminBadge}>Sistem Admin</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        ))}
+        
+        {admins.length === 0 && (
+          <Text style={styles.emptyText}>Henüz admin yok</Text>
+        )}
+      </View>
+    </ScrollView>
+  );
+  
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -627,6 +685,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         {renderTab('calls', 'call', 'Aramalar')}
         {renderTab('auth', 'key', 'Girişler')}
         {renderTab('notifications', 'notifications', 'Bildirim')}
+        {renderTab('admins', 'shield', 'Adminler')}
         {renderTab('settings', 'settings', 'Ayarlar')}
       </ScrollView>
       
