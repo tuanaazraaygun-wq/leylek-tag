@@ -859,27 +859,61 @@ Adres: [Şirket Adresi]
 Bu metni okuduğunuzu ve anladığınızı onaylayarak devam edebilirsiniz.`}
                 </Text>
               </ScrollView>
+              
+              {/* Scroll indicator */}
+              {!termsScrolledToEnd && (
+                <View style={styles.scrollHint}>
+                  <Ionicons name="chevron-down" size={20} color="#3FA9F5" />
+                  <Text style={styles.scrollHintText}>Sonuna kadar kaydırın</Text>
+                </View>
+              )}
+              
               <TouchableOpacity 
-                style={styles.legalAcceptButton}
-                onPress={() => setShowTermsModal(false)}
+                style={[styles.legalAcceptButton, !termsScrolledToEnd && styles.legalAcceptButtonDisabled]}
+                onPress={() => {
+                  if (termsScrolledToEnd) {
+                    setTermsRead(true);
+                    setShowTermsModal(false);
+                  } else {
+                    Alert.alert('⚠️ Zorunlu Okuma', 'Lütfen metni sonuna kadar okuyun.');
+                  }
+                }}
               >
-                <Text style={styles.legalAcceptButtonText}>Okudum, Anladım</Text>
+                <Text style={styles.legalAcceptButtonText}>
+                  {termsScrolledToEnd ? '✓ Okudum, Anladım' : 'Metni Sonuna Kadar Okuyun'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
 
-        {/* KVKK MODAL */}
+        {/* KVKK MODAL - ZORUNLU OKUMA */}
         <Modal visible={showKvkkModal} animationType="slide" transparent={true}>
           <View style={styles.legalModalOverlay}>
             <View style={styles.legalModalContent}>
               <View style={styles.legalModalHeader}>
                 <Text style={styles.legalModalTitle}>🔒 KVKK Metni</Text>
-                <TouchableOpacity onPress={() => setShowKvkkModal(false)}>
-                  <Ionicons name="close-circle" size={32} color="#EF4444" />
+                <TouchableOpacity onPress={() => {
+                  if (!kvkkRead) {
+                    Alert.alert('⚠️ Zorunlu Okuma', 'Metni sonuna kadar okumanız gerekmektedir.');
+                  } else {
+                    setShowKvkkModal(false);
+                  }
+                }}>
+                  <Ionicons name="close-circle" size={32} color={kvkkRead ? "#10B981" : "#EF4444"} />
                 </TouchableOpacity>
               </View>
-              <ScrollView style={styles.legalScrollView}>
+              <ScrollView 
+                style={styles.legalScrollView}
+                onScroll={({ nativeEvent }) => {
+                  const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                  const isAtEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
+                  if (isAtEnd && !kvkkScrolledToEnd) {
+                    setKvkkScrolledToEnd(true);
+                  }
+                }}
+                scrollEventThrottle={16}
+              >
                 <Text style={styles.legalText}>
 {`KİŞİSEL VERİLERİN KORUNMASI VE İŞLENMESİNE İLİŞKİN
 AÇIK RIZA METNİ
