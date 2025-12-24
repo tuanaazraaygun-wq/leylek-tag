@@ -741,6 +741,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 5,
   },
+  tabContent: {
+    flex: 1,
+    padding: 15,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+    marginLeft: 10,
+  },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
