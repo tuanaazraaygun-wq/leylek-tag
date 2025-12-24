@@ -464,12 +464,12 @@ export default function LiveMapView({
                   { text: '🚫 Engelle', style: 'destructive', onPress: onBlock },
                   { text: '⚠️ Şikayet Et', onPress: onReport },
                   { 
-                    text: '⛔ Zorla Bitir (-1 puan)', 
+                    text: '⛔ Zorla Bitir (-5 puan)', 
                     style: 'destructive', 
                     onPress: () => {
                       Alert.alert(
                         '⚠️ Zorla Bitir',
-                        'Yolculuğu zorla bitirmek istediğinize emin misiniz?\n\nBu işlem puanınızı -1 düşürür.',
+                        'Yolculuğu zorla bitirmek istediğinize emin misiniz?\n\nBu işlem puanınızı -5 düşürür ve sürekli yapılması hesabınızın kapatılmasına neden olabilir.',
                         [
                           { text: 'Vazgeç', style: 'cancel' },
                           { 
