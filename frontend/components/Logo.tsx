@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'visible',
+    overflow: 'hidden', // Daire mask için gerekli
     backgroundColor: 'transparent',
   },
   textContainer: {
