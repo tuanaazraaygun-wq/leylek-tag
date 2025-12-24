@@ -2635,6 +2635,109 @@ function PassengerDashboard({
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* PROFİL MODAL */}
+      <Modal visible={showProfileModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>👤 Profil Düzenle</Text>
+              <TouchableOpacity onPress={() => setShowProfileModal(false)}>
+                <Ionicons name="close" size={28} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.profileForm}>
+              <Text style={styles.inputLabel}>Ad Soyad</Text>
+              <TextInput
+                style={styles.profileInput}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Adınız Soyadınız"
+              />
+              
+              <Text style={styles.inputLabel}>Şehir</Text>
+              <TextInput
+                style={styles.profileInput}
+                value={editCity}
+                onChangeText={setEditCity}
+                placeholder="Şehriniz"
+              />
+              
+              <View style={styles.profileInfo}>
+                <Ionicons name="call" size={20} color="#666" />
+                <Text style={styles.profileInfoText}>{user.phone}</Text>
+              </View>
+              
+              <View style={styles.profileInfo}>
+                <Ionicons name="star" size={20} color="#F59E0B" />
+                <Text style={styles.profileInfoText}>Puan: {user.rating?.toFixed(1) || '5.0'}</Text>
+              </View>
+              
+              <TouchableOpacity style={styles.saveProfileButton} onPress={updateProfile}>
+                <LinearGradient colors={['#10B981', '#059669']} style={styles.saveProfileGradient}>
+                  <Ionicons name="checkmark" size={22} color="#FFF" />
+                  <Text style={styles.saveProfileText}>Kaydet</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* GEÇMİŞ YOLCULUKLAR MODAL */}
+      <Modal visible={showHistoryModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: SCREEN_HEIGHT * 0.8 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🕐 Geçmiş Yolculuklar</Text>
+              <TouchableOpacity onPress={() => setShowHistoryModal(false)}>
+                <Ionicons name="close" size={28} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.historyList}>
+              {tripHistory.length === 0 ? (
+                <View style={styles.emptyHistory}>
+                  <Ionicons name="car-outline" size={60} color="#CCC" />
+                  <Text style={styles.emptyHistoryText}>Henüz yolculuk yok</Text>
+                </View>
+              ) : (
+                tripHistory.map((trip, index) => (
+                  <View key={trip.id || index} style={styles.historyCard}>
+                    <View style={styles.historyCardHeader}>
+                      <View style={[styles.historyStatus, { backgroundColor: trip.status === 'completed' ? '#10B981' : '#EF4444' }]}>
+                        <Text style={styles.historyStatusText}>
+                          {trip.status === 'completed' ? 'Tamamlandı' : 'İptal'}
+                        </Text>
+                      </View>
+                      <Text style={styles.historyDate}>
+                        {new Date(trip.date).toLocaleDateString('tr-TR')}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.historyRoute}>
+                      <View style={styles.historyRouteItem}>
+                        <Ionicons name="location" size={16} color="#10B981" />
+                        <Text style={styles.historyRouteText} numberOfLines={1}>{trip.pickup}</Text>
+                      </View>
+                      <View style={styles.historyRouteItem}>
+                        <Ionicons name="flag" size={16} color="#EF4444" />
+                        <Text style={styles.historyRouteText} numberOfLines={1}>{trip.dropoff}</Text>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.historyFooter}>
+                      <Text style={styles.historyDriver}>🚗 {trip.driver_name}</Text>
+                      <Text style={styles.historyPrice}>₺{trip.price || 0}</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Toast Notification - Otomatik Kaybolan */}
       {showToast && (
         <Animated.View style={styles.toastContainer}>
