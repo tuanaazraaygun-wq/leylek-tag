@@ -86,10 +86,63 @@ TURKEY_CITIES = [
 app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
 api_router = APIRouter(prefix="/api")
 
+# Son temizlik zamanı (global)
+last_cleanup_time = None
+
 @app.on_event("startup")
 async def startup():
+    global last_cleanup_time
     init_supabase()
+    last_cleanup_time = datetime.utcnow()
     logger.info("✅ Server started with Supabase")
+
+# Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
+async def auto_cleanup_inactive_tags():
+    """30 dakikadan fazla inaktif TAG'leri otomatik bitir"""
+    global last_cleanup_time
+    
+    # Son temizlikten en az 10 dakika geçmişse tekrar çalıştır
+    if last_cleanup_time and (datetime.utcnow() - last_cleanup_time).total_seconds() < 600:
+        return 0  # Henüz 10 dakika geçmedi
+    
+    try:
+        max_inactive_minutes = 30
+        cutoff_time = (datetime.utcnow() - timedelta(minutes=max_inactive_minutes)).isoformat()
+        
+        # Aktif TAG'leri bul (matched veya in_progress)
+        result = supabase.table("tags").select("id, passenger_id, driver_id, status, last_activity, matched_at, created_at").in_("status", ["matched", "in_progress"]).execute()
+        
+        cleaned_count = 0
+        for tag in result.data:
+            last_activity = tag.get("last_activity") or tag.get("matched_at") or tag.get("created_at")
+            
+            if last_activity:
+                try:
+                    activity_time = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+                    now = datetime.now(activity_time.tzinfo)
+                    
+                    if (now - activity_time).total_seconds() > max_inactive_minutes * 60:
+                        # TAG'i iptal et
+                        supabase.table("tags").update({
+                            "status": "cancelled",
+                            "cancelled_at": datetime.utcnow().isoformat(),
+                            "cancel_reason": "inactivity_timeout"
+                        }).eq("id", tag["id"]).execute()
+                        
+                        cleaned_count += 1
+                        logger.info(f"🧹 Auto-cleanup: İnaktif TAG temizlendi: {tag['id']}")
+                except Exception as e:
+                    logger.error(f"Auto-cleanup error for {tag['id']}: {e}")
+        
+        last_cleanup_time = datetime.utcnow()
+        
+        if cleaned_count > 0:
+            logger.info(f"🧹 Auto-cleanup tamamlandı: {cleaned_count} TAG temizlendi")
+        
+        return cleaned_count
+    except Exception as e:
+        logger.error(f"Auto cleanup error: {e}")
+        return 0
 
 # ==================== HELPER FUNCTIONS ====================
 
