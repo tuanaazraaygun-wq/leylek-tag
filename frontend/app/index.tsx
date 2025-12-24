@@ -207,7 +207,7 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard'>('login');
+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin'>('login');
 
   // Auth states
   const [phone, setPhone] = useState('');
@@ -227,6 +227,7 @@ export default function App() {
   const [hasPin, setHasPin] = useState(false);
   const [deviceId, setDeviceId] = useState<string>(''); // Cihaz ID
   const [isDeviceVerified, setIsDeviceVerified] = useState(false); // Cihaz doğrulanmış mı?
+  const [isForgotPassword, setIsForgotPassword] = useState(false); // Şifremi unuttum akışı mı?
   
   // Role Selection (Dinamik - Her girişte seçilir)
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
