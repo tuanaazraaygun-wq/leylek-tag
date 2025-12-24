@@ -3369,7 +3369,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         <View style={styles.fullScreenMapContainer}>
           <LiveMapView
             userLocation={userLocation}
-            otherLocation={passengerLocation || activeTag?.passenger_location}
+            otherLocation={passengerLocation || activeTag?.passenger_location || null}
             isDriver={true}
             userName={user.name}
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
