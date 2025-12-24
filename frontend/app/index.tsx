@@ -4040,6 +4040,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 6,
   },
+  // Şifremi Unuttum
+  forgotPasswordButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+  forgotPasswordText: {
+    color: '#3FA9F5',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
   // Toast Notification
   toastContainer: {
     position: 'absolute',
