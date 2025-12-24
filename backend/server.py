@@ -2583,22 +2583,37 @@ async def accept_call(user_id: str, call_id: str):
         return {"success": False, "detail": str(e)}
 
 @api_router.post("/voice/reject-call")
-async def reject_call(user_id: str, call_id: str):
+async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
     """Aramayı reddet - Supabase'de güncelle"""
     try:
+        # call_id yoksa tag_id'den en son ringing aramayı bul
+        if not call_id and tag_id:
+            call_result = supabase.table("calls").select("call_id").eq("tag_id", tag_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
+            if call_result.data:
+                call_id = call_result.data[0]["call_id"]
+        
+        # call_id yoksa kullanıcının en son ringing aramasını bul
+        if not call_id:
+            call_result = supabase.table("calls").select("call_id").eq("receiver_id", user_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
+            if call_result.data:
+                call_id = call_result.data[0]["call_id"]
+        
+        if not call_id:
+            return {"success": False, "detail": "Aktif arama bulunamadı"}
+        
         result = supabase.table("calls").update({
             "status": "rejected",
             "ended_at": datetime.utcnow().isoformat(),
             "ended_by": user_id
-        }).eq("call_id", call_id).eq("receiver_id", user_id).execute()
+        }).eq("call_id", call_id).eq("status", "ringing").execute()
         
         if result.data:
             logger.info(f"📵 SUPABASE: Arama reddedildi: {call_id}")
         
-        return {"success": True}
+        return {"success": True, "call_id": call_id}
     except Exception as e:
         logger.error(f"Reject call error: {e}")
-        return {"success": False}
+        return {"success": False, "detail": str(e)}
 
 @api_router.get("/voice/check-call-status")
 async def check_call_status(user_id: str, call_id: str):
