@@ -2850,11 +2850,18 @@ function PassengerDashboard({
         }}
         onReject={async () => {
           setShowIncomingCall(false);
+          const callId = incomingCallInfo?.callId;
           setIncomingCallInfo(null);
           // Backend'e reddetme bildirimi gönder
           try {
-            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
-          } catch (e) {}
+            const rejectUrl = callId 
+              ? `${API_URL}/voice/reject-call?call_id=${callId}&user_id=${user.id}`
+              : `${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`;
+            await fetch(rejectUrl, { method: 'POST' });
+            console.log('📵 Arama reddedildi:', callId);
+          } catch (e) {
+            console.log('Reject error:', e);
+          }
         }}
       />
 
