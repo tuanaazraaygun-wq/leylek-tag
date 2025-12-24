@@ -496,12 +496,12 @@ export default function LiveMapView({
           </View>
         )}
 
-        {/* Arama ve İşlem Butonları - 5 Sütun */}
+        {/* Arama ve İşlem Butonları - 4 Sütun SİMETRİK */}
         <View style={styles.actionRow}>
           {/* Sesli Arama */}
           <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('audio')} activeOpacity={0.8}>
             <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
-              <Ionicons name="call" size={22} color="#FFF" />
+              <Ionicons name="call" size={20} color="#FFF" />
             </LinearGradient>
             <Text style={styles.actionBtnLabel}>Sesli</Text>
           </TouchableOpacity>
@@ -509,7 +509,7 @@ export default function LiveMapView({
           {/* Görüntülü Arama */}
           <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('video')} activeOpacity={0.8}>
             <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.actionBtnCircle}>
-              <Ionicons name="videocam" size={22} color="#FFF" />
+              <Ionicons name="videocam" size={20} color="#FFF" />
             </LinearGradient>
             <Text style={styles.actionBtnLabel}>Video</Text>
           </TouchableOpacity>
@@ -530,41 +530,32 @@ export default function LiveMapView({
             }} 
             activeOpacity={0.8}
           >
-            <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
-              <Ionicons name="navigate" size={26} color="#FFF" />
+            <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.actionBtnCircle}>
+              <Ionicons name="navigate" size={20} color="#FFF" />
             </LinearGradient>
-            <Text style={styles.actionBtnLabel}>{isDriver ? 'Yolcuya Git' : 'Şoföre Git'}</Text>
+            <Text style={styles.actionBtnLabel}>{isDriver ? 'Git' : 'Git'}</Text>
           </TouchableOpacity>
 
-          {/* Bitir - Karşılıklı onay ile */}
-          <TouchableOpacity 
-            style={styles.actionBtn} 
-            onPress={() => {
-              // Karşılıklı onay sistemi: önce onRequestTripEnd varsa onu dene
-              if (onRequestTripEnd) {
-                onRequestTripEnd();
-              } else if (onComplete) {
-                onComplete();
-              }
-            }} 
-            activeOpacity={0.8}
-          >
-            <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
-              <Ionicons name="checkmark-done" size={26} color="#FFF" />
-            </LinearGradient>
-            <Text style={styles.actionBtnLabel}>Bitir</Text>
-          </TouchableOpacity>
-
-          {/* Diğer (Engelle/Şikayet/Zorla Bitir) */}
+          {/* Diğer (Bitir/Engelle/Şikayet/Zorla Bitir) */}
           <TouchableOpacity 
             style={styles.actionBtn} 
             activeOpacity={0.8}
             onPress={() => {
               Alert.alert(
-                `${otherUserName}`,
+                '⚙️ İşlemler',
                 'Ne yapmak istiyorsunuz?',
                 [
                   { text: 'İptal', style: 'cancel' },
+                  { 
+                    text: '✅ Yolculuğu Bitir', 
+                    onPress: () => {
+                      if (onRequestTripEnd) {
+                        onRequestTripEnd();
+                      } else if (onComplete) {
+                        onComplete();
+                      }
+                    }
+                  },
                   { text: '🚫 Engelle', style: 'destructive', onPress: onBlock },
                   { text: '⚠️ Şikayet Et', onPress: onReport },
                   { 
@@ -589,9 +580,9 @@ export default function LiveMapView({
               );
             }}
           >
-            <View style={styles.actionBtnCircleGray}>
-              <Ionicons name="ellipsis-horizontal" size={26} color="#FFF" />
-            </View>
+            <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
+              <Ionicons name="menu" size={20} color="#FFF" />
+            </LinearGradient>
             <Text style={styles.actionBtnLabel}>Diğer</Text>
           </TouchableOpacity>
         </View>
