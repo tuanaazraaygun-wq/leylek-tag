@@ -404,15 +404,14 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           <View style={styles.logHeader}>
             <Ionicons name={item.call_type === 'video' ? 'videocam' : 'call'} size={20} color={COLORS.success} />
             <Text style={styles.logTitle}>{item.call_type === 'video' ? 'Görüntülü' : 'Sesli'} Arama</Text>
-            <Text style={styles.logTime}>{formatDate(item.start_time)}</Text>
+            <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
           </View>
           <View style={styles.logBody}>
-            <Text style={styles.logText}>📞 Arayan: {item.caller_name} ({item.caller_phone})</Text>
-            <Text style={styles.logText}>📱 Aranan: {item.receiver_name} ({item.receiver_phone})</Text>
-            <Text style={styles.logText}>⏱️ Süre: {item.duration_seconds || 0} saniye</Text>
-            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
-            <Text style={styles.logText}>🌐 Arayan IP: {item.caller_ip || '-'}</Text>
-            <Text style={styles.logText}>🌐 Aranan IP: {item.receiver_ip || '-'}</Text>
+            <Text style={styles.logText}>📞 Arayan: {item.caller_name || 'Bilinmiyor'}</Text>
+            <Text style={styles.logText}>📱 Aranan: {item.receiver_name || 'Bilinmiyor'}</Text>
+            <Text style={styles.logText}>⏱️ Süre: {item.duration_seconds ? `${item.duration_seconds} saniye` : 'Cevaplanmadı'}</Text>
+            <Text style={styles.logText}>📊 Durum: {item.status === 'connected' ? '✅ Bağlandı' : item.status === 'rejected' ? '❌ Reddedildi' : item.status === 'cancelled' ? '⚠️ İptal' : item.status === 'missed' ? '📵 Cevapsız' : item.status}</Text>
+            {item.ended_at && <Text style={styles.logText}>🕐 Bitiş: {formatDate(item.ended_at)}</Text>}
           </View>
         </View>
       )}
