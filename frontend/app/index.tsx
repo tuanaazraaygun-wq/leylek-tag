@@ -3422,12 +3422,34 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           <LiveMapView
             userLocation={userLocation}
             otherLocation={passengerLocation || activeTag?.passenger_location}
+            destinationLocation={
+              activeTag?.dropoff_lat && activeTag?.dropoff_lng 
+                ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng }
+                : null
+            }
             isDriver={true}
             userName={user.name}
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
             otherUserId={activeTag?.passenger_id}
             price={activeTag?.final_price}
             routeInfo={activeTag?.route_info}
+            onAutoComplete={async () => {
+              // 1km içinde otomatik tamamlama - şoför
+              try {
+                const response = await fetch(
+                  `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
+                  { method: 'POST' }
+                );
+                const data = await response.json();
+                if (data.success) {
+                  Alert.alert('✅ Yolculuk Tamamlandı', 'Hedefe ulaştınız!');
+                  setActiveTag(null);
+                  loadActiveTag();
+                }
+              } catch (error) {
+                console.log('Auto complete error:', error);
+              }
+            }}
             onCall={async (type) => {
               // Aktif arama varsa engelle
               if (showVoiceCall || showIncomingCall) {
