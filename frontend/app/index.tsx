@@ -2915,6 +2915,14 @@ function PassengerDashboard({
             setIsVideoCall(false);
             setIsCallCaller(false);
             setCurrentCallChannelName(null);
+            // 5 saniye cooldown başlat
+            setCallCooldown(true);
+            if (callCooldownRef.current) {
+              clearTimeout(callCooldownRef.current);
+            }
+            callCooldownRef.current = setTimeout(() => {
+              setCallCooldown(false);
+            }, 5000);
           }}
         />
       )}
