@@ -2096,6 +2096,13 @@ function PassengerDashboard({
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   
+  // Profil ve Geçmiş Modal
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [tripHistory, setTripHistory] = useState<any[]>([]);
+  const [editName, setEditName] = useState(user.name || '');
+  const [editCity, setEditCity] = useState(user.city || '');
+  
   // Mesafe ve süre state'leri
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
