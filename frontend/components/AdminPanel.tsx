@@ -1033,4 +1033,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  // Admin Yönetimi stilleri
+  adminItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.cardLight,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  adminInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adminName: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  adminPhone: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  adminBadge: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
 });
