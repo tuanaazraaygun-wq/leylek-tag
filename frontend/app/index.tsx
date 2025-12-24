@@ -280,6 +280,9 @@ export default function App() {
   const [kvkkRead, setKvkkRead] = useState(false); // KVKK okundu mu?
   const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
   const [kvkkScrolledToEnd, setKvkkScrolledToEnd] = useState(false);
+  const [deviceKvkkApproved, setDeviceKvkkApproved] = useState(false); // Bu cihazda daha önce KVKK onaylandı mı?
+  const [showCombinedLegalModal, setShowCombinedLegalModal] = useState(false); // Birleşik KVKK/Aydınlatma modalı
+  const [currentLegalStep, setCurrentLegalStep] = useState<'terms' | 'kvkk'>('terms'); // Şu an hangi metni gösteriyoruz
 
   // Push Notifications Hook - Expo Push ile (Firebase olmadan)
   const { registerPushToken, removePushToken, notification } = usePushNotifications();
