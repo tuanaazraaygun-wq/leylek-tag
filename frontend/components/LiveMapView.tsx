@@ -204,6 +204,81 @@ export default function LiveMapView({
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
+  // SARI ROTA - Yolcunun pickup'tan destination'a gideceği yol
+  useEffect(() => {
+    if (otherLocation && destinationLocation) {
+      fetchDestinationRoute();
+    }
+  }, [otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude]);
+
+  // 1KM OTOMATİK TAMAMLAMA KONTROLÜ
+  useEffect(() => {
+    if (!destinationLocation || !userLocation || autoCompleteTriggered.current) return;
+    
+    const distanceToDestination = calculateDistance(
+      userLocation.latitude, userLocation.longitude,
+      destinationLocation.latitude, destinationLocation.longitude
+    );
+    
+    console.log('📍 Varış noktasına mesafe:', distanceToDestination.toFixed(2), 'km');
+    
+    if (distanceToDestination <= 1.0) {
+      autoCompleteTriggered.current = true;
+      console.log('✅ 1km mesafe içinde - otomatik tamamlama tetikleniyor');
+      Alert.alert(
+        '🎉 Varış Noktasına Ulaştınız!',
+        'Hedefe 1km veya daha yakınsınız. Yolculuğu tamamlamak ister misiniz?',
+        [
+          { text: 'Hayır', style: 'cancel' },
+          { 
+            text: 'Evet, Tamamla', 
+            onPress: () => {
+              if (onAutoComplete) {
+                onAutoComplete();
+              } else if (onComplete) {
+                onComplete();
+              }
+            }
+          }
+        ]
+      );
+    }
+  }, [userLocation?.latitude, userLocation?.longitude, destinationLocation]);
+
+  // Varış rotası çiz (sarı)
+  const fetchDestinationRoute = async () => {
+    if (!otherLocation || !destinationLocation) {
+      setDestinationRouteCoordinates([]);
+      return;
+    }
+
+    try {
+      // Yolcunun konumundan varış noktasına
+      const origin = `${otherLocation.latitude},${otherLocation.longitude}`;
+      const destination = `${destinationLocation.latitude},${destinationLocation.longitude}`;
+      
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const route = data.routes[0];
+        const points = decodePolyline(route.overview_polyline.points);
+        setDestinationRouteCoordinates(points);
+        console.log('✅ Sarı rota çizildi (yolcunun varış rotası)');
+      } else {
+        // Fallback - düz çizgi
+        setDestinationRouteCoordinates([otherLocation, destinationLocation]);
+      }
+    } catch (error) {
+      console.error('🗺️ Varış rotası hatası:', error);
+      if (otherLocation && destinationLocation) {
+        setDestinationRouteCoordinates([otherLocation, destinationLocation]);
+      }
+    }
+  };
+
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
