@@ -2632,9 +2632,9 @@ async def check_call_status(user_id: str, call_id: str):
                 "should_close": True
             }
         elif status == "ringing":
-            # 60 saniyeden fazla çalıyorsa timeout
+            # 90 saniyeden fazla çalıyorsa timeout (1.5 dakika)
             created_at = datetime.fromisoformat(call["created_at"].replace("Z", "+00:00"))
-            if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=60):
+            if datetime.now(created_at.tzinfo) - created_at > timedelta(seconds=90):
                 # Timeout - missed olarak işaretle
                 supabase.table("calls").update({
                     "status": "missed",
