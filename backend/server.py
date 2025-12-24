@@ -821,6 +821,9 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
     """Aktif TAG getir"""
     try:
+        # Arka planda inaktif TAG'leri temizle
+        await auto_cleanup_inactive_tags()
+        
         # passenger_id veya user_id kabul et
         uid = passenger_id or user_id
         if not uid:
