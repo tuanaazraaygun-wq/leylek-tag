@@ -4386,6 +4386,64 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '500',
   },
+  kvkkTextContainer: {
+    flex: 1,
+  },
+  kvkkLink: {
+    color: '#3FA9F5',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  // Legal Modals
+  legalModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  legalModalContent: {
+    width: '100%',
+    maxHeight: '90%',
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  legalModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  legalModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  legalScrollView: {
+    maxHeight: 450,
+    padding: 16,
+  },
+  legalText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 22,
+  },
+  legalAcceptButton: {
+    backgroundColor: '#3FA9F5',
+    margin: 16,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  legalAcceptButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   buttonDisabled: {
     backgroundColor: '#A0C4E8',
     shadowOpacity: 0.15,
