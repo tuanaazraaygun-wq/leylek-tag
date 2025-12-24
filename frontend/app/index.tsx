@@ -2609,7 +2609,7 @@ function PassengerDashboard({
               <View style={styles.fullScreenMapContainer}>
                 <LiveMapView
                   userLocation={userLocation}
-                  otherLocation={driverLocation || activeTag?.driver_location}
+                  otherLocation={driverLocation || activeTag?.driver_location || null}
                   isDriver={false}
                   userName={user.name}
                   otherUserName={activeTag?.driver_name || 'Şoför'}
