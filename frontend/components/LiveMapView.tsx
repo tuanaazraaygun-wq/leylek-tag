@@ -26,6 +26,7 @@ if (Platform.OS !== 'web') {
 interface LiveMapViewProps {
   userLocation: { latitude: number; longitude: number } | null;
   otherLocation: { latitude: number; longitude: number } | null;
+  destinationLocation?: { latitude: number; longitude: number } | null; // Yolcunun varış noktası
   isDriver: boolean;
   userName?: string;
   otherUserName?: string;
@@ -38,6 +39,7 @@ interface LiveMapViewProps {
   onComplete?: () => void;
   onRequestTripEnd?: () => void; // Karşılıklı iptal için
   onForceEnd?: () => void; // Zorla bitir için
+  onAutoComplete?: () => void; // 1km içinde otomatik tamamlama için
 }
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
