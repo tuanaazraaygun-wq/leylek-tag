@@ -2382,6 +2382,43 @@ function PassengerDashboard({
     }
   };
 
+  // GEÇMİŞ YOLCULUKLARI YÜKLE
+  const loadTripHistory = async () => {
+    try {
+      const response = await fetch(`${API_URL}/passenger/history?user_id=${user.id}&limit=20`);
+      const data = await response.json();
+      if (data.success) {
+        setTripHistory(data.trips || []);
+      }
+    } catch (error) {
+      console.error('Geçmiş yüklenemedi:', error);
+    }
+  };
+
+  // PROFİL GÜNCELLE
+  const updateProfile = async () => {
+    try {
+      const response = await fetch(`${API_URL}/user/update-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          name: editName,
+          city: editCity
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        Alert.alert('Başarılı', 'Profil güncellendi');
+        setShowProfileModal(false);
+      } else {
+        Alert.alert('Hata', data.detail || 'Profil güncellenemedi');
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Profil güncellenemedi');
+    }
+  };
+
   // ÇAĞRI BUTONU - Hedef kontrolü + koordinat gönderimi
   const handleCallButton = async () => {
     console.log('🔵 ÇAĞRI BUTONU TIKLANDI!');
