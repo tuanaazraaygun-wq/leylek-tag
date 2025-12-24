@@ -47,6 +47,7 @@ const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 export default function LiveMapView({
   userLocation,
   otherLocation,
+  destinationLocation,
   isDriver,
   userName = 'Sen',
   otherUserName = 'Karşı Taraf',
@@ -59,14 +60,19 @@ export default function LiveMapView({
   onComplete,
   onRequestTripEnd,
   onForceEnd,
+  onAutoComplete,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
+  const [destinationRouteCoordinates, setDestinationRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]); // Sarı rota
   const [streetName, setStreetName] = useState<string>('');
   
   // Rota bilgisi - önce backend, yoksa local hesaplama
   const [localDistance, setLocalDistance] = useState<number | null>(null);
   const [localDuration, setLocalDuration] = useState<number | null>(null);
+  
+  // Otomatik tamamlama için kontrol
+  const autoCompleteTriggered = useRef(false);
   
   // Backend değeri varsa onu kullan, yoksa local
   const distance = routeInfo?.distance_km || localDistance;
