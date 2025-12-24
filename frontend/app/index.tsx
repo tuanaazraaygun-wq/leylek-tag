@@ -1990,7 +1990,7 @@ function PassengerDashboard({
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
-  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
+  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
@@ -2968,7 +2968,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
-  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
+  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
   
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
