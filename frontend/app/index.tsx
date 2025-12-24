@@ -663,39 +663,77 @@ export default function App() {
               />
             </View>
 
-            {/* KVKK Checkbox */}
+            {/* KVKK ve Aydınlatma Okuma Durumu */}
+            <View style={styles.legalReadStatus}>
+              <TouchableOpacity 
+                style={[styles.legalReadItem, termsRead && styles.legalReadItemDone]}
+                onPress={() => {
+                  setTermsScrolledToEnd(false);
+                  setShowTermsModal(true);
+                }}
+              >
+                <Ionicons 
+                  name={termsRead ? "checkmark-circle" : "document-text-outline"} 
+                  size={20} 
+                  color={termsRead ? "#10B981" : "#3FA9F5"} 
+                />
+                <Text style={[styles.legalReadText, termsRead && styles.legalReadTextDone]}>
+                  Aydınlatma Metni {termsRead ? '✓' : '(Zorunlu)'}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.legalReadItem, kvkkRead && styles.legalReadItemDone]}
+                onPress={() => {
+                  setKvkkScrolledToEnd(false);
+                  setShowKvkkModal(true);
+                }}
+              >
+                <Ionicons 
+                  name={kvkkRead ? "checkmark-circle" : "shield-outline"} 
+                  size={20} 
+                  color={kvkkRead ? "#10B981" : "#3FA9F5"} 
+                />
+                <Text style={[styles.legalReadText, kvkkRead && styles.legalReadTextDone]}>
+                  KVKK Metni {kvkkRead ? '✓' : '(Zorunlu)'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* KVKK Checkbox - Her iki metin okunduktan sonra aktif */}
             <TouchableOpacity 
-              style={styles.kvkkContainer} 
-              onPress={() => setKvkkAccepted(!kvkkAccepted)}
+              style={[styles.kvkkContainer, !(termsRead && kvkkRead) && styles.kvkkContainerDisabled]} 
+              onPress={() => {
+                if (termsRead && kvkkRead) {
+                  setKvkkAccepted(!kvkkAccepted);
+                } else {
+                  Alert.alert(
+                    '⚠️ Zorunlu Okuma',
+                    'Devam etmek için Aydınlatma Metni ve KVKK\'yı okumanız gerekmektedir.',
+                    [{ text: 'Tamam' }]
+                  );
+                }
+              }}
               activeOpacity={0.7}
             >
-              <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
+              <View style={[
+                styles.checkbox, 
+                kvkkAccepted && styles.checkboxChecked,
+                !(termsRead && kvkkRead) && styles.checkboxDisabled
+              ]}>
                 {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
               </View>
               <View style={styles.kvkkTextContainer}>
-                <Text style={styles.kvkkText}>
-                  <Text 
-                    style={styles.kvkkLink}
-                    onPress={() => setShowTermsModal(true)}
-                  >
-                    Aydınlatma Metni
-                  </Text>
-                  {' ve '}
-                  <Text 
-                    style={styles.kvkkLink}
-                    onPress={() => setShowKvkkModal(true)}
-                  >
-                    KVKK
-                  </Text>
-                  {'\'yı okudum, kabul ediyorum.'}
+                <Text style={[styles.kvkkText, !(termsRead && kvkkRead) && styles.kvkkTextDisabled]}>
+                  Aydınlatma Metni ve KVKK'yı okudum, anladım, kabul ediyorum.
                 </Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
+              style={[styles.modernPrimaryButton, (!kvkkAccepted || !termsRead || !kvkkRead) && styles.buttonDisabled]} 
               onPress={handleSendOTP}
-              disabled={!kvkkAccepted}
+              disabled={!kvkkAccepted || !termsRead || !kvkkRead}
             >
               <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
@@ -719,14 +757,20 @@ export default function App() {
           </View>
         </ScrollView>
 
-        {/* AYDINLATMA METNİ MODAL */}
+        {/* AYDINLATMA METNİ MODAL - ZORUNLU OKUMA */}
         <Modal visible={showTermsModal} animationType="slide" transparent={true}>
           <View style={styles.legalModalOverlay}>
             <View style={styles.legalModalContent}>
               <View style={styles.legalModalHeader}>
                 <Text style={styles.legalModalTitle}>📋 Aydınlatma Metni</Text>
-                <TouchableOpacity onPress={() => setShowTermsModal(false)}>
-                  <Ionicons name="close-circle" size={32} color="#EF4444" />
+                <TouchableOpacity onPress={() => {
+                  if (!termsRead) {
+                    Alert.alert('⚠️ Zorunlu Okuma', 'Metni sonuna kadar okumanız gerekmektedir.');
+                  } else {
+                    setShowTermsModal(false);
+                  }
+                }}>
+                  <Ionicons name="close-circle" size={32} color={termsRead ? "#10B981" : "#EF4444"} />
                 </TouchableOpacity>
               </View>
               <ScrollView style={styles.legalScrollView}>
