@@ -94,9 +94,9 @@ export default function VideoCall({
   const [isJoined, setIsJoined] = useState(false);
   
   const engineRef = useRef<any>(null);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const callStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callStatusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const localUidRef = useRef<number>(Math.floor(Math.random() * 100000) + 1);
   const isCleanedUp = useRef(false);
 
