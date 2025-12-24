@@ -119,7 +119,7 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü - HEM ARAYAN HEM ARANAN İÇİN
+  // Arama durumu kontrolü - HEM ARAYAN HEM ARANAN İÇİN - Daha hızlı polling
   useEffect(() => {
     if (!visible || !channelName || !userId || isCleanedUp.current) return;
     
@@ -128,8 +128,16 @@ export default function VideoCall({
       if (isCleanedUp.current) return;
       
       try {
-        // call_id'yi channelName'den çıkar
-        const call_id = channelName.replace('leylek_', '');
+        // call_id'yi channelName'den çıkar - hem "leylek_" hem "call_" prefix'lerini kontrol et
+        let call_id = channelName;
+        if (call_id.startsWith('leylek_')) {
+          call_id = call_id.replace('leylek_', '');
+        }
+        // call_id hala "call_" ile başlamıyorsa, prefix ekle
+        if (!call_id.startsWith('call_')) {
+          call_id = `call_${call_id}`;
+        }
+        
         const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${call_id}`);
         const data = await response.json();
         
@@ -143,17 +151,27 @@ export default function VideoCall({
           handleCallEnded(data.status === 'rejected');
           return;
         }
+        
+        // Karşı taraf aramaya katıldı ve ben arayan isem
+        if (isCaller && data.status === 'accepted' && callState === 'ringing') {
+          console.log('✅ Arama kabul edildi, bağlantı kuruldu');
+          // Ring timer'ı durdur ve connected'a geç
+          if (ringIntervalRef.current) {
+            clearInterval(ringIntervalRef.current);
+            ringIntervalRef.current = null;
+          }
+        }
       } catch (error) {
         console.log('Call status check error:', error);
       }
     };
     
-    // İlk kontrolü 2 saniye sonra yap, sonra her 2 saniyede bir tekrarla
+    // İlk kontrolü 1 saniye sonra yap, sonra her 1.5 saniyede bir tekrarla (daha hızlı)
     const initialDelay = setTimeout(() => {
       if (isCleanedUp.current) return;
       checkStatus();
-      callStatusIntervalRef.current = setInterval(checkStatus, 2000);
-    }, 2000);
+      callStatusIntervalRef.current = setInterval(checkStatus, 1500);
+    }, 1000);
     
     return () => {
       clearTimeout(initialDelay);
@@ -162,7 +180,7 @@ export default function VideoCall({
         callStatusIntervalRef.current = null;
       }
     };
-  }, [visible, channelName, userId, callState]);
+  }, [visible, channelName, userId, callState, isCaller]);
 
   const startRingTimer = () => {
     setRingDuration(0);
