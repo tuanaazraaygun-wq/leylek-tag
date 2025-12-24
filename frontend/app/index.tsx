@@ -663,6 +663,22 @@ export default function App() {
               <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
             </TouchableOpacity>
+
+            {/* Şifremi Unuttum */}
+            <TouchableOpacity 
+              style={styles.forgotPasswordButton} 
+              onPress={() => {
+                if (!phone || phone.length < 10) {
+                  Alert.alert('Hata', 'Önce telefon numaranızı girin');
+                  return;
+                }
+                setIsForgotPassword(true);
+                handleSendOTP();
+              }}
+            >
+              <Ionicons name="key-outline" size={16} color="#3FA9F5" />
+              <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -678,7 +694,7 @@ export default function App() {
             <View style={styles.verifyIconContainer}>
               <Ionicons name="shield-checkmark" size={50} color="#10B981" />
             </View>
-            <Text style={styles.verifyTitle}>Doğrulama</Text>
+            <Text style={styles.verifyTitle}>{isForgotPassword ? 'Şifre Sıfırlama' : 'Doğrulama'}</Text>
             <Text style={styles.heroSubtitle}>{phone} numarasına gönderilen kodu girin</Text>
           </View>
 
@@ -702,9 +718,103 @@ export default function App() {
               <Ionicons name="checkmark-circle" size={20} color="#FFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('login')}>
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
+              setScreen('login');
+              setIsForgotPassword(false);
+            }}>
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Şifre Sıfırlama Ekranı (OTP doğrulandıktan sonra)
+  if (screen === 'reset-pin') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.logoContainer}>
+            <View style={[styles.verifyIconContainer, { backgroundColor: '#F59E0B20' }]}>
+              <Ionicons name="key" size={50} color="#F59E0B" />
+            </View>
+            <Text style={styles.verifyTitle}>Yeni Şifre Belirle</Text>
+            <Text style={styles.heroSubtitle}>6 haneli yeni şifrenizi girin</Text>
+          </View>
+
+          <View style={styles.modernFormContainer}>
+            <Text style={styles.modernLabel}>Yeni 6 Haneli Şifre</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="lock-closed-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="• • • • • •"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="number-pad"
+                secureTextEntry={!showPin}
+                value={pin}
+                onChangeText={setPin}
+                maxLength={6}
+              />
+              <TouchableOpacity onPress={() => setShowPin(!showPin)}>
+                <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modernLabel}>Şifreyi Tekrar Girin</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="lock-closed-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                placeholder="• • • • • •"
+                placeholderTextColor="#A0A0A0"
+                keyboardType="number-pad"
+                secureTextEntry={!showPin}
+                value={confirmPin}
+                onChangeText={setConfirmPin}
+                maxLength={6}
+              />
+            </View>
+
+            <TouchableOpacity 
+              style={styles.modernPrimaryButton} 
+              onPress={async () => {
+                if (pin.length !== 6) {
+                  Alert.alert('Hata', 'Şifre 6 haneli olmalı');
+                  return;
+                }
+                if (pin !== confirmPin) {
+                  Alert.alert('Hata', 'Şifreler eşleşmiyor');
+                  return;
+                }
+                
+                try {
+                  const response = await fetch(`${API_URL}/auth/reset-pin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, new_pin: pin })
+                  });
+                  const data = await response.json();
+                  
+                  if (data.success) {
+                    Alert.alert('Başarılı! ✅', 'Şifreniz güncellendi. Şimdi giriş yapabilirsiniz.');
+                    setScreen('login');
+                    setIsForgotPassword(false);
+                    setPin('');
+                    setConfirmPin('');
+                  } else {
+                    Alert.alert('Hata', data.detail || 'Şifre güncellenemedi');
+                  }
+                } catch (error) {
+                  Alert.alert('Hata', 'Bağlantı hatası');
+                }
+              }}
+            >
+              <Text style={styles.modernPrimaryButtonText}>ŞİFREYİ GÜNCELLE</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
         </ScrollView>
