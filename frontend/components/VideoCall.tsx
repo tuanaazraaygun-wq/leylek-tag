@@ -119,7 +119,7 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü - HEM ARAYAN HEM ARANAN İÇİN - Daha hızlı polling
+  // Arama durumu kontrolü - HEM ARAYAN HEM ARANAN İÇİN - Hızlı polling (1 saniye)
   useEffect(() => {
     if (!visible || !channelName || !userId || isCleanedUp.current) return;
     
@@ -143,12 +143,34 @@ export default function VideoCall({
         
         if (isCleanedUp.current) return;
         
-        console.log('📞 Arama durumu kontrolü:', data, 'callState:', callState);
+        console.log('📞 Arama durumu kontrolü:', data, 'callState:', callState, 'isCaller:', isCaller);
         
-        // Karşı taraf reddetti veya kapattı
+        // Arama sonlandırılmış durumlar
         if (data.should_close) {
-          console.log('📵 Karşı taraf aramayı sonlandırdı, status:', data.status);
-          handleCallEnded(data.status === 'rejected');
+          console.log('📵 Arama sonlandırıldı, status:', data.status);
+          
+          // Status'a göre farklı mesajlar göster
+          if (data.status === 'rejected') {
+            handleCallEnded(true); // Reddedildi
+          } else if (data.status === 'cancelled') {
+            // Arayan iptal etti
+            cleanup();
+            Alert.alert('Arama İptal Edildi', 'Karşı taraf aramayı iptal etti.');
+            onEnd?.();
+          } else if (data.status === 'ended') {
+            // Normal sonlandırma
+            cleanup();
+            onEnd?.();
+          } else if (data.status === 'missed') {
+            // Cevapsız
+            cleanup();
+            Alert.alert('Cevapsız Arama', 'Arama cevaplanmadı.');
+            onEnd?.();
+          } else {
+            // Diğer durumlar
+            cleanup();
+            onEnd?.();
+          }
           return;
         }
         
@@ -160,18 +182,19 @@ export default function VideoCall({
             clearInterval(ringIntervalRef.current);
             ringIntervalRef.current = null;
           }
+          setCallState('connected');
         }
       } catch (error) {
         console.log('Call status check error:', error);
       }
     };
     
-    // İlk kontrolü 1 saniye sonra yap, sonra her 1.5 saniyede bir tekrarla (daha hızlı)
+    // İlk kontrolü 500ms sonra yap, sonra her 1 saniyede bir tekrarla (çok hızlı)
     const initialDelay = setTimeout(() => {
       if (isCleanedUp.current) return;
       checkStatus();
-      callStatusIntervalRef.current = setInterval(checkStatus, 1500);
-    }, 1000);
+      callStatusIntervalRef.current = setInterval(checkStatus, 1000); // 1 saniyede bir kontrol
+    }, 500);
     
     return () => {
       clearTimeout(initialDelay);
