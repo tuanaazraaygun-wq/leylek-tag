@@ -836,17 +836,18 @@ const styles = StyleSheet.create({
   // Action Row - 4 sütun simetrik
   actionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    justifyContent: 'space-around',
+    paddingHorizontal: 4,
   },
   actionBtn: {
     alignItems: 'center',
-    width: (SCREEN_WIDTH - 64) / 4,
+    flex: 1,
+    paddingHorizontal: 4,
   },
   actionBtnCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -856,9 +857,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   actionBtnCircleGray: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#6B7280',
     justifyContent: 'center',
     alignItems: 'center',
@@ -869,10 +870,35 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   actionBtnLabel: {
-    marginTop: 6,
-    fontSize: 12,
+    marginTop: 4,
+    fontSize: 11,
     fontWeight: '600',
     color: '#333',
+    textAlign: 'center',
+  },
+  // Varış noktası marker stili
+  destinationMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  destinationCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 10,
+  },
+  destinationIcon: {
+    fontSize: 20,
+    textAlign: 'center',
   },
   // Sol alt köşe örtücü (Google logosu gizleme)
   bottomLeftCover: {
