@@ -84,6 +84,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         case 'calls': await loadCalls(); break;
         case 'auth': await loadAuthLogs(); break;
         case 'settings': await loadSettings(); break;
+        case 'admins': await loadAdmins(); break;
       }
     } catch (e) {
       console.error('Veri yükleme hatası:', e);
