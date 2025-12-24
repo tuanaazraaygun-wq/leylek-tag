@@ -31,7 +31,7 @@ interface AdminPanelProps {
   onClose: () => void;
 }
 
-type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'reports' | 'auth' | 'notifications' | 'settings';
+type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'reports' | 'auth' | 'notifications' | 'settings' | 'admins';
 
 export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -65,6 +65,10 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [settings, setSettings] = useState<any>({});
   const [driverRadius, setDriverRadius] = useState('50');
   const [maxCallDuration, setMaxCallDuration] = useState('30');
+  
+  // Admin Ekleme
+  const [admins, setAdmins] = useState<any[]>([]);
+  const [newAdminPhone, setNewAdminPhone] = useState('');
   
   useEffect(() => {
     loadData();
