@@ -2439,7 +2439,7 @@ function PassengerDashboard({
   
   // Arama cooldown - 5 saniye (reddedilen aramadan sonra)
   const [callCooldown, setCallCooldown] = useState(false);
-  const callCooldownRef = useRef<NodeJS.Timeout | null>(null);
+  const callCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
