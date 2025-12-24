@@ -4506,6 +4506,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
+  // Legal Read Status
+  legalReadStatus: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 10,
+  },
+  legalReadItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 8,
+  },
+  legalReadItemDone: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+  },
+  legalReadText: {
+    fontSize: 12,
+    color: '#4B5563',
+    fontWeight: '500',
+    flex: 1,
+  },
+  legalReadTextDone: {
+    color: '#059669',
+    fontWeight: '600',
+  },
+  kvkkContainerDisabled: {
+    opacity: 0.5,
+  },
+  checkboxDisabled: {
+    backgroundColor: '#D1D5DB',
+    borderColor: '#D1D5DB',
+  },
+  kvkkTextDisabled: {
+    color: '#9CA3AF',
+  },
   // Legal Modals
   legalModalOverlay: {
     flex: 1,
@@ -4536,7 +4578,7 @@ const styles = StyleSheet.create({
     color: '#1F2937',
   },
   legalScrollView: {
-    maxHeight: 450,
+    maxHeight: 400,
     padding: 16,
   },
   legalText: {
@@ -4544,8 +4586,21 @@ const styles = StyleSheet.create({
     color: '#374151',
     lineHeight: 22,
   },
+  scrollHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    gap: 6,
+  },
+  scrollHintText: {
+    fontSize: 13,
+    color: '#3FA9F5',
+    fontWeight: '500',
+  },
   legalAcceptButton: {
-    backgroundColor: '#3FA9F5',
+    backgroundColor: '#10B981',
     margin: 16,
     padding: 14,
     borderRadius: 12,
