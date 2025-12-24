@@ -21,6 +21,9 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const API_URL = `${BACKEND_URL}/api`;
 
+// Screen type definition
+type ScreenType = 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin';
+
 // Hareketli Bulutlar Bileşeni (90 FPS animasyon) - Daha fazla bulut
 const AnimatedClouds = () => {
   const cloud1X = useRef(new Animated.Value(-100)).current;
