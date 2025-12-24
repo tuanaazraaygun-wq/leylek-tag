@@ -50,11 +50,13 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
+    backgroundColor: 'transparent',
   },
   textContainer: {
     alignItems: 'center',
