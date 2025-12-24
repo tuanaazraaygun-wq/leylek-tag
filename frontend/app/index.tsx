@@ -3284,6 +3284,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     }
 
     try {
+      // Şoförün konumunu da gönder - mesafe hesabı için
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3291,7 +3292,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           tag_id: selectedTagForOffer,
           price: Number(offerPrice),
           estimated_time: 15,
-          notes: 'Hemen geliyorum!'
+          notes: 'Hemen geliyorum!',
+          latitude: userLocation?.latitude || null,
+          longitude: userLocation?.longitude || null
         })
       });
 
