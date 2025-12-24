@@ -2766,9 +2766,32 @@ function PassengerDashboard({
               <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.fullScreenBackBtn}>
                 <Ionicons name="chevron-back" size={26} color="#3FA9F5" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={logout} style={styles.fullScreenLogoutBtn}>
-                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-              </TouchableOpacity>
+              
+              {/* Profil ve Geçmiş Butonları */}
+              <View style={styles.topBarRightButtons}>
+                <TouchableOpacity 
+                  onPress={() => {
+                    loadTripHistory();
+                    setShowHistoryModal(true);
+                  }} 
+                  style={styles.topBarIconBtn}
+                >
+                  <Ionicons name="time-outline" size={24} color="#3FA9F5" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={() => {
+                    setEditName(user.name || '');
+                    setEditCity(user.city || '');
+                    setShowProfileModal(true);
+                  }} 
+                  style={styles.topBarIconBtn}
+                >
+                  <Ionicons name="person-circle-outline" size={26} color="#3FA9F5" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={logout} style={styles.fullScreenLogoutBtn}>
+                  <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
             </View>
             
             {/* Kişi Adı */}
