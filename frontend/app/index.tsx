@@ -211,7 +211,10 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard'>('login');
+  
+  // Screen type definition
+  type ScreenType = 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin';
+  const [screen, setScreen] = useState<ScreenType>('login');
 
   // Auth states
   const [phone, setPhone] = useState('');
