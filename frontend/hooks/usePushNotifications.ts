@@ -32,7 +32,7 @@ interface PushNotificationState {
 interface UsePushNotificationsReturn extends PushNotificationState {
   registerPushToken: (userId: string) => Promise<boolean>;
   removePushToken: (userId: string) => Promise<void>;
-  scheduleLocalNotification: (title: string, body: string, data?: object) => Promise<void>;
+  scheduleLocalNotification: (title: string, body: string, data?: Record<string, unknown>) => Promise<void>;
 }
 
 export function usePushNotifications(): UsePushNotificationsReturn {
