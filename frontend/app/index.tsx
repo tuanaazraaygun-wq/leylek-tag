@@ -3458,15 +3458,20 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                   return;
                 }
+                
+                // ÖNEMLİ: Backend'den dönen channel_name ve call_id'yi kaydet
+                console.log('📞 ŞOFÖR - Arama başlatıldı:', data);
+                setActiveChannelName(data.channel_name);
+                setActiveCallId(data.call_id);
+                setSelectedPassengerName(passengerName);
+                setIsVideoCall(type === 'video');
+                setIsCallCaller(true); // BEN ARIYORUM
+                setShowVoiceCall(true);
               } catch (error) {
                 console.error('Arama bildirimi hatası:', error);
                 Alert.alert('Hata', 'Arama başlatılamadı');
                 return;
               }
-              setSelectedPassengerName(passengerName);
-              setIsVideoCall(type === 'video');
-              setIsCallCaller(true); // BEN ARIYORUM
-              setShowVoiceCall(true);
             }}
             onForceEnd={async () => {
               try {
