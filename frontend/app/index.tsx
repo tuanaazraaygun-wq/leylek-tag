@@ -3016,6 +3016,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedPassengerName, setSelectedPassengerName] = useState('');
   const [isCallCaller, setIsCallCaller] = useState(false); // BEN Mİ ARIYORUM?
+  const [activeChannelName, setActiveChannelName] = useState(''); // ARAMA KANAL ADI
+  const [activeCallId, setActiveCallId] = useState(''); // ARAMA ID
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
