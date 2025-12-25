@@ -2607,6 +2607,7 @@ function PassengerDashboard({
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
+                  destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
                   isDriver={false}
                   userName={user.name}
                   otherUserName={activeTag?.driver_name || 'Şoför'}
