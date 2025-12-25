@@ -2075,8 +2075,8 @@ function PassengerDashboard({
     
     // İlk kontrolü hemen yap
     checkIncomingCall();
-    // Sonra her 1 saniyede bir kontrol et (hızlı senkronizasyon - arama iptali için)
-    const interval = setInterval(checkIncomingCall, 1000);
+    // Sonra her 2 saniyede bir kontrol et (performans için optimize edildi)
+    const interval = setInterval(checkIncomingCall, 2000);
     
     return () => {
       isActive = false;
@@ -3091,8 +3091,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     
     // İlk kontrolü hemen yap
     checkIncomingCall();
-    // Sonra her 1 saniyede bir kontrol et (hızlı senkronizasyon - arama iptali için)
-    const interval = setInterval(checkIncomingCall, 1000);
+    // Sonra her 2 saniyede bir kontrol et (performans için optimize edildi)
+    const interval = setInterval(checkIncomingCall, 2000);
     
     return () => {
       isActive = false;
