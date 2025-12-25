@@ -3553,6 +3553,23 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 ]
               );
             }}
+            onAutoComplete={async () => {
+              // Hedefe yaklaşınca otomatik tamamlama - ŞOFÖR
+              try {
+                const response = await fetch(
+                  `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}`,
+                  { method: 'POST' }
+                );
+                const data = await response.json();
+                if (data.success) {
+                  Alert.alert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
+                  setActiveTag(null);
+                  loadRequests();
+                }
+              } catch (error) {
+                Alert.alert('Hata', 'İşlem başarısız');
+              }
+            }}
             onBlock={async () => {
               try {
                 const response = await fetch(
