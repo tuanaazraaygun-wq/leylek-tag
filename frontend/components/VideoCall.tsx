@@ -39,8 +39,8 @@ interface VideoCallProps {
   onRejected?: () => void;
 }
 
-const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '43c07f0cef814fd4a5ae3283c8bd77de';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylek-bug.preview.emergentagent.com';
 const MAX_CALL_DURATION = 600; // 10 dakika
 const RING_TIMEOUT = 60; // 60 saniye cevap süresi
 
