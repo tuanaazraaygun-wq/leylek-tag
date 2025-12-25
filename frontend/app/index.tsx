@@ -2830,7 +2830,7 @@ function PassengerDashboard({
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
           // Backend'e kabul bildirimi gönder
           try {
-            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+            await fetch(`${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
           } catch (e) {}
           setShowVoiceCall(true);
         }}
@@ -3610,7 +3610,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
           // Backend'e kabul bildirimi gönder
           try {
-            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+            await fetch(`${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
           } catch (e) {}
           setShowVoiceCall(true);
         }}
