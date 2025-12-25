@@ -122,7 +122,7 @@ export default function LiveMapView({
       }
       
       // ÜCRETSİZ: OpenRouteService kullan (Google Maps yerine)
-      const OPENROUTE_API_KEY = '5b3ce3597851110001cf6248a1b2c3d4e5f6g7h8i9j0';
+      const OPENROUTE_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQwM2JjMWQ2MDVlYjQyOTc5MzExNzg3NmRhMmU2NDViIiwiaCI6Im11cm11cjY0In0=';
       const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
       
       console.log('🗺️ OpenRouteService rota isteği...');
