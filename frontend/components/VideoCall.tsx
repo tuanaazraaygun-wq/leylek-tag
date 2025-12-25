@@ -490,21 +490,34 @@ export default function VideoCall({
 
   const handleEndCall = async () => {
     console.log('📞 Arama sonlandırılıyor...');
+    console.log('📞 Channel name:', channelName);
+    console.log('📞 User ID:', userId);
+    console.log('📞 isCaller:', isCaller);
+    console.log('📞 remoteUid:', remoteUid);
     
-    // call_id oluştur
-    const callId = channelName.startsWith('call_') ? channelName : `call_${channelName}`;
+    // Channel name "leylek_call_xxx" formatından call_id'yi çıkar
+    let callId = channelName;
+    if (channelName.startsWith('leylek_')) {
+      callId = channelName.replace('leylek_', '');
+    }
     
-    // Arayan ve henüz bağlanmamışsa = iptal, değilse = sonlandır
-    const endpoint = (isCaller && !remoteUid) 
+    console.log('📞 Call ID:', callId);
+    
+    // Arayan ve henüz bağlanmamışsa = iptal (cancel), değilse = sonlandır (end)
+    const shouldCancel = isCaller && !remoteUid;
+    const endpoint = shouldCancel 
       ? `/api/voice/cancel-call?call_id=${callId}&user_id=${userId}`
       : `/api/voice/end-call?call_id=${callId}&user_id=${userId}`;
+    
+    console.log('📞 Endpoint:', endpoint);
+    console.log('📞 İşlem:', shouldCancel ? 'CANCEL' : 'END');
     
     try {
       const response = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
       const data = await response.json();
-      console.log('📞 Backend cevabı:', data);
+      console.log('📞 Backend cevabı:', JSON.stringify(data));
     } catch (error) {
-      console.log('End call error:', error);
+      console.log('❌ End call error:', error);
     }
     
     cleanup();
