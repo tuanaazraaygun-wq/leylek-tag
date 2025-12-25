@@ -499,22 +499,15 @@ export default function VideoCall({
   const handleEndCall = async () => {
     console.log('📞 Arama sonlandırılıyor...');
     
-    // call_id'yi channelName'den çıkar - prefix kontrolü yap
-    let call_id = channelName;
-    if (call_id.startsWith('leylek_')) {
-      call_id = call_id.replace('leylek_', '');
-    }
-    // call_id hala "call_" ile başlamıyorsa, prefix ekle
-    if (!call_id.startsWith('call_')) {
-      call_id = `call_${call_id}`;
-    }
+    // callId varsa onu kullan, yoksa channelName'den oluştur
+    const effectiveCallId = callId || `call_${channelName}`;
     
     // Arayan ve henüz bağlantı kurulmamışsa = iptal
     // Aranan veya bağlantı kurulmuşsa = sonlandır
     const isCallerCancelling = isCaller && callState === 'ringing';
     const endpoint = isCallerCancelling
-      ? `/api/voice/cancel-call?call_id=${call_id}&user_id=${userId}`
-      : `/api/voice/end-call?call_id=${call_id}&user_id=${userId}`;
+      ? `/api/voice/cancel-call?call_id=${effectiveCallId}&user_id=${userId}`
+      : `/api/voice/end-call?call_id=${effectiveCallId}&user_id=${userId}`;
     
     try {
       const response = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
