@@ -780,4 +780,37 @@ const styles = StyleSheet.create({
     height: 25,
     backgroundColor: '#F5F5F5',
   },
+  // Hedef Marker Stilleri
+  destinationMarker: {
+    alignItems: 'center',
+  },
+  destinationCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#22C55E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  destinationIcon: {
+    fontSize: 24,
+  },
+  destinationLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#22C55E',
+    backgroundColor: '#FFF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
 });
