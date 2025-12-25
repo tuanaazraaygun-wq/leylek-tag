@@ -2683,6 +2683,23 @@ function PassengerDashboard({
                       Alert.alert('Hata', 'İstek gönderilemedi');
                     }
                   }}
+                  onAutoComplete={async () => {
+                    // Hedefe yaklaşınca otomatik tamamlama - YOLCU
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        Alert.alert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
+                        setActiveTag(null);
+                        loadActiveTag();
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İşlem başarısız');
+                    }
+                  }}
                   onComplete={() => {
                     Alert.alert(
                       'Yolculuğu Tamamla',
