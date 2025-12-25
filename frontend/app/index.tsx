@@ -2651,15 +2651,20 @@ function PassengerDashboard({
                         Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                         return;
                       }
+                      
+                      // ÖNEMLİ: Backend'den dönen channel_name ve call_id'yi kaydet
+                      console.log('📞 Arama başlatıldı:', data);
+                      setActiveChannelName(data.channel_name);
+                      setActiveCallId(data.call_id);
+                      setSelectedDriverName(driverName);
+                      setIsVideoCall(type === 'video');
+                      setIsCallCaller(true); // BEN ARIYORUM
+                      setShowVoiceCall(true);
                     } catch (error) {
                       console.error('Arama bildirimi hatası:', error);
                       Alert.alert('Hata', 'Arama başlatılamadı');
                       return;
                     }
-                    setSelectedDriverName(driverName);
-                    setIsVideoCall(type === 'video');
-                    setIsCallCaller(true); // BEN ARIYORUM
-                    setShowVoiceCall(true);
                   }}
                   onRequestTripEnd={async () => {
                     // Karşılıklı iptal isteği gönder - YOLCU
