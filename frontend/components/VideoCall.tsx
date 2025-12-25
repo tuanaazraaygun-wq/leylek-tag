@@ -77,6 +77,7 @@ export default function VideoCall({
   visible,
   remoteUserName,
   channelName,
+  callId,
   userId,
   isVideoCall,
   isCaller = false,
