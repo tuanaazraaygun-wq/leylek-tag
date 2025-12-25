@@ -10,7 +10,6 @@ let createAgoraRtcEngine: any = null;
 let RtcSurfaceView: any = null;
 let ChannelProfileType: any = null;
 let ClientRoleType: any = null;
-let VideoSourceType: any = null;
 
 const isNative = Platform.OS !== 'web';
 
@@ -21,7 +20,6 @@ if (isNative) {
     RtcSurfaceView = AgoraModule.RtcSurfaceView;
     ChannelProfileType = AgoraModule.ChannelProfileType;
     ClientRoleType = AgoraModule.ClientRoleType;
-    VideoSourceType = AgoraModule.VideoSourceType;
     console.log('✅ Agora SDK yüklendi');
   } catch (e) {
     console.log('⚠️ Agora SDK yüklenemedi:', e);
@@ -40,10 +38,14 @@ interface VideoCallProps {
   onRejected?: () => void;
 }
 
-const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '43c07f0cef814fd4a5ae3283c8bd77de';
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylek-bug.preview.emergentagent.com';
-const MAX_CALL_DURATION = 600; // 10 dakika (saniye)
-const RING_TIMEOUT = 60; // 60 saniye çalma süresi
+// Hardcoded değerler - APK için güvenli
+const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
+const BACKEND_URL = 'https://leylek-bug.preview.emergentagent.com';
+const MAX_CALL_DURATION = 600; // 10 dakika
+const RING_TIMEOUT = 60; // 60 saniye
+
+// Global değişken - aynı anda sadece bir arama olabilir
+let globalActiveCall: string | null = null;
 
 // Android için izin isteme
 const requestPermissions = async () => {
@@ -53,11 +55,7 @@ const requestPermissions = async () => {
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
         PermissionsAndroid.PERMISSIONS.CAMERA,
       ]);
-      
-      const audioGranted = grants[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
-      const cameraGranted = grants[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
-      
-      return audioGranted;
+      return grants[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
     } catch (err) {
       console.log('İzin hatası:', err);
       return false;
@@ -77,7 +75,6 @@ export default function VideoCall({
   onEnd,
   onRejected,
 }: VideoCallProps) {
-  // Arama durumları: 'connecting' | 'ringing' | 'connected' | 'ended'
   const [callState, setCallState] = useState<'connecting' | 'ringing' | 'connected' | 'ended'>('connecting');
   const [duration, setDuration] = useState(0);
   const [ringDuration, setRingDuration] = useState(0);
@@ -85,7 +82,6 @@ export default function VideoCall({
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(isVideoCall);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
-  const [isJoined, setIsJoined] = useState(false);
   
   const engineRef = useRef<any>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -93,12 +89,12 @@ export default function VideoCall({
   const callStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isCleanedUp = useRef(false);
   const localUidRef = useRef<number>(Math.floor(Math.random() * 100000) + 1);
+  const currentCallId = useRef<string>('');
   
-  // Pulse animasyonu
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Call ID'yi channel name'den çıkar
-  const getCallId = () => {
+  // Call ID'yi al
+  const getCallId = (): string => {
     if (callId) return callId;
     if (channelName.startsWith('leylek_')) {
       return channelName.replace('leylek_', '');
@@ -106,18 +102,87 @@ export default function VideoCall({
     return channelName;
   };
 
+  // ÖNEMLİ: Tüm interval'leri temizle
+  const clearAllIntervals = () => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+    if (ringIntervalRef.current) {
+      clearInterval(ringIntervalRef.current);
+      ringIntervalRef.current = null;
+    }
+    if (callStatusIntervalRef.current) {
+      clearInterval(callStatusIntervalRef.current);
+      callStatusIntervalRef.current = null;
+    }
+  };
+
+  // ÖNEMLİ: Agora engine'i tamamen temizle
+  const destroyAgoraEngine = async () => {
+    if (engineRef.current) {
+      try {
+        console.log('🧹 Agora engine temizleniyor...');
+        engineRef.current.leaveChannel();
+        engineRef.current.removeAllListeners();
+        engineRef.current.release();
+      } catch (e) {
+        console.log('Agora temizleme hatası:', e);
+      }
+      engineRef.current = null;
+    }
+  };
+
+  // Ana temizlik fonksiyonu
+  const cleanup = async () => {
+    if (isCleanedUp.current) return;
+    isCleanedUp.current = true;
+    
+    console.log('🧹 CLEANUP başladı - CallID:', currentCallId.current);
+    
+    // Global kilidi serbest bırak
+    if (globalActiveCall === currentCallId.current) {
+      globalActiveCall = null;
+    }
+    
+    clearAllIntervals();
+    await destroyAgoraEngine();
+    
+    setCallState('ended');
+    setRemoteUid(null);
+    setDuration(0);
+    setRingDuration(0);
+  };
+
   useEffect(() => {
-    if (visible && !isCleanedUp.current) {
-      console.log('📞 Arama başlatılıyor...');
-      console.log('📞 isCaller:', isCaller);
-      console.log('📞 channelName:', channelName);
-      console.log('📞 callId:', getCallId());
+    if (visible) {
+      const cid = getCallId();
       
+      // Aynı arama zaten aktifse çık
+      if (globalActiveCall === cid) {
+        console.log('⚠️ Bu arama zaten aktif:', cid);
+        return;
+      }
+      
+      // Başka bir arama aktifse önce onu temizle
+      if (globalActiveCall && globalActiveCall !== cid) {
+        console.log('⚠️ Başka arama aktif, önce temizleniyor:', globalActiveCall);
+        cleanup();
+      }
+      
+      // Yeni arama başlat
+      console.log('📞 YENİ ARAMA BAŞLATIYOR:', cid);
+      globalActiveCall = cid;
+      currentCallId.current = cid;
       isCleanedUp.current = false;
+      
       setCallState('connecting');
+      setDuration(0);
+      setRingDuration(0);
+      setRemoteUid(null);
+      
       initAgora();
       
-      // Arayan için durum kontrolü başlat
       if (isCaller) {
         startCallerStatusCheck();
       }
@@ -126,7 +191,7 @@ export default function VideoCall({
     return () => {
       cleanup();
     };
-  }, [visible]);
+  }, [visible, channelName]);
 
   // Pulse animasyonu
   useEffect(() => {
@@ -142,13 +207,14 @@ export default function VideoCall({
     }
   }, [callState]);
 
-  // Çalma sayacı (arayan için)
+  // Çalma sayacı
   const startRingTimer = () => {
+    if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
     setRingDuration(0);
+    
     ringIntervalRef.current = setInterval(() => {
       setRingDuration(prev => {
         if (prev >= RING_TIMEOUT) {
-          // Timeout - karşı taraf cevap vermedi
           handleTimeout();
           return prev;
         }
@@ -159,11 +225,12 @@ export default function VideoCall({
 
   // Görüşme sayacı
   const startCallTimer = () => {
+    if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     setDuration(0);
+    
     durationIntervalRef.current = setInterval(() => {
       setDuration(prev => {
         if (prev >= MAX_CALL_DURATION) {
-          // 10 dakika doldu
           Alert.alert('Süre Doldu', '10 dakikalık görüşme süresi doldu.');
           handleEndCall();
           return prev;
@@ -173,77 +240,80 @@ export default function VideoCall({
     }, 1000);
   };
 
-  // Arayan için arama durumu kontrolü
+  // Arayan için durum kontrolü
   const startCallerStatusCheck = () => {
+    if (callStatusIntervalRef.current) clearInterval(callStatusIntervalRef.current);
+    
     callStatusIntervalRef.current = setInterval(async () => {
+      if (isCleanedUp.current) return;
+      
       try {
         const cid = getCallId();
         const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${cid}`);
         const data = await response.json();
         
-        console.log('📞 Arama durumu:', data);
+        console.log('📞 Arama durumu:', data.status);
         
         if (data.success) {
           if (data.status === 'rejected') {
-            // Reddedildi
-            console.log('📞 Arama reddedildi!');
-            if (ringIntervalRef.current) clearInterval(ringIntervalRef.current);
-            if (callStatusIntervalRef.current) clearInterval(callStatusIntervalRef.current);
-            
+            console.log('❌ ARAMA REDDEDİLDİ');
+            clearAllIntervals();
+            await notifyBackend('cancel');
             cleanup();
-            Alert.alert('Arama Reddedildi', `${remoteUserName} aramayı reddetti.`);
+            Alert.alert('Reddedildi', `${remoteUserName} aramayı reddetti.`);
             onRejected?.();
             onEnd?.();
-          } else if (data.status === 'ended' || data.should_close) {
-            // Arama sonlandırıldı
-            console.log('📞 Arama sonlandırıldı!');
-            if (callStatusIntervalRef.current) clearInterval(callStatusIntervalRef.current);
-            
-            if (!remoteUid) {
-              // Henüz bağlanmamıştı, cevap vermedi
-              cleanup();
-              Alert.alert('Cevap Yok', `${remoteUserName} aramayı yanıtlamadı.`);
-              onEnd?.();
-            }
-          } else if (data.status === 'accepted' && !remoteUid) {
-            // Kabul edildi ama henüz Agora'da bağlanmadı
-            console.log('📞 Arama kabul edildi, bağlanıyor...');
-            setCallState('ringing');
+          } else if (data.status === 'ended' || data.status === 'cancelled') {
+            console.log('📞 ARAMA SONLANDI');
+            clearAllIntervals();
+            cleanup();
+            onEnd?.();
           }
         }
       } catch (e) {
         console.log('Status check error:', e);
       }
-    }, 1000);
+    }, 2000); // 2 saniyede bir kontrol
   };
 
-  // Timeout - cevap vermedi
+  // Timeout
   const handleTimeout = async () => {
-    console.log('⏰ Arama zaman aşımı - cevap vermedi');
-    
-    try {
-      const cid = getCallId();
-      await fetch(`${BACKEND_URL}/api/voice/cancel-call?call_id=${cid}&user_id=${userId}`, {
-        method: 'POST'
-      });
-    } catch (e) {}
-    
+    console.log('⏰ ZAMAN AŞIMI - Cevap yok');
+    clearAllIntervals();
+    await notifyBackend('cancel');
     cleanup();
     Alert.alert('Cevap Yok', `${remoteUserName} aramayı yanıtlamadı.`);
     onEnd?.();
   };
 
+  // Backend'e bildir
+  const notifyBackend = async (action: 'end' | 'cancel') => {
+    try {
+      const cid = getCallId();
+      const endpoint = action === 'cancel' 
+        ? `/api/voice/cancel-call?call_id=${cid}&user_id=${userId}`
+        : `/api/voice/end-call?call_id=${cid}&user_id=${userId}`;
+      
+      console.log('📡 Backend bildirimi:', action, cid);
+      await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
+    } catch (e) {
+      console.log('Backend bildirim hatası:', e);
+    }
+  };
+
   const initAgora = async () => {
     try {
-      console.log('🎬 Agora başlatılıyor...');
+      console.log('🎬 AGORA BAŞLATILIYOR...');
+      console.log('🎬 Channel:', channelName);
+      console.log('🎬 AppID:', AGORA_APP_ID);
       
-      if (!AGORA_APP_ID) {
-        Alert.alert('Hata', 'Agora App ID bulunamadı');
+      if (!createAgoraRtcEngine) {
+        console.log('❌ Agora SDK yüklenmedi');
+        Alert.alert('Hata', 'Arama servisi kullanılamıyor');
         onEnd?.();
         return;
       }
       
-      // İzinleri kontrol et
       const hasPermissions = await requestPermissions();
       if (!hasPermissions) {
         Alert.alert('İzin Gerekli', 'Mikrofon izni verilmedi');
@@ -251,19 +321,13 @@ export default function VideoCall({
         return;
       }
       
-      // Önceki engine varsa temizle
-      if (engineRef.current) {
-        try {
-          engineRef.current.leaveChannel();
-          engineRef.current.release();
-        } catch (e) {}
-        engineRef.current = null;
-      }
+      // Önceki engine varsa MUTLAKA temizle
+      await destroyAgoraEngine();
       
+      // Yeni engine oluştur
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
       
-      // Engine'i başlat
       engine.initialize({
         appId: AGORA_APP_ID,
         channelProfile: ChannelProfileType?.ChannelProfileCommunication || 0,
@@ -272,38 +336,34 @@ export default function VideoCall({
       // Event listeners
       engine.registerEventHandler({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
-          console.log('✅ Kanala katıldım!');
-          setIsJoined(true);
+          console.log('✅ KANALA KATILDIM!');
           
           if (isCaller) {
-            // Arayan - çalma başlasın
             setCallState('ringing');
             startRingTimer();
           } else {
-            // Aranan - direkt bağlandı
             setCallState('connected');
             startCallTimer();
           }
         },
         onUserJoined: (connection: any, uid: number) => {
-          console.log('👤 Karşı taraf katıldı! UID:', uid);
+          console.log('👤 KARŞI TARAF KATILDI! UID:', uid);
           setRemoteUid(uid);
           
-          // Arayan için - karşı taraf bağlandı
-          if (isCaller) {
-            if (ringIntervalRef.current) {
-              clearInterval(ringIntervalRef.current);
-              ringIntervalRef.current = null;
-            }
-            setCallState('connected');
+          if (isCaller && ringIntervalRef.current) {
+            clearInterval(ringIntervalRef.current);
+            ringIntervalRef.current = null;
+          }
+          
+          setCallState('connected');
+          if (!durationIntervalRef.current) {
             startCallTimer();
           }
         },
         onUserOffline: (connection: any, uid: number, reason: number) => {
-          console.log('👤 Karşı taraf ayrıldı');
+          console.log('👤 KARŞI TARAF AYRILDI');
           setRemoteUid(null);
-          
-          // Arama sonlandı
+          clearAllIntervals();
           cleanup();
           onEnd?.();
         },
@@ -312,16 +372,15 @@ export default function VideoCall({
         },
       });
       
-      // SES AYARLARI - YÜKSEK SES
+      // SES AYARLARI
       console.log('🔊 Ses ayarları yapılıyor...');
       engine.enableAudio();
       engine.setEnableSpeakerphone(true);
       engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.adjustRecordingSignalVolume(400); // Mikrofon yükselt
-      engine.adjustPlaybackSignalVolume(400);  // Hoparlör yükselt
+      engine.adjustRecordingSignalVolume(400);
+      engine.adjustPlaybackSignalVolume(400);
       engine.muteLocalAudioStream(false);
       
-      // Video ayarları
       if (isVideoCall) {
         engine.enableVideo();
         engine.enableLocalVideo(true);
@@ -330,7 +389,7 @@ export default function VideoCall({
         setIsVideoEnabled(true);
       }
       
-      // TOKEN AL
+      // Token al
       let token = '';
       try {
         const tokenResponse = await fetch(`${BACKEND_URL}/api/agora/token?channel_name=${channelName}&uid=${localUidRef.current}`);
@@ -340,11 +399,11 @@ export default function VideoCall({
           console.log('🔑 Token alındı');
         }
       } catch (e) {
-        console.log('⚠️ Token alınamadı');
+        console.log('⚠️ Token alınamadı, boş token ile devam');
       }
       
-      // KANALA KATIL
-      console.log('📞 Kanala katılınıyor:', channelName);
+      // Kanala katıl
+      console.log('📞 KANALA KATILINIYOR:', channelName);
       await engine.joinChannel(token, channelName, localUidRef.current, {
         clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
         publishMicrophoneTrack: true,
@@ -360,59 +419,16 @@ export default function VideoCall({
     }
   };
 
-  const cleanup = () => {
-    if (isCleanedUp.current) return;
-    isCleanedUp.current = true;
-    
-    console.log('🧹 Cleanup...');
-    
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-    
-    if (ringIntervalRef.current) {
-      clearInterval(ringIntervalRef.current);
-      ringIntervalRef.current = null;
-    }
-    
-    if (callStatusIntervalRef.current) {
-      clearInterval(callStatusIntervalRef.current);
-      callStatusIntervalRef.current = null;
-    }
-    
-    if (engineRef.current) {
-      try {
-        engineRef.current.leaveChannel();
-        engineRef.current.release();
-        engineRef.current = null;
-      } catch (e) {}
-    }
-    
-    setCallState('ended');
-  };
-
   // Aramayı sonlandır
   const handleEndCall = async () => {
-    console.log('📞 Arama sonlandırılıyor...');
+    console.log('📞 ARAMA SONLANDIRILIYOR...');
     
-    const cid = getCallId();
     const isConnected = callState === 'connected';
+    const action = (isCaller && !isConnected) ? 'cancel' : 'end';
     
-    // Backend'e bildir
-    try {
-      if (isCaller && !isConnected) {
-        // Arayan ve henüz bağlanmamış = iptal
-        await fetch(`${BACKEND_URL}/api/voice/cancel-call?call_id=${cid}&user_id=${userId}`, { method: 'POST' });
-      } else {
-        // Bağlı = sonlandır
-        await fetch(`${BACKEND_URL}/api/voice/end-call?call_id=${cid}&user_id=${userId}`, { method: 'POST' });
-      }
-    } catch (e) {
-      console.log('End call error:', e);
-    }
-    
-    cleanup();
+    clearAllIntervals();
+    await notifyBackend(action);
+    await cleanup();
     onEnd?.();
   };
 
@@ -440,42 +456,29 @@ export default function VideoCall({
     }
   };
 
-  // Süre formatla
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Durum metni
   const getStatusText = () => {
     switch (callState) {
-      case 'connecting':
-        return 'Bağlanıyor...';
-      case 'ringing':
-        return isCaller ? 'Aranıyor...' : 'Gelen Arama';
-      case 'connected':
-        return 'Bağlandı';
-      case 'ended':
-        return 'Arama Sonlandı';
-      default:
-        return '';
+      case 'connecting': return 'Bağlanıyor...';
+      case 'ringing': return isCaller ? 'Aranıyor...' : 'Gelen Arama';
+      case 'connected': return 'Bağlandı';
+      case 'ended': return 'Arama Bitti';
+      default: return '';
     }
   };
 
-  // Durum rengi
   const getStatusColor = () => {
     switch (callState) {
-      case 'connecting':
-        return '#FFA500'; // Turuncu
-      case 'ringing':
-        return '#3B82F6'; // Mavi
-      case 'connected':
-        return '#22C55E'; // Yeşil
-      case 'ended':
-        return '#EF4444'; // Kırmızı
-      default:
-        return '#666';
+      case 'connecting': return '#FFA500';
+      case 'ringing': return '#3B82F6';
+      case 'connected': return '#22C55E';
+      case 'ended': return '#EF4444';
+      default: return '#666';
     }
   };
 
@@ -489,13 +492,11 @@ export default function VideoCall({
       >
         {/* Üst Bilgi */}
         <View style={styles.topSection}>
-          {/* Durum Badge */}
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
             <View style={[styles.statusDot, { backgroundColor: callState === 'connected' ? '#86EFAC' : '#FFF' }]} />
             <Text style={styles.statusBadgeText}>{getStatusText()}</Text>
           </View>
           
-          {/* Avatar */}
           <Animated.View style={[styles.avatarContainer, { transform: [{ scale: pulseAnim }] }]}>
             <LinearGradient
               colors={callState === 'connected' ? ['#22C55E', '#16A34A'] : ['#3B82F6', '#2563EB']}
@@ -510,10 +511,8 @@ export default function VideoCall({
             )}
           </Animated.View>
           
-          {/* İsim */}
           <Text style={styles.userName}>{remoteUserName}</Text>
           
-          {/* Süre/Durum */}
           {callState === 'connected' ? (
             <View style={styles.durationContainer}>
               <Ionicons name="time-outline" size={18} color="#22C55E" />
@@ -527,90 +526,50 @@ export default function VideoCall({
           )}
         </View>
 
-        {/* Video Görünümü */}
+        {/* Video */}
         {isVideoCall && callState === 'connected' && (
           <View style={styles.videoSection}>
-            {/* Remote Video */}
             {remoteUid && RtcSurfaceView && (
-              <RtcSurfaceView
-                style={styles.remoteVideo}
-                canvas={{ uid: remoteUid }}
-              />
+              <RtcSurfaceView style={styles.remoteVideo} canvas={{ uid: remoteUid }} />
             )}
-            
-            {/* Local Video */}
             {isVideoEnabled && RtcSurfaceView && (
               <View style={styles.localVideoContainer}>
-                <RtcSurfaceView
-                  style={styles.localVideo}
-                  canvas={{ uid: 0 }}
-                  zOrderMediaOverlay={true}
-                />
+                <RtcSurfaceView style={styles.localVideo} canvas={{ uid: 0 }} zOrderMediaOverlay={true} />
               </View>
             )}
           </View>
         )}
 
-        {/* Kontrol Butonları */}
+        {/* Kontroller */}
         <View style={styles.controlsSection}>
           {callState === 'connected' && (
             <View style={styles.controlsRow}>
-              {/* Mikrofon */}
-              <TouchableOpacity 
-                style={[styles.controlButton, isMuted && styles.controlButtonActive]}
-                onPress={toggleMute}
-              >
-                <Ionicons 
-                  name={isMuted ? "mic-off" : "mic"} 
-                  size={28} 
-                  color={isMuted ? "#EF4444" : "#FFF"} 
-                />
+              <TouchableOpacity style={[styles.controlButton, isMuted && styles.controlButtonActive]} onPress={toggleMute}>
+                <Ionicons name={isMuted ? "mic-off" : "mic"} size={28} color={isMuted ? "#EF4444" : "#FFF"} />
                 <Text style={styles.controlLabel}>{isMuted ? 'Kapalı' : 'Mikrofon'}</Text>
               </TouchableOpacity>
               
-              {/* Hoparlör */}
-              <TouchableOpacity 
-                style={[styles.controlButton, !isSpeakerOn && styles.controlButtonActive]}
-                onPress={toggleSpeaker}
-              >
-                <Ionicons 
-                  name={isSpeakerOn ? "volume-high" : "volume-mute"} 
-                  size={28} 
-                  color={!isSpeakerOn ? "#EF4444" : "#FFF"} 
-                />
+              <TouchableOpacity style={[styles.controlButton, !isSpeakerOn && styles.controlButtonActive]} onPress={toggleSpeaker}>
+                <Ionicons name={isSpeakerOn ? "volume-high" : "volume-mute"} size={28} color={!isSpeakerOn ? "#EF4444" : "#FFF"} />
                 <Text style={styles.controlLabel}>{isSpeakerOn ? 'Hoparlör' : 'Kulaklık'}</Text>
               </TouchableOpacity>
               
-              {/* Video Toggle */}
               {isVideoCall && (
-                <TouchableOpacity 
-                  style={[styles.controlButton, !isVideoEnabled && styles.controlButtonActive]}
-                  onPress={toggleVideo}
-                >
-                  <Ionicons 
-                    name={isVideoEnabled ? "videocam" : "videocam-off"} 
-                    size={28} 
-                    color={!isVideoEnabled ? "#EF4444" : "#FFF"} 
-                  />
+                <TouchableOpacity style={[styles.controlButton, !isVideoEnabled && styles.controlButtonActive]} onPress={toggleVideo}>
+                  <Ionicons name={isVideoEnabled ? "videocam" : "videocam-off"} size={28} color={!isVideoEnabled ? "#EF4444" : "#FFF"} />
                   <Text style={styles.controlLabel}>{isVideoEnabled ? 'Kamera' : 'Kapalı'}</Text>
                 </TouchableOpacity>
               )}
             </View>
           )}
           
-          {/* Kapat Butonu */}
           <TouchableOpacity style={styles.endCallButton} onPress={handleEndCall}>
-            <LinearGradient
-              colors={['#EF4444', '#DC2626', '#B91C1C']}
-              style={styles.endCallGradient}
-            >
+            <LinearGradient colors={['#EF4444', '#DC2626', '#B91C1C']} style={styles.endCallGradient}>
               <Ionicons name="call" size={32} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
             </LinearGradient>
           </TouchableOpacity>
           
-          <Text style={styles.endCallLabel}>
-            {callState === 'connected' ? 'Aramayı Bitir' : 'İptal'}
-          </Text>
+          <Text style={styles.endCallLabel}>{callState === 'connected' ? 'Aramayı Bitir' : 'İptal'}</Text>
         </View>
       </LinearGradient>
     </Modal>
@@ -618,162 +577,31 @@ export default function VideoCall({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 60,
-  },
-  topSection: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 40,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginBottom: 30,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  statusBadgeText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  avatarContainer: {
-    marginBottom: 20,
-    position: 'relative',
-  },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  avatarText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  connectedIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#FFF',
-    borderRadius: 14,
-  },
-  userName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 8,
-  },
-  durationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  durationText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#22C55E',
-    marginLeft: 6,
-  },
-  maxDuration: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
-  },
-  ringText: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  callTypeText: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  videoSection: {
-    flex: 1,
-    marginTop: 20,
-    marginHorizontal: 20,
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-  },
-  remoteVideo: {
-    flex: 1,
-  },
-  localVideoContainer: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    width: 120,
-    height: 160,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  localVideo: {
-    flex: 1,
-  },
-  controlsSection: {
-    alignItems: 'center',
-    paddingBottom: 50,
-    paddingTop: 30,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 30,
-    gap: 30,
-  },
-  controlButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-  },
-  controlButtonActive: {
-    backgroundColor: 'rgba(239,68,68,0.3)',
-  },
-  controlLabel: {
-    color: '#FFF',
-    fontSize: 10,
-    marginTop: 4,
-    position: 'absolute',
-    bottom: -20,
-  },
-  endCallButton: {
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  endCallGradient: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  endCallLabel: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
-    marginTop: 12,
-  },
+  container: { flex: 1, paddingTop: 60 },
+  topSection: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 40 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginBottom: 30 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  statusBadgeText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
+  avatarContainer: { marginBottom: 20, position: 'relative' },
+  avatar: { width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: 'rgba(255,255,255,0.3)' },
+  avatarText: { fontSize: 48, fontWeight: 'bold', color: '#FFF' },
+  connectedIndicator: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#FFF', borderRadius: 14 },
+  userName: { fontSize: 28, fontWeight: 'bold', color: '#FFF', marginBottom: 8 },
+  durationContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  durationText: { fontSize: 18, fontWeight: 'bold', color: '#22C55E', marginLeft: 6 },
+  maxDuration: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
+  ringText: { fontSize: 16, color: 'rgba(255,255,255,0.8)' },
+  callTypeText: { fontSize: 16, color: 'rgba(255,255,255,0.8)' },
+  videoSection: { flex: 1, marginTop: 20, marginHorizontal: 20, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' },
+  remoteVideo: { flex: 1 },
+  localVideoContainer: { position: 'absolute', top: 20, right: 20, width: 120, height: 160, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#FFF' },
+  localVideo: { flex: 1 },
+  controlsSection: { alignItems: 'center', paddingBottom: 50, paddingTop: 30 },
+  controlsRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 30, gap: 30 },
+  controlButton: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', width: 64, height: 64, borderRadius: 32, justifyContent: 'center' },
+  controlButtonActive: { backgroundColor: 'rgba(239,68,68,0.3)' },
+  controlLabel: { color: '#FFF', fontSize: 10, marginTop: 4, position: 'absolute', bottom: -20 },
+  endCallButton: { shadowColor: '#EF4444', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 10, elevation: 10 },
+  endCallGradient: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center' },
+  endCallLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 12 },
 });
