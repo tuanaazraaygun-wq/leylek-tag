@@ -26,7 +26,6 @@ if (Platform.OS !== 'web') {
 interface LiveMapViewProps {
   userLocation: { latitude: number; longitude: number } | null;
   otherLocation: { latitude: number; longitude: number } | null;
-  destinationLocation?: { latitude: number; longitude: number } | null; // Yolcunun varış noktası
   isDriver: boolean;
   userName?: string;
   otherUserName?: string;
@@ -39,7 +38,6 @@ interface LiveMapViewProps {
   onComplete?: () => void;
   onRequestTripEnd?: () => void; // Karşılıklı iptal için
   onForceEnd?: () => void; // Zorla bitir için
-  onAutoComplete?: () => void; // 1km içinde otomatik tamamlama için
 }
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
@@ -47,7 +45,6 @@ const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 export default function LiveMapView({
   userLocation,
   otherLocation,
-  destinationLocation,
   isDriver,
   userName = 'Sen',
   otherUserName = 'Karşı Taraf',
@@ -60,19 +57,14 @@ export default function LiveMapView({
   onComplete,
   onRequestTripEnd,
   onForceEnd,
-  onAutoComplete,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
-  const [destinationRouteCoordinates, setDestinationRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]); // Sarı rota
   const [streetName, setStreetName] = useState<string>('');
   
   // Rota bilgisi - önce backend, yoksa local hesaplama
   const [localDistance, setLocalDistance] = useState<number | null>(null);
   const [localDuration, setLocalDuration] = useState<number | null>(null);
-  
-  // Otomatik tamamlama için kontrol
-  const autoCompleteTriggered = useRef(false);
   
   // Backend değeri varsa onu kullan, yoksa local
   const distance = routeInfo?.distance_km || localDistance;
@@ -204,81 +196,6 @@ export default function LiveMapView({
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
-  // SARI ROTA - Yolcunun pickup'tan destination'a gideceği yol
-  useEffect(() => {
-    if (otherLocation && destinationLocation) {
-      fetchDestinationRoute();
-    }
-  }, [otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude]);
-
-  // 1KM OTOMATİK TAMAMLAMA KONTROLÜ
-  useEffect(() => {
-    if (!destinationLocation || !userLocation || autoCompleteTriggered.current) return;
-    
-    const distanceToDestination = calculateDistance(
-      userLocation.latitude, userLocation.longitude,
-      destinationLocation.latitude, destinationLocation.longitude
-    );
-    
-    console.log('📍 Varış noktasına mesafe:', distanceToDestination.toFixed(2), 'km');
-    
-    if (distanceToDestination <= 1.0) {
-      autoCompleteTriggered.current = true;
-      console.log('✅ 1km mesafe içinde - otomatik tamamlama tetikleniyor');
-      Alert.alert(
-        '🎉 Varış Noktasına Ulaştınız!',
-        'Hedefe 1km veya daha yakınsınız. Yolculuğu tamamlamak ister misiniz?',
-        [
-          { text: 'Hayır', style: 'cancel' },
-          { 
-            text: 'Evet, Tamamla', 
-            onPress: () => {
-              if (onAutoComplete) {
-                onAutoComplete();
-              } else if (onComplete) {
-                onComplete();
-              }
-            }
-          }
-        ]
-      );
-    }
-  }, [userLocation?.latitude, userLocation?.longitude, destinationLocation]);
-
-  // Varış rotası çiz (sarı)
-  const fetchDestinationRoute = async () => {
-    if (!otherLocation || !destinationLocation) {
-      setDestinationRouteCoordinates([]);
-      return;
-    }
-
-    try {
-      // Yolcunun konumundan varış noktasına
-      const origin = `${otherLocation.latitude},${otherLocation.longitude}`;
-      const destination = `${destinationLocation.latitude},${destinationLocation.longitude}`;
-      
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr`;
-      
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.status === 'OK' && data.routes.length > 0) {
-        const route = data.routes[0];
-        const points = decodePolyline(route.overview_polyline.points);
-        setDestinationRouteCoordinates(points);
-        console.log('✅ Sarı rota çizildi (yolcunun varış rotası)');
-      } else {
-        // Fallback - düz çizgi
-        setDestinationRouteCoordinates([otherLocation, destinationLocation]);
-      }
-    } catch (error) {
-      console.error('🗺️ Varış rotası hatası:', error);
-      if (otherLocation && destinationLocation) {
-        setDestinationRouteCoordinates([otherLocation, destinationLocation]);
-      }
-    }
-  };
-
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
@@ -362,22 +279,12 @@ export default function LiveMapView({
           }
         ]}
       >
-        {/* YEŞİL ROTA ÇİZGİSİ - Şoförden yolcuya */}
+        {/* ROTA ÇİZGİSİ */}
         {routeCoordinates.length >= 2 && (
           <Polyline
             coordinates={routeCoordinates}
             strokeColor="#22C55E"
             strokeWidth={5}
-          />
-        )}
-
-        {/* SARI ROTA ÇİZGİSİ - Yolcunun pickup'tan varış noktasına gideceği yol */}
-        {destinationRouteCoordinates.length >= 2 && (
-          <Polyline
-            coordinates={destinationRouteCoordinates}
-            strokeColor="#F59E0B"
-            strokeWidth={4}
-            strokeDasharray={[10, 5]}
           />
         )}
 
@@ -401,17 +308,6 @@ export default function LiveMapView({
                 <Text style={styles.markerIcon}>{!isDriver ? '🚗' : '👤'}</Text>
               </View>
               <View style={[styles.markerArrow, !isDriver ? styles.driverArrow : styles.passengerArrow]} />
-            </View>
-          </Marker>
-        )}
-
-        {/* VARIŞ NOKTASI - Bayrak işareti */}
-        {destinationLocation && (
-          <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 0.9 }}>
-            <View style={styles.destinationMarker}>
-              <View style={styles.destinationCircle}>
-                <Text style={styles.destinationIcon}>🏁</Text>
-              </View>
             </View>
           </Marker>
         )}
@@ -496,12 +392,12 @@ export default function LiveMapView({
           </View>
         )}
 
-        {/* Arama ve İşlem Butonları - 4 Sütun SİMETRİK */}
+        {/* Arama ve İşlem Butonları - 4 Sütun */}
         <View style={styles.actionRow}>
           {/* Sesli Arama */}
           <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('audio')} activeOpacity={0.8}>
             <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
-              <Ionicons name="call" size={20} color="#FFF" />
+              <Ionicons name="call" size={26} color="#FFF" />
             </LinearGradient>
             <Text style={styles.actionBtnLabel}>Sesli</Text>
           </TouchableOpacity>
@@ -509,62 +405,49 @@ export default function LiveMapView({
           {/* Görüntülü Arama */}
           <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('video')} activeOpacity={0.8}>
             <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.actionBtnCircle}>
-              <Ionicons name="videocam" size={20} color="#FFF" />
+              <Ionicons name="videocam" size={26} color="#FFF" />
             </LinearGradient>
             <Text style={styles.actionBtnLabel}>Video</Text>
           </TouchableOpacity>
 
-          {/* Navigasyon - Yolcuya/Şoföre Git */}
+          {/* Bitir - Karşılıklı onay ile */}
           <TouchableOpacity 
             style={styles.actionBtn} 
             onPress={() => {
-              if (otherLocation) {
-                const url = Platform.select({
-                  ios: `maps://app?daddr=${otherLocation.latitude},${otherLocation.longitude}`,
-                  android: `google.navigation:q=${otherLocation.latitude},${otherLocation.longitude}`
-                });
-                Linking.openURL(url || `https://www.google.com/maps/dir/?api=1&destination=${otherLocation.latitude},${otherLocation.longitude}`);
-              } else {
-                Alert.alert('Konum Yok', 'Karşı tarafın konumu henüz alınamadı');
+              // Karşılıklı onay sistemi: önce onRequestTripEnd varsa onu dene
+              if (onRequestTripEnd) {
+                onRequestTripEnd();
+              } else if (onComplete) {
+                onComplete();
               }
             }} 
             activeOpacity={0.8}
           >
-            <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.actionBtnCircle}>
-              <Ionicons name="navigate" size={20} color="#FFF" />
+            <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
+              <Ionicons name="checkmark-done" size={26} color="#FFF" />
             </LinearGradient>
-            <Text style={styles.actionBtnLabel}>{isDriver ? 'Git' : 'Git'}</Text>
+            <Text style={styles.actionBtnLabel}>Bitir</Text>
           </TouchableOpacity>
 
-          {/* Diğer (Bitir/Engelle/Şikayet/Zorla Bitir) */}
+          {/* Diğer (Engelle/Şikayet/Zorla Bitir) */}
           <TouchableOpacity 
             style={styles.actionBtn} 
             activeOpacity={0.8}
             onPress={() => {
               Alert.alert(
-                '⚙️ İşlemler',
+                `${otherUserName}`,
                 'Ne yapmak istiyorsunuz?',
                 [
                   { text: 'İptal', style: 'cancel' },
-                  { 
-                    text: '✅ Yolculuğu Bitir', 
-                    onPress: () => {
-                      if (onRequestTripEnd) {
-                        onRequestTripEnd();
-                      } else if (onComplete) {
-                        onComplete();
-                      }
-                    }
-                  },
                   { text: '🚫 Engelle', style: 'destructive', onPress: onBlock },
                   { text: '⚠️ Şikayet Et', onPress: onReport },
                   { 
-                    text: '⛔ Zorla Bitir (-5 puan)', 
+                    text: '⛔ Zorla Bitir (-1 puan)', 
                     style: 'destructive', 
                     onPress: () => {
                       Alert.alert(
                         '⚠️ Zorla Bitir',
-                        'Yolculuğu zorla bitirmek istediğinize emin misiniz?\n\nBu işlem puanınızı -5 düşürür ve sürekli yapılması hesabınızın kapatılmasına neden olabilir.',
+                        'Yolculuğu zorla bitirmek istediğinize emin misiniz?\n\nBu işlem puanınızı -1 düşürür.',
                         [
                           { text: 'Vazgeç', style: 'cancel' },
                           { 
@@ -580,9 +463,9 @@ export default function LiveMapView({
               );
             }}
           >
-            <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
-              <Ionicons name="menu" size={20} color="#FFF" />
-            </LinearGradient>
+            <View style={styles.actionBtnCircleGray}>
+              <Ionicons name="ellipsis-horizontal" size={26} color="#FFF" />
+            </View>
             <Text style={styles.actionBtnLabel}>Diğer</Text>
           </TouchableOpacity>
         </View>
@@ -836,18 +719,17 @@ const styles = StyleSheet.create({
   // Action Row - 4 sütun simetrik
   actionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 4,
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
   },
   actionBtn: {
     alignItems: 'center',
-    flex: 1,
-    paddingHorizontal: 4,
+    width: (SCREEN_WIDTH - 64) / 4,
   },
   actionBtnCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -857,9 +739,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   actionBtnCircleGray: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#6B7280',
     justifyContent: 'center',
     alignItems: 'center',
@@ -870,35 +752,10 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   actionBtnLabel: {
-    marginTop: 4,
-    fontSize: 11,
+    marginTop: 6,
+    fontSize: 12,
     fontWeight: '600',
     color: '#333',
-    textAlign: 'center',
-  },
-  // Varış noktası marker stili
-  destinationMarker: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  destinationCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F59E0B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 10,
-  },
-  destinationIcon: {
-    fontSize: 20,
-    textAlign: 'center',
   },
   // Sol alt köşe örtücü (Google logosu gizleme)
   bottomLeftCover: {

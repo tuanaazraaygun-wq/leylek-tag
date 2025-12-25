@@ -32,7 +32,6 @@ interface VideoCallProps {
   visible: boolean;
   remoteUserName: string;
   channelName: string;
-  callId?: string;
   userId: string;
   isVideoCall: boolean;
   isCaller?: boolean;
@@ -43,7 +42,7 @@ interface VideoCallProps {
 const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 const MAX_CALL_DURATION = 600;
-const RING_TIMEOUT = 90; // 1.5 dakika = 90 saniye
+const RING_TIMEOUT = 30;
 
 // Android için izin isteme
 const requestPermissions = async () => {
@@ -77,7 +76,6 @@ export default function VideoCall({
   visible,
   remoteUserName,
   channelName,
-  callId,
   userId,
   isVideoCall,
   isCaller = false,
@@ -96,9 +94,9 @@ export default function VideoCall({
   const [isJoined, setIsJoined] = useState(false);
   
   const engineRef = useRef<any>(null);
-  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const ringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const callStatusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const callStatusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const localUidRef = useRef<number>(Math.floor(Math.random() * 100000) + 1);
   const isCleanedUp = useRef(false);
 
@@ -121,71 +119,36 @@ export default function VideoCall({
     };
   }, [visible]);
 
-  // Arama durumu kontrolü - HEM ARAYAN HEM ARANAN İÇİN - Hızlı polling (1 saniye)
+  // Arama durumu kontrolü - İLK 5 SANİYE KONTROL YAPMA (race condition önleme)
   useEffect(() => {
-    if (!visible || !userId || isCleanedUp.current) return;
+    if (!visible || !channelName || !userId || isCleanedUp.current) return;
     
-    // callId veya channelName olmalı
-    const effectiveCallId = callId || `call_${channelName}`;
-    
-    // Hem bağlanmadan önce hem bağlandıktan sonra kontrol et
-    const checkStatus = async () => {
-      if (isCleanedUp.current) return;
-      
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${effectiveCallId}`);
-        const data = await response.json();
-        
-        if (isCleanedUp.current) return;
-        
-        console.log('📞 Arama durumu:', data.status, 'callId:', effectiveCallId);
-        
-        // Arama sonlandırılmış durumlar
-        if (data.should_close) {
-          console.log('📵 Arama sonlandırıldı, status:', data.status);
-          
-          // Status'a göre farklı mesajlar göster
-          if (data.status === 'rejected') {
-            handleCallEnded(true); // Reddedildi
-          } else if (data.status === 'cancelled') {
-            cleanup();
-            Alert.alert('Arama İptal Edildi', 'Karşı taraf aramayı iptal etti.');
-            onEnd?.();
-          } else if (data.status === 'ended') {
-            cleanup();
-            onEnd?.();
-          } else if (data.status === 'missed') {
-            cleanup();
-            Alert.alert('Cevapsız Arama', 'Arama cevaplanmadı.');
-            onEnd?.();
-          } else {
-            cleanup();
-            onEnd?.();
-          }
-          return;
-        }
-        
-        // Karşı taraf aramaya katıldı ve ben arayan isem
-        if (isCaller && data.status === 'accepted' && callState === 'ringing') {
-          console.log('✅ Arama kabul edildi, bağlantı kuruldu');
-          if (ringIntervalRef.current) {
-            clearInterval(ringIntervalRef.current);
-            ringIntervalRef.current = null;
-          }
-          setCallState('connected');
-          startCallTimer();
-        }
-      } catch (error) {
-        console.log('Call status check error:', error);
-      }
-    };
-    
-    // İlk kontrolü 500ms sonra yap, sonra her 1 saniyede bir tekrarla
+    // İlk 5 saniye bekle - arama başlangıç senkronizasyonu için
     const initialDelay = setTimeout(() => {
       if (isCleanedUp.current) return;
+      
+      const checkStatus = async () => {
+        if (isCleanedUp.current) return;
+        
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/voice/call-status?tag_id=${channelName}&user_id=${userId}`);
+          const data = await response.json();
+          
+          if (isCleanedUp.current) return;
+          
+          // Sadece kesin sonlandırma durumlarında kapat
+          if (data.success && !data.has_active_call && data.status !== 'none') {
+            console.log('📞 Arama sonlandırıldı:', data);
+            handleCallEnded(data.was_rejected);
+          }
+        } catch (error) {
+          console.log('Call status check error:', error);
+        }
+      };
+      
       checkStatus();
-      callStatusIntervalRef.current = setInterval(checkStatus, 1000);
-    }, 500);
+      callStatusIntervalRef.current = setInterval(checkStatus, 3000); // 3 saniyede bir kontrol
+    }, 5000); // 5 saniye bekle
     
     return () => {
       clearTimeout(initialDelay);
@@ -194,7 +157,7 @@ export default function VideoCall({
         callStatusIntervalRef.current = null;
       }
     };
-  }, [visible, callId, channelName, userId, callState, isCaller]);
+  }, [visible, channelName, userId]);
 
   const startRingTimer = () => {
     setRingDuration(0);
@@ -225,9 +188,7 @@ export default function VideoCall({
     console.log('⏰ Arama zaman aşımı');
     
     try {
-      // call_id'yi channelName'den çıkar
-      const call_id = channelName.replace('leylek_', '');
-      await fetch(`${BACKEND_URL}/api/voice/cancel-call?call_id=${call_id}&user_id=${userId}`, {
+      await fetch(`${BACKEND_URL}/api/voice/cancel-call?tag_id=${channelName}&user_id=${userId}`, {
         method: 'POST'
       });
     } catch (e) {}
@@ -499,20 +460,12 @@ export default function VideoCall({
   const handleEndCall = async () => {
     console.log('📞 Arama sonlandırılıyor...');
     
-    // callId varsa onu kullan, yoksa channelName'den oluştur
-    const effectiveCallId = callId || `call_${channelName}`;
-    
-    // Arayan ve henüz bağlantı kurulmamışsa = iptal
-    // Aranan veya bağlantı kurulmuşsa = sonlandır
-    const isCallerCancelling = isCaller && callState === 'ringing';
-    const endpoint = isCallerCancelling
-      ? `/api/voice/cancel-call?call_id=${effectiveCallId}&user_id=${userId}`
-      : `/api/voice/end-call?call_id=${effectiveCallId}&user_id=${userId}`;
+    const endpoint = (isCaller && !remoteUid) 
+      ? `/api/voice/cancel-call?tag_id=${channelName}&user_id=${userId}`
+      : `/api/voice/end-call?tag_id=${channelName}&user_id=${userId}`;
     
     try {
-      const response = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
-      const data = await response.json();
-      console.log('📞 Backend bilgilendirildi:', endpoint, data);
+      await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
     } catch (error) {
       console.log('End call error:', error);
     }

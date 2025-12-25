@@ -19,19 +19,14 @@ export default function Logo({ size = 'medium', showText = true, showSlogan = fa
 
   return (
     <View style={styles.container}>
-      <View style={[styles.logoContainer, { 
-        width: currentSize.icon, 
-        height: currentSize.icon,
-        borderRadius: currentSize.icon / 2, // Daire şeklinde
-      }]}>
+      <View style={[styles.logoContainer, { width: currentSize.icon, height: currentSize.icon }]}>
         <Image
           source={require('../assets/images/logo.png')}
           style={{
             width: currentSize.icon,
             height: currentSize.icon,
-            borderRadius: currentSize.icon / 2, // Daire şeklinde resim
           }}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       </View>
       
@@ -55,13 +50,11 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
   },
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden', // Daire mask için gerekli
-    backgroundColor: 'transparent',
+    overflow: 'hidden',
   },
   textContainer: {
     alignItems: 'center',

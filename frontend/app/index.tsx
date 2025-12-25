@@ -170,7 +170,6 @@ interface User {
   role: 'passenger' | 'driver';
   rating: number;
   total_ratings: number;
-  city?: string;
 }
 
 interface Tag {
@@ -179,10 +178,6 @@ interface Tag {
   passenger_name: string;
   pickup_location: string;
   dropoff_location: string;
-  pickup_lat?: number;
-  pickup_lng?: number;
-  dropoff_lat?: number;
-  dropoff_lng?: number;
   notes?: string;
   status: string;
   driver_id?: string;
@@ -191,9 +186,6 @@ interface Tag {
   created_at: string;
   matched_at?: string;
   completed_at?: string;
-  driver_location?: { latitude: number; longitude: number };
-  passenger_location?: { latitude: number; longitude: number };
-  route_info?: any;
 }
 
 interface Offer {
@@ -211,10 +203,7 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // Screen type definition
-  type ScreenType = 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin';
-  const [screen, setScreen] = useState<ScreenType>('login');
+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard'>('login');
 
   // Auth states
   const [phone, setPhone] = useState('');
@@ -1964,7 +1953,7 @@ function PassengerDashboard({
   userLocation: any;
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
-  setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
+  setScreen: (screen: string) => void;
 }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -1987,12 +1976,10 @@ function PassengerDashboard({
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedDriverName, setSelectedDriverName] = useState('');
   const [isCallCaller, setIsCallCaller] = useState(false); // BEN Mİ ARIYORUM?
-  const [activeCallId, setActiveCallId] = useState<string | null>(null); // Aktif arama ID
-  const [activeChannelName, setActiveChannelName] = useState<string | null>(null); // Agora channel
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
-  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
+  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
@@ -2051,21 +2038,13 @@ function PassengerDashboard({
         if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
-          console.log('📞 YOLCU - GELEN ARAMA!', data.call.caller_name, 'call_id:', data.call.call_id);
+          console.log('📞 YOLCU - GELEN ARAMA!', data.call.caller_name);
           setIncomingCallInfo({
             callerName: data.call.caller_name,
             callType: data.call.call_type || 'audio',
-            channelName: data.call.channel_name,
-            callId: data.call.call_id
+            channelName: data.call.channel_name
           });
           setShowIncomingCall(true);
-        }
-        
-        // Arayan iptal ettiyse veya arama sonlandıysa UI'ı kapat
-        if (data.call_ended && data.end_reason) {
-          console.log('📵 YOLCU - Arama sonlandı:', data.end_reason);
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
         }
       } catch (error) {
         // Sessiz kal
@@ -2619,7 +2598,7 @@ function PassengerDashboard({
               <View style={styles.fullScreenMapContainer}>
                 <LiveMapView
                   userLocation={userLocation}
-                  otherLocation={driverLocation || activeTag?.driver_location || null}
+                  otherLocation={driverLocation || activeTag?.driver_location}
                   isDriver={false}
                   userName={user.name}
                   otherUserName={activeTag?.driver_name || 'Şoför'}
@@ -2644,10 +2623,6 @@ function PassengerDashboard({
                         Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                         return;
                       }
-                      // Call ID ve Channel Name'i sakla
-                      setActiveCallId(data.call_id);
-                      setActiveChannelName(data.channel_name);
-                      console.log('📞 Arama başlatıldı:', data.call_id, data.channel_name);
                     } catch (error) {
                       console.error('Arama bildirimi hatası:', error);
                       Alert.alert('Hata', 'Arama başlatılamadı');
@@ -2844,44 +2819,23 @@ function PassengerDashboard({
         callerName={incomingCallInfo?.callerName || 'Arayan'}
         callType={incomingCallInfo?.callType || 'audio'}
         onAccept={async () => {
-          const callId = incomingCallInfo?.callId;
-          const channelName = incomingCallInfo?.channelName;
-          
           setShowIncomingCall(false);
           setSelectedDriverName(incomingCallInfo?.callerName || 'Arayan');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
-          
-          // Call ID ve Channel Name'i sakla
-          if (callId) setActiveCallId(callId);
-          if (channelName) setActiveChannelName(channelName);
-          
           // Backend'e kabul bildirimi gönder
           try {
-            const acceptUrl = callId 
-              ? `${API_URL}/voice/accept-call?call_id=${callId}&user_id=${user.id}`
-              : `${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`;
-            await fetch(acceptUrl, { method: 'POST' });
-            console.log('✅ Arama kabul edildi:', callId);
-          } catch (e) {
-            console.log('Accept error:', e);
-          }
+            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
           setShowVoiceCall(true);
         }}
         onReject={async () => {
           setShowIncomingCall(false);
-          const callId = incomingCallInfo?.callId;
           setIncomingCallInfo(null);
           // Backend'e reddetme bildirimi gönder
           try {
-            const rejectUrl = callId 
-              ? `${API_URL}/voice/reject-call?call_id=${callId}&user_id=${user.id}`
-              : `${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`;
-            await fetch(rejectUrl, { method: 'POST' });
-            console.log('📵 Arama reddedildi:', callId);
-          } catch (e) {
-            console.log('Reject error:', e);
-          }
+            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
         }}
       />
 
@@ -2890,8 +2844,7 @@ function PassengerDashboard({
         <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedDriverName}
-          channelName={activeChannelName || activeTag.id}
-          callId={activeCallId || `call_${activeTag.id}`}
+          channelName={activeTag.id}
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
@@ -2899,16 +2852,11 @@ function PassengerDashboard({
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
-            setActiveCallId(null);
-            setActiveChannelName(null);
           }}
           onRejected={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
-            setActiveCallId(null);
-            setActiveChannelName(null);
-            Alert.alert('Arama Reddedildi', 'Karşı taraf aramayı reddetti.');
           }}
         />
       )}
@@ -2984,7 +2932,7 @@ function PassengerDashboard({
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
-  setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
+  setScreen: (screen: string) => void;
 }
 
 function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
@@ -3006,12 +2954,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedPassengerName, setSelectedPassengerName] = useState('');
   const [isCallCaller, setIsCallCaller] = useState(false); // BEN Mİ ARIYORUM?
-  const [activeCallId, setActiveCallId] = useState<string | null>(null); // Aktif arama ID
-  const [activeChannelName, setActiveChannelName] = useState<string | null>(null); // Agora channel
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
-  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
+  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string} | null>(null);
   
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
@@ -3074,25 +3020,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           return;
         }
         
-        // Arayan iptal ettiyse veya arama sonlandıysa UI'ı kapat
-        if (data.call_ended && data.end_reason) {
-          console.log('📵 ŞOFÖR - Arama sonlandı:', data.end_reason);
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
-          return;
-        }
-        
         // Son kontrol - ref'ten güncel değerleri al
         const currentState = callStateRef.current;
         if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
         
         if (data.success && data.has_incoming && data.call) {
-          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name, 'call_id:', data.call.call_id);
+          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
           setIncomingCallInfo({
             callerName: data.call.caller_name,
             callType: data.call.call_type || 'audio',
-            channelName: data.call.channel_name,
-            callId: data.call.call_id
+            channelName: data.call.channel_name
           });
           setShowIncomingCall(true);
         }
@@ -3421,7 +3358,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         <View style={styles.fullScreenMapContainer}>
           <LiveMapView
             userLocation={userLocation}
-            otherLocation={passengerLocation || activeTag?.passenger_location || null}
+            otherLocation={passengerLocation || activeTag?.passenger_location}
             isDriver={true}
             userName={user.name}
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
@@ -3452,10 +3389,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                   return;
                 }
-                // Call ID ve Channel Name'i sakla
-                setActiveCallId(data.call_id);
-                setActiveChannelName(data.channel_name);
-                console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id, data.channel_name);
               } catch (error) {
                 console.error('Arama bildirimi hatası:', error);
                 Alert.alert('Hata', 'Arama başlatılamadı');
@@ -3665,43 +3598,22 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         callerName={incomingCallInfo?.callerName || 'Yolcu'}
         callType={incomingCallInfo?.callType || 'audio'}
         onAccept={async () => {
-          const callId = incomingCallInfo?.callId;
-          const channelName = incomingCallInfo?.channelName;
-          
           setShowIncomingCall(false);
           setSelectedPassengerName(incomingCallInfo?.callerName || 'Yolcu');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
-          
-          // Call ID ve Channel Name'i sakla
-          if (callId) setActiveCallId(callId);
-          if (channelName) setActiveChannelName(channelName);
-          
           // Backend'e kabul bildirimi gönder
           try {
-            const acceptUrl = callId 
-              ? `${API_URL}/voice/accept-call?call_id=${callId}&user_id=${user.id}`
-              : `${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`;
-            await fetch(acceptUrl, { method: 'POST' });
-            console.log('✅ ŞOFÖR - Arama kabul edildi:', callId);
-          } catch (e) {
-            console.log('Accept error:', e);
-          }
+            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
           setShowVoiceCall(true);
         }}
         onReject={async () => {
           setShowIncomingCall(false);
-          const callId = incomingCallInfo?.callId;
           setIncomingCallInfo(null);
           try {
-            const rejectUrl = callId 
-              ? `${API_URL}/voice/reject-call?call_id=${callId}&user_id=${user.id}`
-              : `${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`;
-            await fetch(rejectUrl, { method: 'POST' });
-            console.log('📵 ŞOFÖR - Arama reddedildi:', callId);
-          } catch (e) {
-            console.log('Reject error:', e);
-          }
+            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
+          } catch (e) {}
         }}
       />
 
@@ -3710,8 +3622,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedPassengerName}
-          channelName={activeChannelName || activeTag.id}
-          callId={activeCallId || `call_${activeTag.id}`}
+          channelName={activeTag.id}
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
@@ -3719,16 +3630,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
-            setActiveCallId(null);
-            setActiveChannelName(null);
           }}
           onRejected={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
-            setActiveCallId(null);
-            setActiveChannelName(null);
-            Alert.alert('Arama Reddedildi', 'Karşı taraf aramayı reddetti.');
           }}
         />
       )}
@@ -4763,9 +4669,6 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 14,
     overflow: 'hidden',
-  },
-  modernSubmitButtonSuccess: {
-    backgroundColor: '#10B981',
   },
   submitButtonGradient: {
     flexDirection: 'row',

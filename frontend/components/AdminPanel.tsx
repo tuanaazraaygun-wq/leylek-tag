@@ -31,7 +31,7 @@ interface AdminPanelProps {
   onClose: () => void;
 }
 
-type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'reports' | 'auth' | 'notifications' | 'settings' | 'admins';
+type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'auth' | 'notifications' | 'settings';
 
 export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -66,10 +66,6 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [driverRadius, setDriverRadius] = useState('50');
   const [maxCallDuration, setMaxCallDuration] = useState('30');
   
-  // Admin Ekleme
-  const [admins, setAdmins] = useState<any[]>([]);
-  const [newAdminPhone, setNewAdminPhone] = useState('');
-  
   useEffect(() => {
     loadData();
   }, [activeTab]);
@@ -84,7 +80,6 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         case 'calls': await loadCalls(); break;
         case 'auth': await loadAuthLogs(); break;
         case 'settings': await loadSettings(); break;
-        case 'admins': await loadAdmins(); break;
       }
     } catch (e) {
       console.error('Veri yükleme hatası:', e);
@@ -111,15 +106,15 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadTrips = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/tags?admin_phone=${adminPhone}&limit=50`);
+      const res = await fetch(`${API_URL}/admin/metadata/trips?admin_phone=${adminPhone}&limit=50`);
       const data = await res.json();
-      if (data.success) setTrips(data.tags || []);
+      if (data.success) setTrips(data.trips || []);
     } catch (e) { console.error(e); }
   };
   
   const loadCalls = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/calls?admin_phone=${adminPhone}&limit=50`);
+      const res = await fetch(`${API_URL}/admin/metadata/calls?admin_phone=${adminPhone}&limit=50`);
       const data = await res.json();
       if (data.success) setCalls(data.calls || []);
     } catch (e) { console.error(e); }
@@ -127,10 +122,9 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadAuthLogs = async () => {
     try {
-      // Auth logs için reports kullanılabilir
-      const res = await fetch(`${API_URL}/admin/reports?admin_phone=${adminPhone}`);
+      const res = await fetch(`${API_URL}/admin/metadata/auth?admin_phone=${adminPhone}&limit=50`);
       const data = await res.json();
-      if (data.success) setAuthLogs(data.reports || []);
+      if (data.success) setAuthLogs(data.logs || []);
     } catch (e) { console.error(e); }
   };
   
@@ -144,39 +138,6 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         setMaxCallDuration(String(data.settings?.max_call_duration_min || 30));
       }
     } catch (e) { console.error(e); }
-  };
-  
-  const loadAdmins = async () => {
-    try {
-      const res = await fetch(`${API_URL}/admin/list-admins?admin_phone=${adminPhone}`);
-      const data = await res.json();
-      if (data.success) setAdmins(data.admins || []);
-    } catch (e) { console.error(e); }
-  };
-  
-  const addNewAdmin = async () => {
-    if (!newAdminPhone || newAdminPhone.length < 10) {
-      Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
-      return;
-    }
-    
-    try {
-      const res = await fetch(`${API_URL}/admin/add-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_phone: adminPhone, new_admin_phone: newAdminPhone })
-      });
-      const data = await res.json();
-      if (data.success) {
-        Alert.alert('Başarılı', data.message);
-        setNewAdminPhone('');
-        loadAdmins();
-      } else {
-        Alert.alert('Hata', data.detail || 'Admin eklenemedi');
-      }
-    } catch (e) { 
-      Alert.alert('Hata', 'Admin eklenemedi');
-    }
   };
   
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
@@ -402,7 +363,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     </View>
   );
   
-  // ========== TRIPS (Yolculuklar) ==========
+  // ========== TRIPS (Metadata) ==========
   const renderTrips = () => (
     <FlatList
       style={styles.content}
@@ -411,28 +372,18 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       renderItem={({ item }) => (
         <View style={styles.logCard}>
           <View style={styles.logHeader}>
-            <Ionicons name="car" size={20} color={COLORS.primary} />
-            <Text style={styles.logTitle}>TAG #{item.id?.slice(0, 8)}</Text>
+            <Ionicons name="navigate" size={20} color={COLORS.primary} />
+            <Text style={styles.logTitle}>Yolculuk #{item.id?.slice(-6)}</Text>
             <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
           </View>
           <View style={styles.logBody}>
-            <Text style={styles.logText}>👤 Yolcu: {item.passenger_name || 'Bilinmiyor'} ({item.passenger_phone || '-'})</Text>
-            <Text style={styles.logText}>🚗 Şoför: {item.driver_name || 'Atanmadı'} ({item.driver_phone || '-'})</Text>
-            <Text style={styles.logText}>📍 Başlangıç: {item.pickup_location || '-'}</Text>
-            <Text style={styles.logText}>🎯 Hedef: {item.dropoff_location || '-'}</Text>
-            <Text style={styles.logText}>🏙️ Şehir: {item.city || '-'}</Text>
-            <Text style={styles.logText}>💰 Fiyat: {item.final_price ? `₺${item.final_price}` : 'Belirlenmedi'}</Text>
-            <Text style={styles.logText}>📊 Durum: {
-              item.status === 'pending' ? '🟡 Bekliyor' :
-              item.status === 'matched' ? '🟢 Eşleşti' :
-              item.status === 'in_progress' ? '🚗 Devam Ediyor' :
-              item.status === 'completed' ? '✅ Tamamlandı' :
-              item.status === 'cancelled' ? '❌ İptal' :
-              item.status
-            }</Text>
-            {item.matched_at && <Text style={styles.logText}>🤝 Eşleşme: {formatDate(item.matched_at)}</Text>}
-            {item.completed_at && <Text style={styles.logText}>✅ Bitiş: {formatDate(item.completed_at)}</Text>}
-            {item.cancelled_at && <Text style={styles.logText}>❌ İptal: {formatDate(item.cancelled_at)}</Text>}
+            <Text style={styles.logText}>👤 Yolcu: {item.passenger_name} ({item.passenger_phone})</Text>
+            <Text style={styles.logText}>🚗 Şoför: {item.driver_name} ({item.driver_phone})</Text>
+            <Text style={styles.logText}>📍 Başlangıç: {item.pickup_address || '-'}</Text>
+            <Text style={styles.logText}>🎯 Hedef: {item.dropoff_address || '-'}</Text>
+            <Text style={styles.logText}>📏 Mesafe: {item.distance_km || 0} km • Süre: {item.duration_min || 0} dk</Text>
+            <Text style={styles.logText}>💰 Fiyat: ₺{item.price || 0}</Text>
+            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
           </View>
         </View>
       )}
@@ -452,14 +403,15 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           <View style={styles.logHeader}>
             <Ionicons name={item.call_type === 'video' ? 'videocam' : 'call'} size={20} color={COLORS.success} />
             <Text style={styles.logTitle}>{item.call_type === 'video' ? 'Görüntülü' : 'Sesli'} Arama</Text>
-            <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+            <Text style={styles.logTime}>{formatDate(item.start_time)}</Text>
           </View>
           <View style={styles.logBody}>
-            <Text style={styles.logText}>📞 Arayan: {item.caller_name || 'Bilinmiyor'}</Text>
-            <Text style={styles.logText}>📱 Aranan: {item.receiver_name || 'Bilinmiyor'}</Text>
-            <Text style={styles.logText}>⏱️ Süre: {item.duration_seconds ? `${item.duration_seconds} saniye` : 'Cevaplanmadı'}</Text>
-            <Text style={styles.logText}>📊 Durum: {item.status === 'connected' ? '✅ Bağlandı' : item.status === 'rejected' ? '❌ Reddedildi' : item.status === 'cancelled' ? '⚠️ İptal' : item.status === 'missed' ? '📵 Cevapsız' : item.status}</Text>
-            {item.ended_at && <Text style={styles.logText}>🕐 Bitiş: {formatDate(item.ended_at)}</Text>}
+            <Text style={styles.logText}>📞 Arayan: {item.caller_name} ({item.caller_phone})</Text>
+            <Text style={styles.logText}>📱 Aranan: {item.receiver_name} ({item.receiver_phone})</Text>
+            <Text style={styles.logText}>⏱️ Süre: {item.duration_seconds || 0} saniye</Text>
+            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
+            <Text style={styles.logText}>🌐 Arayan IP: {item.caller_ip || '-'}</Text>
+            <Text style={styles.logText}>🌐 Aranan IP: {item.receiver_ip || '-'}</Text>
           </View>
         </View>
       )}
@@ -608,64 +560,6 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     </ScrollView>
   );
   
-  // Admin Yönetimi Tab
-  const renderAdmins = () => (
-    <ScrollView style={styles.tabContent}>
-      {/* Admin Ekle */}
-      <View style={styles.statCard}>
-        <View style={styles.cardHeader}>
-          <Ionicons name="person-add" size={24} color={COLORS.primary} />
-          <Text style={styles.cardTitle}>Yeni Admin Ekle</Text>
-        </View>
-        <Text style={styles.settingDesc}>Kayıtlı bir kullanıcıyı admin yap</Text>
-        <View style={[styles.settingInput, { marginTop: 12 }]}>
-          <TextInput
-            style={[styles.settingTextInput, { flex: 1 }]}
-            value={newAdminPhone}
-            onChangeText={setNewAdminPhone}
-            placeholder="5XX XXX XX XX"
-            keyboardType="phone-pad"
-            maxLength={10}
-          />
-          <TouchableOpacity 
-            style={[styles.saveButton, { marginLeft: 8, paddingVertical: 10 }]} 
-            onPress={addNewAdmin}
-          >
-            <Ionicons name="add" size={20} color="#FFF" />
-            <Text style={styles.saveButtonText}>Ekle</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-      
-      {/* Mevcut Adminler */}
-      <View style={styles.statCard}>
-        <View style={styles.cardHeader}>
-          <Ionicons name="shield-checkmark" size={24} color={COLORS.primary} />
-          <Text style={styles.cardTitle}>Mevcut Adminler ({admins.length})</Text>
-        </View>
-        
-        {admins.map((admin: any, index: number) => (
-          <View key={admin.id || index} style={styles.adminItem}>
-            <View style={styles.adminInfo}>
-              <Ionicons name="person-circle" size={40} color={COLORS.primary} />
-              <View style={{ marginLeft: 12 }}>
-                <Text style={styles.adminName}>{admin.name || 'İsimsiz'}</Text>
-                <Text style={styles.adminPhone}>{admin.phone}</Text>
-                {admin.is_hardcoded && (
-                  <Text style={styles.adminBadge}>Sistem Admin</Text>
-                )}
-              </View>
-            </View>
-          </View>
-        ))}
-        
-        {admins.length === 0 && (
-          <Text style={styles.emptyText}>Henüz admin yok</Text>
-        )}
-      </View>
-    </ScrollView>
-  );
-  
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -685,7 +579,6 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         {renderTab('calls', 'call', 'Aramalar')}
         {renderTab('auth', 'key', 'Girişler')}
         {renderTab('notifications', 'notifications', 'Bildirim')}
-        {renderTab('admins', 'shield', 'Adminler')}
         {renderTab('settings', 'settings', 'Ayarlar')}
       </ScrollView>
       
@@ -703,7 +596,6 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           {activeTab === 'auth' && renderAuthLogs()}
           {activeTab === 'notifications' && renderNotifications()}
           {activeTab === 'settings' && renderSettings()}
-          {activeTab === 'admins' && renderAdmins()}
         </>
       )}
     </View>
@@ -740,21 +632,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     paddingVertical: 10,
     paddingHorizontal: 5,
-  },
-  tabContent: {
-    flex: 1,
-    padding: 15,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-    marginLeft: 10,
   },
   tab: {
     flexDirection: 'row',
@@ -1047,35 +924,5 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '600',
     marginLeft: 8,
-  },
-  // Admin Yönetimi stilleri
-  adminItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.cardLight,
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 10,
-  },
-  adminInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  adminName: {
-    color: '#FFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  adminPhone: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  adminBadge: {
-    color: COLORS.primary,
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
   },
 });
