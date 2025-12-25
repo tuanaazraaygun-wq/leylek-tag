@@ -3532,7 +3532,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                           { text: 'İptal', style: 'cancel' },
                           { 
                             text: 'Gönder', 
-                            onPress: (text) => {
+                            onPress: (text: string | undefined) => {
                               if (text && text.trim()) {
                                 reportPassenger('other', text.trim());
                               } else {
