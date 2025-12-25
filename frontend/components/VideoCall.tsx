@@ -32,6 +32,7 @@ interface VideoCallProps {
   visible: boolean;
   remoteUserName: string;
   channelName: string;
+  callId?: string;
   userId: string;
   isVideoCall: boolean;
   isCaller?: boolean;
