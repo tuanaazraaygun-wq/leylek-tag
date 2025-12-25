@@ -69,7 +69,7 @@ export default function PlacesAutocomplete({
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced search
   useEffect(() => {
