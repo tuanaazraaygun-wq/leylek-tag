@@ -2876,7 +2876,8 @@ function PassengerDashboard({
         <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedDriverName}
-          channelName={activeTag.id}
+          channelName={activeChannelName || activeTag.id}
+          callId={activeCallId || `call_${activeTag.id}`}
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
@@ -2884,11 +2885,16 @@ function PassengerDashboard({
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setActiveCallId(null);
+            setActiveChannelName(null);
           }}
           onRejected={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setActiveCallId(null);
+            setActiveChannelName(null);
+            Alert.alert('Arama Reddedildi', 'Karşı taraf aramayı reddetti.');
           }}
         />
       )}
