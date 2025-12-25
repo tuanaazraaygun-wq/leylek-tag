@@ -86,6 +86,11 @@
     "experiments": {
       "typedRoutes": true
     },
+    "splash": {
+      "image": "./assets/images/splash-image.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "extra": {
       "router": {},
       "eas": {
