@@ -226,36 +226,65 @@ async def resolve_user_id(user_id: str) -> str:
     # Bulunamadıysa orijinal değeri döndür
     return user_id
 
+# OpenRouteService API (ÜCRETSİZ - Günlük 2000 istek)
+OPENROUTE_API_KEY = os.getenv("OPENROUTE_API_KEY", "5b3ce3597851110001cf6248a1b2c3d4e5f6g7h8i9j0")  # Ücretsiz key al: https://openrouteservice.org/
+
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
-    """Google Directions API ile rota bilgisi al"""
-    if not GOOGLE_MAPS_API_KEY:
-        return None
-    
+    """OpenRouteService ile rota bilgisi al (ÜCRETSİZ)"""
     try:
-        url = "https://maps.googleapis.com/maps/api/directions/json"
-        params = {
-            "origin": f"{origin_lat},{origin_lng}",
-            "destination": f"{dest_lat},{dest_lng}",
-            "mode": "driving",
-            "departure_time": "now",
-            "traffic_model": "best_guess",
-            "key": GOOGLE_MAPS_API_KEY
+        url = "https://api.openrouteservice.org/v2/directions/driving-car"
+        headers = {
+            "Authorization": OPENROUTE_API_KEY,
+            "Content-Type": "application/json"
+        }
+        body = {
+            "coordinates": [
+                [float(origin_lng), float(origin_lat)],  # [lng, lat] formatı
+                [float(dest_lng), float(dest_lat)]
+            ]
         }
         
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=10)
+            response = await client.post(url, json=body, headers=headers, timeout=10)
             data = response.json()
             
-            if data.get("status") == "OK" and data.get("routes"):
-                leg = data["routes"][0]["legs"][0]
+            if "routes" in data and len(data["routes"]) > 0:
+                route = data["routes"][0]
+                summary = route.get("summary", {})
+                distance_m = summary.get("distance", 0)
+                duration_s = summary.get("duration", 0)
+                
+                distance_km = distance_m / 1000
+                duration_min = duration_s / 60
+                
                 return {
-                    "distance_km": leg["distance"]["value"] / 1000,
-                    "duration_min": leg.get("duration_in_traffic", leg["duration"])["value"] / 60,
-                    "distance_text": leg["distance"]["text"],
-                    "duration_text": leg.get("duration_in_traffic", leg["duration"])["text"]
+                    "distance_km": round(distance_km, 1),
+                    "duration_min": round(duration_min, 0),
+                    "distance_text": f"{round(distance_km, 1)} km",
+                    "duration_text": f"{int(duration_min)} dk"
                 }
     except Exception as e:
-        logger.error(f"Route info error: {e}")
+        logger.error(f"OpenRouteService error: {e}")
+        # Fallback: Düz çizgi mesafesi hesapla
+        try:
+            from math import radians, sin, cos, sqrt, atan2
+            R = 6371  # Dünya yarıçapı km
+            lat1, lon1 = radians(float(origin_lat)), radians(float(origin_lng))
+            lat2, lon2 = radians(float(dest_lat)), radians(float(dest_lng))
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            distance_km = R * c
+            duration_min = distance_km * 1.5  # Yaklaşık 40 km/saat
+            return {
+                "distance_km": round(distance_km, 1),
+                "duration_min": round(duration_min, 0),
+                "distance_text": f"{round(distance_km, 1)} km",
+                "duration_text": f"{int(duration_min)} dk"
+            }
+        except:
+            pass
     
     return None
 
