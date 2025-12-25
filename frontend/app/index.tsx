@@ -3512,18 +3512,42 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   { text: 'İptal', style: 'cancel' },
                   { text: 'Kötü Davranış', onPress: () => reportPassenger('bad_behavior') },
                   { text: 'Sahte Talep', onPress: () => reportPassenger('fake_request') },
-                  { text: 'Diğer', onPress: () => reportPassenger('other') },
+                  { 
+                    text: 'Diğer (Açıklama Yaz)', 
+                    onPress: () => {
+                      Alert.prompt(
+                        'Şikayet Açıklaması',
+                        'Lütfen şikayet sebebinizi açıklayın:',
+                        [
+                          { text: 'İptal', style: 'cancel' },
+                          { 
+                            text: 'Gönder', 
+                            onPress: (text) => {
+                              if (text && text.trim()) {
+                                reportPassenger('other', text.trim());
+                              } else {
+                                Alert.alert('Hata', 'Lütfen açıklama yazın');
+                              }
+                            }
+                          },
+                        ],
+                        'plain-text',
+                        '',
+                        'default'
+                      );
+                    }
+                  },
                 ]
               );
               
-              async function reportPassenger(reason: string) {
+              async function reportPassenger(reason: string, description?: string) {
                 try {
-                  const response = await fetch(
-                    `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.passenger_id}&reason=${reason}`,
-                    { method: 'POST' }
-                  );
+                  const url = description 
+                    ? `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.passenger_id}&reason=${reason}&description=${encodeURIComponent(description)}`
+                    : `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.passenger_id}&reason=${reason}`;
+                  const response = await fetch(url, { method: 'POST' });
                   const data = await response.json();
-                  Alert.alert('📩 Şikayet Alındı', data.message);
+                  Alert.alert('📩 Şikayet Alındı', data.message || 'Şikayetiniz admin\'e iletildi.');
                 } catch (error) {
                   Alert.alert('Hata', 'Şikayet gönderilemedi');
                 }
