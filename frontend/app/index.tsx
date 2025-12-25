@@ -179,6 +179,8 @@ interface Tag {
   passenger_name: string;
   pickup_location: string;
   dropoff_location: string;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
   notes?: string;
   status: string;
   driver_id?: string;
