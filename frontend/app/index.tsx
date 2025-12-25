@@ -170,6 +170,7 @@ interface User {
   role: 'passenger' | 'driver';
   rating: number;
   total_ratings: number;
+  city?: string;
 }
 
 interface Tag {
@@ -186,6 +187,9 @@ interface Tag {
   created_at: string;
   matched_at?: string;
   completed_at?: string;
+  driver_location?: { latitude: number; longitude: number };
+  passenger_location?: { latitude: number; longitude: number };
+  route_info?: any;
 }
 
 interface Offer {
