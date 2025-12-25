@@ -2844,14 +2844,28 @@ function PassengerDashboard({
         callerName={incomingCallInfo?.callerName || 'Arayan'}
         callType={incomingCallInfo?.callType || 'audio'}
         onAccept={async () => {
+          const callId = incomingCallInfo?.callId;
+          const channelName = incomingCallInfo?.channelName;
+          
           setShowIncomingCall(false);
           setSelectedDriverName(incomingCallInfo?.callerName || 'Arayan');
           setIsVideoCall(incomingCallInfo?.callType === 'video');
           setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
+          
+          // Call ID ve Channel Name'i sakla
+          if (callId) setActiveCallId(callId);
+          if (channelName) setActiveChannelName(channelName);
+          
           // Backend'e kabul bildirimi gönder
           try {
-            await fetch(`${API_URL}/voice/answer-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
-          } catch (e) {}
+            const acceptUrl = callId 
+              ? `${API_URL}/voice/accept-call?call_id=${callId}&user_id=${user.id}`
+              : `${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`;
+            await fetch(acceptUrl, { method: 'POST' });
+            console.log('✅ Arama kabul edildi:', callId);
+          } catch (e) {
+            console.log('Accept error:', e);
+          }
           setShowVoiceCall(true);
         }}
         onReject={async () => {
