@@ -3438,6 +3438,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                   return;
                 }
+                // Call ID ve Channel Name'i sakla
+                setActiveCallId(data.call_id);
+                setActiveChannelName(data.channel_name);
+                console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id, data.channel_name);
               } catch (error) {
                 console.error('Arama bildirimi hatası:', error);
                 Alert.alert('Hata', 'Arama başlatılamadı');
