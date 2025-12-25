@@ -2818,41 +2818,52 @@ trip_end_requests = {}
 
 @api_router.post("/trip/request-end")
 async def request_trip_end(tag_id: str, user_id: str = None, requester_id: str = None, user_type: str = None):
-    """Yolculuk sonlandırma isteği"""
+    """Yolculuk sonlandırma isteği - Supabase'de sakla"""
     try:
         rid = user_id or requester_id
         if not rid:
             raise HTTPException(status_code=422, detail="user_id gerekli")
         
-        trip_end_requests[tag_id] = {
-            "requester_id": rid,
-            "user_type": user_type or "unknown",
-            "requested_at": datetime.utcnow().isoformat(),
-            "status": "pending"
+        # Supabase'de tags tablosunda end_request alanını güncelle
+        update_data = {
+            "end_request": {
+                "requester_id": rid,
+                "user_type": user_type or "unknown",
+                "requested_at": datetime.utcnow().isoformat(),
+                "status": "pending"
+            }
         }
+        
+        result = supabase.table("tags").update(update_data).eq("id", tag_id).execute()
+        
         logger.info(f"🔚 Sonlandırma isteği: {tag_id} by {rid} ({user_type})")
         return {"success": True, "message": "Sonlandırma isteği gönderildi"}
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Request end error: {e}")
         return {"success": False, "detail": str(e)}
 
 @api_router.get("/trip/check-end-request")
 async def check_end_request(tag_id: str, user_id: str):
-    """Sonlandırma isteği var mı kontrol et"""
+    """Sonlandırma isteği var mı kontrol et - Supabase'den oku"""
     try:
-        request = trip_end_requests.get(tag_id)
+        result = supabase.table("tags").select("end_request").eq("id", tag_id).execute()
         
-        if request and request.get("status") == "pending" and request.get("requester_id") != user_id:
-            return {
-                "success": True,
-                "has_request": True,
-                "requester_id": request["requester_id"],
-                "requester_type": request.get("user_type", "unknown")
-            }
+        if result.data and len(result.data) > 0:
+            request = result.data[0].get("end_request")
+            
+            if request and request.get("status") == "pending" and request.get("requester_id") != user_id:
+                return {
+                    "success": True,
+                    "has_request": True,
+                    "requester_id": request["requester_id"],
+                    "requester_type": request.get("user_type", "unknown")
+                }
         
         return {"success": True, "has_request": False}
     except Exception as e:
+        logger.error(f"Check end request error: {e}")
         return {"success": False, "has_request": False}
 
 @api_router.post("/trip/respond-end-request")
@@ -2860,22 +2871,23 @@ async def respond_end_request(tag_id: str, user_id: str, approved: bool = True):
     """Sonlandırma isteğine cevap ver"""
     try:
         if approved:
-            # İsteği temizle
-            if tag_id in trip_end_requests:
-                del trip_end_requests[tag_id]
-            
-            # Trip'i tamamla
+            # Trip'i tamamla ve end_request'i temizle
             supabase.table("tags").update({
                 "status": "completed",
-                "completed_at": datetime.utcnow().isoformat()
+                "completed_at": datetime.utcnow().isoformat(),
+                "end_request": None
             }).eq("id", tag_id).execute()
             
             logger.info(f"✅ Yolculuk tamamlandı (karşılıklı): {tag_id}")
             return {"success": True, "approved": True, "message": "Yolculuk tamamlandı"}
         else:
-            # İsteği reddet
-            if tag_id in trip_end_requests:
-                trip_end_requests[tag_id]["status"] = "rejected"
+            # İsteği reddet - end_request içindeki status'u güncelle
+            result = supabase.table("tags").select("end_request").eq("id", tag_id).execute()
+            if result.data and result.data[0].get("end_request"):
+                end_request = result.data[0]["end_request"]
+                end_request["status"] = "rejected"
+                supabase.table("tags").update({"end_request": end_request}).eq("id", tag_id).execute()
+            
             return {"success": True, "approved": False, "message": "Sonlandırma isteği reddedildi"}
     except Exception as e:
         logger.error(f"Respond end request error: {e}")
