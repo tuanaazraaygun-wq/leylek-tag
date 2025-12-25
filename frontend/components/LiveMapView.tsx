@@ -201,13 +201,18 @@ export default function LiveMapView({
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
-        mapRef.current?.fitToCoordinates([userLocation, otherLocation], {
+        // Hedef konumu varsa 3 noktayı, yoksa 2 noktayı sığdır
+        const coordinates = [userLocation, otherLocation];
+        if (destinationLocation) {
+          coordinates.push(destinationLocation);
+        }
+        mapRef.current?.fitToCoordinates(coordinates, {
           edgePadding: { top: 180, right: 50, bottom: 280, left: 50 },
           animated: true,
         });
       }, 500);
     }
-  }, [userLocation, otherLocation]);
+  }, [userLocation, otherLocation, destinationLocation]);
 
   const openNavigation = () => {
     if (!otherLocation) return;
