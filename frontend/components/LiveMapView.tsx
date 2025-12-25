@@ -64,13 +64,14 @@ export default function LiveMapView({
   const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
   const [streetName, setStreetName] = useState<string>('');
   
-  // Rota bilgisi - önce backend, yoksa local hesaplama
+  // Rota bilgisi - Google API'den gerçek zamanlı hesaplama (daha doğru)
   const [localDistance, setLocalDistance] = useState<number | null>(null);
   const [localDuration, setLocalDuration] = useState<number | null>(null);
   
-  // Backend değeri varsa onu kullan, yoksa local
-  const distance = routeInfo?.distance_km || localDistance;
-  const duration = routeInfo?.duration_min || localDuration;
+  // GERÇEK ZAMANLI değer öncelikli (Google API'den her seferinde güncel hesaplanır)
+  // Backend değeri sadece fallback
+  const distance = localDistance || routeInfo?.distance_km;
+  const duration = localDuration || routeInfo?.duration_min;
 
   // Polyline decode
   const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
