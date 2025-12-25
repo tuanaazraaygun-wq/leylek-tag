@@ -7,20 +7,26 @@
     "simple": {
       "android": {
         "buildType": "apk",
-        "distribution": "internal"
+        "distribution": "internal",
+        "developmentClient": false,
+        "gradleCommand": ":app:assembleRelease"
       }
     },
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
       }
     },
     "production": {
