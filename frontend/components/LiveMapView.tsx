@@ -313,6 +313,18 @@ export default function LiveMapView({
             </View>
           </Marker>
         )}
+
+        {/* HEDEF KONUM - Yeşil Bayrak */}
+        {destinationLocation && (
+          <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 1 }}>
+            <View style={styles.destinationMarker}>
+              <View style={styles.destinationCircle}>
+                <Text style={styles.destinationIcon}>🏁</Text>
+              </View>
+              <Text style={styles.destinationLabel}>HEDEF</Text>
+            </View>
+          </Marker>
+        )}
       </MapView>
 
       {/* ÜST BİLGİ KARTI - MAVİ GRADIENT */}
