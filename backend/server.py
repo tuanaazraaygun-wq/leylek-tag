@@ -227,7 +227,7 @@ async def resolve_user_id(user_id: str) -> str:
     return user_id
 
 # OpenRouteService API (ÜCRETSİZ - Günlük 2000 istek)
-OPENROUTE_API_KEY = os.getenv("OPENROUTE_API_KEY", "5b3ce3597851110001cf6248a1b2c3d4e5f6g7h8i9j0")  # Ücretsiz key al: https://openrouteservice.org/
+OPENROUTE_API_KEY = os.getenv("OPENROUTE_API_KEY", "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQwM2JjMWQ2MDVlYjQyOTc5MzExNzg3NmRhMmU2NDViIiwiaCI6Im11cm11cjY0In0=")
 
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     """OpenRouteService ile rota bilgisi al (ÜCRETSİZ)"""
