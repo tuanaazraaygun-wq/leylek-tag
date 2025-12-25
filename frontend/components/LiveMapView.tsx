@@ -26,6 +26,7 @@ if (Platform.OS !== 'web') {
 interface LiveMapViewProps {
   userLocation: { latitude: number; longitude: number } | null;
   otherLocation: { latitude: number; longitude: number } | null;
+  destinationLocation?: { latitude: number; longitude: number } | null; // Hedef konum
   isDriver: boolean;
   userName?: string;
   otherUserName?: string;
@@ -45,6 +46,7 @@ const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 export default function LiveMapView({
   userLocation,
   otherLocation,
+  destinationLocation,
   isDriver,
   userName = 'Sen',
   otherUserName = 'Karşı Taraf',
