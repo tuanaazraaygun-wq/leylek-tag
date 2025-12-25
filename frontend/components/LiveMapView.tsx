@@ -26,7 +26,7 @@ if (Platform.OS !== 'web') {
 interface LiveMapViewProps {
   userLocation: { latitude: number; longitude: number } | null;
   otherLocation: { latitude: number; longitude: number } | null;
-  destinationLocation?: { latitude: number; longitude: number } | null; // Hedef konum
+  destinationLocation?: { latitude: number; longitude: number } | null;
   isDriver: boolean;
   userName?: string;
   otherUserName?: string;
@@ -37,11 +37,25 @@ interface LiveMapViewProps {
   onReport?: () => void;
   onCall?: (type: 'audio' | 'video') => void;
   onComplete?: () => void;
-  onRequestTripEnd?: () => void; // Karşılıklı iptal için
-  onForceEnd?: () => void; // Zorla bitir için
+  onRequestTripEnd?: () => void;
+  onForceEnd?: () => void;
+  onAutoComplete?: () => void; // Hedefe yaklaşınca otomatik bitirme
 }
 
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+// OpenRouteService API Key
+const OPENROUTE_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQwM2JjMWQ2MDVlYjQyOTc5MzExNzg3NmRhMmU2NDViIiwiaCI6Im11cm11cjY0In0=';
+
+// Haversine mesafe hesaplama (km)
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
 
 export default function LiveMapView({
   userLocation,
@@ -59,167 +73,154 @@ export default function LiveMapView({
   onComplete,
   onRequestTripEnd,
   onForceEnd,
+  onAutoComplete,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
-  const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
-  const [streetName, setStreetName] = useState<string>('');
   
-  // Rota bilgisi - Google API'den gerçek zamanlı hesaplama (daha doğru)
-  const [localDistance, setLocalDistance] = useState<number | null>(null);
-  const [localDuration, setLocalDuration] = useState<number | null>(null);
+  // YEŞİL ROTA: Şoför → Yolcu (buluşma)
+  const [meetingRoute, setMeetingRoute] = useState<{latitude: number, longitude: number}[]>([]);
+  const [meetingDistance, setMeetingDistance] = useState<number | null>(null);
+  const [meetingDuration, setMeetingDuration] = useState<number | null>(null);
   
-  // GERÇEK ZAMANLI değer öncelikli (Google API'den her seferinde güncel hesaplanır)
-  // Backend değeri sadece fallback
-  const distance = localDistance || routeInfo?.distance_km;
-  const duration = localDuration || routeInfo?.duration_min;
+  // TURUNCU ROTA: Yolcu → Hedef (varış)
+  const [destinationRoute, setDestinationRoute] = useState<{latitude: number, longitude: number}[]>([]);
+  const [destinationDistance, setDestinationDistance] = useState<number | null>(null);
+  const [destinationDuration, setDestinationDuration] = useState<number | null>(null);
+  
+  // Hedefe yaklaşma kontrolü
+  const [nearDestination, setNearDestination] = useState(false);
+  const autoCompleteTriggered = useRef(false);
 
-  // Polyline decode
-  const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
-    const points: {latitude: number, longitude: number}[] = [];
-    let index = 0, lat = 0, lng = 0;
-
-    while (index < encoded.length) {
-      let b, shift = 0, result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
-
-      points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
-    }
-    return points;
-  };
-
-  // Polyline için rota çiz + mesafe/süre hesapla
-  const fetchRoutePolyline = async () => {
-    if (!userLocation || !otherLocation) {
-      setRouteCoordinates([]);
-      return;
-    }
-
+  // OpenRouteService'den rota al
+  const fetchRoute = async (
+    start: { latitude: number; longitude: number },
+    end: { latitude: number; longitude: number }
+  ): Promise<{ coordinates: {latitude: number, longitude: number}[], distance: number, duration: number } | null> => {
     try {
-      // Her zaman şoförden yolcuya hesapla
-      let origin, destination;
-      if (isDriver) {
-        origin = { lat: userLocation.latitude, lng: userLocation.longitude };
-        destination = { lat: otherLocation.latitude, lng: otherLocation.longitude };
-      } else {
-        origin = { lat: otherLocation.latitude, lng: otherLocation.longitude };
-        destination = { lat: userLocation.latitude, lng: userLocation.longitude };
-      }
-      
-      // ÜCRETSİZ: OpenRouteService kullan (Google Maps yerine)
-      const OPENROUTE_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQwM2JjMWQ2MDVlYjQyOTc5MzExNzg3NmRhMmU2NDViIiwiaCI6Im11cm11cjY0In0=';
       const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
       
-      console.log('🗺️ OpenRouteService rota isteği...');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': OPENROUTE_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          coordinates: [
+            [start.longitude, start.latitude],
+            [end.longitude, end.latitude]
+          ]
+        })
+      });
       
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': OPENROUTE_API_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            coordinates: [
-              [origin.lng, origin.lat],
-              [destination.lng, destination.lat]
-            ]
-          })
-        });
+      const data = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        const route = data.features[0];
+        const props = route.properties;
+        const coords = route.geometry.coordinates;
         
-        const data = await response.json();
+        const points = coords.map((c: number[]) => ({
+          latitude: c[1],
+          longitude: c[0]
+        }));
         
-        if (data.features && data.features.length > 0) {
-          const route = data.features[0];
-          const props = route.properties;
-          const coords = route.geometry.coordinates;
-          
-          // GeoJSON koordinatlarını [lat, lng] formatına çevir
-          const points = coords.map((c: number[]) => ({
-            latitude: c[1],
-            longitude: c[0]
-          }));
-          setRouteCoordinates(points);
-          
-          const distKm = (props.summary?.distance || 0) / 1000;
-          const durMin = Math.round((props.summary?.duration || 0) / 60);
-          setLocalDistance(distKm);
-          setLocalDuration(durMin);
-          console.log('✅ OpenRouteService rota:', distKm.toFixed(1), 'km,', durMin, 'dk');
-        } else {
-          throw new Error('Rota bulunamadı');
-        }
-      } catch (orsError) {
-        console.log('⚠️ OpenRouteService hatası, fallback kullanılıyor:', orsError);
-        // Fallback: Düz çizgi mesafe x 1.5
-        const straightDist = calculateDistance(
-          userLocation.latitude, userLocation.longitude,
-          otherLocation.latitude, otherLocation.longitude
-        );
-        const dist = straightDist * 1.5;
-        const dur = Math.round((dist / 35) * 60);
-        setLocalDistance(dist);
-        setLocalDuration(dur);
-        setRouteCoordinates([
-          isDriver ? userLocation : otherLocation,
-          isDriver ? otherLocation : userLocation
-        ]);
+        const distKm = (props.summary?.distance || 0) / 1000;
+        const durMin = Math.round((props.summary?.duration || 0) / 60);
+        
+        return { coordinates: points, distance: distKm, duration: durMin };
       }
     } catch (error) {
-      console.error('🗺️ Rota hatası:', error);
-      if (userLocation && otherLocation) {
-        const dist = calculateDistance(
-          userLocation.latitude, userLocation.longitude,
-          otherLocation.latitude, otherLocation.longitude
-        );
-        const dur = Math.round((dist / 40) * 60);
-        setLocalDistance(dist);
-        setLocalDuration(dur);
-        setRouteCoordinates([
-          isDriver ? userLocation : otherLocation,
-          isDriver ? otherLocation : userLocation
-        ]);
-      }
+      console.log('OpenRouteService hatası:', error);
     }
-  };
-  
-  // Haversine mesafe hesaplama
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
+    return null;
   };
 
+  // YEŞİL ROTA: Şoför → Yolcu
   useEffect(() => {
-    if (userLocation && otherLocation) {
-      fetchRoutePolyline();
-    }
-  }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
+    if (!userLocation || !otherLocation) return;
+    
+    const updateMeetingRoute = async () => {
+      let start, end;
+      if (isDriver) {
+        start = userLocation; // Şoför
+        end = otherLocation;   // Yolcu
+      } else {
+        start = otherLocation; // Şoför
+        end = userLocation;    // Yolcu
+      }
+      
+      const result = await fetchRoute(start, end);
+      if (result) {
+        setMeetingRoute(result.coordinates);
+        setMeetingDistance(result.distance);
+        setMeetingDuration(result.duration);
+        console.log('✅ Buluşma rotası:', result.distance.toFixed(1), 'km,', result.duration, 'dk');
+      } else {
+        // Fallback: Düz çizgi
+        setMeetingRoute([start, end]);
+        const dist = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
+        setMeetingDistance(dist * 1.3);
+        setMeetingDuration(Math.round((dist * 1.3 / 40) * 60));
+      }
+    };
+    
+    updateMeetingRoute();
+    const interval = setInterval(updateMeetingRoute, 30000); // 30 saniyede bir güncelle
+    return () => clearInterval(interval);
+  }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, isDriver]);
 
+  // TURUNCU ROTA: Yolcu → Hedef
+  useEffect(() => {
+    if (!userLocation || !destinationLocation) return;
+    
+    const updateDestinationRoute = async () => {
+      // Yolcunun konumundan hedefe
+      const passengerLocation = isDriver ? otherLocation : userLocation;
+      if (!passengerLocation) return;
+      
+      const result = await fetchRoute(passengerLocation, destinationLocation);
+      if (result) {
+        setDestinationRoute(result.coordinates);
+        setDestinationDistance(result.distance);
+        setDestinationDuration(result.duration);
+        console.log('✅ Hedef rotası:', result.distance.toFixed(1), 'km,', result.duration, 'dk');
+        
+        // 1 km'den az mı kontrol et
+        if (result.distance <= 1 && !autoCompleteTriggered.current) {
+          setNearDestination(true);
+          autoCompleteTriggered.current = true;
+          
+          Alert.alert(
+            '🎯 Hedefe Yaklaştınız!',
+            'Hedefe 1 km\'den az kaldı. Yolculuğu tamamlamak ister misiniz?',
+            [
+              { text: 'Hayır', style: 'cancel' },
+              { text: 'Evet, Tamamla', onPress: () => onAutoComplete?.() }
+            ]
+          );
+        }
+      } else {
+        // Fallback
+        setDestinationRoute([passengerLocation, destinationLocation]);
+        const dist = calculateDistance(
+          passengerLocation.latitude, passengerLocation.longitude,
+          destinationLocation.latitude, destinationLocation.longitude
+        );
+        setDestinationDistance(dist * 1.3);
+        setDestinationDuration(Math.round((dist * 1.3 / 40) * 60));
+      }
+    };
+    
+    updateDestinationRoute();
+    const interval = setInterval(updateDestinationRoute, 30000);
+    return () => clearInterval(interval);
+  }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
+
+  // Harita sınırlarını ayarla
   useEffect(() => {
     if (mapRef.current && userLocation && otherLocation) {
       setTimeout(() => {
-        // Hedef konumu varsa 3 noktayı, yoksa 2 noktayı sığdır
         const coordinates = [userLocation, otherLocation];
         if (destinationLocation) {
           coordinates.push(destinationLocation);
@@ -232,100 +233,99 @@ export default function LiveMapView({
     }
   }, [userLocation, otherLocation, destinationLocation]);
 
+  // Google/Apple Maps navigasyon aç
   const openNavigation = () => {
     if (!otherLocation) return;
     
-    const url = Platform.select({
-      ios: `comgooglemaps://?daddr=${otherLocation.latitude},${otherLocation.longitude}&directionsmode=driving`,
-      android: `google.navigation:q=${otherLocation.latitude},${otherLocation.longitude}&mode=d`,
-    });
-
-    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${otherLocation.latitude},${otherLocation.longitude}&travelmode=driving`;
-
-    if (url) {
-      Linking.canOpenURL(url)
-        .then((supported) => Linking.openURL(supported ? url : webUrl))
-        .catch(() => Linking.openURL(webUrl));
+    const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
+    const label = encodeURIComponent(otherUserName);
+    
+    const googleUrl = `google.navigation:q=${destination}&mode=d`;
+    const appleUrl = `maps://app?daddr=${destination}&dirflg=d`;
+    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
+    
+    if (Platform.OS === 'android') {
+      Linking.openURL(googleUrl).catch(() => Linking.openURL(webUrl));
+    } else if (Platform.OS === 'ios') {
+      Linking.openURL(appleUrl).catch(() => Linking.openURL(webUrl));
     } else {
       Linking.openURL(webUrl);
     }
   };
 
+  // Web fallback
   if (Platform.OS === 'web' || !MapView) {
     return (
-      <View style={styles.webPlaceholder}>
-        <Ionicons name="map" size={60} color="#22C55E" />
-        <Text style={styles.webText}>Harita (Mobil Uygulamada)</Text>
+      <View style={styles.container}>
+        <View style={styles.webFallback}>
+          <Ionicons name="map" size={64} color="#3FA9F5" />
+          <Text style={styles.webFallbackText}>Harita sadece mobil uygulamada görüntülenebilir</Text>
+          {meetingDistance && (
+            <Text style={styles.distanceText}>
+              Buluşma: {meetingDistance.toFixed(1)} km • {meetingDuration} dk
+            </Text>
+          )}
+          {destinationDistance && (
+            <Text style={styles.destinationDistanceText}>
+              Hedefe: {destinationDistance.toFixed(1)} km • {destinationDuration} dk
+            </Text>
+          )}
+        </View>
       </View>
     );
   }
 
-  const initialRegion = userLocation ? {
-    latitude: userLocation.latitude,
-    longitude: userLocation.longitude,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  } : {
-    latitude: 39.9334,
-    longitude: 32.8597,
-    latitudeDelta: 0.1,
-    longitudeDelta: 0.1,
-  };
-
   return (
     <View style={styles.container}>
+      {/* HARİTA */}
       <MapView
         ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
-        initialRegion={initialRegion}
+        initialRegion={{
+          latitude: userLocation?.latitude || 39.9334,
+          longitude: userLocation?.longitude || 32.8597,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
         showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
-        mapType="standard"
-        toolbarEnabled={false}
-        showsScale={false}
-        showsBuildings={false}
-        showsTraffic={false}
-        showsIndoors={false}
-        showsIndoorLevelPicker={false}
-        showsPointsOfInterest={false}
-        paddingAdjustmentBehavior="automatic"
-        mapPadding={{ left: 0, right: 0, top: 0, bottom: 100 }}
-        customMapStyle={[
-          {
-            "featureType": "administrative",
-            "elementType": "geometry",
-            "stylers": [{ "visibility": "off" }]
-          },
-          {
-            "featureType": "poi",
-            "stylers": [{ "visibility": "off" }]
-          }
-        ]}
+        customMapStyle={mapStyle}
       >
-        {/* ROTA ÇİZGİSİ */}
-        {routeCoordinates.length >= 2 && (
+        {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) */}
+        {meetingRoute.length > 1 && (
           <Polyline
-            coordinates={routeCoordinates}
+            coordinates={meetingRoute}
             strokeColor="#22C55E"
             strokeWidth={5}
+            lineDashPattern={[0]}
+          />
+        )}
+        
+        {/* TURUNCU ROTA: Yolcu → Hedef */}
+        {destinationRoute.length > 1 && destinationLocation && (
+          <Polyline
+            coordinates={destinationRoute}
+            strokeColor="#F97316"
+            strokeWidth={5}
+            lineDashPattern={[10, 5]}
           />
         )}
 
-        {/* BEN */}
+        {/* BEN - Mavi Marker */}
         {userLocation && (
           <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={styles.markerContainer}>
-              <View style={[styles.markerCircle, isDriver ? styles.driverCircle : styles.passengerCircle]}>
+              <View style={[styles.markerCircle, styles.myCircle]}>
                 <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
               </View>
-              <View style={[styles.markerArrow, isDriver ? styles.driverArrow : styles.passengerArrow]} />
+              <View style={[styles.markerArrow, styles.myArrow]} />
             </View>
           </Marker>
         )}
 
-        {/* KARŞI TARAF */}
+        {/* KARŞI TARAF - Yeşil/Mor Marker */}
         {otherLocation && (
           <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={styles.markerContainer}>
@@ -337,7 +337,7 @@ export default function LiveMapView({
           </Marker>
         )}
 
-        {/* HEDEF KONUM - Yeşil Bayrak */}
+        {/* HEDEF - Turuncu Bayrak */}
         {destinationLocation && (
           <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 1 }}>
             <View style={styles.destinationMarker}>
@@ -350,490 +350,163 @@ export default function LiveMapView({
         )}
       </MapView>
 
-      {/* ÜST BİLGİ KARTI - MAVİ GRADIENT */}
-      <View style={styles.topCard}>
-        <LinearGradient
-          colors={['#3B82F6', '#1D4ED8']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.topCardGradient}
-        >
-          {/* Üst Satır: Mesafe - Süre - Fiyat */}
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Ionicons name="navigate-circle" size={22} color="#FFF" />
-              <Text style={styles.statValue}>{distance ? `${distance.toFixed(1)} km` : '--'}</Text>
-              <Text style={styles.statLabel}>Mesafe</Text>
-            </View>
-            
-            <View style={styles.statDivider} />
-            
-            <View style={styles.statItemMain}>
-              <Ionicons name="time" size={26} color="#FFF" />
-              <Text style={styles.statValueBig}>{duration ? `${duration} dk` : '--'}</Text>
-              <Text style={styles.statLabel}>Tahmini Süre</Text>
-            </View>
-            
-            <View style={styles.statDivider} />
-            
-            <View style={styles.statItem}>
-              <Ionicons name="cash" size={22} color="#22C55E" />
-              <Text style={styles.statValueGreen}>{price ? `₺${price}` : '--'}</Text>
-              <Text style={styles.statLabel}>Fiyat</Text>
+      {/* ÜST BİLGİ PANELİ */}
+      <View style={styles.topInfoPanel}>
+        <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,0.95)']} style={styles.infoGradient}>
+          {/* Buluşma Bilgisi - Yeşil */}
+          <View style={styles.routeInfoRow}>
+            <View style={[styles.routeIndicator, { backgroundColor: '#22C55E' }]} />
+            <View style={styles.routeDetails}>
+              <Text style={styles.routeLabel}>Buluşma</Text>
+              <Text style={styles.routeValue}>
+                {meetingDistance ? `${meetingDistance.toFixed(1)} km` : '...'} • {meetingDuration ? `${meetingDuration} dk` : '...'}
+              </Text>
             </View>
           </View>
-
-          {/* Alt Satır: Buluşma Mesajı */}
-          <View style={styles.meetingRow}>
-            <Text style={styles.meetingText}>
-              🤝 {duration ? `${duration} dakika sonra buluşacaksınız!` : 'Hesaplanıyor...'}
-            </Text>
-          </View>
-
-          {/* Şoförün Sokağı (Yolcu için) */}
-          {!isDriver && streetName ? (
-            <Text style={styles.streetText}>📍 Şoför: {streetName}</Text>
-          ) : null}
+          
+          {/* Hedef Bilgisi - Turuncu */}
+          {destinationLocation && (
+            <View style={styles.routeInfoRow}>
+              <View style={[styles.routeIndicator, { backgroundColor: '#F97316' }]} />
+              <View style={styles.routeDetails}>
+                <Text style={styles.routeLabel}>Hedefe</Text>
+                <Text style={styles.routeValue}>
+                  {destinationDistance ? `${destinationDistance.toFixed(1)} km` : '...'} • {destinationDuration ? `${destinationDuration} dk` : '...'}
+                </Text>
+              </View>
+              {nearDestination && (
+                <View style={styles.nearBadge}>
+                  <Text style={styles.nearBadgeText}>YAKIN!</Text>
+                </View>
+              )}
+            </View>
+          )}
+          
+          {/* Fiyat */}
+          {price && (
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>Ücret:</Text>
+              <Text style={styles.priceValue}>₺{price}</Text>
+            </View>
+          )}
         </LinearGradient>
       </View>
 
-      {/* CANLI Gösterge */}
-      <View style={styles.liveIndicator}>
-        <View style={styles.liveDot} />
-        <Text style={styles.liveText}>CANLI</Text>
-      </View>
-
-      {/* Sol alt köşe örtücü (Google logosu gizleme) */}
-      <View style={styles.bottomLeftCover} />
-
-      {/* ALT BUTONLAR - SİMETRİK DÜZEN */}
-      <View style={styles.bottomContainer}>
-        {/* Navigasyon Butonu - SADECE ŞOFÖR İÇİN */}
-        {isDriver ? (
-          <TouchableOpacity style={styles.navButton} onPress={openNavigation} activeOpacity={0.8}>
-            <LinearGradient
-              colors={['#4285F4', '#2563EB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.navButtonGradient}
-            >
-              <Ionicons name="navigate" size={22} color="#FFF" />
-              <Text style={styles.navButtonText}>Yolcuya Git</Text>
+      {/* ALT BUTONLAR */}
+      <View style={styles.bottomPanel}>
+        <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,1)']} style={styles.bottomGradient}>
+          {/* Navigasyon Butonu */}
+          <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
+            <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.navButtonGradient}>
+              <Ionicons name="navigate" size={24} color="#FFF" />
+              <Text style={styles.navButtonText}>Navigasyon</Text>
             </LinearGradient>
           </TouchableOpacity>
-        ) : (
-          /* Yolcu için: Şoförü haritada izleme bilgisi */
-          <View style={styles.watchingInfo}>
-            <Ionicons name="eye" size={20} color="#22C55E" />
-            <Text style={styles.watchingText}>Şoförün konumunu canlı izliyorsunuz</Text>
+
+          {/* Arama Butonları */}
+          <View style={styles.callButtons}>
+            <TouchableOpacity style={styles.callButton} onPress={() => onCall?.('audio')}>
+              <Ionicons name="call" size={22} color="#22C55E" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.callButton} onPress={() => onCall?.('video')}>
+              <Ionicons name="videocam" size={22} color="#3B82F6" />
+            </TouchableOpacity>
           </View>
-        )}
 
-        {/* Arama ve İşlem Butonları - 4 Sütun */}
-        <View style={styles.actionRow}>
-          {/* Sesli Arama */}
-          <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('audio')} activeOpacity={0.8}>
-            <LinearGradient colors={['#10B981', '#059669']} style={styles.actionBtnCircle}>
-              <Ionicons name="call" size={26} color="#FFF" />
-            </LinearGradient>
-            <Text style={styles.actionBtnLabel}>Sesli</Text>
-          </TouchableOpacity>
-
-          {/* Görüntülü Arama */}
-          <TouchableOpacity style={styles.actionBtn} onPress={() => onCall?.('video')} activeOpacity={0.8}>
-            <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.actionBtnCircle}>
-              <Ionicons name="videocam" size={26} color="#FFF" />
-            </LinearGradient>
-            <Text style={styles.actionBtnLabel}>Video</Text>
-          </TouchableOpacity>
-
-          {/* Bitir - Karşılıklı onay ile */}
-          <TouchableOpacity 
-            style={styles.actionBtn} 
-            onPress={() => {
-              // Karşılıklı onay sistemi: önce onRequestTripEnd varsa onu dene
-              if (onRequestTripEnd) {
-                onRequestTripEnd();
-              } else if (onComplete) {
-                onComplete();
-              }
-            }} 
-            activeOpacity={0.8}
-          >
-            <LinearGradient colors={['#EF4444', '#DC2626']} style={styles.actionBtnCircle}>
-              <Ionicons name="checkmark-done" size={26} color="#FFF" />
-            </LinearGradient>
-            <Text style={styles.actionBtnLabel}>Bitir</Text>
-          </TouchableOpacity>
-
-          {/* Diğer (Engelle/Şikayet/Zorla Bitir) */}
-          <TouchableOpacity 
-            style={styles.actionBtn} 
-            activeOpacity={0.8}
-            onPress={() => {
-              Alert.alert(
-                `${otherUserName}`,
-                'Ne yapmak istiyorsunuz?',
+          {/* Diğer Butonlar */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => {
+              Alert.prompt(
+                'Şikayet',
+                'Lütfen şikayet sebebinizi yazın:',
                 [
                   { text: 'İptal', style: 'cancel' },
-                  { text: '🚫 Engelle', style: 'destructive', onPress: onBlock },
-                  { text: '⚠️ Şikayet Et', onPress: onReport },
-                  { 
-                    text: '⛔ Zorla Bitir (-1 puan)', 
-                    style: 'destructive', 
-                    onPress: () => {
-                      Alert.alert(
-                        '⚠️ Zorla Bitir',
-                        'Yolculuğu zorla bitirmek istediğinize emin misiniz?\n\nBu işlem puanınızı -1 düşürür.',
-                        [
-                          { text: 'Vazgeç', style: 'cancel' },
-                          { 
-                            text: 'Zorla Bitir', 
-                            style: 'destructive',
-                            onPress: onForceEnd
-                          }
-                        ]
-                      );
-                    }
-                  },
+                  { text: 'Gönder', onPress: (text) => text && onReport?.() }
+                ],
+                'plain-text'
+              );
+            }}>
+              <Ionicons name="flag" size={18} color="#EF4444" />
+              <Text style={styles.actionButtonText}>Şikayet</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.actionButton, styles.endButton]} onPress={() => {
+              Alert.alert(
+                'Yolculuğu Bitir',
+                'Nasıl bitirmek istiyorsunuz?',
+                [
+                  { text: 'İptal', style: 'cancel' },
+                  { text: 'Onay İste', onPress: () => onRequestTripEnd?.() },
+                  { text: 'Tamamla', onPress: () => onComplete?.(), style: 'destructive' }
                 ]
               );
-            }}
-          >
-            <View style={styles.actionBtnCircleGray}>
-              <Ionicons name="ellipsis-horizontal" size={26} color="#FFF" />
-            </View>
-            <Text style={styles.actionBtnLabel}>Diğer</Text>
-          </TouchableOpacity>
-        </View>
+            }}>
+              <Ionicons name="checkmark-circle" size={18} color="#FFF" />
+              <Text style={[styles.actionButtonText, { color: '#FFF' }]}>Bitir</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
       </View>
     </View>
   );
 }
 
+// Harita stili
+const mapStyle = [
+  { "featureType": "poi", "stylers": [{ "visibility": "off" }] },
+  { "featureType": "transit", "stylers": [{ "visibility": "off" }] }
+];
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  map: {
-    flex: 1,
-  },
-  webPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-  },
-  webText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  // YENİ Modern Marker Stilleri
-  markerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  markerCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 10,
-  },
-  driverCircle: {
-    backgroundColor: '#DC2626', // Kırmızı - Şoför
-  },
-  passengerCircle: {
-    backgroundColor: '#2563EB', // Mavi - Yolcu
-  },
-  markerIcon: {
-    fontSize: 22,
-    textAlign: 'center',
-  },
-  markerArrow: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderTopWidth: 12,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    marginTop: -2,
-  },
-  driverArrow: {
-    borderTopColor: '#DC2626',
-  },
-  passengerArrow: {
-    borderTopColor: '#2563EB',
-  },
-  // Eski stilleri tutuyorum - yedek olarak
-  markerOuter: {
-    width: 90,
-    height: 90,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  markerInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  driverMarker: {
-    backgroundColor: '#DC2626',
-  },
-  passengerMarker: {
-    backgroundColor: '#2563EB',
-  },
-  markerEmoji: {
-    fontSize: 24,
-    textAlign: 'center',
-  },
-  // Üst Kart
-  topCard: {
-    position: 'absolute',
-    top: 50,
-    left: 16,
-    right: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  topCardGradient: {
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statItemMain: {
-    flex: 1.3,
-    alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginTop: 4,
-  },
-  statValueBig: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginTop: 4,
-  },
-  statValueGreen: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#22C55E',
-    marginTop: 4,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 2,
-  },
-  meetingRow: {
-    marginTop: 12,
-    backgroundColor: 'rgba(34, 197, 94, 0.9)',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  meetingText: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#FFF',
-    textAlign: 'center',
-  },
-  streetText: {
-    marginTop: 8,
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.9)',
-    textAlign: 'center',
-  },
-  // Canlı Gösterge
-  liveIndicator: {
-    position: 'absolute',
-    top: 56,
-    right: 24,
-    backgroundColor: '#EF4444',
-    borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FFF',
-  },
-  liveText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  // Alt Container
-  bottomContainer: {
-    position: 'absolute',
-    bottom: 50,
-    left: 16,
-    right: 16,
-  },
-  navButton: {
-    marginBottom: 16,
-    borderRadius: 14,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 6,
-  },
-  navButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 10,
-  },
-  navButtonText: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  watchingInfo: {
-    backgroundColor: 'rgba(34, 197, 94, 0.9)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  watchingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  // Action Row - 4 sütun simetrik
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-  },
-  actionBtn: {
-    alignItems: 'center',
-    width: (SCREEN_WIDTH - 64) / 4,
-  },
-  actionBtnCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  actionBtnCircleGray: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#6B7280',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  actionBtnLabel: {
-    marginTop: 6,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#333',
-  },
-  // Sol alt köşe örtücü (Google logosu gizleme)
-  bottomLeftCover: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    width: 80,
-    height: 25,
-    backgroundColor: '#F5F5F5',
-  },
-  // Hedef Marker Stilleri
-  destinationMarker: {
-    alignItems: 'center',
-  },
-  destinationCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#22C55E',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  destinationIcon: {
-    fontSize: 24,
-  },
-  destinationLabel: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#22C55E',
-    backgroundColor: '#FFF',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
+  container: { flex: 1 },
+  map: { flex: 1 },
+  webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8' },
+  webFallbackText: { fontSize: 16, color: '#666', marginTop: 16, textAlign: 'center' },
+  distanceText: { fontSize: 18, fontWeight: 'bold', color: '#22C55E', marginTop: 12 },
+  destinationDistanceText: { fontSize: 16, color: '#F97316', marginTop: 8 },
+  
+  // Marker Styles
+  markerContainer: { alignItems: 'center' },
+  markerCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
+  myCircle: { backgroundColor: '#3B82F6' },
+  driverCircle: { backgroundColor: '#22C55E' },
+  passengerCircle: { backgroundColor: '#8B5CF6' },
+  markerIcon: { fontSize: 20 },
+  markerArrow: { width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', marginTop: -2 },
+  myArrow: { borderTopColor: '#3B82F6' },
+  driverArrow: { borderTopColor: '#22C55E' },
+  passengerArrow: { borderTopColor: '#8B5CF6' },
+  
+  // Destination Marker
+  destinationMarker: { alignItems: 'center' },
+  destinationCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F97316', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8 },
+  destinationIcon: { fontSize: 24 },
+  destinationLabel: { marginTop: 4, fontSize: 11, fontWeight: 'bold', color: '#F97316', backgroundColor: '#FFF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
+  
+  // Top Info Panel
+  topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0 },
+  infoGradient: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 16, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  routeIndicator: { width: 12, height: 12, borderRadius: 6, marginRight: 12 },
+  routeDetails: { flex: 1 },
+  routeLabel: { fontSize: 12, color: '#666' },
+  routeValue: { fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
+  nearBadge: { backgroundColor: '#F97316', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  nearBadgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  priceLabel: { fontSize: 14, color: '#666' },
+  priceValue: { fontSize: 20, fontWeight: 'bold', color: '#22C55E' },
+  
+  // Bottom Panel
+  bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
+  bottomGradient: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 30, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  navButton: { marginBottom: 12 },
+  navButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12 },
+  navButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  callButtons: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 12 },
+  callButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB' },
+  actionButtons: { flexDirection: 'row', gap: 12 },
+  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: '#F3F4F6', borderRadius: 10 },
+  actionButtonText: { fontSize: 14, fontWeight: '500', marginLeft: 6, color: '#374151' },
+  endButton: { backgroundColor: '#22C55E' },
 });
