@@ -622,7 +622,14 @@ export default function App() {
         
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
-            <Logo size="large" showSlogan={false} />
+            {/* Yuvarlak Logo */}
+            <View style={styles.roundLogoWrapper}>
+              <Image 
+                source={require('../assets/images/logo.png')} 
+                style={styles.roundLogo}
+                resizeMode="cover"
+              />
+            </View>
             <Text style={styles.heroTitle}>Yolculuk Eşleştirme</Text>
             <Text style={styles.heroSubtitle}>Güvenli ve hızlı yolculuk deneyimi</Text>
           </View>
