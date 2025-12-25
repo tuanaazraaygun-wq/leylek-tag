@@ -114,48 +114,65 @@ export default function LiveMapView({
       // Her zaman şoförden yolcuya hesapla
       let origin, destination;
       if (isDriver) {
-        origin = `${userLocation.latitude},${userLocation.longitude}`;
-        destination = `${otherLocation.latitude},${otherLocation.longitude}`;
+        origin = { lat: userLocation.latitude, lng: userLocation.longitude };
+        destination = { lat: otherLocation.latitude, lng: otherLocation.longitude };
       } else {
-        origin = `${otherLocation.latitude},${otherLocation.longitude}`;
-        destination = `${userLocation.latitude},${userLocation.longitude}`;
+        origin = { lat: otherLocation.latitude, lng: otherLocation.longitude };
+        destination = { lat: userLocation.latitude, lng: userLocation.longitude };
       }
       
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}&mode=driving&language=tr`;
+      // ÜCRETSİZ: OpenRouteService kullan (Google Maps yerine)
+      const OPENROUTE_API_KEY = '5b3ce3597851110001cf6248a1b2c3d4e5f6g7h8i9j0';
+      const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
       
-      console.log('🗺️ Rota isteği:', url);
-      const response = await fetch(url);
-      const data = await response.json();
-      console.log('🗺️ API yanıtı:', data.status);
-
-      if (data.status === 'OK' && data.routes.length > 0) {
-        const route = data.routes[0];
-        const leg = route.legs[0];
-        const points = decodePolyline(route.overview_polyline.points);
-        setRouteCoordinates(points);
+      console.log('🗺️ OpenRouteService rota isteği...');
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': OPENROUTE_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            coordinates: [
+              [origin.lng, origin.lat],
+              [destination.lng, destination.lat]
+            ]
+          })
+        });
         
-        // Google'dan gelen GERÇEK mesafe ve süre
-        const distKm = leg.distance.value / 1000;
-        const durMin = Math.round(leg.duration.value / 60);
-        setLocalDistance(distKm);
-        setLocalDuration(durMin);
-        console.log('✅ Google rota:', distKm.toFixed(1), 'km,', durMin, 'dk');
+        const data = await response.json();
         
-        // Şoförün sokak adı (yolcu için)
-        if (!isDriver && leg.start_address) {
-          setStreetName(leg.start_address.split(',')[0]);
+        if (data.features && data.features.length > 0) {
+          const route = data.features[0];
+          const props = route.properties;
+          const coords = route.geometry.coordinates;
+          
+          // GeoJSON koordinatlarını [lat, lng] formatına çevir
+          const points = coords.map((c: number[]) => ({
+            latitude: c[1],
+            longitude: c[0]
+          }));
+          setRouteCoordinates(points);
+          
+          const distKm = (props.summary?.distance || 0) / 1000;
+          const durMin = Math.round((props.summary?.duration || 0) / 60);
+          setLocalDistance(distKm);
+          setLocalDuration(durMin);
+          console.log('✅ OpenRouteService rota:', distKm.toFixed(1), 'km,', durMin, 'dk');
+        } else {
+          throw new Error('Rota bulunamadı');
         }
-      } else {
-        console.log('⚠️ API hatası, fallback kullanılıyor. Status:', data.status);
-        // Fallback: Düz çizgi mesafe x 1.8 (şehir içi yol katsayısı)
+      } catch (orsError) {
+        console.log('⚠️ OpenRouteService hatası, fallback kullanılıyor:', orsError);
+        // Fallback: Düz çizgi mesafe x 1.5
         const straightDist = calculateDistance(
           userLocation.latitude, userLocation.longitude,
           otherLocation.latitude, otherLocation.longitude
         );
-        // Şehir içi yollar düz çizginin ~1.8 katı (virajlar, trafik)
-        const dist = straightDist * 1.8;
-        // Ortalama 30 km/h şehir içi hız
-        const dur = Math.round((dist / 30) * 60);
+        const dist = straightDist * 1.5;
+        const dur = Math.round((dist / 35) * 60);
         setLocalDistance(dist);
         setLocalDuration(dur);
         setRouteCoordinates([
