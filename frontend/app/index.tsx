@@ -3715,7 +3715,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         <VideoCall
           visible={showVoiceCall}
           remoteUserName={selectedPassengerName}
-          channelName={activeTag.id}
+          channelName={activeChannelName || incomingCallInfo?.channelName || ''}
+          callId={activeCallId || incomingCallInfo?.callId || ''}
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
@@ -3723,11 +3724,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setActiveChannelName('');
+            setActiveCallId('');
           }}
           onRejected={() => {
             setShowVoiceCall(false);
             setIsVideoCall(false);
             setIsCallCaller(false);
+            setActiveChannelName('');
+            setActiveCallId('');
           }}
         />
       )}
