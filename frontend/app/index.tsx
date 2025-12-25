@@ -2187,9 +2187,10 @@ function PassengerDashboard({
         const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
         const data = await response.json();
         
-        console.log('🔚 Trip end request check:', data);
+        console.log('🔚 YOLCU - Trip end request check:', JSON.stringify(data));
         
         if (data.success && data.has_request && !showTripEndModal) {
+          console.log('🔚 YOLCU - Bitirme isteği VAR! Requester:', data.requester_type);
           setTripEndRequesterType(data.requester_type || 'unknown');
           setShowTripEndModal(true);
         }
@@ -2199,7 +2200,7 @@ function PassengerDashboard({
     };
     
     checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 3000);
+    const interval = setInterval(checkTripEndRequest, 2000); // 2 saniyede bir kontrol
     return () => clearInterval(interval);
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
