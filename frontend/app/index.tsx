@@ -16,10 +16,18 @@ import RatingModal from '../components/RatingModal';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 
+import Constants from 'expo-constants';
+
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Backend URL - önce extra'dan, sonra env'den, en son hardcoded
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
+                    process.env.EXPO_PUBLIC_BACKEND_URL || 
+                    'https://leylek-bug.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
+
+console.log('🌐 BACKEND_URL:', BACKEND_URL);
+console.log('🌐 API_URL:', API_URL);
 
 // Hareketli Bulutlar Bileşeni (90 FPS animasyon) - Daha fazla bulut
 const AnimatedClouds = () => {
