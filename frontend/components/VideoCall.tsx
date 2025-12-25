@@ -308,23 +308,34 @@ export default function VideoCall({
       console.log('🎬 AppID:', AGORA_APP_ID);
       
       if (!createAgoraRtcEngine) {
-        console.log('❌ Agora SDK yüklenmedi');
-        Alert.alert('Hata', 'Arama servisi kullanılamıyor');
+        console.log('❌ Agora SDK yüklenmedi - Web ortamında çalışmaz');
+        Alert.alert('Bilgi', 'Sesli/görüntülü arama sadece telefonda çalışır');
         onEnd?.();
         return;
       }
       
       const hasPermissions = await requestPermissions();
       if (!hasPermissions) {
-        Alert.alert('İzin Gerekli', 'Mikrofon izni verilmedi');
+        Alert.alert('İzin Gerekli', 'Mikrofon izni verilmedi. Lütfen ayarlardan izin verin.');
         onEnd?.();
         return;
       }
       
       // Önceki engine varsa MUTLAKA temizle
-      await destroyAgoraEngine();
+      if (engineRef.current) {
+        try {
+          engineRef.current.leaveChannel();
+          engineRef.current.removeAllListeners();
+          engineRef.current.release();
+        } catch (e) {}
+        engineRef.current = null;
+      }
+      
+      // Kısa bekleme - önceki bağlantının tamamen kapanması için
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Yeni engine oluştur
+      console.log('🎬 Yeni Agora engine oluşturuluyor...');
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
       
@@ -333,10 +344,12 @@ export default function VideoCall({
         channelProfile: ChannelProfileType?.ChannelProfileCommunication || 0,
       });
       
+      console.log('🎬 Engine initialized');
+      
       // Event listeners
       engine.registerEventHandler({
         onJoinChannelSuccess: (connection: any, elapsed: number) => {
-          console.log('✅ KANALA KATILDIM!');
+          console.log('✅ KANALA KATILDIM! Süre:', elapsed, 'ms');
           
           if (isCaller) {
             setCallState('ringing');
@@ -361,27 +374,43 @@ export default function VideoCall({
           }
         },
         onUserOffline: (connection: any, uid: number, reason: number) => {
-          console.log('👤 KARŞI TARAF AYRILDI');
+          console.log('👤 KARŞI TARAF AYRILDI - Reason:', reason);
           setRemoteUid(null);
           clearAllIntervals();
           cleanup();
           onEnd?.();
         },
         onError: (err: number, msg: string) => {
-          console.log('❌ Agora hatası:', err, msg);
+          console.log('❌ AGORA HATASI:', err, msg);
+          // Hata olursa kullanıcıya bildir ama aramayı kapatma
+          if (err === 17 || err === 110) {
+            // 17: Already in channel, 110: Invalid token
+            console.log('⚠️ Token veya kanal hatası, yeniden deneniyor...');
+          }
+        },
+        onConnectionStateChanged: (connection: any, state: number, reason: number) => {
+          console.log('🔗 Bağlantı durumu:', state, 'Sebep:', reason);
+        },
+        onAudioVolumeIndication: (connection: any, speakers: any, totalVolume: number) => {
+          // Ses seviyesi debug için
+          if (totalVolume > 0) {
+            console.log('🔊 Ses algılandı, seviye:', totalVolume);
+          }
         },
       });
       
-      // SES AYARLARI
+      // SES AYARLARI - ÇOK ÖNEMLİ
       console.log('🔊 Ses ayarları yapılıyor...');
       engine.enableAudio();
       engine.setEnableSpeakerphone(true);
       engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.adjustRecordingSignalVolume(400);
-      engine.adjustPlaybackSignalVolume(400);
+      engine.adjustRecordingSignalVolume(400); // Mikrofon %400
+      engine.adjustPlaybackSignalVolume(400);  // Hoparlör %400
       engine.muteLocalAudioStream(false);
+      engine.enableAudioVolumeIndication(200, 3, true); // Ses seviyesi takibi
       
       if (isVideoCall) {
+        console.log('📹 Video ayarları yapılıyor...');
         engine.enableVideo();
         engine.enableLocalVideo(true);
         engine.muteLocalVideoStream(false);
@@ -392,29 +421,39 @@ export default function VideoCall({
       // Token al
       let token = '';
       try {
+        console.log('🔑 Token alınıyor...');
         const tokenResponse = await fetch(`${BACKEND_URL}/api/agora/token?channel_name=${channelName}&uid=${localUidRef.current}`);
         const tokenData = await tokenResponse.json();
         if (tokenData.success && tokenData.token) {
           token = tokenData.token;
-          console.log('🔑 Token alındı');
+          console.log('🔑 Token alındı, uzunluk:', token.length);
+        } else {
+          console.log('⚠️ Token alınamadı:', tokenData);
         }
       } catch (e) {
-        console.log('⚠️ Token alınamadı, boş token ile devam');
+        console.log('⚠️ Token hatası:', e);
       }
       
       // Kanala katıl
-      console.log('📞 KANALA KATILINIYOR:', channelName);
-      await engine.joinChannel(token, channelName, localUidRef.current, {
+      console.log('📞 KANALA KATILINIYOR:', channelName, 'UID:', localUidRef.current);
+      
+      const joinOptions = {
         clientRoleType: ClientRoleType?.ClientRoleBroadcaster || 1,
         publishMicrophoneTrack: true,
         publishCameraTrack: isVideoCall,
         autoSubscribeAudio: true,
         autoSubscribeVideo: isVideoCall,
-      });
+      };
       
-    } catch (error) {
-      console.error('❌ Agora init error:', error);
-      Alert.alert('Hata', 'Arama başlatılamadı');
+      console.log('📞 Join options:', JSON.stringify(joinOptions));
+      
+      await engine.joinChannel(token, channelName, localUidRef.current, joinOptions);
+      
+      console.log('📞 joinChannel çağrıldı, bekleniyor...');
+      
+    } catch (error: any) {
+      console.error('❌ AGORA INIT HATASI:', error?.message || error);
+      Alert.alert('Arama Hatası', 'Bağlantı kurulamadı. Lütfen tekrar deneyin.');
       onEnd?.();
     }
   };
