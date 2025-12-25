@@ -2992,6 +2992,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [selectedPassengerName, setSelectedPassengerName] = useState('');
   const [isCallCaller, setIsCallCaller] = useState(false); // BEN Mİ ARIYORUM?
+  const [activeCallId, setActiveCallId] = useState<string | null>(null); // Aktif arama ID
+  const [activeChannelName, setActiveChannelName] = useState<string | null>(null); // Agora channel
   
   // Gelen arama state'leri
   const [showIncomingCall, setShowIncomingCall] = useState(false);
