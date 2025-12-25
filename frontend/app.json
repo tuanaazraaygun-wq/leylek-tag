@@ -48,6 +48,23 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0",
+            "enableProguardInReleaseBuilds": false,
+            "newArchEnabled": false
+          },
+          "ios": {
+            "deploymentTarget": "13.4",
+            "newArchEnabled": false
+          }
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Konumunuzu şoförlere göstermek için konum izni gereklidir."
