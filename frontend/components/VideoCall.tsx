@@ -43,6 +43,7 @@ const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 const BACKEND_URL = 'https://ride-rescue-5.preview.emergentagent.com';
 const MAX_CALL_DURATION = 600; // 10 dakika
 const RING_TIMEOUT = 60; // 60 saniye
+const FAST_POLL_INTERVAL = 500; // 500ms - HIZLI POLLING
 
 // Global değişken - aynı anda sadece bir arama olabilir
 let globalActiveCall: string | null = null;
@@ -82,6 +83,7 @@ export default function VideoCall({
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(isVideoCall);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
   
   const engineRef = useRef<any>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -90,6 +92,7 @@ export default function VideoCall({
   const isCleanedUp = useRef(false);
   const localUidRef = useRef<number>(Math.floor(Math.random() * 100000) + 1);
   const currentCallId = useRef<string>('');
+  const endCallSent = useRef(false); // Arama bitiş bildirimi gönderildi mi?
   
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -175,6 +178,7 @@ export default function VideoCall({
       globalActiveCall = cid;
       currentCallId.current = cid;
       isCleanedUp.current = false;
+      endCallSent.current = false;
       
       setCallState('connecting');
       setDuration(0);
@@ -183,9 +187,8 @@ export default function VideoCall({
       
       initAgora();
       
-      if (isCaller) {
-        startCallerStatusCheck();
-      }
+      // HIZLI POLLING - Her iki taraf için de
+      startFastStatusCheck();
     }
     
     return () => {
@@ -240,8 +243,8 @@ export default function VideoCall({
     }, 1000);
   };
 
-  // Arayan için durum kontrolü
-  const startCallerStatusCheck = () => {
+  // HIZLI DURUM KONTROLÜ - 500ms
+  const startFastStatusCheck = () => {
     if (callStatusIntervalRef.current) clearInterval(callStatusIntervalRef.current);
     
     callStatusIntervalRef.current = setInterval(async () => {
@@ -252,50 +255,55 @@ export default function VideoCall({
         const response = await fetch(`${BACKEND_URL}/api/voice/check-call-status?user_id=${userId}&call_id=${cid}`);
         const data = await response.json();
         
-        console.log('📞 Arama durumu:', data.status);
-        
         if (data.success) {
-          if (data.status === 'rejected') {
-            console.log('❌ ARAMA REDDEDİLDİ');
+          // Arama bitti/iptal/reddedildi - HEMEN KAPAT
+          if (data.status === 'ended' || data.status === 'cancelled' || data.status === 'rejected') {
+            console.log('📞 ARAMA SONLANDI (hızlı kontrol):', data.status);
             clearAllIntervals();
-            await notifyBackend('cancel');
-            cleanup();
-            Alert.alert('Reddedildi', `${remoteUserName} aramayı reddetti.`);
-            onRejected?.();
-            onEnd?.();
-          } else if (data.status === 'ended' || data.status === 'cancelled') {
-            console.log('📞 ARAMA SONLANDI');
-            clearAllIntervals();
-            cleanup();
+            
+            if (data.status === 'rejected' && isCaller) {
+              Alert.alert('Reddedildi', `${remoteUserName} aramayı reddetti.`);
+              onRejected?.();
+            }
+            
+            await cleanup();
             onEnd?.();
           }
         }
       } catch (e) {
-        console.log('Status check error:', e);
+        // Sessiz hata - polling devam etsin
       }
-    }, 2000); // 2 saniyede bir kontrol
+    }, FAST_POLL_INTERVAL);
   };
 
   // Timeout
   const handleTimeout = async () => {
     console.log('⏰ ZAMAN AŞIMI - Cevap yok');
     clearAllIntervals();
-    await notifyBackend('cancel');
+    await notifyBackendImmediate('cancel');
     cleanup();
     Alert.alert('Cevap Yok', `${remoteUserName} aramayı yanıtlamadı.`);
     onEnd?.();
   };
 
-  // Backend'e bildir
-  const notifyBackend = async (action: 'end' | 'cancel') => {
+  // Backend'e ANINDA bildir - Gecikme olmadan
+  const notifyBackendImmediate = async (action: 'end' | 'cancel') => {
+    if (endCallSent.current) return; // Zaten gönderildi
+    endCallSent.current = true;
+    
     try {
       const cid = getCallId();
       const endpoint = action === 'cancel' 
         ? `/api/voice/cancel-call?call_id=${cid}&user_id=${userId}`
         : `/api/voice/end-call?call_id=${cid}&user_id=${userId}`;
       
-      console.log('📡 Backend bildirimi:', action, cid);
-      await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' });
+      console.log('📡 Backend bildirimi (ANINDA):', action, cid);
+      
+      // Fetch'i beklemeden gönder - paralel işlem
+      fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' })
+        .then(() => console.log('✅ Backend bildirimi başarılı'))
+        .catch(e => console.log('❌ Backend bildirim hatası:', e));
+        
     } catch (e) {
       console.log('Backend bildirim hatası:', e);
     }
@@ -332,7 +340,7 @@ export default function VideoCall({
       }
       
       // Kısa bekleme - önceki bağlantının tamamen kapanması için
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Yeni engine oluştur
       console.log('🎬 Yeni Agora engine oluşturuluyor...');
@@ -382,20 +390,9 @@ export default function VideoCall({
         },
         onError: (err: number, msg: string) => {
           console.log('❌ AGORA HATASI:', err, msg);
-          // Hata olursa kullanıcıya bildir ama aramayı kapatma
-          if (err === 17 || err === 110) {
-            // 17: Already in channel, 110: Invalid token
-            console.log('⚠️ Token veya kanal hatası, yeniden deneniyor...');
-          }
         },
         onConnectionStateChanged: (connection: any, state: number, reason: number) => {
           console.log('🔗 Bağlantı durumu:', state, 'Sebep:', reason);
-        },
-        onAudioVolumeIndication: (connection: any, speakers: any, totalVolume: number) => {
-          // Ses seviyesi debug için
-          if (totalVolume > 0) {
-            console.log('🔊 Ses algılandı, seviye:', totalVolume);
-          }
         },
       });
       
@@ -404,10 +401,9 @@ export default function VideoCall({
       engine.enableAudio();
       engine.setEnableSpeakerphone(true);
       engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.adjustRecordingSignalVolume(400); // Mikrofon %400
-      engine.adjustPlaybackSignalVolume(400);  // Hoparlör %400
+      engine.adjustRecordingSignalVolume(400);
+      engine.adjustPlaybackSignalVolume(400);
       engine.muteLocalAudioStream(false);
-      engine.enableAudioVolumeIndication(200, 3, true); // Ses seviyesi takibi
       
       if (isVideoCall) {
         console.log('📹 Video ayarları yapılıyor...');
@@ -427,8 +423,6 @@ export default function VideoCall({
         if (tokenData.success && tokenData.token) {
           token = tokenData.token;
           console.log('🔑 Token alındı, uzunluk:', token.length);
-        } else {
-          console.log('⚠️ Token alınamadı:', tokenData);
         }
       } catch (e) {
         console.log('⚠️ Token hatası:', e);
@@ -445,8 +439,6 @@ export default function VideoCall({
         autoSubscribeVideo: isVideoCall,
       };
       
-      console.log('📞 Join options:', JSON.stringify(joinOptions));
-      
       await engine.joinChannel(token, channelName, localUidRef.current, joinOptions);
       
       console.log('📞 joinChannel çağrıldı, bekleniyor...');
@@ -458,16 +450,23 @@ export default function VideoCall({
     }
   };
 
-  // Aramayı sonlandır
+  // Aramayı sonlandır - ANINDA
   const handleEndCall = async () => {
-    console.log('📞 ARAMA SONLANDIRILIYOR...');
+    console.log('📞 ARAMA SONLANDIRILIYOR (ANINDA)...');
     
     const isConnected = callState === 'connected';
     const action = (isCaller && !isConnected) ? 'cancel' : 'end';
     
+    // ÖNCE interval'leri durdur
     clearAllIntervals();
-    await notifyBackend(action);
+    
+    // ANINDA backend'e bildir (beklemeden)
+    notifyBackendImmediate(action);
+    
+    // Agora'dan çık
     await cleanup();
+    
+    // UI'ı kapat
     onEnd?.();
   };
 
@@ -495,6 +494,13 @@ export default function VideoCall({
     }
   };
 
+  const switchCamera = () => {
+    if (engineRef.current && isVideoCall) {
+      engineRef.current.switchCamera();
+      setIsFrontCamera(!isFrontCamera);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -511,18 +517,105 @@ export default function VideoCall({
     }
   };
 
-  const getStatusColor = () => {
-    switch (callState) {
-      case 'connecting': return '#FFA500';
-      case 'ringing': return '#3B82F6';
-      case 'connected': return '#22C55E';
-      case 'ended': return '#EF4444';
-      default: return '#666';
-    }
-  };
-
   if (!visible) return null;
 
+  // ==================== WHATSAPP TARZI TAM EKRAN VİDEO ARAMA ====================
+  if (isVideoCall && callState === 'connected') {
+    return (
+      <Modal visible={visible} animationType="fade" statusBarTranslucent>
+        <View style={styles.fullScreenVideoContainer}>
+          {/* KARŞI TARAFIN VİDEOSU - TAM EKRAN */}
+          {remoteUid && RtcSurfaceView ? (
+            <RtcSurfaceView 
+              style={styles.fullScreenRemoteVideo} 
+              canvas={{ uid: remoteUid }} 
+            />
+          ) : (
+            <View style={styles.fullScreenRemoteVideo}>
+              <View style={styles.noVideoPlaceholder}>
+                <Ionicons name="videocam-off" size={60} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.noVideoText}>Video bekleniyor...</Text>
+              </View>
+            </View>
+          )}
+
+          {/* KENDİ GÖRÜNTÜMÜZ - SOL ÜST KÖŞE (KÜÇÜK) */}
+          {isVideoEnabled && RtcSurfaceView && (
+            <View style={styles.pipLocalVideo}>
+              <RtcSurfaceView 
+                style={styles.pipLocalVideoInner} 
+                canvas={{ uid: 0 }} 
+                zOrderMediaOverlay={true} 
+              />
+              {/* Kamera değiştir butonu */}
+              <TouchableOpacity style={styles.switchCameraButton} onPress={switchCamera}>
+                <Ionicons name="camera-reverse" size={18} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ÜST BİLGİ BARI */}
+          <View style={styles.videoTopBar}>
+            <View style={styles.videoTopBarLeft}>
+              <View style={styles.videoCallerInfo}>
+                <View style={styles.videoCallerAvatar}>
+                  <Text style={styles.videoCallerAvatarText}>
+                    {remoteUserName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.videoCallerName}>{remoteUserName}</Text>
+                  <View style={styles.videoDurationRow}>
+                    <View style={styles.liveIndicator}>
+                      <View style={styles.liveDot} />
+                      <Text style={styles.liveText}>CANLI</Text>
+                    </View>
+                    <Text style={styles.videoDurationText}>{formatTime(duration)}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* ALT KONTROL BARI */}
+          <View style={styles.videoBottomBar}>
+            <View style={styles.videoControlsRow}>
+              {/* Mikrofon */}
+              <TouchableOpacity 
+                style={[styles.videoControlBtn, isMuted && styles.videoControlBtnActive]} 
+                onPress={toggleMute}
+              >
+                <Ionicons name={isMuted ? "mic-off" : "mic"} size={26} color="#FFF" />
+              </TouchableOpacity>
+
+              {/* Kamera */}
+              <TouchableOpacity 
+                style={[styles.videoControlBtn, !isVideoEnabled && styles.videoControlBtnActive]} 
+                onPress={toggleVideo}
+              >
+                <Ionicons name={isVideoEnabled ? "videocam" : "videocam-off"} size={26} color="#FFF" />
+              </TouchableOpacity>
+
+              {/* Hoparlör */}
+              <TouchableOpacity 
+                style={[styles.videoControlBtn, !isSpeakerOn && styles.videoControlBtnActive]} 
+                onPress={toggleSpeaker}
+              >
+                <Ionicons name={isSpeakerOn ? "volume-high" : "volume-mute"} size={26} color="#FFF" />
+              </TouchableOpacity>
+
+              {/* Aramayı Bitir - KIRMIZI */}
+              <TouchableOpacity style={styles.videoEndCallBtn} onPress={handleEndCall}>
+                <Ionicons name="call" size={30} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // ==================== SESLİ ARAMA VEYA BAĞLANMA EKRANI ====================
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <LinearGradient
@@ -531,7 +624,7 @@ export default function VideoCall({
       >
         {/* Üst Bilgi */}
         <View style={styles.topSection}>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
+          <View style={[styles.statusBadge, { backgroundColor: callState === 'connected' ? '#22C55E' : callState === 'ringing' ? '#3B82F6' : '#FFA500' }]}>
             <View style={[styles.statusDot, { backgroundColor: callState === 'connected' ? '#86EFAC' : '#FFF' }]} />
             <Text style={styles.statusBadgeText}>{getStatusText()}</Text>
           </View>
@@ -565,20 +658,6 @@ export default function VideoCall({
           )}
         </View>
 
-        {/* Video */}
-        {isVideoCall && callState === 'connected' && (
-          <View style={styles.videoSection}>
-            {remoteUid && RtcSurfaceView && (
-              <RtcSurfaceView style={styles.remoteVideo} canvas={{ uid: remoteUid }} />
-            )}
-            {isVideoEnabled && RtcSurfaceView && (
-              <View style={styles.localVideoContainer}>
-                <RtcSurfaceView style={styles.localVideo} canvas={{ uid: 0 }} zOrderMediaOverlay={true} />
-              </View>
-            )}
-          </View>
-        )}
-
         {/* Kontroller */}
         <View style={styles.controlsSection}>
           {callState === 'connected' && (
@@ -592,13 +671,6 @@ export default function VideoCall({
                 <Ionicons name={isSpeakerOn ? "volume-high" : "volume-mute"} size={28} color={!isSpeakerOn ? "#EF4444" : "#FFF"} />
                 <Text style={styles.controlLabel}>{isSpeakerOn ? 'Hoparlör' : 'Kulaklık'}</Text>
               </TouchableOpacity>
-              
-              {isVideoCall && (
-                <TouchableOpacity style={[styles.controlButton, !isVideoEnabled && styles.controlButtonActive]} onPress={toggleVideo}>
-                  <Ionicons name={isVideoEnabled ? "videocam" : "videocam-off"} size={28} color={!isVideoEnabled ? "#EF4444" : "#FFF"} />
-                  <Text style={styles.controlLabel}>{isVideoEnabled ? 'Kamera' : 'Kapalı'}</Text>
-                </TouchableOpacity>
-              )}
             </View>
           )}
           
@@ -616,31 +688,303 @@ export default function VideoCall({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60 },
-  topSection: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 40 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginBottom: 30 },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  statusBadgeText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
-  avatarContainer: { marginBottom: 20, position: 'relative' },
-  avatar: { width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: 'rgba(255,255,255,0.3)' },
-  avatarText: { fontSize: 48, fontWeight: 'bold', color: '#FFF' },
-  connectedIndicator: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#FFF', borderRadius: 14 },
-  userName: { fontSize: 28, fontWeight: 'bold', color: '#FFF', marginBottom: 8 },
-  durationContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  durationText: { fontSize: 18, fontWeight: 'bold', color: '#22C55E', marginLeft: 6 },
-  maxDuration: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
-  ringText: { fontSize: 16, color: 'rgba(255,255,255,0.8)' },
-  callTypeText: { fontSize: 16, color: 'rgba(255,255,255,0.8)' },
-  videoSection: { flex: 1, marginTop: 20, marginHorizontal: 20, borderRadius: 20, overflow: 'hidden', backgroundColor: '#000' },
-  remoteVideo: { flex: 1 },
-  localVideoContainer: { position: 'absolute', top: 20, right: 20, width: 120, height: 160, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#FFF' },
-  localVideo: { flex: 1 },
-  controlsSection: { alignItems: 'center', paddingBottom: 50, paddingTop: 30 },
-  controlsRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 30, gap: 30 },
-  controlButton: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', width: 64, height: 64, borderRadius: 32, justifyContent: 'center' },
-  controlButtonActive: { backgroundColor: 'rgba(239,68,68,0.3)' },
-  controlLabel: { color: '#FFF', fontSize: 10, marginTop: 4, position: 'absolute', bottom: -20 },
-  endCallButton: { shadowColor: '#EF4444', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 10, elevation: 10 },
-  endCallGradient: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center' },
-  endCallLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 14, marginTop: 12 },
+  // ==================== TAM EKRAN VİDEO STİLLERİ ====================
+  fullScreenVideoContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  fullScreenRemoteVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#1a1a1a',
+  },
+  noVideoPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noVideoText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 16,
+    marginTop: 12,
+  },
+  
+  // PIP (Picture-in-Picture) Kendi Görüntümüz
+  pipLocalVideo: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    width: 100,
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: '#000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  pipLocalVideoInner: {
+    flex: 1,
+  },
+  switchCameraButton: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Video Üst Bilgi Barı
+  videoTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 50,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  videoTopBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  videoCallerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 120, // PIP video'nun yanında
+  },
+  videoCallerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#3FA9F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  videoCallerAvatarText: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  videoCallerName: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  videoDurationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFF',
+    marginRight: 4,
+  },
+  liveText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  videoDurationText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+  },
+
+  // Video Alt Kontrol Barı
+  videoBottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: 40,
+    paddingTop: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  videoControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+  },
+  videoControlBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoControlBtnActive: {
+    backgroundColor: 'rgba(239,68,68,0.4)',
+  },
+  videoEndCallBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+
+  // ==================== SESLİ ARAMA STİLLERİ ====================
+  container: { 
+    flex: 1, 
+    paddingTop: 60 
+  },
+  topSection: { 
+    alignItems: 'center', 
+    paddingHorizontal: 20, 
+    paddingTop: 40,
+    flex: 1,
+  },
+  statusBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 20, 
+    marginBottom: 30 
+  },
+  statusDot: { 
+    width: 8, 
+    height: 8, 
+    borderRadius: 4, 
+    marginRight: 8 
+  },
+  statusBadgeText: { 
+    color: '#FFF', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  avatarContainer: { 
+    marginBottom: 20, 
+    position: 'relative' 
+  },
+  avatar: { 
+    width: 120, 
+    height: 120, 
+    borderRadius: 60, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 4, 
+    borderColor: 'rgba(255,255,255,0.3)' 
+  },
+  avatarText: { 
+    fontSize: 48, 
+    fontWeight: 'bold', 
+    color: '#FFF' 
+  },
+  connectedIndicator: { 
+    position: 'absolute', 
+    bottom: 0, 
+    right: 0, 
+    backgroundColor: '#FFF', 
+    borderRadius: 14 
+  },
+  userName: { 
+    fontSize: 28, 
+    fontWeight: 'bold', 
+    color: '#FFF', 
+    marginBottom: 8 
+  },
+  durationContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(0,0,0,0.2)', 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 20 
+  },
+  durationText: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    color: '#22C55E', 
+    marginLeft: 6 
+  },
+  maxDuration: { 
+    fontSize: 14, 
+    color: 'rgba(255,255,255,0.6)' 
+  },
+  ringText: { 
+    fontSize: 16, 
+    color: 'rgba(255,255,255,0.8)' 
+  },
+  callTypeText: { 
+    fontSize: 16, 
+    color: 'rgba(255,255,255,0.8)' 
+  },
+  controlsSection: { 
+    alignItems: 'center', 
+    paddingBottom: 50, 
+    paddingTop: 30 
+  },
+  controlsRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    marginBottom: 30, 
+    gap: 30 
+  },
+  controlButton: { 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(255,255,255,0.15)', 
+    width: 64, 
+    height: 64, 
+    borderRadius: 32, 
+    justifyContent: 'center' 
+  },
+  controlButtonActive: { 
+    backgroundColor: 'rgba(239,68,68,0.3)' 
+  },
+  controlLabel: { 
+    color: '#FFF', 
+    fontSize: 10, 
+    marginTop: 4, 
+    position: 'absolute', 
+    bottom: -20 
+  },
+  endCallButton: { 
+    shadowColor: '#EF4444', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.5, 
+    shadowRadius: 10, 
+    elevation: 10 
+  },
+  endCallGradient: { 
+    width: 72, 
+    height: 72, 
+    borderRadius: 36, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  endCallLabel: { 
+    color: 'rgba(255,255,255,0.7)', 
+    fontSize: 14, 
+    marginTop: 12 
+  },
 });
