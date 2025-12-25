@@ -2187,12 +2187,14 @@ function PassengerDashboard({
         const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
         const data = await response.json();
         
+        console.log('🔚 Trip end request check:', data);
+        
         if (data.success && data.has_request && !showTripEndModal) {
-          setTripEndRequesterType(data.request.requester_type);
+          setTripEndRequesterType(data.requester_type || 'unknown');
           setShowTripEndModal(true);
         }
       } catch (error) {
-        // Sessiz kal
+        console.log('Check trip end error:', error);
       }
     };
     
