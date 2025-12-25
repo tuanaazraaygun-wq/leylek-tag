@@ -2533,23 +2533,25 @@ async def check_incoming_call(user_id: str):
                 }
             }
         
-        # Son biten/iptal edilen aramayı kontrol et (bildirim için)
-        ended_result = supabase.table("calls").select("*").or_(f"caller_id.eq.{user_id},receiver_id.eq.{user_id}").in_("status", ["ended", "rejected", "cancelled"]).order("ended_at", desc=True).limit(1).execute()
+        # Son iptal edilen aramayı kontrol et - ARAYAN İPTAL ETTİ Mİ?
+        cancelled_result = supabase.table("calls").select("*").eq("receiver_id", user_id).in_("status", ["cancelled", "ended", "rejected"]).order("ended_at", desc=True).limit(1).execute()
         
-        if ended_result.data:
-            ended_call = ended_result.data[0]
-            ended_at = ended_call.get("ended_at")
+        if cancelled_result.data:
+            cancelled_call = cancelled_result.data[0]
+            ended_at = cancelled_call.get("ended_at")
             if ended_at:
                 ended_time = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
-                # Son 10 saniye içinde bitmiş aramayı bildir
-                if datetime.now(ended_time.tzinfo) - ended_time < timedelta(seconds=10):
+                # Son 15 saniye içinde iptal edilmiş aramayı bildir (daha geniş pencere)
+                if datetime.now(ended_time.tzinfo) - ended_time < timedelta(seconds=15):
+                    logger.info(f"📵 Arama iptal edildi bildiriliyor: {cancelled_call['call_id']} - {cancelled_call['status']}")
                     return {
                         "success": True,
                         "has_incoming": False,
                         "call": None,
+                        "call_cancelled": True,
                         "call_ended": True,
-                        "end_reason": ended_call.get("status"),
-                        "call_id": ended_call.get("call_id")
+                        "end_reason": cancelled_call.get("status"),
+                        "call_id": cancelled_call.get("call_id")
                     }
         
         return {"success": True, "has_incoming": False, "call": None}
