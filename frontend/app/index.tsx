@@ -2703,18 +2703,42 @@ function PassengerDashboard({
                         { text: 'İptal', style: 'cancel' },
                         { text: 'Kötü Davranış', onPress: () => reportUser('bad_behavior') },
                         { text: 'Güvensiz Sürüş', onPress: () => reportUser('unsafe_driving') },
-                        { text: 'Diğer', onPress: () => reportUser('other') },
+                        { 
+                          text: 'Diğer (Açıklama Yaz)', 
+                          onPress: () => {
+                            Alert.prompt(
+                              'Şikayet Açıklaması',
+                              'Lütfen şikayet sebebinizi açıklayın:',
+                              [
+                                { text: 'İptal', style: 'cancel' },
+                                { 
+                                  text: 'Gönder', 
+                                  onPress: (text) => {
+                                    if (text && text.trim()) {
+                                      reportUser('other', text.trim());
+                                    } else {
+                                      Alert.alert('Hata', 'Lütfen açıklama yazın');
+                                    }
+                                  }
+                                },
+                              ],
+                              'plain-text',
+                              '',
+                              'default'
+                            );
+                          }
+                        },
                       ]
                     );
                     
-                    async function reportUser(reason: string) {
+                    async function reportUser(reason: string, description?: string) {
                       try {
-                        const response = await fetch(
-                          `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.driver_id}&reason=${reason}`,
-                          { method: 'POST' }
-                        );
+                        const url = description 
+                          ? `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.driver_id}&reason=${reason}&description=${encodeURIComponent(description)}`
+                          : `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.driver_id}&reason=${reason}`;
+                        const response = await fetch(url, { method: 'POST' });
                         const data = await response.json();
-                        Alert.alert('📩 Şikayet Alındı', data.message);
+                        Alert.alert('📩 Şikayet Alındı', data.message || 'Şikayetiniz admin\'e iletildi.');
                       } catch (error) {
                         Alert.alert('Hata', 'Şikayet gönderilemedi');
                       }
