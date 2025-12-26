@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, Image } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Dimensions, Image, Platform } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -11,56 +11,58 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
+    // Hemen başlat
+    setIsReady(true);
+    
     // Logo animasyonu
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 800,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
         tension: 50,
         friction: 7,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
 
     // Yazı animasyonu (biraz gecikmeyle)
-    setTimeout(() => {
+    const textTimer = setTimeout(() => {
       Animated.timing(textFadeAnim, {
         toValue: 1,
         duration: 600,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }).start();
     }, 500);
 
     // 3 saniye sonra giriş sayfasına geç
-    const timer = setTimeout(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        onFinish();
-      });
+    const finishTimer = setTimeout(() => {
+      console.log('🎬 Splash screen tamamlandı, login sayfasına geçiliyor...');
+      onFinish();
     }, 3000);
 
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      clearTimeout(textTimer);
+      clearTimeout(finishTimer);
+    };
+  }, [onFinish]);
 
   return (
     <View style={styles.container}>
-      {/* Leylek Logosu - Tam ekran arka plan BEYAZ */}
+      {/* Leylek Logosu */}
       <Animated.View 
         style={[
           styles.logoContainer,
-          {
+          Platform.OS !== 'web' ? {
             opacity: fadeAnim,
             transform: [{ scale: scaleAnim }]
-          }
+          } : {}
         ]}
       >
         <Image
@@ -71,55 +73,29 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       </Animated.View>
 
       {/* Leylek Yazısı - Mavi */}
-      <Animated.View style={[styles.textContainer, { opacity: textFadeAnim }]}>
+      <Animated.View style={[
+        styles.textContainer, 
+        Platform.OS !== 'web' ? { opacity: textFadeAnim } : {}
+      ]}>
         <Text style={styles.brandText}>Leylek</Text>
       </Animated.View>
 
       {/* Alt yükleniyor göstergesi */}
-      <Animated.View style={[styles.loadingContainer, { opacity: textFadeAnim }]}>
+      <View style={styles.loadingContainer}>
         <View style={styles.loadingDots}>
-          <LoadingDot delay={0} />
-          <LoadingDot delay={200} />
-          <LoadingDot delay={400} />
+          <View style={styles.dot} />
+          <View style={styles.dot} />
+          <View style={styles.dot} />
         </View>
-      </Animated.View>
+      </View>
     </View>
   );
 }
 
-// Yükleniyor noktaları
-const LoadingDot = ({ delay }: { delay: number }) => {
-  const opacity = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.3,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    animation.start();
-    return () => animation.stop();
-  }, []);
-
-  return (
-    <Animated.View style={[styles.dot, { opacity }]} />
-  );
-};
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF', // Tamamen beyaz arka plan
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -138,7 +114,7 @@ const styles = StyleSheet.create({
   brandText: {
     fontSize: 48,
     fontWeight: '700',
-    color: '#3FA9F5', // Mavi renk
+    color: '#3FA9F5',
     letterSpacing: 4,
   },
   loadingContainer: {
