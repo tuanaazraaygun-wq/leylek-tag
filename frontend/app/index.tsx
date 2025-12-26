@@ -2232,17 +2232,18 @@ function PassengerDashboard({
     ).start();
   }, []);
 
-  // CANLI KONUM GÜNCELLEME - Eşleşince başla
+  // CANLI KONUM GÜNCELLEME - Eşleşince başla (1 saniyede bir)
   useEffect(() => {
     if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
-      const interval = setInterval(async () => {
+      console.log('🔄 Yolcu: Şoför konum takibi başlatıldı');
+      
+      // İlk yükleme
+      const fetchDriverLocation = async () => {
         try {
-          // Sürücü konumunu backend'den al
           const response = await fetch(`${API_URL}/passenger/driver-location/${activeTag.driver_id}`);
           const data = await response.json();
           if (data.location) {
             setDriverLocation(data.location);
-            // Mesafeyi hesapla
             if (userLocation) {
               const distance = calculateDistance(
                 userLocation.latitude,
@@ -2251,19 +2252,21 @@ function PassengerDashboard({
                 data.location.longitude
               );
               setRealDistance(distance);
-              // Tahmini süreyi hesapla (ortalama 40 km/h)
               const time = Math.round((distance / 40) * 60);
               setEstimatedTime(time);
             }
           }
         } catch (error) {
-          console.log('Konum alınamadı:', error);
+          console.log('Şoför konumu alınamadı:', error);
         }
-      }, 5000); // 5 saniyede bir güncelle
+      };
+      
+      fetchDriverLocation();
+      const interval = setInterval(fetchDriverLocation, 1000); // 1 saniyede bir güncelle - CANLI
 
       return () => clearInterval(interval);
     }
-  }, [activeTag, userLocation]);
+  }, [activeTag?.id, activeTag?.status, activeTag?.driver_id]);
 
   // GELEN ARAMA KONTROLÜ - Polling (Yolcu için)
   useEffect(() => {
