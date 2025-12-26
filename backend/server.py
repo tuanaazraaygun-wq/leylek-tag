@@ -1395,63 +1395,9 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 "notes": tag.get("notes"),
                 "status": tag["status"],
                 "distance_to_passenger_km": round(distance_km, 1) if distance_km else None,
-                    if passenger_loc.data and passenger_loc.data[0].get("latitude"):
-                        passenger_current_lat = float(passenger_loc.data[0]["latitude"])
-                        passenger_current_lng = float(passenger_loc.data[0]["longitude"])
-                except:
-                    pass
-            
-            # Yolcunun güncel konumu varsa onu kullan, yoksa pickup konumunu kullan
-            target_lat = passenger_current_lat or (float(tag["pickup_lat"]) if tag.get("pickup_lat") else None)
-            target_lng = passenger_current_lng or (float(tag["pickup_lng"]) if tag.get("pickup_lng") else None)
-            
-            if driver_lat and driver_lng and target_lat and target_lng:
-                route_info = await get_route_info(
-                    driver_lat, driver_lng,
-                    target_lat, target_lng
-                )
-                if route_info:
-                    distance_km = route_info["distance_km"]
-                    duration_min = route_info["duration_min"]
-                    
-                    # 50 KM RADİUS KONTROLÜ - Yolcunun konumu sürücüye 50km'den uzaksa gösterme
-                    if distance_km > radius_km:
-                        continue
-            
-            # Yolculuk mesafesi (pickup -> dropoff)
-            trip_distance_km = None
-            trip_duration_min = None
-            if tag.get("pickup_lat") and tag.get("dropoff_lat"):
-                trip_route = await get_route_info(
-                    float(tag["pickup_lat"]), float(tag["pickup_lng"]),
-                    float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
-                )
-                if trip_route:
-                    trip_distance_km = trip_route["distance_km"]
-                    trip_duration_min = trip_route["duration_min"]
-            
-            requests.append({
-                "id": tag["id"],
-                "passenger_id": tag["passenger_id"],
-                "passenger_name": passenger_info.get("name", tag.get("passenger_name", "Yolcu")),
-                "passenger_rating": float(passenger_info.get("rating", 5.0)),
-                "passenger_photo": passenger_info.get("profile_photo"),
-                "passenger_city": passenger_city,
-                "pickup_location": tag["pickup_location"],
-                "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
-                "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
-                "dropoff_location": tag["dropoff_location"],
-                "dropoff_lat": float(tag["dropoff_lat"]) if tag.get("dropoff_lat") else None,
-                "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
-                "notes": tag.get("notes"),
-                "status": tag["status"],
-                # Şoför -> Yolcu mesafesi
-                "distance_to_passenger_km": round(distance_km, 1) if distance_km else None,
                 "time_to_passenger_min": round(duration_min) if duration_min else None,
-                # Yolculuk mesafesi (pickup -> dropoff)
                 "trip_distance_km": round(trip_distance_km, 1) if trip_distance_km else None,
                 "trip_duration_min": round(trip_duration_min) if trip_duration_min else None,
-                # Eski alan adları da (geriye uyumluluk)
                 "distance_km": round(distance_km, 1) if distance_km else None,
                 "duration_min": round(duration_min) if duration_min else None,
                 "created_at": tag["created_at"]
