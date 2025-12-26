@@ -497,6 +497,63 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         logger.error(f"Set PIN error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# verify-pin endpoint - Frontend uyumluluğu için
+@api_router.post("/auth/verify-pin")
+async def verify_pin_endpoint(phone: str = None, pin: str = None, device_id: str = None):
+    """PIN doğrulama - login ile aynı işlevi görür"""
+    try:
+        if not phone or not pin:
+            raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
+        
+        result = supabase.table("users").select("*").eq("phone", phone).execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = result.data[0]
+        
+        if not verify_pin(pin, user.get("pin_hash", "")):
+            raise HTTPException(status_code=401, detail="Yanlış PIN")
+        
+        # Cihaz ID güncelle
+        if device_id:
+            supabase.table("users").update({
+                "device_id": device_id,
+                "last_login": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", user["id"]).execute()
+        else:
+            supabase.table("users").update({
+                "last_login": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", user["id"]).execute()
+        
+        is_admin = phone in ADMIN_PHONE_NUMBERS
+        
+        logger.info(f"✅ PIN doğrulandı: {phone}, Admin: {is_admin}")
+        
+        return {
+            "success": True,
+            "user": {
+                "id": user["id"],
+                "phone": user["phone"],
+                "name": user["name"],
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "city": user.get("city"),
+                "rating": float(user.get("rating", 5.0)),
+                "total_trips": user.get("total_trips", 0),
+                "profile_photo": user.get("profile_photo"),
+                "driver_details": user.get("driver_details"),
+                "is_admin": is_admin
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Verify PIN error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 class LoginRequest(BaseModel):
     phone: str
     pin: str
