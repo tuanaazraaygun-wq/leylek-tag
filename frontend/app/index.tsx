@@ -359,8 +359,8 @@ export default function App() {
       requestLocationPermission().then(granted => {
         if (granted) {
           updateUserLocation();
-          // Her 10 saniyede bir konum güncelle
-          const interval = setInterval(updateUserLocation, 10000);
+          // Her 0.5 saniyede bir konum güncelle - CANLI TAKİP
+          const interval = setInterval(updateUserLocation, 500);
           return () => clearInterval(interval);
         }
       });
