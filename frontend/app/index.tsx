@@ -324,8 +324,37 @@ export default function App() {
     // Önce cihaz ID'yi al
     const dId = await getOrCreateDeviceId();
     setDeviceId(dId);
+    
+    // KVKK onayı kontrolü (telefon numarasına göre)
+    const storedKVKKPhone = await AsyncStorage.getItem('kvkk_accepted_phone');
+    // Onay varsa set et
+    if (storedKVKKPhone) {
+      setKvkkAccepted(true);
+    }
+    
     // Sonra kullanıcıyı yükle
     await loadUser();
+  };
+  
+  // KVKK onayını kaydet (telefon numarasına göre)
+  const saveKVKKConsent = async (phoneNumber: string) => {
+    try {
+      await AsyncStorage.setItem('kvkk_accepted_phone', phoneNumber);
+      setKvkkAccepted(true);
+      console.log('✅ KVKK onayı kaydedildi:', phoneNumber);
+    } catch (error) {
+      console.error('KVKK kayıt hatası:', error);
+    }
+  };
+  
+  // KVKK onayı kontrol (telefon değiştiğinde yeniden iste)
+  const checkKVKKConsent = async (phoneNumber: string): Promise<boolean> => {
+    try {
+      const storedPhone = await AsyncStorage.getItem('kvkk_accepted_phone');
+      return storedPhone === phoneNumber;
+    } catch (error) {
+      return false;
+    }
   };
 
   useEffect(() => {
