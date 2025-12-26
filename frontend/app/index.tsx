@@ -217,7 +217,15 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin'>('login');
+  const [screen, setScreen] = useState<'splash' | 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin'>('splash');
+
+  // Splash Screen
+  const [showSplash, setShowSplash] = useState(true);
+  
+  // KVKK Onayı
+  const [kvkkAccepted, setKvkkAccepted] = useState(false);
+  const [showKVKKModal, setShowKVKKModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
   // Auth states
   const [phone, setPhone] = useState('');
