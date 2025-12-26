@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Image, Platform } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -11,51 +11,64 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
-  const hasFinished = useRef(false);
+  const hasCalledFinish = useRef(false);
 
-  // Callback'i memoize et
-  const handleFinish = useCallback(() => {
-    if (hasFinished.current) return;
-    hasFinished.current = true;
-    console.log('🎬 Splash screen tamamlandı, login sayfasına geçiliyor...');
+  const callFinish = () => {
+    if (hasCalledFinish.current) return;
+    hasCalledFinish.current = true;
+    console.log('🎬 Splash screen bitti, login\'e geçiliyor...');
     onFinish();
-  }, [onFinish]);
+  };
 
   useEffect(() => {
-    console.log('🎬 Splash screen başlatıldı');
+    console.log('🎬 SplashScreen mount edildi');
     
-    // Logo animasyonu
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    ]).start();
+    // Animasyonları başlat - Platform kontrolü ile
+    const useNativeDriver = Platform.OS !== 'web';
+    
+    try {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 50,
+          friction: 7,
+          useNativeDriver,
+        }),
+      ]).start();
 
-    // Yazı animasyonu (biraz gecikmeyle)
-    const textTimer = setTimeout(() => {
-      Animated.timing(textFadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: Platform.OS !== 'web',
-      }).start();
-    }, 500);
+      // Yazı animasyonu
+      setTimeout(() => {
+        Animated.timing(textFadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver,
+        }).start();
+      }, 500);
+    } catch (error) {
+      console.log('⚠️ Animasyon hatası:', error);
+    }
 
-    // 3 saniye sonra giriş sayfasına geç - daha güvenilir
-    const finishTimer = setTimeout(handleFinish, 3000);
+    // 3 saniye sonra çık - BU EN ÖNEMLİ KISIM
+    const finishTimer = setTimeout(() => {
+      callFinish();
+    }, 3000);
+
+    // Güvenlik: 5 saniye sonra zorla çık
+    const safetyTimer = setTimeout(() => {
+      console.log('⚠️ Safety timeout - zorla çıkılıyor');
+      callFinish();
+    }, 5000);
 
     return () => {
-      clearTimeout(textTimer);
       clearTimeout(finishTimer);
+      clearTimeout(safetyTimer);
     };
-  }, [handleFinish]);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -73,6 +86,11 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
           source={require('../assets/images/leylek-splash.png')}
           style={styles.logo}
           resizeMode="contain"
+          onError={(e) => {
+            console.log('⚠️ Splash image yüklenemedi:', e.nativeEvent.error);
+            // Image yüklenemezse hemen çık
+            callFinish();
+          }}
         />
       </Animated.View>
 
