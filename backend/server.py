@@ -1303,7 +1303,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
 
 @api_router.get("/driver/requests")
 async def get_driver_requests(driver_id: str = None, user_id: str = None, latitude: float = None, longitude: float = None):
-    """Şoför için yakındaki istekleri getir - Şehir bazlı + 50km radius"""
+    """Şoför için yakındaki istekleri getir - ŞEHİR BAZLI (aynı şehirdeki tüm teklifler)"""
     try:
         # driver_id veya user_id kabul et
         did = driver_id or user_id
@@ -1321,28 +1321,24 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         
         if driver_result.data:
             driver_city = driver_result.data[0].get("city")
-            # Konum parametresi yoksa DB'den al
             if not driver_lat:
                 driver_lat = driver_result.data[0].get("latitude")
             if not driver_lng:
                 driver_lng = driver_result.data[0].get("longitude")
         
-        # Ayarlardan radius al (varsayılan 50 km)
-        settings_result = supabase.table("app_settings").select("driver_radius_km").eq("type", "global").execute()
-        radius_km = settings_result.data[0]["driver_radius_km"] if settings_result.data else 50
-        
         # Engellenen kullanıcıları al
         blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
         blocked_ids = [r["blocked_user_id"] for r in blocked_result.data]
-        
-        # Beni engelleyenleri al
         blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", resolved_id).execute()
         blocked_by_ids = [r["user_id"] for r in blocked_by_result.data]
-        
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
-        # Pending TAG'leri getir
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(50).execute()
+        # Pending TAG'leri getir - Şehir filtresi SQL'de
+        if driver_city:
+            # Aynı şehirdeki tüm teklifleri getir
+            result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(100).execute()
+        else:
+            result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(50).execute()
         
         requests = []
         for tag in result.data:
@@ -1353,16 +1349,52 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             passenger_info = tag.get("users", {}) or {}
             passenger_city = passenger_info.get("city")
             
-            # Mesafe hesapla
+            # ŞEHİR KONTROLÜ - Sadece aynı şehirdeki teklifleri göster
+            if driver_city and passenger_city:
+                if driver_city.lower().strip() != passenger_city.lower().strip():
+                    continue
+            
+            # Mesafe hesapla (OSRM)
             distance_km = None
             duration_min = None
             
-            # Yolcunun güncel konumunu al (eğer varsa)
-            passenger_current_lat = None
-            passenger_current_lng = None
-            if tag.get("passenger_id"):
-                try:
-                    passenger_loc = supabase.table("users").select("latitude, longitude").eq("id", tag["passenger_id"]).execute()
+            target_lat = float(tag["pickup_lat"]) if tag.get("pickup_lat") else None
+            target_lng = float(tag["pickup_lng"]) if tag.get("pickup_lng") else None
+            
+            if driver_lat and driver_lng and target_lat and target_lng:
+                route_info = await get_route_info(driver_lat, driver_lng, target_lat, target_lng)
+                if route_info:
+                    distance_km = route_info["distance_km"]
+                    duration_min = route_info["duration_min"]
+            
+            # Yolculuk mesafesi (pickup -> dropoff)
+            trip_distance_km = None
+            trip_duration_min = None
+            if tag.get("pickup_lat") and tag.get("dropoff_lat"):
+                trip_route = await get_route_info(
+                    float(tag["pickup_lat"]), float(tag["pickup_lng"]),
+                    float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
+                )
+                if trip_route:
+                    trip_distance_km = trip_route["distance_km"]
+                    trip_duration_min = trip_route["duration_min"]
+            
+            requests.append({
+                "id": tag["id"],
+                "passenger_id": tag["passenger_id"],
+                "passenger_name": passenger_info.get("name", tag.get("passenger_name", "Yolcu")),
+                "passenger_rating": float(passenger_info.get("rating", 5.0)),
+                "passenger_photo": passenger_info.get("profile_photo"),
+                "passenger_city": passenger_city,
+                "pickup_location": tag["pickup_location"],
+                "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
+                "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
+                "dropoff_location": tag["dropoff_location"],
+                "dropoff_lat": float(tag["dropoff_lat"]) if tag.get("dropoff_lat") else None,
+                "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
+                "notes": tag.get("notes"),
+                "status": tag["status"],
+                "distance_to_passenger_km": round(distance_km, 1) if distance_km else None,
                     if passenger_loc.data and passenger_loc.data[0].get("latitude"):
                         passenger_current_lat = float(passenger_loc.data[0]["latitude"])
                         passenger_current_lng = float(passenger_loc.data[0]["longitude"])
