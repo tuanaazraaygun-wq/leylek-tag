@@ -611,6 +611,27 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Admin kontrolü endpoint
+@api_router.get("/admin/check")
+async def check_admin(phone: str = None):
+    """Telefon numarasının admin olup olmadığını kontrol et"""
+    try:
+        if not phone:
+            return {"success": False, "is_admin": False}
+        
+        # TR numara temizle
+        cleaned_phone = phone.replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
+        if cleaned_phone.startswith("0"):
+            cleaned_phone = cleaned_phone[1:]
+        
+        is_admin = cleaned_phone in ADMIN_PHONE_NUMBERS
+        logger.info(f"🔍 Admin check: {cleaned_phone} -> {is_admin}")
+        
+        return {"success": True, "is_admin": is_admin, "phone": cleaned_phone}
+    except Exception as e:
+        logger.error(f"Admin check error: {e}")
+        return {"success": False, "is_admin": False}
+
 # Şifremi Unuttum - OTP doğrulandıktan sonra yeni PIN belirleme
 class ResetPinRequest(BaseModel):
     phone: str
