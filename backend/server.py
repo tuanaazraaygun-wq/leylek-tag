@@ -515,18 +515,14 @@ async def verify_pin_endpoint(phone: str = None, pin: str = None, device_id: str
         if not verify_pin(pin, user.get("pin_hash", "")):
             raise HTTPException(status_code=401, detail="Yanlış PIN")
         
-        # Cihaz ID güncelle
-        if device_id:
-            supabase.table("users").update({
-                "device_id": device_id,
-                "last_login": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", user["id"]).execute()
-        else:
+        # Son giriş zamanını güncelle (device_id kolonu Supabase'de yok, bu yüzden eklenmedi)
+        try:
             supabase.table("users").update({
                 "last_login": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("id", user["id"]).execute()
+        except Exception as update_err:
+            logger.warning(f"Last login update error (ignored): {update_err}")
         
         is_admin = phone in ADMIN_PHONE_NUMBERS
         
