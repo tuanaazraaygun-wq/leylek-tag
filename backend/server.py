@@ -1655,11 +1655,19 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo)").eq("driver_id", resolved_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
         
         if result.data:
             tag = result.data[0]
             passenger_info = tag.get("users", {}) or {}
+            
+            # Yolcu konumu
+            passenger_location = None
+            if passenger_info.get("latitude") and passenger_info.get("longitude"):
+                passenger_location = {
+                    "latitude": float(passenger_info["latitude"]),
+                    "longitude": float(passenger_info["longitude"])
+                }
             
             tag_data = {
                 "id": tag["id"],
@@ -1668,6 +1676,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "passenger_phone": passenger_info.get("phone"),
                 "passenger_rating": float(passenger_info.get("rating", 5.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
+                "passenger_location": passenger_location,  # EKLENDİ
                 "pickup_location": tag["pickup_location"],
                 "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
                 "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
