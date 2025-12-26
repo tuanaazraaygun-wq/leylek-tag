@@ -1350,13 +1350,8 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             if tag.get("passenger_id") in all_blocked:
                 continue
             
-            # ŞEHİR KONTROLÜ - Aynı şehirde olmalı
             passenger_info = tag.get("users", {}) or {}
             passenger_city = passenger_info.get("city")
-            
-            # Eğer sürücünün şehri varsa, aynı şehirde olmalı
-            if driver_city and passenger_city and driver_city.lower() != passenger_city.lower():
-                continue
             
             # Mesafe hesapla
             distance_km = None
