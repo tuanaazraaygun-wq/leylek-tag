@@ -226,36 +226,28 @@ async def resolve_user_id(user_id: str) -> str:
     # Bulunamadıysa orijinal değeri döndür
     return user_id
 
-# OpenRouteService API (ÜCRETSİZ - Günlük 2000 istek)
-OPENROUTE_API_KEY = os.getenv("OPENROUTE_API_KEY", "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQwM2JjMWQ2MDVlYjQyOTc5MzExNzg3NmRhMmU2NDViIiwiaCI6Im11cm11cjY0In0=")
+# OSRM API (TAMAMEN ÜCRETSİZ - LİMİTSİZ)
+# OpenStreetMap'in routing servisi - Daha güvenilir ve limitsiz
 
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
-    """OpenRouteService ile rota bilgisi al (ÜCRETSİZ)"""
+    """OSRM ile rota bilgisi al (TAMAMEN ÜCRETSİZ - LİMİTSİZ)"""
     try:
-        url = "https://api.openrouteservice.org/v2/directions/driving-car"
-        headers = {
-            "Authorization": OPENROUTE_API_KEY,
-            "Content-Type": "application/json"
-        }
-        body = {
-            "coordinates": [
-                [float(origin_lng), float(origin_lat)],  # [lng, lat] formatı
-                [float(dest_lng), float(dest_lat)]
-            ]
-        }
+        # OSRM Public API
+        url = f"https://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
         
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=body, headers=headers, timeout=10)
+            response = await client.get(url, timeout=10)
             data = response.json()
             
-            if "routes" in data and len(data["routes"]) > 0:
+            if data.get("code") == "Ok" and data.get("routes"):
                 route = data["routes"][0]
-                summary = route.get("summary", {})
-                distance_m = summary.get("distance", 0)
-                duration_s = summary.get("duration", 0)
+                distance_m = route.get("distance", 0)
+                duration_s = route.get("duration", 0)
                 
                 distance_km = distance_m / 1000
                 duration_min = duration_s / 60
+                
+                logger.info(f"✅ OSRM rota: {distance_km:.1f} km, {duration_min:.0f} dk")
                 
                 return {
                     "distance_km": round(distance_km, 1),
@@ -264,27 +256,28 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                     "duration_text": f"{int(duration_min)} dk"
                 }
     except Exception as e:
-        logger.error(f"OpenRouteService error: {e}")
-        # Fallback: Düz çizgi mesafesi hesapla
-        try:
-            from math import radians, sin, cos, sqrt, atan2
-            R = 6371  # Dünya yarıçapı km
-            lat1, lon1 = radians(float(origin_lat)), radians(float(origin_lng))
-            lat2, lon2 = radians(float(dest_lat)), radians(float(dest_lng))
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-            c = 2 * atan2(sqrt(a), sqrt(1-a))
-            distance_km = R * c
-            duration_min = distance_km * 1.5  # Yaklaşık 40 km/saat
-            return {
-                "distance_km": round(distance_km, 1),
-                "duration_min": round(duration_min, 0),
-                "distance_text": f"{round(distance_km, 1)} km",
-                "duration_text": f"{int(duration_min)} dk"
-            }
-        except:
-            pass
+        logger.error(f"OSRM error: {e}")
+    
+    # Fallback: Düz çizgi mesafesi hesapla
+    try:
+        from math import radians, sin, cos, sqrt, atan2
+        R = 6371  # Dünya yarıçapı km
+        lat1, lon1 = radians(float(origin_lat)), radians(float(origin_lng))
+        lat2, lon2 = radians(float(dest_lat)), radians(float(dest_lng))
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        distance_km = R * c * 1.3  # Gerçek yol mesafesi için %30 ekle
+        duration_min = distance_km / 40 * 60  # 40 km/saat ortalama
+        return {
+            "distance_km": round(distance_km, 1),
+            "duration_min": round(duration_min, 0),
+            "distance_text": f"{round(distance_km, 1)} km",
+            "duration_text": f"{int(duration_min)} dk"
+        }
+    except:
+        pass
     
     return None
 
