@@ -604,6 +604,7 @@ const styles = StyleSheet.create({
   callButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#F0FDF4', borderRadius: 12, borderWidth: 1.5, borderColor: '#22C55E' },
   videoCallButton: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
   callButtonText: { fontSize: 15, fontWeight: '600', marginLeft: 8, color: '#374151' },
+  callButtonDisabled: { opacity: 0.6 },
   actionButtons: { flexDirection: 'row', gap: 12 },
   actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: '#FEF2F2', borderRadius: 12, borderWidth: 1, borderColor: '#FECACA' },
   actionButtonText: { fontSize: 14, fontWeight: '500', marginLeft: 6, color: '#DC2626' },
