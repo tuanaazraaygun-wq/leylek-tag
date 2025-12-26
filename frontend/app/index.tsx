@@ -2252,7 +2252,11 @@ function PassengerDashboard({
       const response = await fetch(`${API_URL}/passenger/offers/${tagId}?user_id=${user.id}`);
       const data = await response.json();
       if (data.success) {
-        setOffers(data.offers);
+        // Teklifleri fiyata göre sırala (UCUZDAN PAHALIYA)
+        const sortedOffers = (data.offers || []).sort((a: any, b: any) => {
+          return (a.price || 0) - (b.price || 0);
+        });
+        setOffers(sortedOffers);
       }
     } catch (error) {
       console.error('Teklifler yüklenemedi:', error);
