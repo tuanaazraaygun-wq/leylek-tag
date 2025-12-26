@@ -616,10 +616,11 @@ class LeylekTagTester:
             print("❌ Setup failed, aborting tests")
             return
         
-        # Priority tests based on test_result.md
+        # Priority tests based on test_result.md and review request
         await self.test_create_tag_with_coordinates()
         await self.test_distance_calculation()  # MOST CRITICAL
-        await self.test_driver_send_offer()
+        await self.test_driver_send_offer_performance()  # NEW: Performance test for optimization
+        await self.test_background_distance_updates()   # NEW: Background processing test
         await self.test_passenger_update_destination()
         await self.test_passenger_cancel_tag()
         
