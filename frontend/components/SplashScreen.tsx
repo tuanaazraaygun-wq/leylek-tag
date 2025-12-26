@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -54,42 +53,36 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#FFFFFF', '#F0F8FF', '#E6F3FF']}
-        style={styles.gradient}
+      {/* Leylek Logosu - Tam ekran arka plan BEYAZ */}
+      <Animated.View 
+        style={[
+          styles.logoContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ scale: scaleAnim }]
+          }
+        ]}
       >
-        {/* Leylek Logosu */}
-        <Animated.View 
-          style={[
-            styles.logoContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }]
-            }
-          ]}
-        >
-          <Image
-            source={require('../assets/images/leylek-splash.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </Animated.View>
+        <Image
+          source={require('../assets/images/leylek-splash.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+      </Animated.View>
 
-        {/* Leylek Yazısı */}
-        <Animated.View style={[styles.textContainer, { opacity: textFadeAnim }]}>
-          <Text style={styles.brandText}>Leylek</Text>
-          <Text style={styles.taglineText}>Güvenli Yolculuk</Text>
-        </Animated.View>
+      {/* Leylek Yazısı - Mavi */}
+      <Animated.View style={[styles.textContainer, { opacity: textFadeAnim }]}>
+        <Text style={styles.brandText}>Leylek</Text>
+      </Animated.View>
 
-        {/* Alt yükleniyor göstergesi */}
-        <Animated.View style={[styles.loadingContainer, { opacity: textFadeAnim }]}>
-          <View style={styles.loadingDots}>
-            <LoadingDot delay={0} />
-            <LoadingDot delay={200} />
-            <LoadingDot delay={400} />
-          </View>
-        </Animated.View>
-      </LinearGradient>
+      {/* Alt yükleniyor göstergesi */}
+      <Animated.View style={[styles.loadingContainer, { opacity: textFadeAnim }]}>
+        <View style={styles.loadingDots}>
+          <LoadingDot delay={0} />
+          <LoadingDot delay={200} />
+          <LoadingDot delay={400} />
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -126,9 +119,7 @@ const LoadingDot = ({ delay }: { delay: number }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  gradient: {
-    flex: 1,
+    backgroundColor: '#FFFFFF', // Tamamen beyaz arka plan
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -137,40 +128,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logo: {
-    width: SCREEN_WIDTH * 0.6,
-    height: SCREEN_WIDTH * 0.6,
+    width: SCREEN_WIDTH * 0.7,
+    height: SCREEN_WIDTH * 0.7,
   },
   textContainer: {
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 24,
   },
   brandText: {
-    fontSize: 42,
+    fontSize: 48,
     fontWeight: '700',
-    color: '#3FA9F5',
-    letterSpacing: 3,
-    textShadowColor: 'rgba(63, 169, 245, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  taglineText: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 8,
-    letterSpacing: 1,
+    color: '#3FA9F5', // Mavi renk
+    letterSpacing: 4,
   },
   loadingContainer: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 100,
   },
   loadingDots: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: '#3FA9F5',
   },
 });
