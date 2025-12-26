@@ -1418,12 +1418,8 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         blocked_by_ids = [r["user_id"] for r in blocked_by_result.data]
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
-        # Pending TAG'leri getir - Şehir filtresi SQL'de
-        if driver_city:
-            # Aynı şehirdeki tüm teklifleri getir
-            result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(100).execute()
-        else:
-            result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(50).execute()
+        # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(100).execute()
         
         requests = []
         for tag in result.data:
