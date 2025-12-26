@@ -1559,7 +1559,7 @@ function AnimatedOfferButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-// ==================== TIKTOK TARZI TAM EKRAN TEKLİF KARTI ====================
+// ==================== MODERN BASİT TEKLİF KARTI ====================
 function TikTokOfferCard({ 
   offer, 
   index, 
@@ -1579,178 +1579,227 @@ function TikTokOfferCard({
   driverArrivalMin?: number;
   tripDurationMin?: number;
 }) {
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    
-    // Pulse animation for accept button
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  // Hesapla: Şoförün yolcuya varış süresi ve yolculuk süresi
+  // Hesaplamalar
   const arrivalTime = driverArrivalMin || offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
-  const tripTime = tripDurationMin || offer.estimated_time || offer.trip_duration_min || Math.round((offer.trip_distance_km || 10) / 50 * 60);
-  const distanceKm = offer.distance_to_passenger_km?.toFixed(1) || '?';
   const tripDistanceKm = offer.trip_distance_km?.toFixed(1) || '?';
-
-  // İsim ve avatar bilgisi
   const personName = isPassenger ? offer.driver_name : offer.passenger_name;
   const personRating = isPassenger ? (offer.driver_rating || 5.0) : 5.0;
-  const avatarLetter = personName?.charAt(0) || '?';
 
   return (
-    <View style={styles.tikTokCardFull}>
-      <LinearGradient
-        colors={['#0A1628', '#1E3A5F', '#0F2744']}
-        style={styles.tikTokGradientFull}
-      >
-        {/* Üst Kısım - Çarpı Butonu ve Sayfa Göstergesi */}
-        <Animated.View style={[styles.tikTokHeaderClean, { opacity: fadeAnim }]}>
-          <TouchableOpacity 
-            style={styles.tikTokBackBtnClean} 
-            onPress={onDismiss}
-          >
-            <Ionicons name="close" size={28} color="#FFF" />
-          </TouchableOpacity>
-          
-          <View style={styles.tikTokPageIndicatorClean}>
-            <Text style={styles.tikTokPageTextClean}>{index + 1} / {total}</Text>
-          </View>
-        </Animated.View>
+    <View style={modernCardStyles.container}>
+      {/* Header */}
+      <View style={modernCardStyles.header}>
+        <TouchableOpacity onPress={onDismiss} style={modernCardStyles.closeBtn}>
+          <Ionicons name="close" size={24} color="#666" />
+        </TouchableOpacity>
+        <Text style={modernCardStyles.pageText}>{index + 1} / {total}</Text>
+      </View>
 
-        {/* Profil Kartı */}
-        <View style={styles.tikTokProfileCardClean}>
-          <LinearGradient
-            colors={['#3FA9F5', '#2563EB']}
-            style={styles.tikTokAvatarClean}
-          >
-            <Text style={styles.tikTokAvatarTextClean}>{avatarLetter}</Text>
-          </LinearGradient>
-          
-          <View style={styles.tikTokProfileInfoClean}>
-            <Text style={styles.tikTokNameClean}>{personName}</Text>
-            <View style={styles.tikTokRatingClean}>
-              <Ionicons name="star" size={16} color="#FFD700" />
-              <Text style={styles.tikTokRatingTextClean}>{personRating.toFixed(1)}</Text>
-            </View>
+      {/* Profil */}
+      <View style={modernCardStyles.profile}>
+        <View style={modernCardStyles.avatar}>
+          <Text style={modernCardStyles.avatarText}>{personName?.charAt(0) || '?'}</Text>
+        </View>
+        <View style={modernCardStyles.info}>
+          <Text style={modernCardStyles.name}>{personName}</Text>
+          <View style={modernCardStyles.ratingRow}>
+            <Ionicons name="star" size={16} color="#FFD700" />
+            <Text style={modernCardStyles.rating}>{personRating.toFixed(1)}</Text>
           </View>
         </View>
+      </View>
 
-        {/* Araç Bilgisi - Her iki rol için de göster */}
-        <View style={styles.vehicleCardTop}>
-          <View style={styles.vehicleIconBox}>
-            <Ionicons name="car-sport" size={40} color="#3FA9F5" />
-          </View>
-          <View style={styles.vehicleInfoBox}>
-            <Text style={styles.vehicleModelText}>
-              {isPassenger ? (offer.vehicle_model || 'Araç Bilgisi Yok') : 'Yolcu Talebi'}
-            </Text>
-            <Text style={styles.vehicleColorText}>
-              {isPassenger ? (offer.vehicle_color || 'Renk belirtilmedi') : (offer.dropoff_location || 'Hedef belirtilmedi')}
-            </Text>
-          </View>
+      {/* Fiyat */}
+      {isPassenger && (
+        <View style={modernCardStyles.priceBox}>
+          <Text style={modernCardStyles.priceLabel}>Teklif</Text>
+          <Text style={modernCardStyles.price}>₺{offer.price || '?'}</Text>
         </View>
-        
-        {/* Fiyat - Yolcu için teklif fiyatı, Şoför için teklif girişi */}
-        {isPassenger && (
-          <View style={styles.tikTokPriceSectionNew}>
-            <Text style={styles.tikTokPriceLabelNew}>Teklif Fiyatı</Text>
-            <Text style={styles.tikTokPriceNew}>₺{offer.price || '?'}</Text>
-          </View>
-        )}
-        
-        {/* Varış ve Mesafe Kartları - AYNI TASARIM HER İKİ ROL İÇİN */}
-        <View style={styles.tikTokTimeCardsNew}>
-          <View style={styles.tikTokTimeCardNew}>
-            <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.tikTokTimeGradientNew}>
-              <Ionicons name="car-sport" size={28} color="#FFF" />
-              <Text style={styles.tikTokTimeValueNew}>{arrivalTime} dk</Text>
-              <Text style={styles.tikTokTimeLabelNew}>{isPassenger ? 'içinde gelir' : 'içinde giderim'}</Text>
-            </LinearGradient>
-          </View>
-          
-          <View style={styles.tikTokTimeCardNew}>
-            <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.tikTokTimeGradientNew}>
-              <Ionicons name="navigate" size={28} color="#FFF" />
-              <Text style={styles.tikTokTimeValueNew}>{tripDistanceKm} km</Text>
-              <Text style={styles.tikTokTimeLabelNew}>yolculuk</Text>
-            </LinearGradient>
-          </View>
-        </View>
+      )}
 
-        {/* Not varsa */}
-        {offer.notes && (
-          <View style={styles.tikTokNotesNew}>
-            <Ionicons name="chatbubble-ellipses" size={16} color="#94A3B8" />
-            <Text style={styles.tikTokNotesTextNew}>"{offer.notes}"</Text>
-          </View>
-        )}
-
-        {/* Alt Kısım - Aksiyon Butonu */}
-        <View style={styles.tikTokActionsNew}>
-          <Animated.View style={{ transform: [{ scale: pulseAnim }], width: '100%' }}>
-            <TouchableOpacity style={styles.tikTokAcceptButtonNew} onPress={onAccept}>
-              <LinearGradient
-                colors={['#3FA9F5', '#2563EB']}
-                style={styles.tikTokAcceptGradientNew}
-              >
-                <Ionicons name="checkmark-circle" size={28} color="#FFF" />
-                <Text style={styles.tikTokAcceptTextNew}>
-                  {isPassenger ? 'KABUL ET' : 'TEKLİF GÖNDER'}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
+      {/* Bilgi Kartları */}
+      <View style={modernCardStyles.infoCards}>
+        <View style={[modernCardStyles.infoCard, { backgroundColor: '#ECFDF5' }]}>
+          <Ionicons name="time" size={24} color="#22C55E" />
+          <Text style={modernCardStyles.infoValue}>{arrivalTime} dk</Text>
+          <Text style={modernCardStyles.infoLabel}>Varış</Text>
         </View>
-
-        {/* Alt İpucu ve Şifreleme Notu */}
-        <View style={styles.tikTokBottomInfo}>
-          <View style={styles.tikTokSwipeHintNew}>
-            <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.5)" />
-            <Text style={styles.tikTokSwipeTextNew}>
-              Diğer {isPassenger ? 'teklifleri' : 'yolcuları'} görmek için yukarı kaydır
-            </Text>
-          </View>
-          
-          <View style={styles.tikTokSecurityNote}>
-            <Ionicons name="lock-closed" size={14} color="rgba(255,255,255,0.4)" />
-            <Text style={styles.tikTokSecurityText}>Görüşmeler uçtan uca şifrelidir</Text>
-          </View>
-          
-          <Text style={styles.tikTokCompanyNote}>Karekod Teknoloji ve Yazılım AŞ</Text>
+        <View style={[modernCardStyles.infoCard, { backgroundColor: '#FEF3C7' }]}>
+          <Ionicons name="navigate" size={24} color="#F59E0B" />
+          <Text style={modernCardStyles.infoValue}>{tripDistanceKm} km</Text>
+          <Text style={modernCardStyles.infoLabel}>Mesafe</Text>
         </View>
-      </LinearGradient>
+      </View>
+
+      {/* Araç Bilgisi */}
+      {isPassenger && offer.vehicle_model && (
+        <View style={modernCardStyles.vehicleRow}>
+          <Ionicons name="car-sport" size={20} color="#3FA9F5" />
+          <Text style={modernCardStyles.vehicleText}>
+            {offer.vehicle_model} {offer.vehicle_color ? `(${offer.vehicle_color})` : ''}
+          </Text>
+        </View>
+      )}
+
+      {/* Kabul Butonu */}
+      <TouchableOpacity style={modernCardStyles.acceptBtn} onPress={onAccept} activeOpacity={0.8}>
+        <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+        <Text style={modernCardStyles.acceptText}>
+          {isPassenger ? 'KABUL ET' : 'TEKLİF GÖNDER'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Kaydır İpucu */}
+      <View style={modernCardStyles.swipeHint}>
+        <Ionicons name="chevron-up" size={18} color="#999" />
+        <Text style={modernCardStyles.swipeText}>Diğer teklifler için kaydır</Text>
+      </View>
     </View>
   );
 }
+
+// Modern Kart Stilleri
+const modernCardStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    paddingHorizontal: 20,
+    paddingTop: 50,
+    paddingBottom: 30,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pageText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  profile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#3FA9F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  info: {
+    marginLeft: 16,
+  },
+  name: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  rating: {
+    fontSize: 16,
+    color: '#666',
+    marginLeft: 4,
+  },
+  priceBox: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  priceLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  price: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#3FA9F5',
+  },
+  infoCards: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  infoCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  infoValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginTop: 8,
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  vehicleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  vehicleText: {
+    fontSize: 15,
+    color: '#4B5563',
+    marginLeft: 10,
+  },
+  acceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3FA9F5',
+    paddingVertical: 18,
+    borderRadius: 14,
+    marginBottom: 16,
+  },
+  acceptText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginLeft: 10,
+  },
+  swipeHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swipeText: {
+    fontSize: 13,
+    color: '#999',
+    marginLeft: 6,
+  },
+});
 
 // ==================== TRAFIK LAMBASI ANIMASYONU ====================
 function TrafficLightBorder({ children }: { children: React.ReactNode }) {
