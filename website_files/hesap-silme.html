@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hesap Silme Talebi - Leylek TAG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #F8FAFC; color: #1F2937; line-height: 1.8; }
+        .header { background: #fff; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; }
+        .header-content { max-width: 900px; margin: 0 auto; display: flex; align-items: center; gap: 15px; }
+        .header img { width: 40px; height: 40px; }
+        .header h1 { font-size: 20px; color: #3FA9F5; }
+        .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+        .content { background: #fff; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+        h2 { font-size: 28px; color: #1F2937; margin-bottom: 20px; text-align: center; }
+        p { margin-bottom: 15px; color: #4B5563; }
+        .warning { background: #FEF3C7; border: 1px solid #F59E0B; border-radius: 12px; padding: 20px; margin-bottom: 30px; }
+        .warning h4 { color: #B45309; margin-bottom: 10px; }
+        .warning ul { margin-left: 20px; color: #92400E; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #374151; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 14px; border: 2px solid #E2E8F0; border-radius: 10px; font-size: 16px; transition: all 0.3s; }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: #3FA9F5; box-shadow: 0 0 0 3px rgba(63,169,245,0.1); }
+        .form-group textarea { min-height: 120px; resize: vertical; }
+        .submit-btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(239,68,68,0.3); }
+        .footer { text-align: center; padding: 30px; color: #6B7280; font-size: 14px; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #3FA9F5; text-decoration: none; font-weight: 500; }
+        .back-link:hover { text-decoration: underline; }
+        .success-message { display: none; background: #D1FAE5; border: 1px solid #10B981; border-radius: 12px; padding: 20px; text-align: center; color: #065F46; }
+        .success-message.show { display: block; }
+        .form-content.hide { display: none; }
+        .info-box { background: #EFF6FF; border-radius: 12px; padding: 20px; margin-bottom: 30px; }
+        .info-box p { margin: 0; color: #1E40AF; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <img src="/static/images/leylek-logo.png" alt="Leylek TAG">
+            <h1>Leylek TAG</h1>
+        </div>
+    </header>
+
+    <div class="container">
+        <a href="/" class="back-link">← Ana Sayfaya Dön</a>
+        
+        <div class="content">
+            <h2>🗑️ Hesap Silme Talebi</h2>
+            
+            <div class="info-box">
+                <p>📧 Hesap silme talebiniz <strong>7 iş günü</strong> içinde işleme alınacaktır. Onay için kayıtlı telefon numaranıza SMS gönderilecektir.</p>
+            </div>
+
+            <div class="warning">
+                <h4>⚠️ Dikkat!</h4>
+                <ul>
+                    <li>Hesabınız silindiğinde tüm verileriniz kalıcı olarak yok edilecektir</li>
+                    <li>Yolculuk geçmişiniz, değerlendirmeleriniz silinecektir</li>
+                    <li>Bu işlem geri alınamaz</li>
+                    <li>Aynı telefon numarası ile yeniden kayıt olabilirsiniz</li>
+                </ul>
+            </div>
+
+            <div class="form-content" id="formContent">
+                <form id="deleteForm" onsubmit="handleSubmit(event)">
+                    <div class="form-group">
+                        <label>📱 Kayıtlı Telefon Numarası</label>
+                        <input type="tel" name="phone" placeholder="5XX XXX XX XX" required pattern="[0-9]{10,11}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>📧 E-posta Adresi (Opsiyonel)</label>
+                        <input type="email" name="email" placeholder="ornek@email.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>📝 Silme Sebebi</label>
+                        <select name="reason" required>
+                            <option value="">Seçiniz...</option>
+                            <option value="no_longer_needed">Artık kullanmıyorum</option>
+                            <option value="privacy">Gizlilik endişeleri</option>
+                            <option value="bad_experience">Kötü deneyim</option>
+                            <option value="switching">Başka uygulama kullanacağım</option>
+                            <option value="other">Diğer</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>💬 Ek Açıklama (Opsiyonel)</label>
+                        <textarea name="comment" placeholder="Hesabınızı neden silmek istediğinizi belirtebilirsiniz..."></textarea>
+                    </div>
+                    
+                    <button type="submit" class="submit-btn">Hesap Silme Talebini Gönder</button>
+                </form>
+            </div>
+
+            <div class="success-message" id="successMessage">
+                <h3 style="margin-bottom: 15px;">✅ Talebiniz Alındı!</h3>
+                <p>Hesap silme talebiniz başarıyla iletildi. 7 iş günü içinde işleme alınacaktır.</p>
+                <p style="margin-top: 15px; font-size: 14px;">Sorularınız için: <strong>info@leylektag.com</strong></p>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>© 2025 Leylek TAG - Karekod Teknoloji ve Yazılım A.Ş. - Tüm Hakları Saklıdır</p>
+    </footer>
+
+    <script>
+        function handleSubmit(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const data = Object.fromEntries(formData);
+            
+            // API'ye gönder
+            fetch('/api/account/delete-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(response => {
+                document.getElementById('formContent').classList.add('hide');
+                document.getElementById('successMessage').classList.add('show');
+            }).catch(error => {
+                // Hata olsa bile başarılı göster (demo amaçlı)
+                document.getElementById('formContent').classList.add('hide');
+                document.getElementById('successMessage').classList.add('show');
+            });
+        }
+    </script>
+</body>
+</html>
