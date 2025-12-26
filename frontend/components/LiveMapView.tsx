@@ -491,13 +491,21 @@ export default function LiveMapView({
 
           {/* Arama Butonları - HER İKİ ROL İÇİN */}
           <View style={styles.callButtons}>
-            <TouchableOpacity style={styles.callButton} onPress={() => onCall?.('audio')}>
+            <TouchableOpacity 
+              style={[styles.callButton, isCallLoading && styles.callButtonDisabled]} 
+              onPress={() => handleCall('audio')}
+              disabled={isCallLoading}
+            >
               <Ionicons name="call" size={22} color="#22C55E" />
-              <Text style={styles.callButtonText}>Sesli Ara</Text>
+              <Text style={styles.callButtonText}>{isCallLoading ? 'Aranıyor...' : 'Sesli Ara'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.callButton, styles.videoCallButton]} onPress={() => onCall?.('video')}>
+            <TouchableOpacity 
+              style={[styles.callButton, styles.videoCallButton, isCallLoading && styles.callButtonDisabled]} 
+              onPress={() => handleCall('video')}
+              disabled={isCallLoading}
+            >
               <Ionicons name="videocam" size={22} color="#3B82F6" />
-              <Text style={styles.callButtonText}>Görüntülü Ara</Text>
+              <Text style={styles.callButtonText}>{isCallLoading ? 'Aranıyor...' : 'Görüntülü Ara'}</Text>
             </TouchableOpacity>
           </View>
 
