@@ -3079,7 +3079,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000);
+    const interval = setInterval(loadData, 1500); // Her 1.5 saniyede bir - HIZLI
     return () => clearInterval(interval);
   }, []);
   
