@@ -2322,10 +2322,17 @@ function PassengerDashboard({
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
   useEffect(() => {
+    console.log('🔄 Yolcu polling başlatıldı');
     loadActiveTag();
-    const interval = setInterval(loadActiveTag, 1000); // Her 1 saniyede bir kontrol et - ANINDA
-    return () => clearInterval(interval);
-  }, []);
+    const interval = setInterval(() => {
+      console.log('🔄 Yolcu TAG ve teklifler yükleniyor...');
+      loadActiveTag();
+    }, 1000); // Her 1 saniyede bir kontrol et - ANINDA
+    return () => {
+      console.log('🔄 Yolcu polling durduruldu');
+      clearInterval(interval);
+    };
+  }, [user?.id]);
 
   const loadActiveTag = async () => {
     try {
