@@ -1391,6 +1391,13 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
+        # 10 DAKİKADAN ESKİ TAG'LERİ OTOMATİK İPTAL ET
+        ten_min_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
+        try:
+            supabase.table("tags").update({"status": "expired"}).in_("status", ["pending", "offers_received"]).lt("created_at", ten_min_ago).execute()
+        except:
+            pass  # Hata olursa devam et
+        
         # Sürücünün şehrini al
         driver_result = supabase.table("users").select("city, latitude, longitude").eq("id", resolved_id).execute()
         driver_city = None
