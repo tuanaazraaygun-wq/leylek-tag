@@ -653,6 +653,17 @@ export default function App() {
   };
 
   // ==================== RENDER SCREENS ====================
+  
+  // SPLASH SCREEN - 3 saniye göster
+  if (showSplash) {
+    return (
+      <SplashScreen onFinish={() => {
+        setShowSplash(false);
+        // Loading durumunu kontrol et
+      }} />
+    );
+  }
+  
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -696,7 +707,7 @@ export default function App() {
               />
             </View>
 
-            {/* KVKK Checkbox */}
+            {/* KVKK Checkbox - Tıklanabilir Metin */}
             <TouchableOpacity 
               style={styles.kvkkContainer} 
               onPress={() => setKvkkAccepted(!kvkkAccepted)}
@@ -706,7 +717,13 @@ export default function App() {
                 {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
               </View>
               <Text style={styles.kvkkText}>
-                Aydınlatma Metni ve KVKK'yı okudum, anladım, kabul ediyorum.
+                <Text 
+                  style={styles.kvkkLink} 
+                  onPress={() => setShowKVKKModal(true)}
+                >
+                  Aydınlatma Metni ve Gizlilik Politikası
+                </Text>
+                <Text>'nı okudum, anladım ve kabul ediyorum.</Text>
               </Text>
             </TouchableOpacity>
 
@@ -718,8 +735,44 @@ export default function App() {
               <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
             </TouchableOpacity>
+            
+            {/* Şifremi Unuttum */}
+            <TouchableOpacity 
+              style={styles.forgotPasswordButton}
+              onPress={() => setScreen('forgot-password')}
+            >
+              <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+            </TouchableOpacity>
+            
+            {/* Destek Butonu */}
+            <TouchableOpacity 
+              style={styles.supportButton}
+              onPress={() => setShowSupportModal(true)}
+            >
+              <Ionicons name="headset-outline" size={20} color="#3FA9F5" />
+              <Text style={styles.supportButtonText}>Destek</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
+        
+        {/* KVKK Modal */}
+        <KVKKConsentModal
+          visible={showKVKKModal}
+          onAccept={() => {
+            setKvkkAccepted(true);
+            setShowKVKKModal(false);
+          }}
+          onDecline={() => {
+            setKvkkAccepted(false);
+            setShowKVKKModal(false);
+          }}
+        />
+        
+        {/* Destek Modal */}
+        <SupportModal
+          visible={showSupportModal}
+          onClose={() => setShowSupportModal(false)}
+        />
       </SafeAreaView>
     );
   }
