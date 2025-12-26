@@ -3029,6 +3029,82 @@ app.add_middleware(
 
 app.include_router(api_router)
 
+# ==================== WEB SAYFALARI ====================
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+import os
+
+# Static dosyaları serve et
+static_path = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_path):
+    app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+templates_path = os.path.join(os.path.dirname(__file__), "templates")
+
+@app.get("/", response_class=HTMLResponse)
+async def landing_page():
+    """Ana sayfa - Landing Page"""
+    try:
+        with open(os.path.join(templates_path, "landing.html"), "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except:
+        return HTMLResponse(content="<h1>Leylek TAG</h1><p>Ana sayfa yükleniyor...</p>")
+
+@app.get("/gizlilik-politikasi", response_class=HTMLResponse)
+async def privacy_policy():
+    """Gizlilik Politikası"""
+    try:
+        with open(os.path.join(templates_path, "gizlilik-politikasi.html"), "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except:
+        return HTMLResponse(content="<h1>Gizlilik Politikası</h1>")
+
+@app.get("/kvkk", response_class=HTMLResponse)
+async def kvkk():
+    """KVKK Aydınlatma Metni"""
+    try:
+        with open(os.path.join(templates_path, "kvkk.html"), "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except:
+        return HTMLResponse(content="<h1>KVKK Aydınlatma Metni</h1>")
+
+@app.get("/hesap-silme", response_class=HTMLResponse)
+async def account_deletion():
+    """Hesap Silme Talebi"""
+    try:
+        with open(os.path.join(templates_path, "hesap-silme.html"), "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except:
+        return HTMLResponse(content="<h1>Hesap Silme</h1>")
+
+@app.get("/kullanim-sartlari", response_class=HTMLResponse)
+async def terms_of_service():
+    """Kullanım Şartları"""
+    try:
+        with open(os.path.join(templates_path, "kullanim-sartlari.html"), "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except:
+        return HTMLResponse(content="<h1>Kullanım Şartları</h1>")
+
+# Hesap silme API endpoint'i
+@api_router.post("/account/delete-request")
+async def account_delete_request(request: dict):
+    """Hesap silme talebi al"""
+    try:
+        phone = request.get("phone", "")
+        email = request.get("email", "")
+        reason = request.get("reason", "")
+        comment = request.get("comment", "")
+        
+        logger.info(f"🗑️ Hesap silme talebi: {phone}, Sebep: {reason}")
+        
+        # Talebi kaydet (opsiyonel - admin panelinde göstermek için)
+        # supabase.table("delete_requests").insert({...}).execute()
+        
+        return {"success": True, "message": "Talebiniz alındı"}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
