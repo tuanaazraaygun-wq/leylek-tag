@@ -1469,6 +1469,13 @@ async def send_offer(
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
+        # 3 DAKİKA COOLDOWN - Aynı şoför aynı TAG'e 3 dk içinde tekrar teklif veremez
+        from datetime import datetime, timedelta
+        three_min_ago = (datetime.utcnow() - timedelta(minutes=3)).isoformat()
+        existing_offer = supabase.table("offers").select("id, created_at").eq("driver_id", resolved_id).eq("tag_id", tid).gte("created_at", three_min_ago).execute()
+        if existing_offer.data:
+            raise HTTPException(status_code=429, detail="Bu yolcuya 3 dakika içinde zaten teklif verdiniz. Lütfen bekleyin.")
+        
         # Şoför bilgisi
         driver_result = supabase.table("users").select("name, rating, profile_photo, driver_details").eq("id", resolved_id).execute()
         if not driver_result.data:
