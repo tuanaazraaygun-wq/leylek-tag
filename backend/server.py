@@ -1508,7 +1508,9 @@ async def send_offer(
     latitude: float = None,
     longitude: float = None
 ):
-    """Teklif gönder"""
+    """Teklif gönder - OPTİMİZE EDİLDİ (Hızlı Response)"""
+    import asyncio
+    
     try:
         # Body veya query param'dan al
         did = user_id or driver_id
@@ -1529,7 +1531,6 @@ async def send_offer(
         resolved_id = await resolve_user_id(did)
         
         # 3 DAKİKA COOLDOWN - Aynı şoför aynı TAG'e 3 dk içinde tekrar teklif veremez
-        from datetime import datetime, timedelta
         three_min_ago = (datetime.utcnow() - timedelta(minutes=3)).isoformat()
         existing_offer = supabase.table("offers").select("id, created_at").eq("driver_id", resolved_id).eq("tag_id", tid).gte("created_at", three_min_ago).execute()
         if existing_offer.data:
@@ -1549,27 +1550,10 @@ async def send_offer(
         
         tag = tag_result.data[0]
         
-        # Mesafe ve süre hesapla
-        distance_to_passenger = None
-        estimated_arrival = None
-        trip_distance = None
-        trip_duration = None
+        # ⚡ HIZLI TEKLİF: Önce teklifi kaydet, sonra mesafeleri arka planda hesapla
+        # Bu sayede şoför anında yanıt alır
         
-        if lat and lng and tag.get("pickup_lat"):
-            # Şoför -> Yolcu
-            route1 = await get_route_info(lat, lng, float(tag["pickup_lat"]), float(tag["pickup_lng"]))
-            if route1:
-                distance_to_passenger = route1["distance_km"]
-                estimated_arrival = route1["duration_min"]
-            
-            # Yolcu -> Varış
-            if tag.get("dropoff_lat"):
-                route2 = await get_route_info(float(tag["pickup_lat"]), float(tag["pickup_lng"]), float(tag["dropoff_lat"]), float(tag["dropoff_lng"]))
-                if route2:
-                    trip_distance = route2["distance_km"]
-                    trip_duration = route2["duration_min"]
-        
-        # Teklif oluştur
+        # Temel teklif verisi (mesafeler olmadan)
         offer_data = {
             "tag_id": tid,
             "driver_id": resolved_id,
@@ -1579,24 +1563,84 @@ async def send_offer(
             "price": p,
             "notes": n,
             "status": "pending",
-            "distance_to_passenger_km": round(distance_to_passenger, 2) if distance_to_passenger else None,
-            "estimated_arrival_min": round(estimated_arrival) if estimated_arrival else None,
-            "trip_distance_km": round(trip_distance, 2) if trip_distance else None,
-            "trip_duration_min": round(trip_duration) if trip_duration else None
+            "distance_to_passenger_km": None,
+            "estimated_arrival_min": None,
+            "trip_distance_km": None,
+            "trip_duration_min": None
         }
         
+        # Araç bilgisi ekle
         if driver.get("driver_details"):
             offer_data["vehicle_model"] = driver["driver_details"].get("vehicle_model")
             offer_data["vehicle_color"] = driver["driver_details"].get("vehicle_color")
             offer_data["vehicle_photo"] = driver["driver_details"].get("vehicle_photo")
         
+        # ⚡ TEKLİFİ HEMEN KAYDET (hızlı response)
         result = supabase.table("offers").insert(offer_data).execute()
+        offer_id = result.data[0]["id"]
         
         # TAG durumunu güncelle
         supabase.table("tags").update({"status": "offers_received"}).eq("id", tid).execute()
         
-        logger.info(f"📤 Teklif gönderildi: {resolved_id} -> {tid}")
-        return {"success": True, "offer_id": result.data[0]["id"]}
+        logger.info(f"📤 Teklif HIZLI gönderildi: {resolved_id} -> {tid}")
+        
+        # ⚡ ARKA PLANDA MESAFE HESAPLA (response'u bloklamaz)
+        async def update_distances():
+            try:
+                distance_to_passenger = None
+                estimated_arrival = None
+                trip_distance = None
+                trip_duration = None
+                
+                if lat and lng and tag.get("pickup_lat"):
+                    # PARALEL OSRM çağrıları - her ikisi aynı anda
+                    tasks = []
+                    
+                    # Task 1: Şoför -> Yolcu mesafesi
+                    tasks.append(get_route_info(lat, lng, float(tag["pickup_lat"]), float(tag["pickup_lng"])))
+                    
+                    # Task 2: Yolcu -> Varış mesafesi (varsa)
+                    if tag.get("dropoff_lat"):
+                        tasks.append(get_route_info(float(tag["pickup_lat"]), float(tag["pickup_lng"]), float(tag["dropoff_lat"]), float(tag["dropoff_lng"])))
+                    else:
+                        tasks.append(asyncio.sleep(0))  # Dummy task
+                    
+                    # Her iki çağrıyı PARALEL çalıştır (3 saniye timeout)
+                    try:
+                        results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=3.0)
+                        
+                        # Sonuçları işle
+                        route1 = results[0] if not isinstance(results[0], Exception) else None
+                        route2 = results[1] if len(results) > 1 and not isinstance(results[1], Exception) and not isinstance(results[1], type(None)) else None
+                        
+                        if route1 and isinstance(route1, dict):
+                            distance_to_passenger = route1.get("distance_km")
+                            estimated_arrival = route1.get("duration_min")
+                        
+                        if route2 and isinstance(route2, dict):
+                            trip_distance = route2.get("distance_km")
+                            trip_duration = route2.get("duration_min")
+                            
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⏱️ OSRM timeout for offer {offer_id}")
+                    
+                    # Teklifi güncelle (mesafelerle)
+                    if distance_to_passenger or trip_distance:
+                        supabase.table("offers").update({
+                            "distance_to_passenger_km": round(distance_to_passenger, 2) if distance_to_passenger else None,
+                            "estimated_arrival_min": round(estimated_arrival) if estimated_arrival else None,
+                            "trip_distance_km": round(trip_distance, 2) if trip_distance else None,
+                            "trip_duration_min": round(trip_duration) if trip_duration else None
+                        }).eq("id", offer_id).execute()
+                        
+                        logger.info(f"📍 Mesafeler güncellendi: {offer_id} -> {distance_to_passenger}km / {trip_distance}km")
+            except Exception as e:
+                logger.error(f"Background distance update error: {e}")
+        
+        # Arka plan task'ı başlat (response'u bekletmez)
+        asyncio.create_task(update_distances())
+        
+        return {"success": True, "offer_id": offer_id}
     except HTTPException:
         raise
     except Exception as e:
