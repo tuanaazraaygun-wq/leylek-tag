@@ -3285,6 +3285,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     setSelectedTagForOffer(tagId);
     setOfferPrice('');
     setOfferSent(false); // Reset
+    setOfferSending(false); // Reset loading state
     setOfferModalVisible(true);
   };
 
