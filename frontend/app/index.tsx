@@ -3485,58 +3485,70 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   };
 
   const submitOffer = async () => {
+    // Validasyon
     if (!offerPrice || isNaN(Number(offerPrice))) {
       Alert.alert('Hata', 'Geçerli bir fiyat girin');
       return;
     }
-    
     if (!selectedTagForOffer) {
       Alert.alert('Hata', 'Talep seçilmedi');
       return;
     }
-    
     if (offerSending) return;
     
     setOfferSending(true);
+    
+    const url = `${API_URL}/driver/send-offer?user_id=${user.id}`;
+    const body = {
+      tag_id: selectedTagForOffer,
+      price: Number(offerPrice),
+      estimated_time: 15,
+      notes: 'Hemen geliyorum!',
+      latitude: userLocation?.latitude || 0,
+      longitude: userLocation?.longitude || 0
+    };
 
-    // ⚡ ULTRA HIZLI TEKLİF - Timeout yok, basit fetch
+    console.log('📤 TEKLİF GÖNDERİLİYOR:', url, JSON.stringify(body));
+    
     try {
-      const url = `${API_URL}/driver/send-offer?user_id=${user.id}`;
-      const body = JSON.stringify({
-        tag_id: selectedTagForOffer,
-        price: Number(offerPrice),
-        estimated_time: 15,
-        notes: 'Hemen geliyorum!',
-        latitude: userLocation?.latitude || null,
-        longitude: userLocation?.longitude || null
-      });
-      
-      console.log('📤 Teklif gönderiliyor:', url);
+      const startTime = Date.now();
       
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(body)
       });
       
+      const endTime = Date.now();
+      console.log(`📥 YANIT ALDI: ${endTime - startTime}ms`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('❌ HTTP Hata:', response.status, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
       const data = await response.json();
-      console.log('📥 Yanıt:', data);
+      console.log('📥 DATA:', JSON.stringify(data));
       
       if (data.success || data.offer_id) {
-        Alert.alert('✅ Başarılı', 'Teklif gönderildi!');
+        // BAŞARILI
         setOfferModalVisible(false);
-        setOfferSent(false);
         setOfferSending(false);
+        setOfferSent(false);
         setOfferPrice('');
+        Alert.alert('✅', 'Teklif gönderildi!');
         loadRequests();
       } else {
-        setOfferSending(false);
-        Alert.alert('❌ Hata', data.detail || 'Teklif gönderilemedi');
+        throw new Error(data.detail || 'Bilinmeyen hata');
       }
-    } catch (error: any) {
-      console.log('❌ Hata:', error);
+    } catch (err: any) {
+      console.log('❌ HATA:', err.message);
       setOfferSending(false);
-      Alert.alert('❌ Bağlantı Hatası', 'İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      Alert.alert('Hata', err.message || 'Bağlantı hatası');
     }
   };
 
