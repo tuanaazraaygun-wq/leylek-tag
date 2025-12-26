@@ -2812,80 +2812,104 @@ function PassengerDashboard({
             ) : null}
       </ScrollView>
 
-      {/* Hedef Seçme - ÜSTTEN AÇILAN YARIM SAYFA (Modal yerine Animated View) */}
-      {showDestinationPicker && (
-        <View style={styles.topSheetFullOverlay}>
-          {/* Arka plan - tıklayınca kapat */}
-          <TouchableOpacity 
-            style={styles.topSheetBackdropFull}
-            activeOpacity={1}
-            onPress={() => setShowDestinationPicker(false)}
-          />
+      {/* Hedef Seçme - TAM EKRAN MODAL */}
+      <Modal
+        visible={showDestinationPicker}
+        animationType="slide"
+        onRequestClose={() => setShowDestinationPicker(false)}
+      >
+        <SafeAreaView style={styles.destinationModalContainer}>
+          {/* Üst Bar */}
+          <View style={styles.destinationModalHeader}>
+            <TouchableOpacity 
+              onPress={() => setShowDestinationPicker(false)}
+              style={styles.destinationModalBackBtn}
+            >
+              <Ionicons name="arrow-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.destinationModalTitle}>Nereye Gidiyorsunuz?</Text>
+            <View style={{ width: 40 }} />
+          </View>
           
-          {/* Üstten açılan panel */}
-          <View style={styles.topSheetPanelFromTop}>
-            {/* Üst Bar - Kapat */}
-            <View style={styles.topSheetHeader}>
-              <Text style={styles.topSheetTitle}>Nereye Gidiyorsunuz?</Text>
-              <TouchableOpacity 
-                onPress={() => setShowDestinationPicker(false)}
-                style={styles.topSheetCloseBtn}
-              >
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
+          {/* Seçilen Hedef Gösterimi */}
+          {destination && (
+            <View style={styles.selectedDestinationBox}>
+              <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
+              <Text style={styles.selectedDestinationText} numberOfLines={2}>
+                {destination.address}
+              </Text>
             </View>
-            
-            {/* Seçilen Hedef - BÜYÜK VE BELİRGİN */}
-            {destination && (
-              <View style={styles.selectedDestinationBig}>
-                <Ionicons name="navigate" size={32} color="#3FA9F5" />
-                <View style={styles.selectedDestinationTextBox}>
-                  <Text style={styles.selectedDestinationLabel}>HEDEF</Text>
-                  <Text style={styles.selectedDestinationName}>{destination.address}</Text>
-                </View>
-              </View>
-            )}
-            
-            {/* Arama */}
+          )}
+          
+          {/* Arama Bileşeni */}
+          <View style={styles.destinationSearchContainer}>
             <PlacesAutocomplete
-              placeholder="Adres, sokak veya mekan ara..."
+              placeholder="Mahalle, sokak veya mekan ara..."
               city={user?.city || ''}
               onPlaceSelected={(place) => {
                 handleDestinationSelect(place.address, place.latitude, place.longitude);
               }}
             />
-            
-            {/* Popüler Konumlar */}
-            <Text style={styles.topSheetPopularTitle}>
-              {user?.city ? `${user.city} Popüler` : 'Popüler Konumlar'}
+          </View>
+          
+          {/* Hızlı Seçim - Popüler Yerler */}
+          <View style={styles.quickSelectContainer}>
+            <Text style={styles.quickSelectTitle}>
+              📍 {user?.city || 'Türkiye'} - Hızlı Seçim
             </Text>
-            <ScrollView style={styles.topSheetPopularScroll} showsVerticalScrollIndicator={false}>
-              {[
-                { name: 'Taksim Meydanı, İstanbul', lat: 41.0370, lng: 28.9850 },
-                { name: 'Kadıköy İskele, İstanbul', lat: 40.9927, lng: 29.0230 },
-                { name: 'Kızılay, Ankara', lat: 39.9208, lng: 32.8541 },
-                { name: 'Ulus, Ankara', lat: 39.9420, lng: 32.8647 },
-                { name: 'Konak, İzmir', lat: 38.4189, lng: 27.1287 },
-                { name: 'Alsancak, İzmir', lat: 38.4361, lng: 27.1428 },
-              ].filter(place => !user?.city || place.name.includes(user.city)).map((place, index) => (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Şehre göre popüler yerler */}
+              {(user?.city === 'Ankara' ? [
+                { name: 'Kızılay Meydanı', lat: 39.9208, lng: 32.8541 },
+                { name: 'Ulus', lat: 39.9420, lng: 32.8647 },
+                { name: 'Çankaya', lat: 39.9032, lng: 32.8644 },
+                { name: 'Keçiören', lat: 39.9981, lng: 32.8619 },
+                { name: 'Yenimahalle', lat: 39.9647, lng: 32.8097 },
+                { name: 'Mamak', lat: 39.9303, lng: 32.9122 },
+                { name: 'Etimesgut', lat: 39.9456, lng: 32.6786 },
+                { name: 'Batıkent', lat: 39.9684, lng: 32.7268 },
+                { name: 'Eryaman', lat: 39.9647, lng: 32.6497 },
+                { name: 'Dikmen', lat: 39.8889, lng: 32.8467 },
+              ] : user?.city === 'İstanbul' ? [
+                { name: 'Taksim Meydanı', lat: 41.0370, lng: 28.9850 },
+                { name: 'Kadıköy', lat: 40.9927, lng: 29.0230 },
+                { name: 'Beşiktaş', lat: 41.0422, lng: 29.0047 },
+                { name: 'Şişli', lat: 41.0602, lng: 28.9877 },
+                { name: 'Bakırköy', lat: 40.9819, lng: 28.8772 },
+                { name: 'Ümraniye', lat: 41.0167, lng: 29.1167 },
+                { name: 'Üsküdar', lat: 41.0250, lng: 29.0156 },
+                { name: 'Fatih', lat: 41.0186, lng: 28.9397 },
+                { name: 'Ataşehir', lat: 40.9833, lng: 29.1167 },
+                { name: 'Maltepe', lat: 40.9333, lng: 29.1500 },
+              ] : user?.city === 'İzmir' ? [
+                { name: 'Konak', lat: 38.4189, lng: 27.1287 },
+                { name: 'Alsancak', lat: 38.4361, lng: 27.1428 },
+                { name: 'Karşıyaka', lat: 38.4561, lng: 27.1103 },
+                { name: 'Bornova', lat: 38.4697, lng: 27.2172 },
+                { name: 'Buca', lat: 38.3883, lng: 27.1756 },
+                { name: 'Bayraklı', lat: 38.4639, lng: 27.1644 },
+              ] : [
+                { name: 'Merkez', lat: 39.9334, lng: 32.8597 },
+              ]).map((place, index) => (
                 <TouchableOpacity
                   key={index}
-                  style={styles.topSheetPopularItem}
+                  style={styles.quickSelectItem}
                   onPress={() => {
-                    handleDestinationSelect(place.name, place.lat, place.lng);
+                    const fullAddress = `${place.name}, ${user?.city || 'Türkiye'}`;
+                    handleDestinationSelect(fullAddress, place.lat, place.lng);
                   }}
                 >
-                  <Ionicons name="location" size={18} color="#3FA9F5" />
-                  <Text style={styles.topSheetPopularText}>{place.name}</Text>
+                  <View style={styles.quickSelectIcon}>
+                    <Ionicons name="location" size={20} color="#3FA9F5" />
+                  </View>
+                  <Text style={styles.quickSelectText}>{place.name}</Text>
+                  <Ionicons name="chevron-forward" size={18} color="#CCC" />
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            
-            {/* Alt Çizgi */}
-            <View style={styles.topSheetHandle} />
           </View>
-        </View>
-      )}
+        </SafeAreaView>
+      </Modal>
 
       {/* Gelen Arama Modal */}
       <IncomingCall
