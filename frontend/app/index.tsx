@@ -3750,14 +3750,20 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               <TouchableOpacity
                 style={[styles.modernSubmitButton, offerSent && styles.modernSubmitButtonSuccess]}
                 onPress={submitOffer}
-                disabled={offerSent}
+                disabled={offerSent || offerSending}
               >
                 <LinearGradient
                   colors={offerSent ? ['#22C55E', '#16A34A'] : ['#3FA9F5', '#2563EB']}
                   style={styles.submitButtonGradient}
                 >
-                  <Ionicons name={offerSent ? "checkmark-circle" : "send"} size={20} color="#FFF" />
-                  <Text style={styles.modernSubmitButtonText}>{offerSent ? 'Gönderildi!' : 'Gönder'}</Text>
+                  {offerSending && !offerSent ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Ionicons name={offerSent ? "checkmark-circle" : "send"} size={20} color="#FFF" />
+                  )}
+                  <Text style={styles.modernSubmitButtonText}>
+                    {offerSent ? 'Gönderildi!' : offerSending ? 'Gönderiliyor...' : 'Gönder'}
+                  </Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
