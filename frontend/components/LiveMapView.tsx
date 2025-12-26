@@ -39,11 +39,8 @@ interface LiveMapViewProps {
   onComplete?: () => void;
   onRequestTripEnd?: () => void;
   onForceEnd?: () => void;
-  onAutoComplete?: () => void; // Hedefe yaklaşınca otomatik bitirme
+  onAutoComplete?: () => void;
 }
-
-// OpenRouteService API Key
-const OPENROUTE_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjQwM2JjMWQ2MDVlYjQyOTc5MzExNzg3NmRhMmU2NDViIiwiaCI6Im11cm11cjY0In0=';
 
 // Haversine mesafe hesaplama (km)
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -55,6 +52,39 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
             Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
+};
+
+// Polyline decode fonksiyonu (OSRM formatı)
+const decodePolyline = (encoded: string): {latitude: number, longitude: number}[] => {
+  const points: {latitude: number, longitude: number}[] = [];
+  let index = 0, lat = 0, lng = 0;
+
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+
+    points.push({
+      latitude: lat / 1e5,
+      longitude: lng / 1e5
+    });
+  }
+  return points;
 };
 
 export default function LiveMapView({
@@ -90,103 +120,117 @@ export default function LiveMapView({
   // Hedefe yaklaşma kontrolü
   const [nearDestination, setNearDestination] = useState(false);
   const autoCompleteTriggered = useRef(false);
+  
+  // API çağrı sayacı (rate limiting için)
+  const lastRouteCall = useRef<number>(0);
 
-  // OpenRouteService'den rota al
+  // OSRM API ile rota al (TAMAMEN ÜCRETSİZ - Limitsiz)
   const fetchRoute = async (
     start: { latitude: number; longitude: number },
     end: { latitude: number; longitude: number }
   ): Promise<{ coordinates: {latitude: number, longitude: number}[], distance: number, duration: number } | null> => {
     try {
-      const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
+      // Rate limiting - en az 2 saniye bekle
+      const now = Date.now();
+      if (now - lastRouteCall.current < 2000) {
+        return null;
+      }
+      lastRouteCall.current = now;
       
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': OPENROUTE_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          coordinates: [
-            [start.longitude, start.latitude],
-            [end.longitude, end.latitude]
-          ]
-        })
-      });
+      // OSRM Public API (Tamamen ücretsiz, limitsiz)
+      const url = `https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=polyline`;
       
+      console.log('🗺️ OSRM rota isteği...');
+      
+      const response = await fetch(url);
       const data = await response.json();
       
-      if (data.features && data.features.length > 0) {
-        const route = data.features[0];
-        const props = route.properties;
-        const coords = route.geometry.coordinates;
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
         
-        const points = coords.map((c: number[]) => ({
-          latitude: c[1],
-          longitude: c[0]
-        }));
+        // Polyline decode et
+        const points = decodePolyline(route.geometry);
         
-        const distKm = (props.summary?.distance || 0) / 1000;
-        const durMin = Math.round((props.summary?.duration || 0) / 60);
+        const distKm = route.distance / 1000;
+        const durMin = Math.round(route.duration / 60);
+        
+        console.log('✅ OSRM rota:', distKm.toFixed(1), 'km,', durMin, 'dk');
         
         return { coordinates: points, distance: distKm, duration: durMin };
       }
     } catch (error) {
-      console.log('OpenRouteService hatası:', error);
+      console.log('OSRM hatası:', error);
     }
     return null;
   };
 
-  // YEŞİL ROTA: Şoför → Yolcu
+  // YEŞİL ROTA: Şoför → Yolcu (her 5 saniyede güncelle)
   useEffect(() => {
     if (!userLocation || !otherLocation) return;
     
     const updateMeetingRoute = async () => {
       let start, end;
       if (isDriver) {
-        start = userLocation; // Şoför
-        end = otherLocation;   // Yolcu
+        start = userLocation;
+        end = otherLocation;
       } else {
-        start = otherLocation; // Şoför
-        end = userLocation;    // Yolcu
+        start = otherLocation;
+        end = userLocation;
       }
       
+      // Önce düz çizgi mesafesini hesapla
+      const straightDistance = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
+      
+      // Hemen düz çizgi göster (anlık geri bildirim)
+      if (meetingRoute.length === 0) {
+        setMeetingRoute([start, end]);
+        setMeetingDistance(straightDistance * 1.3);
+        setMeetingDuration(Math.round((straightDistance * 1.3 / 40) * 60));
+      }
+      
+      // Gerçek rotayı al
       const result = await fetchRoute(start, end);
-      if (result) {
+      if (result && result.coordinates.length > 2) {
         setMeetingRoute(result.coordinates);
         setMeetingDistance(result.distance);
         setMeetingDuration(result.duration);
-        console.log('✅ Buluşma rotası:', result.distance.toFixed(1), 'km,', result.duration, 'dk');
-      } else {
-        // Fallback: Düz çizgi
-        setMeetingRoute([start, end]);
-        const dist = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
-        setMeetingDistance(dist * 1.3);
-        setMeetingDuration(Math.round((dist * 1.3 / 40) * 60));
       }
     };
     
     updateMeetingRoute();
-    const interval = setInterval(updateMeetingRoute, 30000); // 30 saniyede bir güncelle
+    const interval = setInterval(updateMeetingRoute, 5000); // 5 saniyede bir güncelle
     return () => clearInterval(interval);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, isDriver]);
 
   // TURUNCU ROTA: Yolcu → Hedef
   useEffect(() => {
-    if (!userLocation || !destinationLocation) return;
+    if (!destinationLocation) return;
+    
+    const passengerLocation = isDriver ? otherLocation : userLocation;
+    if (!passengerLocation) return;
     
     const updateDestinationRoute = async () => {
-      // Yolcunun konumundan hedefe
-      const passengerLocation = isDriver ? otherLocation : userLocation;
-      if (!passengerLocation) return;
+      // Düz çizgi mesafesi
+      const straightDistance = calculateDistance(
+        passengerLocation.latitude, passengerLocation.longitude,
+        destinationLocation.latitude, destinationLocation.longitude
+      );
       
+      // Hemen göster
+      if (destinationRoute.length === 0) {
+        setDestinationRoute([passengerLocation, destinationLocation]);
+        setDestinationDistance(straightDistance * 1.3);
+        setDestinationDuration(Math.round((straightDistance * 1.3 / 40) * 60));
+      }
+      
+      // Gerçek rota
       const result = await fetchRoute(passengerLocation, destinationLocation);
-      if (result) {
+      if (result && result.coordinates.length > 2) {
         setDestinationRoute(result.coordinates);
         setDestinationDistance(result.distance);
         setDestinationDuration(result.duration);
-        console.log('✅ Hedef rotası:', result.distance.toFixed(1), 'km,', result.duration, 'dk');
         
-        // 1 km'den az mı kontrol et
+        // 1 km kontrolü
         if (result.distance <= 1 && !autoCompleteTriggered.current) {
           setNearDestination(true);
           autoCompleteTriggered.current = true;
@@ -200,20 +244,11 @@ export default function LiveMapView({
             ]
           );
         }
-      } else {
-        // Fallback
-        setDestinationRoute([passengerLocation, destinationLocation]);
-        const dist = calculateDistance(
-          passengerLocation.latitude, passengerLocation.longitude,
-          destinationLocation.latitude, destinationLocation.longitude
-        );
-        setDestinationDistance(dist * 1.3);
-        setDestinationDuration(Math.round((dist * 1.3 / 40) * 60));
       }
     };
     
     updateDestinationRoute();
-    const interval = setInterval(updateDestinationRoute, 30000);
+    const interval = setInterval(updateDestinationRoute, 10000); // 10 saniyede bir
     return () => clearInterval(interval);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
 
@@ -298,7 +333,7 @@ export default function LiveMapView({
           <Polyline
             coordinates={meetingRoute}
             strokeColor="#22C55E"
-            strokeWidth={5}
+            strokeWidth={6}
             lineDashPattern={[0]}
           />
         )}
@@ -357,7 +392,7 @@ export default function LiveMapView({
           <View style={styles.routeInfoRow}>
             <View style={[styles.routeIndicator, { backgroundColor: '#22C55E' }]} />
             <View style={styles.routeDetails}>
-              <Text style={styles.routeLabel}>Buluşma</Text>
+              <Text style={styles.routeLabel}>🚗 Buluşma</Text>
               <Text style={styles.routeValue}>
                 {meetingDistance ? `${meetingDistance.toFixed(1)} km` : '...'} • {meetingDuration ? `${meetingDuration} dk` : '...'}
               </Text>
@@ -369,7 +404,7 @@ export default function LiveMapView({
             <View style={styles.routeInfoRow}>
               <View style={[styles.routeIndicator, { backgroundColor: '#F97316' }]} />
               <View style={styles.routeDetails}>
-                <Text style={styles.routeLabel}>Hedefe</Text>
+                <Text style={styles.routeLabel}>🏁 Hedefe</Text>
                 <Text style={styles.routeValue}>
                   {destinationDistance ? `${destinationDistance.toFixed(1)} km` : '...'} • {destinationDuration ? `${destinationDuration} dk` : '...'}
                 </Text>
@@ -399,7 +434,7 @@ export default function LiveMapView({
           <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
             <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.navButtonGradient}>
               <Ionicons name="navigate" size={24} color="#FFF" />
-              <Text style={styles.navButtonText}>Navigasyon</Text>
+              <Text style={styles.navButtonText}>Navigasyon Aç</Text>
             </LinearGradient>
           </TouchableOpacity>
 
@@ -407,23 +442,25 @@ export default function LiveMapView({
           <View style={styles.callButtons}>
             <TouchableOpacity style={styles.callButton} onPress={() => onCall?.('audio')}>
               <Ionicons name="call" size={22} color="#22C55E" />
+              <Text style={styles.callButtonText}>Ara</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.callButton} onPress={() => onCall?.('video')}>
+            <TouchableOpacity style={[styles.callButton, styles.videoCallButton]} onPress={() => onCall?.('video')}>
               <Ionicons name="videocam" size={22} color="#3B82F6" />
+              <Text style={styles.callButtonText}>Görüntülü</Text>
             </TouchableOpacity>
           </View>
 
           {/* Diğer Butonlar */}
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.actionButton} onPress={() => {
-              Alert.prompt(
+              Alert.alert(
                 'Şikayet',
-                'Lütfen şikayet sebebinizi yazın:',
+                'Ne tür bir şikayet bildirmek istiyorsunuz?',
                 [
                   { text: 'İptal', style: 'cancel' },
-                  { text: 'Gönder', onPress: (text) => text && onReport?.() }
-                ],
-                'plain-text'
+                  { text: 'Uygunsuz Davranış', onPress: () => onReport?.() },
+                  { text: 'Güvenlik Sorunu', onPress: () => onReport?.() }
+                ]
               );
             }}>
               <Ionicons name="flag" size={18} color="#EF4444" />
@@ -436,7 +473,7 @@ export default function LiveMapView({
                 'Nasıl bitirmek istiyorsunuz?',
                 [
                   { text: 'İptal', style: 'cancel' },
-                  { text: 'Onay İste', onPress: () => onRequestTripEnd?.() },
+                  { text: 'Karşı Taraftan Onay İste', onPress: () => onRequestTripEnd?.() },
                   { text: 'Tamamla', onPress: () => onComplete?.(), style: 'destructive' }
                 ]
               );
@@ -451,10 +488,11 @@ export default function LiveMapView({
   );
 }
 
-// Harita stili
+// Harita stili - Temiz görünüm
 const mapStyle = [
   { "featureType": "poi", "stylers": [{ "visibility": "off" }] },
-  { "featureType": "transit", "stylers": [{ "visibility": "off" }] }
+  { "featureType": "transit", "stylers": [{ "visibility": "off" }] },
+  { "featureType": "poi.business", "stylers": [{ "visibility": "off" }] }
 ];
 
 const styles = StyleSheet.create({
@@ -467,11 +505,11 @@ const styles = StyleSheet.create({
   
   // Marker Styles
   markerContainer: { alignItems: 'center' },
-  markerCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
+  markerCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
   myCircle: { backgroundColor: '#3B82F6' },
   driverCircle: { backgroundColor: '#22C55E' },
   passengerCircle: { backgroundColor: '#8B5CF6' },
-  markerIcon: { fontSize: 20 },
+  markerIcon: { fontSize: 22 },
   markerArrow: { width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', marginTop: -2 },
   myArrow: { borderTopColor: '#3B82F6' },
   driverArrow: { borderTopColor: '#22C55E' },
@@ -479,34 +517,36 @@ const styles = StyleSheet.create({
   
   // Destination Marker
   destinationMarker: { alignItems: 'center' },
-  destinationCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F97316', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8 },
-  destinationIcon: { fontSize: 24 },
+  destinationCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#F97316', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8 },
+  destinationIcon: { fontSize: 26 },
   destinationLabel: { marginTop: 4, fontSize: 11, fontWeight: 'bold', color: '#F97316', backgroundColor: '#FFF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
   
   // Top Info Panel
   topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0 },
-  infoGradient: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 16, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  routeIndicator: { width: 12, height: 12, borderRadius: 6, marginRight: 12 },
+  infoGradient: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  routeIndicator: { width: 14, height: 14, borderRadius: 7, marginRight: 12 },
   routeDetails: { flex: 1 },
-  routeLabel: { fontSize: 12, color: '#666' },
-  routeValue: { fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
-  nearBadge: { backgroundColor: '#F97316', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  nearBadgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  routeLabel: { fontSize: 13, color: '#666', fontWeight: '500' },
+  routeValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
+  nearBadge: { backgroundColor: '#F97316', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  nearBadgeText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
   priceLabel: { fontSize: 14, color: '#666' },
-  priceValue: { fontSize: 20, fontWeight: 'bold', color: '#22C55E' },
+  priceValue: { fontSize: 22, fontWeight: 'bold', color: '#22C55E' },
   
   // Bottom Panel
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  bottomGradient: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 30, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-  navButton: { marginBottom: 12 },
-  navButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12 },
-  navButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
-  callButtons: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 12 },
-  callButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#E5E7EB' },
+  bottomGradient: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  navButton: { marginBottom: 14 },
+  navButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 14 },
+  navButtonText: { color: '#FFF', fontSize: 17, fontWeight: '600', marginLeft: 10 },
+  callButtons: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 14 },
+  callButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#F0FDF4', borderRadius: 12, borderWidth: 1.5, borderColor: '#22C55E' },
+  videoCallButton: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
+  callButtonText: { fontSize: 15, fontWeight: '600', marginLeft: 8, color: '#374151' },
   actionButtons: { flexDirection: 'row', gap: 12 },
-  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: '#F3F4F6', borderRadius: 10 },
-  actionButtonText: { fontSize: 14, fontWeight: '500', marginLeft: 6, color: '#374151' },
-  endButton: { backgroundColor: '#22C55E' },
+  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: '#FEF2F2', borderRadius: 12, borderWidth: 1, borderColor: '#FECACA' },
+  actionButtonText: { fontSize: 14, fontWeight: '500', marginLeft: 6, color: '#DC2626' },
+  endButton: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
 });
