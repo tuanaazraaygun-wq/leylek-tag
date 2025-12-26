@@ -3418,6 +3418,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       console.log('📤 Teklif gönderiliyor...', selectedTagForOffer, offerPrice);
       
       // Konum bilgisini ekle - OSRM mesafe hesaplaması için GEREKLİ
+      // userLocation kullan (currentLocation tanımlı değil!)
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3426,8 +3427,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           price: Number(offerPrice),
           estimated_time: 15,
           notes: 'Hemen geliyorum!',
-          latitude: currentLocation?.latitude,
-          longitude: currentLocation?.longitude
+          latitude: userLocation?.latitude,
+          longitude: userLocation?.longitude
         })
       });
 
