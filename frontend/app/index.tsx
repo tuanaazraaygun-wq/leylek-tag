@@ -3187,10 +3187,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const buttonPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    console.log('🔄 Sürücü polling başlatıldı');
     loadData();
-    const interval = setInterval(loadData, 1000); // Her 1 saniyede bir - ANINDA
-    return () => clearInterval(interval);
-  }, []);
+    const interval = setInterval(() => {
+      console.log('🔄 Sürücü data yükleniyor...');
+      loadData();
+    }, 1000); // Her 1 saniyede bir - ANINDA
+    return () => {
+      console.log('🔄 Sürücü polling durduruldu');
+      clearInterval(interval);
+    };
+  }, [user?.id]);
   
   // Gelen arama polling - Şoför için
   useEffect(() => {
