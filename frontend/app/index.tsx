@@ -4060,6 +4060,38 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '500',
   },
+  kvkkLink: {
+    color: '#3FA9F5',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  forgotPasswordButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  supportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 8,
+    backgroundColor: '#EEF6FF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    gap: 8,
+  },
+  supportButtonText: {
+    fontSize: 15,
+    color: '#3FA9F5',
+    fontWeight: '600',
+  },
   buttonDisabled: {
     backgroundColor: '#A0C4E8',
     shadowOpacity: 0.15,
