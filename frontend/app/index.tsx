@@ -3415,26 +3415,36 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       return;
     }
     
+    // TAG ID kontrolü
+    if (!selectedTagForOffer) {
+      Alert.alert('Hata', 'Talep seçilmedi');
+      setOfferSending(false);
+      return;
+    }
+    
     // Çift tıklamayı önle
     if (offerSending) return;
     setOfferSending(true);
 
     try {
-      console.log('📤 Teklif gönderiliyor...', selectedTagForOffer, offerPrice);
+      console.log('📤 Teklif gönderiliyor...', selectedTagForOffer, offerPrice, userLocation);
+      
+      const requestBody = {
+        tag_id: selectedTagForOffer,
+        price: Number(offerPrice),
+        estimated_time: 15,
+        notes: 'Hemen geliyorum!',
+        latitude: userLocation?.latitude || null,
+        longitude: userLocation?.longitude || null
+      };
+      
+      console.log('📤 Request body:', JSON.stringify(requestBody));
       
       // Konum bilgisini ekle - OSRM mesafe hesaplaması için GEREKLİ
-      // userLocation kullan (currentLocation tanımlı değil!)
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tag_id: selectedTagForOffer,
-          price: Number(offerPrice),
-          estimated_time: 15,
-          notes: 'Hemen geliyorum!',
-          latitude: userLocation?.latitude,
-          longitude: userLocation?.longitude
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await response.json();
@@ -3458,7 +3468,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     } catch (error) {
       console.log('❌ Teklif hatası:', error);
       setOfferSending(false);
-      Alert.alert('Hata', 'Teklif gönderilemedi');
+      Alert.alert('Hata', 'Teklif gönderilemedi: ' + (error as Error).message);
     }
   };
 
