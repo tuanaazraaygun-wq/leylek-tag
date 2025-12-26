@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Image, Platform } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -11,11 +11,18 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
-  const [isReady, setIsReady] = useState(false);
+  const hasFinished = useRef(false);
+
+  // Callback'i memoize et
+  const handleFinish = useCallback(() => {
+    if (hasFinished.current) return;
+    hasFinished.current = true;
+    console.log('🎬 Splash screen tamamlandı, login sayfasına geçiliyor...');
+    onFinish();
+  }, [onFinish]);
 
   useEffect(() => {
-    // Hemen başlat
-    setIsReady(true);
+    console.log('🎬 Splash screen başlatıldı');
     
     // Logo animasyonu
     Animated.parallel([
@@ -41,17 +48,14 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       }).start();
     }, 500);
 
-    // 3 saniye sonra giriş sayfasına geç
-    const finishTimer = setTimeout(() => {
-      console.log('🎬 Splash screen tamamlandı, login sayfasına geçiliyor...');
-      onFinish();
-    }, 3000);
+    // 3 saniye sonra giriş sayfasına geç - daha güvenilir
+    const finishTimer = setTimeout(handleFinish, 3000);
 
     return () => {
       clearTimeout(textTimer);
       clearTimeout(finishTimer);
     };
-  }, [onFinish]);
+  }, [handleFinish]);
 
   return (
     <View style={styles.container}>
