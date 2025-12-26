@@ -339,3 +339,34 @@ agent_communication:
       
       📊 TEST RESULTS: 11/11 tests passed (100% success rate)
       All backend APIs are functioning correctly with proper coordinate handling and distance calculations.
+
+  - agent: "main"
+    message: |
+      ## TEKLİF SİSTEMİ OPTİMİZASYONU - Haziran 2025
+      
+      ### SORUN:
+      Şoförün "Teklif Gönder" butonu çok yavaştı ve takılı kalıyordu.
+      Sebep: send-offer endpoint'inde 2 adet OSRM API çağrısı SIRAYLA yapılıyordu (sequentially).
+      Her OSRM çağrısı 3-5 saniye sürdüğünden toplam 6-10 saniye bekleme oluyordu.
+      
+      ### YAPILAN DÜZELTMELER:
+      
+      #### 1. Backend - /api/driver/send-offer endpoint optimize edildi (server.py)
+      - ⚡ HIZLI RESPONSE: Teklif önce mesafeler olmadan kaydedilip anında response dönülüyor
+      - ⚡ ARKA PLAN HESAPLAMA: Mesafeler asyncio.create_task ile arka planda hesaplanıp güncelleniyor
+      - ⚡ PARALEL OSRM ÇAĞRILARI: asyncio.gather ile her iki rota aynı anda hesaplanıyor
+      - ⚡ TIMEOUT: 3 saniye OSRM timeout'u eklendi
+      
+      #### 2. Frontend - submitOffer fonksiyonu iyileştirildi (index.tsx)
+      - AbortController ile 10 saniye timeout eklendi
+      - Timeout hatası için özel mesaj: "Sunucu yanıt vermedi. Lütfen tekrar deneyin."
+      - Hata yönetimi iyileştirildi
+      
+      ### BEKLENTİ:
+      - ÖNCE: Teklif gönderme 6-10 saniye sürüyordu
+      - SONRA: Teklif gönderme < 1 saniye sürmeli (mesafeler arka planda gelecek)
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. curl ile send-offer endpoint response time testi
+      2. Gerçek cihazda "Teklif Gönder" butonunun hızını test et
+      3. Teklif gönderildikten sonra mesafe bilgilerinin güncelleniyor mu kontrol et
