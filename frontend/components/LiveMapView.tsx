@@ -568,4 +568,13 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: '#FEF2F2', borderRadius: 12, borderWidth: 1, borderColor: '#FECACA' },
   actionButtonText: { fontSize: 14, fontWeight: '500', marginLeft: 6, color: '#DC2626' },
   endButton: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
+  
+  // Canlı İzleme Bilgisi (Yolcu için)
+  liveTrackingInfo: { backgroundColor: '#ECFDF5', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#A7F3D0' },
+  liveTrackingHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  liveIndicatorBig: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EF4444', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 10 },
+  liveDotBig: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFF', marginRight: 6 },
+  liveTextBig: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+  liveTrackingTitle: { fontSize: 16, fontWeight: '700', color: '#065F46' },
+  liveTrackingSubtitle: { fontSize: 14, color: '#059669', marginLeft: 4 },
 });
