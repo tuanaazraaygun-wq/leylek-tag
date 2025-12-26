@@ -730,8 +730,17 @@ export default function App() {
 
             <TouchableOpacity 
               style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
-              onPress={handleSendOTP}
-              disabled={!kvkkAccepted}
+              onPress={() => {
+                if (!kvkkAccepted) {
+                  Alert.alert(
+                    '⚠️ Onay Gerekli', 
+                    'Devam etmek için Aydınlatma Metni ve Gizlilik Politikasını kabul etmelisiniz.',
+                    [{ text: 'Tamam', style: 'default' }]
+                  );
+                  return;
+                }
+                handleSendOTP();
+              }}
             >
               <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
