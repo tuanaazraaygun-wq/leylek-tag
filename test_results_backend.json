@@ -1,9 +1,9 @@
 {
   "summary": {
-    "passed": 11,
-    "failed": 0,
-    "total": 11,
-    "success_rate": 100.0
+    "passed": 10,
+    "failed": 2,
+    "total": 12,
+    "success_rate": 83.33333333333334
   },
   "results": [
     {
@@ -11,108 +11,125 @@
       "passed": true,
       "message": "Using existing passenger: Test Yolcu Ahmet",
       "details": {},
-      "timestamp": "2025-12-15T11:38:10.371864"
+      "timestamp": "2025-12-26T18:06:50.454921"
     },
     {
       "test": "Setup Driver User",
       "passed": true,
       "message": "Using existing driver: Test Sürücü Mehmet",
       "details": {},
-      "timestamp": "2025-12-15T11:38:10.396094"
+      "timestamp": "2025-12-26T18:06:50.954248"
     },
     {
       "test": "Update Driver Location",
       "passed": true,
       "message": "Driver location set to Adana (37.1, 35.1)",
       "details": {},
-      "timestamp": "2025-12-15T11:38:10.445180"
+      "timestamp": "2025-12-26T18:06:51.127145"
     },
     {
       "test": "Create TAG with Coordinates",
       "passed": true,
       "message": "TAG created with coordinates saved: True",
       "details": {
-        "tag_id": "693ff3225e9fc700b34eb201",
+        "tag_id": "1119b506-84c7-49ac-bedb-937156939121",
         "pickup_coords": "(37.0, 35.0)",
         "dropoff_coords": "(41.0, 29.0)",
         "coordinates_match": true
       },
-      "timestamp": "2025-12-15T11:38:10.463270"
+      "timestamp": "2025-12-26T18:06:51.490971"
     },
     {
       "test": "Distance Calculation - Driver to Passenger",
       "passed": true,
       "message": "Distance calculated correctly: True",
       "details": {
-        "distance_to_passenger_km": 14.22,
-        "trip_distance_km": 683.31,
+        "distance_to_passenger_km": 39.7,
+        "trip_distance_km": 908.2,
         "expected_distance_range": "10-20km (Adana to Adana)",
         "expected_trip_range": "500-600km (Adana to Istanbul)",
         "calculation_working": true
       },
-      "timestamp": "2025-12-15T11:38:10.483253"
+      "timestamp": "2025-12-26T18:06:53.909750"
     },
     {
       "test": "Distance Values Reasonableness",
-      "passed": true,
-      "message": "Distance values are reasonable: True",
+      "passed": false,
+      "message": "Distance values are reasonable: False",
       "details": {
         "distance_to_passenger_reasonable": true,
-        "trip_distance_reasonable": true
+        "trip_distance_reasonable": false
       },
-      "timestamp": "2025-12-15T11:38:10.483285"
+      "timestamp": "2025-12-26T18:06:53.909783"
     },
     {
-      "test": "Driver Send Offer",
+      "test": "Driver Send Offer - Performance",
+      "passed": true,
+      "message": "Response time: 0.78s (Target: <2s, Previous: 6-10s)",
+      "details": {
+        "response_time_seconds": 0.78,
+        "performance_target": "< 2 seconds",
+        "previous_performance": "6-10 seconds",
+        "performance_improvement": "87.0% faster",
+        "offer_price": 850.0,
+        "response": {
+          "success": true,
+          "offer_id": "b6e78275-181e-44a3-ba11-db6e1d1191f2"
+        }
+      },
+      "timestamp": "2025-12-26T18:06:54.691850"
+    },
+    {
+      "test": "Driver Send Offer - Functionality",
       "passed": true,
       "message": "Offer sent successfully: True",
       "details": {
-        "offer_price": 850.0,
-        "estimated_time": 480,
-        "response": {
+        "offer_id": "b6e78275-181e-44a3-ba11-db6e1d1191f2",
+        "success_returned": true,
+        "response_data": {
           "success": true,
-          "message": "Teklif gönderildi",
-          "offer_id": "693ff3225e9fc700b34eb202"
+          "offer_id": "b6e78275-181e-44a3-ba11-db6e1d1191f2"
         }
       },
-      "timestamp": "2025-12-15T11:38:10.559585"
+      "timestamp": "2025-12-26T18:06:54.691885"
+    },
+    {
+      "test": "Background Distance Updates",
+      "passed": true,
+      "message": "Distance calculations updated in background: True",
+      "details": {
+        "distance_to_passenger_km": 39.7,
+        "trip_distance_km": 908.2,
+        "expected_behavior": "Initially null in fast response, then updated in background",
+        "distances_calculated": true
+      },
+      "timestamp": "2025-12-26T18:07:00.214498"
     },
     {
       "test": "Passenger Update Destination",
-      "passed": true,
-      "message": "Destination updated successfully: True",
+      "passed": false,
+      "message": "Destination updated successfully: False",
       "details": {
         "new_destination": "Taksim, İstanbul",
         "new_coordinates": "(41.05, 28.98)",
         "response": {
-          "success": true,
-          "message": "Hedef başarıyla güncellendi"
+          "detail": "Not Found"
         }
       },
-      "timestamp": "2025-12-15T11:38:10.570671"
-    },
-    {
-      "test": "Destination Update Verification",
-      "passed": true,
-      "message": "Destination coordinates updated in database: True",
-      "details": {
-        "updated_location": "Taksim, İstanbul",
-        "updated_coords": "(41.05, 28.98)"
-      },
-      "timestamp": "2025-12-15T11:38:10.580017"
+      "timestamp": "2025-12-26T18:07:00.223254"
     },
     {
       "test": "Passenger Cancel TAG",
       "passed": true,
       "message": "TAG cancelled successfully: True",
       "details": {
-        "cancelled_tag_id": "693ff3225e9fc700b34eb201",
+        "cancelled_tag_id": "1119b506-84c7-49ac-bedb-937156939121",
         "response": {
           "success": true,
-          "message": "Çağrı başarıyla iptal edildi"
+          "message": "TAG iptal edildi"
         }
       },
-      "timestamp": "2025-12-15T11:38:10.629372"
+      "timestamp": "2025-12-26T18:07:00.531187"
     },
     {
       "test": "TAG Cancellation Verification",
@@ -124,8 +141,8 @@
           "tag": null
         }
       },
-      "timestamp": "2025-12-15T11:38:10.639158"
+      "timestamp": "2025-12-26T18:07:00.739101"
     }
   ],
-  "timestamp": "2025-12-15T11:38:10.639317"
+  "timestamp": "2025-12-26T18:07:00.739268"
 }
