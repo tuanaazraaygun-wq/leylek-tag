@@ -3515,12 +3515,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         longitude: userLocation?.longitude || null
       };
       
-      // ⚡ 5 saniye timeout - daha kısa ve hızlı
+      // ⚡ 15 saniye timeout - mobil ağlar için yeterli süre
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         console.log('⏰ Timeout tetiklendi');
         controller.abort();
-      }, 5000);
+      }, 15000);
       
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
