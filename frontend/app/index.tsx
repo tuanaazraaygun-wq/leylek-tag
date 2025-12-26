@@ -7545,4 +7545,86 @@ const styles = StyleSheet.create({
   topSheetPopularScroll: {
     maxHeight: 150,
   },
+  
+  // Hedef Seçme Modal Stilleri
+  destinationModalContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  destinationModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  destinationModalBackBtn: {
+    padding: 8,
+  },
+  destinationModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  selectedDestinationBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  selectedDestinationText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 15,
+    color: '#065F46',
+    fontWeight: '500',
+  },
+  destinationSearchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+  },
+  quickSelectContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  quickSelectTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 16,
+  },
+  quickSelectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  quickSelectIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  quickSelectText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1F2937',
+    fontWeight: '500',
+  },
 });
