@@ -3211,7 +3211,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     };
     
     checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 2000); // 2 saniyede bir kontrol
+    const interval = setInterval(checkTripEndRequest, 1000); // 1 saniyede bir kontrol - HIZLI
     return () => clearInterval(interval);
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
