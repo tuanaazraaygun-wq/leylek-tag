@@ -93,7 +93,7 @@
     },
     "extra": {
       "router": {},
-      "backendUrl": "https://ride-rescue-5.preview.emergentagent.com",
+      "backendUrl": "https://tag-app-revamp.preview.emergentagent.com",
       "eas": {
         "projectId": "f00346b0-b9cb-47f9-a647-7f56b168e3a9"
       }
