@@ -2190,8 +2190,8 @@ function PassengerDashboard({
 
       // İlk kontrolü hemen yap
       checkIncoming();
-      // Sonra her 2 saniyede bir kontrol et
-      const interval = setInterval(checkIncoming, 2000);
+      // Gelen arama kontrolü - 1 saniyede bir
+      const interval = setInterval(checkIncoming, 1000);
       return () => clearInterval(interval);
     }
   }, [activeTag, user.id, showVoiceCall, showIncomingCall]);
