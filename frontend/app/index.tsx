@@ -3311,8 +3311,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       Alert.alert('Hata', 'Geçerli bir fiyat girin');
       return;
     }
+    
+    // Çift tıklamayı önle
+    if (offerSending) return;
+    setOfferSending(true);
 
     try {
+      console.log('📤 Teklif gönderiliyor...', selectedTagForOffer, offerPrice);
+      
       // Konum bilgisini ekle - OSRM mesafe hesaplaması için GEREKLİ
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
@@ -3328,19 +3334,26 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       });
 
       const data = await response.json();
+      console.log('📥 Teklif yanıtı:', data);
+      
       if (data.success) {
-        // Buton yeşile dönsün, alert yok
+        // Buton yeşile dönsün
         setOfferSent(true);
-        // 1 saniye sonra otomatik kapat - HIZLI
+        // Hemen kapat
         setTimeout(() => {
           setOfferModalVisible(false);
           setOfferSent(false);
+          setOfferSending(false);
+          setOfferPrice('');
           loadRequests();
-        }, 1000);
+        }, 500);
       } else {
+        setOfferSending(false);
         Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
       }
     } catch (error) {
+      console.log('❌ Teklif hatası:', error);
+      setOfferSending(false);
       Alert.alert('Hata', 'Teklif gönderilemedi');
     }
   };
