@@ -651,13 +651,26 @@ export default function App() {
 
   // ==================== RENDER SCREENS ====================
   
-  // SPLASH SCREEN - 3 saniye göster
+  // SPLASH SCREEN - 3 saniye göster - daha güvenilir timeout ile
+  useEffect(() => {
+    if (showSplash) {
+      const splashTimer = setTimeout(() => {
+        console.log('🎬 Splash timeout - login ekranına geçiliyor');
+        setShowSplash(false);
+        if (!user) {
+          setScreen('login');
+        }
+      }, 3000);
+      
+      return () => clearTimeout(splashTimer);
+    }
+  }, [showSplash, user]);
+  
   if (showSplash) {
     return (
       <SplashScreen onFinish={() => {
+        console.log('🎬 SplashScreen onFinish çağrıldı');
         setShowSplash(false);
-        // Screen zaten 'login' olarak başladığı için ayarlamaya gerek yok
-        // Ama emin olmak için set edelim
         if (!user) {
           setScreen('login');
         }
