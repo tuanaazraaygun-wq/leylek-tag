@@ -1193,7 +1193,22 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
         
         if result.data:
-            return {"success": True, "tag": result.data[0]}
+            tag = result.data[0]
+            
+            # Eğer şoför atandıysa, şoförün konumunu al
+            driver_location = None
+            if tag.get("driver_id"):
+                driver_result = supabase.table("users").select("latitude, longitude, name").eq("id", tag["driver_id"]).execute()
+                if driver_result.data and driver_result.data[0].get("latitude"):
+                    driver_location = {
+                        "latitude": float(driver_result.data[0]["latitude"]),
+                        "longitude": float(driver_result.data[0]["longitude"])
+                    }
+            
+            # TAG'e driver_location ekle
+            tag["driver_location"] = driver_location
+            
+            return {"success": True, "tag": tag}
         
         return {"success": True, "tag": None}
     except Exception as e:
