@@ -329,13 +329,13 @@ class LeylekTagTester:
             )
             return False
     
-    async def test_driver_send_offer(self):
-        """Test driver send offer endpoint"""
-        print("\n💰 Testing driver send offer...")
+    async def test_driver_send_offer_performance(self):
+        """Test optimized driver send offer endpoint - PERFORMANCE CRITICAL"""
+        print("\n🚀 Testing OPTIMIZED driver send offer (Performance Test)...")
         
         if not self.test_tag_id:
             self.test_results.add_result(
-                "Driver Send Offer Test",
+                "Driver Send Offer Performance Test",
                 False,
                 "No test TAG available for offer testing"
             )
@@ -347,27 +347,141 @@ class LeylekTagTester:
             "tag_id": self.test_tag_id,
             "price": 850.0,  # Reasonable price for Adana-Istanbul
             "estimated_time": 480,  # 8 hours
-            "notes": "Konforlu yolculuk, klimalı araç"
+            "notes": "Konforlu yolculuk, klimalı araç",
+            "latitude": 37.1,  # Driver location in Adana
+            "longitude": 35.1
         }
+        
+        # Measure response time - CRITICAL: Should be < 2 seconds
+        import time
+        start_time = time.time()
         
         response = await self.make_request("POST", "/driver/send-offer", 
             offer_data,
             params={"user_id": driver_id}
         )
         
-        success = response["success"]
+        end_time = time.time()
+        response_time = end_time - start_time
+        
+        # Performance check: < 2 seconds (previously 6-10 seconds)
+        performance_passed = response_time < 2.0
+        
+        success = response["success"] and performance_passed
+        
         self.test_results.add_result(
-            "Driver Send Offer",
-            success,
-            f"Offer sent successfully: {success}",
+            "Driver Send Offer - Performance",
+            performance_passed,
+            f"Response time: {response_time:.2f}s (Target: <2s, Previous: 6-10s)",
             {
+                "response_time_seconds": round(response_time, 2),
+                "performance_target": "< 2 seconds",
+                "previous_performance": "6-10 seconds",
+                "performance_improvement": f"{((6.0 - response_time) / 6.0 * 100):.1f}% faster" if response_time < 6.0 else "No improvement",
                 "offer_price": offer_data["price"],
-                "estimated_time": offer_data["estimated_time"],
                 "response": response["data"]
             }
         )
         
-        return success
+        # Test functionality
+        functional_success = response["success"]
+        offer_id = None
+        if functional_success and response["data"].get("offer_id"):
+            offer_id = response["data"]["offer_id"]
+        
+        self.test_results.add_result(
+            "Driver Send Offer - Functionality",
+            functional_success,
+            f"Offer sent successfully: {functional_success}",
+            {
+                "offer_id": offer_id,
+                "success_returned": response["data"].get("success"),
+                "response_data": response["data"]
+            }
+        )
+        
+        # Store offer_id for background distance testing
+        if offer_id:
+            self.test_offer_id = offer_id
+        
+        return success and functional_success
+    
+    async def test_background_distance_updates(self):
+        """Test background distance calculation updates after offer sent"""
+        print("\n📏 Testing background distance updates...")
+        
+        if not hasattr(self, 'test_offer_id') or not self.test_offer_id:
+            self.test_results.add_result(
+                "Background Distance Updates",
+                False,
+                "No offer ID available for background distance testing"
+            )
+            return False
+        
+        passenger_id = self.test_users["passenger"]["id"]
+        
+        # Wait for background processing (as mentioned in review request)
+        print("⏳ Waiting 5 seconds for background distance calculations...")
+        await asyncio.sleep(5)
+        
+        # Get offers to check if distances were updated
+        response = await self.make_request("GET", "/passenger/offers", 
+            params={
+                "user_id": passenger_id,
+                "tag_id": self.test_tag_id
+            }
+        )
+        
+        if response["success"]:
+            offers = response["data"]["offers"]
+            
+            # Find our test offer
+            test_offer = None
+            for offer in offers:
+                if offer.get("id") == self.test_offer_id:
+                    test_offer = offer
+                    break
+            
+            if test_offer:
+                # Check if distance fields were updated from null
+                distance_to_passenger = test_offer.get("distance_to_passenger_km")
+                trip_distance = test_offer.get("trip_distance_km")
+                
+                # Initially these should be null, then updated in background
+                distances_updated = (
+                    distance_to_passenger is not None and 
+                    trip_distance is not None and
+                    isinstance(distance_to_passenger, (int, float)) and
+                    isinstance(trip_distance, (int, float))
+                )
+                
+                self.test_results.add_result(
+                    "Background Distance Updates",
+                    distances_updated,
+                    f"Distance calculations updated in background: {distances_updated}",
+                    {
+                        "distance_to_passenger_km": distance_to_passenger,
+                        "trip_distance_km": trip_distance,
+                        "expected_behavior": "Initially null in fast response, then updated in background",
+                        "distances_calculated": distances_updated
+                    }
+                )
+                
+                return distances_updated
+            else:
+                self.test_results.add_result(
+                    "Background Distance Updates",
+                    False,
+                    "Test offer not found in offers list"
+                )
+                return False
+        else:
+            self.test_results.add_result(
+                "Background Distance Updates",
+                False,
+                f"Failed to get offers: {response['data']}"
+            )
+            return False
     
     async def test_passenger_update_destination(self):
         """Test passenger update destination endpoint"""
