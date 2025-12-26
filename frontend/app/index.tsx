@@ -3444,21 +3444,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     // TAG ID kontrolü
     if (!selectedTagForOffer) {
       Alert.alert('Hata', 'Talep seçilmedi');
-      setOfferSending(false);
       return;
     }
     
     // Çift tıklamayı önle
-    if (offerSending) return;
+    if (offerSending) {
+      console.log('⚠️ Zaten gönderiliyor, bekleniyor...');
+      return;
+    }
+    
     setOfferSending(true);
-
-    // ⚡ Timeout için AbortController
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 saniye timeout
+    console.log('📤 Teklif başlatıldı:', selectedTagForOffer, offerPrice);
 
     try {
-      console.log('📤 Teklif gönderiliyor...', selectedTagForOffer, offerPrice, userLocation);
-      
       const requestBody = {
         tag_id: selectedTagForOffer,
         price: Number(offerPrice),
@@ -3468,9 +3466,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         longitude: userLocation?.longitude || null
       };
       
-      console.log('📤 Request body:', JSON.stringify(requestBody));
+      // ⚡ 5 saniye timeout - daha kısa ve hızlı
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.log('⏰ Timeout tetiklendi');
+        controller.abort();
+      }, 5000);
       
-      // ⚡ Timeout'lu fetch isteği
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3479,35 +3481,35 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       });
       
       clearTimeout(timeoutId);
-
       const data = await response.json();
-      console.log('📥 Teklif yanıtı:', data);
+      console.log('📥 Yanıt:', data);
       
       if (data.success) {
-        // Buton yeşile dönsün
+        // ✅ Başarılı - anında kapat
         setOfferSent(true);
-        // Hemen kapat
-        setTimeout(() => {
-          setOfferModalVisible(false);
-          setOfferSent(false);
-          setOfferSending(false);
-          setOfferPrice('');
-          loadRequests();
-        }, 500);
-      } else {
+        Alert.alert('✅ Başarılı', 'Teklif gönderildi!');
+        
+        // Modal'ı hemen kapat
+        setOfferModalVisible(false);
+        setOfferSent(false);
         setOfferSending(false);
-        Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
+        setOfferPrice('');
+        
+        // Liste yenile
+        loadRequests();
+      } else {
+        throw new Error(data.detail || 'Teklif gönderilemedi');
       }
     } catch (error: any) {
-      clearTimeout(timeoutId);
-      console.log('❌ Teklif hatası:', error);
+      console.log('❌ Hata:', error);
+      
+      // Her durumda state'i resetle
       setOfferSending(false);
       
-      // Timeout hatası kontrolü
       if (error.name === 'AbortError') {
-        Alert.alert('Zaman Aşımı', 'Sunucu yanıt vermedi. Lütfen tekrar deneyin.');
+        Alert.alert('⏱️ Zaman Aşımı', 'Sunucu meşgul. Tekrar deneyin.');
       } else {
-        Alert.alert('Hata', 'Teklif gönderilemedi: ' + (error.message || 'Bilinmeyen hata'));
+        Alert.alert('❌ Hata', error.message || 'Bilinmeyen hata');
       }
     }
   };
