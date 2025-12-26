@@ -3312,6 +3312,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     }
 
     try {
+      // Konum bilgisini ekle - OSRM mesafe hesaplaması için GEREKLİ
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3319,7 +3320,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           tag_id: selectedTagForOffer,
           price: Number(offerPrice),
           estimated_time: 15,
-          notes: 'Hemen geliyorum!'
+          notes: 'Hemen geliyorum!',
+          latitude: currentLocation?.latitude,
+          longitude: currentLocation?.longitude
         })
       });
 
@@ -3327,12 +3330,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       if (data.success) {
         // Buton yeşile dönsün, alert yok
         setOfferSent(true);
-        // 1.5 saniye sonra otomatik kapat
+        // 1 saniye sonra otomatik kapat - HIZLI
         setTimeout(() => {
           setOfferModalVisible(false);
           setOfferSent(false);
           loadRequests();
-        }, 1500);
+        }, 1000);
       } else {
         Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
       }
