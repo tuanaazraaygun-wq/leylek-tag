@@ -430,23 +430,42 @@ export default function LiveMapView({
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
         <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,1)']} style={styles.bottomGradient}>
-          {/* Navigasyon Butonu */}
-          <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
-            <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.navButtonGradient}>
-              <Ionicons name="navigate" size={24} color="#FFF" />
-              <Text style={styles.navButtonText}>Navigasyon Aç</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          
+          {/* YOLCU İÇİN - Canlı İzleme Bilgisi */}
+          {!isDriver && (
+            <View style={styles.liveTrackingInfo}>
+              <View style={styles.liveTrackingHeader}>
+                <View style={styles.liveIndicatorBig}>
+                  <View style={styles.liveDotBig} />
+                  <Text style={styles.liveTextBig}>CANLI</Text>
+                </View>
+                <Text style={styles.liveTrackingTitle}>🚗 Şoförü Canlı İzliyorsunuz</Text>
+              </View>
+              <Text style={styles.liveTrackingSubtitle}>
+                Şoförü sesli ve görüntülü arayabilirsiniz
+              </Text>
+            </View>
+          )}
+          
+          {/* ŞOFÖR İÇİN - Yolcuya Git Butonu */}
+          {isDriver && (
+            <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
+              <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.navButtonGradient}>
+                <Ionicons name="navigate" size={24} color="#FFF" />
+                <Text style={styles.navButtonText}>Yolcuya Git</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
 
-          {/* Arama Butonları */}
+          {/* Arama Butonları - HER İKİ ROL İÇİN */}
           <View style={styles.callButtons}>
             <TouchableOpacity style={styles.callButton} onPress={() => onCall?.('audio')}>
               <Ionicons name="call" size={22} color="#22C55E" />
-              <Text style={styles.callButtonText}>Ara</Text>
+              <Text style={styles.callButtonText}>Sesli Ara</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.callButton, styles.videoCallButton]} onPress={() => onCall?.('video')}>
               <Ionicons name="videocam" size={22} color="#3B82F6" />
-              <Text style={styles.callButtonText}>Görüntülü</Text>
+              <Text style={styles.callButtonText}>Görüntülü Ara</Text>
             </TouchableOpacity>
           </View>
 
