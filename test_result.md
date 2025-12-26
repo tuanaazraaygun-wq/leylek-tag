@@ -129,6 +129,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ FIXED: Removed deprecated role field validation. Endpoint now works correctly - offer sent successfully with price 850.0 TL and 480 min estimated time."
+      - working: true
+        agent: "testing"
+        comment: "✅ OPTIMIZATION VERIFIED: Send-offer endpoint performance dramatically improved! Response time: 0.78s (87% faster than previous 6-10s). Background distance calculations working perfectly. Offer functionality confirmed with success=true and offer_id returned."
 
   - task: "Distance calculation in driver requests"
     implemented: true
