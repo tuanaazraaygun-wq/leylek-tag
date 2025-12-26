@@ -266,9 +266,6 @@ export default function App() {
   } | null>(null);
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   
-  // KVKK checkbox state
-  const [kvkkAccepted, setKvkkAccepted] = useState(false);
-  
   // Admin Panel state
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
