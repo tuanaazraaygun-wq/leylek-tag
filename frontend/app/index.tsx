@@ -3452,6 +3452,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     if (offerSending) return;
     setOfferSending(true);
 
+    // ⚡ Timeout için AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 saniye timeout
+
     try {
       console.log('📤 Teklif gönderiliyor...', selectedTagForOffer, offerPrice, userLocation);
       
@@ -3466,12 +3470,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       
       console.log('📤 Request body:', JSON.stringify(requestBody));
       
-      // Konum bilgisini ekle - OSRM mesafe hesaplaması için GEREKLİ
+      // ⚡ Timeout'lu fetch isteği
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       const data = await response.json();
       console.log('📥 Teklif yanıtı:', data);
@@ -3491,10 +3498,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         setOfferSending(false);
         Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
       }
-    } catch (error) {
+    } catch (error: any) {
+      clearTimeout(timeoutId);
       console.log('❌ Teklif hatası:', error);
       setOfferSending(false);
-      Alert.alert('Hata', 'Teklif gönderilemedi: ' + (error as Error).message);
+      
+      // Timeout hatası kontrolü
+      if (error.name === 'AbortError') {
+        Alert.alert('Zaman Aşımı', 'Sunucu yanıt vermedi. Lütfen tekrar deneyin.');
+      } else {
+        Alert.alert('Hata', 'Teklif gönderilemedi: ' + (error.message || 'Bilinmeyen hata'));
+      }
     }
   };
 
