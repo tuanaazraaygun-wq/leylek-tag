@@ -656,7 +656,11 @@ export default function App() {
     return (
       <SplashScreen onFinish={() => {
         setShowSplash(false);
-        // Loading durumunu kontrol et
+        // Screen zaten 'login' olarak başladığı için ayarlamaya gerek yok
+        // Ama emin olmak için set edelim
+        if (!user) {
+          setScreen('login');
+        }
       }} />
     );
   }
