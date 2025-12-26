@@ -1303,7 +1303,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
 
 @api_router.get("/driver/requests")
 async def get_driver_requests(driver_id: str = None, user_id: str = None, latitude: float = None, longitude: float = None):
-    """Şoför için yakındaki istekleri getir"""
+    """Şoför için yakındaki istekleri getir - Şehir bazlı + 50km radius"""
     try:
         # driver_id veya user_id kabul et
         did = driver_id or user_id
@@ -1313,7 +1313,21 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
-        # Ayarlardan radius al
+        # Sürücünün şehrini al
+        driver_result = supabase.table("users").select("city, latitude, longitude").eq("id", resolved_id).execute()
+        driver_city = None
+        driver_lat = latitude
+        driver_lng = longitude
+        
+        if driver_result.data:
+            driver_city = driver_result.data[0].get("city")
+            # Konum parametresi yoksa DB'den al
+            if not driver_lat:
+                driver_lat = driver_result.data[0].get("latitude")
+            if not driver_lng:
+                driver_lng = driver_result.data[0].get("longitude")
+        
+        # Ayarlardan radius al (varsayılan 50 km)
         settings_result = supabase.table("app_settings").select("driver_radius_km").eq("type", "global").execute()
         radius_km = settings_result.data[0]["driver_radius_km"] if settings_result.data else 50
         
@@ -1328,12 +1342,20 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
         # Pending TAG'leri getir
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(50).execute()
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).order("created_at", desc=True).limit(50).execute()
         
         requests = []
         for tag in result.data:
             # Engelli kontrolü
             if tag.get("passenger_id") in all_blocked:
+                continue
+            
+            # ŞEHİR KONTROLÜ - Aynı şehirde olmalı
+            passenger_info = tag.get("users", {}) or {}
+            passenger_city = passenger_info.get("city")
+            
+            # Eğer sürücünün şehri varsa, aynı şehirde olmalı
+            if driver_city and passenger_city and driver_city.lower() != passenger_city.lower():
                 continue
             
             # Mesafe hesapla
@@ -1356,16 +1378,16 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             target_lat = passenger_current_lat or (float(tag["pickup_lat"]) if tag.get("pickup_lat") else None)
             target_lng = passenger_current_lng or (float(tag["pickup_lng"]) if tag.get("pickup_lng") else None)
             
-            if latitude and longitude and target_lat and target_lng:
+            if driver_lat and driver_lng and target_lat and target_lng:
                 route_info = await get_route_info(
-                    latitude, longitude,
+                    driver_lat, driver_lng,
                     target_lat, target_lng
                 )
                 if route_info:
                     distance_km = route_info["distance_km"]
                     duration_min = route_info["duration_min"]
                     
-                    # Radius kontrolü
+                    # 50 KM RADİUS KONTROLÜ - Yolcunun konumu sürücüye 50km'den uzaksa gösterme
                     if distance_km > radius_km:
                         continue
             
@@ -1381,13 +1403,13 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                     trip_distance_km = trip_route["distance_km"]
                     trip_duration_min = trip_route["duration_min"]
             
-            passenger_info = tag.get("users", {}) or {}
             requests.append({
                 "id": tag["id"],
                 "passenger_id": tag["passenger_id"],
                 "passenger_name": passenger_info.get("name", tag.get("passenger_name", "Yolcu")),
                 "passenger_rating": float(passenger_info.get("rating", 5.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
+                "passenger_city": passenger_city,
                 "pickup_location": tag["pickup_location"],
                 "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
                 "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
