@@ -2225,7 +2225,7 @@ function PassengerDashboard({
 
   useEffect(() => {
     loadActiveTag();
-    const interval = setInterval(loadActiveTag, 1500); // Her 1.5 saniyede bir kontrol et - HIZLI
+    const interval = setInterval(loadActiveTag, 1000); // Her 1 saniyede bir kontrol et - ANINDA
     return () => clearInterval(interval);
   }, []);
 
