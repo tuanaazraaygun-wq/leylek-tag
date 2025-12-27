@@ -17,6 +17,9 @@ import SplashScreen from '../components/SplashScreen';
 import { KVKKConsentModal, SupportModal } from '../components/KVKKComponents';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
+// Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
+import { useOffers } from '../hooks/useOffers';
+import { useCall } from '../hooks/useCall';
 
 import Constants from 'expo-constants';
 
