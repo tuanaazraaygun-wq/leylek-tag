@@ -84,6 +84,66 @@ def test_auth_check_user():
                 f"HTTP {response.status_code if response else 'Connection Error'}", response_time)
         return None
 
+def test_create_user_if_needed():
+    """Create user if doesn't exist"""
+    print("\n👤 Creating test user if needed...")
+    
+    # First verify OTP
+    response, response_time = make_request("POST", "/auth/verify-otp", {
+        "phone": TEST_PHONE,
+        "otp": TEST_OTP
+    })
+    
+    if response and response.status_code == 200:
+        data = response.json()
+        success = data.get("success", False)
+        user_exists = data.get("user_exists", False)
+        
+        if user_exists:
+            user_id = data.get("user", {}).get("id")
+            log_test("User Creation - Verify OTP", success, 
+                    f"User already exists, ID: {user_id}", response_time)
+            return user_id
+        else:
+            log_test("User Creation - Verify OTP", success, 
+                    "User doesn't exist, will create", response_time)
+    else:
+        log_test("User Creation - Verify OTP", False, 
+                f"HTTP {response.status_code if response else 'Connection Error'}", response_time)
+    
+    # Set PIN to create user
+    response, response_time = make_request("POST", "/auth/set-pin", {
+        "phone": TEST_PHONE,
+        "pin": "123456",
+        "first_name": "Test",
+        "last_name": "User",
+        "city": "Adana"
+    })
+    
+    if response and response.status_code == 200:
+        data = response.json()
+        success = data.get("success", False)
+        log_test("User Creation - Set PIN", success, 
+                f"User created: {success}", response_time)
+        
+        if success:
+            # Now login to get user ID
+            login_response, login_time = make_request("POST", "/auth/login", {
+                "phone": TEST_PHONE,
+                "pin": "123456"
+            })
+            
+            if login_response and login_response.status_code == 200:
+                login_data = login_response.json()
+                user_id = login_data.get("user", {}).get("id")
+                log_test("User Creation - Login", True, 
+                        f"User ID: {user_id}", login_time)
+                return user_id
+    
+    log_test("User Creation - Set PIN", False, 
+            f"HTTP {response.status_code if response else 'Connection Error'}", response_time)
+    return None
+
 def test_passenger_create_request(user_id):
     """Test POST /api/passenger/create-request"""
     print("\n🏷️ Testing Tag System - Create Request...")
