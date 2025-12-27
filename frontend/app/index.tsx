@@ -2136,7 +2136,6 @@ function PassengerDashboard({
   setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
 }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
-  const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
@@ -2146,6 +2145,31 @@ function PassengerDashboard({
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  
+  // ========== SUPABASE REALTIME - TEKLİF YÖNETİMİ ==========
+  // useOffers hook'u ile anlık teklif güncellemeleri (polling yerine)
+  const { 
+    offers: realtimeOffers, 
+    isLoading: offersLoading,
+    acceptOffer: acceptOfferRealtime,
+    rejectOffer: rejectOfferRealtime,
+    refetch: refetchOffers
+  } = useOffers({
+    userId: user?.id || '',
+    tagId: activeTag?.id,
+    isDriver: false,
+    enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'pending' || activeTag?.status === 'offers_received')),
+    onNewOffer: (offer) => {
+      console.log('🔔 YENİ TEKLİF GELDİ (Realtime):', offer.price, 'TL');
+      // Bildirim göster
+      setToastMessage(`Yeni teklif: ${offer.price} TL`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    }
+  });
+  
+  // Teklifleri fiyata göre sırala (ucuzdan pahalıya)
+  const offers = [...realtimeOffers].sort((a, b) => (a.price || 0) - (b.price || 0));
   
   // Mesafe ve süre state'leri
   const [realDistance, setRealDistance] = useState<number>(0);
