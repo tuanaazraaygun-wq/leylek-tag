@@ -300,23 +300,27 @@ def test_realtime_integration():
     # Step 1: Check user
     user_id = test_auth_check_user()
     
-    # Step 2: Create request
+    # Step 2: Create user if needed
+    if not user_id:
+        user_id = test_create_user_if_needed()
+    
+    # Step 3: Create request
     tag_id = test_passenger_create_request(user_id)
     
-    # Step 3: Verify active tag
+    # Step 4: Verify active tag
     active_tag_id = test_passenger_active_tag(user_id)
     
     # Use the active tag ID if available
     if active_tag_id:
         tag_id = active_tag_id
     
-    # Step 4: Send offer (performance critical)
+    # Step 5: Send offer (performance critical)
     offer_id = test_driver_send_offer(user_id, tag_id)
     
-    # Step 5: Get offers (should show realtime)
+    # Step 6: Get offers (should show realtime)
     offers = test_passenger_offers(user_id, tag_id)
     
-    # Step 6: Accept offer
+    # Step 7: Accept offer
     if offers and len(offers) > 0:
         offer_to_accept = offers[0]["id"]
         test_passenger_accept_offer(offer_to_accept)
