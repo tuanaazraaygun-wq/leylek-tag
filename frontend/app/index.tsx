@@ -3485,56 +3485,55 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   };
 
   const submitOffer = async () => {
-    console.log('🔴 submitOffer ÇAĞRILDI');
-    console.log('🔴 offerPrice:', offerPrice);
-    console.log('🔴 selectedTagForOffer:', selectedTagForOffer);
-    console.log('🔴 offerSending:', offerSending);
-    console.log('🔴 API_URL:', API_URL);
-    console.log('🔴 user.id:', user?.id);
-    
-    if (!offerPrice || !selectedTagForOffer || offerSending) {
-      console.log('🔴 ERKEN RETURN - validasyon başarısız');
-      return;
-    }
+    if (!offerPrice || !selectedTagForOffer || offerSending) return;
     
     setOfferSending(true);
-    console.log('🔴 offerSending = true yapıldı');
     
+    // XMLHttpRequest kullan - daha güvenilir
+    const xhr = new XMLHttpRequest();
     const url = `${API_URL}/driver/send-offer?user_id=${user.id}`;
-    console.log('🔴 FETCH URL:', url);
     
-    try {
-      console.log('🔴 FETCH BAŞLIYOR...');
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tag_id: selectedTagForOffer,
-          price: Number(offerPrice),
-          latitude: userLocation?.latitude,
-          longitude: userLocation?.longitude
-        })
-      });
-      console.log('🔴 FETCH TAMAMLANDI, status:', res.status);
-      
-      const data = await res.json();
-      console.log('🔴 RESPONSE DATA:', JSON.stringify(data));
-      
-      if (data.success || data.offer_id) {
-        console.log('🔴 BAŞARILI!');
-        setOfferModalVisible(false);
-        setOfferPrice('');
-        loadRequests();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 10000; // 10 saniye timeout
+    
+    xhr.onload = function() {
+      setOfferSending(false);
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data.success || data.offer_id) {
+            setOfferModalVisible(false);
+            setOfferPrice('');
+            Alert.alert('✅', 'Teklif gönderildi!');
+            loadRequests();
+          } else {
+            Alert.alert('Hata', data.detail || 'Gönderilemedi');
+          }
+        } catch (e) {
+          Alert.alert('Hata', 'Yanıt okunamadı');
+        }
       } else {
-        console.log('🔴 BAŞARISIZ:', data.detail);
-        Alert.alert('Hata', data.detail || 'Gönderilemedi');
+        Alert.alert('Hata', 'Sunucu hatası: ' + xhr.status);
       }
-    } catch (e: any) {
-      console.log('🔴 HATA:', e.message);
-      Alert.alert('Hata', 'Bağlantı hatası: ' + e.message);
-    }
-    setOfferSending(false);
-    console.log('🔴 offerSending = false yapıldı');
+    };
+    
+    xhr.onerror = function() {
+      setOfferSending(false);
+      Alert.alert('Hata', 'Bağlantı hatası');
+    };
+    
+    xhr.ontimeout = function() {
+      setOfferSending(false);
+      Alert.alert('Hata', 'Zaman aşımı - tekrar deneyin');
+    };
+    
+    xhr.send(JSON.stringify({
+      tag_id: selectedTagForOffer,
+      price: Number(offerPrice),
+      latitude: userLocation?.latitude || 0,
+      longitude: userLocation?.longitude || 0
+    }));
   };
 
   const handleStartTag = async () => {
