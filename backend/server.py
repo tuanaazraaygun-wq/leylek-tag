@@ -232,11 +232,11 @@ async def resolve_user_id(user_id: str) -> str:
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     """OSRM ile rota bilgisi al (TAMAMEN ÜCRETSİZ - LİMİTSİZ)"""
     try:
-        # OSRM Public API
+        # OSRM Public API - 5 saniye timeout
         url = f"https://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
         
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
             data = response.json()
             
             if data.get("code") == "Ok" and data.get("routes"):
@@ -256,7 +256,7 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                     "duration_text": f"{int(duration_min)} dk"
                 }
     except Exception as e:
-        logger.error(f"OSRM error: {e}")
+        logger.warning(f"OSRM timeout/error: {e}")
     
     # Fallback: Düz çizgi mesafesi hesapla
     try:
