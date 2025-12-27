@@ -2564,9 +2564,8 @@ function PassengerDashboard({
 
               const data = await response.json();
               if (data.success) {
-                
                 setActiveTag(null);
-                setOffers([]);
+                // offers artık useOffers hook'u tarafından yönetiliyor - otomatik temizlenecek
               } else {
                 Alert.alert('Hata', data.detail || 'İptal edilemedi');
               }
