@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend API Test Suite for Leylek TAG
-Tests critical endpoints based on test_result.md priorities
+Backend API Test Suite - Supabase Realtime Integration
+Tests specific endpoints mentioned in review request
 """
 
 import asyncio
@@ -12,9 +12,11 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-# Test configuration
-BACKEND_URL = os.environ.get('EXPO_PUBLIC_BACKEND_URL', 'https://leylek-realtime.preview.emergentagent.com')
+# Test configuration from review request
+BACKEND_URL = "https://leylek-realtime.preview.emergentagent.com"
 API_BASE = f"{BACKEND_URL}/api"
+TEST_PHONE = "5321234567"
+TEST_OTP = "123456"
 
 class TestResults:
     def __init__(self):
