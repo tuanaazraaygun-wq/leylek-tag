@@ -1,46 +1,67 @@
 {
   "summary": {
-    "total": 5,
-    "passed": 1,
-    "failed": 4,
-    "success_rate": 20.0
+    "total": 8,
+    "passed": 7,
+    "failed": 1,
+    "success_rate": 87.5
   },
   "results": [
     {
       "test": "Auth - Check User",
       "success": true,
       "details": "User exists: False, Has PIN: False",
-      "response_time": 0.3084988594055176,
-      "timestamp": "2025-12-27T17:30:36.696162"
+      "response_time": 0.3119034767150879,
+      "timestamp": "2025-12-27T17:31:20.294798"
+    },
+    {
+      "test": "User Creation - Verify OTP",
+      "success": true,
+      "details": "User doesn't exist, will create",
+      "response_time": 0.19232487678527832,
+      "timestamp": "2025-12-27T17:31:20.487795"
+    },
+    {
+      "test": "User Creation - Set PIN",
+      "success": true,
+      "details": "User created: True",
+      "response_time": 0.3516528606414795,
+      "timestamp": "2025-12-27T17:31:20.840250"
+    },
+    {
+      "test": "User Creation - Login",
+      "success": true,
+      "details": "User ID: a1a11bed-02a4-4dba-87e4-e8a99f34b564",
+      "response_time": 0.34201502799987793,
+      "timestamp": "2025-12-27T17:31:21.182320"
     },
     {
       "test": "TAG - Create Request",
-      "success": false,
-      "details": "No user_id available",
-      "response_time": null,
-      "timestamp": "2025-12-27T17:30:36.696803"
+      "success": true,
+      "details": "TAG ID: 42adabfe-fd61-4d20-9f93-da59f921a4d4",
+      "response_time": 0.3675081729888916,
+      "timestamp": "2025-12-27T17:31:21.551203"
     },
     {
       "test": "TAG - Active Tag",
-      "success": false,
-      "details": "No user_id available",
-      "response_time": null,
-      "timestamp": "2025-12-27T17:30:36.696816"
+      "success": true,
+      "details": "Active TAG: 42adabfe-fd61-4d20-9f93-da59f921a4d4",
+      "response_time": 0.20795655250549316,
+      "timestamp": "2025-12-27T17:31:21.759957"
     },
     {
       "test": "Offer - Send Offer",
       "success": false,
-      "details": "Missing user_id or tag_id",
-      "response_time": null,
-      "timestamp": "2025-12-27T17:30:36.696823"
+      "details": "HTTP Connection Error",
+      "response_time": 0.04032588005065918,
+      "timestamp": "2025-12-27T17:31:21.801062"
     },
     {
       "test": "Offer - Get Offers",
-      "success": false,
-      "details": "Missing user_id or tag_id",
-      "response_time": null,
-      "timestamp": "2025-12-27T17:30:36.696830"
+      "success": true,
+      "details": "Found 0 offers",
+      "response_time": 0.4998950958251953,
+      "timestamp": "2025-12-27T17:31:22.301663"
     }
   ],
-  "timestamp": "2025-12-27T17:30:36.697129"
+  "timestamp": "2025-12-27T17:31:22.302666"
 }
