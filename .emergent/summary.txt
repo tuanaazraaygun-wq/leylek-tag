@@ -1,229 +1,205 @@
 <analysis>
 
 **original_problem_statement:**
-The user initially requested a comprehensive overhaul of the Leylek TAG ride-sharing app. The primary goal is to get a stable, production-ready application.
-
-The scope of work included:
-1.  **Auth System:** Implement a full TR-based phone authentication flow with OTP, PIN, and device verification.
-2.  **Legal Flow:** Add mandatory, scroll-to-read KVKK and Privacy Policy agreements during registration. This was later simplified by user request.
-3.  **Call System (P0 Critical):** A core feature that is currently broken. The main problem is lack of synchronization between the caller and receiver. Calls do not end for both users simultaneously, rejections are not handled correctly, and there are state inconsistencies. The user has repeatedly expressed frustration over this.
-4.  **Trip Lifecycle:** Implement a request to end trip flow where one user must get confirmation from the other to complete the trip.
-5.  **UI/UX:** Various UI fixes and enhancements, including a redesign of the login screen's legal agreement flow.
-6.  **Admin Panel:** Fixes and enhancements for the admin dashboard.
-7.  **APK Build (BLOCKER):** The most critical issue is the complete failure of the EAS build process, preventing the user from testing any new features via a distributable APK.
+The user is developing a ride-sharing application, Leylek TAG, and is facing critical performance and stability issues. The primary complaints are:
+1.  **Offer System is Unusably Slow:** Sending an offer takes minutes, and the button often gets stuck in a sending state. This is the highest priority issue.
+2.  **Live Map Data is Missing:** On the live map screen, both drivers and passengers cannot see crucial distance (km) and time (dk) information to the meeting point and destination.
+3.  **Calling System is Unstable:** In-app calls (Agora) are unreliable, with calls failing to connect, not ending properly (ghost calls), and lacking a professional, synchronous feel like WhatsApp.
+4.  **Store Compliance Features are Missing:** The app lacks a real SMS OTP system (uses a hardcoded PIN) and an in-app account deletion feature, both of which are required for App Store/Google Play publication.
 
 **User's preferred language**: Turkish. The next agent MUST respond in Turkish.
 
 **what currently exists?**
-The application is a full-stack Expo (React Native) and FastAPI app. The frontend is dominated by a monolithic  file (now over 4800 lines after some code was reverted) and the backend by  (over 2800 lines).
+The application is a monolith with a React Native (Expo) frontend () and a FastAPI backend ().
 
-During this session, the agent performed a massive cleanup of TypeScript errors, refactored the login screen's legal agreement flow, and made several critical, targeted bug fixes to the call and trip completion systems.
+In response to persistent performance issues with the HTTP polling-based system, the user mandated a major architectural shift to use **Supabase Realtime**. The agent has created the foundational files for this new architecture but has **NOT yet integrated them** into the application's core logic.
 
-However, the project is in a fragile state:
-1.  **APK builds are completely broken.** No new APK has been successfully generated in this session.
-2.  The application is only testable via the web preview and the Expo Go app.
-3.  Core features like the call system have been repeatedly fixed but user testing reveals they are still not working as expected.
+- **New Backend Service:**  was created to centralize call logic (start, end, status checks).
+- **New Frontend Hooks:**
+    - : Designed to replace offer polling with a Realtime subscription.
+    - : Designed to replace call status polling with a Realtime subscription to the  table.
+- **New Route Caching Service:**  was created to cache OSRM route calculations.
+
+The existing logic in  still uses  and  for offers and calls, which is the source of the user's frustration.
 
 **Last working item**:
-    - Last item agent was working: The agent was performing a major bug-fixing pass on the voice and video call system. The latest fixes involved correcting the API endpoints being called ( instead of  and  with  instead of ) and fixing state management logic.
-    - Status: IN PROGRESS
+    - Last item agent was working: Creating the new files for the Supabase Realtime architecture as explicitly requested by the user (, , ). The goal is to make the offer and call systems instant and reliable. The agent finished by updating  to use Realtime and initiated a new APK build.
+    - Status: **IN PROGRESS** (The foundational files are created, but the critical integration work has not started).
     - Agent Testing Done: N
-    - Which testing method agent to use? manual testing by curl. The user needs to test the fixes in the Expo Go app. The agent should guide the user on how to test the call flow between two devices.
-    - User Testing Done: N (User has tested previous broken versions, but not the very latest fixes from the last few messages).
+    - Which testing method agent to use? This requires significant code changes, so both backend and frontend testing will be necessary after integration. Start with  for the new backend endpoints, then use the  to verify the UI.
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - Issue 1: EAS Android Build is Consistently Failing (P0 - BLOCKER)
-  - Issue 2: Call System Synchronization is Broken (P0 - CRITICAL)
-  - Issue 3: End Trip Confirmation Flow is Unreliable (P1)
+  - Issue 1: Integrate the new Supabase Realtime architecture (P0)
+  - Issue 2: Live map data (km/dk) is still not visible for driver or passenger (P0)
+  - Issue 3: App is not ready for App Store / Google Play (P1)
+  - Issue 4: Offer system is perceived as slow and unreliable by the user (P0 - BLOCKED by Issue 1)
+  - Issue 5: Calling system is unstable (P1 - BLOCKED by Issue 1)
 
   Issues Detail:
-  - **Issue 1:** EAS Android Build is Consistently Failing (P0 - BLOCKER)
-     - **Description:** All attempts to build an APK using An Expo user account is required to proceed.
-
-Log in to EAS with email or username (exit and run eas login --help to see other login options)
-Input is required, but stdin is not readable. Failed to display prompt: Email or username have failed with a generic Gradle error:  This blocks the user from receiving an installable app for testing.
-     - **Attempted fixes:** A wide range of fixes were attempted without success:
-        - Downgrading/upgrading React versions ( vs ).
-        - Toggling New Architecture ().
-        - Using different build profiles (, ).
-        - Cleaning the build cache ().
-        - Syncing all package dependencies with .
-        - Reverting the entire codebase to the last known successful build commit.
+  - **Issue 1:** Integrate the new Supabase Realtime architecture (P0)
+     - **Description:** The agent has created the files , , and  but they are not used anywhere in the app. The core logic in  must be refactored to use these new hooks, and  must be updated to use . This is the user's mandated solution to the core problems.
+     - **Attempted fixes:** None. This is the next step.
      - **Next debug checklist:**
-        1.  Since code changes and configuration tweaks have failed, the problem is likely environmental.
-        2.  **Hypothesis 1: Native Module Conflict.** The  package is the most likely culprit. The next agent should try to create a build *after temporarily removing* the Agora integration to confirm if it's the source of the build failure.
-        3.  **Hypothesis 2: Expo SDK/RN Versioning.** The combination of Expo 54, RN 0.81.x, and React 19 may be unstable. Research compatibility issues for these versions, especially with Agora.
-        4.  **Hypothesis 3: Local Build.** Try to guide the user through setting up a local Android development environment to build the APK locally (env: load .env
-env: export EXPO_TUNNEL_SUBDOMAIN EXPO_PACKAGER_HOSTNAME EXPO_PUBLIC_BACKEND_URL EXPO_USE_FAST_RESOLVER METRO_CACHE_ROOT EXPO_PUBLIC_GOOGLE_MAPS_API_KEY EXPO_PUBLIC_AGORA_APP_ID EXPO_DEVTOOLS_LISTEN_ADDRESS EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY
-- Creating native directory (./android)
-✔ Created native directory
-- Updating package.json
-✔ Updated package.json
-- Running prebuild
-✔ Finished prebuild), bypassing EAS servers completely. This is a last resort.
-     - **Why fix this issue and what will be achieved with the fix?** This is a complete showstopper. Without a working build, the project cannot move forward.
-     - **Status:** BLOCKED
+        1.  **:** Import  and .
+        2.  **:** Remove all  loops related to polling for offers () and incoming calls ().
+        3.  **:** Replace the -based  function with the  function returned by the  hook.
+        4.  **:** Replace all -based call logic (, ) with functions from the  hook.
+        5.  **:** Import functions from  and replace the existing inline logic for starting/ending calls.
+     - **Why fix this issue and what will be achieved with the fix?** This will replace the slow, unreliable HTTP polling with an instant, event-driven system, which should fix the user's main complaints about speed and reliability.
+     - **Status:** NOT STARTED
      - **Is recurring issue?** Y
-     - **Should Test frontend/backend/both after fix?** Frontend (build process)
+     - **Should Test frontend/backend/both after fix?** Both
      - **Blocked on other issue:** None
 
-  - **Issue 2:** Call System Synchronization is Broken (P0 - CRITICAL)
-     - **Description:** The user has repeatedly reported that the core calling feature is unusable. Symptoms include: one user ending a call but it continues to ring for the other; rejections not registering; calls not connecting; phantom calls.
-     - **Attempted fixes:** The agent made several critical fixes that **have not been tested by the user yet**:
-        - Corrected the  call to use the  endpoint instead of the non-existent .
-        - Fixed state management to correctly capture and use  and  returned from the  endpoint, for both passenger and driver.
-        - Updated  to use the correct  in API calls to  and .
+  - **Issue 2:** Live map data (km/dk) is still not visible for driver or passenger (P0)
+     - **Description:** Despite backend fixes to include location data, the user reports that distance and time are not displayed on the  component or on the offer cards.
+     - **Attempted fixes:** The agent updated the backend (, ) to correctly return  and  objects. This was a correct fix, but the UI is still not updating.
      - **Next debug checklist:**
-        1.  **VERIFY THE LATEST FIXES.** Guide the user to test the call flow on two devices using Expo Go.
-        2.  If it still fails, meticulously trace the state (, , ) in  and the props passed to . Use  heavily.
-        3.  Verify the backend logic in  for , , , , and  to ensure the state machine is robust.
-     - **Why fix this issue and what will be achieved with the fix?** It is a primary feature of the app and the main source of user frustration.
-     - **Status:** USER VERIFICATION PENDING
+        1.  **:** After integrating , ensure the offer objects received via Realtime contain the , , and  fields.
+        2.  **:** Pass this information as props to the component that renders the offer card (e.g., ).
+        3.  **:** Verify that the  hooks responsible for calculating routes are being triggered. The  prop might still be  or delayed. Log the values of , , , and  inside  to see what data it's receiving.
+     - **Why fix this issue and what will be achieved with the fix?** This provides critical, trust-building information to users during the ride-hailing process.
+     - **Status:** IN PROGRESS
      - **Is recurring issue?** Y
-     - **Should Test frontend/backend/both after fix?** Both
-     - **Blocked on other issue:** Issue 1 (for full APK testing).
+     - **Should Test frontend/backend/both after fix?** Frontend
+     - **Blocked on other issue:** None
 
-  - **Issue 3:** End Trip Confirmation Flow is Unreliable (P1)
-     - **Description:** The user reported that pressing the Bitir (End) button does not correctly trigger the confirmation modal on the other user's device.
-     - **Attempted fixes:**
-        - The backend logic was migrated from a volatile in-memory dictionary to a persistent  JSONB column in the Supabase  table.
-        - A bug in the frontend polling logic was fixed (it was checking for  instead of the correct ).
+  - **Issue 3:** App is not ready for App Store / Google Play (P1)
+     - **Description:** The application has critical deficiencies that will lead to store rejection.
+     - **Attempted fixes:** None. The user has deferred these fixes.
      - **Next debug checklist:**
-        1.  Guide the user to test this flow on two devices using Expo Go.
-        2.  If it fails, check the Supabase  table to see if the  column is being updated correctly when one user presses Bitir.
-        3.  Check the frontend polling logic in  in .
-     - **Why fix this issue and what will be achieved with the fix?** This is a core part of the trip lifecycle.
-     - **Status:** USER VERIFICATION PENDING
+        1.  **Real SMS OTP:** Get the  from the user and integrate it into  to replace the hardcoded  OTP.
+        2.  **Account Deletion:** Create a button in the UI and a backend endpoint () that anonymizes or deletes the user's data from all relevant database tables.
+     - **Why fix this issue and what will be achieved with the fix?** To successfully publish the application.
+     - **Status:** NOT STARTED
      - **Is recurring issue?** N
      - **Should Test frontend/backend/both after fix?** Both
-     - **Blocked on other issue:** Issue 1 (for full APK testing).
+     - **Blocked on other issue:** None
 
 **In progress Task List**:
-  - **Task 1:** Implement user-requested UI changes for Live Map screen
-     - **Description:** The user requested changes to the action buttons on the  screen.
-     - **Where to resume:** The agent has already implemented the Report button to prompt for a reason. The user also mentioned a Force End option when the End button is pressed. This needs to be implemented in  and its  callback in .
-     - **What will be achieved with this?** A more robust and user-friendly set of actions during a trip.
-     - **Status:** IN PROGRESS
-     - **Should Test frontend/backend/both after fix?** Frontend
-     - **Blocked on something:** None
+- **Task 1:** Refactor Core App to use Supabase Realtime (P0)
+   - **Description:** Implement the user's requested architectural change by integrating the newly created hooks and services for offers and calls.
+   - **Where to resume:** . Begin by removing old polling logic and integrating the  and  hooks.
+   - **What will be achieved with this?** A fast, responsive, and reliable core user experience for offers and calls.
+   - **Status:** IN PROGRESS
+   - **Should Test frontend/backend/both after fix?** Both
+   - **Blocked on something:** None
 
 **Upcoming and Future Tasks**
-    - **Upcoming Tasks:**
-        - **P0: Real SMS OTP Integration:** The backend is ready for a . The current OTP is hardcoded as .
-        - **P1: Activate and Test Push Notifications:** The  hook exists but has not been fully integrated and tested for events like new offers or call notifications.
-        - **P1: Driver Verification Flow:** A flow for drivers to submit documents and for an admin to approve them is required for trust and safety.
-    - **Future Tasks:**
-        - **P0: Refactor :** This is a **critical necessity**. The monolithic file is the source of instability and maintenance nightmares. It must be broken down into smaller components and a proper file-based routing structure using .
-        - **P1: Implement an Online Payment System:** The user wants to add this later (e.g., iyzico, Stripe).
-        - **P2: 10-minute Call Duration Limit:** The user requested this. The  constant was set in , but it needs to be thoroughly tested.
+- **Upcoming Tasks:**
+    - **P0: Implement Real SMS OTP:** Integrate NETGSM API to replace the mock OTP.
+    - **P0: Implement In-App Account Deletion:** Create the UI and backend endpoint for users to delete their accounts.
+    - **P1: Implement Rating/Review System:** A core feature for a ride-sharing app.
+- **Future Tasks:**
+    - **P0: Refactor :** Even after the Realtime integration, this file is a >7500-line monolith. It needs to be broken down into smaller components and the new hooks need to be used effectively.
+    - **P1: Implement Online Payment System:** Integrate a provider like Iyzico or Stripe.
 
 **Completed work in this session**
-- **TypeScript Error Cleanup:** Fixed all () TypeScript errors in the project, making the codebase type-safe.
-- **Login Screen Refactor:** Reworked the KVKK/Privacy policy agreement on the login screen to be a single, simpler, clickable checkbox flow, using  to remember the user's choice.
-- **Call System Bug Fixes (Needs Verification):**
-  - Fixed multiple incorrect endpoint calls (e.g.,  -> ).
-  - Corrected state management to use  instead of  for call operations.
-  - Ensured  is correctly passed down to the  component from both driver and passenger sides.
-- **End Trip Flow Bug Fixes (Needs Verification):**
-  - Migrated trip-end request state from a volatile backend dictionary to a persistent Supabase column ().
-  - Fixed frontend polling logic to correctly check for the end-trip request.
-- **Tag Not Loading Bug Fix:** Corrected a stale  in the  file that was causing API calls to fail.
-- **Report User Enhancement:** The Report feature now prompts the user for a text description of the issue.
+- **Backend Offer Optimization:** The  endpoint was refactored to remove an artificial 3-minute cooldown and now calculates route distances synchronously, returning them in the initial response. The endpoint itself is confirmed to be fast (<2 seconds).
+- **Backend Location Fix:** Endpoints  and  were fixed to correctly include  and  objects.
+- **Frontend Offer Card Modernization:** The UI for the offer card was updated to a more modern design.
+- **Login Bug Fix:** A crash on login due to a missing  column in the database was resolved by removing the responsible code from the backend.
+- **APK Build Fixes:**
+    - Corrected  to include the , fixing connection errors in new builds.
+    - Created an  file to reduce APK build size.
+- **Architectural Scaffolding for Realtime:** Created but did not integrate the following files based on user's explicit request:
+    - 
+    - 
+    - 
+    - 
 
 **Earlier issues found/mentioned but not fixed**
-   - **Admin Panel UI:** User mentioned the admin panel doesn't open full-screen correctly. This was never addressed.
-
-**Known issue recurrence from previous fork**
-  - **Issue recurrence in previous fork:** APK Build is Unstable and Constantly Failing
-  - **Recurrence count:** High (at least 15 failed builds in this session)
-  - **Status:** BLOCKED
+- All known issues have been captured in the Pending Issues list.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **State-Driven Monolith:** The entire app UI is driven by a  state variable inside the monolithic .
-- **HTTP Polling for Real-time:** The app uses frequent  polling to check for call status, incoming calls, and trip-end requests. This is inefficient and a source of sync issues. **A future refactor should use Supabase Realtime Subscriptions.**
-- **Volatile to Persistent State:** The agent correctly identified that trip end requests were being stored in a volatile backend dictionary and migrated the logic to a persistent database column.
+- **Full-Stack Monolith:** All logic is in  and .
+- **Architectural Pivot:** The system is in transition from an inefficient **HTTP Polling** model to an event-driven **Supabase Realtime** model.
+- **Third-Party APIs:** OSRM (routing), Nominatim (geocoding), Agora (calls), Supabase (database & realtime).
+- **State Management:** Currently via  in . The new hooks are a step towards better state management.
 
 **key DB schema**
-  - **tags**: Added  (type ) to store trip completion requests.
+- ****: A new table is implicitly required by  with columns like uid=0(root) gid=0(root) groups=0(root), , ,  ('ringing', 'connected', 'ended'), .
+- No other schema changes were made, but the new architecture relies heavily on realtime subscriptions to the  and  tables.
 
 **changes in tech stack**
-- None.
+- A major conceptual shift from HTTP Polling to **Supabase Realtime** for core features.
 
 **All files of reference**
-- : **CRITICAL**. The core of the app. All recent bug fixes for call and trip flows are here.
-- : **CRITICAL**. The logic for all voice/video calls. Heavily modified.
-- : Contains all backend logic. The endpoints for call management (, , ) and trip management (, ) were modified or referenced.
-- : This file was the cause of the tag yüklenemedi error and was corrected.
+- : **CRITICAL**. Must be refactored to use the new hooks.
+- : **CRITICAL**. Must be updated to use .
+- : **NEW**. Contains the logic to fix the slow offer system.
+- : **NEW**. Contains the logic to fix the unstable call system.
+- : **NEW**. Contains the backend logic for the new call system.
+- : Needs debugging for the missing UI data.
 
 **Areas that need refactoring**:
-- ** MUST BE REFACTORED.** This is the highest priority technical debt.
-- **Polling to WebSockets/Realtime:** The entire real-time experience (calls, location updates) relies on HTTP polling. Migrating to Supabase Realtime would make the app more efficient and reliable.
+- ** is the #1 priority.** The immediate task is to replace its polling logic with the new  and  hooks.
 
 **key api endpoints**
-- **Call Management (HEAVILY DEBUGGED):**
-  - : Initiates a call, returns  and .
-  - : Answers an incoming call.
-  - : Rejects an incoming call.
-  - : Ends an ongoing call.
-  - : Polled by receiver to check for calls.
-  - : Polled by caller to check call status.
-- **Trip Management (MODIFIED):**
-  - : Initiates a request to end the trip. (Now uses DB)
-  - : Polled to check for end-trip requests. (Now uses DB)
+- : Backend is fast, but the frontend interaction is broken. Will be complemented by Realtime.
+- : This polling endpoint should be deprecated in favor of the  Realtime hook.
+- : The existing HTTP endpoints for calls should be replaced by logic in  and state managed by  hook.
 
 **Critical Info for New Agent**
-- **DO NOT FOCUS ON THE APK BUILD YET.** The previous agent spent most of its time on this and failed. The problem is likely environmental. Your priority is to fix the functional bugs that the user is reporting.
-- **FOCUS ON THE CALL SYSTEM.** This is the user's biggest pain point. The previous agent made many fixes right at the end of the session. Your first task is to **thoroughly test these fixes with the user via Expo Go**.
-- **Communicate clearly** that the app is testable on Expo Go, and that the APK build issue is a separate, complex problem.
-- **The codebase is brittle.** Changes in  can have unexpected side effects. Proceed with caution.
-- The user is frustrated with the amount of credits spent. Be efficient and focus on delivering working functionality.
+1.  **DO NOT DEBUG THE OLD SYSTEM.** The user is extremely frustrated with the old polling method. Your absolute first priority is to **integrate the new Supabase Realtime architecture**. Do not waste time trying to fix the  or  logic in .
+2.  **Integrate the New Hooks:** Your first coding task is to open  and replace the existing offer and call logic with the newly created  and  hooks.
+3.  **Integrate the New Backend Service:** Your second task is to open  and ensure that the API endpoints for calling are using the functions from the new  file.
+4.  **Verify Map Data After Realtime Integration:** Once the core app is running on the new Realtime architecture, re-test the live map screen. The missing km/dk issue is likely due to props not being passed correctly or components not re-rendering. The data should now be available in the  state.
+5.  **Communicate the Shift:** When you start, confirm with the user that you are implementing the new Realtime architecture they requested. This will build confidence.
+6.  **Deployment Context:** The user is aware that the app only works while you are active because it's in a preview environment. Do not get sidetracked by deployment until the core features are stable and the user requests it.
 
 **documents created in this job**
-  - None.
+- 
+- 
+- 
+- 
+- 
 
-**Last 10 User Messages and any pending user messages**
-- The user is extremely frustrated with the broken call system and the failing builds.
-- **Last requests:**
-  1.  Fix call sync issues completely (answered, rejected, ended states). (IN PROGRESS)
-  2.  Add a 10-minute duration limit to calls.
-  3.  Set the ring timeout to 60 seconds. (DONE)
-  4.  Change the map buttons: add a Force End option and prompt for a reason on Report. (PARTIALLY DONE)
-  5.  Fix the End Trip button not sending a confirmation. (FIXED, PENDING VERIFICATION)
-  6.  User has asked questions about platform independence and how to get their code, which the agent answered.
-- **Pending:** The user is waiting to test the latest fixes for the call and trip-end systems.
+**Last 10 User Messages and any pending HUMAN messages**
+1. **User:** The offer takes 3 minutes to be sent. Is there a faster way? (Reports continued slowness).
+2. **User:** While waiting, tell me whats ready and what needs to be done for app store release." (Asks for a status update).
+3. **User:** "Im still having the same problem, the sending button waits. This isnt right." (Expresses extreme frustration with the offer system).
+4. **User:** "What are you doing now?" (Asks for an update).
+5. **User:** "Theres still a problem with the offer. It says sending and waits. This didnt happen before." (Reiterates the core issue).
+6. **User:** "Okay, just look at `backend/route_service.py` and `frontend/hooks/useOffers.ts`. Cache routes on the backend and make the UI update instantly. Dont touch other files. (Provides very specific technical direction for a refactor).
+7. **User:** Okay, Im testing the last APK. What about the sound issues? Lets fix those, then OTP. (Pivots to fixing call stability).
+8. **User:** (Provides a long, detailed architectural plan to fix Agora calls using a backend-centric state machine with Supabase Realtime, specifying a  and ).
+9. **User:** Yes, thats what you need to do. Use Supabase Realtime. And for the voice, do exactly this..." (Reiterates the plan for Realtime for both offers and calls).
+10. **User:** "When youre not online, I get a connection error. (Reports issue with the preview environment).
 
 **Project Health Check:**
 - **Broken:**
-  - **EAS APK Build Process:** Completely non-functional.
+    - The core user experience of sending/receiving offers is broken from the user's perspective, despite backend fixes.
+    - In-app calling is unstable (ghost calls).
+    - Live map data display is not working.
 - **Mocked:**
-  - **SMS OTP:** Hardcoded to .
-- **Untested / High-Risk:**
-  - **Call Synchronization:** The core feature is undergoing major bug fixes and is not verified.
-  - **End Trip Flow:** The backend was refactored, but the flow is not verified.
-  - **Push Notifications:** Logic exists but is not confirmed to be working.
+    - SMS OTP is hardcoded ().
+- **Needs Implementation:**
+    - The new Supabase Realtime architecture is scaffolded but not integrated.
+    - In-app account deletion.
 
 **3rd Party Integrations**
-- **Supabase (PostgreSQL):** Primary database.
-- **Google Maps Platform:** Maps, Directions, Places API.
-- **Agora:** Real-time voice and video calls.
-- **NETGSM:** Planned for SMS, but not yet integrated.
+- **Supabase (PostgreSQL & Realtime):** Primary database and now the core of the event-driven architecture.
+- **Agora:** For real-time voice/video calls. Known to be unstable in the current implementation.
+- **OSRM (Open Source Routing Machine):** Public API for route calculations.
+- **Nominatim (OpenStreetMap):** Public API for geocoding.
+- **NETGSM:** Planned for SMS OTP, not yet integrated. Requires a user-provided API key.
 
 **Testing status**
-  - Testing agent used after significant changes: NO
-  - Troubleshoot agent used after agent stuck in loop: YES, multiple times for the build issue.
+  - Testing agent used after significant changes: YES, confirmed backend speed-up, but user-facing issues persisted.
+  - Troubleshoot agent used after agent stuck in loop: YES, correctly identified a potential APK URL issue, though the root cause was more complex.
   - Test files created: []
-  - Known regressions: The APK build process has completely regressed.
+  - Known regressions: The offer sending process, from a user's perspective, has become slower and less reliable throughout the session, leading to the mandated architectural change.
 
 **Credentials to test flow:**
-- OTP for any valid TR number is hardcoded to .
-- Backend URL for manual testing: The agent provided , but this will change in the new fork. The agent should use the environment variable.
+- Any valid Turkish phone number (e.g., ). The OTP is hardcoded to .
+- The admin phone number is .
 
 **What agent forgot to execute**
-- The agent got stuck in a loop trying to fix the build issue instead of prioritizing the functional bugs the user was reporting earlier. It eventually pivoted, but a lot of time was lost.
-- The agent did not address the user's initial report that the Admin Panel UI was not opening correctly.
-- The user-requested 10-minute call duration limit has not been fully implemented and tested.  was set, but the timer logic needs verification.
+- The most critical oversight was not integrating the new architectural files (, , etc.) after creating them. The agent built and sent APKs that did not contain the new logic, leading to user confusion and frustration as the same problems persisted.
 
 </analysis>
