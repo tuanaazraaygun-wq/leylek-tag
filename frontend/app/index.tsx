@@ -2293,6 +2293,35 @@ function PassengerDashboard({
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   
+  // Ses efekti için
+  const soundRef = useRef<Audio.Sound | null>(null);
+  
+  // Teklif geldiğinde ses çal
+  const playOfferSound = async () => {
+    try {
+      // Önceki sesi durdur
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      
+      // Yeni ses yükle ve çal - casino/slot machine tarzı ses
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3' },
+        { shouldPlay: true, volume: 1.0 }
+      );
+      soundRef.current = sound;
+      
+      // Ses bitince temizle
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log('Ses çalma hatası:', error);
+    }
+  };
+  
   // ========== SUPABASE REALTIME - TEKLİF YÖNETİMİ ==========
   // useOffers hook'u ile anlık teklif güncellemeleri (polling yerine)
   const { 
@@ -2306,10 +2335,12 @@ function PassengerDashboard({
     tagId: activeTag?.id,
     isDriver: false,
     enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'pending' || activeTag?.status === 'offers_received')),
-    onNewOffer: (offer) => {
+    onNewOffer: async (offer) => {
       console.log('🔔 YENİ TEKLİF GELDİ (Realtime):', offer.price, 'TL');
+      // Ses çal
+      await playOfferSound();
       // Bildirim göster
-      setToastMessage(`Yeni teklif: ${offer.price} TL`);
+      setToastMessage(`💰 Yeni teklif: ${offer.price} TL`);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     }
