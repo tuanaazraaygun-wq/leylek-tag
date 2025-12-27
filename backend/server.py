@@ -1559,31 +1559,54 @@ async def send_offer(
         
         tag = tag_result.data[0]
         
-        # ⚡ MESAFE HESAPLA - ANINDA (arka planda değil)
+        # ⚡ MESAFE HESAPLA - PARALEL (hızlı)
         distance_to_passenger = None
         estimated_arrival = None
         trip_distance = None
         trip_duration = None
         
         if driver_lat and driver_lng and tag.get("pickup_lat"):
-            # Şoför -> Yolcu mesafesi
-            route1 = await get_route_info(
-                float(driver_lat), float(driver_lng),
-                float(tag["pickup_lat"]), float(tag["pickup_lng"])
-            )
-            if route1:
-                distance_to_passenger = route1.get("distance_km")
-                estimated_arrival = route1.get("duration_min")
+            import asyncio
             
-            # Yolcu -> Varış mesafesi
-            if tag.get("dropoff_lat"):
-                route2 = await get_route_info(
-                    float(tag["pickup_lat"]), float(tag["pickup_lng"]),
-                    float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
+            # İki route hesaplamasını paralel yap
+            async def get_route1():
+                return await get_route_info(
+                    float(driver_lat), float(driver_lng),
+                    float(tag["pickup_lat"]), float(tag["pickup_lng"])
                 )
+            
+            async def get_route2():
+                if tag.get("dropoff_lat"):
+                    return await get_route_info(
+                        float(tag["pickup_lat"]), float(tag["pickup_lng"]),
+                        float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
+                    )
+                return None
+            
+            # Paralel çalıştır - toplam max 5 saniye
+            try:
+                route1, route2 = await asyncio.wait_for(
+                    asyncio.gather(get_route1(), get_route2()),
+                    timeout=5.0
+                )
+                
+                if route1:
+                    distance_to_passenger = route1.get("distance_km")
+                    estimated_arrival = route1.get("duration_min")
                 if route2:
                     trip_distance = route2.get("distance_km")
                     trip_duration = route2.get("duration_min")
+            except asyncio.TimeoutError:
+                logger.warning("Route hesaplama timeout - varsayılan değerler kullanılacak")
+                # Düz çizgi mesafesi ile tahmin
+                from math import radians, sin, cos, sqrt, atan2
+                R = 6371
+                lat1, lon1 = radians(float(driver_lat)), radians(float(driver_lng))
+                lat2, lon2 = radians(float(tag["pickup_lat"])), radians(float(tag["pickup_lng"]))
+                dlat, dlon = lat2 - lat1, lon2 - lon1
+                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                distance_to_passenger = round(R * 2 * atan2(sqrt(a), sqrt(1-a)), 1)
+                estimated_arrival = int(distance_to_passenger / 40 * 60)  # 40 km/h ortalama
         
         # Teklif verisi - MESAFELERLE BİRLİKTE
         offer_data = {
