@@ -3603,6 +3603,51 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [offerPrice, setOfferPrice] = useState('');
   const [offerSent, setOfferSent] = useState(false); // Teklif gönderildi mi?
 
+  // ANINDA TEKLİF GÖNDER - Supabase Direkt INSERT
+  const sendOfferInstant = async (tagId: string, price: number): Promise<boolean> => {
+    if (!user?.id || !tagId || price < 10) return false;
+    
+    console.log('🚀 ANINDA TEKLİF GÖNDERİLİYOR:', price, '₺');
+    
+    try {
+      // Backend API'ye gönder (timeout: 8 saniye)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
+      const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_id: tagId,
+          price: price,
+          latitude: userLocation?.latitude || 0,
+          longitude: userLocation?.longitude || 0
+        }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      const data = await response.json();
+      
+      if (data.success || data.offer_id) {
+        console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
+        // Talebi listeden kaldır
+        setRequests(prev => prev.filter(r => r.id !== tagId));
+        return true;
+      } else {
+        Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
+        return false;
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        Alert.alert('Zaman Aşımı', 'Sunucu yanıt vermedi. Tekrar deneyin.');
+      } else {
+        Alert.alert('Hata', 'Bağlantı hatası');
+      }
+      return false;
+    }
+  };
+
   const handleSendOffer = (tagId: string) => {
     setSelectedTagForOffer(tagId);
     setOfferPrice('');
