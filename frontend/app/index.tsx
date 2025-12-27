@@ -2428,31 +2428,12 @@ function PassengerDashboard({
       const data = await response.json();
       if (data.success && data.tag) {
         setActiveTag(data.tag);
-        if (data.tag.status === 'pending' || data.tag.status === 'offers_received') {
-          loadOffers(data.tag.id);
-        }
+        // useOffers hook'u otomatik olarak teklifleri yükleyecek (Supabase Realtime)
       } else {
         setActiveTag(null);
-        setOffers([]);
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
-    }
-  };
-
-  const loadOffers = async (tagId: string) => {
-    try {
-      const response = await fetch(`${API_URL}/passenger/offers/${tagId}?user_id=${user.id}`);
-      const data = await response.json();
-      if (data.success) {
-        // Teklifleri fiyata göre sırala (UCUZDAN PAHALIYA)
-        const sortedOffers = (data.offers || []).sort((a: any, b: any) => {
-          return (a.price || 0) - (b.price || 0);
-        });
-        setOffers(sortedOffers);
-      }
-    } catch (error) {
-      console.error('Teklifler yüklenemedi:', error);
     }
   };
 
