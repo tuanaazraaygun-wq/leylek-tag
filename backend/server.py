@@ -1519,9 +1519,7 @@ async def send_offer(
     latitude: float = None,
     longitude: float = None
 ):
-    """Teklif gönder - OPTİMİZE EDİLDİ (Hızlı Response)"""
-    import asyncio
-    
+    """Teklif gönder - HIZLI VE MESAFE BİLGİLİ"""
     try:
         # Body veya query param'dan al
         did = user_id or driver_id
@@ -1541,18 +1539,18 @@ async def send_offer(
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
-        # 3 DAKİKA COOLDOWN - Aynı şoför aynı TAG'e 3 dk içinde tekrar teklif veremez
-        three_min_ago = (datetime.utcnow() - timedelta(minutes=3)).isoformat()
-        existing_offer = supabase.table("offers").select("id, created_at").eq("driver_id", resolved_id).eq("tag_id", tid).gte("created_at", three_min_ago).execute()
-        if existing_offer.data:
-            raise HTTPException(status_code=429, detail="Bu yolcuya 3 dakika içinde zaten teklif verdiniz. Lütfen bekleyin.")
+        # COOLDOWN KALDIRILDI - Şoför istediği kadar teklif verebilir
         
         # Şoför bilgisi
-        driver_result = supabase.table("users").select("name, rating, profile_photo, driver_details").eq("id", resolved_id).execute()
+        driver_result = supabase.table("users").select("name, rating, profile_photo, driver_details, latitude, longitude").eq("id", resolved_id).execute()
         if not driver_result.data:
             raise HTTPException(status_code=404, detail="Şoför bulunamadı")
         
         driver = driver_result.data[0]
+        
+        # Şoför konumu (request'ten veya DB'den)
+        driver_lat = lat or driver.get("latitude")
+        driver_lng = lng or driver.get("longitude")
         
         # TAG bilgisi
         tag_result = supabase.table("tags").select("*").eq("id", tid).execute()
@@ -1561,10 +1559,33 @@ async def send_offer(
         
         tag = tag_result.data[0]
         
-        # ⚡ HIZLI TEKLİF: Önce teklifi kaydet, sonra mesafeleri arka planda hesapla
-        # Bu sayede şoför anında yanıt alır
+        # ⚡ MESAFE HESAPLA - ANINDA (arka planda değil)
+        distance_to_passenger = None
+        estimated_arrival = None
+        trip_distance = None
+        trip_duration = None
         
-        # Temel teklif verisi (mesafeler olmadan)
+        if driver_lat and driver_lng and tag.get("pickup_lat"):
+            # Şoför -> Yolcu mesafesi
+            route1 = await get_route_info(
+                float(driver_lat), float(driver_lng),
+                float(tag["pickup_lat"]), float(tag["pickup_lng"])
+            )
+            if route1:
+                distance_to_passenger = route1.get("distance_km")
+                estimated_arrival = route1.get("duration_min")
+            
+            # Yolcu -> Varış mesafesi
+            if tag.get("dropoff_lat"):
+                route2 = await get_route_info(
+                    float(tag["pickup_lat"]), float(tag["pickup_lng"]),
+                    float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
+                )
+                if route2:
+                    trip_distance = route2.get("distance_km")
+                    trip_duration = route2.get("duration_min")
+        
+        # Teklif verisi - MESAFELERLE BİRLİKTE
         offer_data = {
             "tag_id": tid,
             "driver_id": resolved_id,
@@ -1572,12 +1593,12 @@ async def send_offer(
             "driver_rating": float(driver.get("rating", 5.0)),
             "driver_photo": driver.get("profile_photo"),
             "price": p,
-            "notes": n,
+            "notes": f"{int(estimated_arrival or 15)} dk'da gelirim, {int(trip_duration or 30)} dk'da gideriz" if estimated_arrival else n,
             "status": "pending",
-            "distance_to_passenger_km": None,
-            "estimated_arrival_min": None,
-            "trip_distance_km": None,
-            "trip_duration_min": None
+            "distance_to_passenger_km": round(distance_to_passenger, 1) if distance_to_passenger else None,
+            "estimated_arrival_min": int(estimated_arrival) if estimated_arrival else None,
+            "trip_distance_km": round(trip_distance, 1) if trip_distance else None,
+            "trip_duration_min": int(trip_duration) if trip_duration else None
         }
         
         # Araç bilgisi ekle
