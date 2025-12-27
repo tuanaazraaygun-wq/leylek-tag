@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 5,
+    "passed": 1,
+    "failed": 4,
+    "success_rate": 20.0
+  },
+  "results": [
+    {
+      "test": "Auth - Check User",
+      "success": true,
+      "details": "User exists: False, Has PIN: False",
+      "response_time": 0.3084988594055176,
+      "timestamp": "2025-12-27T17:30:36.696162"
+    },
+    {
+      "test": "TAG - Create Request",
+      "success": false,
+      "details": "No user_id available",
+      "response_time": null,
+      "timestamp": "2025-12-27T17:30:36.696803"
+    },
+    {
+      "test": "TAG - Active Tag",
+      "success": false,
+      "details": "No user_id available",
+      "response_time": null,
+      "timestamp": "2025-12-27T17:30:36.696816"
+    },
+    {
+      "test": "Offer - Send Offer",
+      "success": false,
+      "details": "Missing user_id or tag_id",
+      "response_time": null,
+      "timestamp": "2025-12-27T17:30:36.696823"
+    },
+    {
+      "test": "Offer - Get Offers",
+      "success": false,
+      "details": "Missing user_id or tag_id",
+      "response_time": null,
+      "timestamp": "2025-12-27T17:30:36.696830"
+    }
+  ],
+  "timestamp": "2025-12-27T17:30:36.697129"
+}
