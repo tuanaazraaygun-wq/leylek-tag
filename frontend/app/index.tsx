@@ -3642,9 +3642,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     console.log('🚀 ANINDA TEKLİF GÖNDERİLİYOR:', price, '₺');
     
     try {
-      // Backend API'ye gönder (timeout: 8 saniye)
+      // Backend API'ye gönder (timeout: 15 saniye - route hesaplama için)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
@@ -3672,8 +3672,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        Alert.alert('Zaman Aşımı', 'Sunucu yanıt vermedi. Tekrar deneyin.');
+        Alert.alert('Zaman Aşımı', 'Sunucu meşgul. Lütfen tekrar deneyin.');
       } else {
+        console.error('Send offer error:', error);
         Alert.alert('Hata', 'Bağlantı hatası');
       }
       return false;
