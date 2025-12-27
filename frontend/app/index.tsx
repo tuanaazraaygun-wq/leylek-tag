@@ -3642,9 +3642,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     console.log('🚀 ANINDA TEKLİF GÖNDERİLİYOR:', price, '₺');
     
     try {
-      // Backend API'ye gönder (timeout: 15 saniye - route hesaplama için)
+      // Backend API'ye gönder (timeout: 30 saniye - mobil internet için)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
