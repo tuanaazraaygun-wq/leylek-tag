@@ -3485,12 +3485,27 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   };
 
   const submitOffer = async () => {
-    if (!offerPrice || !selectedTagForOffer || offerSending) return;
+    console.log('🔴 submitOffer ÇAĞRILDI');
+    console.log('🔴 offerPrice:', offerPrice);
+    console.log('🔴 selectedTagForOffer:', selectedTagForOffer);
+    console.log('🔴 offerSending:', offerSending);
+    console.log('🔴 API_URL:', API_URL);
+    console.log('🔴 user.id:', user?.id);
+    
+    if (!offerPrice || !selectedTagForOffer || offerSending) {
+      console.log('🔴 ERKEN RETURN - validasyon başarısız');
+      return;
+    }
     
     setOfferSending(true);
+    console.log('🔴 offerSending = true yapıldı');
+    
+    const url = `${API_URL}/driver/send-offer?user_id=${user.id}`;
+    console.log('🔴 FETCH URL:', url);
     
     try {
-      const res = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
+      console.log('🔴 FETCH BAŞLIYOR...');
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3500,19 +3515,26 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           longitude: userLocation?.longitude
         })
       });
+      console.log('🔴 FETCH TAMAMLANDI, status:', res.status);
+      
       const data = await res.json();
+      console.log('🔴 RESPONSE DATA:', JSON.stringify(data));
       
       if (data.success || data.offer_id) {
+        console.log('🔴 BAŞARILI!');
         setOfferModalVisible(false);
         setOfferPrice('');
         loadRequests();
       } else {
+        console.log('🔴 BAŞARISIZ:', data.detail);
         Alert.alert('Hata', data.detail || 'Gönderilemedi');
       }
-    } catch (e) {
-      Alert.alert('Hata', 'Bağlantı hatası');
+    } catch (e: any) {
+      console.log('🔴 HATA:', e.message);
+      Alert.alert('Hata', 'Bağlantı hatası: ' + e.message);
     }
     setOfferSending(false);
+    console.log('🔴 offerSending = false yapıldı');
   };
 
   const handleStartTag = async () => {
