@@ -1,12 +1,29 @@
 /**
- * useCall Hook - Agora Arama Yönetimi
- * Supabase Realtime ile senkronize, backend merkezli lifecycle
+ * useCall Hook - Supabase Realtime ile Senkronize Arama Yönetimi
+ * WhatsApp/Facebook mantığında, backend merkezli lifecycle
+ * 
+ * KURALLAR:
+ * 1. "Kapat" butonu SADECE backend'e status=ended yazar
+ * 2. Agora cleanup SADECE realtime event ile yapılır
+ * 3. Kim kapatırsa kapatsın, diğer tarafa anında bildirim gider
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, PermissionsAndroid } from 'react-native';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
+
+// ==================== CONFIG ====================
+
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
+                    'https://cabapp-bugfix.preview.emergentagent.com';
+const API_URL = `${BACKEND_URL}/api`;
+
+const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NzExMTQsImV4cCI6MjA1MDE0NzExNH0.MM0zFnocqN4mpuqWVqxfLZJqDDC-2uaHa7TXCodDrCY';
+const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ==================== TYPES ====================
 
@@ -19,9 +36,6 @@ export interface Call {
   status: 'ringing' | 'connected' | 'ended';
   caller_uid?: number;
   callee_uid?: number;
-  started_at?: string;
-  answered_at?: string;
-  ended_at?: string;
   ended_by?: string;
   end_reason?: string;
 }
@@ -34,90 +48,116 @@ export interface UseCallOptions {
   onCallConnected?: (call: Call) => void;
 }
 
-export interface UseCallReturn {
-  activeCall: Call | null;
-  incomingCall: Call | null;
-  isInCall: boolean;
-  isRinging: boolean;
-  isCalling: boolean;
-  startCall: (calleeId: string, callType: 'voice' | 'video', tagId?: string) => Promise<boolean>;
-  answerCall: (callId: string) => Promise<boolean>;
-  endCall: (reason?: string) => Promise<boolean>;
-  rejectCall: () => Promise<boolean>;
-}
-
-// ==================== CONFIG ====================
-
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://cabapp-bugfix.preview.emergentagent.com';
-const API_URL = `${BACKEND_URL}/api`;
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ujvploftywsxprlzejgc.supabase.co';
-const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NzExMTQsImV4cCI6MjA1MDE0NzExNH0.MM0zFnocqN4mpuqWVqxfLZJqDDC-2uaHa7TXCodDrCY';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// ==================== AGORA ENGINE (lazy load) ====================
+// ==================== AGORA ENGINE ====================
 
 let agoraEngine: any = null;
-let agoraInitialized = false;
+let isAgoraJoined = false;
 
-const initAgora = async (appId: string) => {
-  if (agoraInitialized) return agoraEngine;
+const initAgora = async (): Promise<any> => {
+  if (Platform.OS === 'web') return null;
   
   try {
-    const { createAgoraRtcEngine } = await import('react-native-agora');
+    const { createAgoraRtcEngine, ChannelProfileType, ClientRoleType } = await import('react-native-agora');
+    
+    if (agoraEngine) {
+      return agoraEngine;
+    }
+    
     agoraEngine = createAgoraRtcEngine();
-    agoraEngine.initialize({ appId });
-    agoraInitialized = true;
-    console.log('✅ Agora initialized');
+    agoraEngine.initialize({
+      appId: AGORA_APP_ID,
+      channelProfile: ChannelProfileType.ChannelProfileCommunication,
+    });
+    
+    // Ses ayarları
+    agoraEngine.enableAudio();
+    agoraEngine.setEnableSpeakerphone(true);
+    agoraEngine.setDefaultAudioRouteToSpeakerphone(true);
+    agoraEngine.adjustRecordingSignalVolume(400);
+    agoraEngine.adjustPlaybackSignalVolume(400);
+    
+    console.log('✅ Agora engine initialized');
     return agoraEngine;
-  } catch (error) {
-    console.error('❌ Agora init error:', error);
+  } catch (e) {
+    console.error('❌ Agora init error:', e);
     return null;
   }
 };
 
+/**
+ * Agora Cleanup - SADECE realtime event sonrası çağrılır
+ * Buton'dan ASLA doğrudan çağrılmaz!
+ */
 const cleanupAgora = async () => {
-  if (!agoraEngine) return;
+  console.log('🧹 Agora cleanup başladı...');
   
-  try {
-    await agoraEngine.leaveChannel();
-    console.log('✅ Agora leaveChannel');
-  } catch (e) {
-    console.log('⚠️ Agora leaveChannel error:', e);
+  if (!agoraEngine) {
+    console.log('🧹 Agora engine yok, skip');
+    return;
   }
   
-  // Engine'i destroy etme - tekrar kullanılacak
-  // agoraEngine.release();
-  // agoraInitialized = false;
+  try {
+    if (isAgoraJoined) {
+      await agoraEngine.leaveChannel();
+      console.log('✅ Agora leaveChannel');
+    }
+  } catch (e) {
+    console.log('⚠️ leaveChannel error:', e);
+  }
+  
+  try {
+    agoraEngine.removeAllListeners();
+    agoraEngine.release();
+    console.log('✅ Agora released');
+  } catch (e) {
+    console.log('⚠️ release error:', e);
+  }
+  
+  agoraEngine = null;
+  isAgoraJoined = false;
+  console.log('🧹 Agora cleanup tamamlandı');
+};
+
+const requestPermissions = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') return true;
+  
+  try {
+    const grants = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+    ]);
+    return grants[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
 };
 
 // ==================== HOOK ====================
 
-export function useCall(options: UseCallOptions): UseCallReturn {
+export function useCall(options: UseCallOptions) {
   const { userId, enabled = true, onIncomingCall, onCallEnded, onCallConnected } = options;
   
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
-  const [isCalling, setIsCalling] = useState(false);
+  const [callState, setCallState] = useState<'idle' | 'calling' | 'ringing' | 'connected'>('idle');
+  const [remoteUid, setRemoteUid] = useState<number | null>(null);
   
-  // Refs for cleanup
+  // Refs
   const channelRef = useRef<RealtimeChannel | null>(null);
   const isMountedRef = useRef(true);
   const currentCallIdRef = useRef<string | null>(null);
-  
-  // ==================== SUPABASE REALTIME ====================
+
+  // ==================== SUPABASE REALTIME SUBSCRIPTION ====================
   
   useEffect(() => {
     if (!enabled || !userId) return;
     
     isMountedRef.current = true;
+    console.log('📡 Calls realtime subscription başlatılıyor...');
     
-    // Calls tablosunu realtime subscribe et
+    // calls tablosunu realtime subscribe et
     const channel = supabase
-      .channel(`calls:${userId}`)
+      .channel(`calls_${userId}`)
       .on(
         'postgres_changes',
         {
@@ -126,7 +166,7 @@ export function useCall(options: UseCallOptions): UseCallReturn {
           table: 'calls',
           filter: `caller_id=eq.${userId}`
         },
-        (payload) => handleCallChange(payload)
+        (payload) => handleCallEvent(payload, 'caller')
       )
       .on(
         'postgres_changes',
@@ -136,14 +176,17 @@ export function useCall(options: UseCallOptions): UseCallReturn {
           table: 'calls',
           filter: `callee_id=eq.${userId}`
         },
-        (payload) => handleCallChange(payload)
+        (payload) => handleCallEvent(payload, 'callee')
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Realtime status:', status);
+      });
     
     channelRef.current = channel;
     
-    // CLEANUP
+    // CLEANUP - Component unmount
     return () => {
+      console.log('🧹 useCall cleanup...');
       isMountedRef.current = false;
       
       // Supabase subscription cleanup
@@ -157,70 +200,97 @@ export function useCall(options: UseCallOptions): UseCallReturn {
       cleanupAgora();
     };
   }, [enabled, userId]);
-  
+
   // ==================== REALTIME EVENT HANDLER ====================
   
-  const handleCallChange = useCallback((payload: any) => {
+  const handleCallEvent = useCallback((payload: any, role: 'caller' | 'callee') => {
     if (!isMountedRef.current) return;
     
     const call = payload.new as Call;
     const eventType = payload.eventType;
     
-    console.log(`📞 Call event: ${eventType}`, call?.status, call?.id?.slice(0, 8));
+    console.log(`📞 Call event [${role}]: ${eventType}`, call?.status);
     
     if (!call) return;
     
-    // INSERT - Yeni arama
+    // ========== INSERT - Yeni arama ==========
     if (eventType === 'INSERT') {
-      if (call.callee_id === userId && call.status === 'ringing') {
-        // Bana gelen arama
+      if (role === 'callee' && call.status === 'ringing') {
+        // GELEN ARAMA
+        console.log('📞 GELEN ARAMA!');
         setIncomingCall(call);
+        setCallState('ringing');
         onIncomingCall?.(call);
-      } else if (call.caller_id === userId) {
+      } else if (role === 'caller') {
         // Benim başlattığım arama
         setActiveCall(call);
+        setCallState('calling');
         currentCallIdRef.current = call.id;
       }
     }
     
-    // UPDATE - Arama durumu değişti
+    // ========== UPDATE - Durum değişti ==========
     if (eventType === 'UPDATE') {
-      // Connected oldu
+      
+      // CONNECTED - Arama cevaplandı
       if (call.status === 'connected') {
+        console.log('📞 ARAMA BAĞLANDI!');
         setActiveCall(call);
         setIncomingCall(null);
+        setCallState('connected');
         currentCallIdRef.current = call.id;
         onCallConnected?.(call);
       }
       
-      // ENDED - Arama bitti
+      // ========== ENDED - ARAMA BİTTİ ==========
+      // Bu event geldiğinde TÜM CLEANUP burada yapılır
       if (call.status === 'ended') {
-        console.log('📞 Call ended, cleaning up...');
+        console.log('📞 ARAMA SONLANDI - Cleanup başlıyor...');
+        console.log('📞 Kapatan:', call.ended_by, 'Sebep:', call.end_reason);
         
-        // Agora cleanup
+        // 1. Agora cleanup
         cleanupAgora();
         
-        // State reset
+        // 2. State reset
         setActiveCall(null);
         setIncomingCall(null);
-        setIsCalling(false);
+        setCallState('idle');
+        setRemoteUid(null);
         currentCallIdRef.current = null;
         
+        // 3. Callback
         onCallEnded?.(call);
+        
+        // 4. UI feedback
+        if (call.end_reason === 'rejected') {
+          Alert.alert('Reddedildi', 'Arama reddedildi');
+        } else if (call.end_reason === 'timeout') {
+          Alert.alert('Cevap Yok', 'Arama cevaplanmadı');
+        }
       }
     }
   }, [userId, onIncomingCall, onCallEnded, onCallConnected]);
-  
+
   // ==================== START CALL ====================
   
   const startCall = useCallback(async (
     calleeId: string,
-    callType: 'voice' | 'video',
+    callType: 'voice' | 'video' = 'voice',
     tagId?: string
   ): Promise<boolean> => {
-    if (!userId || isCalling || activeCall) return false;
+    if (!userId || callState !== 'idle') {
+      console.log('⚠️ startCall: userId yok veya zaten aramada');
+      return false;
+    }
     
-    setIsCalling(true);
+    // İzin kontrolü
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      Alert.alert('İzin Gerekli', 'Mikrofon izni verin');
+      return false;
+    }
+    
+    setCallState('calling');
     
     try {
       // Backend'e arama başlat
@@ -237,92 +307,146 @@ export function useCall(options: UseCallOptions): UseCallReturn {
       
       const data = await response.json();
       
-      if (data.success) {
-        // Agora'ya bağlan
-        const engine = await initAgora(data.app_id);
-        if (engine) {
-          await engine.joinChannel(data.token, data.channel_name, data.uid, {
-            clientRoleType: 1 // Broadcaster
-          });
-          console.log('✅ Agora joined channel');
-        }
-        
-        return true;
-      } else {
-        if (data.busy) {
-          Alert.alert('Meşgul', 'Kullanıcı başka bir aramada');
+      if (!data.success) {
+        setCallState('idle');
+        if (data.error === 'busy') {
+          Alert.alert('Meşgul', 'Kullanıcı başka aramada');
         } else {
-          Alert.alert('Hata', data.error || 'Arama başlatılamadı');
+          Alert.alert('Hata', data.message || 'Arama başlatılamadı');
         }
-        setIsCalling(false);
         return false;
       }
+      
+      // Agora'ya bağlan
+      const engine = await initAgora();
+      if (engine) {
+        // Agora event handlers
+        engine.registerEventHandler({
+          onUserJoined: (_: any, uid: number) => {
+            console.log('👤 Karşı taraf katıldı:', uid);
+            setRemoteUid(uid);
+          },
+          onUserOffline: (_: any, uid: number, reason: number) => {
+            console.log('👤 Karşı taraf ayrıldı:', uid, reason);
+            setRemoteUid(null);
+            // Backend'e yazma - sadece local cleanup
+            // Karşı taraf zaten end_call çağırmış olmalı
+          },
+          onConnectionStateChanged: (_: any, state: number, reason: number) => {
+            console.log('🔗 Connection state:', state, reason);
+            // DISCONNECTED durumunda backend'e yazma
+            // Sadece local state güncelle
+            if (state === 5) { // DISCONNECTED
+              setRemoteUid(null);
+            }
+          },
+        });
+        
+        await engine.joinChannel(data.token, data.channel_name, data.uid, {
+          clientRoleType: 1
+        });
+        isAgoraJoined = true;
+        console.log('✅ Agora channel joined (caller)');
+      }
+      
+      currentCallIdRef.current = data.call_id;
+      return true;
+      
     } catch (error) {
       console.error('Start call error:', error);
-      setIsCalling(false);
+      setCallState('idle');
       Alert.alert('Hata', 'Bağlantı hatası');
       return false;
     }
-  }, [userId, isCalling, activeCall]);
-  
+  }, [userId, callState]);
+
   // ==================== ANSWER CALL ====================
   
-  const answerCall = useCallback(async (callId: string): Promise<boolean> => {
-    if (!userId) return false;
+  const answerCall = useCallback(async (): Promise<boolean> => {
+    if (!incomingCall || !userId) return false;
+    
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      Alert.alert('İzin Gerekli', 'Mikrofon izni verin');
+      return false;
+    }
     
     try {
       const response = await fetch(`${API_URL}/voice/answer-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          call_id: callId,
+          call_id: incomingCall.id,
           callee_id: userId
         })
       });
       
       const data = await response.json();
       
-      if (data.success) {
-        // Agora'ya bağlan
-        const engine = await initAgora(data.app_id);
-        if (engine) {
-          await engine.joinChannel(data.token, data.channel_name, data.uid, {
-            clientRoleType: 1
-          });
-          console.log('✅ Agora joined (callee)');
-        }
-        
-        setIncomingCall(null);
-        return true;
-      } else {
-        Alert.alert('Hata', data.error || 'Arama cevaplanamadı');
+      if (!data.success) {
+        Alert.alert('Hata', data.error || 'Cevaplanamadı');
         return false;
       }
+      
+      // Agora'ya bağlan
+      const engine = await initAgora();
+      if (engine) {
+        engine.registerEventHandler({
+          onUserJoined: (_: any, uid: number) => {
+            console.log('👤 Caller katıldı:', uid);
+            setRemoteUid(uid);
+          },
+          onUserOffline: (_: any, uid: number) => {
+            console.log('👤 Caller ayrıldı:', uid);
+            setRemoteUid(null);
+          },
+          onConnectionStateChanged: (_: any, state: number) => {
+            if (state === 5) setRemoteUid(null);
+          },
+        });
+        
+        await engine.joinChannel(data.token, data.channel_name, data.uid, {
+          clientRoleType: 1
+        });
+        isAgoraJoined = true;
+        console.log('✅ Agora channel joined (callee)');
+      }
+      
+      currentCallIdRef.current = incomingCall.id;
+      setIncomingCall(null);
+      return true;
+      
     } catch (error) {
       console.error('Answer call error:', error);
       Alert.alert('Hata', 'Bağlantı hatası');
       return false;
     }
-  }, [userId]);
-  
+  }, [userId, incomingCall]);
+
   // ==================== END CALL ====================
-  
+  /**
+   * KAPAT BUTONU BUNU ÇAĞIRIR
+   * Sadece backend'e status=ended yazar
+   * Agora cleanup YAPILMAZ - realtime event'te yapılır
+   */
   const endCall = useCallback(async (reason: string = 'user_ended'): Promise<boolean> => {
     const callId = currentCallIdRef.current || activeCall?.id || incomingCall?.id;
     
-    if (!callId || !userId) {
-      // Call ID yok ama local cleanup yap
+    if (!callId) {
+      console.log('⚠️ endCall: callId yok');
+      // Yine de local cleanup yap
       cleanupAgora();
       setActiveCall(null);
       setIncomingCall(null);
-      setIsCalling(false);
+      setCallState('idle');
       return true;
     }
     
+    console.log('📞 END CALL çağrıldı - Backend\'e yazılıyor...');
+    
     try {
-      // SADECE backend'e status=ended yaz
-      // Agora cleanup realtime event'te yapılacak
-      const response = await fetch(`${API_URL}/voice/end-call`, {
+      // SADECE backend'e yaz - Agora cleanup realtime'da yapılacak
+      await fetch(`${API_URL}/voice/end-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -332,19 +456,21 @@ export function useCall(options: UseCallOptions): UseCallReturn {
         })
       });
       
-      const data = await response.json();
-      return data.success;
+      console.log('✅ Backend\'e end_call yazıldı');
+      // Realtime event gelince cleanup yapılacak
+      return true;
+      
     } catch (error) {
       console.error('End call error:', error);
-      // Hata olsa bile local cleanup yap
+      // Hata durumunda manual cleanup
       cleanupAgora();
       setActiveCall(null);
       setIncomingCall(null);
-      setIsCalling(false);
+      setCallState('idle');
       return false;
     }
   }, [userId, activeCall, incomingCall]);
-  
+
   // ==================== REJECT CALL ====================
   
   const rejectCall = useCallback(async (): Promise<boolean> => {
@@ -361,27 +487,31 @@ export function useCall(options: UseCallOptions): UseCallReturn {
         })
       });
       
-      setIncomingCall(null);
+      // Realtime event'te cleanup yapılacak
       return true;
-    } catch (error) {
-      console.error('Reject call error:', error);
+    } catch {
       setIncomingCall(null);
+      setCallState('idle');
       return false;
     }
   }, [userId, incomingCall]);
-  
+
   // ==================== RETURN ====================
   
   return {
+    // State
     activeCall,
     incomingCall,
-    isInCall: !!activeCall && activeCall.status === 'connected',
-    isRinging: !!incomingCall || (!!activeCall && activeCall.status === 'ringing'),
-    isCalling,
+    callState,
+    remoteUid,
+    isInCall: callState === 'connected',
+    isRinging: callState === 'ringing' || callState === 'calling',
+    
+    // Actions
     startCall,
     answerCall,
     endCall,
-    rejectCall
+    rejectCall,
   };
 }
 

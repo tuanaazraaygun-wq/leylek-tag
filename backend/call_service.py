@@ -1,16 +1,12 @@
-"""
-Call Service - Agora Arama Yönetimi
-Backend merkezli arama lifecycle, Supabase Realtime ile senkronizasyon
+"""Call Service - Backend Merkezli Arama Yönetimi
+Supabase Realtime ile senkronize, WhatsApp/Facebook mantığında
 """
 
 import os
 import time
-import hmac
-import hashlib
-import base64
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
-import logging
 from supabase import create_client
 
 logger = logging.getLogger(__name__)
@@ -21,37 +17,26 @@ SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXV
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Agora credentials
-AGORA_APP_ID = os.getenv("AGORA_APP_ID", "1d12c0c5a7d74b2fa80adbd04393b76a")
+AGORA_APP_ID = os.getenv("AGORA_APP_ID", "43c07f0cef814fd4a5ae3283c8bd77de")
 AGORA_APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "a83c535b0d6f4fd2a6e96d34e7fcb9a6")
 
-# ==================== AGORA TOKEN GENERATION ====================
+# ==================== AGORA TOKEN ====================
 
-def generate_agora_token(channel_name: str, uid: int, role: int = 1, expire_seconds: int = 3600) -> str:
-    """
-    Agora RTC token oluştur
-    role: 1 = publisher, 2 = subscriber
-    """
+def generate_agora_token(channel_name: str, uid: int, expire_seconds: int = 3600) -> str:
+    """Agora RTC token oluştur"""
     try:
         from agora_token_builder import RtcTokenBuilder
-        
-        current_timestamp = int(time.time())
-        privilege_expired_ts = current_timestamp + expire_seconds
-        
+        privilege_expired_ts = int(time.time()) + expire_seconds
         token = RtcTokenBuilder.buildTokenWithUid(
-            AGORA_APP_ID,
-            AGORA_APP_CERTIFICATE,
-            channel_name,
-            uid,
-            role,
-            privilege_expired_ts
+            AGORA_APP_ID, AGORA_APP_CERTIFICATE,
+            channel_name, uid, 1, privilege_expired_ts
         )
         return token
     except ImportError:
-        # Fallback: basit token
-        logger.warning("agora_token_builder not found, using simple token")
-        return f"{AGORA_APP_ID}_{channel_name}_{uid}_{int(time.time())}"
+        logger.warning("agora_token_builder not found")
+        return f"{AGORA_APP_ID}_{channel_name}_{uid}"
     except Exception as e:
-        logger.error(f"Token generation error: {e}")
+        logger.error(f"Token error: {e}")
         return ""
 
 # ==================== CALL LIFECYCLE ====================
@@ -59,46 +44,28 @@ def generate_agora_token(channel_name: str, uid: int, role: int = 1, expire_seco
 async def start_call(
     caller_id: str,
     callee_id: str,
-    call_type: str = "voice",  # voice | video
+    call_type: str = "voice",
     tag_id: Optional[str] = None
 ) -> dict:
     """
-    Yeni arama başlat - Backend merkezli
-    
-    1. Callee'nin meşgul olup olmadığını kontrol et
-    2. calls tablosuna kayıt ekle (status: ringing)
-    3. Agora token'ları oluştur
-    4. Supabase Realtime ile callee'ye bildirim gider
-    
-    Returns:
-        {
-            "success": bool,
-            "call_id": str,
-            "channel_name": str,
-            "token": str,
-            "uid": int,
-            "error": str | None
-        }
+    Arama başlat - calls tablosuna INSERT
+    Supabase Realtime ile callee'ye anında bildirim gider
     """
     try:
-        # 1. Callee meşgul mu kontrol et
-        active_call = supabase.table("calls").select("id").or_(
+        # Meşgul kontrolü - aktif arama var mı?
+        active = supabase.table("calls").select("id").or_(
             f"caller_id.eq.{callee_id},callee_id.eq.{callee_id}"
         ).in_("status", ["ringing", "connected"]).execute()
         
-        if active_call.data:
-            return {
-                "success": False,
-                "error": "Kullanıcı başka bir aramada",
-                "busy": True
-            }
+        if active.data:
+            return {"success": False, "error": "busy", "message": "Kullanıcı başka aramada"}
         
-        # 2. Channel name ve UID oluştur
-        channel_name = f"call_{caller_id[:8]}_{callee_id[:8]}_{int(time.time())}"
+        # Channel ve UID oluştur
+        channel_name = f"call_{int(time.time())}_{caller_id[:8]}"
         caller_uid = int(time.time()) % 100000 + 1
         callee_uid = caller_uid + 1
         
-        # 3. Calls tablosuna kayıt ekle
+        # calls tablosuna INSERT - Realtime ile callee'ye gider
         call_data = {
             "caller_id": caller_id,
             "callee_id": callee_id,
@@ -107,17 +74,17 @@ async def start_call(
             "channel_name": channel_name,
             "caller_uid": caller_uid,
             "callee_uid": callee_uid,
-            "status": "ringing",
+            "status": "ringing",  # ringing | connected | ended
             "started_at": datetime.utcnow().isoformat()
         }
         
         result = supabase.table("calls").insert(call_data).execute()
         call_id = result.data[0]["id"]
         
-        # 4. Agora token oluştur (caller için)
+        # Caller için token
         token = generate_agora_token(channel_name, caller_uid)
         
-        logger.info(f"📞 Arama başlatıldı: {caller_id[:8]} -> {callee_id[:8]} | {call_id}")
+        logger.info(f"📞 ARAMA BAŞLADI: {caller_id[:8]} -> {callee_id[:8]}")
         
         return {
             "success": True,
@@ -127,7 +94,6 @@ async def start_call(
             "uid": caller_uid,
             "app_id": AGORA_APP_ID
         }
-        
     except Exception as e:
         logger.error(f"Start call error: {e}")
         return {"success": False, "error": str(e)}
@@ -136,43 +102,35 @@ async def start_call(
 async def answer_call(call_id: str, callee_id: str) -> dict:
     """
     Aramayı cevapla - status: ringing -> connected
-    
-    Returns:
-        {
-            "success": bool,
-            "channel_name": str,
-            "token": str,
-            "uid": int
-        }
+    Supabase Realtime ile caller'a bildirim gider
     """
     try:
-        # Call bilgisini al
-        call_result = supabase.table("calls").select("*").eq("id", call_id).eq("callee_id", callee_id).eq("status", "ringing").execute()
+        # Call'ı bul
+        call = supabase.table("calls").select("*").eq("id", call_id).eq("callee_id", callee_id).eq("status", "ringing").execute()
         
-        if not call_result.data:
-            return {"success": False, "error": "Arama bulunamadı veya zaten cevaplandı"}
+        if not call.data:
+            return {"success": False, "error": "Arama bulunamadı"}
         
-        call = call_result.data[0]
+        call_data = call.data[0]
         
-        # Status güncelle
+        # Status güncelle - Realtime ile caller'a gider
         supabase.table("calls").update({
             "status": "connected",
             "answered_at": datetime.utcnow().isoformat()
         }).eq("id", call_id).execute()
         
-        # Callee için token oluştur
-        token = generate_agora_token(call["channel_name"], call["callee_uid"])
+        # Callee için token
+        token = generate_agora_token(call_data["channel_name"], call_data["callee_uid"])
         
-        logger.info(f"📞 Arama cevaplandı: {call_id}")
+        logger.info(f"📞 ARAMA CEVAPLANDI: {call_id}")
         
         return {
             "success": True,
-            "channel_name": call["channel_name"],
+            "channel_name": call_data["channel_name"],
             "token": token,
-            "uid": call["callee_uid"],
+            "uid": call_data["callee_uid"],
             "app_id": AGORA_APP_ID
         }
-        
     except Exception as e:
         logger.error(f"Answer call error: {e}")
         return {"success": False, "error": str(e)}
@@ -181,33 +139,27 @@ async def answer_call(call_id: str, callee_id: str) -> dict:
 async def end_call(call_id: str, user_id: str, reason: str = "user_ended") -> dict:
     """
     Aramayı sonlandır - status: ended
-    
-    Bu fonksiyon çağrıldığında:
-    1. calls tablosunda status = 'ended' olur
-    2. Supabase Realtime ile diğer tarafa bildirim gider
-    3. Frontend bu event'i alınca Agora cleanup yapar
-    
-    Args:
-        call_id: Arama ID
-        user_id: Kapatan kullanıcı
-        reason: user_ended | timeout | missed | error
+    KİM KAPATIRSA KAPATSIN bu çağrılır
+    Supabase Realtime ile diğer tarafa ANINDA bildirim gider
+    Client bu event'i alınca:
+      - Agora leaveChannel()
+      - Agora destroy()
+      - UI reset
     """
     try:
-        # Call var mı ve bu kullanıcı dahil mi kontrol et
-        call_result = supabase.table("calls").select("*").eq("id", call_id).or_(
+        # Call var mı ve bu user dahil mi?
+        call = supabase.table("calls").select("*").eq("id", call_id).or_(
             f"caller_id.eq.{user_id},callee_id.eq.{user_id}"
         ).execute()
         
-        if not call_result.data:
+        if not call.data:
             return {"success": False, "error": "Arama bulunamadı"}
         
-        call = call_result.data[0]
+        # Zaten ended ise skip
+        if call.data[0]["status"] == "ended":
+            return {"success": True, "message": "Zaten sonlandırılmış"}
         
-        # Zaten ended ise bir şey yapma
-        if call["status"] == "ended":
-            return {"success": True, "message": "Arama zaten sonlandırılmış"}
-        
-        # Status güncelle
+        # Status güncelle - Realtime ile diğer tarafa ANINDA gider
         supabase.table("calls").update({
             "status": "ended",
             "ended_at": datetime.utcnow().isoformat(),
@@ -215,19 +167,21 @@ async def end_call(call_id: str, user_id: str, reason: str = "user_ended") -> di
             "end_reason": reason
         }).eq("id", call_id).execute()
         
-        logger.info(f"📞 Arama sonlandırıldı: {call_id} | {reason}")
+        logger.info(f"📞 ARAMA SONLANDI: {call_id} | {reason}")
         
-        return {"success": True, "call_id": call_id}
-        
+        return {"success": True}
     except Exception as e:
         logger.error(f"End call error: {e}")
         return {"success": False, "error": str(e)}
 
 
+async def reject_call(call_id: str, user_id: str) -> dict:
+    """Aramayı reddet"""
+    return await end_call(call_id, user_id, "rejected")
+
+
 async def get_incoming_call(user_id: str) -> dict:
-    """
-    Kullanıcıya gelen aktif aramayı getir
-    """
+    """Gelen aramayı kontrol et"""
     try:
         result = supabase.table("calls").select(
             "*, caller:users!calls_caller_id_fkey(name, profile_photo)"
@@ -239,56 +193,29 @@ async def get_incoming_call(user_id: str) -> dict:
             call = result.data[0]
             return {
                 "success": True,
+                "has_incoming": True,
                 "call": {
                     "id": call["id"],
                     "caller_id": call["caller_id"],
-                    "caller_name": call.get("caller", {}).get("name", "Bilinmeyen"),
-                    "caller_photo": call.get("caller", {}).get("profile_photo"),
+                    "caller_name": call.get("caller", {}).get("name", "Arayan"),
                     "call_type": call["call_type"],
                     "channel_name": call["channel_name"]
                 }
             }
-        
-        return {"success": True, "call": None}
-        
+        return {"success": True, "has_incoming": False, "call": None}
     except Exception as e:
-        logger.error(f"Get incoming call error: {e}")
-        return {"success": False, "call": None}
-
-
-async def get_active_call(user_id: str) -> dict:
-    """
-    Kullanıcının aktif aramasını getir
-    """
-    try:
-        result = supabase.table("calls").select("*").or_(
-            f"caller_id.eq.{user_id},callee_id.eq.{user_id}"
-        ).in_("status", ["ringing", "connected"]).order(
-            "created_at", desc=True
-        ).limit(1).execute()
-        
-        if result.data:
-            return {"success": True, "call": result.data[0]}
-        
-        return {"success": True, "call": None}
-        
-    except Exception as e:
-        logger.error(f"Get active call error: {e}")
-        return {"success": False, "call": None}
+        logger.error(f"Get incoming error: {e}")
+        return {"success": False, "has_incoming": False}
 
 
 async def cleanup_stale_calls():
-    """
-    30 saniyeden uzun süredir ringing olan aramaları temizle
-    """
+    """60 saniyeden uzun ringing olanları ended yap"""
     try:
-        stale_time = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
-        
+        stale = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
         supabase.table("calls").update({
             "status": "ended",
             "end_reason": "timeout",
             "ended_at": datetime.utcnow().isoformat()
-        }).eq("status", "ringing").lt("started_at", stale_time).execute()
-        
+        }).eq("status", "ringing").lt("started_at", stale).execute()
     except Exception as e:
-        logger.error(f"Cleanup stale calls error: {e}")
+        logger.error(f"Cleanup error: {e}")
