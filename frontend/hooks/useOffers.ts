@@ -371,7 +371,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     
     try {
       await fetch(
-        `${API_URL}/passenger/reject-offer/${offerId}?user_id=${userId}`,
+        `${API_URL}/passenger/dismiss-offer?user_id=${userId}&offer_id=${offerId}`,
         { method: 'POST' }
       );
       return true;
