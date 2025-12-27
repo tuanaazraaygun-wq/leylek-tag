@@ -1571,7 +1571,8 @@ function TikTokOfferCard({
   onDismiss,
   isPassenger = true,
   driverArrivalMin = 0,
-  tripDurationMin = 0
+  tripDurationMin = 0,
+  onSendOffer
 }: { 
   offer: any; 
   index: number; 
@@ -1581,12 +1582,47 @@ function TikTokOfferCard({
   isPassenger?: boolean;
   driverArrivalMin?: number;
   tripDurationMin?: number;
+  onSendOffer?: (price: number) => Promise<boolean>;
 }) {
+  // Şoför fiyat girişi için state
+  const [priceInput, setPriceInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  
   // Hesaplamalar
   const arrivalTime = driverArrivalMin || offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
+  const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || '?';
   const tripDistanceKm = offer.trip_distance_km?.toFixed(1) || '?';
+  const tripDuration = tripDurationMin || offer.trip_duration_min || Math.round((offer.trip_distance_km || 10) / 50 * 60);
   const personName = isPassenger ? offer.driver_name : offer.passenger_name;
   const personRating = isPassenger ? (offer.driver_rating || 5.0) : 5.0;
+
+  // Şoför için anında teklif gönder
+  const handleQuickSend = async () => {
+    if (!priceInput || sending || sent) return;
+    const price = Number(priceInput);
+    if (price < 10) {
+      Alert.alert('Hata', 'Minimum 10₺ giriniz');
+      return;
+    }
+    
+    setSending(true);
+    
+    if (onSendOffer) {
+      const success = await onSendOffer(price);
+      setSending(false);
+      if (success) {
+        setSent(true);
+        setTimeout(() => {
+          setSent(false);
+          setPriceInput('');
+        }, 2000);
+      }
+    } else {
+      onAccept();
+      setSending(false);
+    }
+  };
 
   return (
     <View style={modernCardStyles.container}>
@@ -1612,7 +1648,7 @@ function TikTokOfferCard({
         </View>
       </View>
 
-      {/* Fiyat */}
+      {/* YOLCU: Fiyat Gösterimi */}
       {isPassenger && (
         <View style={modernCardStyles.priceBox}>
           <Text style={modernCardStyles.priceLabel}>Teklif</Text>
@@ -1620,17 +1656,41 @@ function TikTokOfferCard({
         </View>
       )}
 
-      {/* Bilgi Kartları */}
-      <View style={modernCardStyles.infoCards}>
-        <View style={[modernCardStyles.infoCard, { backgroundColor: '#ECFDF5' }]}>
-          <Ionicons name="time" size={24} color="#22C55E" />
-          <Text style={modernCardStyles.infoValue}>{arrivalTime} dk</Text>
-          <Text style={modernCardStyles.infoLabel}>Varış</Text>
+      {/* ŞOFÖR: Fiyat Girişi - Modern Mavi Tasarım */}
+      {!isPassenger && (
+        <View style={driverPriceStyles.container}>
+          <Text style={driverPriceStyles.label}>💰 Teklif Tutarınız</Text>
+          <View style={driverPriceStyles.inputRow}>
+            <Text style={driverPriceStyles.currency}>₺</Text>
+            <TextInput
+              style={driverPriceStyles.input}
+              placeholder="0"
+              placeholderTextColor="#93C5FD"
+              keyboardType="numeric"
+              value={priceInput}
+              onChangeText={setPriceInput}
+              editable={!sending && !sent}
+              maxLength={5}
+            />
+          </View>
         </View>
+      )}
+
+      {/* Bilgi Kartları - Mesafe ve Süre Bilgileri */}
+      <View style={modernCardStyles.infoCards}>
+        {/* Yolcuya Mesafe/Süre */}
+        <View style={[modernCardStyles.infoCard, { backgroundColor: '#DBEAFE' }]}>
+          <Ionicons name="location" size={22} color="#3B82F6" />
+          <Text style={modernCardStyles.infoValue}>{distanceToPassengerKm} km</Text>
+          <Text style={modernCardStyles.infoLabel}>{arrivalTime} dk</Text>
+          <Text style={[modernCardStyles.infoLabel, { fontSize: 10, color: '#3B82F6' }]}>Yolcuya</Text>
+        </View>
+        {/* Toplam Yolculuk */}
         <View style={[modernCardStyles.infoCard, { backgroundColor: '#FEF3C7' }]}>
-          <Ionicons name="navigate" size={24} color="#F59E0B" />
+          <Ionicons name="navigate" size={22} color="#F59E0B" />
           <Text style={modernCardStyles.infoValue}>{tripDistanceKm} km</Text>
-          <Text style={modernCardStyles.infoLabel}>Mesafe</Text>
+          <Text style={modernCardStyles.infoLabel}>{tripDuration} dk</Text>
+          <Text style={[modernCardStyles.infoLabel, { fontSize: 10, color: '#F59E0B' }]}>Yolculuk</Text>
         </View>
       </View>
 
@@ -1644,22 +1704,108 @@ function TikTokOfferCard({
         </View>
       )}
 
-      {/* Kabul Butonu */}
-      <TouchableOpacity style={modernCardStyles.acceptBtn} onPress={onAccept} activeOpacity={0.8}>
-        <Ionicons name="checkmark-circle" size={24} color="#FFF" />
-        <Text style={modernCardStyles.acceptText}>
-          {isPassenger ? 'KABUL ET' : 'TEKLİF GÖNDER'}
-        </Text>
-      </TouchableOpacity>
+      {/* YOLCU: Kabul Butonu */}
+      {isPassenger && (
+        <TouchableOpacity style={modernCardStyles.acceptBtn} onPress={onAccept} activeOpacity={0.8}>
+          <Ionicons name="checkmark-circle" size={24} color="#FFF" />
+          <Text style={modernCardStyles.acceptText}>KABUL ET</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ŞOFÖR: Anında Gönder Butonu */}
+      {!isPassenger && (
+        <TouchableOpacity 
+          style={[
+            driverPriceStyles.sendBtn,
+            sent && driverPriceStyles.sendBtnSuccess,
+            (!priceInput || sending) && driverPriceStyles.sendBtnDisabled
+          ]} 
+          onPress={handleQuickSend} 
+          activeOpacity={0.8}
+          disabled={!priceInput || sending || sent}
+        >
+          {sending ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Ionicons name={sent ? "checkmark-done" : "send"} size={22} color="#FFF" />
+          )}
+          <Text style={driverPriceStyles.sendBtnText}>
+            {sent ? 'GÖNDERİLDİ!' : sending ? 'GÖNDERİLİYOR...' : 'TEKLİF GÖNDER'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Kaydır İpucu */}
       <View style={modernCardStyles.swipeHint}>
         <Ionicons name="chevron-up" size={18} color="#999" />
-        <Text style={modernCardStyles.swipeText}>Diğer teklifler için kaydır</Text>
+        <Text style={modernCardStyles.swipeText}>Diğer {isPassenger ? 'teklifler' : 'yolcular'} için kaydır</Text>
       </View>
     </View>
   );
 }
+
+// Şoför Fiyat Girişi Stilleri - Modern Mavi
+const driverPriceStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#1E40AF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  label: {
+    fontSize: 14,
+    color: '#BFDBFE',
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currency: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginRight: 4,
+  },
+  input: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFF',
+    minWidth: 120,
+    textAlign: 'center',
+    paddingVertical: 0,
+  },
+  sendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B82F6',
+    paddingVertical: 18,
+    borderRadius: 14,
+    marginBottom: 16,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  sendBtnSuccess: {
+    backgroundColor: '#22C55E',
+  },
+  sendBtnDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0,
+  },
+  sendBtnText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginLeft: 10,
+  },
+});
 
 // Modern Kart Stilleri
 const modernCardStyles = StyleSheet.create({
