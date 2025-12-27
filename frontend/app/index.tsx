@@ -3799,6 +3799,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   isPassenger={false}
                   driverArrivalMin={timeToPassenger}
                   tripDurationMin={tripDuration}
+                  onSendOffer={(price) => sendOfferInstant(item.id, price)}
                 />
               );
             }}
