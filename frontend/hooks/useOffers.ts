@@ -1,10 +1,11 @@
 /**
  * useOffers Hook - Teklif Yönetimi
- * Realtime subscription ile anlık teklif güncellemeleri
+ * Supabase Realtime ile anlık teklif güncellemeleri
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
@@ -12,15 +13,22 @@ const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl ||
                     'https://cabapp-bugfix.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ujvploftywsxprlzejgc.supabase.co';
+const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NzExMTQsImV4cCI6MjA1MDE0NzExNH0.MM0zFnocqN4mpuqWVqxfLZJqDDC-2uaHa7TXCodDrCY';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ==================== TYPES ====================
 
 export interface Offer {
   id: string;
+  tag_id: string;
   driver_id: string;
   driver_name: string;
   driver_rating: number;
   driver_photo?: string;
   price: number;
+  notes?: string;
   status: string;
   vehicle_model?: string;
   vehicle_color?: string;
@@ -36,6 +44,7 @@ export interface UseOffersOptions {
   tagId?: string;
   isDriver?: boolean;
   enabled?: boolean;
+  onNewOffer?: (offer: Offer) => void;
 }
 
 export interface UseOffersReturn {
@@ -51,51 +60,124 @@ export interface UseOffersReturn {
 // ==================== HOOK ====================
 
 export function useOffers(options: UseOffersOptions): UseOffersReturn {
-  const { userId, tagId, isDriver = false, enabled = true } = options;
+  const { userId, tagId, isDriver = false, enabled = true, onNewOffer } = options;
   
   const [offers, setOffers] = useState<Offer[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Cleanup için ref'ler
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Refs for cleanup
+  const channelRef = useRef<RealtimeChannel | null>(null);
   const isMountedRef = useRef(true);
-  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ==================== SUPABASE REALTIME ====================
+  
+  useEffect(() => {
+    if (!enabled || !tagId) return;
+    
+    isMountedRef.current = true;
+    
+    // İlk yükleme
+    fetchOffers();
+    
+    // Offers tablosunu realtime subscribe et
+    const channel = supabase
+      .channel(`offers:${tagId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'offers',
+          filter: `tag_id=eq.${tagId}`
+        },
+        (payload) => {
+          if (!isMountedRef.current) return;
+          const newOffer = payload.new as Offer;
+          console.log('📥 Yeni teklif geldi:', newOffer.price, 'TL');
+          
+          setOffers(prev => {
+            // Duplicate kontrolü
+            if (prev.find(o => o.id === newOffer.id)) return prev;
+            return [newOffer, ...prev];
+          });
+          
+          onNewOffer?.(newOffer);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'offers',
+          filter: `tag_id=eq.${tagId}`
+        },
+        (payload) => {
+          if (!isMountedRef.current) return;
+          const updatedOffer = payload.new as Offer;
+          
+          setOffers(prev => prev.map(o => 
+            o.id === updatedOffer.id ? updatedOffer : o
+          ));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'offers',
+          filter: `tag_id=eq.${tagId}`
+        },
+        (payload) => {
+          if (!isMountedRef.current) return;
+          const deletedId = (payload.old as any).id;
+          setOffers(prev => prev.filter(o => o.id !== deletedId));
+        }
+      )
+      .subscribe();
+    
+    channelRef.current = channel;
+    
+    // CLEANUP
+    return () => {
+      isMountedRef.current = false;
+      
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+        console.log('🧹 Offers channel removed');
+      }
+    };
+  }, [enabled, tagId]);
 
   // ==================== FETCH OFFERS ====================
   
   const fetchOffers = useCallback(async () => {
-    if (!userId || !tagId || !enabled) return;
-    
-    // Önceki isteği iptal et
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
+    if (!tagId) return;
     
     try {
-      const response = await fetch(
-        `${API_URL}/passenger/offers/${tagId}?user_id=${userId}`,
-        { signal: abortControllerRef.current.signal }
-      );
+      const { data, error } = await supabase
+        .from('offers')
+        .select('*')
+        .eq('tag_id', tagId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
       
-      if (!isMountedRef.current) return;
-      
-      const data = await response.json();
-      
-      if (data.success && data.offers) {
-        setOffers(data.offers);
-        setError(null);
+      if (error) throw error;
+      if (isMountedRef.current && data) {
+        setOffers(data);
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') return; // İptal edildi, hata değil
+      console.error('Fetch offers error:', err);
       if (isMountedRef.current) {
-        setError(err.message || 'Teklifler alınamadı');
+        setError(err.message);
       }
     }
-  }, [userId, tagId, enabled]);
+  }, [tagId]);
 
-  // ==================== SEND OFFER (DRIVER) ====================
+  // ==================== SEND OFFER ====================
   
   const sendOffer = useCallback(async (
     targetTagId: string,
@@ -106,56 +188,41 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     
     setIsLoading(true);
     
-    // Optimistic UI update - hemen "gönderiliyor" göster
-    const tempOffer: Offer = {
-      id: `temp-${Date.now()}`,
-      driver_id: userId,
-      driver_name: 'Sen',
-      driver_rating: 5.0,
-      price,
-      status: 'sending',
-    };
-    
-    if (isDriver) {
-      // Driver kendi tekliflerini görmüyor, sadece loading göster
-    }
-    
     try {
+      // Backend'e gönder - Supabase Realtime ile yolcuya anında ulaşacak
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tag_id: targetTagId,
           price,
-          estimated_time: 15,
-          notes: 'Hemen geliyorum!',
           latitude: location?.latitude || 0,
           longitude: location?.longitude || 0
         })
       });
       
       const data = await response.json();
+      setIsLoading(false);
       
       if (data.success || data.offer_id) {
-        setIsLoading(false);
         return true;
       } else {
-        throw new Error(data.detail || 'Teklif gönderilemedi');
+        Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
+        return false;
       }
     } catch (err: any) {
       setIsLoading(false);
-      setError(err.message);
-      Alert.alert('Hata', err.message || 'Teklif gönderilemedi');
+      Alert.alert('Hata', 'Bağlantı hatası');
       return false;
     }
-  }, [userId, isDriver]);
+  }, [userId]);
 
-  // ==================== ACCEPT OFFER (PASSENGER) ====================
+  // ==================== ACCEPT OFFER ====================
   
   const acceptOffer = useCallback(async (offerId: string): Promise<boolean> => {
     if (!userId || !tagId) return false;
     
-    // Optimistic UI - hemen "kabul edildi" göster
+    // Optimistic UI
     setOffers(prev => prev.map(o => 
       o.id === offerId ? { ...o, status: 'accepting' } : o
     ));
@@ -169,82 +236,42 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       const data = await response.json();
       
       if (data.success) {
-        // Diğer teklifleri temizle
         setOffers(prev => prev.filter(o => o.id === offerId));
         return true;
       } else {
-        // Geri al
+        // Rollback
         setOffers(prev => prev.map(o => 
           o.id === offerId ? { ...o, status: 'pending' } : o
         ));
-        throw new Error(data.detail || 'Teklif kabul edilemedi');
+        Alert.alert('Hata', data.detail || 'Teklif kabul edilemedi');
+        return false;
       }
-    } catch (err: any) {
-      Alert.alert('Hata', err.message || 'Teklif kabul edilemedi');
+    } catch (err) {
+      fetchOffers();
+      Alert.alert('Hata', 'Bağlantı hatası');
       return false;
     }
-  }, [userId, tagId]);
+  }, [userId, tagId, fetchOffers]);
 
   // ==================== REJECT OFFER ====================
   
   const rejectOffer = useCallback(async (offerId: string): Promise<boolean> => {
     if (!userId) return false;
     
-    // Optimistic UI - hemen listeden kaldır
+    // Optimistic UI
     setOffers(prev => prev.filter(o => o.id !== offerId));
     
     try {
-      const response = await fetch(
+      await fetch(
         `${API_URL}/passenger/reject-offer/${offerId}?user_id=${userId}`,
         { method: 'POST' }
       );
-      
-      const data = await response.json();
-      
-      if (!data.success) {
-        // Başarısız olursa geri getir
-        fetchOffers();
-      }
-      
-      return data.success;
+      return true;
     } catch {
       fetchOffers();
       return false;
     }
   }, [userId, fetchOffers]);
-
-  // ==================== POLLING & CLEANUP ====================
-  
-  useEffect(() => {
-    isMountedRef.current = true;
-    
-    if (!enabled || !tagId) return;
-    
-    // İlk fetch
-    fetchOffers();
-    
-    // Polling başlat (2 saniyede bir)
-    pollingIntervalRef.current = setInterval(fetchOffers, 2000);
-    
-    // CLEANUP - Component unmount olduğunda
-    return () => {
-      isMountedRef.current = false;
-      
-      // Polling'i durdur
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-      
-      // Devam eden request'i iptal et
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-      
-      console.log('🧹 useOffers cleanup completed');
-    };
-  }, [enabled, tagId, fetchOffers]);
 
   // ==================== RETURN ====================
   
