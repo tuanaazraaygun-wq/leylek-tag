@@ -1607,72 +1607,23 @@ async def send_offer(
             offer_data["vehicle_color"] = driver["driver_details"].get("vehicle_color")
             offer_data["vehicle_photo"] = driver["driver_details"].get("vehicle_photo")
         
-        # ⚡ TEKLİFİ HEMEN KAYDET (hızlı response)
+        # TEKLİFİ KAYDET
         result = supabase.table("offers").insert(offer_data).execute()
         offer_id = result.data[0]["id"]
         
         # TAG durumunu güncelle
         supabase.table("tags").update({"status": "offers_received"}).eq("id", tid).execute()
         
-        logger.info(f"📤 Teklif HIZLI gönderildi: {resolved_id} -> {tid}")
+        logger.info(f"📤 Teklif gönderildi: {resolved_id} -> {tid} | {distance_to_passenger}km/{estimated_arrival}dk")
         
-        # ⚡ ARKA PLANDA MESAFE HESAPLA (response'u bloklamaz)
-        async def update_distances():
-            try:
-                distance_to_passenger = None
-                estimated_arrival = None
-                trip_distance = None
-                trip_duration = None
-                
-                if lat and lng and tag.get("pickup_lat"):
-                    # PARALEL OSRM çağrıları - her ikisi aynı anda
-                    tasks = []
-                    
-                    # Task 1: Şoför -> Yolcu mesafesi
-                    tasks.append(get_route_info(lat, lng, float(tag["pickup_lat"]), float(tag["pickup_lng"])))
-                    
-                    # Task 2: Yolcu -> Varış mesafesi (varsa)
-                    if tag.get("dropoff_lat"):
-                        tasks.append(get_route_info(float(tag["pickup_lat"]), float(tag["pickup_lng"]), float(tag["dropoff_lat"]), float(tag["dropoff_lng"])))
-                    else:
-                        tasks.append(asyncio.sleep(0))  # Dummy task
-                    
-                    # Her iki çağrıyı PARALEL çalıştır (3 saniye timeout)
-                    try:
-                        results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=3.0)
-                        
-                        # Sonuçları işle
-                        route1 = results[0] if not isinstance(results[0], Exception) else None
-                        route2 = results[1] if len(results) > 1 and not isinstance(results[1], Exception) and not isinstance(results[1], type(None)) else None
-                        
-                        if route1 and isinstance(route1, dict):
-                            distance_to_passenger = route1.get("distance_km")
-                            estimated_arrival = route1.get("duration_min")
-                        
-                        if route2 and isinstance(route2, dict):
-                            trip_distance = route2.get("distance_km")
-                            trip_duration = route2.get("duration_min")
-                            
-                    except asyncio.TimeoutError:
-                        logger.warning(f"⏱️ OSRM timeout for offer {offer_id}")
-                    
-                    # Teklifi güncelle (mesafelerle)
-                    if distance_to_passenger or trip_distance:
-                        supabase.table("offers").update({
-                            "distance_to_passenger_km": round(distance_to_passenger, 2) if distance_to_passenger else None,
-                            "estimated_arrival_min": round(estimated_arrival) if estimated_arrival else None,
-                            "trip_distance_km": round(trip_distance, 2) if trip_distance else None,
-                            "trip_duration_min": round(trip_duration) if trip_duration else None
-                        }).eq("id", offer_id).execute()
-                        
-                        logger.info(f"📍 Mesafeler güncellendi: {offer_id} -> {distance_to_passenger}km / {trip_distance}km")
-            except Exception as e:
-                logger.error(f"Background distance update error: {e}")
-        
-        # Arka plan task'ı başlat (response'u bekletmez)
-        asyncio.create_task(update_distances())
-        
-        return {"success": True, "offer_id": offer_id}
+        return {
+            "success": True, 
+            "offer_id": offer_id,
+            "distance_to_passenger_km": distance_to_passenger,
+            "estimated_arrival_min": estimated_arrival,
+            "trip_distance_km": trip_distance,
+            "trip_duration_min": trip_duration
+        }
     except HTTPException:
         raise
     except Exception as e:
