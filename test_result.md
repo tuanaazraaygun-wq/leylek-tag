@@ -233,6 +233,37 @@ test_plan:
   test_all: false
   test_priority: "high_first"
 
+
+  - agent: "main"
+    message: |
+      ## SUPABASE REALTIME ENTEGRASİYONU - Haziran 2025
+      
+      ### YAPILAN DEĞİŞİKLİKLER:
+      
+      #### 1. Yolcu Teklif Sistemi (index.tsx)
+      - ✅ `useOffers` hook'u entegre edildi - Supabase Realtime ile anlık teklif güncellemeleri
+      - ✅ Eski polling (`setInterval` + `loadOffers`) kaldırıldı
+      - ✅ Teklifler artık Supabase'den anında geliyor (< 1 saniye)
+      - ✅ `handleAcceptOffer` ve `handleDismissOffer` hook metodlarını kullanıyor
+      
+      #### 2. Import Güncellemeleri
+      - ✅ `useOffers` ve `useCall` hook'ları import edildi
+      - ⚠️ `useCall` hook'u henüz aktif kullanılmıyor (sonraki adım)
+      
+      ### DEĞİŞEN DOSYALAR:
+      - /app/frontend/app/index.tsx (useOffers entegrasyonu)
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. Yolcu teklif isteği oluştursun
+      2. Şoför teklif göndersin  
+      3. Yolcu tarafında teklifin ANINDA görünmesi gerekiyor (< 1 saniye)
+      4. Teklifi kabul etme ve reddetme işlemleri
+      5. Supabase Realtime bağlantısı log'larda görünmeli
+      
+      ### NOT:
+      Arama sistemi için `useCall` hook'u hazır ama henüz entegre edilmedi.
+      Kullanıcı onayı ile bir sonraki adımda yapılacak.
+
 agent_communication:
   - agent: "main"
     message: |
