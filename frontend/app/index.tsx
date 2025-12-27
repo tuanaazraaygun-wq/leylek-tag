@@ -3486,54 +3486,34 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   const submitOffer = async () => {
     if (!offerPrice || !selectedTagForOffer || offerSending) return;
-    
     setOfferSending(true);
     
-    // XMLHttpRequest kullan - daha güvenilir
-    const xhr = new XMLHttpRequest();
-    const url = `${API_URL}/driver/send-offer?user_id=${user.id}`;
-    
-    xhr.open('POST', url, true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.timeout = 10000; // 10 saniye timeout
-    
-    xhr.onload = function() {
+    fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tag_id: selectedTagForOffer,
+        price: Number(offerPrice),
+        latitude: userLocation?.latitude || 0,
+        longitude: userLocation?.longitude || 0
+      })
+    })
+    .then(r => r.json())
+    .then(data => {
       setOfferSending(false);
-      if (xhr.status === 200) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          if (data.success || data.offer_id) {
-            setOfferModalVisible(false);
-            setOfferPrice('');
-            Alert.alert('✅', 'Teklif gönderildi!');
-            loadRequests();
-          } else {
-            Alert.alert('Hata', data.detail || 'Gönderilemedi');
-          }
-        } catch (e) {
-          Alert.alert('Hata', 'Yanıt okunamadı');
-        }
+      if (data.success || data.offer_id) {
+        setOfferModalVisible(false);
+        setOfferPrice('');
+        Alert.alert('Başarılı', 'Teklif gönderildi!');
+        loadRequests();
       } else {
-        Alert.alert('Hata', 'Sunucu hatası: ' + xhr.status);
+        Alert.alert('Hata', data.detail || 'Gönderilemedi');
       }
-    };
-    
-    xhr.onerror = function() {
+    })
+    .catch(() => {
       setOfferSending(false);
       Alert.alert('Hata', 'Bağlantı hatası');
-    };
-    
-    xhr.ontimeout = function() {
-      setOfferSending(false);
-      Alert.alert('Hata', 'Zaman aşımı - tekrar deneyin');
-    };
-    
-    xhr.send(JSON.stringify({
-      tag_id: selectedTagForOffer,
-      price: Number(offerPrice),
-      latitude: userLocation?.latitude || 0,
-      longitude: userLocation?.longitude || 0
-    }));
+    });
   };
 
   const handleStartTag = async () => {
