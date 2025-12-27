@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import { Audio } from 'expo-av';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import VideoCall from '../components/VideoCall';
