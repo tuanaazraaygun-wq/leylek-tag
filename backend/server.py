@@ -1559,56 +1559,7 @@ async def send_offer(
         
         tag = tag_result.data[0]
         
-        # ⚡ MESAFE HESAPLA - PARALEL (hızlı)
-        distance_to_passenger = None
-        estimated_arrival = None
-        trip_distance = None
-        trip_duration = None
-        
-        if driver_lat and driver_lng and tag.get("pickup_lat"):
-            import asyncio
-            
-            # İki route hesaplamasını paralel yap
-            async def get_route1():
-                return await get_route_info(
-                    float(driver_lat), float(driver_lng),
-                    float(tag["pickup_lat"]), float(tag["pickup_lng"])
-                )
-            
-            async def get_route2():
-                if tag.get("dropoff_lat"):
-                    return await get_route_info(
-                        float(tag["pickup_lat"]), float(tag["pickup_lng"]),
-                        float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
-                    )
-                return None
-            
-            # Paralel çalıştır - toplam max 5 saniye
-            try:
-                route1, route2 = await asyncio.wait_for(
-                    asyncio.gather(get_route1(), get_route2()),
-                    timeout=5.0
-                )
-                
-                if route1:
-                    distance_to_passenger = route1.get("distance_km")
-                    estimated_arrival = route1.get("duration_min")
-                if route2:
-                    trip_distance = route2.get("distance_km")
-                    trip_duration = route2.get("duration_min")
-            except asyncio.TimeoutError:
-                logger.warning("Route hesaplama timeout - varsayılan değerler kullanılacak")
-                # Düz çizgi mesafesi ile tahmin
-                from math import radians, sin, cos, sqrt, atan2
-                R = 6371
-                lat1, lon1 = radians(float(driver_lat)), radians(float(driver_lng))
-                lat2, lon2 = radians(float(tag["pickup_lat"])), radians(float(tag["pickup_lng"]))
-                dlat, dlon = lat2 - lat1, lon2 - lon1
-                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-                distance_to_passenger = round(R * 2 * atan2(sqrt(a), sqrt(1-a)), 1)
-                estimated_arrival = int(distance_to_passenger / 40 * 60)  # 40 km/h ortalama
-        
-        # Teklif verisi - MESAFELERLE BİRLİKTE
+        # ⚡ ÖNCE TEKLİFİ KAYDET - MESAFE SONRA HESAPLANACAK (ANINDA YANIT)
         offer_data = {
             "tag_id": tid,
             "driver_id": resolved_id,
@@ -1616,12 +1567,12 @@ async def send_offer(
             "driver_rating": float(driver.get("rating", 5.0)),
             "driver_photo": driver.get("profile_photo"),
             "price": p,
-            "notes": f"{int(estimated_arrival or 15)} dk'da gelirim, {int(trip_duration or 30)} dk'da gideriz" if estimated_arrival else n,
+            "notes": n or "Teklif gönderildi",
             "status": "pending",
-            "distance_to_passenger_km": round(distance_to_passenger, 1) if distance_to_passenger else None,
-            "estimated_arrival_min": int(estimated_arrival) if estimated_arrival else None,
-            "trip_distance_km": round(trip_distance, 1) if trip_distance else None,
-            "trip_duration_min": int(trip_duration) if trip_duration else None
+            "distance_to_passenger_km": None,
+            "estimated_arrival_min": None,
+            "trip_distance_km": None,
+            "trip_duration_min": None
         }
         
         # Araç bilgisi ekle
@@ -1630,22 +1581,64 @@ async def send_offer(
             offer_data["vehicle_color"] = driver["driver_details"].get("vehicle_color")
             offer_data["vehicle_photo"] = driver["driver_details"].get("vehicle_photo")
         
-        # TEKLİFİ KAYDET
+        # 1. TEKLİFİ ANINDA KAYDET
         result = supabase.table("offers").insert(offer_data).execute()
         offer_id = result.data[0]["id"]
         
-        # TAG durumunu güncelle
+        # 2. TAG durumunu güncelle
         supabase.table("tags").update({"status": "offers_received"}).eq("id", tid).execute()
         
-        logger.info(f"📤 Teklif gönderildi: {resolved_id} -> {tid} | {distance_to_passenger}km/{estimated_arrival}dk")
+        logger.info(f"📤 Teklif ANINDA gönderildi: {resolved_id} -> {tid}")
+        
+        # 3. ARKA PLANDA mesafe hesapla ve güncelle (kullanıcı beklemez)
+        import asyncio
+        
+        async def update_distances():
+            try:
+                distance_to_passenger = None
+                estimated_arrival = None
+                trip_distance = None
+                trip_duration = None
+                
+                if driver_lat and driver_lng and tag.get("pickup_lat"):
+                    # Route hesapla
+                    route1 = await get_route_info(
+                        float(driver_lat), float(driver_lng),
+                        float(tag["pickup_lat"]), float(tag["pickup_lng"])
+                    )
+                    if route1:
+                        distance_to_passenger = route1.get("distance_km")
+                        estimated_arrival = route1.get("duration_min")
+                    
+                    if tag.get("dropoff_lat"):
+                        route2 = await get_route_info(
+                            float(tag["pickup_lat"]), float(tag["pickup_lng"]),
+                            float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
+                        )
+                        if route2:
+                            trip_distance = route2.get("distance_km")
+                            trip_duration = route2.get("duration_min")
+                
+                # Teklifi güncelle
+                supabase.table("offers").update({
+                    "distance_to_passenger_km": round(distance_to_passenger, 1) if distance_to_passenger else None,
+                    "estimated_arrival_min": int(estimated_arrival) if estimated_arrival else None,
+                    "trip_distance_km": round(trip_distance, 1) if trip_distance else None,
+                    "trip_duration_min": int(trip_duration) if trip_duration else None,
+                    "notes": f"{int(estimated_arrival or 15)} dk'da gelirim" if estimated_arrival else None
+                }).eq("id", offer_id).execute()
+                
+                logger.info(f"📍 Mesafeler güncellendi: {offer_id}")
+            except Exception as e:
+                logger.error(f"Mesafe güncelleme hatası: {e}")
+        
+        # Arka planda çalıştır - kullanıcı beklemez
+        asyncio.create_task(update_distances())
         
         return {
             "success": True, 
             "offer_id": offer_id,
-            "distance_to_passenger_km": distance_to_passenger,
-            "estimated_arrival_min": estimated_arrival,
-            "trip_distance_km": trip_distance,
-            "trip_duration_min": trip_duration
+            "message": "Teklif gönderildi, mesafe bilgisi güncelleniyor..."
         }
     except HTTPException:
         raise
