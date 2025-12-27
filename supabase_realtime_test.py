@@ -211,7 +211,6 @@ def test_driver_send_offer(user_id, tag_id):
         return None
     
     offer_data = {
-        "user_id": user_id,
         "tag_id": tag_id,
         "price": 850.0,
         "notes": "Test teklifi - 15 dakikada gelirim",
@@ -221,7 +220,7 @@ def test_driver_send_offer(user_id, tag_id):
     
     # Measure response time - CRITICAL: Should be < 2 seconds
     start_time = time.time()
-    response, response_time = make_request("POST", "/driver/send-offer", offer_data)
+    response, response_time = make_request("POST", f"/driver/send-offer?user_id={user_id}", offer_data)
     
     if response and response.status_code == 200:
         data = response.json()
