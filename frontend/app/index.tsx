@@ -2521,43 +2521,7 @@ function PassengerDashboard({
     }
   }, [activeTag?.id, activeTag?.status, activeTag?.driver_id]);
 
-  // GELEN ARAMA KONTROLÜ - Polling (Yolcu için)
-  useEffect(() => {
-    if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') && !showVoiceCall && !showIncomingCall) {
-      const checkIncoming = async () => {
-        try {
-          const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-          
-          if (!response.ok) return;
-          
-          const text = await response.text();
-          if (!text || text.trim() === '') return;
-          
-          const data = JSON.parse(text);
-          
-          if (data.success && data.has_incoming && data.call) {
-            console.log('📞 YOLCU - GELEN ARAMA!', data.call.caller_name);
-            setIncomingCallInfo({
-              callerName: data.call.caller_name,
-              callType: data.call.call_type || 'audio',
-              channelName: data.call.channel_name
-            });
-            setShowIncomingCall(true);
-          }
-        } catch (error) {
-          if (!(error instanceof SyntaxError)) {
-            console.log('Gelen arama kontrolü hatası:', error);
-          }
-        }
-      };
-
-      // İlk kontrolü hemen yap
-      checkIncoming();
-      // Gelen arama kontrolü - 1 saniyede bir
-      const interval = setInterval(checkIncoming, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [activeTag, user.id, showVoiceCall, showIncomingCall]);
+  // ❌ ESKİ POLLING KALDIRILDI - Supabase Realtime ile değiştirildi (yukarıda)
 
   // Karşılıklı iptal isteği polling - YOLCU için
   useEffect(() => {
