@@ -3405,12 +3405,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       clearInterval(interval);
     };
   }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
-      });
-    
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
