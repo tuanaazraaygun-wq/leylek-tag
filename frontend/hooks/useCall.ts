@@ -52,12 +52,19 @@ export interface UseCallOptions {
 
 let agoraEngine: any = null;
 let isAgoraJoined = false;
+let agoraCleanupInProgress = false;
 
 const initAgora = async (): Promise<any> => {
   if (Platform.OS === 'web') return null;
   
   try {
     const { createAgoraRtcEngine, ChannelProfileType, ClientRoleType } = await import('react-native-agora');
+    
+    // Eğer cleanup devam ediyorsa bekle
+    if (agoraCleanupInProgress) {
+      console.log('⏳ Agora cleanup bekleniyor...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
     
     if (agoraEngine) {
       return agoraEngine;
@@ -87,34 +94,56 @@ const initAgora = async (): Promise<any> => {
 /**
  * Agora Cleanup - SADECE realtime event sonrası çağrılır
  * Buton'dan ASLA doğrudan çağrılmaz!
+ * Güvenli cleanup - tüm hataları yakalar
  */
 const cleanupAgora = async () => {
+  if (agoraCleanupInProgress) {
+    console.log('⚠️ Cleanup zaten devam ediyor, skip');
+    return;
+  }
+  
+  agoraCleanupInProgress = true;
   console.log('🧹 Agora cleanup başladı...');
   
   if (!agoraEngine) {
     console.log('🧹 Agora engine yok, skip');
+    agoraCleanupInProgress = false;
     return;
   }
   
+  // 1. Leave channel
   try {
     if (isAgoraJoined) {
       await agoraEngine.leaveChannel();
       console.log('✅ Agora leaveChannel');
+      isAgoraJoined = false;
     }
   } catch (e) {
-    console.log('⚠️ leaveChannel error:', e);
+    console.log('⚠️ leaveChannel error (ignored):', e);
+    isAgoraJoined = false;
   }
   
+  // 2. Remove listeners
   try {
     agoraEngine.removeAllListeners();
-    agoraEngine.release();
-    console.log('✅ Agora released');
+    console.log('✅ Agora listeners removed');
   } catch (e) {
-    console.log('⚠️ release error:', e);
+    console.log('⚠️ removeAllListeners error (ignored):', e);
   }
   
+  // 3. Release engine
+  try {
+    agoraEngine.release();
+    console.log('✅ Agora engine released');
+  } catch (e) {
+    console.log('⚠️ release error (ignored):', e);
+  }
+  
+  // 4. Reset state
   agoraEngine = null;
   isAgoraJoined = false;
+  agoraCleanupInProgress = false;
+  
   console.log('🧹 Agora cleanup tamamlandı');
 };
 
