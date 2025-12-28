@@ -353,6 +353,7 @@ class SendOtpBodyRequest(BaseModel):
 # ==================== NETGSM SMS GÖNDERİMİ ====================
 import base64
 import httpx
+import random
 
 # OTP kodlarını geçici olarak sakla (production'da Redis kullanılmalı)
 otp_storage: dict = {}
