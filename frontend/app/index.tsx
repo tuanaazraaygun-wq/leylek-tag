@@ -3257,9 +3257,9 @@ function PassengerDashboard({
         </SafeAreaView>
       </Modal>
 
-      {/* ✅ SimpleCallScreen - Basit ve Çalışan Arama Ekranı - YOLCU */}
+      {/* ✅ CallScreen - Profesyonel Arama Ekranı - YOLCU */}
       {showCallScreen && callScreenData && (
-        <SimpleCallScreen
+        <CallScreen
           visible={showCallScreen}
           mode={callScreenData.mode}
           callId={callScreenData.callId}
@@ -3268,6 +3268,7 @@ function PassengerDashboard({
           userId={user.id}
           remoteName={callScreenData.remoteName}
           callType={callScreenData.callType}
+          apiUrl={API_URL}
           onClose={() => {
             console.log('📞 YOLCU - Arama ekranı kapandı');
             setShowCallScreen(false);
