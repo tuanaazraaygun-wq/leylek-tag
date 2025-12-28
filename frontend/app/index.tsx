@@ -2414,13 +2414,6 @@ function PassengerDashboard({
       clearInterval(interval);
     };
   }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
-        console.log('📡 YOLCU Realtime status:', status);
-      });
-    
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status]);
   
   // Ara butonu animasyonu
   const buttonPulse = useRef(new Animated.Value(1)).current;
