@@ -3458,14 +3458,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   }, [user?.id]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
-    
-    return () => {
-      isActive = false;
-      clearInterval(interval);
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status]);
-
-  // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
     if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
       const interval = setInterval(async () => {
