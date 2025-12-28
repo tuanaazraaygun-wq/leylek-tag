@@ -1759,6 +1759,35 @@ function TikTokOfferCard({
   );
 }
 
+// Şoför Hedef Adresi Stilleri
+const destinationStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  iconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#059669',
+    marginLeft: 8,
+  },
+  address: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#064E3B',
+    lineHeight: 22,
+  },
+});
+
 // Şoför Fiyat Girişi Stilleri - Modern Mavi
 const driverPriceStyles = StyleSheet.create({
   container: {
