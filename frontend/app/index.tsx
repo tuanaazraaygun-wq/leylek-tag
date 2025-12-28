@@ -3882,13 +3882,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             price={activeTag?.final_price}
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
-              // Aktif arama varsa engelle
-              if (showVoiceCall || showIncomingCall) {
+              // 🔒 Arama kilidi kontrol
+              if (isCallActiveRef.current || showPhoneCall) {
                 Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
                 return;
               }
               
+              isCallActiveRef.current = true;
               const passengerName = activeTag.passenger_name || 'Yolcu';
+              const passengerId = activeTag.passenger_id || '';
+              
               try {
                 const response = await fetch(`${API_URL}/voice/start-call`, {
                   method: 'POST',
@@ -3902,20 +3905,27 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 });
                 const data = await response.json();
                 if (!data.success) {
+                  isCallActiveRef.current = false;
                   Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                   return;
                 }
                 
-                // ÖNEMLİ: Backend'den dönen channel_name ve call_id'yi kaydet
-                console.log('📞 ŞOFÖR - Arama başlatıldı:', data);
-                setActiveChannelName(data.channel_name);
-                setActiveCallId(data.call_id);
-                setSelectedPassengerName(passengerName);
-                setIsVideoCall(type === 'video');
-                setIsCallCaller(true); // BEN ARIYORUM
-                setShowVoiceCall(true);
+                // ✅ YENİ: PhoneCallScreen'i aç - ANINDA
+                console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
+                setPhoneCallData({
+                  isCaller: true,
+                  callId: data.call_id,
+                  channelName: data.channel_name,
+                  remoteUserName: passengerName,
+                  remoteUserId: passengerId,
+                  callType: type,
+                  agoraToken: data.agora_token
+                });
+                setShowPhoneCall(true);
+                
               } catch (error) {
-                console.error('Arama bildirimi hatası:', error);
+                console.error('Arama hatası:', error);
+                isCallActiveRef.current = false;
                 Alert.alert('Hata', 'Arama başlatılamadı');
                 return;
               }
