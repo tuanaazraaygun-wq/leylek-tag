@@ -4,6 +4,7 @@ Supabase Realtime ile senkronize, WhatsApp/Facebook mantığında
 
 import os
 import time
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -11,9 +12,9 @@ from supabase import create_client
 
 logger = logging.getLogger(__name__)
 
-# Supabase client
+# Supabase client - Güncel key
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ujvploftywsxprlzejgc.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NzExMTQsImV4cCI6MjA1MDE0NzExNH0.MM0zFnocqN4mpuqWVqxfLZJqDDC-2uaHa7TXCodDrCY")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k"))
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Agora credentials
