@@ -1658,6 +1658,19 @@ function TikTokOfferCard({
         </View>
       )}
 
+      {/* ŞOFÖR: Yolcunun Hedef Adresi */}
+      {!isPassenger && offer.dropoff_location && (
+        <View style={destinationStyles.container}>
+          <View style={destinationStyles.iconRow}>
+            <Ionicons name="flag" size={20} color="#10B981" />
+            <Text style={destinationStyles.label}>Yolcunun Gideceği Adres</Text>
+          </View>
+          <Text style={destinationStyles.address} numberOfLines={2}>
+            {offer.dropoff_location}
+          </Text>
+        </View>
+      )}
+
       {/* ŞOFÖR: Fiyat Girişi - Modern Mavi Tasarım */}
       {!isPassenger && (
         <View style={driverPriceStyles.container}>
