@@ -3134,7 +3134,7 @@ function PassengerDashboard({
                     // Yolculuğu normal bitir
                     try {
                       const response = await fetch(
-                        `${API_URL}/trip/complete?tag_id=${activeTag.id}&user_id=${user.id}`,
+                        `${API_URL}/driver/complete-trip?tag_id=${activeTag.id}&user_id=${user.id}`,
                         { method: 'POST' }
                       );
                       const data = await response.json();
