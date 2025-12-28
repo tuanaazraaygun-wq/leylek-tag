@@ -2964,7 +2964,17 @@ function PassengerDashboard({
                   price={activeTag?.final_price}
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
+                    // 🔒 LOCK: Zaten arama aktifse veya gelen arama varsa engelle
+                    if (showVoiceCall || showIncomingCall || isCallCaller) {
+                      console.log('⚠️ Arama zaten aktif, yeni arama engellendi');
+                      return;
+                    }
+                    
                     const driverName = activeTag?.driver_name || 'Sürücü';
+                    
+                    // 🔒 Önce state'i ayarla ki tekrar basılmasın
+                    setIsCallCaller(true);
+                    
                     try {
                       const response = await fetch(`${API_URL}/voice/start-call`, {
                         method: 'POST',
@@ -2978,20 +2988,21 @@ function PassengerDashboard({
                       });
                       const data = await response.json();
                       if (!data.success) {
+                        setIsCallCaller(false); // Reset on error
                         Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
                         return;
                       }
                       
                       // ÖNEMLİ: Backend'den dönen channel_name ve call_id'yi kaydet
-                      console.log('📞 Arama başlatıldı:', data);
+                      console.log('📞 Arama başlatıldı:', data.call_id);
                       setActiveChannelName(data.channel_name);
                       setActiveCallId(data.call_id);
                       setSelectedDriverName(driverName);
                       setIsVideoCall(type === 'video');
-                      setIsCallCaller(true); // BEN ARIYORUM
                       setShowVoiceCall(true);
                     } catch (error) {
                       console.error('Arama bildirimi hatası:', error);
+                      setIsCallCaller(false); // Reset on error
                       Alert.alert('Hata', 'Arama başlatılamadı');
                       return;
                     }
