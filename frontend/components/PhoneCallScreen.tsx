@@ -125,8 +125,8 @@ export default function PhoneCallScreen({
   const engineRef = useRef<any>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const realtimeChannelRef = useRef<RealtimeChannel | null>(null);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const ringIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCleanedUpRef = useRef(false);
   const localUidRef = useRef(Math.floor(Math.random() * 100000) + 1);
   const pulseAnim = useRef(new Animated.Value(1)).current;
