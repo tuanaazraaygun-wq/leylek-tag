@@ -3813,16 +3813,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   remoteName: passengerName,
                   callType: type
                 });
-                  callType: type,
-                  agoraToken: data.agora_token
-                });
-                setShowPhoneCall(true);
                 
               } catch (error) {
                 console.error('Arama hatası:', error);
                 isCallActiveRef.current = false;
-                Alert.alert('Hata', 'Arama başlatılamadı');
-                return;
+                setShowCallScreen(false);
+                setCallScreenData(null);
+                Alert.alert('Hata', 'Bağlantı hatası');
               }
             }}
             onForceEnd={async () => {
