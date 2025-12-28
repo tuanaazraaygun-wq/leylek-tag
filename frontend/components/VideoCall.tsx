@@ -159,6 +159,12 @@ export default function VideoCall({
 
   useEffect(() => {
     if (visible) {
+      // ÖNEMLİ: channelName yoksa arama başlatma!
+      if (!channelName || channelName.trim() === '') {
+        console.log('⚠️ channelName boş, arama başlatılmıyor');
+        return;
+      }
+      
       const cid = getCallId();
       
       // Aynı arama zaten aktifse çık
@@ -174,7 +180,7 @@ export default function VideoCall({
       }
       
       // Yeni arama başlat
-      console.log('📞 YENİ ARAMA BAŞLATIYOR:', cid);
+      console.log('📞 YENİ ARAMA BAŞLATIYOR:', cid, 'channel:', channelName);
       globalActiveCall = cid;
       currentCallId.current = cid;
       isCleanedUp.current = false;
