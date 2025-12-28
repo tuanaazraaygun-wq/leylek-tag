@@ -29,7 +29,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 // Backend URL - önce extra'dan, sonra env'den, en son hardcoded
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://leylek-realtime.preview.emergentagent.com';
+                    'https://leylek-realtime-1.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 console.log('🌐 BACKEND_URL:', BACKEND_URL);

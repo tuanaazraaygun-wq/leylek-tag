@@ -1,205 +1,194 @@
 <analysis>
+<original_problem_statement>
+The user is developing a ride-sharing app, Leylek TAG, and has been facing critical performance and stability issues.
 
-**original_problem_statement:**
-The user is developing a ride-sharing application, Leylek TAG, and is facing critical performance and stability issues. The primary complaints are:
-1.  **Offer System is Unusably Slow:** Sending an offer takes minutes, and the button often gets stuck in a sending state. This is the highest priority issue.
-2.  **Live Map Data is Missing:** On the live map screen, both drivers and passengers cannot see crucial distance (km) and time (dk) information to the meeting point and destination.
-3.  **Calling System is Unstable:** In-app calls (Agora) are unreliable, with calls failing to connect, not ending properly (ghost calls), and lacking a professional, synchronous feel like WhatsApp.
-4.  **Store Compliance Features are Missing:** The app lacks a real SMS OTP system (uses a hardcoded PIN) and an in-app account deletion feature, both of which are required for App Store/Google Play publication.
+**Initial Core Problems:**
+1.  **Offer System:** Sending an offer was unusably slow (taking minutes), and the UI would get stuck.
+2.  **Calling System:** In-app Agora calls were unstable, with calls failing to connect, not ending properly (ghost calls), and feeling unreliable.
+3.  **Live Map Data:** Distance (km) and time (dk) information was missing on the live map.
+4.  **Store Compliance:** The app lacked a real SMS OTP system and an account deletion feature.
+
+**User's Mandated Architectural Direction:**
+Frustrated with the slow polling-based system, the user has explicitly demanded a complete overhaul of the core features to use a backend-centric state machine powered by **Supabase Realtime**. All new development must follow this event-driven pattern for speed and reliability.
+
+**Recent User Frustrations & Requests (High Priority):**
+*   **Fix the Call System (P0):** The user is extremely frustrated that the call system is still broken. They've requested a complete, professional fix that works like WhatsApp/Facebook. This includes:
+    *   Backend-centric lifecycle management using the  table (, , ).
+    *   Supabase Realtime as the single source of truth; no more HTTP polling.
+    *   The End Call button should only trigger a backend update. All cleanup should be handled in response to the Realtime event.
+    *   Proper cleanup of the Agora engine and Supabase subscriptions to prevent ghost calls.
+    *   Preventing users from making repeated calls while another is in progress.
+    *   Video calls are not connecting.
+    *   Limit call duration to 10 minutes before the driver and passenger meet.
+
+*   **Fix the Map Buttons (P0):** The Bitir (End) button on the live map screen was not working, preventing users from completing a trip, which blocked testing.
+
+</original_problem_statement>
 
 **User's preferred language**: Turkish. The next agent MUST respond in Turkish.
 
 **what currently exists?**
-The application is a monolith with a React Native (Expo) frontend () and a FastAPI backend ().
+The application is a monolith with a React Native (Expo) frontend and a FastAPI backend.
 
-In response to persistent performance issues with the HTTP polling-based system, the user mandated a major architectural shift to use **Supabase Realtime**. The agent has created the foundational files for this new architecture but has **NOT yet integrated them** into the application's core logic.
+The **Offer System** has been successfully and completely overhauled. It now uses a hybrid approach for speed: the driver's offer is instantly sent to the backend, which saves it to Supabase and returns a response in under 1 second. The expensive route calculation (OSRM) is then handled asynchronously in a background task on the backend, and the offer record is updated. This has resolved the user's primary complaint about slowness.
 
-- **New Backend Service:**  was created to centralize call logic (start, end, status checks).
-- **New Frontend Hooks:**
-    - : Designed to replace offer polling with a Realtime subscription.
-    - : Designed to replace call status polling with a Realtime subscription to the  table.
-- **New Route Caching Service:**  was created to cache OSRM route calculations.
-
-The existing logic in  still uses  and  for offers and calls, which is the source of the user's frustration.
+The **Calling System** is in a broken and unstable state. The agent attempted to implement a  hook using Supabase Realtime but failed to get it working correctly. In a step backward, the agent **reverted the code to use the old, problematic HTTP polling mechanism** ( calling  every second). This is the source of the ghost calls and instability the user is experiencing. A  hook exists but is effectively disabled or not properly integrated.
 
 **Last working item**:
-    - Last item agent was working: Creating the new files for the Supabase Realtime architecture as explicitly requested by the user (, , ). The goal is to make the offer and call systems instant and reliable. The agent finished by updating  to use Realtime and initiated a new APK build.
-    - Status: **IN PROGRESS** (The foundational files are created, but the critical integration work has not started).
-    - Agent Testing Done: N
-    - Which testing method agent to use? This requires significant code changes, so both backend and frontend testing will be necessary after integration. Start with  for the new backend endpoints, then use the  to verify the UI.
-    - User Testing Done: N
+    - Last item agent was working: The agent was trying to fix the highly unstable Agora voice calling system. The last action was to revert the implementation back to the old, buggy HTTP polling system after failing to stabilize the new Supabase Realtime-based  hook. The agent also found that the  table in Supabase was full of old, unterminated call records, which was contributing to the ghost call issue, and cleared them.
+    - Status: **IN PROGRESS**
+    - Agent Testing Done: N (The agent did manual  tests, but the feature is not working for the user.)
+    - Which testing method agent to use? backend testing agent, then frontend testing agent. Before any test, the  table in the database must be cleared of old records.
+    - User Testing Done: N (User reported it is still broken).
 
 **All Pending/In progress Issue list**:
-  - Issue 1: Integrate the new Supabase Realtime architecture (P0)
-  - Issue 2: Live map data (km/dk) is still not visible for driver or passenger (P0)
-  - Issue 3: App is not ready for App Store / Google Play (P1)
-  - Issue 4: Offer system is perceived as slow and unreliable by the user (P0 - BLOCKED by Issue 1)
-  - Issue 5: Calling system is unstable (P1 - BLOCKED by Issue 1)
+  - Issue 1: The Agora Voice/Video Call system is critically unstable (P0)
+  - Issue 2: Live map data (km/dk) is not visible on offer cards or the live map (P1)
+  - Issue 3: App is not ready for App Store / Google Play (P2)
+  - Issue 4: Video call does not connect, only audio (P1)
 
   Issues Detail:
-  - **Issue 1:** Integrate the new Supabase Realtime architecture (P0)
-     - **Description:** The agent has created the files , , and  but they are not used anywhere in the app. The core logic in  must be refactored to use these new hooks, and  must be updated to use . This is the user's mandated solution to the core problems.
-     - **Attempted fixes:** None. This is the next step.
-     - **Next debug checklist:**
-        1.  **:** Import  and .
-        2.  **:** Remove all  loops related to polling for offers () and incoming calls ().
-        3.  **:** Replace the -based  function with the  function returned by the  hook.
-        4.  **:** Replace all -based call logic (, ) with functions from the  hook.
-        5.  **:** Import functions from  and replace the existing inline logic for starting/ending calls.
-     - **Why fix this issue and what will be achieved with the fix?** This will replace the slow, unreliable HTTP polling with an instant, event-driven system, which should fix the user's main complaints about speed and reliability.
-     - **Status:** NOT STARTED
+  - **Issue 1:** The Agora Voice/Video Call system is critically unstable (P0)
+     - **Attempted fixes:** The agent created a  hook for a Realtime-based approach. This was integrated but caused issues. The agent then **reverted** the implementation back to the old  HTTP polling method, which is the known source of the instability. A client-side lock () was added to prevent spamming the call button, but this is a band-aid. The root issue is architectural.
+     - **Next debug checklist:** The core problem is the reliance on HTTP polling. The next agent must abandon this and fix the Realtime implementation.
+        1.  **Stop the Reversion:** Remove the recently re-added polling logic ( calling ) from .
+        2.  **Properly Integrate :** Re-enable and debug the  hook. Ensure it is the *only* mechanism for handling incoming call state.
+        3.  **Debug :** Add extensive  statements inside the hook to trace the Supabase Realtime events (, ). Why did it fail previously? Is the subscription being created correctly? Is it being cleaned up on unmount or when a call ends?
+        4.  **Backend State Management:** Ensure all call state changes (, , ) in  and  correctly update the  column in the  table to , , or .
+        5.  **Database Hygiene:** Before every test run, execute  in the Supabase SQL Editor to prevent ghost calls from previous failed sessions.
+     - **Why fix this issue and what will be achieved with the fix?** This is a core feature of the application and is currently unusable. Fixing it will unblock further testing and restore user confidence.
+     - **Status:** IN PROGRESS
      - **Is recurring issue?** Y
      - **Should Test frontend/backend/both after fix?** Both
      - **Blocked on other issue:** None
 
-  - **Issue 2:** Live map data (km/dk) is still not visible for driver or passenger (P0)
-     - **Description:** Despite backend fixes to include location data, the user reports that distance and time are not displayed on the  component or on the offer cards.
-     - **Attempted fixes:** The agent updated the backend (, ) to correctly return  and  objects. This was a correct fix, but the UI is still not updating.
+  - **Issue 2:** Live map data (km/dk) is not visible (P1)
+     - **Attempted fixes:** This was part of the original request, but was de-prioritized to fix the offer and call systems. No recent fixes have been attempted.
      - **Next debug checklist:**
-        1.  **:** After integrating , ensure the offer objects received via Realtime contain the , , and  fields.
-        2.  **:** Pass this information as props to the component that renders the offer card (e.g., ).
-        3.  **:** Verify that the  hooks responsible for calculating routes are being triggered. The  prop might still be  or delayed. Log the values of , , , and  inside  to see what data it's receiving.
-     - **Why fix this issue and what will be achieved with the fix?** This provides critical, trust-building information to users during the ride-hailing process.
-     - **Status:** IN PROGRESS
+        1.  Check if the offer objects received by the frontend contain , , etc.
+        2.  Verify in  that these values are being passed as props to the  (for drivers) and  (for passengers).
+        3.  Inspect the  component to ensure it is receiving and displaying the route information.
+     - **Why fix this issue and what will be achieved with the fix?** Provides critical information to users, building trust and improving usability.
+     - **Status:** NOT STARTED
      - **Is recurring issue?** Y
      - **Should Test frontend/backend/both after fix?** Frontend
      - **Blocked on other issue:** None
 
-  - **Issue 3:** App is not ready for App Store / Google Play (P1)
-     - **Description:** The application has critical deficiencies that will lead to store rejection.
-     - **Attempted fixes:** None. The user has deferred these fixes.
-     - **Next debug checklist:**
-        1.  **Real SMS OTP:** Get the  from the user and integrate it into  to replace the hardcoded  OTP.
-        2.  **Account Deletion:** Create a button in the UI and a backend endpoint () that anonymizes or deletes the user's data from all relevant database tables.
-     - **Why fix this issue and what will be achieved with the fix?** To successfully publish the application.
+  - **Issue 3:** App is not ready for App Store / Google Play (P2)
+     - **Description:** The app uses a hardcoded OTP () and lacks an account deletion feature.
      - **Status:** NOT STARTED
      - **Is recurring issue?** N
-     - **Should Test frontend/backend/both after fix?** Both
-     - **Blocked on other issue:** None
+
+   - **Issue 4:** Video call does not connect (P1)
+     - **Description:** User reports that while audio calls sometimes connect, video calls do not work at all.
+     - **Next debug checklist:**
+        1.  Inside , verify that  is being called.
+        2.  Check the  and  to see if the call type ('audio' vs 'video') is being correctly passed when initiating a call.
+     - **Status:** NOT STARTED
+     - **Is recurring issue?** Y
 
 **In progress Task List**:
-- **Task 1:** Refactor Core App to use Supabase Realtime (P0)
-   - **Description:** Implement the user's requested architectural change by integrating the newly created hooks and services for offers and calls.
-   - **Where to resume:** . Begin by removing old polling logic and integrating the  and  hooks.
-   - **What will be achieved with this?** A fast, responsive, and reliable core user experience for offers and calls.
-   - **Status:** IN PROGRESS
-   - **Should Test frontend/backend/both after fix?** Both
-   - **Blocked on something:** None
+  - **Task 1:** Stabilize the Agora Voice/Video Call system (P0)
+     - **Where to resume:**  and . The immediate goal is to completely remove the HTTP polling logic and successfully implement the  hook with Supabase Realtime for a stable, event-driven call experience.
+     - **What will be achieved with this?** A reliable, professional-feeling calling feature without ghost calls or connection issues.
+     - **Status:** IN PROGRESS
 
 **Upcoming and Future Tasks**
 - **Upcoming Tasks:**
-    - **P0: Implement Real SMS OTP:** Integrate NETGSM API to replace the mock OTP.
-    - **P0: Implement In-App Account Deletion:** Create the UI and backend endpoint for users to delete their accounts.
-    - **P1: Implement Rating/Review System:** A core feature for a ride-sharing app.
+    - **P1: Fix Map Data Display:** Ensure distance (km) and time (dk) are visible on all relevant cards and maps.
+    - **P1: Fix Video Call Connection:** Ensure the video stream is enabled and connects properly.
+    - **P2: Implement Real SMS OTP:** Integrate the NETGSM API key (needs to be requested from user) to replace the hardcoded OTP.
+    - **P2: Implement In-App Account Deletion:** Create the UI and backend endpoint for users to delete their accounts.
 - **Future Tasks:**
-    - **P0: Refactor :** Even after the Realtime integration, this file is a >7500-line monolith. It needs to be broken down into smaller components and the new hooks need to be used effectively.
-    - **P1: Implement Online Payment System:** Integrate a provider like Iyzico or Stripe.
+    - **Refactor :** This file is a massive monolith and should be broken down into smaller, manageable components.
 
 **Completed work in this session**
-- **Backend Offer Optimization:** The  endpoint was refactored to remove an artificial 3-minute cooldown and now calculates route distances synchronously, returning them in the initial response. The endpoint itself is confirmed to be fast (<2 seconds).
-- **Backend Location Fix:** Endpoints  and  were fixed to correctly include  and  objects.
-- **Frontend Offer Card Modernization:** The UI for the offer card was updated to a more modern design.
-- **Login Bug Fix:** A crash on login due to a missing  column in the database was resolved by removing the responsible code from the backend.
-- **APK Build Fixes:**
-    - Corrected  to include the , fixing connection errors in new builds.
-    - Created an  file to reduce APK build size.
-- **Architectural Scaffolding for Realtime:** Created but did not integrate the following files based on user's explicit request:
-    - 
-    - 
-    - 
-    - 
+- **Offer System Performance Overhaul:**
+  - The  backend endpoint was refactored to respond in under 1 second by deferring OSRM route calculations to a background task.
+  - The two sequential OSRM calls were parallelized, improving performance even before the background task implementation.
+- **Offer System UI/UX Redesign:**
+  - The driver-side UI was changed to allow entering a price directly on the passenger request card, removing the need for a modal.
+  - A sound effect () was added for incoming offers on the passenger side.
+- **Supabase RLS & Realtime Configuration:**
+  - Created and guided the user to apply correct RLS policies for , , and  tables to allow access from the frontend  key.
+  - Ensured Realtime was enabled for these tables via the  publication.
+- **Bug Fixes:**
+  - Fixed the End Trip () buttons on the map screen by correcting the backend endpoint URL in .
+  - Fixed the Accept Offer and Reject Offer functionality by correcting the API endpoint URL in .
+  - Added a client-side lock () to prevent spamming the call button.
+- **Database Maintenance:**
+  - Identified and cleared numerous stuck call records from the  table that were causing ghost calls.
 
 **Earlier issues found/mentioned but not fixed**
-- All known issues have been captured in the Pending Issues list.
+- The issue of missing distance (km) and time (dk) data on the UI, which was part of the original problem statement, has not been addressed.
 
 **Code Architecture**
-
+backendUrl
 
 **Key Technical Concepts**
-- **Full-Stack Monolith:** All logic is in  and .
-- **Architectural Pivot:** The system is in transition from an inefficient **HTTP Polling** model to an event-driven **Supabase Realtime** model.
-- **Third-Party APIs:** OSRM (routing), Nominatim (geocoding), Agora (calls), Supabase (database & realtime).
-- **State Management:** Currently via  in . The new hooks are a step towards better state management.
+- **Architectural Conflict:** The core of the problem is a battle between an old, unreliable **HTTP Polling** system and a new, user-mandated **Supabase Realtime** event-driven architecture. The offer system has successfully migrated, but the call system has regressed back to polling.
+- **Asynchronous Backend Operations:** The offer system's speed was achieved by moving slow tasks (OSRM route calculation) into background tasks, allowing the API to respond instantly.
+- **Third-Party APIs:** Supabase (DB, Realtime), Agora (Voice/Video), OSRM (Routing).
+- **State Management:** Primarily  and  within the monolithic . The  and  hooks are attempts to create more structured, reusable state logic.
 
 **key DB schema**
-- ****: A new table is implicitly required by  with columns like uid=0(root) gid=0(root) groups=0(root), , ,  ('ringing', 'connected', 'ended'), .
-- No other schema changes were made, but the new architecture relies heavily on realtime subscriptions to the  and  tables.
-
-**changes in tech stack**
-- A major conceptual shift from HTTP Polling to **Supabase Realtime** for core features.
+- ****:  etc. This table's state is the source of truth for all calls. It must be kept clean.
+- ****: The primary table for ride offers.
+- ****: The primary table for passenger ride requests.
 
 **All files of reference**
-- : **CRITICAL**. Must be refactored to use the new hooks.
-- : **CRITICAL**. Must be updated to use .
-- : **NEW**. Contains the logic to fix the slow offer system.
-- : **NEW**. Contains the logic to fix the unstable call system.
-- : **NEW**. Contains the backend logic for the new call system.
-- : Needs debugging for the missing UI data.
-
-**Areas that need refactoring**:
-- ** is the #1 priority.** The immediate task is to replace its polling logic with the new  and  hooks.
-
-**key api endpoints**
-- : Backend is fast, but the frontend interaction is broken. Will be complemented by Realtime.
-- : This polling endpoint should be deprecated in favor of the  Realtime hook.
-- : The existing HTTP endpoints for calls should be replaced by logic in  and state managed by  hook.
+- : **CRITICAL**. Must be edited to remove call polling and properly integrate .
+- : **CRITICAL**. Must be debugged and made fully functional.
+- : Contains the API endpoints for calls. The  endpoint should be deprecated.
+- : Contains the core backend logic for managing call state in the  table.
+- : UI for the call screen.
 
 **Critical Info for New Agent**
-1.  **DO NOT DEBUG THE OLD SYSTEM.** The user is extremely frustrated with the old polling method. Your absolute first priority is to **integrate the new Supabase Realtime architecture**. Do not waste time trying to fix the  or  logic in .
-2.  **Integrate the New Hooks:** Your first coding task is to open  and replace the existing offer and call logic with the newly created  and  hooks.
-3.  **Integrate the New Backend Service:** Your second task is to open  and ensure that the API endpoints for calling are using the functions from the new  file.
-4.  **Verify Map Data After Realtime Integration:** Once the core app is running on the new Realtime architecture, re-test the live map screen. The missing km/dk issue is likely due to props not being passed correctly or components not re-rendering. The data should now be available in the  state.
-5.  **Communicate the Shift:** When you start, confirm with the user that you are implementing the new Realtime architecture they requested. This will build confidence.
-6.  **Deployment Context:** The user is aware that the app only works while you are active because it's in a preview environment. Do not get sidetracked by deployment until the core features are stable and the user requests it.
-
-**documents created in this job**
-- 
-- 
-- 
-- 
-- 
+1.  **PRIORITY #1 IS THE CALLING SYSTEM.** The user is extremely frustrated. Your first and only task is to make calls stable.
+2.  **ABANDON HTTP POLLING FOR CALLS.** The previous agent reverted to  for calls out of desperation. This is the source of the problem. You **MUST** remove it and successfully implement the Supabase Realtime solution using the existing  hook.
+3.  **DATABASE HYGIENE IS CRITICAL.** Before you start testing the call feature, run  in the Supabase SQL Editor. Old, unterminated call records were a major source of ghost calls.
+4.  **The Offer System is FIXED and FAST.** Do not touch the offer logic in , , or the related UI in . The backend's sub-second response time is a major accomplishment of the previous session.
+5.  **Follow the User's Vision:** The user wants a backend-centric, Realtime-powered system. When the End Call button is pressed, it should simply update the call's  to  in the backend. The UI on *both* clients should then react to the Realtime event, cleaning up the Agora engine and UI state.  should not be called directly in the  handler.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1. **User:** The offer takes 3 minutes to be sent. Is there a faster way? (Reports continued slowness).
-2. **User:** While waiting, tell me whats ready and what needs to be done for app store release." (Asks for a status update).
-3. **User:** "Im still having the same problem, the sending button waits. This isnt right." (Expresses extreme frustration with the offer system).
-4. **User:** "What are you doing now?" (Asks for an update).
-5. **User:** "Theres still a problem with the offer. It says sending and waits. This didnt happen before." (Reiterates the core issue).
-6. **User:** "Okay, just look at `backend/route_service.py` and `frontend/hooks/useOffers.ts`. Cache routes on the backend and make the UI update instantly. Dont touch other files. (Provides very specific technical direction for a refactor).
-7. **User:** Okay, Im testing the last APK. What about the sound issues? Lets fix those, then OTP. (Pivots to fixing call stability).
-8. **User:** (Provides a long, detailed architectural plan to fix Agora calls using a backend-centric state machine with Supabase Realtime, specifying a  and ).
-9. **User:** Yes, thats what you need to do. Use Supabase Realtime. And for the voice, do exactly this..." (Reiterates the plan for Realtime for both offers and calls).
-10. **User:** "When youre not online, I get a connection error. (Reports issue with the preview environment).
+1.  **User:** The call system is still broken. It calls, I close it, it calls by itself, it connects late. Fix it properly like WhatsApp/Facebook. Why was it working before but is completely broken now? (P0 - Critical call system failure)
+2.  **User:** Why is the offer system so slow? It should be instant. (Resolved - agent made it <1s)
+3.  **User:** Ok, let's finish for now. The offer is accepted, no problem. Maybe the time issue is my slow internet. Let's move to the voice call system. (User confirms offer system is OK, pivots to calls)
+4.  **User:** I ran the SQL. Is there any other policy I need to give you? (User is helping with DB setup)
+5.  **User:** It gives  error. (User reporting DB error)
+6.  **User:** **NO, do not run those policies!**  will not work. (User correctly identifies a flaw in the agent's proposed RLS policy because the app doesn't use Supabase Auth)
+7.  **User:** I found the problem, RLS is turned off in Supabase. (User is actively debugging)
+8.  **User:** Server not responding error when sending an offer. Fix it. (Resolved)
+9.  **User:** The new APK is installed, I'm getting a server busy, timeout error. Is it because I'm on the free Supabase plan? You spent 500 credits on one offer page and couldn't do it! (User is frustrated and questioning costs/competence)
+10. **User:** I'm getting a connection error, fix this properly. (Resolved, was an outdated Supabase key in an APK)
 
 **Project Health Check:**
 - **Broken:**
-    - The core user experience of sending/receiving offers is broken from the user's perspective, despite backend fixes.
-    - In-app calling is unstable (ghost calls).
-    - Live map data display is not working.
+    - The entire voice/video calling feature is unstable and unusable.
+    - Video stream does not work, only audio (sometimes).
 - **Mocked:**
-    - SMS OTP is hardcoded ().
+    - SMS OTP is hardcoded.
 - **Needs Implementation:**
-    - The new Supabase Realtime architecture is scaffolded but not integrated.
-    - In-app account deletion.
+    - Account Deletion.
+    - Display of distance/time on map/cards.
 
 **3rd Party Integrations**
-- **Supabase (PostgreSQL & Realtime):** Primary database and now the core of the event-driven architecture.
-- **Agora:** For real-time voice/video calls. Known to be unstable in the current implementation.
+- **Supabase:** PostgreSQL DB, Realtime, and Storage.
+- **Agora:** Real-time voice/video calls. (v.  via )
 - **OSRM (Open Source Routing Machine):** Public API for route calculations.
 - **Nominatim (OpenStreetMap):** Public API for geocoding.
-- **NETGSM:** Planned for SMS OTP, not yet integrated. Requires a user-provided API key.
+- **NETGSM:** Planned for SMS OTP, not integrated. Requires a user-provided API key.
 
 **Testing status**
-  - Testing agent used after significant changes: YES, confirmed backend speed-up, but user-facing issues persisted.
-  - Troubleshoot agent used after agent stuck in loop: YES, correctly identified a potential APK URL issue, though the root cause was more complex.
+  - Testing agent used after significant changes: NO (not for the latest, broken changes).
+  - Troubleshoot agent used after agent stuck in loop: NO.
   - Test files created: []
-  - Known regressions: The offer sending process, from a user's perspective, has become slower and less reliable throughout the session, leading to the mandated architectural change.
+  - Known regressions: The voice call system is a major regression. It was somewhat functional before, but recent attempts to refactor it to use Supabase Realtime failed, and the subsequent reversion to polling has made it worse.
 
 **Credentials to test flow:**
-- Any valid Turkish phone number (e.g., ). The OTP is hardcoded to .
-- The admin phone number is .
+- Use any valid Turkish phone number (e.g., ). The OTP is hardcoded to .
 
 **What agent forgot to execute**
-- The most critical oversight was not integrating the new architectural files (, , etc.) after creating them. The agent built and sent APKs that did not contain the new logic, leading to user confusion and frustration as the same problems persisted.
-
+- The agent failed to properly integrate the  hook, leading to a huge amount of wasted time and user frustration. Instead of debugging the Realtime implementation, the agent reverted to the known-bad polling system.
+- The request to display distance/time (km/dk) on the UI, present from the very beginning, was forgotten.
 </analysis>

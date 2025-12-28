@@ -11,7 +11,7 @@ import Constants from 'expo-constants';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://leylek-realtime.preview.emergentagent.com';
+                    'https://leylek-realtime-1.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ujvploftywsxprlzejgc.supabase.co';
