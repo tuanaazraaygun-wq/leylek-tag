@@ -2974,18 +2974,7 @@ function PassengerDashboard({
                     // 🔒 Arama kilidi
                     isCallActiveRef.current = true;
                     
-                    // ⚡ ÖNCE EKRANI AÇ - Arka planda backend'e istek at
-                    setCallScreenData({
-                      mode: 'caller',
-                      callId: '', // Backend'den gelecek
-                      channelName: '', // Backend'den gelecek
-                      agoraToken: '', // Backend'den gelecek
-                      remoteName: driverName,
-                      callType: type
-                    });
-                    setShowCallScreen(true);
-                    
-                    // Backend'e arama isteği gönder
+                    // Backend'e arama isteği gönder - ÖNCE DATA AL
                     try {
                       const response = await fetch(`${API_URL}/voice/start-call`, {
                         method: 'POST',
@@ -3001,13 +2990,11 @@ function PassengerDashboard({
                       
                       if (!data.success) {
                         isCallActiveRef.current = false;
-                        setShowCallScreen(false);
-                        setCallScreenData(null);
                         Alert.alert('Hata', data.detail || 'Arama başlatılamadı');
                         return;
                       }
                       
-                      // Ekran zaten açık, bilgileri güncelle
+                      // ✅ Data geldi, şimdi ekranı aç
                       console.log('📞 YOLCU - Arama başlatıldı:', data.call_id);
                       setCallScreenData({
                         mode: 'caller',
@@ -3017,12 +3004,11 @@ function PassengerDashboard({
                         remoteName: driverName,
                         callType: type
                       });
+                      setShowCallScreen(true);
                       
                     } catch (error) {
                       console.error('Arama hatası:', error);
                       isCallActiveRef.current = false;
-                      setShowCallScreen(false);
-                      setCallScreenData(null);
                       Alert.alert('Hata', 'Bağlantı hatası');
                     }
                   }}
