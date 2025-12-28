@@ -2369,19 +2369,59 @@ function PassengerDashboard({
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
   
-  // Refs for polling (closure problem fix) - YOLCU
-  const passengerCallStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
-  useEffect(() => {
-    passengerCallStateRef.current = { showVoiceCall, showIncomingCall, isCallCaller };
-  }, [showVoiceCall, showIncomingCall, isCallCaller]);
+  // ========== SUPABASE REALTIME - ARAMA YÖNETİMİ ==========
+  // useCall hook'u ile anlık arama güncellemeleri (polling yerine)
+  const {
+    activeCall,
+    incomingCall,
+    callState,
+    startCall: startCallHook,
+    answerCall: answerCallHook,
+    endCall: endCallHook,
+    rejectCall: rejectCallHook
+  } = useCall({
+    userId: user?.id || '',
+    enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'matched' || activeTag?.status === 'in_progress')),
+    onIncomingCall: (call) => {
+      console.log('📞 YOLCU - GELEN ARAMA (Realtime):', call);
+      // Zaten aramadaysam veya gelen arama varsa ignore et
+      if (showVoiceCall || showIncomingCall) return;
+      
+      setIncomingCallInfo({
+        callerName: 'Şoför',
+        callType: call.call_type || 'audio',
+        channelName: call.channel_name,
+        callId: call.id
+      });
+      setShowIncomingCall(true);
+    },
+    onCallEnded: (call) => {
+      console.log('📞 YOLCU - ARAMA BİTTİ (Realtime):', call.end_reason);
+      // Tüm arama state'lerini temizle
+      setShowVoiceCall(false);
+      setShowIncomingCall(false);
+      setIncomingCallInfo(null);
+      setIsCallCaller(false);
+      setActiveChannelName('');
+      setActiveCallId('');
+    },
+    onCallConnected: (call) => {
+      console.log('📞 YOLCU - ARAMA BAĞLANDI (Realtime)');
+    }
+  });
   
-  // Gelen arama polling - YOLCU için
+  // Gelen arama varsa ve modal kapalıysa göster (yedek kontrol)
   useEffect(() => {
-    // Başlangıç kontrolü
-    if (!user?.id || !activeTag) return;
-    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    
-    let isActive = true;
+    if (incomingCall && !showIncomingCall && !showVoiceCall) {
+      setIncomingCallInfo({
+        callerName: 'Şoför',
+        callType: incomingCall.call_type || 'audio',
+        channelName: incomingCall.channel_name,
+        callId: incomingCall.id
+      });
+      setShowIncomingCall(true);
+    }
+  }, [incomingCall, showIncomingCall, showVoiceCall]);
     
     const checkIncomingCall = async () => {
       // Güncel state'leri ref'ten oku (closure fix)
