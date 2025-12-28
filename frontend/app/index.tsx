@@ -4092,9 +4092,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </View>
       </Modal>
 
-      {/* ✅ SimpleCallScreen - Basit ve Çalışan Arama Ekranı - ŞOFÖR */}
+      {/* ✅ CallScreen - Profesyonel Arama Ekranı - ŞOFÖR */}
       {showCallScreen && callScreenData && (
-        <SimpleCallScreen
+        <CallScreen
           visible={showCallScreen}
           mode={callScreenData.mode}
           callId={callScreenData.callId}
@@ -4103,6 +4103,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           userId={user.id}
           remoteName={callScreenData.remoteName}
           callType={callScreenData.callType}
+          apiUrl={API_URL}
           onClose={() => {
             console.log('📞 ŞOFÖR - Arama ekranı kapandı');
             setShowCallScreen(false);
