@@ -263,11 +263,18 @@ export default function SimpleCallScreen({
   useEffect(() => {
     if (!visible) return;
     
+    // ⚠️ callId yoksa henüz bekle (caller modunda backend'den data gelmesi bekleniyor)
+    if (mode === 'caller' && !callId) {
+      console.log('📞 Caller mode - callId bekleniyor...');
+      setStatus('ringing');
+      return;
+    }
+    
     cleanedRef.current = false;
     setDuration(0);
     setRemoteJoined(false);
     
-    console.log(`📞 SimpleCallScreen açıldı - mode: ${mode}`);
+    console.log(`📞 SimpleCallScreen açıldı - mode: ${mode}, callId: ${callId}`);
     
     // Pulse animasyonu
     Animated.loop(
@@ -301,7 +308,7 @@ export default function SimpleCallScreen({
     return () => {
       cleanup();
     };
-  }, [visible]);
+  }, [visible, callId]);
   
   // ===== CONTROLS =====
   const toggleMute = () => {
