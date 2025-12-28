@@ -3222,60 +3222,25 @@ function PassengerDashboard({
         </SafeAreaView>
       </Modal>
 
-      {/* ✅ YENİ: PhoneCallScreen - Profesyonel Arama Ekranı */}
-      {showPhoneCall && phoneCallData && (
-        <PhoneCallScreen
-          visible={showPhoneCall}
-          isCaller={phoneCallData.isCaller}
-          callId={phoneCallData.callId}
-          channelName={phoneCallData.channelName}
+      {/* ✅ SimpleCallScreen - Basit ve Çalışan Arama Ekranı - YOLCU */}
+      {showCallScreen && callScreenData && (
+        <SimpleCallScreen
+          visible={showCallScreen}
+          mode={callScreenData.mode}
+          callId={callScreenData.callId}
+          channelName={callScreenData.channelName}
+          agoraToken={callScreenData.agoraToken}
           userId={user.id}
-          remoteUserName={phoneCallData.remoteUserName}
-          remoteUserId={phoneCallData.remoteUserId}
-          callType={phoneCallData.callType}
-          agoraToken={phoneCallData.agoraToken}
+          remoteName={callScreenData.remoteName}
+          callType={callScreenData.callType}
           onClose={() => {
             console.log('📞 YOLCU - Arama ekranı kapandı');
-            setShowPhoneCall(false);
-            setPhoneCallData(null);
-            isCallActiveRef.current = false;
-          }}
-          onCallEnded={(reason) => {
-            console.log('📞 YOLCU - Arama bitti:', reason);
-            setShowPhoneCall(false);
-            setPhoneCallData(null);
+            setShowCallScreen(false);
+            setCallScreenData(null);
             isCallActiveRef.current = false;
           }}
         />
       )}
-
-      {/* ❌ ESKİ: IncomingCall - Artık kullanılmıyor, PhoneCallScreen ile değiştirildi */}
-      {/* 
-      <IncomingCall
-        visible={showIncomingCall && !showVoiceCall}
-        callerName={incomingCallInfo?.callerName || 'Arayan'}
-        callType={incomingCallInfo?.callType || 'audio'}
-        onAccept={async () => { ... }}
-        onReject={async () => { ... }}
-      />
-      */}
-
-      {/* ❌ ESKİ: VideoCall - Artık kullanılmıyor, PhoneCallScreen ile değiştirildi */}
-      {/*
-      {activeTag && (
-        <VideoCall
-          visible={showVoiceCall}
-          remoteUserName={selectedDriverName}
-          channelName={activeChannelName || incomingCallInfo?.channelName || ''}
-          callId={activeCallId || incomingCallInfo?.callId || ''}
-          userId={user.id}
-          isVideoCall={isVideoCall}
-          isCaller={isCallCaller}
-          onEnd={() => { ... }}
-          onRejected={() => { ... }}
-        />
-      )}
-      */}
 
       {/* Karşılıklı İptal Onay Modalı - YOLCU */}
       <Modal
