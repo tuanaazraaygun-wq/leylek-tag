@@ -3449,7 +3449,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     console.log('🔄 Sürücü polling başlatıldı');
     loadData();
     const interval = setInterval(() => {
-      console.log('🔄 Sürücü data yükleniyor...');
       loadData();
     }, 3000); // Her 3 saniyede bir (arama için polling gerekmiyor artık)
     return () => {
@@ -3457,46 +3456,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       clearInterval(interval);
     };
   }, [user?.id]);
-        
-        // ARAYAN KAPATTI MI KONTROLÜ - IncomingCall açıkken
-        if (hasIncoming && data.success && data.call_cancelled) {
-          console.log('📞 ŞOFÖR - Arayan aramayı kapattı, modal kapatılıyor');
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
-          return;
-        }
-        
-        // Gelen arama yoksa ve modal açıksa kapat (arayan vazgeçti)
-        if (hasIncoming && data.success && !data.has_incoming && !data.call_cancelled) {
-          console.log('📞 ŞOFÖR - Arama artık yok, modal kapatılıyor');
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
-          return;
-        }
-        
-        // Son kontrol - ref'ten güncel değerleri al
-        const currentState = callStateRef.current;
-        if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
-        
-        if (data.success && data.has_incoming && data.call) {
-          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name, 'call_id:', data.call.call_id);
-          setIncomingCallInfo({
-            callerName: data.call.caller_name,
-            callType: data.call.call_type || 'audio',
-            channelName: data.call.channel_name,
-            callId: data.call.call_id
-          });
-          setShowIncomingCall(true);
-        }
-      } catch (error) {
-        // Sessiz kal
-      }
-    };
-    
-    // İlk kontrolü hemen yap
-    checkIncomingCall();
-    // Gelen arama kontrolü - 1 saniyede bir
-    const interval = setInterval(checkIncomingCall, 1000);
+
+  // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
     
     return () => {
       isActive = false;
