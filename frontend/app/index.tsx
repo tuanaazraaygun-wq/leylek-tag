@@ -4170,57 +4170,35 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </View>
       </Modal>
 
-      {/* Gelen Arama Modal - Şoför */}
-      <IncomingCall
-        visible={showIncomingCall && !showVoiceCall}
-        callerName={incomingCallInfo?.callerName || 'Yolcu'}
-        callType={incomingCallInfo?.callType || 'audio'}
-        onAccept={async () => {
-          setShowIncomingCall(false);
-          setSelectedPassengerName(incomingCallInfo?.callerName || 'Yolcu');
-          setIsVideoCall(incomingCallInfo?.callType === 'video');
-          setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
-          // Backend'e kabul bildirimi gönder
-          try {
-            await fetch(`${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
-          } catch (e) {}
-          setShowVoiceCall(true);
-        }}
-        onReject={async () => {
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
-          try {
-            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
-          } catch (e) {}
-        }}
-      />
-
-      {/* Sesli/Görüntülü Arama Modal */}
-      {activeTag && (
-        <VideoCall
-          visible={showVoiceCall}
-          remoteUserName={selectedPassengerName}
-          channelName={activeChannelName || incomingCallInfo?.channelName || ''}
-          callId={activeCallId || incomingCallInfo?.callId || ''}
+      {/* ✅ YENİ: PhoneCallScreen - Profesyonel Arama Ekranı - ŞOFÖR */}
+      {showPhoneCall && phoneCallData && (
+        <PhoneCallScreen
+          visible={showPhoneCall}
+          isCaller={phoneCallData.isCaller}
+          callId={phoneCallData.callId}
+          channelName={phoneCallData.channelName}
           userId={user.id}
-          isVideoCall={isVideoCall}
-          isCaller={isCallCaller}
-          onEnd={() => {
-            setShowVoiceCall(false);
-            setIsVideoCall(false);
-            setIsCallCaller(false);
-            setActiveChannelName('');
-            setActiveCallId('');
+          remoteUserName={phoneCallData.remoteUserName}
+          remoteUserId={phoneCallData.remoteUserId}
+          callType={phoneCallData.callType}
+          agoraToken={phoneCallData.agoraToken}
+          onClose={() => {
+            console.log('📞 ŞOFÖR - Arama ekranı kapandı');
+            setShowPhoneCall(false);
+            setPhoneCallData(null);
+            isCallActiveRef.current = false;
           }}
-          onRejected={() => {
-            setShowVoiceCall(false);
-            setIsVideoCall(false);
-            setIsCallCaller(false);
-            setActiveChannelName('');
-            setActiveCallId('');
+          onCallEnded={(reason) => {
+            console.log('📞 ŞOFÖR - Arama bitti:', reason);
+            setShowPhoneCall(false);
+            setPhoneCallData(null);
+            isCallActiveRef.current = false;
           }}
         />
       )}
+
+      {/* ❌ ESKİ: IncomingCall ve VideoCall - Artık kullanılmıyor */}
+      {/* ... yorum olarak tutuldu ... */}
 
       {/* Karşılıklı İptal Onay Modalı - ŞOFÖR */}
       <Modal
