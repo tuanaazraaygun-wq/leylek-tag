@@ -4062,35 +4062,25 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </View>
       </Modal>
 
-      {/* ✅ YENİ: PhoneCallScreen - Profesyonel Arama Ekranı - ŞOFÖR */}
-      {showPhoneCall && phoneCallData && (
-        <PhoneCallScreen
-          visible={showPhoneCall}
-          isCaller={phoneCallData.isCaller}
-          callId={phoneCallData.callId}
-          channelName={phoneCallData.channelName}
+      {/* ✅ SimpleCallScreen - Basit ve Çalışan Arama Ekranı - ŞOFÖR */}
+      {showCallScreen && callScreenData && (
+        <SimpleCallScreen
+          visible={showCallScreen}
+          mode={callScreenData.mode}
+          callId={callScreenData.callId}
+          channelName={callScreenData.channelName}
+          agoraToken={callScreenData.agoraToken}
           userId={user.id}
-          remoteUserName={phoneCallData.remoteUserName}
-          remoteUserId={phoneCallData.remoteUserId}
-          callType={phoneCallData.callType}
-          agoraToken={phoneCallData.agoraToken}
+          remoteName={callScreenData.remoteName}
+          callType={callScreenData.callType}
           onClose={() => {
             console.log('📞 ŞOFÖR - Arama ekranı kapandı');
-            setShowPhoneCall(false);
-            setPhoneCallData(null);
-            isCallActiveRef.current = false;
-          }}
-          onCallEnded={(reason) => {
-            console.log('📞 ŞOFÖR - Arama bitti:', reason);
-            setShowPhoneCall(false);
-            setPhoneCallData(null);
+            setShowCallScreen(false);
+            setCallScreenData(null);
             isCallActiveRef.current = false;
           }}
         />
       )}
-
-      {/* ❌ ESKİ: IncomingCall ve VideoCall - Artık kullanılmıyor */}
-      {/* ... yorum olarak tutuldu ... */}
 
       {/* Karşılıklı İptal Onay Modalı - ŞOFÖR */}
       <Modal
