@@ -2354,90 +2354,66 @@ function PassengerDashboard({
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
-  // ==================== YENİ ARAMA SİSTEMİ - YOLCU ====================
-  // PhoneCallScreen için state'ler
-  const [showPhoneCall, setShowPhoneCall] = useState(false);
-  const [phoneCallData, setPhoneCallData] = useState<{
-    isCaller: boolean;
+  // ==================== BASİT ARAMA SİSTEMİ - YOLCU ====================
+  const [showCallScreen, setShowCallScreen] = useState(false);
+  const [callScreenData, setCallScreenData] = useState<{
+    mode: 'caller' | 'receiver';
     callId: string;
     channelName: string;
-    remoteUserName: string;
-    remoteUserId: string;
+    agoraToken: string;
+    remoteName: string;
     callType: 'audio' | 'video';
-    agoraToken?: string;
   } | null>(null);
   
-  // Eski state'ler (geriye uyumluluk için - kaldırılabilir)
-  const [showVoiceCall, setShowVoiceCall] = useState(false);
-  const [isVideoCall, setIsVideoCall] = useState(false);
-  const [selectedDriverName, setSelectedDriverName] = useState('');
-  const [isCallCaller, setIsCallCaller] = useState(false);
-  const [activeChannelName, setActiveChannelName] = useState('');
-  const [activeCallId, setActiveCallId] = useState('');
-  const [showIncomingCall, setShowIncomingCall] = useState(false);
-  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
+  // Arama kilidi
+  const isCallActiveRef = useRef(false);
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
   
-  // Arama kilidi - aynı anda birden fazla arama açılmasın
-  const isCallActiveRef = useRef(false);
-  
-  // ==================== SUPABASE REALTIME İLE GELEN ARAMA KONTROLÜ - YOLCU ====================
+  // ==================== GELEN ARAMA KONTROLÜ - YOLCU (Polling) ====================
   useEffect(() => {
     if (!user?.id || !activeTag) return;
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    if (isCallActiveRef.current) return; // Zaten aramada
+    if (isCallActiveRef.current || showCallScreen) return;
     
-    console.log('📡 YOLCU: Supabase Realtime gelen arama dinleniyor...');
+    let active = true;
     
-    const { createClient } = require('@supabase/supabase-js');
-    const supabase = createClient(
-      'https://ujvploftywsxprlzejgc.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k'
-    );
-    
-    const channel = supabase
-      .channel(`incoming_calls_passenger_${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'calls',
-          filter: `receiver_id=eq.${user.id}`
-        },
-        async (payload: any) => {
-          const call = payload.new;
-          if (!call || call.status !== 'ringing') return;
-          if (isCallActiveRef.current) return; // Zaten aramada
+    const checkIncoming = async () => {
+      if (!active || isCallActiveRef.current || showCallScreen) return;
+      
+      try {
+        const res = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+        if (!res.ok || !active) return;
+        
+        const data = await res.json();
+        
+        if (data.success && data.has_incoming && data.call) {
+          console.log('📞 YOLCU - GELEN ARAMA:', data.call.caller_name);
           
-          console.log('📞 YOLCU - GELEN ARAMA (Realtime):', call.call_id);
-          
-          // Arayan bilgisini al
-          let callerName = 'Sürücü';
-          try {
-            const res = await fetch(`${API_URL}/user/${call.caller_id}`);
-            const userData = await res.json();
-            if (userData.name) callerName = userData.name;
-          } catch (e) {}
-          
-          // Arama ekranını aç - GELEN ARAMA
           isCallActiveRef.current = true;
-          setPhoneCallData({
-            isCaller: false, // Aranan taraf
-            callId: call.call_id,
-            channelName: call.channel_name,
-            remoteUserName: callerName,
-            remoteUserId: call.caller_id,
-            callType: call.call_type || 'audio',
-            agoraToken: call.agora_token
+          setCallScreenData({
+            mode: 'receiver',
+            callId: data.call.call_id,
+            channelName: data.call.channel_name,
+            agoraToken: data.call.agora_token || '',
+            remoteName: data.call.caller_name || 'Sürücü',
+            callType: data.call.call_type || 'audio'
           });
-          setShowPhoneCall(true);
+          setShowCallScreen(true);
         }
-      )
-      .subscribe((status: string) => {
+      } catch (e) {}
+    };
+    
+    checkIncoming();
+    const interval = setInterval(checkIncoming, 1000);
+    
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
         console.log('📡 YOLCU Realtime status:', status);
       });
     
