@@ -2914,7 +2914,7 @@ function PassengerDashboard({
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // 🔒 LOCK: Zaten arama aktifse engelle
-                    if (showPhoneCall || isCallActiveRef.current) {
+                    if (showCallScreen || isCallActiveRef.current) {
                       console.log('⚠️ Arama zaten aktif, yeni arama engellendi');
                       Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
                       return;
