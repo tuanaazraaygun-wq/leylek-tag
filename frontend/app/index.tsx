@@ -10,7 +10,7 @@ import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
-import PhoneCallScreen from '../components/PhoneCallScreen';
+import SimpleCallScreen from '../components/SimpleCallScreen';
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
