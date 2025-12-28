@@ -3139,19 +3139,6 @@ function PassengerDashboard({
                       Alert.alert('Hata', 'İşlem başarısız');
                     }
                   }}
-                  onRequestTripEnd={async () => {
-                    // Karşı taraftan onay iste
-                    try {
-                      const response = await fetch(
-                        `${API_URL}/trip/request-end?tag_id=${activeTag.id}&user_id=${user.id}`,
-                        { method: 'POST' }
-                      );
-                      const data = await response.json();
-                      Alert.alert('📩 İstek Gönderildi', 'Şoförden onay bekleniyor...');
-                    } catch (error) {
-                      Alert.alert('Hata', 'İstek gönderilemedi');
-                    }
-                  }}
                 />
               </View>
             ) : null}
