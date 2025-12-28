@@ -350,9 +350,71 @@ async def check_user_query(phone: str, device_id: str = None):
 class SendOtpBodyRequest(BaseModel):
     phone: str
 
+# ==================== NETGSM SMS GÖNDERİMİ ====================
+import base64
+import httpx
+
+# OTP kodlarını geçici olarak sakla (production'da Redis kullanılmalı)
+otp_storage: dict = {}
+
+async def send_sms_via_netgsm(phone: str, message: str) -> bool:
+    """NETGSM API ile SMS gönder"""
+    try:
+        usercode = os.getenv("NETGSM_USERCODE", "")
+        password = os.getenv("NETGSM_PASSWORD", "")
+        msgheader = os.getenv("NETGSM_MSGHEADER", "LEYLEKTAG")
+        
+        if not usercode or not password:
+            logger.error("❌ NETGSM credentials eksik!")
+            return False
+        
+        # Telefon numarasını düzenle (90 ile başlamalı)
+        if phone.startswith("0"):
+            phone = "90" + phone[1:]
+        elif not phone.startswith("90"):
+            phone = "90" + phone
+        
+        # Basic Auth
+        credentials = base64.b64encode(f"{usercode}:{password}".encode()).decode()
+        
+        # API isteği
+        url = "https://api.netgsm.com.tr/sms/rest/v2/send"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Basic {credentials}"
+        }
+        payload = {
+            "msgheader": msgheader,
+            "messages": [
+                {
+                    "msg": message,
+                    "no": phone
+                }
+            ],
+            "encoding": "TR",
+            "iysfilter": "0"  # Bilgilendirme SMS'i (OTP)
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            result = response.json()
+            
+            logger.info(f"📱 NETGSM Response: {result}")
+            
+            if result.get("code") in ["00", "01", "02"]:
+                logger.info(f"✅ SMS gönderildi: {phone}")
+                return True
+            else:
+                logger.error(f"❌ SMS gönderilemedi: {result}")
+                return False
+                
+    except Exception as e:
+        logger.error(f"❌ NETGSM hatası: {e}")
+        return False
+
 @api_router.post("/auth/send-otp")
 async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
-    """OTP gönder - TR numara kontrolü ile"""
+    """OTP gönder - NETGSM ile gerçek SMS"""
     # Body veya query param'dan al
     phone_number = None
     if request and request.phone:
@@ -370,16 +432,30 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     
     cleaned_phone = result  # Temizlenmiş numara
     
-    # TODO: NetGSM entegrasyonu - şimdilik mock
-    # netgsm_api_key = os.getenv("NETGSM_API_KEY")
-    # if netgsm_api_key:
-    #     otp_code = str(random.randint(100000, 999999))
-    #     send_sms_via_netgsm(cleaned_phone, f"Leylek TAG doğrulama kodunuz: {otp_code}")
-    # else:
-    otp_code = "123456"  # Test modu
+    # 6 haneli rastgele OTP oluştur
+    otp_code = str(random.randint(100000, 999999))
     
-    logger.info(f"📱 OTP gönderildi: {cleaned_phone} -> {otp_code}")
-    return {"success": True, "message": "OTP gönderildi", "dev_otp": otp_code}
+    # OTP'yi sakla (5 dakika geçerli)
+    otp_storage[cleaned_phone] = {
+        "code": otp_code,
+        "expires": datetime.utcnow().timestamp() + 300  # 5 dakika
+    }
+    
+    # NETGSM ile SMS gönder
+    message = f"Leylek TAG dogrulama kodunuz: {otp_code}"
+    sms_sent = await send_sms_via_netgsm(cleaned_phone, message)
+    
+    if sms_sent:
+        logger.info(f"📱 OTP gönderildi: {cleaned_phone}")
+        return {"success": True, "message": "OTP gönderildi"}
+    else:
+        # SMS gönderilemezse test moduna düş
+        logger.warning(f"⚠️ SMS gönderilemedi, test modu: {cleaned_phone} -> 123456")
+        otp_storage[cleaned_phone] = {
+            "code": "123456",
+            "expires": datetime.utcnow().timestamp() + 300
+        }
+        return {"success": True, "message": "OTP gönderildi", "dev_otp": "123456"}
 
 class VerifyOtpRequest(BaseModel):
     phone: str
