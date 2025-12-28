@@ -3763,14 +3763,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               // 🔒 Arama kilidi kontrol
-              if (isCallActiveRef.current || showPhoneCall) {
+              if (isCallActiveRef.current || showCallScreen) {
                 Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
                 return;
               }
               
               isCallActiveRef.current = true;
               const passengerName = activeTag.passenger_name || 'Yolcu';
-              const passengerId = activeTag.passenger_id || '';
+              
+              // ⚡ ÖNCE EKRANI AÇ - Arka planda backend'e istek at
+              setCallScreenData({
+                mode: 'caller',
+                callId: '',
+                channelName: '',
+                agoraToken: '',
+                remoteName: passengerName,
+                callType: type
+              });
+              setShowCallScreen(true);
               
               try {
                 const response = await fetch(`${API_URL}/voice/start-call`, {
@@ -3784,20 +3794,25 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   })
                 });
                 const data = await response.json();
+                
                 if (!data.success) {
                   isCallActiveRef.current = false;
-                  Alert.alert('Arama Başlatılamadı', data.detail || 'Lütfen tekrar deneyin');
+                  setShowCallScreen(false);
+                  setCallScreenData(null);
+                  Alert.alert('Hata', data.detail || 'Arama başlatılamadı');
                   return;
                 }
                 
-                // ✅ YENİ: PhoneCallScreen'i aç - ANINDA
+                // Ekran zaten açık, bilgileri güncelle
                 console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
-                setPhoneCallData({
-                  isCaller: true,
+                setCallScreenData({
+                  mode: 'caller',
                   callId: data.call_id,
                   channelName: data.channel_name,
-                  remoteUserName: passengerName,
-                  remoteUserId: passengerId,
+                  agoraToken: data.agora_token || '',
+                  remoteName: passengerName,
+                  callType: type
+                });
                   callType: type,
                   agoraToken: data.agora_token
                 });
