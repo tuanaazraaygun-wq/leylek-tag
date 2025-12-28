@@ -3635,17 +3635,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [offerPrice, setOfferPrice] = useState('');
   const [offerSent, setOfferSent] = useState(false); // Teklif gönderildi mi?
 
-  // ANINDA TEKLİF GÖNDER - Supabase Direkt INSERT
+  // ANINDA TEKLİF GÖNDER - Backend API
   const sendOfferInstant = async (tagId: string, price: number): Promise<boolean> => {
     if (!user?.id || !tagId || price < 10) return false;
     
-    console.log('🚀 ANINDA TEKLİF GÖNDERİLİYOR:', price, '₺');
+    console.log('🚀 TEKLİF GÖNDERİLİYOR:', price, '₺', 'TAG:', tagId);
     
     try {
-      // Backend API'ye gönder (timeout: 30 saniye - mobil internet için)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3654,16 +3650,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           price: price,
           latitude: userLocation?.latitude || 0,
           longitude: userLocation?.longitude || 0
-        }),
-        signal: controller.signal
+        })
       });
       
-      clearTimeout(timeoutId);
       const data = await response.json();
+      console.log('📥 BACKEND YANITI:', JSON.stringify(data));
       
       if (data.success || data.offer_id) {
         console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
-        // Talebi listeden kaldır
         setRequests(prev => prev.filter(r => r.id !== tagId));
         return true;
       } else {
@@ -3671,12 +3665,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         return false;
       }
     } catch (error: any) {
-      if (error.name === 'AbortError') {
-        Alert.alert('Zaman Aşımı', 'Sunucu meşgul. Lütfen tekrar deneyin.');
-      } else {
-        console.error('Send offer error:', error);
-        Alert.alert('Hata', 'Bağlantı hatası');
-      }
+      console.error('❌ TEKLİF HATASI:', error.message || error);
+      Alert.alert('Bağlantı Hatası', 'İnternet bağlantınızı kontrol edin');
       return false;
     }
   };
