@@ -3430,56 +3430,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
   
-  // ========== SUPABASE REALTIME - ARAMA YÖNETİMİ (ŞOFÖR) ==========
-  const {
-    activeCall: driverActiveCall,
-    incomingCall: driverIncomingCall,
-    callState: driverCallState,
-    startCall: startCallHookDriver,
-    answerCall: answerCallHookDriver,
-    endCall: endCallHookDriver,
-    rejectCall: rejectCallHookDriver
-  } = useCall({
-    userId: user?.id || '',
-    enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'matched' || activeTag?.status === 'in_progress')),
-    onIncomingCall: (call) => {
-      console.log('📞 ŞOFÖR - GELEN ARAMA (Realtime):', call);
-      if (showVoiceCall || showIncomingCall) return;
-      
-      setIncomingCallInfo({
-        callerName: 'Yolcu',
-        callType: call.call_type || 'audio',
-        channelName: call.channel_name,
-        callId: call.id
-      });
-      setShowIncomingCall(true);
-    },
-    onCallEnded: (call) => {
-      console.log('📞 ŞOFÖR - ARAMA BİTTİ (Realtime):', call.end_reason);
-      setShowVoiceCall(false);
-      setShowIncomingCall(false);
-      setIncomingCallInfo(null);
-      setIsCallCaller(false);
-      setActiveChannelName('');
-      setActiveCallId('');
-    },
-    onCallConnected: (call) => {
-      console.log('📞 ŞOFÖR - ARAMA BAĞLANDI (Realtime)');
-    }
-  });
-  
-  // Gelen arama varsa ve modal kapalıysa göster (yedek kontrol)
+  // Refs for polling (closure problem fix) - ŞOFÖR
+  const driverCallStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
   useEffect(() => {
-    if (driverIncomingCall && !showIncomingCall && !showVoiceCall) {
-      setIncomingCallInfo({
-        callerName: 'Yolcu',
-        callType: driverIncomingCall.call_type || 'audio',
-        channelName: driverIncomingCall.channel_name,
-        callId: driverIncomingCall.id
-      });
-      setShowIncomingCall(true);
-    }
-  }, [driverIncomingCall, showIncomingCall, showVoiceCall]);
+    driverCallStateRef.current = { showVoiceCall, showIncomingCall, isCallCaller };
+  }, [showVoiceCall, showIncomingCall, isCallCaller]);
   
   // Animation
   const buttonPulse = useRef(new Animated.Value(1)).current;
@@ -3489,12 +3444,67 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     loadData();
     const interval = setInterval(() => {
       loadData();
-    }, 3000); // Her 3 saniyede bir (arama için polling gerekmiyor artık)
+    }, 3000);
     return () => {
       console.log('🔄 Sürücü polling durduruldu');
       clearInterval(interval);
     };
   }, [user?.id]);
+  
+  // Gelen arama polling - ŞOFÖR için (ESKİ ÇALIŞAN SİSTEM)
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+    
+    let isActive = true;
+    
+    const checkIncomingCall = async () => {
+      const { showVoiceCall: inCall, showIncomingCall: hasIncoming, isCallCaller: isCaller } = driverCallStateRef.current;
+      if (!isActive || inCall || isCaller) return;
+      
+      try {
+        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+        if (!isActive || !response.ok) return;
+        
+        const text = await response.text();
+        if (!text || text.trim() === '') return;
+        
+        const data = JSON.parse(text);
+        
+        // Arayan kapattı mı?
+        if (hasIncoming && data.success && (data.call_cancelled || !data.has_incoming)) {
+          console.log('📞 ŞOFÖR - Arama iptal/bitti');
+          setShowIncomingCall(false);
+          setIncomingCallInfo(null);
+          return;
+        }
+        
+        const currentState = driverCallStateRef.current;
+        if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
+        
+        if (data.success && data.has_incoming && data.call) {
+          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
+          setIncomingCallInfo({
+            callerName: data.call.caller_name,
+            callType: data.call.call_type || 'audio',
+            channelName: data.call.channel_name,
+            callId: data.call.call_id
+          });
+          setShowIncomingCall(true);
+        }
+      } catch (error) {
+        // Sessiz
+      }
+    };
+    
+    checkIncomingCall();
+    const interval = setInterval(checkIncomingCall, 1500);
+    
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [user?.id, activeTag?.id, activeTag?.status]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
