@@ -3813,17 +3813,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               isCallActiveRef.current = true;
               const passengerName = activeTag.passenger_name || 'Yolcu';
               
-              // ⚡ ÖNCE EKRANI AÇ - Arka planda backend'e istek at
-              setCallScreenData({
-                mode: 'caller',
-                callId: '',
-                channelName: '',
-                agoraToken: '',
-                remoteName: passengerName,
-                callType: type
-              });
-              setShowCallScreen(true);
-              
+              // Backend'e arama isteği gönder - ÖNCE DATA AL
               try {
                 const response = await fetch(`${API_URL}/voice/start-call`, {
                   method: 'POST',
@@ -3839,13 +3829,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 
                 if (!data.success) {
                   isCallActiveRef.current = false;
-                  setShowCallScreen(false);
-                  setCallScreenData(null);
                   Alert.alert('Hata', data.detail || 'Arama başlatılamadı');
                   return;
                 }
                 
-                // Ekran zaten açık, bilgileri güncelle
+                // ✅ Data geldi, şimdi ekranı aç
                 console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
                 setCallScreenData({
                   mode: 'caller',
@@ -3855,12 +3843,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   remoteName: passengerName,
                   callType: type
                 });
+                setShowCallScreen(true);
                 
               } catch (error) {
                 console.error('Arama hatası:', error);
                 isCallActiveRef.current = false;
-                setShowCallScreen(false);
-                setCallScreenData(null);
                 Alert.alert('Hata', 'Bağlantı hatası');
               }
             }}
