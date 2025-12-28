@@ -226,13 +226,50 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Voice/Video Call Synchronization"
-    - "Map UI Improvements"
-    - "Distance/Time Display"
+    - "Professional Phone Call System"
+    - "Supabase Realtime for Calls"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
+agent_communication:
+  - agent: "main"
+    message: |
+      ## 📞 YENİ PROFESYONEL ARAMA SİSTEMİ - Aralık 2024
+      
+      ### YAPILAN BÜYÜK DEĞİŞİKLİKLER:
+      
+      #### 1. PhoneCallScreen.tsx - Yeni Bileşen
+      - ✅ Gerçek telefon gibi çalışan profesyonel arama ekranı oluşturuldu
+      - ✅ Tuşa basınca ANINDA "Aranıyor..." ekranı açılıyor
+      - ✅ 7 kez çalma sesi (21 saniye timeout)
+      - ✅ "Kullanıcı cevap vermiyor" / "Kullanıcı meşgul" durumları
+      - ✅ Supabase Realtime ile anlık senkronizasyon
+      - ✅ Bir taraf kapattığında diğer taraf da otomatik kapanıyor
+      
+      #### 2. HTTP Polling KALDIRILDI
+      - ❌ Eski `setInterval` + `checkIncomingCall` polling kaldırıldı
+      - ✅ Supabase Realtime ile gelen arama dinleniyor
+      - ✅ Ghost call problemi çözüldü
+      
+      #### 3. Entegre Edilen Dosyalar
+      - /app/frontend/components/PhoneCallScreen.tsx (YENİ)
+      - /app/frontend/app/index.tsx (Yolcu + Şoför tarafları güncellendi)
+      
+      ### TEST ÖNCESİ YAPILMASI GEREKENLER:
+      ⚠️ Supabase SQL Editor'da çalıştırın:
+      ```sql
+      DELETE FROM calls;
+      ```
+      Bu, eski kalan "ghost call" kayıtlarını temizler.
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. Yolcu -> Şoför arama başlatsın (Sesli buton)
+      2. Arama ekranı ANINDA açılmalı
+      3. "Aranıyor..." + çalma sayısı gösterilmeli
+      4. Şoför tarafında "Gelen Arama" ekranı açılmalı
+      5. Kabul edilince bağlantı kurulmalı
+      6. Bir taraf kapattığında ikisi de kapanmalı
 
   - agent: "main"
     message: |
