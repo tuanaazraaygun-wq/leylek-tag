@@ -3330,28 +3330,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
-  // Arama state'leri (sesli ve görüntülü)
-  const [showVoiceCall, setShowVoiceCall] = useState(false);
-  const [isVideoCall, setIsVideoCall] = useState(false);
-  const [selectedPassengerName, setSelectedPassengerName] = useState('');
-  const [isCallCaller, setIsCallCaller] = useState(false); // BEN Mİ ARIYORUM?
-  const [activeChannelName, setActiveChannelName] = useState(''); // ARAMA KANAL ADI
-  const [activeCallId, setActiveCallId] = useState(''); // ARAMA ID
-  
-  // Gelen arama state'leri
-  const [showIncomingCall, setShowIncomingCall] = useState(false);
-  const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
-  
-  // ==================== YENİ ARAMA SİSTEMİ - ŞOFÖR ====================
-  const [showPhoneCall, setShowPhoneCall] = useState(false);
-  const [phoneCallData, setPhoneCallData] = useState<{
-    isCaller: boolean;
+  // ==================== BASİT ARAMA SİSTEMİ - ŞOFÖR ====================
+  const [showCallScreen, setShowCallScreen] = useState(false);
+  const [callScreenData, setCallScreenData] = useState<{
+    mode: 'caller' | 'receiver';
     callId: string;
     channelName: string;
-    remoteUserName: string;
-    remoteUserId: string;
+    agoraToken: string;
+    remoteName: string;
     callType: 'audio' | 'video';
-    agoraToken?: string;
   } | null>(null);
   
   // Arama kilidi
