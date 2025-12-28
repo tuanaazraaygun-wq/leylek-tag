@@ -2944,20 +2944,17 @@ function PassengerDashboard({
                   price={activeTag?.final_price}
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
-                    // 🔒 LOCK: Zaten arama aktifse veya gelen arama varsa engelle
-                    if (showVoiceCall || showIncomingCall || isCallCaller) {
+                    // 🔒 LOCK: Zaten arama aktifse engelle
+                    if (showPhoneCall || isCallActiveRef.current) {
                       console.log('⚠️ Arama zaten aktif, yeni arama engellendi');
+                      Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
                       return;
                     }
                     
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     const driverId = activeTag?.driver_id || '';
                     
-                    // 🔒 Arama kilidi kontrol
-                    if (isCallActiveRef.current) {
-                      Alert.alert('Uyarı', 'Zaten bir aramada');
-                      return;
-                    }
+                    // 🔒 Arama kilidi
                     isCallActiveRef.current = true;
                     
                     try {
