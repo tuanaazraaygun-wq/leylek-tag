@@ -3130,6 +3130,38 @@ function PassengerDashboard({
                       Alert.alert('Hata', 'İşlem başarısız');
                     }
                   }}
+                  onComplete={async () => {
+                    // Yolculuğu normal bitir
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/complete?tag_id=${activeTag.id}&user_id=${user.id}`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        Alert.alert('✅ Yolculuk Tamamlandı', 'İyi yolculuklar!');
+                        setActiveTag(null);
+                        loadActiveTag();
+                      } else {
+                        Alert.alert('Hata', data.detail || 'İşlem başarısız');
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İşlem başarısız');
+                    }
+                  }}
+                  onRequestTripEnd={async () => {
+                    // Karşı taraftan onay iste
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/request-end?tag_id=${activeTag.id}&user_id=${user.id}`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      Alert.alert('📩 İstek Gönderildi', 'Şoförden onay bekleniyor...');
+                    } catch (error) {
+                      Alert.alert('Hata', 'İstek gönderilemedi');
+                    }
+                  }}
                 />
               </View>
             ) : null}
