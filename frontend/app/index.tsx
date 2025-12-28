@@ -3370,48 +3370,55 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     };
   }, [user?.id]);
   
-  // ==================== GELEN ARAMA KONTROLÜ - ŞOFÖR (Polling) ====================
+  // ==================== GELEN ARAMA - ŞOFÖR (Supabase Realtime) ====================
   useEffect(() => {
     if (!user?.id || !activeTag) return;
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    if (isCallActiveRef.current || showCallScreen) return;
     
-    let active = true;
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      'https://ujvploftywsxprlzejgc.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k'
+    );
     
-    const checkIncoming = async () => {
-      if (!active || isCallActiveRef.current || showCallScreen) return;
-      
-      try {
-        const res = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-        if (!res.ok || !active) return;
-        
-        const data = await res.json();
-        
-        if (data.success && data.has_incoming && data.call) {
-          console.log('📞 ŞOFÖR - GELEN ARAMA:', data.call.caller_name);
+    console.log('📡 ŞOFÖR: Realtime gelen arama dinleniyor...');
+    
+    const channel = supabase
+      .channel(`driver_calls_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'calls',
+          filter: `receiver_id=eq.${user.id}`
+        },
+        async (payload: any) => {
+          const call = payload.new;
+          if (!call || call.status !== 'ringing') return;
+          if (isCallActiveRef.current || showCallScreen) return;
+          
+          console.log('📞 ŞOFÖR - GELEN ARAMA (Realtime):', call.call_id);
           
           isCallActiveRef.current = true;
           setCallScreenData({
             mode: 'receiver',
-            callId: data.call.call_id,
-            channelName: data.call.channel_name,
-            agoraToken: data.call.agora_token || '',
-            remoteName: data.call.caller_name || 'Yolcu',
-            callType: data.call.call_type || 'audio'
+            callId: call.call_id,
+            channelName: call.channel_name,
+            agoraToken: call.agora_token || '',
+            remoteName: call.caller_name || 'Yolcu',
+            callType: call.call_type || 'audio'
           });
           setShowCallScreen(true);
         }
-      } catch (e) {}
-    };
-    
-    checkIncoming();
-    const interval = setInterval(checkIncoming, 1000);
+      )
+      .subscribe();
     
     return () => {
-      active = false;
-      clearInterval(interval);
+      console.log('📡 ŞOFÖR: Realtime cleanup');
+      supabase.removeChannel(channel);
     };
-  }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
+  }, [user?.id, activeTag?.id, activeTag?.status]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
