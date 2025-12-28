@@ -3430,15 +3430,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [showIncomingCall, setShowIncomingCall] = useState(false);
   const [incomingCallInfo, setIncomingCallInfo] = useState<{callerName: string, callType: 'audio' | 'video', channelName: string, callId?: string} | null>(null);
   
+  // ==================== YENİ ARAMA SİSTEMİ - ŞOFÖR ====================
+  const [showPhoneCall, setShowPhoneCall] = useState(false);
+  const [phoneCallData, setPhoneCallData] = useState<{
+    isCaller: boolean;
+    callId: string;
+    channelName: string;
+    remoteUserName: string;
+    remoteUserId: string;
+    callType: 'audio' | 'video';
+    agoraToken?: string;
+  } | null>(null);
+  
+  // Arama kilidi
+  const isCallActiveRef = useRef(false);
+  
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
-  
-  // Refs for polling (closure problem fix) - ŞOFÖR
-  const driverCallStateRef = useRef({ showVoiceCall: false, showIncomingCall: false, isCallCaller: false });
-  useEffect(() => {
-    driverCallStateRef.current = { showVoiceCall, showIncomingCall, isCallCaller };
-  }, [showVoiceCall, showIncomingCall, isCallCaller]);
   
   // Animation
   const buttonPulse = useRef(new Animated.Value(1)).current;
@@ -3455,58 +3464,65 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     };
   }, [user?.id]);
   
-  // Gelen arama polling - ŞOFÖR için (ESKİ ÇALIŞAN SİSTEM)
+  // ==================== SUPABASE REALTIME İLE GELEN ARAMA KONTROLÜ - ŞOFÖR ====================
   useEffect(() => {
     if (!user?.id || !activeTag) return;
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+    if (isCallActiveRef.current) return;
     
-    let isActive = true;
+    console.log('📡 ŞOFÖR: Supabase Realtime gelen arama dinleniyor...');
     
-    const checkIncomingCall = async () => {
-      const { showVoiceCall: inCall, showIncomingCall: hasIncoming, isCallCaller: isCaller } = driverCallStateRef.current;
-      if (!isActive || inCall || isCaller) return;
-      
-      try {
-        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-        if (!isActive || !response.ok) return;
-        
-        const text = await response.text();
-        if (!text || text.trim() === '') return;
-        
-        const data = JSON.parse(text);
-        
-        // Arayan kapattı mı?
-        if (hasIncoming && data.success && (data.call_cancelled || !data.has_incoming)) {
-          console.log('📞 ŞOFÖR - Arama iptal/bitti');
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
-          return;
-        }
-        
-        const currentState = driverCallStateRef.current;
-        if (!isActive || currentState.showVoiceCall || currentState.showIncomingCall) return;
-        
-        if (data.success && data.has_incoming && data.call) {
-          console.log('📞 ŞOFÖR - GELEN ARAMA!', data.call.caller_name);
-          setIncomingCallInfo({
-            callerName: data.call.caller_name,
-            callType: data.call.call_type || 'audio',
-            channelName: data.call.channel_name,
-            callId: data.call.call_id
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      'https://ujvploftywsxprlzejgc.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k'
+    );
+    
+    const channel = supabase
+      .channel(`incoming_calls_driver_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'calls',
+          filter: `receiver_id=eq.${user.id}`
+        },
+        async (payload: any) => {
+          const call = payload.new;
+          if (!call || call.status !== 'ringing') return;
+          if (isCallActiveRef.current) return;
+          
+          console.log('📞 ŞOFÖR - GELEN ARAMA (Realtime):', call.call_id);
+          
+          // Arayan bilgisini al
+          let callerName = 'Yolcu';
+          try {
+            const res = await fetch(`${API_URL}/user/${call.caller_id}`);
+            const userData = await res.json();
+            if (userData.name) callerName = userData.name;
+          } catch (e) {}
+          
+          // Arama ekranını aç - GELEN ARAMA
+          isCallActiveRef.current = true;
+          setPhoneCallData({
+            isCaller: false,
+            callId: call.call_id,
+            channelName: call.channel_name,
+            remoteUserName: callerName,
+            remoteUserId: call.caller_id,
+            callType: call.call_type || 'audio',
+            agoraToken: call.agora_token
           });
-          setShowIncomingCall(true);
+          setShowPhoneCall(true);
         }
-      } catch (error) {
-        // Sessiz
-      }
-    };
-    
-    checkIncomingCall();
-    const interval = setInterval(checkIncomingCall, 1500);
+      )
+      .subscribe((status: string) => {
+        console.log('📡 ŞOFÖR Realtime status:', status);
+      });
     
     return () => {
-      isActive = false;
-      clearInterval(interval);
+      supabase.removeChannel(channel);
     };
   }, [user?.id, activeTag?.id, activeTag?.status]);
 
