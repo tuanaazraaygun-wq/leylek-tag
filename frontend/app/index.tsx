@@ -3275,33 +3275,46 @@ function PassengerDashboard({
         </SafeAreaView>
       </Modal>
 
-      {/* Gelen Arama Modal */}
+      {/* ✅ YENİ: PhoneCallScreen - Profesyonel Arama Ekranı */}
+      {showPhoneCall && phoneCallData && (
+        <PhoneCallScreen
+          visible={showPhoneCall}
+          isCaller={phoneCallData.isCaller}
+          callId={phoneCallData.callId}
+          channelName={phoneCallData.channelName}
+          userId={user.id}
+          remoteUserName={phoneCallData.remoteUserName}
+          remoteUserId={phoneCallData.remoteUserId}
+          callType={phoneCallData.callType}
+          agoraToken={phoneCallData.agoraToken}
+          onClose={() => {
+            console.log('📞 YOLCU - Arama ekranı kapandı');
+            setShowPhoneCall(false);
+            setPhoneCallData(null);
+            isCallActiveRef.current = false;
+          }}
+          onCallEnded={(reason) => {
+            console.log('📞 YOLCU - Arama bitti:', reason);
+            setShowPhoneCall(false);
+            setPhoneCallData(null);
+            isCallActiveRef.current = false;
+          }}
+        />
+      )}
+
+      {/* ❌ ESKİ: IncomingCall - Artık kullanılmıyor, PhoneCallScreen ile değiştirildi */}
+      {/* 
       <IncomingCall
         visible={showIncomingCall && !showVoiceCall}
         callerName={incomingCallInfo?.callerName || 'Arayan'}
         callType={incomingCallInfo?.callType || 'audio'}
-        onAccept={async () => {
-          setShowIncomingCall(false);
-          setSelectedDriverName(incomingCallInfo?.callerName || 'Arayan');
-          setIsVideoCall(incomingCallInfo?.callType === 'video');
-          setIsCallCaller(false); // GELEN ARAMAYI KABUL ETTİM
-          // Backend'e kabul bildirimi gönder
-          try {
-            await fetch(`${API_URL}/voice/accept-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
-          } catch (e) {}
-          setShowVoiceCall(true);
-        }}
-        onReject={async () => {
-          setShowIncomingCall(false);
-          setIncomingCallInfo(null);
-          // Backend'e reddetme bildirimi gönder
-          try {
-            await fetch(`${API_URL}/voice/reject-call?tag_id=${activeTag?.id}&user_id=${user.id}`, { method: 'POST' });
-          } catch (e) {}
-        }}
+        onAccept={async () => { ... }}
+        onReject={async () => { ... }}
       />
+      */}
 
-      {/* Sesli/Görüntülü Arama Modal */}
+      {/* ❌ ESKİ: VideoCall - Artık kullanılmıyor, PhoneCallScreen ile değiştirildi */}
+      {/*
       {activeTag && (
         <VideoCall
           visible={showVoiceCall}
@@ -3311,22 +3324,11 @@ function PassengerDashboard({
           userId={user.id}
           isVideoCall={isVideoCall}
           isCaller={isCallCaller}
-          onEnd={() => {
-            setShowVoiceCall(false);
-            setIsVideoCall(false);
-            setIsCallCaller(false);
-            setActiveChannelName('');
-            setActiveCallId('');
-          }}
-          onRejected={() => {
-            setShowVoiceCall(false);
-            setIsVideoCall(false);
-            setIsCallCaller(false);
-            setActiveChannelName('');
-            setActiveCallId('');
-          }}
+          onEnd={() => { ... }}
+          onRejected={() => { ... }}
         />
       )}
+      */}
 
       {/* Karşılıklı İptal Onay Modalı - YOLCU */}
       <Modal
