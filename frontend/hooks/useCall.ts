@@ -16,7 +16,7 @@ import Constants from 'expo-constants';
 // ==================== CONFIG ====================
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    'https://leylek-stable.preview.emergentagent.com';
+                    'https://ridely-app-1.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';
