@@ -103,9 +103,6 @@ async def call_user(sid, data):
         logger.warning(f"⚠️ Alıcı çevrimdışı veya kayıtlı değil: {receiver_id}")
         logger.warning(f"⚠️ Kayıtlı kullanıcılar: {connected_users}")
         await sio.emit('call_ringing', {'success': False, 'receiver_online': False, 'reason': 'user_offline'}, room=sid)
-    else:
-        logger.warning(f"⚠️ Alıcı çevrimdışı: {receiver_id}")
-        await sio.emit('call_ringing', {'success': False, 'receiver_online': False, 'reason': 'user_offline'}, room=sid)
 
 @sio.event
 async def accept_call(sid, data):
