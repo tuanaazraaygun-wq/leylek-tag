@@ -57,13 +57,12 @@ export default function useSocket({
     console.log('🔌 Socket.IO bağlanıyor:', SOCKET_URL);
 
     const socket = io(SOCKET_URL, {
-      path: '/api/socket.io',  // Emergent proxy /api/* kullanıyor
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
+      path: '/api/socket.io',
+      transports: ['websocket'],
+      forceNew: true,
       reconnection: true,
-      reconnectionAttempts: maxReconnectAttempts,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
       timeout: 20000,
     });
 
