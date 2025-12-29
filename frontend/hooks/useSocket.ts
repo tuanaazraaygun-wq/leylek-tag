@@ -11,8 +11,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 
-// Backend URL - Socket.IO için (HTTPS zorunlu, localhost YOK)
-const SOCKET_URL = 'https://leylek-stable.preview.emergentagent.com';
+// Socket.IO Sunucusu - Kendi VPS
+const SOCKET_URL = 'https://socket.leylektag.com';
 
 interface CallData {
   call_id: string;
