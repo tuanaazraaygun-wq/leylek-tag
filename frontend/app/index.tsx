@@ -3047,7 +3047,11 @@ function PassengerDashboard({
                       
                       console.log('📞 YOLCU - Arama başlatıldı:', data.call_id);
                       
-                      // Socket.IO ile karşı tarafa bildir
+                      // 🚀 ANINDA Agora kanalına katıl (socket yanıtı bekleme!)
+                      console.log('🎙️ YOLCU - Agora kanalına ANINDA katılıyor:', data.channel_name);
+                      agoraJoinChannel(data.channel_name, data.agora_token);
+                      
+                      // Socket.IO ile karşı tarafa bildir (sadece sinyal için)
                       socketStartCall({
                         caller_id: user.id,
                         caller_name: user.name || 'Yolcu',
