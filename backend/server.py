@@ -254,6 +254,10 @@ TURKEY_CITIES = [
 app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
 api_router = APIRouter(prefix="/api")
 
+# ==================== SOCKET.IO ASGI APP ====================
+# Socket.IO'yu FastAPI ile birleştir
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
 # Son temizlik zamanı (global)
 last_cleanup_time = None
 
@@ -262,7 +266,7 @@ async def startup():
     global last_cleanup_time
     init_supabase()
     last_cleanup_time = datetime.utcnow()
-    logger.info("✅ Server started with Supabase")
+    logger.info("✅ Server started with Supabase + Socket.IO")
 
 # Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
 async def auto_cleanup_inactive_tags():
