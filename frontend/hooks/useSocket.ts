@@ -13,16 +13,17 @@ import { AppState, AppStateStatus } from 'react-native';
 
 // Backend URL - Socket.IO için
 const getSocketUrl = () => {
+  // Emergent proxy üzerinden /api altında çalışıyor
   const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-  // /api varsa kaldır
-  let url = backendUrl.replace('/api', '').replace(/\/$/, '');
   
-  // Eğer boşsa localhost kullan
+  // URL'den /api'yi kaldır çünkü Socket.IO kendi path'ini kullanacak
+  let url = backendUrl.replace(/\/api\/?$/, '');
+  
   if (!url) {
     url = 'http://localhost:8001';
   }
   
-  console.log('🔌 Socket.IO URL:', url);
+  console.log('🔌 Socket.IO Base URL:', url);
   return url;
 };
 
