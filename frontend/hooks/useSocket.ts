@@ -240,7 +240,8 @@ export default function useSocket({
       
       // Eğer zaten bağlıysa, kullanıcıyı kaydet
       if (socketRef.current?.connected) {
-        registerUser(userId);
+        console.log('📱 Zaten bağlı, register gönderiliyor:', userId);
+        socketRef.current.emit('register', { user_id: userId });
       }
     } else {
       disconnect();
@@ -249,7 +250,15 @@ export default function useSocket({
     return () => {
       // Component unmount olduğunda bağlantıyı kesme (uygulama kapanmadı)
     };
-  }, [userId, connect, disconnect, registerUser]);
+  }, [userId, connect, disconnect]);
+  
+  // userId değiştiğinde ve socket bağlıysa register gönder
+  useEffect(() => {
+    if (userId && socketRef.current?.connected) {
+      console.log('📱 UserId değişti, register gönderiliyor:', userId);
+      socketRef.current.emit('register', { user_id: userId });
+    }
+  }, [userId]);
 
   return {
     socket: socketRef.current,
