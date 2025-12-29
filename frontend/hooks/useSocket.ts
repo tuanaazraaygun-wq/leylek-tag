@@ -71,8 +71,9 @@ export default function useSocket({
       setIsConnected(true);
       reconnectAttempts.current = 0;
 
-      // Kullanıcıyı kaydet
+      // Kullanıcıyı HEMEN kaydet
       if (userId) {
+        console.log('📱 Register gönderiliyor:', userId);
         socket.emit('register', { user_id: userId });
       }
     });
