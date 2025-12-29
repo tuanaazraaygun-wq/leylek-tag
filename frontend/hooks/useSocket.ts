@@ -62,11 +62,11 @@ export default function useSocket({
       return;
     }
 
-    console.log('🔌 Socket.IO bağlanıyor:', SOCKET_URL);
+    console.log('🔌 Socket.IO bağlanıyor:', SOCKET_URL, 'Path:', SOCKET_PATH);
 
     const socket = io(SOCKET_URL, {
-      path: '/socket.io',
-      transports: ['websocket'],
+      path: SOCKET_PATH,
+      transports: ['websocket', 'polling'],
       forceNew: true,
       reconnection: true,
       reconnectionAttempts: 10,
