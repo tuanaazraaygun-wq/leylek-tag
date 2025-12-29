@@ -2978,6 +2978,13 @@ function PassengerDashboard({
                       return;
                     }
                     
+                    // 🔌 Socket bağlantı kontrolü
+                    if (!socketConnected || !socketRegistered) {
+                      console.log('❌ Socket bağlı değil veya kayıtlı değil:', { socketConnected, socketRegistered });
+                      Alert.alert('Bağlantı Hatası', 'Arama sistemi henüz hazır değil. Lütfen birkaç saniye bekleyip tekrar deneyin.');
+                      return;
+                    }
+                    
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     const driverId = activeTag?.driver_id || '';
                     
