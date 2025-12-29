@@ -3396,35 +3396,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     };
   }, [user?.id]);
   
-  // ==================== GELEN ARAMA - ŞOFÖR (Supabase Realtime) ====================
+  // ==================== GELEN ARAMA - ŞOFÖR (Polling + Realtime Fallback) ====================
   useEffect(() => {
     if (!user?.id || !activeTag) return;
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
     
-    const { createClient } = require('@supabase/supabase-js');
-    const supabase = createClient(
-      'https://ujvploftywsxprlzejgc.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k'
-    );
+    console.log('📡 ŞOFÖR: Gelen arama kontrolü başlatılıyor...');
     
-    console.log('📡 ŞOFÖR: Realtime gelen arama dinleniyor...');
-    
-    const channel = supabase
-      .channel(`driver_calls_${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'calls',
-          filter: `receiver_id=eq.${user.id}`
-        },
-        async (payload: any) => {
-          const call = payload.new;
-          if (!call || call.status !== 'ringing') return;
-          if (isCallActiveRef.current || showCallScreen) return;
-          
-          console.log('📞 ŞOFÖR - GELEN ARAMA (Realtime):', call.call_id);
+    // POLLING: Her 2 saniyede bir gelen arama kontrolü
+    const checkIncomingCall = async () => {
+      if (isCallActiveRef.current || showCallScreen) return;
+      
+      try {
+        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
+        const data = await response.json();
+        
+        if (data.success && data.has_call && data.call) {
+          const call = data.call;
+          console.log('📞 ŞOFÖR - GELEN ARAMA (Polling):', call.call_id);
           
           isCallActiveRef.current = true;
           setCallScreenData({
@@ -3437,14 +3426,22 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           });
           setShowCallScreen(true);
         }
-      )
-      .subscribe();
+      } catch (error) {
+        // Sessizce devam et
+      }
+    };
+    
+    // İlk kontrol
+    checkIncomingCall();
+    
+    // Polling interval - her 2 saniye
+    const pollInterval = setInterval(checkIncomingCall, 2000);
     
     return () => {
-      console.log('📡 ŞOFÖR: Realtime cleanup');
-      supabase.removeChannel(channel);
+      console.log('📡 ŞOFÖR: Polling cleanup');
+      clearInterval(pollInterval);
     };
-  }, [user?.id, activeTag?.id, activeTag?.status]);
+  }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
