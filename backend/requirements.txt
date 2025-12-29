@@ -92,3 +92,6 @@ uvicorn==0.25.0
 watchfiles==1.1.1
 websockets==15.0.1
 yarl==1.22.0
+python-socketio==5.16.0
+simple-websocket==1.1.0
+websockets==15.0.1
