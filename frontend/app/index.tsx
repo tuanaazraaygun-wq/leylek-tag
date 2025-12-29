@@ -3891,6 +3891,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 return;
               }
               
+              // 🔌 Socket bağlantı kontrolü
+              if (!socketConnected || !socketRegistered) {
+                console.log('❌ Socket bağlı değil veya kayıtlı değil:', { socketConnected, socketRegistered });
+                Alert.alert('Bağlantı Hatası', 'Arama sistemi henüz hazır değil. Lütfen birkaç saniye bekleyip tekrar deneyin.');
+                return;
+              }
+              
               isCallActiveRef.current = true;
               const passengerName = activeTag.passenger_name || 'Yolcu';
               const passengerId = activeTag.passenger_id || '';
