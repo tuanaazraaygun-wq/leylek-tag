@@ -33,11 +33,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
 # ==================== SOCKET.IO SERVER ====================
+# Emergent /api/* path'ini kullanıyor, bu yüzden /api/socket.io kullanıyoruz
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins='*',
     logger=True,
-    engineio_logger=False
+    engineio_logger=True
 )
 
 # Aktif kullanıcılar: {user_id: socket_id}
@@ -46,6 +47,7 @@ connected_users = {}
 @sio.event
 async def connect(sid, environ):
     logger.info(f"🔌 Socket bağlandı: {sid}")
+    logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
 
 @sio.event
 async def disconnect(sid):
