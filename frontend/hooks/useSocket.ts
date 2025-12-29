@@ -57,7 +57,7 @@ export default function useSocket({
     console.log('🔌 Socket.IO bağlanıyor:', SOCKET_URL);
 
     const socket = io(SOCKET_URL, {
-      path: '/api/socket.io',
+      path: '/socket.io',
       transports: ['websocket'],
       forceNew: true,
       reconnection: true,
