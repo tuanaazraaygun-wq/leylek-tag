@@ -11,23 +11,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 
-// Backend URL - Socket.IO için
-const getSocketUrl = () => {
-  // Emergent proxy üzerinden /api altında çalışıyor
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-  
-  // URL'den /api'yi kaldır çünkü Socket.IO kendi path'ini kullanacak
-  let url = backendUrl.replace(/\/api\/?$/, '');
-  
-  if (!url) {
-    url = 'http://localhost:8001';
-  }
-  
-  console.log('🔌 Socket.IO Base URL:', url);
-  return url;
-};
-
-const SOCKET_URL = getSocketUrl();
+// Backend URL - Socket.IO için (HTTPS zorunlu, localhost YOK)
+const SOCKET_URL = 'https://leylek-stable.preview.emergentagent.com';
 
 interface CallData {
   call_id: string;
