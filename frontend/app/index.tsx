@@ -4183,23 +4183,59 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         </View>
       </Modal>
 
-      {/* ✅ CallScreen - Profesyonel Arama Ekranı - ŞOFÖR */}
+      {/* ✅ CallScreenV2 - Socket.IO Arama Ekranı - ŞOFÖR */}
       {showCallScreen && callScreenData && (
-        <CallScreen
+        <CallScreenV2
           visible={showCallScreen}
           mode={callScreenData.mode}
           callId={callScreenData.callId}
           channelName={callScreenData.channelName}
           agoraToken={callScreenData.agoraToken}
           userId={user.id}
+          remoteUserId={callScreenData.remoteUserId}
           remoteName={callScreenData.remoteName}
           callType={callScreenData.callType}
-          apiUrl={API_URL}
+          callAccepted={callAccepted}
+          callRejected={callRejected}
+          callEnded={callEnded}
+          receiverOffline={receiverOffline}
+          onAccept={() => {
+            if (callScreenData) {
+              socketAcceptCall({
+                call_id: callScreenData.callId,
+                caller_id: callScreenData.remoteUserId,
+                receiver_id: user.id
+              });
+            }
+          }}
+          onReject={() => {
+            if (callScreenData) {
+              socketRejectCall({
+                call_id: callScreenData.callId,
+                caller_id: callScreenData.remoteUserId,
+                receiver_id: user.id
+              });
+            }
+          }}
+          onEnd={() => {
+            if (callScreenData) {
+              socketEndCall({
+                call_id: callScreenData.callId,
+                caller_id: callScreenData.mode === 'caller' ? user.id : callScreenData.remoteUserId,
+                receiver_id: callScreenData.mode === 'caller' ? callScreenData.remoteUserId : user.id,
+                ended_by: user.id
+              });
+            }
+          }}
           onClose={() => {
             console.log('📞 ŞOFÖR - Arama ekranı kapandı');
             setShowCallScreen(false);
             setCallScreenData(null);
             isCallActiveRef.current = false;
+            setCallAccepted(false);
+            setCallRejected(false);
+            setCallEnded(false);
+            setReceiverOffline(false);
           }}
         />
       )}
