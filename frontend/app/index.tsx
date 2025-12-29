@@ -2978,11 +2978,18 @@ function PassengerDashboard({
                     }
                     
                     const driverName = activeTag?.driver_name || 'Sürücü';
+                    const driverId = activeTag?.driver_id || '';
                     
                     // 🔒 Arama kilidi
                     isCallActiveRef.current = true;
                     
-                    // Backend'e arama isteği gönder - ÖNCE DATA AL
+                    // State sıfırla
+                    setCallAccepted(false);
+                    setCallRejected(false);
+                    setCallEnded(false);
+                    setReceiverOffline(false);
+                    
+                    // Backend'e arama isteği gönder - token ve channel al
                     try {
                       const response = await fetch(`${API_URL}/voice/start-call`, {
                         method: 'POST',
@@ -3002,14 +3009,27 @@ function PassengerDashboard({
                         return;
                       }
                       
-                      // ✅ Data geldi, şimdi ekranı aç
                       console.log('📞 YOLCU - Arama başlatıldı:', data.call_id);
+                      
+                      // Socket.IO ile karşı tarafa bildir
+                      socketStartCall({
+                        caller_id: user.id,
+                        caller_name: user.name || 'Yolcu',
+                        receiver_id: driverId,
+                        call_id: data.call_id,
+                        channel_name: data.channel_name,
+                        agora_token: data.agora_token || '',
+                        call_type: type
+                      });
+                      
+                      // Ekranı aç
                       setCallScreenData({
                         mode: 'caller',
                         callId: data.call_id,
                         channelName: data.channel_name,
                         agoraToken: data.agora_token || '',
                         remoteName: driverName,
+                        remoteUserId: driverId,
                         callType: type
                       });
                       setShowCallScreen(true);
