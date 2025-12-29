@@ -2429,7 +2429,7 @@ function PassengerDashboard({
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         const data = await response.json();
         
-        if (data.success && data.has_call && data.call) {
+        if (data.success && data.has_incoming && data.call) {
           const call = data.call;
           console.log('📞 YOLCU - GELEN ARAMA (Polling):', call.call_id);
           
@@ -3411,7 +3411,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
         const data = await response.json();
         
-        if (data.success && data.has_call && data.call) {
+        if (data.success && data.has_incoming && data.call) {
           const call = data.call;
           console.log('📞 ŞOFÖR - GELEN ARAMA (Polling):', call.call_id);
           
