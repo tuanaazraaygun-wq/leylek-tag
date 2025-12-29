@@ -3387,6 +3387,11 @@ async def account_delete_request(request: dict):
     except Exception as e:
         return {"success": False, "detail": str(e)}
 
+# ==================== SOCKET.IO ENABLED APP ====================
+# Supervisor server:app olarak çalıştırıyor, bu yüzden app'i socket_app ile değiştiriyoruz
+# Bu sayede Socket.IO otomatik olarak çalışacak
+app = socket_app
+
 if __name__ == "__main__":
     import uvicorn
     # Socket.IO + FastAPI birlikte çalıştır
