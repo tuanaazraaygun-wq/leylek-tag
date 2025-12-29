@@ -2418,52 +2418,55 @@ function PassengerDashboard({
   // Arama kilidi
   const isCallActiveRef = useRef(false);
   
-  // ==================== GELEN ARAMA POLLING - YOLCU ====================
-  useEffect(() => {
-    if (!user?.id || !activeTag) return;
-    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    
-    console.log('📡 YOLCU: Gelen arama polling başlatıldı');
-    
-    const checkIncomingCall = async () => {
+  // ==================== SOCKET.IO HOOK - YOLCU ====================
+  const {
+    isConnected: socketConnected,
+    startCall: socketStartCall,
+    acceptCall: socketAcceptCall,
+    rejectCall: socketRejectCall,
+    endCall: socketEndCall,
+  } = useSocket({
+    userId: user?.id || null,
+    onIncomingCall: (data) => {
+      console.log('📞 YOLCU - GELEN ARAMA (Socket.IO):', data);
       if (isCallActiveRef.current || showCallScreen) return;
       
-      try {
-        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-        const data = await response.json();
-        
-        if (data.success && data.has_incoming && data.call) {
-          const call = data.call;
-          console.log('📞 YOLCU - GELEN ARAMA:', call.call_id);
-          
-          isCallActiveRef.current = true;
-          setCallAccepted(false);
-          setCallRejected(false);
-          setCallEnded(false);
-          
-          setCallScreenData({
-            mode: 'receiver',
-            callId: call.call_id,
-            channelName: call.channel_name,
-            agoraToken: call.agora_token || '',
-            remoteName: call.caller_name || 'Sürücü',
-            remoteUserId: call.caller_id || '',
-            callType: call.call_type || 'audio'
-          });
-          setShowCallScreen(true);
-        }
-      } catch (error) {
-        // Sessiz
+      isCallActiveRef.current = true;
+      setCallAccepted(false);
+      setCallRejected(false);
+      setCallEnded(false);
+      setReceiverOffline(false);
+      
+      setCallScreenData({
+        mode: 'receiver',
+        callId: data.call_id,
+        channelName: data.channel_name,
+        agoraToken: data.agora_token,
+        remoteName: data.caller_name || 'Sürücü',
+        remoteUserId: data.caller_id,
+        callType: data.call_type || 'audio'
+      });
+      setShowCallScreen(true);
+    },
+    onCallAccepted: (data) => {
+      console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
+      setCallAccepted(true);
+    },
+    onCallRejected: (data) => {
+      console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
+      setCallRejected(true);
+    },
+    onCallEnded: (data) => {
+      console.log('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
+      setCallEnded(true);
+    },
+    onCallRinging: (data) => {
+      console.log('🔔 YOLCU - ARAMA DURUMU:', data);
+      if (!data.success && !data.receiver_online) {
+        setReceiverOffline(true);
       }
-    };
-    
-    checkIncomingCall();
-    const pollInterval = setInterval(checkIncomingCall, 1000); // Her 1 saniye
-    
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
+    },
+  });
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
