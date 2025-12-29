@@ -2421,6 +2421,7 @@ function PassengerDashboard({
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
     isConnected: socketConnected,
+    isRegistered: socketRegistered,
     startCall: socketStartCall,
     acceptCall: socketAcceptCall,
     rejectCall: socketRejectCall,
