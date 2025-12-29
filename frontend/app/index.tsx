@@ -3455,6 +3455,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
     isConnected: socketConnected,
+    isRegistered: socketRegistered,
     startCall: socketStartCall,
     acceptCall: socketAcceptCall,
     rejectCall: socketRejectCall,
