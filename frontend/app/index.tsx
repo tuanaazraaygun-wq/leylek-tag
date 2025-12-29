@@ -3884,8 +3884,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               
               isCallActiveRef.current = true;
               const passengerName = activeTag.passenger_name || 'Yolcu';
+              const passengerId = activeTag.passenger_id || '';
               
-              // Backend'e arama isteği gönder - ÖNCE DATA AL
+              // State sıfırla
+              setCallAccepted(false);
+              setCallRejected(false);
+              setCallEnded(false);
+              setReceiverOffline(false);
+              
+              // Backend'e arama isteği gönder - token ve channel al
               try {
                 const response = await fetch(`${API_URL}/voice/start-call`, {
                   method: 'POST',
@@ -3905,14 +3912,27 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   return;
                 }
                 
-                // ✅ Data geldi, şimdi ekranı aç
                 console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
+                
+                // Socket.IO ile karşı tarafa bildir
+                socketStartCall({
+                  caller_id: user.id,
+                  caller_name: user.name || 'Şoför',
+                  receiver_id: passengerId,
+                  call_id: data.call_id,
+                  channel_name: data.channel_name,
+                  agora_token: data.agora_token || '',
+                  call_type: type
+                });
+                
+                // Ekranı aç
                 setCallScreenData({
                   mode: 'caller',
                   callId: data.call_id,
                   channelName: data.channel_name,
                   agoraToken: data.agora_token || '',
                   remoteName: passengerName,
+                  remoteUserId: passengerId,
                   callType: type
                 });
                 setShowCallScreen(true);
