@@ -10,9 +10,17 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
+import Constants from 'expo-constants';
 
-// Socket.IO Sunucusu - Kendi VPS
-const SOCKET_URL = 'https://socket.leylektag.com';
+// Socket.IO Sunucusu - Backend'in Socket.IO sunucusu
+// Backend /api/socket.io path'inde çalışıyor
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
+                    process.env.EXPO_PUBLIC_BACKEND_URL || 
+                    'https://ridely-app-1.preview.emergentagent.com';
+const SOCKET_URL = BACKEND_URL;
+const SOCKET_PATH = '/api/socket.io';
+
+console.log('🔌 Socket URL:', SOCKET_URL, 'Path:', SOCKET_PATH);
 
 interface CallData {
   call_id: string;
