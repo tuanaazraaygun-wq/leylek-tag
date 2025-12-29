@@ -12,13 +12,10 @@ import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 import Constants from 'expo-constants';
 
-// Socket.IO Sunucusu - Backend'in Socket.IO sunucusu
-// Backend /api/socket.io path'inde çalışıyor
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://ridely-app-1.preview.emergentagent.com';
-const SOCKET_URL = BACKEND_URL;
-const SOCKET_PATH = '/api/socket.io';
+// Socket.IO Sunucusu - Kullanıcının VPS'i (socket.leylektag.com)
+// FastAPI + Python Socket.IO + Uvicorn + Nginx + Let's Encrypt SSL
+const SOCKET_URL = 'https://socket.leylektag.com';
+const SOCKET_PATH = '/socket.io';
 
 console.log('🔌 Socket URL:', SOCKET_URL, 'Path:', SOCKET_PATH);
 
