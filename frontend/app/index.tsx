@@ -3491,6 +3491,33 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   // Arama kilidi
   const isCallActiveRef = useRef(false);
   
+  // ==================== AGORA ENGINE HOOK - ŞOFÖR ====================
+  const {
+    isEngineReady: agoraReady,
+    isInChannel: agoraInChannel,
+    joinChannel: agoraJoinChannel,
+    leaveChannel: agoraLeaveChannel,
+    toggleMute: agoraToggleMute,
+    toggleSpeaker: agoraToggleSpeaker,
+    isMuted: agoraMuted,
+    isSpeakerOn: agoraSpeakerOn,
+  } = useAgoraEngine({
+    userId: user?.id || null,
+    onUserJoined: (uid) => {
+      console.log('🎙️ ŞOFÖR - Karşı taraf kanala katıldı:', uid);
+    },
+    onUserOffline: (uid) => {
+      console.log('🎙️ ŞOFÖR - Karşı taraf ayrıldı:', uid);
+    },
+    onJoinChannelSuccess: (channel, uid) => {
+      console.log('✅ ŞOFÖR - Kanala katıldı:', channel, uid);
+    },
+    onError: (error) => {
+      console.error('❌ ŞOFÖR - Agora hatası:', error);
+      Alert.alert('Arama Hatası', error);
+    },
+  });
+  
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
     isConnected: socketConnected,
