@@ -81,7 +81,8 @@ async def call_user(sid, data):
     call_type = data.get('call_type', 'audio')
     caller_name = data.get('caller_name', 'Bilinmeyen')
     
-    logger.info(f"📞 Arama: {caller_id} -> {receiver_id} (call_id: {call_id})")
+    logger.info(f"📞 Arama isteği: {caller_id} -> {receiver_id} (call_id: {call_id})")
+    logger.info(f"📱 Bağlı kullanıcılar: {list(connected_users.keys())}")
     
     # Karşı tarafın socket_id'sini bul
     receiver_sid = connected_users.get(receiver_id)
@@ -96,8 +97,12 @@ async def call_user(sid, data):
             'agora_token': agora_token,
             'call_type': call_type
         }, room=receiver_sid)
-        logger.info(f"📲 Gelen arama bildirimi gönderildi: {receiver_id}")
+        logger.info(f"📲 Gelen arama bildirimi gönderildi: {receiver_id} (sid: {receiver_sid})")
         await sio.emit('call_ringing', {'success': True, 'receiver_online': True}, room=sid)
+    else:
+        logger.warning(f"⚠️ Alıcı çevrimdışı veya kayıtlı değil: {receiver_id}")
+        logger.warning(f"⚠️ Kayıtlı kullanıcılar: {connected_users}")
+        await sio.emit('call_ringing', {'success': False, 'receiver_online': False, 'reason': 'user_offline'}, room=sid)
     else:
         logger.warning(f"⚠️ Alıcı çevrimdışı: {receiver_id}")
         await sio.emit('call_ringing', {'success': False, 'receiver_online': False, 'reason': 'user_offline'}, room=sid)
