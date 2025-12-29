@@ -1,6 +1,6 @@
 """
 Leylek TAG - Supabase Backend
-Full PostgreSQL Backend with Supabase
+Full PostgreSQL Backend with Supabase + Socket.IO
 """
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
@@ -19,6 +19,9 @@ import httpx
 import json
 import time
 
+# Socket.IO
+import socketio
+
 # Supabase
 from supabase import create_client, Client
 
@@ -28,6 +31,130 @@ load_dotenv(ROOT_DIR / '.env')
 # Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
+
+# ==================== SOCKET.IO SERVER ====================
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins='*',
+    logger=True,
+    engineio_logger=False
+)
+
+# Aktif kullanıcılar: {user_id: socket_id}
+connected_users = {}
+
+@sio.event
+async def connect(sid, environ):
+    logger.info(f"🔌 Socket bağlandı: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    # Kullanıcıyı connected_users'dan kaldır
+    user_to_remove = None
+    for user_id, socket_id in connected_users.items():
+        if socket_id == sid:
+            user_to_remove = user_id
+            break
+    if user_to_remove:
+        del connected_users[user_to_remove]
+        logger.info(f"🔌 Socket ayrıldı: {sid} (user: {user_to_remove})")
+    else:
+        logger.info(f"🔌 Socket ayrıldı: {sid}")
+
+@sio.event
+async def register(sid, data):
+    """Kullanıcı kaydı - user_id ile socket_id eşleştir"""
+    user_id = data.get('user_id')
+    if user_id:
+        connected_users[user_id] = sid
+        logger.info(f"📱 Kullanıcı kayıtlı: {user_id} -> {sid}")
+        await sio.emit('registered', {'success': True, 'user_id': user_id}, room=sid)
+
+@sio.event
+async def call_user(sid, data):
+    """Arama başlat - karşı tarafa bildir"""
+    caller_id = data.get('caller_id')
+    receiver_id = data.get('receiver_id')
+    call_id = data.get('call_id')
+    channel_name = data.get('channel_name')
+    agora_token = data.get('agora_token')
+    call_type = data.get('call_type', 'audio')
+    caller_name = data.get('caller_name', 'Bilinmeyen')
+    
+    logger.info(f"📞 Arama: {caller_id} -> {receiver_id} (call_id: {call_id})")
+    
+    # Karşı tarafın socket_id'sini bul
+    receiver_sid = connected_users.get(receiver_id)
+    
+    if receiver_sid:
+        # Karşı tarafa gelen arama bildirimi gönder
+        await sio.emit('incoming_call', {
+            'call_id': call_id,
+            'caller_id': caller_id,
+            'caller_name': caller_name,
+            'channel_name': channel_name,
+            'agora_token': agora_token,
+            'call_type': call_type
+        }, room=receiver_sid)
+        logger.info(f"📲 Gelen arama bildirimi gönderildi: {receiver_id}")
+        await sio.emit('call_ringing', {'success': True, 'receiver_online': True}, room=sid)
+    else:
+        logger.warning(f"⚠️ Alıcı çevrimdışı: {receiver_id}")
+        await sio.emit('call_ringing', {'success': False, 'receiver_online': False, 'reason': 'user_offline'}, room=sid)
+
+@sio.event
+async def accept_call(sid, data):
+    """Aramayı kabul et"""
+    call_id = data.get('call_id')
+    caller_id = data.get('caller_id')
+    receiver_id = data.get('receiver_id')
+    
+    logger.info(f"✅ Arama kabul edildi: {call_id}")
+    
+    # Arayana bildir
+    caller_sid = connected_users.get(caller_id)
+    if caller_sid:
+        await sio.emit('call_accepted', {
+            'call_id': call_id,
+            'accepted_by': receiver_id
+        }, room=caller_sid)
+
+@sio.event
+async def reject_call(sid, data):
+    """Aramayı reddet"""
+    call_id = data.get('call_id')
+    caller_id = data.get('caller_id')
+    receiver_id = data.get('receiver_id')
+    
+    logger.info(f"❌ Arama reddedildi: {call_id}")
+    
+    # Arayana bildir
+    caller_sid = connected_users.get(caller_id)
+    if caller_sid:
+        await sio.emit('call_rejected', {
+            'call_id': call_id,
+            'rejected_by': receiver_id
+        }, room=caller_sid)
+
+@sio.event
+async def end_call(sid, data):
+    """Aramayı sonlandır"""
+    call_id = data.get('call_id')
+    caller_id = data.get('caller_id')
+    receiver_id = data.get('receiver_id')
+    ended_by = data.get('ended_by')
+    
+    logger.info(f"📴 Arama sonlandırıldı: {call_id} (by: {ended_by})")
+    
+    # Her iki tarafa da bildir
+    for user_id in [caller_id, receiver_id]:
+        if user_id and user_id != ended_by:
+            user_sid = connected_users.get(user_id)
+            if user_sid:
+                await sio.emit('call_ended', {
+                    'call_id': call_id,
+                    'ended_by': ended_by
+                }, room=user_sid)
 
 # Agora Token Builder - import sonra yap
 AGORA_TOKEN_AVAILABLE = False
@@ -39,10 +166,6 @@ try:
     logger.info("✅ Agora token builder yüklendi")
 except ImportError as e:
     logger.warning(f"⚠️ agora_token_builder yüklenemedi: {e}")
-
-# Logger setup
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("server")
 
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50
