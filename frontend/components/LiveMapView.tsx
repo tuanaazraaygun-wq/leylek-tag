@@ -533,7 +533,17 @@ export default function LiveMapView({
                 [
                   { text: 'İptal', style: 'cancel' },
                   { text: 'Karşı Taraftan Onay İste', onPress: () => onRequestTripEnd?.() },
-                  { text: 'Tamamla', onPress: () => onComplete?.(), style: 'destructive' }
+                  { text: 'Tamamla', onPress: () => onComplete?.() },
+                  { text: '⚠️ Zorla Bitir (-5 Puan)', onPress: () => {
+                    Alert.alert(
+                      '⚠️ Dikkat!',
+                      'Zorla bitirme işlemi puanınızı 5 düşürecektir. Devam etmek istiyor musunuz?',
+                      [
+                        { text: 'Vazgeç', style: 'cancel' },
+                        { text: 'Evet, Zorla Bitir', style: 'destructive', onPress: () => onForceEnd?.() }
+                      ]
+                    );
+                  }, style: 'destructive' }
                 ]
               );
             }}>
