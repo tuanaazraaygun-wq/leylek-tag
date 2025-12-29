@@ -3438,11 +3438,68 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     channelName: string;
     agoraToken: string;
     remoteName: string;
+    remoteUserId: string;
     callType: 'audio' | 'video';
   } | null>(null);
   
+  // Socket.IO arama durumları
+  const [callAccepted, setCallAccepted] = useState(false);
+  const [callRejected, setCallRejected] = useState(false);
+  const [callEnded, setCallEnded] = useState(false);
+  const [receiverOffline, setReceiverOffline] = useState(false);
+  
   // Arama kilidi
   const isCallActiveRef = useRef(false);
+  
+  // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
+  const {
+    isConnected: socketConnected,
+    startCall: socketStartCall,
+    acceptCall: socketAcceptCall,
+    rejectCall: socketRejectCall,
+    endCall: socketEndCall,
+  } = useSocket({
+    userId: user?.id || null,
+    onIncomingCall: (data) => {
+      console.log('📞 ŞOFÖR - GELEN ARAMA (Socket.IO):', data);
+      if (isCallActiveRef.current || showCallScreen) return;
+      
+      isCallActiveRef.current = true;
+      setCallAccepted(false);
+      setCallRejected(false);
+      setCallEnded(false);
+      setReceiverOffline(false);
+      
+      setCallScreenData({
+        mode: 'receiver',
+        callId: data.call_id,
+        channelName: data.channel_name,
+        agoraToken: data.agora_token,
+        remoteName: data.caller_name || 'Yolcu',
+        remoteUserId: data.caller_id,
+        callType: data.call_type || 'audio'
+      });
+      setShowCallScreen(true);
+    },
+    onCallAccepted: (data) => {
+      console.log('✅ ŞOFÖR - ARAMA KABUL EDİLDİ:', data);
+      setCallAccepted(true);
+    },
+    onCallRejected: (data) => {
+      console.log('❌ ŞOFÖR - ARAMA REDDEDİLDİ:', data);
+      setCallRejected(true);
+    },
+    onCallEnded: (data) => {
+      console.log('📴 ŞOFÖR - ARAMA SONLANDIRILDI:', data);
+      setCallEnded(true);
+    },
+    onCallRinging: (data) => {
+      console.log('🔔 ŞOFÖR - ARAMA DURUMU:', data);
+      if (!data.success && !data.receiver_online) {
+        setReceiverOffline(true);
+      }
+    },
+  });
   
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
@@ -3462,53 +3519,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       clearInterval(interval);
     };
   }, [user?.id]);
-  
-  // ==================== GELEN ARAMA - ŞOFÖR (Polling + Realtime Fallback) ====================
-  useEffect(() => {
-    if (!user?.id || !activeTag) return;
-    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    
-    console.log('📡 ŞOFÖR: Gelen arama kontrolü başlatılıyor...');
-    
-    // POLLING: Her 2 saniyede bir gelen arama kontrolü
-    const checkIncomingCall = async () => {
-      if (isCallActiveRef.current || showCallScreen) return;
-      
-      try {
-        const response = await fetch(`${API_URL}/voice/check-incoming?user_id=${user.id}`);
-        const data = await response.json();
-        
-        if (data.success && data.has_incoming && data.call) {
-          const call = data.call;
-          console.log('📞 ŞOFÖR - GELEN ARAMA (Polling):', call.call_id);
-          
-          isCallActiveRef.current = true;
-          setCallScreenData({
-            mode: 'receiver',
-            callId: call.call_id,
-            channelName: call.channel_name,
-            agoraToken: call.agora_token || '',
-            remoteName: call.caller_name || 'Yolcu',
-            callType: call.call_type || 'audio'
-          });
-          setShowCallScreen(true);
-        }
-      } catch (error) {
-        // Sessizce devam et
-      }
-    };
-    
-    // İlk kontrol
-    checkIncomingCall();
-    
-    // Polling interval - her 2 saniye
-    const pollInterval = setInterval(checkIncomingCall, 2000);
-    
-    return () => {
-      console.log('📡 ŞOFÖR: Polling cleanup');
-      clearInterval(pollInterval);
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status, showCallScreen]);
 
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
