@@ -2419,6 +2419,33 @@ function PassengerDashboard({
   // Arama kilidi
   const isCallActiveRef = useRef(false);
   
+  // ==================== AGORA ENGINE HOOK - YOLCU ====================
+  const {
+    isEngineReady: agoraReady,
+    isInChannel: agoraInChannel,
+    joinChannel: agoraJoinChannel,
+    leaveChannel: agoraLeaveChannel,
+    toggleMute: agoraToggleMute,
+    toggleSpeaker: agoraToggleSpeaker,
+    isMuted: agoraMuted,
+    isSpeakerOn: agoraSpeakerOn,
+  } = useAgoraEngine({
+    userId: user?.id || null,
+    onUserJoined: (uid) => {
+      console.log('🎙️ YOLCU - Karşı taraf kanala katıldı:', uid);
+    },
+    onUserOffline: (uid) => {
+      console.log('🎙️ YOLCU - Karşı taraf ayrıldı:', uid);
+    },
+    onJoinChannelSuccess: (channel, uid) => {
+      console.log('✅ YOLCU - Kanala katıldı:', channel, uid);
+    },
+    onError: (error) => {
+      console.error('❌ YOLCU - Agora hatası:', error);
+      Alert.alert('Arama Hatası', error);
+    },
+  });
+  
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
     isConnected: socketConnected,
