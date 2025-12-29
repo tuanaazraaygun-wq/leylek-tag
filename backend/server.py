@@ -259,8 +259,8 @@ app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
 api_router = APIRouter(prefix="/api")
 
 # ==================== SOCKET.IO ASGI APP ====================
-# Socket.IO'yu /api/socket.io path'inde çalıştır (Emergent proxy için)
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/api/socket.io')
+# Socket.IO'yu /api/socket.io path'inde çalıştır
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='socket.io')
 
 # Son temizlik zamanı (global)
 last_cleanup_time = None
