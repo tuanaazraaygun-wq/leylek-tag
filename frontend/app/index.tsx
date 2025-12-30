@@ -12,7 +12,7 @@ import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
 import useSocket from '../hooks/useSocket';
-import useAgoraEngine from '../hooks/useAgoraEngine';
+// NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
