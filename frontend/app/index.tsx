@@ -3915,13 +3915,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 return;
               }
               
-              // 🔌 Socket bağlantı kontrolü
-              if (!socketConnected || !socketRegistered) {
-                console.log('❌ Socket bağlı değil veya kayıtlı değil:', { socketConnected, socketRegistered });
-                Alert.alert('Bağlantı Hatası', 'Arama sistemi henüz hazır değil. Lütfen birkaç saniye bekleyip tekrar deneyin.');
-                return;
-              }
-              
               isCallActiveRef.current = true;
               const passengerName = activeTag.passenger_name || 'Yolcu';
               const passengerId = activeTag.passenger_id || '';
@@ -3932,7 +3925,23 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               setCallEnded(false);
               setReceiverOffline(false);
               
-              // Backend'e arama isteği gönder - token ve channel al
+              // 🚀 CALLER: UI ANINDA AÇ (socket/backend bekleme!)
+              const tempCallId = `temp_${Date.now()}`;
+              const tempChannelName = `call_${user.id}_${passengerId}_${Date.now()}`;
+              
+              console.log('📞 ŞOFÖR - CallScreen ANINDA açılıyor');
+              setCallScreenData({
+                mode: 'caller',
+                callId: tempCallId,
+                channelName: tempChannelName,
+                agoraToken: '',
+                remoteName: passengerName,
+                remoteUserId: passengerId,
+                callType: type
+              });
+              setShowCallScreen(true);
+              
+              // 🔄 Backend'e PARALEL istek gönder
               try {
                 const response = await fetch(`${API_URL}/voice/start-call`, {
                   method: 'POST',
@@ -3947,29 +3956,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 const data = await response.json();
                 
                 if (!data.success) {
+                  console.error('❌ Backend hatası:', data);
+                  setShowCallScreen(false);
                   isCallActiveRef.current = false;
                   Alert.alert('Hata', data.detail || 'Arama başlatılamadı');
                   return;
                 }
                 
-                console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
+                console.log('📞 ŞOFÖR - Backend cevabı geldi:', data.call_id);
                 
-                // 🚀 ANINDA Agora kanalına katıl (socket yanıtı bekleme!)
-                console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
-                // NOT: Agora bağlantısı CallScreenV2 içinde yapılıyor (singleton)
-                
-                // Socket.IO ile karşı tarafa bildir (SADECE SİNYAL)
-                socketStartCall({
-                  caller_id: user.id,
-                  caller_name: user.name || 'Şoför',
-                  receiver_id: passengerId,
-                  call_id: data.call_id,
-                  channel_name: data.channel_name,
-                  agora_token: data.agora_token || '',
-                  call_type: type
-                });
-                
-                // Ekranı aç
+                // CallScreen'i gerçek verilerle güncelle
                 setCallScreenData({
                   mode: 'caller',
                   callId: data.call_id,
@@ -3979,10 +3975,23 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   remoteUserId: passengerId,
                   callType: type
                 });
-                setShowCallScreen(true);
+                
+                // Socket.IO ile karşı tarafa bildir
+                if (socketConnected && socketRegistered) {
+                  socketStartCall({
+                    caller_id: user.id,
+                    caller_name: user.name || 'Şoför',
+                    receiver_id: passengerId,
+                    call_id: data.call_id,
+                    channel_name: data.channel_name,
+                    agora_token: data.agora_token || '',
+                    call_type: type
+                  });
+                }
                 
               } catch (error) {
                 console.error('Arama hatası:', error);
+                setShowCallScreen(false);
                 isCallActiveRef.current = false;
                 Alert.alert('Hata', 'Bağlantı hatası');
               }
