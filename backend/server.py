@@ -688,17 +688,19 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
     if not phone_number or not otp_code:
         raise HTTPException(status_code=422, detail="Phone ve OTP gerekli")
     
-    # TR numara doğrulama
+    # TR numara doğrulama ve normalize et
     is_valid, result = validate_turkish_phone(phone_number)
     if is_valid:
-        phone_number = result
+        phone_number = normalize_turkish_phone(result)
+    
+    logger.info(f"📱 OTP verify for: {phone_number}")
     
     # OTP kontrolü
     stored_otp = otp_storage.get(phone_number)
     
     if stored_otp:
         # Süre kontrolü
-        if datetime.utcnow().timestamp() > stored_otp["expires"]:
+        if time.time() > stored_otp["expires"]:
             del otp_storage[phone_number]
             raise HTTPException(status_code=400, detail="OTP süresi doldu, yeni kod isteyin")
         
@@ -708,10 +710,12 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
         
         # Başarılı - OTP'yi sil
         del otp_storage[phone_number]
+        logger.info(f"✅ OTP verified for: {phone_number}")
     else:
         # Fallback: Test modu için 123456 kabul et
         if otp_code != "123456":
             raise HTTPException(status_code=400, detail="Geçersiz OTP")
+        logger.warning(f"⚠️ Test OTP used for: {phone_number}")
     
     # Kullanıcı var mı kontrol et
     result = supabase.table("users").select("*").eq("phone", phone_number).execute()
