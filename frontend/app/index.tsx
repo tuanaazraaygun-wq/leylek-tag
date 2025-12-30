@@ -3987,10 +3987,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
                 
                 // 🚀 ANINDA Agora kanalına katıl (socket yanıtı bekleme!)
-                console.log('🎙️ ŞOFÖR - Agora kanalına ANINDA katılıyor:', data.channel_name);
-                agoraJoinChannel(data.channel_name, data.agora_token);
+                console.log('📞 ŞOFÖR - Arama başlatıldı:', data.call_id);
+                // NOT: Agora bağlantısı CallScreenV2 içinde yapılıyor (singleton)
                 
-                // Socket.IO ile karşı tarafa bildir (sadece sinyal için)
+                // Socket.IO ile karşı tarafa bildir (SADECE SİNYAL)
                 socketStartCall({
                   caller_id: user.id,
                   caller_name: user.name || 'Şoför',
