@@ -1,13 +1,16 @@
 /**
- * CallScreenV2 - Production-Grade Real-Time Calling
+ * CallScreenV2 - PRODUCTION-READY Real-Time Calling
  * 
- * ARCHITECTURE:
- * - Agora: Handles ALL media (audio/video)
- * - Socket: ONLY signaling (ring/accept/reject/end)
- * - Call start: < 300ms
+ * CRITICAL FIXES:
+ * 1. Call start < 300ms (NO socket waiting)
+ * 2. Video never downgrades to voice
+ * 3. Draggable PIP with proper mirroring
+ * 4. Button debouncing + haptic feedback
+ * 5. Proper end/reject logic
+ * 6. Scalable architecture (Agora = media, Socket = signal only)
+ * 7. Comprehensive timestamp logging
  * 
- * STATE MACHINE:
- * idle → calling → ringing → connecting → in_call → ended
+ * STATE MACHINE: idle → calling → ringing → connecting → in_call → ended
  */
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
@@ -25,6 +28,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import {
   createAgoraRtcEngine,
   IRtcEngine,
@@ -40,7 +44,9 @@ import {
 const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// ==================== CALL STATE MACHINE ====================
+// Debounce time for buttons (ms)
+const BUTTON_DEBOUNCE_MS = 500;
+
 type CallState = 'idle' | 'calling' | 'ringing' | 'connecting' | 'in_call' | 'ended';
 
 interface CallScreenProps {
@@ -52,7 +58,7 @@ interface CallScreenProps {
   userId: string;
   remoteUserId: string;
   remoteName: string;
-  callType: 'audio' | 'video';
+  callType: 'audio' | 'video'; // LOCKED - never changes
   onAccept: () => void;
   onReject: () => void;
   onEnd: () => void;
@@ -72,95 +78,98 @@ let activeCallId: string | null = null;
 let audioPermissionGranted = false;
 let cameraPermissionGranted = false;
 
-// ==================== DEBUG LOGGER ====================
-const log = (tag: string, message: string, data?: any) => {
-  const ts = new Date().toISOString().split('T')[1].slice(0, 12);
-  const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
-  console.log(`[${ts}] 📞 ${tag}: ${message}${dataStr}`);
+// ==================== TIMESTAMP LOGGER ====================
+const LOG_PREFIX = '📞 CALL';
+const getTimestamp = () => {
+  const now = new Date();
+  return `${now.toISOString().split('T')[1].slice(0, 12)}`;
 };
 
-// ==================== PERMISSIONS (CACHED) ====================
-const checkAndRequestPermissions = async (needCamera: boolean): Promise<boolean> => {
-  if (Platform.OS !== 'android') {
-    return true;
+const log = (event: string, data?: any) => {
+  const ts = getTimestamp();
+  const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
+  console.log(`[${ts}] ${LOG_PREFIX} ${event}${dataStr}`);
+};
+
+// ==================== HAPTIC FEEDBACK ====================
+const hapticFeedback = async (type: 'light' | 'medium' | 'heavy' = 'medium') => {
+  try {
+    if (type === 'light') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else if (type === 'heavy') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    } else {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  } catch (e) {
+    // Haptics not available
   }
+};
+
+// ==================== PERMISSIONS (PRE-CACHED) ====================
+const ensurePermissions = async (needVideo: boolean): Promise<boolean> => {
+  if (Platform.OS !== 'android') return true;
 
   try {
-    // Check what we need
-    const permissionsToRequest: string[] = [];
-    
-    // Audio - always needed
+    const toRequest: string[] = [];
+
+    // Check audio
     if (!audioPermissionGranted) {
-      const audioStatus = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
-      );
-      if (audioStatus) {
+      const hasAudio = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+      if (hasAudio) {
         audioPermissionGranted = true;
-        log('PERM', 'Audio already granted (cached)');
+        log('PERM_AUDIO_CACHED');
       } else {
-        permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        toRequest.push(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
       }
     }
 
-    // Camera - only for video
-    if (needCamera && !cameraPermissionGranted) {
-      const cameraStatus = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.CAMERA
-      );
-      if (cameraStatus) {
+    // Check camera (only for video)
+    if (needVideo && !cameraPermissionGranted) {
+      const hasCam = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+      if (hasCam) {
         cameraPermissionGranted = true;
-        log('PERM', 'Camera already granted (cached)');
+        log('PERM_CAMERA_CACHED');
       } else {
-        permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+        toRequest.push(PermissionsAndroid.PERMISSIONS.CAMERA);
       }
     }
 
-    // Request if needed
-    if (permissionsToRequest.length > 0) {
-      log('PERM', 'Requesting permissions', permissionsToRequest);
-      const results = await PermissionsAndroid.requestMultiple(
-        permissionsToRequest as any
-      );
-
-      // Check results
-      if (results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 
-          PermissionsAndroid.RESULTS.GRANTED) {
+    // Request missing permissions
+    if (toRequest.length > 0) {
+      log('PERM_REQUESTING', toRequest);
+      const results = await PermissionsAndroid.requestMultiple(toRequest as any);
+      
+      if (results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED) {
         audioPermissionGranted = true;
       }
-      if (results[PermissionsAndroid.PERMISSIONS.CAMERA] === 
-          PermissionsAndroid.RESULTS.GRANTED) {
+      if (results[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED) {
         cameraPermissionGranted = true;
       }
     }
 
-    // Final check
-    const audioOk = audioPermissionGranted;
-    const cameraOk = !needCamera || cameraPermissionGranted;
-    
-    log('PERM', 'Permission status', { audioOk, cameraOk });
-    return audioOk && cameraOk;
-
-  } catch (error) {
-    log('PERM', 'Permission error', error);
+    const ok = audioPermissionGranted && (!needVideo || cameraPermissionGranted);
+    log('PERM_RESULT', { audio: audioPermissionGranted, camera: cameraPermissionGranted, ok });
+    return ok;
+  } catch (e) {
+    log('PERM_ERROR', e);
     return false;
   }
 };
 
-// ==================== ENGINE MANAGEMENT ====================
-const getEngine = async (isVideo: boolean): Promise<IRtcEngine | null> => {
+// ==================== ENGINE (SINGLETON) ====================
+const getOrCreateEngine = async (isVideo: boolean): Promise<IRtcEngine | null> => {
   if (engineReady && globalEngine) {
-    log('ENGINE', 'Using existing engine (singleton)');
-    
-    // Enable video if needed
+    log('ENGINE_REUSE');
     if (isVideo) {
       globalEngine.enableVideo();
       globalEngine.startPreview();
+      log('ENGINE_VIDEO_ENABLED');
     }
     return globalEngine;
   }
 
-  log('ENGINE', 'Creating new engine...');
-  
+  log('ENGINE_CREATING');
   try {
     const engine = createAgoraRtcEngine();
     
@@ -169,15 +178,15 @@ const getEngine = async (isVideo: boolean): Promise<IRtcEngine | null> => {
       channelProfile: ChannelProfileType.ChannelProfileCommunication,
     });
 
-    // Audio setup
+    // Audio - always
     engine.enableAudio();
     engine.setDefaultAudioRouteToSpeakerphone(true);
     engine.setEnableSpeakerphone(true);
-    
-    // Video setup
+    log('ENGINE_AUDIO_ENABLED');
+
+    // Video - only if needed
     if (isVideo) {
       engine.enableVideo();
-      // Fix mirrored/inverted self-view
       engine.setVideoEncoderConfiguration({
         dimensions: { width: 480, height: 640 },
         frameRate: 15,
@@ -185,17 +194,17 @@ const getEngine = async (isVideo: boolean): Promise<IRtcEngine | null> => {
         mirrorMode: VideoMirrorModeType.VideoMirrorModeDisabled,
       });
       engine.startPreview();
+      log('ENGINE_VIDEO_ENABLED');
     }
-    
+
     engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
 
     globalEngine = engine;
     engineReady = true;
-    
-    log('ENGINE', '✅ Engine created successfully');
+    log('ENGINE_CREATED_OK');
     return engine;
-  } catch (error) {
-    log('ENGINE', '❌ Failed to create engine', error);
+  } catch (e) {
+    log('ENGINE_ERROR', e);
     return null;
   }
 };
@@ -210,7 +219,7 @@ export default function CallScreen({
   userId,
   remoteUserId,
   remoteName,
-  callType,
+  callType, // LOCKED - voice or video, never changes
   onAccept,
   onReject,
   onEnd,
@@ -228,18 +237,39 @@ export default function CallScreen({
   const [isSpeaker, setIsSpeaker] = useState(true);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
-  
-  // PIP position for self-view
-  const [pipPosition, setPipPosition] = useState({ x: SCREEN_WIDTH - 130, y: 60 });
-  const pipPan = useRef(new Animated.ValueXY({ x: SCREEN_WIDTH - 130, y: 60 })).current;
-  
+  const [showSelfView, setShowSelfView] = useState(true);
+
   // Refs
   const isInChannel = useRef(false);
   const isCleaningUp = useRef(false);
   const durationTimer = useRef<NodeJS.Timeout | null>(null);
   const timeoutTimer = useRef<NodeJS.Timeout | null>(null);
   const callStartTs = useRef<number>(0);
+  const lastButtonPress = useRef<number>(0);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
+
+  // PIP position
+  const pipPan = useRef(new Animated.ValueXY({ x: SCREEN_WIDTH - 140, y: 80 })).current;
+
+  // ==================== DEBOUNCE ====================
+  const canPressButton = useCallback(() => {
+    const now = Date.now();
+    if (now - lastButtonPress.current < BUTTON_DEBOUNCE_MS) {
+      log('BUTTON_DEBOUNCED');
+      return false;
+    }
+    lastButtonPress.current = now;
+    return true;
+  }, []);
+
+  // ==================== BUTTON ANIMATION ====================
+  const animateButtonPress = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(buttonScale, { toValue: 0.9, duration: 50, useNativeDriver: true }),
+      Animated.timing(buttonScale, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+  }, [buttonScale]);
 
   // ==================== PIP PAN RESPONDER ====================
   const pipPanResponder = useMemo(() => PanResponder.create({
@@ -247,8 +277,8 @@ export default function CallScreen({
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: () => {
       pipPan.setOffset({
-        x: (pipPan.x as any)._value,
-        y: (pipPan.y as any)._value,
+        x: (pipPan.x as any)._value || 0,
+        y: (pipPan.y as any)._value || 0,
       });
     },
     onPanResponderMove: Animated.event(
@@ -257,29 +287,22 @@ export default function CallScreen({
     ),
     onPanResponderRelease: (_, gesture) => {
       pipPan.flattenOffset();
-      // Snap to edges
-      let newX = gesture.moveX - 60;
-      let newY = gesture.moveY - 80;
-      
-      // Boundaries
-      newX = Math.max(10, Math.min(SCREEN_WIDTH - 130, newX));
-      newY = Math.max(50, Math.min(SCREEN_HEIGHT - 200, newY));
-      
+      // Snap to boundaries
+      let x = Math.max(10, Math.min(SCREEN_WIDTH - 140, gesture.moveX - 60));
+      let y = Math.max(60, Math.min(SCREEN_HEIGHT - 220, gesture.moveY - 90));
       Animated.spring(pipPan, {
-        toValue: { x: newX, y: newY },
+        toValue: { x, y },
         useNativeDriver: false,
-        friction: 7,
+        friction: 8,
       }).start();
     },
-  }), []);
+  }), [pipPan]);
 
   // ==================== TIMERS ====================
   const startDurationTimer = useCallback(() => {
     if (durationTimer.current) return;
-    log('TIMER', 'Duration timer started');
-    durationTimer.current = setInterval(() => {
-      setDuration(d => d + 1);
-    }, 1000);
+    log('TIMER_START');
+    durationTimer.current = setInterval(() => setDuration(d => d + 1), 1000);
   }, []);
 
   const stopDurationTimer = useCallback(() => {
@@ -307,135 +330,135 @@ export default function CallScreen({
     Vibration.cancel();
   }, []);
 
-  // ==================== END CALL (UNIFIED) ====================
+  // ==================== END CALL ====================
   const endCall = useCallback(async () => {
     if (isCleaningUp.current) {
-      log('END', 'Already cleaning up');
+      log('END_ALREADY_CLEANING');
       return;
     }
     isCleaningUp.current = true;
 
-    const totalTime = Date.now() - callStartTs.current;
-    log('END', `======= END CALL (${totalTime}ms total) =======`);
+    const totalMs = Date.now() - callStartTs.current;
+    log('END_CALL_START', { totalMs, callId });
 
-    // 1. Stop everything
     stopRingtone();
     stopDurationTimer();
     stopTimeout();
     setCallState('ended');
 
-    // 2. Leave Agora
+    // Leave Agora
     if (isInChannel.current && globalEngine) {
-      log('END', 'Leaving Agora channel');
+      log('END_LEAVE_CHANNEL');
       try {
         globalEngine.leaveChannel();
       } catch (e) {
-        log('END', 'Leave error (ignored)', e);
+        log('END_LEAVE_ERROR', e);
       }
       isInChannel.current = false;
     }
 
-    // 3. Clear active call
     activeCallId = null;
-
-    // 4. Signal via socket
     onEnd();
+    log('END_CALL_COMPLETE');
 
-    // 5. Close UI
-    log('END', 'Closing call screen');
     setTimeout(() => {
       isCleaningUp.current = false;
       onClose();
-    }, 500);
-  }, [onEnd, onClose, stopRingtone, stopDurationTimer, stopTimeout]);
+    }, 400);
+  }, [callId, onEnd, onClose, stopRingtone, stopDurationTimer, stopTimeout]);
 
-  // ==================== JOIN CHANNEL (INSTANT) ====================
-  const joinChannel = useCallback(async () => {
-    // Guard against multiple joins
+  // ==================== JOIN CHANNEL (INSTANT - NO BLOCKING) ====================
+  const joinChannelNow = useCallback(async () => {
     if (activeCallId && activeCallId !== callId) {
-      log('JOIN', '⚠️ Another call active');
+      log('JOIN_BLOCKED_OTHER_CALL');
       return false;
     }
-    
     if (isInChannel.current) {
-      log('JOIN', '⚠️ Already in channel');
+      log('JOIN_ALREADY_IN_CHANNEL');
       return true;
     }
 
-    const joinStartTs = Date.now();
-    callStartTs.current = joinStartTs;
+    const startMs = Date.now();
+    callStartTs.current = startMs;
     activeCallId = callId;
 
-    log('JOIN', `======= JOIN START =======`);
-    log('JOIN', `Channel: ${channelName}, Type: ${callType}`);
+    log('JOIN_START', { callId, channelName, callType });
 
-    // 1. Check permissions (cached = instant if already granted)
-    const hasPermissions = await checkAndRequestPermissions(callType === 'video');
-    if (!hasPermissions) {
-      log('JOIN', '❌ Permissions denied');
+    // 1. Permissions (cached = instant)
+    const isVideo = callType === 'video';
+    const hasPerms = await ensurePermissions(isVideo);
+    if (!hasPerms) {
+      log('JOIN_NO_PERMS');
       endCall();
       return false;
     }
+    log('JOIN_PERMS_OK', { ms: Date.now() - startMs });
 
-    // 2. Get engine (singleton = instant if already created)
-    const engine = await getEngine(callType === 'video');
+    // 2. Engine (singleton = instant)
+    const engine = await getOrCreateEngine(isVideo);
     if (!engine) {
-      log('JOIN', '❌ No engine');
+      log('JOIN_NO_ENGINE');
       endCall();
       return false;
     }
+    log('JOIN_ENGINE_OK', { ms: Date.now() - startMs });
 
-    // 3. Register event handlers
+    // 3. Event handlers
     const handler: IRtcEngineEventHandler = {
-      onJoinChannelSuccess: (connection, elapsed) => {
-        const joinTime = Date.now() - joinStartTs;
-        log('AGORA', `✅ onJoinChannelSuccess | ${joinTime}ms`);
+      onJoinChannelSuccess: (conn, elapsed) => {
+        const ms = Date.now() - startMs;
+        log('AGORA_JOIN_SUCCESS', { channel: conn.channelId, ms, elapsed });
         isInChannel.current = true;
       },
-      onUserJoined: (connection, uid) => {
-        const userJoinTime = Date.now() - joinStartTs;
-        log('AGORA', `👤 onUserJoined | uid: ${uid} | ${userJoinTime}ms`);
+      onUserJoined: (conn, uid) => {
+        const ms = Date.now() - startMs;
+        log('AGORA_USER_JOINED', { uid, ms });
         setRemoteUid(uid);
         setCallState('in_call');
         startDurationTimer();
         stopRingtone();
         stopTimeout();
+        hapticFeedback('light');
       },
-      onUserOffline: (connection, uid, reason) => {
-        log('AGORA', `👤 onUserOffline | uid: ${uid} | reason: ${reason}`);
+      onUserOffline: (conn, uid, reason) => {
+        log('AGORA_USER_OFFLINE', { uid, reason });
         setRemoteUid(null);
         endCall();
       },
       onLeaveChannel: () => {
-        log('AGORA', '📴 onLeaveChannel');
+        log('AGORA_LEAVE_CHANNEL');
         isInChannel.current = false;
       },
       onError: (err, msg) => {
-        log('AGORA', `❌ Error: ${err} - ${msg}`);
+        log('AGORA_ERROR', { err, msg });
+      },
+      onRemoteVideoStateChanged: (conn, uid, state, reason) => {
+        log('AGORA_REMOTE_VIDEO_STATE', { uid, state, reason });
+      },
+      onLocalVideoStateChanged: (source, state, error) => {
+        log('AGORA_LOCAL_VIDEO_STATE', { source, state, error });
       },
     };
-
     engine.registerEventHandler(handler);
 
-    // 4. JOIN NOW!
+    // 4. JOIN NOW (no waiting!)
     const uid = Math.floor(Math.random() * 100000);
-    log('JOIN', `🚀 Joining NOW | uid: ${uid}`);
+    log('JOIN_CHANNEL_NOW', { uid, isVideo });
 
     try {
       engine.joinChannel(agoraToken, channelName, uid, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
         publishMicrophoneTrack: true,
-        publishCameraTrack: callType === 'video',
+        publishCameraTrack: isVideo, // ENFORCED: video only if callType === 'video'
         autoSubscribeAudio: true,
-        autoSubscribeVideo: callType === 'video',
+        autoSubscribeVideo: isVideo, // ENFORCED: video only if callType === 'video'
       });
 
-      const joinTime = Date.now() - joinStartTs;
-      log('JOIN', `✅ joinChannel called | ${joinTime}ms`);
+      const joinMs = Date.now() - startMs;
+      log('JOIN_CHANNEL_CALLED', { ms: joinMs });
       return true;
-
-    } catch (error) {
-      log('JOIN', `❌ joinChannel error`, error);
+    } catch (e) {
+      log('JOIN_ERROR', e);
       endCall();
       return false;
     }
@@ -443,73 +466,89 @@ export default function CallScreen({
 
   // ==================== ACCEPT (RECEIVER) ====================
   const handleAccept = useCallback(async () => {
-    log('ACTION', '✅ ACCEPT pressed');
+    if (!canPressButton()) return;
+    hapticFeedback('medium');
+    animateButtonPress();
+    
+    log('ACCEPT_PRESSED');
     setCallState('connecting');
     stopRingtone();
-    onAccept(); // Signal via socket
-    await joinChannel(); // Join Agora IMMEDIATELY
-  }, [onAccept, joinChannel, stopRingtone]);
+    onAccept();
+    await joinChannelNow();
+  }, [canPressButton, animateButtonPress, onAccept, joinChannelNow, stopRingtone]);
 
   // ==================== REJECT (RECEIVER) ====================
   const handleReject = useCallback(() => {
-    log('ACTION', '❌ REJECT pressed');
+    if (!canPressButton()) return;
+    hapticFeedback('heavy');
+    animateButtonPress();
+
+    log('REJECT_PRESSED');
     setCallState('ended');
     stopRingtone();
     stopTimeout();
     onReject();
     activeCallId = null;
     setTimeout(() => onClose(), 300);
-  }, [onReject, onClose, stopRingtone, stopTimeout]);
+  }, [canPressButton, animateButtonPress, onReject, onClose, stopRingtone, stopTimeout]);
+
+  // ==================== END (BOTH) ====================
+  const handleEnd = useCallback(() => {
+    if (!canPressButton()) return;
+    hapticFeedback('heavy');
+    animateButtonPress();
+    
+    log('END_PRESSED');
+    endCall();
+  }, [canPressButton, animateButtonPress, endCall]);
 
   // ==================== CONTROLS ====================
   const toggleMute = useCallback(() => {
-    if (globalEngine) {
-      const newMute = !isMuted;
-      globalEngine.muteLocalAudioStream(newMute);
-      setIsMuted(newMute);
-      log('CTRL', `Mute: ${newMute}`);
-    }
+    if (!globalEngine) return;
+    hapticFeedback('light');
+    const newVal = !isMuted;
+    globalEngine.muteLocalAudioStream(newVal);
+    setIsMuted(newVal);
+    log('TOGGLE_MUTE', { muted: newVal });
   }, [isMuted]);
 
   const toggleSpeaker = useCallback(() => {
-    if (globalEngine) {
-      const newSpeaker = !isSpeaker;
-      globalEngine.setEnableSpeakerphone(newSpeaker);
-      setIsSpeaker(newSpeaker);
-      log('CTRL', `Speaker: ${newSpeaker}`);
-    }
+    if (!globalEngine) return;
+    hapticFeedback('light');
+    const newVal = !isSpeaker;
+    globalEngine.setEnableSpeakerphone(newVal);
+    setIsSpeaker(newVal);
+    log('TOGGLE_SPEAKER', { speaker: newVal });
   }, [isSpeaker]);
 
   const toggleCamera = useCallback(() => {
-    if (globalEngine && callType === 'video') {
-      const newOff = !isCameraOff;
-      globalEngine.muteLocalVideoStream(newOff);
-      setIsCameraOff(newOff);
-      log('CTRL', `Camera off: ${newOff}`);
-    }
+    if (!globalEngine || callType !== 'video') return;
+    hapticFeedback('light');
+    const newVal = !isCameraOff;
+    globalEngine.muteLocalVideoStream(newVal);
+    setIsCameraOff(newVal);
+    log('TOGGLE_CAMERA', { off: newVal });
   }, [callType, isCameraOff]);
 
   const switchCamera = useCallback(() => {
-    if (globalEngine && callType === 'video') {
-      globalEngine.switchCamera();
-      log('CTRL', 'Camera switched');
-    }
+    if (!globalEngine || callType !== 'video') return;
+    hapticFeedback('light');
+    globalEngine.switchCamera();
+    log('SWITCH_CAMERA');
   }, [callType]);
 
   // ==================== MAIN EFFECT ====================
   useEffect(() => {
     if (!visible || !callId) return;
 
-    // Guard against duplicate calls
     if (activeCallId && activeCallId !== callId) {
-      log('INIT', '⚠️ Another call active, ignoring');
+      log('INIT_BLOCKED_OTHER_CALL');
       return;
     }
 
-    log('INIT', `======= CALL SCREEN OPEN =======`);
-    log('INIT', `Mode: ${mode} | CallType: ${callType} | CallId: ${callId}`);
+    log('SCREEN_OPEN', { mode, callType, callId });
 
-    // Reset state
+    // Reset
     isCleaningUp.current = false;
     setCallState('idle');
     setDuration(0);
@@ -517,42 +556,39 @@ export default function CallScreen({
     setIsMuted(false);
     setIsSpeaker(true);
     setIsCameraOff(false);
+    setShowSelfView(true);
 
     // Pulse animation
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.12, duration: 600, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
       ])
     ).start();
 
     if (mode === 'caller') {
-      // === CALLER: Join IMMEDIATELY ===
-      log('INIT', '🚀 CALLER: Starting call...');
+      log('CALLER_START');
       setCallState('calling');
-      joinChannel();
+      // JOIN IMMEDIATELY - no waiting!
+      joinChannelNow();
 
-      // Timeout 45s
       timeoutTimer.current = setTimeout(() => {
-        log('TIMEOUT', '⏱️ No answer after 45s');
+        log('CALLER_TIMEOUT_45S');
         endCall();
       }, 45000);
-
     } else {
-      // === RECEIVER: Wait for accept ===
-      log('INIT', '🔔 RECEIVER: Incoming call...');
+      log('RECEIVER_START');
       setCallState('ringing');
       startRingtone();
 
-      // Timeout 45s
       timeoutTimer.current = setTimeout(() => {
-        log('TIMEOUT', '⏱️ Auto-reject after 45s');
+        log('RECEIVER_TIMEOUT_45S');
         handleReject();
       }, 45000);
     }
 
     return () => {
-      log('CLEANUP', 'CallScreen cleanup');
+      log('SCREEN_CLEANUP');
       stopRingtone();
       stopDurationTimer();
       stopTimeout();
@@ -560,24 +596,24 @@ export default function CallScreen({
     };
   }, [visible, callId]);
 
-  // ==================== EXTERNAL STATUS ====================
+  // ==================== EXTERNAL EVENTS ====================
   useEffect(() => {
     if (callRejected) {
-      log('EXT', 'Call rejected');
+      log('EXT_REJECTED');
       endCall();
     }
   }, [callRejected, endCall]);
 
   useEffect(() => {
     if (callEnded) {
-      log('EXT', 'Call ended externally');
+      log('EXT_ENDED');
       endCall();
     }
   }, [callEnded, endCall]);
 
   useEffect(() => {
     if (receiverOffline) {
-      log('EXT', 'Receiver offline');
+      log('EXT_OFFLINE');
       endCall();
     }
   }, [receiverOffline, endCall]);
@@ -585,36 +621,43 @@ export default function CallScreen({
   // ==================== RENDER ====================
   if (!visible) return null;
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const statusText = {
-    idle: 'Hazırlanıyor...',
-    calling: 'Aranıyor...',
-    ringing: 'Gelen Arama',
-    connecting: 'Bağlanıyor...',
-    in_call: formatTime(duration),
-    ended: 'Arama Bitti',
-  }[callState];
+  // Status text with call type
+  const getStatusText = () => {
+    const isVideo = callType === 'video';
+    switch (callState) {
+      case 'idle': return 'Hazırlanıyor...';
+      case 'calling': return isVideo ? 'Video Aranıyor...' : 'Sesli Aranıyor...';
+      case 'ringing': return isVideo ? 'Video Gelen Arama' : 'Sesli Gelen Arama';
+      case 'connecting': return 'Bağlanıyor...';
+      case 'in_call': return formatTime(duration);
+      case 'ended': return 'Arama Bitti';
+      default: return '';
+    }
+  };
 
   const statusColor = {
     idle: '#FFC107',
-    calling: '#FFC107',
+    calling: '#FF9800',
     ringing: '#4CAF50',
     connecting: '#2196F3',
     in_call: '#4CAF50',
     ended: '#f44336',
   }[callState];
 
+  const isVideo = callType === 'video';
+
   return (
     <Modal visible={visible} animationType="fade" statusBarTranslucent>
       <View style={styles.container}>
         
         {/* Remote Video (Full Screen) */}
-        {callType === 'video' && remoteUid && (
+        {isVideo && remoteUid && (
           <RtcSurfaceView
             style={styles.remoteVideo}
             canvas={{ 
@@ -624,8 +667,8 @@ export default function CallScreen({
           />
         )}
 
-        {/* Local Video PIP (Draggable) */}
-        {callType === 'video' && callState === 'in_call' && !isCameraOff && (
+        {/* Self Video PIP (Draggable) - Always visible in video call */}
+        {isVideo && showSelfView && !isCameraOff && (
           <Animated.View 
             style={[
               styles.pipContainer,
@@ -642,33 +685,62 @@ export default function CallScreen({
                 mirrorMode: VideoMirrorModeType.VideoMirrorModeEnabled,
               }}
             />
+            {/* PIP close button */}
+            <TouchableOpacity 
+              style={styles.pipClose}
+              onPress={() => setShowSelfView(false)}
+            >
+              <Ionicons name="close" size={14} color="#fff" />
+            </TouchableOpacity>
           </Animated.View>
         )}
 
+        {/* Show self view button if hidden */}
+        {isVideo && !showSelfView && (
+          <TouchableOpacity 
+            style={styles.showPipBtn}
+            onPress={() => setShowSelfView(true)}
+          >
+            <Ionicons name="person" size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
+
+        {/* Call Type Badge */}
+        <View style={styles.callTypeBadge}>
+          <Ionicons 
+            name={isVideo ? "videocam" : "call"} 
+            size={16} 
+            color="#fff" 
+          />
+          <Text style={styles.callTypeText}>
+            {isVideo ? 'Video' : 'Sesli'}
+          </Text>
+        </View>
+
         {/* Status Badge */}
-        <View style={[styles.statusBadge, { backgroundColor: statusColor + '33' }]}>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor + '40' }]}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
           <Text style={styles.statusBadgeText}>{callState.toUpperCase()}</Text>
         </View>
 
-        {/* Avatar (hide during video call) */}
-        {!(callType === 'video' && remoteUid) && (
+        {/* Avatar (hide during video call with remote) */}
+        {!(isVideo && remoteUid) && (
           <Animated.View style={[styles.avatarWrap, { transform: [{ scale: pulseAnim }] }]}>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={60} color="#fff" />
+            <View style={[styles.avatar, isVideo && styles.avatarVideo]}>
+              <Ionicons name={isVideo ? "videocam" : "person"} size={60} color="#fff" />
             </View>
           </Animated.View>
         )}
 
         {/* Name & Status */}
         <Text style={styles.remoteName}>{remoteName}</Text>
-        <Text style={styles.statusText}>{statusText}</Text>
+        <Text style={styles.statusText}>{getStatusText()}</Text>
 
-        {/* Connected Badge */}
+        {/* Connected indicator */}
         {remoteUid && (
           <View style={styles.connectedBadge}>
             <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-            <Text style={styles.connectedText}>Bağlı</Text>
+            <Text style={styles.connectedText}>Bağlandı</Text>
           </View>
         )}
 
@@ -677,12 +749,24 @@ export default function CallScreen({
           {callState === 'ringing' && mode === 'receiver' ? (
             // Incoming call
             <View style={styles.incomingRow}>
-              <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
-                <Ionicons name="close" size={32} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.acceptBtn} onPress={handleAccept}>
-                <Ionicons name="call" size={32} color="#fff" />
-              </TouchableOpacity>
+              <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+                <TouchableOpacity 
+                  style={styles.rejectBtn} 
+                  onPress={handleReject}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={32} color="#fff" />
+                </TouchableOpacity>
+              </Animated.View>
+              <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+                <TouchableOpacity 
+                  style={[styles.acceptBtn, isVideo && styles.acceptBtnVideo]} 
+                  onPress={handleAccept}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={isVideo ? "videocam" : "call"} size={32} color="#fff" />
+                </TouchableOpacity>
+              </Animated.View>
             </View>
           ) : callState === 'in_call' ? (
             // In call
@@ -690,38 +774,53 @@ export default function CallScreen({
               <TouchableOpacity 
                 style={[styles.ctrlBtn, isMuted && styles.ctrlBtnActive]} 
                 onPress={toggleMute}
+                activeOpacity={0.7}
               >
                 <Ionicons name={isMuted ? "mic-off" : "mic"} size={24} color="#fff" />
               </TouchableOpacity>
 
-              {callType === 'video' && (
+              {isVideo && (
                 <>
                   <TouchableOpacity 
                     style={[styles.ctrlBtn, isCameraOff && styles.ctrlBtnActive]} 
                     onPress={toggleCamera}
+                    activeOpacity={0.7}
                   >
                     <Ionicons name={isCameraOff ? "videocam-off" : "videocam"} size={24} color="#fff" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.ctrlBtn} onPress={switchCamera}>
+                  <TouchableOpacity 
+                    style={styles.ctrlBtn} 
+                    onPress={switchCamera}
+                    activeOpacity={0.7}
+                  >
                     <Ionicons name="camera-reverse" size={24} color="#fff" />
                   </TouchableOpacity>
                 </>
               )}
 
-              <TouchableOpacity style={styles.endBtn} onPress={endCall}>
+              <TouchableOpacity 
+                style={styles.endBtn} 
+                onPress={handleEnd}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
               </TouchableOpacity>
 
               <TouchableOpacity 
                 style={[styles.ctrlBtn, isSpeaker && styles.ctrlBtnActive]} 
                 onPress={toggleSpeaker}
+                activeOpacity={0.7}
               >
                 <Ionicons name={isSpeaker ? "volume-high" : "volume-low"} size={24} color="#fff" />
               </TouchableOpacity>
             </View>
           ) : (
             // Calling/Connecting
-            <TouchableOpacity style={styles.endBtn} onPress={endCall}>
+            <TouchableOpacity 
+              style={styles.endBtn} 
+              onPress={handleEnd}
+              activeOpacity={0.7}
+            >
               <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
           )}
@@ -747,20 +846,60 @@ const styles = StyleSheet.create({
   },
   pipContainer: {
     position: 'absolute',
-    width: 120,
-    height: 160,
-    borderRadius: 12,
+    width: 130,
+    height: 180,
+    borderRadius: 14,
     overflow: 'hidden',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#fff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 10,
+    backgroundColor: '#000',
   },
   pipVideo: {
     flex: 1,
+  },
+  pipClose: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  showPipBtn: {
+    position: 'absolute',
+    top: 80,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  callTypeBadge: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(67, 97, 238, 0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  callTypeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   statusBadge: {
     position: 'absolute',
@@ -800,6 +939,10 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
+  avatarVideo: {
+    backgroundColor: '#9C27B0',
+    shadowColor: '#9C27B0',
+  },
   remoteName: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -811,13 +954,13 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 18,
-    color: 'rgba(255,255,255,0.8)',
+    color: 'rgba(255,255,255,0.85)',
     marginBottom: 16,
   },
   connectedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(76,175,80,0.2)',
+    backgroundColor: 'rgba(76,175,80,0.25)',
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
@@ -844,7 +987,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
+    gap: 14,
   },
   ctrlBtn: {
     width: 52,
@@ -866,9 +1009,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#4CAF50',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  acceptBtnVideo: {
+    backgroundColor: '#9C27B0',
+    shadowColor: '#9C27B0',
   },
   rejectBtn: {
     width: 72,
@@ -879,9 +1026,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#f44336',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
   },
   endBtn: {
     width: 68,
@@ -892,9 +1039,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#f44336',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-    marginHorizontal: 12,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+    marginHorizontal: 10,
   },
 });
