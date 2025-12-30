@@ -1,15 +1,11 @@
 /**
- * CallScreenV2 - Profesyonel Sesli/Görüntülü Arama Ekranı
+ * CallScreenV2 - Sesli/Görüntülü Arama Ekranı
  * 
- * YENİ MİMARİ:
- * - Agora engine SINGLETON olarak useAgoraEngine hook'undan geliyor
- * - joinChannel ANINDA çağrılıyor (socket beklenmez)
- * - Socket SADECE sinyal için (ringing/accept/reject/end)
- * - Call State Machine: idle → calling → in_call → ended
- * 
- * DEBUG LOGS:
- * - 🕐 Timestamp ile her adım loglanıyor
- * - Call start → joinChannel → onJoinChannelSuccess → onUserJoined
+ * CRITICAL FIXES:
+ * 1. VIDEO CALL - Permission & Media
+ * 2. DRIVER SIDE CALL - Instant ringing
+ * 3. RECONNECT - Singleton engine, no destroy
+ * 4. END CALL - Unified cleanup, close map
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -23,6 +19,7 @@ import {
   Animated,
   Platform,
   PermissionsAndroid,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -31,11 +28,12 @@ import {
   ChannelProfileType,
   ClientRoleType,
   IRtcEngineEventHandler,
+  RtcSurfaceView,
+  VideoSourceType,
 } from 'react-native-agora';
 
 const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 
-// Call State Machine
 type CallState = 'idle' | 'calling' | 'ringing' | 'connecting' | 'in_call' | 'ended';
 
 interface CallScreenProps {
@@ -48,26 +46,110 @@ interface CallScreenProps {
   remoteUserId: string;
   remoteName: string;
   callType: 'audio' | 'video';
-  
-  // Socket.IO callbacks (SADECE SİNYAL!)
   onAccept: () => void;
   onReject: () => void;
   onEnd: () => void;
   onClose: () => void;
-  
-  // External status updates (Socket'ten)
   callAccepted?: boolean;
   callRejected?: boolean;
   callEnded?: boolean;
   receiverOffline?: boolean;
 }
 
-// Singleton Agora Engine
+// ==================== SINGLETON ENGINE ====================
 let globalEngine: IRtcEngine | null = null;
 let engineInitialized = false;
+let activeCallId: string | null = null; // Concurrent call guard
 
-// Debug timestamp
-const timestamp = () => new Date().toISOString().split('T')[1].slice(0, 12);
+// ==================== PERMISSION CHECK (CACHED) ====================
+let permissionsGranted = false;
+
+const requestPermissionsOnce = async (callType: 'audio' | 'video'): Promise<boolean> => {
+  if (permissionsGranted) {
+    console.log('📞 Permissions already granted (cached)');
+    return true;
+  }
+
+  if (Platform.OS === 'android') {
+    try {
+      const permissions = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+      if (callType === 'video') {
+        permissions.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+      }
+
+      const granted = await PermissionsAndroid.requestMultiple(permissions);
+      
+      const audioOk = granted[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 
+                     PermissionsAndroid.RESULTS.GRANTED;
+      const cameraOk = callType === 'audio' || 
+                      granted[PermissionsAndroid.PERMISSIONS.CAMERA] === 
+                      PermissionsAndroid.RESULTS.GRANTED;
+      
+      console.log(`📞 Permissions: audio=${audioOk}, camera=${cameraOk}`);
+      
+      if (audioOk && cameraOk) {
+        permissionsGranted = true;
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('📞 Permission error:', err);
+      return false;
+    }
+  }
+  
+  permissionsGranted = true;
+  return true;
+};
+
+// ==================== GET/INIT SINGLETON ENGINE ====================
+const getOrCreateEngine = async (callType: 'audio' | 'video'): Promise<IRtcEngine | null> => {
+  // Return existing engine if initialized
+  if (engineInitialized && globalEngine) {
+    console.log('📞 Using existing Agora engine (singleton)');
+    
+    // Enable video if needed and not already enabled
+    if (callType === 'video') {
+      globalEngine.enableVideo();
+      globalEngine.startPreview();
+    }
+    
+    return globalEngine;
+  }
+
+  console.log('📞 Creating new Agora engine...');
+
+  try {
+    const engine = createAgoraRtcEngine();
+    
+    engine.initialize({
+      appId: AGORA_APP_ID,
+      channelProfile: ChannelProfileType.ChannelProfileCommunication,
+    });
+
+    // Audio setup - ALWAYS
+    engine.enableAudio();
+    engine.setDefaultAudioRouteToSpeakerphone(true);
+    engine.setEnableSpeakerphone(true);
+    
+    // Video setup - ONLY for video calls
+    if (callType === 'video') {
+      engine.enableVideo();
+      engine.startPreview();
+    }
+    
+    engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+
+    globalEngine = engine;
+    engineInitialized = true;
+    
+    console.log('📞 ✅ Agora engine created successfully');
+    return engine;
+  } catch (error) {
+    console.error('📞 ❌ Engine creation failed:', error);
+    return null;
+  }
+};
 
 export default function CallScreen({
   visible,
@@ -95,7 +177,8 @@ export default function CallScreen({
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(true);
   const [remoteJoined, setRemoteJoined] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [localVideoEnabled, setLocalVideoEnabled] = useState(callType === 'video');
   
   // Refs
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -103,184 +186,9 @@ export default function CallScreen({
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const isInChannel = useRef(false);
   const callStartTime = useRef<number>(0);
+  const isCleaningUp = useRef(false);
 
-  // ==================== DEBUG LOGGER ====================
-  const log = useCallback((message: string) => {
-    const logMsg = `[${timestamp()}] ${message}`;
-    console.log(`📞 CALL: ${logMsg}`);
-    setDebugLogs(prev => [...prev.slice(-9), logMsg]);
-  }, []);
-
-  // ==================== PERMISSIONS ====================
-  const requestPermissions = async (): Promise<boolean> => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-        ]);
-        
-        const audioOk = granted[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 
-                       PermissionsAndroid.RESULTS.GRANTED;
-        const cameraOk = granted[PermissionsAndroid.PERMISSIONS.CAMERA] === 
-                        PermissionsAndroid.RESULTS.GRANTED;
-        
-        log(`Permissions: audio=${audioOk}, camera=${cameraOk}`);
-        return audioOk; // En azından mikrofon gerekli
-      } catch (err) {
-        log(`Permission error: ${err}`);
-        return false;
-      }
-    }
-    return true;
-  };
-
-  // ==================== AGORA ENGINE (SINGLETON) ====================
-  const initEngine = useCallback(async (): Promise<IRtcEngine | null> => {
-    if (engineInitialized && globalEngine) {
-      log('Engine already initialized (singleton)');
-      return globalEngine;
-    }
-
-    log('Initializing Agora engine...');
-    
-    try {
-      // Request permissions first
-      const hasPermissions = await requestPermissions();
-      if (!hasPermissions) {
-        log('❌ Permissions denied!');
-        return null;
-      }
-
-      const engine = createAgoraRtcEngine();
-      
-      engine.initialize({
-        appId: AGORA_APP_ID,
-        channelProfile: ChannelProfileType.ChannelProfileCommunication,
-      });
-
-      // Audio setup
-      engine.enableAudio();
-      engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.setEnableSpeakerphone(true);
-      
-      // Video setup (if needed)
-      if (callType === 'video') {
-        engine.enableVideo();
-        engine.startPreview();
-      }
-      
-      // Set client role
-      engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
-
-      globalEngine = engine;
-      engineInitialized = true;
-      
-      log('✅ Engine initialized successfully');
-      return engine;
-    } catch (error) {
-      log(`❌ Engine init error: ${error}`);
-      return null;
-    }
-  }, [callType, log]);
-
-  // ==================== JOIN CHANNEL (IMMEDIATELY!) ====================
-  const joinChannel = useCallback(async () => {
-    if (isInChannel.current) {
-      log('Already in channel, skipping');
-      return;
-    }
-
-    const joinStartTime = Date.now();
-    log(`🚀 joinChannel START - channel: ${channelName}`);
-
-    try {
-      let engine = globalEngine;
-      if (!engine) {
-        engine = await initEngine();
-      }
-
-      if (!engine) {
-        log('❌ No engine available!');
-        return;
-      }
-
-      // Register event handlers
-      const eventHandler: IRtcEngineEventHandler = {
-        onJoinChannelSuccess: (connection, elapsed) => {
-          const joinTime = Date.now() - joinStartTime;
-          log(`✅ onJoinChannelSuccess - channel: ${connection.channelId}, time: ${joinTime}ms`);
-          isInChannel.current = true;
-          
-          if (mode === 'caller') {
-            setCallState('calling');
-          } else {
-            setCallState('connecting');
-          }
-        },
-        onUserJoined: (connection, uid, elapsed) => {
-          const totalTime = Date.now() - callStartTime.current;
-          log(`👤 onUserJoined - uid: ${uid}, totalTime: ${totalTime}ms`);
-          setRemoteJoined(true);
-          setCallState('in_call');
-          startDurationTimer();
-          stopRingtone();
-        },
-        onUserOffline: (connection, uid, reason) => {
-          log(`👤 onUserOffline - uid: ${uid}, reason: ${reason}`);
-          setRemoteJoined(false);
-          // ⚠️ CRITICAL: Karşı taraf ayrıldığında otomatik bitir
-          handleEndCall();
-        },
-        onLeaveChannel: (connection, stats) => {
-          log(`📴 onLeaveChannel - duration: ${stats.duration}s`);
-          isInChannel.current = false;
-        },
-        onError: (err, msg) => {
-          log(`❌ Agora error: ${err} - ${msg}`);
-        },
-        onConnectionStateChanged: (connection, state, reason) => {
-          log(`🔌 Connection state: ${state}, reason: ${reason}`);
-        },
-      };
-
-      engine.registerEventHandler(eventHandler);
-
-      // Generate UID
-      const uid = Math.floor(Math.random() * 100000);
-      log(`📡 Joining channel: ${channelName}, uid: ${uid}`);
-
-      // JOIN IMMEDIATELY!
-      engine.joinChannel(agoraToken, channelName, uid, {
-        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: callType === 'video',
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: callType === 'video',
-      });
-
-    } catch (error) {
-      log(`❌ joinChannel error: ${error}`);
-    }
-  }, [channelName, agoraToken, callType, mode, initEngine, log]);
-
-  // ==================== LEAVE CHANNEL ====================
-  const leaveChannel = useCallback(async () => {
-    if (!isInChannel.current || !globalEngine) {
-      log('Not in channel, skipping leave');
-      return;
-    }
-
-    log('📴 Leaving channel...');
-    try {
-      globalEngine.leaveChannel();
-      isInChannel.current = false;
-    } catch (error) {
-      log(`Leave error: ${error}`);
-    }
-  }, [log]);
-
-  // ==================== TIMER & RINGTONE ====================
+  // ==================== TIMER ====================
   const startDurationTimer = useCallback(() => {
     if (durationTimerRef.current) return;
     durationTimerRef.current = setInterval(() => {
@@ -295,6 +203,7 @@ export default function CallScreen({
     }
   }, []);
 
+  // ==================== RINGTONE ====================
   const playRingtone = useCallback(() => {
     if (mode === 'receiver') {
       Vibration.vibrate([0, 500, 300, 500], true);
@@ -309,79 +218,219 @@ export default function CallScreen({
     }
   }, []);
 
-  // ==================== CALL ACTIONS ====================
-  
-  // KABUL ET (receiver only)
-  const handleAcceptCall = useCallback(async () => {
-    log('✅ ACCEPT pressed');
-    setCallState('connecting');
-    stopRingtone();
-    
-    // Socket üzerinden SADECE sinyal gönder
-    onAccept();
-    
-    // 🚀 ANINDA Agora'ya katıl!
-    await joinChannel();
-  }, [onAccept, joinChannel, stopRingtone, log]);
-
-  // REDDET (receiver only)
-  const handleRejectCall = useCallback(() => {
-    log('❌ REJECT pressed');
-    setCallState('ended');
-    stopRingtone();
-    
-    // Socket üzerinden SADECE sinyal gönder
-    onReject();
-    
-    setTimeout(() => onClose(), 500);
-  }, [onReject, onClose, stopRingtone, log]);
-
-  // KAPAT (both)
+  // ==================== UNIFIED END CALL (FIX #4) ====================
   const handleEndCall = useCallback(async () => {
-    log('📴 END CALL');
-    setCallState('ended');
+    if (isCleaningUp.current) {
+      console.log('📞 Already cleaning up, skip');
+      return;
+    }
+    isCleaningUp.current = true;
+
+    console.log('📞 ======= END CALL START =======');
+    
+    // 1. Stop timers & ringtone
     stopRingtone();
     stopDurationTimer();
     
-    // Socket üzerinden SADECE sinyal gönder
+    // 2. Update state
+    setCallState('ended');
+    
+    // 3. Leave Agora channel (DO NOT DESTROY ENGINE - FIX #3)
+    if (isInChannel.current && globalEngine) {
+      console.log('📞 Leaving Agora channel...');
+      try {
+        globalEngine.leaveChannel();
+      } catch (e) {
+        console.log('📞 Leave channel error (ignored):', e);
+      }
+      isInChannel.current = false;
+    }
+    
+    // 4. Clear active call guard
+    activeCallId = null;
+    
+    // 5. Notify via socket (signal only)
     onEnd();
     
-    // Agora'dan çık
-    await leaveChannel();
+    // 6. Close call screen AND trigger map close (FIX #4)
+    console.log('📞 Closing call screen...');
+    setTimeout(() => {
+      isCleaningUp.current = false;
+      onClose(); // This should also close map screen
+    }, 500);
     
-    setTimeout(() => onClose(), 1000);
-  }, [onEnd, onClose, stopRingtone, stopDurationTimer, leaveChannel, log]);
+    console.log('📞 ======= END CALL COMPLETE =======');
+  }, [onEnd, onClose, stopRingtone, stopDurationTimer]);
+
+  // ==================== JOIN CHANNEL (IDENTICAL FOR BOTH ROLES - FIX #2) ====================
+  const joinChannelNow = useCallback(async () => {
+    // Concurrent call guard (FIX #3)
+    if (activeCallId && activeCallId !== callId) {
+      console.log('📞 ⚠️ Another call is active, ignoring');
+      return;
+    }
+    
+    if (isInChannel.current) {
+      console.log('📞 Already in channel');
+      return;
+    }
+
+    console.log('📞 ======= JOIN CHANNEL START =======');
+    console.log(`📞 Channel: ${channelName}, CallType: ${callType}`);
+    
+    // Set active call guard
+    activeCallId = callId;
+    callStartTime.current = Date.now();
+
+    // 1. Check permissions FIRST (FIX #1)
+    const hasPermissions = await requestPermissionsOnce(callType);
+    if (!hasPermissions) {
+      console.log('📞 ❌ Permissions not granted!');
+      Alert.alert('İzin Gerekli', 'Arama için mikrofon izni gerekli.');
+      handleEndCall();
+      return;
+    }
+
+    // 2. Get or create engine (singleton - FIX #3)
+    const engine = await getOrCreateEngine(callType);
+    if (!engine) {
+      console.log('📞 ❌ Engine not available!');
+      handleEndCall();
+      return;
+    }
+
+    // 3. Register event handlers
+    const eventHandler: IRtcEngineEventHandler = {
+      onJoinChannelSuccess: (connection, elapsed) => {
+        const joinTime = Date.now() - callStartTime.current;
+        console.log(`📞 ✅ onJoinChannelSuccess - channel: ${connection.channelId}, time: ${joinTime}ms`);
+        isInChannel.current = true;
+      },
+      onUserJoined: (connection, uid, elapsed) => {
+        const totalTime = Date.now() - callStartTime.current;
+        console.log(`📞 👤 onUserJoined - uid: ${uid}, totalTime: ${totalTime}ms`);
+        setRemoteJoined(true);
+        setRemoteUid(uid);
+        setCallState('in_call');
+        startDurationTimer();
+        stopRingtone();
+      },
+      onUserOffline: (connection, uid, reason) => {
+        console.log(`📞 👤 onUserOffline - uid: ${uid}, reason: ${reason}`);
+        setRemoteJoined(false);
+        setRemoteUid(null);
+        // Remote user left - end call (FIX #4)
+        handleEndCall();
+      },
+      onLeaveChannel: (connection, stats) => {
+        console.log(`📞 📴 onLeaveChannel`);
+        isInChannel.current = false;
+      },
+      onError: (err, msg) => {
+        console.error(`📞 ❌ Agora error: ${err} - ${msg}`);
+      },
+    };
+
+    engine.registerEventHandler(eventHandler);
+
+    // 4. Enable video if needed (FIX #1)
+    if (callType === 'video') {
+      console.log('📞 Enabling video...');
+      engine.enableVideo();
+      engine.startPreview();
+    }
+
+    // 5. JOIN CHANNEL IMMEDIATELY
+    const uid = Math.floor(Math.random() * 100000);
+    console.log(`📞 🚀 Joining channel NOW: ${channelName}, uid: ${uid}`);
+
+    try {
+      engine.joinChannel(agoraToken, channelName, uid, {
+        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+        publishMicrophoneTrack: true,
+        publishCameraTrack: callType === 'video',
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: callType === 'video',
+      });
+      console.log('📞 ✅ joinChannel called successfully');
+    } catch (error) {
+      console.error('📞 ❌ joinChannel error:', error);
+      handleEndCall();
+    }
+
+    console.log('📞 ======= JOIN CHANNEL END =======');
+  }, [callId, channelName, agoraToken, callType, handleEndCall, startDurationTimer, stopRingtone]);
+
+  // ==================== ACCEPT CALL (RECEIVER) ====================
+  const handleAcceptCall = useCallback(async () => {
+    console.log('📞 ✅ ACCEPT pressed');
+    setCallState('connecting');
+    stopRingtone();
+    
+    // Signal via socket
+    onAccept();
+    
+    // JOIN CHANNEL IMMEDIATELY (FIX #2 - identical to caller)
+    await joinChannelNow();
+  }, [onAccept, joinChannelNow, stopRingtone]);
+
+  // ==================== REJECT CALL (RECEIVER) ====================
+  const handleRejectCall = useCallback(() => {
+    console.log('📞 ❌ REJECT pressed');
+    setCallState('ended');
+    stopRingtone();
+    onReject();
+    activeCallId = null;
+    setTimeout(() => onClose(), 300);
+  }, [onReject, onClose, stopRingtone]);
 
   // ==================== CONTROLS ====================
   const toggleMute = useCallback(() => {
     if (globalEngine) {
       globalEngine.muteLocalAudioStream(!isMuted);
       setIsMuted(!isMuted);
-      log(`Mute: ${!isMuted}`);
     }
-  }, [isMuted, log]);
+  }, [isMuted]);
 
   const toggleSpeaker = useCallback(() => {
     if (globalEngine) {
       globalEngine.setEnableSpeakerphone(!isSpeaker);
       setIsSpeaker(!isSpeaker);
-      log(`Speaker: ${!isSpeaker}`);
     }
-  }, [isSpeaker, log]);
+  }, [isSpeaker]);
+
+  const toggleCamera = useCallback(() => {
+    if (globalEngine && callType === 'video') {
+      globalEngine.muteLocalVideoStream(localVideoEnabled);
+      setLocalVideoEnabled(!localVideoEnabled);
+    }
+  }, [callType, localVideoEnabled]);
+
+  const switchCamera = useCallback(() => {
+    if (globalEngine && callType === 'video') {
+      globalEngine.switchCamera();
+    }
+  }, [callType]);
 
   // ==================== MAIN EFFECT ====================
   useEffect(() => {
     if (!visible || !callId) return;
 
+    // Concurrent call guard
+    if (activeCallId && activeCallId !== callId) {
+      console.log('📞 Another call active, ignoring this one');
+      return;
+    }
+
+    console.log(`📞 ======= CALL SCREEN OPEN =======`);
+    console.log(`📞 Mode: ${mode}, CallId: ${callId}, CallType: ${callType}`);
+
     // Reset state
-    callStartTime.current = Date.now();
+    isCleaningUp.current = false;
     setCallState('idle');
     setDuration(0);
     setRemoteJoined(false);
-    setDebugLogs([]);
-
-    log(`📞 CallScreen OPEN - mode: ${mode}, callId: ${callId}`);
-    log(`Channel: ${channelName}, Token: ${agoraToken?.slice(0, 20)}...`);
+    setRemoteUid(null);
 
     // Pulse animation
     Animated.loop(
@@ -392,35 +441,34 @@ export default function CallScreen({
     ).start();
 
     if (mode === 'caller') {
-      // ==================== CALLER FLOW ====================
-      // 🚀 ANINDA state'i "calling" yap ve Agora'ya katıl
+      // ==================== CALLER FLOW (FIX #2) ====================
+      console.log('📞 CALLER: Starting call...');
       setCallState('calling');
-      log('🚀 CALLER: Joining channel IMMEDIATELY');
-      joinChannel();
+      
+      // JOIN CHANNEL IMMEDIATELY - no waiting!
+      joinChannelNow();
 
-      // 45 saniye timeout
+      // Timeout after 45 seconds
       ringtoneTimeoutRef.current = setTimeout(() => {
-        if (callState === 'calling') {
-          log('⏱️ Timeout - no answer');
-          handleEndCall();
-        }
+        console.log('📞 ⏱️ Timeout - no answer');
+        handleEndCall();
       }, 45000);
 
     } else {
       // ==================== RECEIVER FLOW ====================
+      console.log('📞 RECEIVER: Incoming call...');
       setCallState('ringing');
-      log('🔔 RECEIVER: Ringing...');
       playRingtone();
 
-      // 45 saniye timeout
+      // Timeout after 45 seconds
       ringtoneTimeoutRef.current = setTimeout(() => {
-        log('⏱️ Timeout - auto reject');
+        console.log('📞 ⏱️ Timeout - auto reject');
         handleRejectCall();
       }, 45000);
     }
 
     return () => {
-      log('📞 CallScreen CLEANUP');
+      console.log('📞 CallScreen cleanup');
       stopRingtone();
       stopDurationTimer();
       pulseAnim.stopAnimation();
@@ -430,33 +478,31 @@ export default function CallScreen({
   // ==================== EXTERNAL STATUS UPDATES ====================
   useEffect(() => {
     if (callAccepted && mode === 'caller') {
-      log('✅ External: callAccepted');
-      // Arayan için - karşı taraf kabul etti, Agora'da onUserJoined bekle
+      console.log('📞 External: callAccepted');
+      // Caller already in channel, waiting for onUserJoined
     }
-  }, [callAccepted, mode, log]);
+  }, [callAccepted, mode]);
 
   useEffect(() => {
     if (callRejected) {
-      log('❌ External: callRejected');
-      setCallState('ended');
+      console.log('📞 External: callRejected');
       handleEndCall();
     }
-  }, [callRejected, log]);
+  }, [callRejected, handleEndCall]);
 
   useEffect(() => {
     if (callEnded) {
-      log('📴 External: callEnded');
+      console.log('📞 External: callEnded');
       handleEndCall();
     }
-  }, [callEnded, log]);
+  }, [callEnded, handleEndCall]);
 
   useEffect(() => {
     if (receiverOffline) {
-      log('📵 External: receiverOffline');
-      setCallState('ended');
+      console.log('📞 External: receiverOffline');
       handleEndCall();
     }
-  }, [receiverOffline, log]);
+  }, [receiverOffline, handleEndCall]);
 
   // ==================== RENDER ====================
   if (!visible) return null;
@@ -482,9 +528,34 @@ export default function CallScreen({
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <View style={styles.container}>
+        {/* Video Views */}
+        {callType === 'video' && callState === 'in_call' && (
+          <>
+            {/* Remote Video (Full Screen) */}
+            {remoteUid && (
+              <RtcSurfaceView
+                style={styles.remoteVideo}
+                canvas={{ uid: remoteUid }}
+              />
+            )}
+            {/* Local Video (Small) */}
+            {localVideoEnabled && (
+              <View style={styles.localVideoContainer}>
+                <RtcSurfaceView
+                  style={styles.localVideo}
+                  canvas={{ uid: 0, sourceType: VideoSourceType.VideoSourceCamera }}
+                />
+              </View>
+            )}
+          </>
+        )}
+
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.statusBadge}>
+          <View style={[styles.statusBadge, { backgroundColor: 
+            callState === 'in_call' ? 'rgba(76,175,80,0.3)' : 
+            callState === 'ended' ? 'rgba(244,67,54,0.3)' : 'rgba(255,193,7,0.3)' 
+          }]}>
             <View style={[styles.statusDot, { backgroundColor: 
               callState === 'in_call' ? '#4CAF50' : 
               callState === 'ended' ? '#f44336' : '#FFC107' 
@@ -493,30 +564,31 @@ export default function CallScreen({
           </View>
         </View>
 
-        {/* Avatar */}
-        <Animated.View style={[styles.avatarContainer, { transform: [{ scale: pulseAnim }] }]}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={60} color="#fff" />
-          </View>
-        </Animated.View>
+        {/* Avatar (hide during video call) */}
+        {!(callType === 'video' && callState === 'in_call') && (
+          <Animated.View style={[styles.avatarContainer, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={60} color="#fff" />
+            </View>
+          </Animated.View>
+        )}
 
         {/* Name & Status */}
         <Text style={styles.remoteName}>{remoteName}</Text>
         <Text style={styles.statusText}>{getStatusText()}</Text>
 
-        {/* Debug Logs (visible in dev) */}
-        {__DEV__ && (
-          <View style={styles.debugContainer}>
-            {debugLogs.map((log, i) => (
-              <Text key={i} style={styles.debugText}>{log}</Text>
-            ))}
+        {/* Connection indicator */}
+        {remoteJoined && (
+          <View style={styles.connectedBadge}>
+            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+            <Text style={styles.connectedText}>Bağlı</Text>
           </View>
         )}
 
         {/* Controls */}
         <View style={styles.controlsContainer}>
           {callState === 'ringing' && mode === 'receiver' ? (
-            // Receiver - Incoming call buttons
+            // Incoming call buttons
             <View style={styles.incomingControls}>
               <TouchableOpacity style={styles.rejectButton} onPress={handleRejectCall}>
                 <Ionicons name="close" size={30} color="#fff" />
@@ -534,9 +606,26 @@ export default function CallScreen({
               >
                 <Ionicons name={isMuted ? "mic-off" : "mic"} size={24} color="#fff" />
               </TouchableOpacity>
+
+              {callType === 'video' && (
+                <TouchableOpacity 
+                  style={[styles.controlButton, !localVideoEnabled && styles.controlButtonActive]} 
+                  onPress={toggleCamera}
+                >
+                  <Ionicons name={localVideoEnabled ? "videocam" : "videocam-off"} size={24} color="#fff" />
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity style={styles.endButton} onPress={handleEndCall}>
                 <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
               </TouchableOpacity>
+
+              {callType === 'video' && (
+                <TouchableOpacity style={styles.controlButton} onPress={switchCamera}>
+                  <Ionicons name="camera-reverse" size={24} color="#fff" />
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity 
                 style={[styles.controlButton, isSpeaker && styles.controlButtonActive]} 
                 onPress={toggleSpeaker}
@@ -551,14 +640,6 @@ export default function CallScreen({
             </TouchableOpacity>
           )}
         </View>
-
-        {/* Connection indicator */}
-        {remoteJoined && (
-          <View style={styles.connectedBadge}>
-            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-            <Text style={styles.connectedText}>Bağlı</Text>
-          </View>
-        )}
       </View>
     </Modal>
   );
@@ -569,17 +650,37 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
     alignItems: 'center',
-    paddingTop: 60,
+    justifyContent: 'center',
+  },
+  remoteVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  localVideoContainer: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 120,
+    height: 160,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  localVideo: {
+    flex: 1,
   },
   header: {
     position: 'absolute',
     top: 50,
-    right: 20,
+    left: 20,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -596,7 +697,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   avatarContainer: {
-    marginTop: 80,
     marginBottom: 20,
   },
   avatar: {
@@ -618,20 +718,20 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     marginBottom: 20,
   },
-  debugContainer: {
-    position: 'absolute',
-    bottom: 200,
-    left: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 8,
-    borderRadius: 8,
-    maxHeight: 150,
+  connectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76,175,80,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 10,
   },
-  debugText: {
-    color: '#0f0',
-    fontSize: 9,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  connectedText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 4,
   },
   controlsContainer: {
     position: 'absolute',
@@ -648,12 +748,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    width: '80%',
+    width: '90%',
   },
   controlButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -684,22 +784,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#f44336',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  connectedBadge: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(76,175,80,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  connectedText: {
-    color: '#4CAF50',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginLeft: 4,
   },
 });
