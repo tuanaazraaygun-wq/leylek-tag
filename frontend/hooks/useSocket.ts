@@ -36,6 +36,10 @@ interface UseSocketProps {
   onCallRejected?: (data: { call_id: string; rejected_by: string }) => void;
   onCallEnded?: (data: { call_id: string; ended_by: string }) => void;
   onCallRinging?: (data: { success: boolean; receiver_online: boolean; reason?: string }) => void;
+  // Trip end events
+  onTripEndRequest?: (data: { tag_id: string; requester_id: string; requester_type: string }) => void;
+  onTripCompleted?: (data: { tag_id: string; completed_at: string }) => void;
+  onTripEndRejected?: (data: { tag_id: string; rejected_by: string }) => void;
 }
 
 export default function useSocket({
