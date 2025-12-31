@@ -274,7 +274,8 @@ export default function CallScreen({
     setCallState('error');
     clearAllTimers();
     stopRingtone();
-  }, [clearAllTimers, stopRingtone]);
+    stopRingback();
+  }, [clearAllTimers, stopRingtone, stopRingback]);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // CLEANUP
@@ -286,6 +287,7 @@ export default function CallScreen({
     log('CLEANUP_START');
     clearAllTimers();
     stopRingtone();
+    stopRingback();
 
     if (engineRef.current) {
       try {
