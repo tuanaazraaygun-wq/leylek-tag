@@ -3128,9 +3128,10 @@ function PassengerDashboard({
                               );
                               const data = await response.json();
                               if (data.success) {
-                                
+                                Alert.alert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
                                 setActiveTag(null);
-                                loadActiveTag();
+                                setDestination(null);
+                                setScreen('role-select');
                               }
                             } catch (error) {
                               Alert.alert('Hata', 'İşlem başarısız');
