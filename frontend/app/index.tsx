@@ -371,16 +371,15 @@ export default function App() {
     }
   };
 
-  // Uygulama başlangıcında izinleri iste
+  // Uygulama başlangıcında izinleri iste - HEMEN
   useEffect(() => {
     const checkPermissions = async () => {
-      console.log('🔐 İzin kontrolü başlıyor...');
+      console.log('🔐 Uygulama başladı - İzin kontrolü başlıyor...');
       await requestAllPermissions();
     };
     
-    // Splash screen kapandıktan sonra izinleri iste
-    if (!showSplash) {
-      checkPermissions();
+    // Splash screen beklemeden hemen izin iste
+    checkPermissions();
     }
   }, [showSplash]);
 
