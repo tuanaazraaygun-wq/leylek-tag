@@ -309,6 +309,89 @@ export default function App() {
     }
   }, [notification]);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PERMISSION GATE - Request ALL permissions at app start
+  // ═══════════════════════════════════════════════════════════════════════════
+  const requestAllPermissions = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+      console.log('🔐 iOS - izinler otomatik isteniyor');
+      setMicrophonePermission(true);
+      setCameraPermission(true);
+      setPermissionsGranted(true);
+      setPermissionChecking(false);
+      return true;
+    }
+
+    console.log('🔐 Android - Tüm izinler isteniyor...');
+    
+    try {
+      // Android 12+ için BLUETOOTH_CONNECT izni de gerekli
+      const permissions: string[] = [
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        PermissionsAndroid.PERMISSIONS.MODIFY_AUDIO_SETTINGS,
+      ];
+
+      // Android 12+ (API 31+) için Bluetooth izinleri
+      if (Platform.Version >= 31) {
+        permissions.push('android.permission.BLUETOOTH_CONNECT');
+      }
+
+      console.log('🔐 İstenen izinler:', permissions);
+
+      const results = await PermissionsAndroid.requestMultiple(permissions as any);
+      
+      console.log('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
+
+      const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
+      const cameraGranted = results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
+      const audioSettingsGranted = results[PermissionsAndroid.PERMISSIONS.MODIFY_AUDIO_SETTINGS] === 'granted';
+
+      setMicrophonePermission(audioGranted);
+      setCameraPermission(cameraGranted);
+
+      // En önemli izin: RECORD_AUDIO - bu olmadan arama yapılamaz
+      if (!audioGranted) {
+        console.log('❌ RECORD_AUDIO izni REDDEDİLDİ - Arama yapılamaz!');
+        Alert.alert(
+          'Mikrofon İzni Gerekli',
+          'Sesli ve görüntülü arama yapabilmek için mikrofon izni vermeniz gerekiyor. Lütfen ayarlardan izin verin.',
+          [
+            { text: 'Tamam', onPress: () => Linking.openSettings() }
+          ]
+        );
+        setPermissionsGranted(false);
+        setPermissionChecking(false);
+        return false;
+      }
+
+      console.log('✅ RECORD_AUDIO izni verildi');
+      console.log(cameraGranted ? '✅ CAMERA izni verildi' : '⚠️ CAMERA izni reddedildi (opsiyonel)');
+      console.log(audioSettingsGranted ? '✅ MODIFY_AUDIO_SETTINGS izni verildi' : '⚠️ MODIFY_AUDIO_SETTINGS izni reddedildi');
+
+      setPermissionsGranted(true);
+      setPermissionChecking(false);
+      return true;
+    } catch (error) {
+      console.error('🔐 İzin hatası:', error);
+      setPermissionChecking(false);
+      return false;
+    }
+  };
+
+  // Uygulama başlangıcında izinleri iste
+  useEffect(() => {
+    const checkPermissions = async () => {
+      console.log('🔐 İzin kontrolü başlıyor...');
+      await requestAllPermissions();
+    };
+    
+    // Splash screen kapandıktan sonra izinleri iste
+    if (!showSplash) {
+      checkPermissions();
+    }
+  }, [showSplash]);
+
   // Device ID oluştur veya al
   const getOrCreateDeviceId = async (): Promise<string> => {
     try {
