@@ -105,39 +105,29 @@ const haptic = async (type: 'light' | 'medium' | 'heavy' = 'medium') => {
 };
 
 // ════════════════════════════════════════════════════════════════════════════════
-// PERMISSION - CRITICAL FOR AUDIO
+// PERMISSION - CHECK ONLY (permissions already granted at app start)
 // ════════════════════════════════════════════════════════════════════════════════
-const requestPermissions = async (needVideo: boolean): Promise<boolean> => {
+const checkPermissions = async (needVideo: boolean): Promise<boolean> => {
   if (Platform.OS !== 'android') return true;
 
   try {
-    // ALWAYS request RECORD_AUDIO for calls
-    const permissions: string[] = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
-    if (needVideo) {
-      permissions.push(PermissionsAndroid.PERMISSIONS.CAMERA);
-    }
-
-    log('PERMISSION_REQUEST', { permissions, needVideo });
+    // Check if RECORD_AUDIO is already granted
+    const audioGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    const cameraGranted = !needVideo || await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
     
-    const results = await PermissionsAndroid.requestMultiple(permissions as any);
-    
-    const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
-    const cameraGranted = !needVideo || results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
-    
-    log('PERMISSION_RESULT', { 
-      audioGranted, 
-      cameraGranted,
-      audioResult: results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO],
-      cameraResult: needVideo ? results[PermissionsAndroid.PERMISSIONS.CAMERA] : 'not_requested'
-    });
+    log('PERMISSION_CHECK', { audioGranted, cameraGranted, needVideo });
     
     if (!audioGranted) {
-      log('PERMISSION_AUDIO_DENIED');
+      log('PERMISSION_AUDIO_NOT_GRANTED - Cannot start call');
       return false;
     }
     
     return audioGranted && cameraGranted;
   } catch (e) {
+    log('PERMISSION_CHECK_ERROR', { error: String(e) });
+    return false;
+  }
+};
     log('PERMISSION_ERROR', { error: String(e) });
     return false;
   }
