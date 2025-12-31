@@ -160,6 +160,95 @@ async def end_call(sid, data):
                     'ended_by': ended_by
                 }, room=user_sid)
 
+# ==================== TRIP END SOCKET EVENTS ====================
+
+@sio.event
+async def request_trip_end_socket(sid, data):
+    """Socket üzerinden trip sonlandırma isteği - ANINDA bildirim"""
+    tag_id = data.get('tag_id')
+    requester_id = data.get('requester_id')
+    requester_type = data.get('requester_type')  # 'passenger' veya 'driver'
+    target_user_id = data.get('target_user_id')  # Karşı tarafın ID'si
+    
+    logger.info(f"🔚 Socket trip end request: {tag_id} by {requester_id} ({requester_type})")
+    
+    # Supabase'e kaydet
+    try:
+        supabase.table("tags").update({
+            "end_request": {
+                "requester_id": requester_id,
+                "user_type": requester_type,
+                "requested_at": datetime.utcnow().isoformat(),
+                "status": "pending"
+            }
+        }).eq("id", tag_id).execute()
+    except Exception as e:
+        logger.error(f"Trip end request save error: {e}")
+    
+    # Karşı tarafa ANINDA bildirim gönder
+    target_sid = connected_users.get(target_user_id)
+    if target_sid:
+        await sio.emit('trip_end_request', {
+            'tag_id': tag_id,
+            'requester_id': requester_id,
+            'requester_type': requester_type
+        }, room=target_sid)
+        logger.info(f"📲 Trip end request sent to: {target_user_id}")
+        await sio.emit('trip_end_request_sent', {'success': True}, room=sid)
+    else:
+        logger.warning(f"⚠️ Target user offline: {target_user_id}")
+        await sio.emit('trip_end_request_sent', {'success': True, 'target_offline': True}, room=sid)
+
+@sio.event
+async def respond_trip_end_socket(sid, data):
+    """Socket üzerinden trip sonlandırma isteğine cevap - ANINDA"""
+    tag_id = data.get('tag_id')
+    responder_id = data.get('responder_id')
+    approved = data.get('approved', True)
+    requester_id = data.get('requester_id')  # İsteği yapan kişi
+    
+    logger.info(f"🔚 Socket trip end response: {tag_id} approved={approved}")
+    
+    try:
+        if approved:
+            # Trip'i tamamla
+            supabase.table("tags").update({
+                "status": "completed",
+                "completed_at": datetime.utcnow().isoformat(),
+                "end_request": None
+            }).eq("id", tag_id).execute()
+            
+            # Her iki tarafa da bildir
+            for user_id in [responder_id, requester_id]:
+                user_sid = connected_users.get(user_id)
+                if user_sid:
+                    await sio.emit('trip_completed', {
+                        'tag_id': tag_id,
+                        'completed_at': datetime.utcnow().isoformat()
+                    }, room=user_sid)
+            
+            logger.info(f"✅ Trip completed via socket: {tag_id}")
+        else:
+            # İsteği reddet
+            result = supabase.table("tags").select("end_request").eq("id", tag_id).execute()
+            if result.data and result.data[0].get("end_request"):
+                end_request = result.data[0]["end_request"]
+                end_request["status"] = "rejected"
+                supabase.table("tags").update({"end_request": end_request}).eq("id", tag_id).execute()
+            
+            # İsteği yapana reddi bildir
+            requester_sid = connected_users.get(requester_id)
+            if requester_sid:
+                await sio.emit('trip_end_rejected', {
+                    'tag_id': tag_id,
+                    'rejected_by': responder_id
+                }, room=requester_sid)
+            
+            logger.info(f"❌ Trip end rejected: {tag_id}")
+    except Exception as e:
+        logger.error(f"Trip end response error: {e}")
+
+
 # Agora Token Builder - import sonra yap
 AGORA_TOKEN_AVAILABLE = False
 RtcTokenBuilder = None
