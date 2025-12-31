@@ -128,10 +128,6 @@ const checkPermissions = async (needVideo: boolean): Promise<boolean> => {
     return false;
   }
 };
-    log('PERMISSION_ERROR', { error: String(e) });
-    return false;
-  }
-};
 
 // ════════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
