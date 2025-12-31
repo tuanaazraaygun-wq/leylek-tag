@@ -146,8 +146,32 @@ export default function useSocket({
       }
     });
 
+    // Trip end request (karşı taraf sonlandırma istedi)
+    socket.on('trip_end_request', (data) => {
+      console.log('🔚 TRIP END REQUEST:', data);
+      if (onTripEndRequest) {
+        onTripEndRequest(data);
+      }
+    });
+
+    // Trip completed (yolculuk tamamlandı)
+    socket.on('trip_completed', (data) => {
+      console.log('✅ TRIP COMPLETED:', data);
+      if (onTripCompleted) {
+        onTripCompleted(data);
+      }
+    });
+
+    // Trip end rejected (sonlandırma reddedildi)
+    socket.on('trip_end_rejected', (data) => {
+      console.log('❌ TRIP END REJECTED:', data);
+      if (onTripEndRejected) {
+        onTripEndRejected(data);
+      }
+    });
+
     socketRef.current = socket;
-  }, [userId, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging]);
+  }, [userId, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging, onTripEndRequest, onTripCompleted, onTripEndRejected]);
 
   // Bağlantıyı kes
   const disconnect = useCallback(() => {
