@@ -228,6 +228,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin'>('login');
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PERMISSION GATE - All permissions requested ONCE at app start
+  // ═══════════════════════════════════════════════════════════════════════════
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [permissionChecking, setPermissionChecking] = useState(true);
+  const [microphonePermission, setMicrophonePermission] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState(false);
+
   // Splash Screen
   const [showSplash, setShowSplash] = useState(true);
   
