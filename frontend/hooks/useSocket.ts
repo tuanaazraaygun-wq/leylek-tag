@@ -49,6 +49,9 @@ export default function useSocket({
   onCallRejected,
   onCallEnded,
   onCallRinging,
+  onTripEndRequest,
+  onTripCompleted,
+  onTripEndRejected,
 }: UseSocketProps) {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
