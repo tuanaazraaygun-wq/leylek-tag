@@ -380,8 +380,7 @@ export default function App() {
     
     // Splash screen beklemeden hemen izin iste
     checkPermissions();
-    }
-  }, [showSplash]);
+  }, []);
 
   // Device ID oluştur veya al
   const getOrCreateDeviceId = async (): Promise<string> => {
