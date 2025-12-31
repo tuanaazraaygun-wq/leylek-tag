@@ -4029,7 +4029,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 if (data.success) {
                   Alert.alert('⚠️ Yolculuk Bitirildi', data.message);
                   setActiveTag(null);
-                  loadActiveTag();
+                  setScreen('role-select');
                 } else {
                   Alert.alert('Hata', data.detail);
                 }
