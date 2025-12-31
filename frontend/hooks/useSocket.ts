@@ -247,6 +247,36 @@ export default function useSocket({
     }
   }, []);
 
+  // Trip sonlandırma isteği gönder (Socket üzerinden - ANINDA)
+  const requestTripEnd = useCallback((data: {
+    tag_id: string;
+    requester_id: string;
+    requester_type: 'passenger' | 'driver';
+    target_user_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🔚 Trip end request gönderiliyor:', data);
+      socketRef.current.emit('request_trip_end_socket', data);
+    } else {
+      console.error('❌ Socket bağlı değil, trip end request gönderilemedi');
+    }
+  }, []);
+
+  // Trip sonlandırma isteğine cevap ver (Socket üzerinden - ANINDA)
+  const respondTripEnd = useCallback((data: {
+    tag_id: string;
+    responder_id: string;
+    approved: boolean;
+    requester_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🔚 Trip end response gönderiliyor:', data);
+      socketRef.current.emit('respond_trip_end_socket', data);
+    } else {
+      console.error('❌ Socket bağlı değil, trip end response gönderilemedi');
+    }
+  }, []);
+
   // App state değişikliklerini dinle
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
