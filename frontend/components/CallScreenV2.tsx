@@ -1,29 +1,18 @@
 /**
- * CallScreenV2 - FINAL PRODUCTION VERSION
+ * CallScreenV2 - FINAL PRODUCTION VERSION v2.0
  * 
  * ════════════════════════════════════════════════════════════════════════════════
- * CALL STATE MACHINE (FINAL - MANDATORY)
+ * CRITICAL FIX: RTC IS NOW COMPLETELY DECOUPLED FROM UI
  * ════════════════════════════════════════════════════════════════════════════════
  * 
- * STATES:
- *   IDLE → RINGING → ACCEPTED → CONNECTING → CONNECTED → ENDED
+ * BOTH caller AND callee:
+ *   - rtc.join() IMMEDIATELY on call start/incoming
+ *   - create & publish microphone/camera tracks IMMEDIATELY
+ *   - subscribe to remote tracks IMMEDIATELY on onUserPublished
  * 
- * KEY RULE:
- *   CONNECTED state is driven by SOCKET SIGNALING, NOT by media tracks!
+ * Accept button ONLY changes UI state (nothing else)
  * 
- * CALLER FLOW:
- *   1. Press call → state = CALLING, emit call_invite, start ringback
- *   2. Receive callAccepted → state = CONNECTED, stop ringback
- *   3. RTC media runs in parallel (doesn't block state)
- * 
- * CALLEE FLOW:
- *   1. Receive incoming_call → state = RINGING, play ringtone
- *   2. Press Accept → emit call_accepted, state = CONNECTED
- *   3. RTC media runs in parallel (doesn't block state)
- * 
- * SAFETY:
- *   - Max 1s timeout after RTC join → force CONNECTED
- *   - Never infinite "Bağlanıyor..."
+ * Audio/Video MUST work in BOTH directions within <3 seconds
  * 
  * ════════════════════════════════════════════════════════════════════════════════
  */
@@ -62,17 +51,14 @@ const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // TIMEOUTS
-const CONNECT_TIMEOUT_MS = 10000;  // 10s max for entire connection
-const FORCE_CONNECTED_MS = 1000;  // Force CONNECTED after 1s if RTC joined
+const CONNECT_TIMEOUT_MS = 15000;  // 15s max for entire connection
 
 // ════════════════════════════════════════════════════════════════════════════════
-// CALL STATES (CLEAR & FINAL)
+// CALL STATES
 // ════════════════════════════════════════════════════════════════════════════════
 type CallState = 
   | 'calling'      // Caller: Waiting for callee to answer
   | 'ringing'      // Callee: Incoming call
-  | 'accepted'     // Callee pressed accept, transitioning
-  | 'connecting'   // RTC handshake in progress
   | 'connected'    // CALL ACTIVE - show duration timer
   | 'ended'        // Call finished
   | 'error';       // Error state
@@ -98,7 +84,7 @@ interface CallScreenProps {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// LOGGING (MANDATORY)
+// LOGGING
 // ════════════════════════════════════════════════════════════════════════════════
 const getTs = () => new Date().toISOString().split('T')[1].slice(0, 12);
 const log = (event: string, data?: any) => {
@@ -176,9 +162,10 @@ export default function CallScreen({
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // RTC internal state (not for UI decisions)
+  // RTC internal state tracking
   const [rtcJoined, setRtcJoined] = useState(false);
-  const [remoteJoined, setRemoteJoined] = useState(false);
+  const [localPublished, setLocalPublished] = useState(false);
+  const [remoteSubscribed, setRemoteSubscribed] = useState(false);
 
   const isVideo = useRef(callType === 'video').current;
 
@@ -194,18 +181,17 @@ export default function CallScreen({
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ringbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const forceConnectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Animation
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
   // Lifecycle flags
-  const isJoining = useRef(false);
-  const hasJoined = useRef(false);
+  const isInitializing = useRef(false);
+  const hasInitialized = useRef(false);
   const isCleaningUp = useRef(false);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // TRANSITION TO CONNECTED (CENTRAL FUNCTION)
+  // TRANSITION TO CONNECTED
   // ══════════════════════════════════════════════════════════════════════════════
   const transitionToConnected = useCallback(() => {
     if (callState === 'connected' || callState === 'ended' || callState === 'error') {
@@ -224,12 +210,6 @@ export default function CallScreen({
     if (ringbackTimerRef.current) {
       clearInterval(ringbackTimerRef.current);
       ringbackTimerRef.current = null;
-    }
-    
-    // Clear force connected timer
-    if (forceConnectedTimerRef.current) {
-      clearTimeout(forceConnectedTimerRef.current);
-      forceConnectedTimerRef.current = null;
     }
     
     // Clear connect timeout
@@ -301,10 +281,6 @@ export default function CallScreen({
       clearTimeout(connectTimeoutRef.current);
       connectTimeoutRef.current = null;
     }
-    if (forceConnectedTimerRef.current) {
-      clearTimeout(forceConnectedTimerRef.current);
-      forceConnectedTimerRef.current = null;
-    }
     Vibration.cancel();
   }, []);
 
@@ -324,6 +300,14 @@ export default function CallScreen({
           engineRef.current.unregisterEventHandler(eventHandlerRef.current);
           eventHandlerRef.current = null;
         }
+        
+        // Stop preview and disable video/audio before leaving
+        if (isVideo) {
+          try {
+            engineRef.current.stopPreview();
+          } catch {}
+        }
+        
         await engineRef.current.leaveChannel();
         log('AGORA_LEAVE_CHANNEL');
         engineRef.current.release();
@@ -334,11 +318,11 @@ export default function CallScreen({
       }
     }
 
-    isJoining.current = false;
-    hasJoined.current = false;
+    isInitializing.current = false;
+    hasInitialized.current = false;
     isCleaningUp.current = false;
     log('CLEANUP_DONE');
-  }, [clearAllTimers]);
+  }, [clearAllTimers, isVideo]);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // END CALL
@@ -364,164 +348,206 @@ export default function CallScreen({
   }, [clearAllTimers]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // RTC JOIN CHANNEL
+  // ════════════════════════════════════════════════════════════════════════════
+  // CRITICAL: INITIALIZE RTC IMMEDIATELY
+  // This happens on BOTH caller AND callee as soon as call screen opens
+  // ════════════════════════════════════════════════════════════════════════════
   // ══════════════════════════════════════════════════════════════════════════════
-  const joinChannel = useCallback(async (token: string, channel: string) => {
-    if (isJoining.current || hasJoined.current) {
-      log('JOIN_SKIP', { isJoining: isJoining.current, hasJoined: hasJoined.current });
+  const initializeRTC = useCallback(async (token: string, channel: string) => {
+    if (isInitializing.current || hasInitialized.current) {
+      log('RTC_INIT_SKIP', { isInitializing: isInitializing.current, hasInitialized: hasInitialized.current });
       return;
     }
 
     if (!token || !channel) {
-      log('JOIN_MISSING_PARAMS', { hasToken: !!token, hasChannel: !!channel });
+      log('RTC_INIT_MISSING_PARAMS', { hasToken: !!token, hasChannel: !!channel });
       return;
     }
 
-    isJoining.current = true;
-    log('RTC_JOIN_START', { channel, uid: localUid.current, isVideo });
+    isInitializing.current = true;
+    const startTime = Date.now();
+    log('RTC_INIT_START', { channel, uid: localUid.current, isVideo, mode });
 
-    // Permission
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 1: Request Permissions
+    // ═══════════════════════════════════════════════════════════════════════════
     const hasPermission = await requestPermissions(isVideo);
     if (!hasPermission) {
       log('PERMISSION_DENIED');
-      isJoining.current = false;
+      isInitializing.current = false;
+      failCall('Mikrofon/Kamera izni gerekli');
       return;
     }
+    log('RTC_PERMISSION_OK', { elapsed: Date.now() - startTime });
 
-    // Create engine
-    if (!engineRef.current) {
-      try {
-        log('AGORA_ENGINE_CREATE');
-        const engine = createAgoraRtcEngine();
-        
-        engine.initialize({
-          appId: AGORA_APP_ID,
-          channelProfile: ChannelProfileType.ChannelProfileCommunication,
-        });
-
-        engine.setAudioProfile(
-          AudioProfileType.AudioProfileSpeechStandard,
-          AudioScenarioType.AudioScenarioChatroom
-        );
-        engine.enableAudio();
-        engine.setDefaultAudioRouteToSpeakerphone(true);
-        engine.setEnableSpeakerphone(true);
-        log('AGORA_AUDIO_ENABLED');
-
-        if (isVideo) {
-          engine.enableVideo();
-          engine.setVideoEncoderConfiguration({
-            dimensions: { width: 480, height: 640 },
-            frameRate: 15,
-            bitrate: 400,
-            mirrorMode: VideoMirrorModeType.VideoMirrorModeDisabled,
-          });
-          engine.startPreview();
-          log('AGORA_VIDEO_ENABLED');
-        }
-
-        engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
-
-        // Event handlers
-        const handler: IRtcEngineEventHandler = {
-          onJoinChannelSuccess: (connection, elapsed) => {
-            log('RTC_JOIN_COMPLETED', { 
-              channel: connection.channelId, 
-              uid: connection.localUid, 
-              elapsed,
-              ms: Date.now() - callStartTs.current
-            });
-            hasJoined.current = true;
-            setRtcJoined(true);
-            
-            // ════════════════════════════════════════════════════════════════
-            // SAFETY: Force CONNECTED after 1s if still connecting
-            // ════════════════════════════════════════════════════════════════
-            forceConnectedTimerRef.current = setTimeout(() => {
-              log('FORCE_CONNECTED_TIMEOUT', { ms: Date.now() - callStartTs.current });
-              transitionToConnected();
-            }, FORCE_CONNECTED_MS);
-          },
-
-          onUserJoined: (connection, uid, elapsed) => {
-            log('REMOTE_USER_JOINED', { uid, elapsed });
-            setRemoteUid(uid);
-            setRemoteJoined(true);
-            
-            // Remote joined → transition to connected
-            transitionToConnected();
-          },
-
-          onUserPublished: (connection, uid, mediaType) => {
-            log('REMOTE_USER_PUBLISHED', { uid, mediaType });
-            
-            if (engineRef.current) {
-              if (mediaType === 1) {
-                engineRef.current.muteRemoteAudioStream(uid, false);
-              } else if (mediaType === 2) {
-                engineRef.current.muteRemoteVideoStream(uid, false);
-              }
-            }
-          },
-
-          onUserOffline: (connection, uid, reason) => {
-            log('REMOTE_USER_OFFLINE', { uid, reason });
-            setRemoteUid(null);
-            setRemoteJoined(false);
-            endCall();
-          },
-
-          onConnectionStateChanged: (connection, state, reason) => {
-            log('CONNECTION_STATE', { state, reason });
-            if (state === ConnectionStateType.ConnectionStateFailed) {
-              failCall('Bağlantı kurulamadı');
-            }
-          },
-
-          onError: (err, msg) => {
-            log('AGORA_ERROR', { err, msg });
-          },
-
-          onLeaveChannel: () => {
-            log('AGORA_LEAVE_CHANNEL_EVENT');
-            hasJoined.current = false;
-            setRtcJoined(false);
-          },
-        };
-
-        eventHandlerRef.current = handler;
-        engine.registerEventHandler(handler);
-        engineRef.current = engine;
-
-      } catch (e) {
-        log('ENGINE_CREATE_ERROR', { error: String(e) });
-        isJoining.current = false;
-        return;
-      }
-    }
-
-    // Join
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 2: Create and Configure Engine
+    // ═══════════════════════════════════════════════════════════════════════════
     try {
-      log('JOIN_CHANNEL_CALL', { channel, uid: localUid.current });
+      log('AGORA_ENGINE_CREATE');
+      const engine = createAgoraRtcEngine();
       
-      engineRef.current!.joinChannel(token, channel, localUid.current, {
-        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: isVideo,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: isVideo,
+      engine.initialize({
+        appId: AGORA_APP_ID,
+        channelProfile: ChannelProfileType.ChannelProfileCommunication,
       });
 
-      log('JOIN_CHANNEL_EXECUTED');
+      // Audio configuration - CRITICAL for call quality
+      engine.setAudioProfile(
+        AudioProfileType.AudioProfileSpeechStandard,
+        AudioScenarioType.AudioScenarioChatroom
+      );
+      engine.enableAudio();
+      engine.setDefaultAudioRouteToSpeakerphone(true);
+      engine.setEnableSpeakerphone(true);
+      log('AGORA_AUDIO_ENABLED', { elapsed: Date.now() - startTime });
+
+      // Video configuration if needed
+      if (isVideo) {
+        engine.enableVideo();
+        engine.setVideoEncoderConfiguration({
+          dimensions: { width: 480, height: 640 },
+          frameRate: 15,
+          bitrate: 400,
+          mirrorMode: VideoMirrorModeType.VideoMirrorModeDisabled,
+        });
+        engine.startPreview();
+        log('AGORA_VIDEO_ENABLED', { elapsed: Date.now() - startTime });
+      }
+
+      // Set as broadcaster to publish tracks
+      engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+
+      // ═══════════════════════════════════════════════════════════════════════════
+      // STEP 3: Register Event Handlers
+      // ═══════════════════════════════════════════════════════════════════════════
+      const handler: IRtcEngineEventHandler = {
+        onJoinChannelSuccess: (connection, elapsed) => {
+          log('RTC_JOIN_SUCCESS', { 
+            channel: connection.channelId, 
+            uid: connection.localUid, 
+            elapsed,
+            totalMs: Date.now() - callStartTs.current
+          });
+          hasInitialized.current = true;
+          setRtcJoined(true);
+          setLocalPublished(true); // Tracks auto-publish with joinChannelOptions
+        },
+
+        onUserJoined: (connection, uid, elapsed) => {
+          log('REMOTE_USER_JOINED', { uid, elapsed, totalMs: Date.now() - callStartTs.current });
+          setRemoteUid(uid);
+        },
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // CRITICAL: Subscribe to remote tracks IMMEDIATELY
+        // ═══════════════════════════════════════════════════════════════════════
+        onUserPublished: async (connection, uid, mediaType) => {
+          log('REMOTE_USER_PUBLISHED', { uid, mediaType, totalMs: Date.now() - callStartTs.current });
+          
+          if (!engineRef.current) {
+            log('SUBSCRIBE_ERROR_NO_ENGINE');
+            return;
+          }
+          
+          try {
+            // SUBSCRIBE to the remote user's track
+            await engineRef.current.subscribe(uid, mediaType);
+            log('SUBSCRIBE_SUCCESS', { uid, mediaType });
+            
+            // Unmute to ensure we receive the stream
+            if (mediaType === 1) { // Audio
+              engineRef.current.muteRemoteAudioStream(uid, false);
+              log('REMOTE_AUDIO_UNMUTED', { uid });
+            } else if (mediaType === 2) { // Video
+              engineRef.current.muteRemoteVideoStream(uid, false);
+              log('REMOTE_VIDEO_UNMUTED', { uid });
+            }
+            
+            setRemoteSubscribed(true);
+            setRemoteUid(uid);
+            
+          } catch (e) {
+            log('SUBSCRIBE_ERROR', { uid, mediaType, error: String(e) });
+          }
+        },
+
+        onUserUnpublished: (connection, uid, mediaType) => {
+          log('REMOTE_USER_UNPUBLISHED', { uid, mediaType });
+        },
+
+        onUserOffline: (connection, uid, reason) => {
+          log('REMOTE_USER_OFFLINE', { uid, reason });
+          setRemoteUid(null);
+          setRemoteSubscribed(false);
+          endCall();
+        },
+
+        onConnectionStateChanged: (connection, state, reason) => {
+          log('CONNECTION_STATE', { state, reason });
+          if (state === ConnectionStateType.ConnectionStateFailed) {
+            failCall('Bağlantı kurulamadı');
+          }
+        },
+
+        onError: (err, msg) => {
+          log('AGORA_ERROR', { err, msg });
+        },
+
+        onLeaveChannel: () => {
+          log('AGORA_LEAVE_CHANNEL_EVENT');
+          hasInitialized.current = false;
+          setRtcJoined(false);
+          setLocalPublished(false);
+        },
+
+        // Track stats for debugging
+        onLocalAudioStateChanged: (state, reason) => {
+          log('LOCAL_AUDIO_STATE', { state, reason });
+        },
+
+        onLocalVideoStateChanged: (source, state, reason) => {
+          log('LOCAL_VIDEO_STATE', { source, state, reason });
+        },
+
+        onRemoteAudioStateChanged: (connection, uid, state, reason, elapsed) => {
+          log('REMOTE_AUDIO_STATE', { uid, state, reason });
+        },
+
+        onRemoteVideoStateChanged: (connection, uid, state, reason, elapsed) => {
+          log('REMOTE_VIDEO_STATE', { uid, state, reason });
+        },
+      };
+
+      eventHandlerRef.current = handler;
+      engine.registerEventHandler(handler);
+      engineRef.current = engine;
+      log('AGORA_HANDLERS_REGISTERED', { elapsed: Date.now() - startTime });
+
+      // ═══════════════════════════════════════════════════════════════════════════
+      // STEP 4: JOIN CHANNEL IMMEDIATELY WITH AUTO-PUBLISH
+      // ═══════════════════════════════════════════════════════════════════════════
+      log('RTC_JOIN_CHANNEL', { channel, uid: localUid.current });
+      
+      engine.joinChannel(token, channel, localUid.current, {
+        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+        publishMicrophoneTrack: true,           // PUBLISH AUDIO IMMEDIATELY
+        publishCameraTrack: isVideo,            // PUBLISH VIDEO IMMEDIATELY (if video call)
+        autoSubscribeAudio: true,               // AUTO SUBSCRIBE TO REMOTE AUDIO
+        autoSubscribeVideo: isVideo,            // AUTO SUBSCRIBE TO REMOTE VIDEO
+      });
+
+      log('RTC_JOIN_EXECUTED', { elapsed: Date.now() - startTime });
 
     } catch (e) {
-      log('JOIN_CHANNEL_ERROR', { error: String(e) });
-      isJoining.current = false;
+      log('RTC_INIT_ERROR', { error: String(e) });
+      isInitializing.current = false;
+      failCall('RTC başlatılamadı');
     }
-  }, [isVideo, transitionToConnected, failCall, endCall]);
+  }, [isVideo, mode, failCall, endCall]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: INITIAL SETUP ON MOUNT
+  // EFFECT: INITIALIZE ON MOUNT - IMMEDIATELY START RTC
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!visible || !callId) return;
@@ -533,8 +559,10 @@ export default function CallScreen({
     setCallState(mode === 'caller' ? 'calling' : 'ringing');
     setDuration(0);
     setRtcJoined(false);
-    setRemoteJoined(false);
+    setLocalPublished(false);
+    setRemoteSubscribed(false);
     setRemoteUid(null);
+    setErrorMessage('');
 
     // Start sounds
     if (mode === 'caller') {
@@ -558,9 +586,12 @@ export default function CallScreen({
       }
     }, CONNECT_TIMEOUT_MS);
 
-    // Join RTC immediately if we have token
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CRITICAL: Initialize RTC IMMEDIATELY for BOTH caller AND callee
+    // ═══════════════════════════════════════════════════════════════════════════
     if (agoraToken && channelName) {
-      joinChannel(agoraToken, channelName);
+      log('RTC_INIT_IMMEDIATE', { mode });
+      initializeRTC(agoraToken, channelName);
     }
 
     return () => {
@@ -570,26 +601,22 @@ export default function CallScreen({
   }, [visible, callId]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: TOKEN UPDATE (for caller when token arrives later)
+  // EFFECT: TOKEN ARRIVES LATER (backup)
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (visible && agoraToken && channelName && !hasJoined.current && !isJoining.current) {
-      log('TOKEN_RECEIVED_JOINING', { channel: channelName });
-      joinChannel(agoraToken, channelName);
+    if (visible && agoraToken && channelName && !hasInitialized.current && !isInitializing.current) {
+      log('TOKEN_ARRIVED_LATE_INIT', { channel: channelName });
+      initializeRTC(agoraToken, channelName);
     }
-  }, [visible, agoraToken, channelName, joinChannel]);
+  }, [visible, agoraToken, channelName, initializeRTC]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: CALL ACCEPTED (CALLER RECEIVES THIS)
-  // ════════════════════════════════════════════════════════════════════════════════
+  // EFFECT: CALL ACCEPTED (CALLER RECEIVES THIS FROM CALLEE)
+  // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (callAccepted && mode === 'caller') {
-      log('CALL_ACCEPTED_RECEIVED', { ms: Date.now() - callStartTs.current });
-      
-      // ═══════════════════════════════════════════════════════════════════════
-      // CRITICAL: Transition to CONNECTED immediately on callAccepted
-      // Do NOT wait for media tracks!
-      // ═══════════════════════════════════════════════════════════════════════
+      log('CALL_ACCEPTED_SIGNAL', { ms: Date.now() - callStartTs.current });
+      // Caller transitions to connected when callee accepts
       transitionToConnected();
     }
   }, [callAccepted, mode, transitionToConnected]);
@@ -599,7 +626,7 @@ export default function CallScreen({
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (callRejected) {
-      log('CALL_REJECTED_RECEIVED');
+      log('CALL_REJECTED_SIGNAL');
       stopRingback();
       setCallState('ended');
       setErrorMessage('Arama reddedildi');
@@ -612,14 +639,14 @@ export default function CallScreen({
 
   useEffect(() => {
     if (callEnded) {
-      log('CALL_ENDED_RECEIVED');
+      log('CALL_ENDED_SIGNAL');
       endCall();
     }
   }, [callEnded, endCall]);
 
   useEffect(() => {
     if (receiverOffline) {
-      log('RECEIVER_OFFLINE');
+      log('RECEIVER_OFFLINE_SIGNAL');
       stopRingback();
       failCall('Karşı taraf çevrimdışı');
     }
@@ -638,32 +665,22 @@ export default function CallScreen({
   // HANDLERS
   // ══════════════════════════════════════════════════════════════════════════════
   
-  // ACCEPT (Callee only)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // ACCEPT - ONLY changes UI state, RTC is already running!
+  // ═══════════════════════════════════════════════════════════════════════════════
   const handleAccept = useCallback(() => {
-    log('ACCEPT_PRESSED', { callId, ms: Date.now() - callStartTs.current });
+    log('ACCEPT_PRESSED', { callId, ms: Date.now() - callStartTs.current, rtcJoined });
     haptic('medium');
     
     stopRingtone();
     
-    // ═══════════════════════════════════════════════════════════════════════════
-    // CRITICAL: Emit callAccepted AND transition to CONNECTED immediately
-    // ═══════════════════════════════════════════════════════════════════════════
+    // Emit socket event to notify caller
     onAccept();
     
-    setCallState('accepted');
+    // Transition to connected - RTC is already publishing!
+    transitionToConnected();
     
-    // Join RTC if not already
-    if (!hasJoined.current && agoraToken && channelName) {
-      joinChannel(agoraToken, channelName);
-    }
-    
-    // Transition to connected after brief moment (give socket time to deliver)
-    setTimeout(() => {
-      log('CALLEE_FORCE_CONNECTED');
-      transitionToConnected();
-    }, 500);
-    
-  }, [callId, agoraToken, channelName, stopRingtone, onAccept, joinChannel, transitionToConnected]);
+  }, [callId, rtcJoined, stopRingtone, onAccept, transitionToConnected]);
 
   // REJECT (Callee only)
   const handleReject = useCallback(() => {
@@ -726,15 +743,11 @@ export default function CallScreen({
   const formatTime = (s: number) => 
     `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  // ════════════════════════════════════════════════════════════════════════════════
-  // STATUS TEXT (CLEAR & VISIBLE)
-  // ════════════════════════════════════════════════════════════════════════════════
+  // Status text
   const getStatusText = () => {
     switch (callState) {
       case 'calling': return 'Aranıyor...';
       case 'ringing': return 'Gelen Arama';
-      case 'accepted': return 'Bağlanıyor...';
-      case 'connecting': return 'Bağlanıyor...';
       case 'connected': return formatTime(duration);
       case 'ended': return errorMessage || 'Arama Bitti';
       case 'error': return errorMessage || 'Bağlantı kurulamadı';
@@ -746,8 +759,6 @@ export default function CallScreen({
     switch (callState) {
       case 'calling': return '#FFA500';
       case 'ringing': return '#4CAF50';
-      case 'accepted': 
-      case 'connecting': return '#2196F3';
       case 'connected': return '#4CAF50';
       case 'ended':
       case 'error': return '#f44336';
@@ -769,7 +780,7 @@ export default function CallScreen({
           />
         )}
 
-        {/* Local Video (PIP - always visible when video call) */}
+        {/* Local Video (PIP) - Show when RTC joined and camera is on */}
         {isVideo && rtcJoined && !isCameraOff && (
           <View style={styles.localVideoPip}>
             <RtcSurfaceView
@@ -791,11 +802,10 @@ export default function CallScreen({
           <Text style={styles.badgeText}>{isVideo ? 'Görüntülü' : 'Sesli'}</Text>
         </View>
 
-        {/* State Badge */}
-        <View style={[styles.stateBadge, { backgroundColor: getStatusColor() + '33' }]}>
-          <View style={[styles.stateDot, { backgroundColor: getStatusColor() }]} />
-          <Text style={[styles.stateText, { color: getStatusColor() }]}>
-            {callState.toUpperCase()}
+        {/* RTC Status Badge - Debug info */}
+        <View style={styles.rtcBadge}>
+          <Text style={styles.rtcText}>
+            {rtcJoined ? '✓RTC' : '○RTC'} | {localPublished ? '✓PUB' : '○PUB'} | {remoteSubscribed ? '✓SUB' : '○SUB'}
           </Text>
         </View>
 
@@ -877,7 +887,7 @@ export default function CallScreen({
               </TouchableOpacity>
             </View>
           ) : (
-            // Calling/connecting - end button only
+            // Calling/error - end button only
             <TouchableOpacity style={styles.endBtn} onPress={handleEnd}>
               <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
@@ -952,19 +962,21 @@ const styles = StyleSheet.create({
   badgeVideo: { backgroundColor: '#9C27B0' },
   badgeAudio: { backgroundColor: '#4361ee' },
   badgeText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  stateBadge: {
+  rtcBadge: {
     position: 'absolute',
     top: 50,
     left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
-    gap: 6,
+    borderRadius: 12,
   },
-  stateDot: { width: 10, height: 10, borderRadius: 5 },
-  stateText: { fontSize: 11, fontWeight: '700' },
+  rtcText: {
+    color: '#4CAF50',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
   avatar: {
     width: 130,
     height: 130,
