@@ -325,27 +325,20 @@ export default function App() {
     console.log('🔐 Android - Tüm izinler isteniyor...');
     
     try {
-      // Android 12+ için BLUETOOTH_CONNECT izni de gerekli
-      const permissions: string[] = [
+      // Core permissions
+      const permissions: any[] = [
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
         PermissionsAndroid.PERMISSIONS.CAMERA,
-        PermissionsAndroid.PERMISSIONS.MODIFY_AUDIO_SETTINGS,
       ];
-
-      // Android 12+ (API 31+) için Bluetooth izinleri
-      if (Platform.Version >= 31) {
-        permissions.push('android.permission.BLUETOOTH_CONNECT');
-      }
 
       console.log('🔐 İstenen izinler:', permissions);
 
-      const results = await PermissionsAndroid.requestMultiple(permissions as any);
+      const results = await PermissionsAndroid.requestMultiple(permissions);
       
       console.log('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
 
       const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
       const cameraGranted = results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
-      const audioSettingsGranted = results[PermissionsAndroid.PERMISSIONS.MODIFY_AUDIO_SETTINGS] === 'granted';
 
       setMicrophonePermission(audioGranted);
       setCameraPermission(cameraGranted);
@@ -367,7 +360,6 @@ export default function App() {
 
       console.log('✅ RECORD_AUDIO izni verildi');
       console.log(cameraGranted ? '✅ CAMERA izni verildi' : '⚠️ CAMERA izni reddedildi (opsiyonel)');
-      console.log(audioSettingsGranted ? '✅ MODIFY_AUDIO_SETTINGS izni verildi' : '⚠️ MODIFY_AUDIO_SETTINGS izni reddedildi');
 
       setPermissionsGranted(true);
       setPermissionChecking(false);
