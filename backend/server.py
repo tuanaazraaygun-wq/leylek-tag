@@ -527,7 +527,7 @@ def normalize_turkish_phone(phone: str) -> str:
 
 async def send_sms_via_netgsm(phone: str, message: str) -> dict:
     """
-    NETGSM API ile SMS gönder
+    NETGSM API ile SMS gönder - HTTP GET API (daha güvenilir)
     Returns: {"success": bool, "response": dict, "error": str}
     """
     result = {"success": False, "response": None, "error": None}
@@ -546,50 +546,66 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         normalized_phone = normalize_turkish_phone(phone)
         logger.info(f"📱 Phone normalized: {phone} -> {normalized_phone}")
         
-        # Basic Auth
-        credentials = base64.b64encode(f"{usercode}:{password}".encode()).decode()
-        
-        # API request
-        url = "https://api.netgsm.com.tr/sms/rest/v2/send"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Basic {credentials}"
-        }
-        
-        # Use numeric sender or approved header
+        # Use msgheader or usercode as sender
         sender = msgheader if msgheader else usercode
         
-        payload = {
-            "msgheader": sender,
-            "messages": [
-                {
-                    "msg": message,
-                    "no": normalized_phone
-                }
-            ],
-            "encoding": "TR",
-            "iysfilter": "0"  # Bilgilendirme SMS'i (OTP)
-        }
+        # NETGSM HTTP GET API - daha basit ve güvenilir
+        # Docs: https://www.netgsm.com.tr/dokuman/
+        import urllib.parse
+        
+        # URL encode the message
+        encoded_message = urllib.parse.quote(message)
+        
+        # Build API URL
+        url = (
+            f"https://api.netgsm.com.tr/sms/send/get?"
+            f"usercode={usercode}"
+            f"&password={urllib.parse.quote(password)}"
+            f"&gsmno={normalized_phone}"
+            f"&message={encoded_message}"
+            f"&msgheader={urllib.parse.quote(sender)}"
+            f"&dil=TR"
+        )
         
         logger.info(f"📱 NETGSM Request - Phone: {normalized_phone}, Sender: {sender}")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            api_result = response.json()
+            response = await client.get(url)
+            response_text = response.text.strip()
             
-            # Log full response for debugging
-            logger.info(f"📱 NETGSM Response: {api_result}")
-            result["response"] = api_result
+            # Log response
+            logger.info(f"📱 NETGSM Response: {response_text}")
+            result["response"] = {"raw": response_text}
             
-            # Check success codes
-            code = api_result.get("code", "")
+            # Parse response - NETGSM returns codes like:
+            # 00 XXXXXXXX = Success (with job ID)
+            # 20 = Post error
+            # 30 = Credential error
+            # 40 = Sender not defined
+            # 50 = Incorrect IYS brand code
+            # 51 = IYS brand code required
+            # 70 = Incorrect query parameter
+            
+            parts = response_text.split()
+            code = parts[0] if parts else response_text
+            
             if code in ["00", "01", "02"]:
-                logger.info(f"✅ SMS gönderildi: {normalized_phone}, JobID: {api_result.get('jobid', 'N/A')}")
+                job_id = parts[1] if len(parts) > 1 else "N/A"
+                logger.info(f"✅ SMS gönderildi: {normalized_phone}, JobID: {job_id}")
                 result["success"] = True
+                result["response"]["job_id"] = job_id
             else:
-                error_msg = f"Code: {code}, Desc: {api_result.get('description', 'Unknown')}"
-                logger.error(f"❌ SMS gönderilemedi: {normalized_phone} - {error_msg}")
-                result["error"] = error_msg
+                error_desc = {
+                    "20": "POST hatası",
+                    "30": "Kimlik doğrulama hatası (usercode/password yanlış)",
+                    "40": "Mesaj başlığı (sender) tanımlı değil",
+                    "50": "IYS marka kodu hatalı",
+                    "51": "IYS marka kodu zorunlu",
+                    "70": "Parametre hatası"
+                }.get(code, f"Bilinmeyen hata: {code}")
+                
+                logger.error(f"❌ SMS gönderilemedi: {normalized_phone} - Code: {code}, Desc: {error_desc}")
+                result["error"] = f"Code: {code}, Desc: {error_desc}"
                 
     except Exception as e:
         logger.error(f"❌ NETGSM exception: {e}")
