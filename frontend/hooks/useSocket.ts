@@ -337,5 +337,7 @@ export default function useSocket({
     acceptCall,
     rejectCall,
     endCall,
+    requestTripEnd,
+    respondTripEnd,
   };
 }
