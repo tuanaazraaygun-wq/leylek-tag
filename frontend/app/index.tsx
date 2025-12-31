@@ -3212,7 +3212,8 @@ function PassengerDashboard({
                       if (data.success) {
                         Alert.alert('⚠️ Yolculuk Bitirildi', data.message);
                         setActiveTag(null);
-                        loadActiveTag();
+                        setDestination(null);
+                        setScreen('role-select');
                       } else {
                         Alert.alert('Hata', data.detail);
                       }
