@@ -2985,6 +2985,11 @@ function PassengerDashboard({
                     const driverName = activeTag?.driver_name || 'Sürücü';
                     const driverId = activeTag?.driver_id || '';
                     
+                    if (!driverId) {
+                      Alert.alert('Hata', 'Sürücü bilgisi bulunamadı');
+                      return;
+                    }
+                    
                     // 🔒 Arama kilidi
                     isCallActiveRef.current = true;
                     
@@ -2994,12 +2999,17 @@ function PassengerDashboard({
                     setCallEnded(false);
                     setReceiverOffline(false);
                     
-                    // 🚀 CALLER: UI ANINDA AÇ (socket/backend bekleme!)
-                    // Geçici callId ve channelName oluştur
-                    const tempCallId = `temp_${Date.now()}`;
-                    const tempChannelName = `call_${user.id}_${driverId}_${Date.now()}`;
+                    // ════════════════════════════════════════════════════════════
+                    // 🚀 CRITICAL FIX: Socket emit HEMEN, backend PARALEL
+                    // ════════════════════════════════════════════════════════════
                     
-                    console.log('📞 YOLCU - CallScreen ANINDA açılıyor');
+                    // 1. Geçici call ID ve channel oluştur
+                    const tempCallId = `call_${user.id}_${driverId}_${Date.now()}`;
+                    const tempChannelName = `ch_${user.id}_${driverId}_${Date.now()}`;
+                    
+                    console.log('📞 YOLCU - HEMEN Socket emit + UI açılıyor');
+                    
+                    // 2. UI ANINDA AÇ
                     setCallScreenData({
                       mode: 'caller',
                       callId: tempCallId,
@@ -3011,7 +3021,27 @@ function PassengerDashboard({
                     });
                     setShowCallScreen(true);
                     
-                    // 🔄 Backend'e PARALEL istek gönder (UI'ı bloklamaz)
+                    // 3. Socket emit HEMEN (backend beklenmez!)
+                    if (socketConnected && socketRegistered) {
+                      console.log('📞 Socket emit HEMEN yapılıyor - karşı taraf ≤3sn içinde görecek');
+                      socketStartCall({
+                        caller_id: user.id,
+                        caller_name: user.name || 'Yolcu',
+                        receiver_id: driverId,
+                        call_id: tempCallId,
+                        channel_name: tempChannelName,
+                        agora_token: '', // Backend'den gelecek, şimdilik boş
+                        call_type: type
+                      });
+                    } else {
+                      console.error('❌ Socket bağlı değil!');
+                      setShowCallScreen(false);
+                      isCallActiveRef.current = false;
+                      Alert.alert('Hata', 'Bağlantı hatası - lütfen tekrar deneyin');
+                      return;
+                    }
+                    
+                    // 4. Backend'e PARALEL istek (token almak için)
                     try {
                       const response = await fetch(`${API_URL}/voice/start-call`, {
                         method: 'POST',
@@ -3020,53 +3050,32 @@ function PassengerDashboard({
                           tag_id: activeTag?.id,
                           caller_id: user.id,
                           caller_name: user.name,
-                          call_type: type
+                          call_type: type,
+                          // Oluşturduğumuz ID'leri backend'e gönder
+                          call_id: tempCallId,
+                          channel_name: tempChannelName
                         })
                       });
                       const data = await response.json();
                       
                       if (!data.success) {
                         console.error('❌ Backend hatası:', data);
-                        // CallScreen zaten açık, hata olursa kapat
-                        setShowCallScreen(false);
-                        isCallActiveRef.current = false;
-                        Alert.alert('Hata', data.detail || 'Arama başlatılamadı');
-                        return;
+                        return; // UI açık kalsın, kullanıcı kapatabilir
                       }
                       
-                      console.log('📞 YOLCU - Backend cevabı geldi:', data.call_id);
+                      console.log('📞 Backend token geldi:', data.agora_token ? 'VAR' : 'YOK');
                       
-                      // CallScreen'i gerçek verilerle güncelle
-                      setCallScreenData({
-                        mode: 'caller',
-                        callId: data.call_id,
-                        channelName: data.channel_name,
+                      // 5. Token gelince CallScreen'i güncelle (RTC başlayabilir)
+                      setCallScreenData(prev => prev ? {
+                        ...prev,
                         agoraToken: data.agora_token || '',
-                        remoteName: driverName,
-                        remoteUserId: driverId,
-                        callType: type
-                      });
-                      
-                      // Socket.IO ile karşı tarafa bildir (SADECE SİNYAL)
-                      if (socketConnected && socketRegistered) {
-                        socketStartCall({
-                          caller_id: user.id,
-                          caller_name: user.name || 'Yolcu',
-                          receiver_id: driverId,
-                          call_id: data.call_id,
-                          channel_name: data.channel_name,
-                          agora_token: data.agora_token || '',
-                          call_type: type
-                        });
-                      } else {
-                        console.warn('⚠️ Socket bağlı değil, sinyal gönderilemedi');
-                      }
+                        callId: data.call_id || tempCallId,
+                        channelName: data.channel_name || tempChannelName
+                      } : null);
                       
                     } catch (error) {
-                      console.error('Arama hatası:', error);
-                      setShowCallScreen(false);
-                      isCallActiveRef.current = false;
-                      Alert.alert('Hata', 'Bağlantı hatası');
+                      console.error('Backend token hatası:', error);
+                      // Token gelmese bile UI açık kalsın, socket sinyal gitmiş olabilir
                     }
                   }}
                   onRequestTripEnd={async () => {
