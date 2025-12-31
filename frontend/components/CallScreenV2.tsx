@@ -1,18 +1,17 @@
 /**
- * CallScreenV2 - FINAL PRODUCTION VERSION v3.0
+ * CallScreenV2 - PRODUCTION RTC v4.0
  * 
  * ════════════════════════════════════════════════════════════════════════════════
- * CRITICAL AUDIO FIX - v3.0
+ * CRITICAL FIX: MANUAL TRACK PUBLISH + PROPER RTC LIFECYCLE
  * ════════════════════════════════════════════════════════════════════════════════
  * 
- * AUDIO REQUIREMENTS:
- *   1. enableAudio() + enableLocalAudio(true)
- *   2. muteLocalAudioStream(false) explicitly
- *   3. adjustRecordingSignalVolume(100) for microphone
- *   4. adjustPlaybackSignalVolume(100) for speaker
- *   5. setEnableSpeakerphone(true) for output
- *   6. Proper audio scenario: AudioScenarioDefault
- *   7. Subscribe + unmute remote audio on onUserPublished
+ * KEY CHANGES:
+ * 1. NO auto-publish - manual track creation and publishing
+ * 2. Audio track created and published FIRST
+ * 3. Video track created and published SECOND
+ * 4. Tracks published AFTER joinChannel success
+ * 5. "Connected" state ONLY after remote track received
+ * 6. Comprehensive debug logging
  * 
  * ════════════════════════════════════════════════════════════════════════════════
  */
@@ -45,21 +44,32 @@ import {
   AudioProfileType,
   AudioScenarioType,
   ConnectionStateType,
+  LocalAudioStreamState,
+  LocalAudioStreamReason,
+  RemoteAudioState,
+  RemoteAudioStateReason,
+  LocalVideoStreamState,
+  LocalVideoStreamReason,
+  RemoteVideoState,
+  RemoteVideoStateReason,
 } from 'react-native-agora';
 
 const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // TIMEOUTS
-const CONNECT_TIMEOUT_MS = 20000;  // 20s max for entire connection
+const CONNECT_TIMEOUT_MS = 25000;  // 25s max for entire connection
+const TRACK_PUBLISH_DELAY_MS = 500; // Wait before publishing tracks
 
 // ════════════════════════════════════════════════════════════════════════════════
-// CALL STATES
+// CALL STATES - Strict state machine
 // ════════════════════════════════════════════════════════════════════════════════
 type CallState = 
+  | 'idle'         // Initial state
   | 'calling'      // Caller: Waiting for callee to answer
   | 'ringing'      // Callee: Incoming call
-  | 'connected'    // CALL ACTIVE - show duration timer
+  | 'connecting'   // RTC joining/connecting
+  | 'connected'    // CALL ACTIVE - audio/video flowing
   | 'ended'        // Call finished
   | 'error';       // Error state
 
@@ -84,12 +94,16 @@ interface CallScreenProps {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// LOGGING
+// LOGGING - Comprehensive debug output
 // ════════════════════════════════════════════════════════════════════════════════
-const getTs = () => new Date().toISOString().split('T')[1].slice(0, 12);
+const getTs = () => {
+  const now = new Date();
+  return `${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}.${now.getMilliseconds().toString().padStart(3,'0')}`;
+};
+
 const log = (event: string, data?: any) => {
   const d = data ? ` | ${JSON.stringify(data)}` : '';
-  console.log(`[${getTs()}] 📞 ${event}${d}`);
+  console.log(`[${getTs()}] 🎙️ RTC: ${event}${d}`);
 };
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -105,22 +119,16 @@ const haptic = async (type: 'light' | 'medium' | 'heavy' = 'medium') => {
 };
 
 // ════════════════════════════════════════════════════════════════════════════════
-// PERMISSION - CHECK ONLY (permissions already granted at app start)
+// PERMISSION CHECK (permissions already granted at app start)
 // ════════════════════════════════════════════════════════════════════════════════
 const checkPermissions = async (needVideo: boolean): Promise<boolean> => {
   if (Platform.OS !== 'android') return true;
 
   try {
-    // Check if RECORD_AUDIO is already granted
     const audioGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
     const cameraGranted = !needVideo || await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
     
     log('PERMISSION_CHECK', { audioGranted, cameraGranted, needVideo });
-    
-    if (!audioGranted) {
-      log('PERMISSION_AUDIO_NOT_GRANTED - Cannot start call');
-      return false;
-    }
     
     return audioGranted && cameraGranted;
   } catch (e) {
@@ -155,7 +163,7 @@ export default function CallScreen({
   // ══════════════════════════════════════════════════════════════════════════════
   // STATE
   // ══════════════════════════════════════════════════════════════════════════════
-  const [callState, setCallState] = useState<CallState>(mode === 'caller' ? 'calling' : 'ringing');
+  const [callState, setCallState] = useState<CallState>('idle');
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(true);
@@ -163,10 +171,16 @@ export default function CallScreen({
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // RTC internal state tracking
+  // Track state indicators
+  const [localAudioState, setLocalAudioState] = useState<string>('OFF');
+  const [localVideoState, setLocalVideoState] = useState<string>('OFF');
+  const [remoteAudioState, setRemoteAudioState] = useState<string>('OFF');
+  const [remoteVideoState, setRemoteVideoState] = useState<string>('OFF');
+
+  // RTC state
   const [rtcJoined, setRtcJoined] = useState(false);
-  const [localAudioEnabled, setLocalAudioEnabled] = useState(false);
-  const [remoteAudioReceived, setRemoteAudioReceived] = useState(false);
+  const [audioPublished, setAudioPublished] = useState(false);
+  const [videoPublished, setVideoPublished] = useState(false);
 
   const isVideo = useRef(callType === 'video').current;
 
@@ -190,19 +204,18 @@ export default function CallScreen({
   const isInitializing = useRef(false);
   const hasInitialized = useRef(false);
   const isCleaningUp = useRef(false);
+  const tracksPublished = useRef(false);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // TRANSITION TO CONNECTED
+  // TRANSITION TO CONNECTED - Only when audio/video actually flowing
   // ══════════════════════════════════════════════════════════════════════════════
   const transitionToConnected = useCallback(() => {
     if (callState === 'connected' || callState === 'ended' || callState === 'error') {
       return;
     }
     
-    log('STATE_TRANSITION_TO_CONNECTED', { 
-      from: callState, 
-      ms: Date.now() - callStartTs.current 
-    });
+    const elapsed = Date.now() - callStartTs.current;
+    log('STATE_TO_CONNECTED', { from: callState, elapsed });
     
     setCallState('connected');
     
@@ -221,7 +234,6 @@ export default function CallScreen({
     
     // Start duration timer
     if (!durationTimerRef.current) {
-      log('DURATION_TIMER_START');
       durationTimerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     }
     
@@ -236,13 +248,10 @@ export default function CallScreen({
     if (ringbackTimerRef.current) return;
     
     log('RINGBACK_START');
-    
-    const playPattern = () => {
+    Vibration.vibrate([0, 200, 200, 200], false);
+    ringbackTimerRef.current = setInterval(() => {
       Vibration.vibrate([0, 200, 200, 200], false);
-    };
-    
-    playPattern();
-    ringbackTimerRef.current = setInterval(playPattern, 3000);
+    }, 3000);
   }, [mode]);
 
   const stopRingback = useCallback(() => {
@@ -297,23 +306,28 @@ export default function CallScreen({
 
     if (engineRef.current) {
       try {
+        // Unregister handler first
         if (eventHandlerRef.current) {
           engineRef.current.unregisterEventHandler(eventHandlerRef.current);
           eventHandlerRef.current = null;
         }
         
-        // Disable audio/video before leaving
+        // Disable tracks
         try {
-          engineRef.current.enableLocalAudio(false);
           engineRef.current.muteLocalAudioStream(true);
+          engineRef.current.enableLocalAudio(false);
           if (isVideo) {
-            engineRef.current.stopPreview();
+            engineRef.current.muteLocalVideoStream(true);
             engineRef.current.enableLocalVideo(false);
+            engineRef.current.stopPreview();
           }
-        } catch {}
+        } catch (e) {
+          log('CLEANUP_DISABLE_ERROR', { error: String(e) });
+        }
         
         await engineRef.current.leaveChannel();
-        log('AGORA_LEAVE_CHANNEL');
+        log('AGORA_LEFT_CHANNEL');
+        
         engineRef.current.release();
         log('AGORA_ENGINE_RELEASED');
         engineRef.current = null;
@@ -322,9 +336,12 @@ export default function CallScreen({
       }
     }
 
+    // Reset state
     isInitializing.current = false;
     hasInitialized.current = false;
     isCleaningUp.current = false;
+    tracksPublished.current = false;
+    
     log('CLEANUP_DONE');
   }, [clearAllTimers, isVideo]);
 
@@ -353,7 +370,96 @@ export default function CallScreen({
 
   // ══════════════════════════════════════════════════════════════════════════════
   // ════════════════════════════════════════════════════════════════════════════
-  // CRITICAL: INITIALIZE RTC WITH PROPER AUDIO CONFIGURATION
+  // PUBLISH TRACKS - Called AFTER joinChannel success
+  // ════════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════════
+  const publishTracks = useCallback(async () => {
+    if (!engineRef.current || tracksPublished.current) {
+      log('PUBLISH_SKIP', { hasEngine: !!engineRef.current, alreadyPublished: tracksPublished.current });
+      return;
+    }
+
+    tracksPublished.current = true;
+    const engine = engineRef.current;
+    
+    log('PUBLISH_TRACKS_START', { isVideo });
+
+    try {
+      // ═══════════════════════════════════════════════════════════════════════
+      // STEP 1: Enable and publish AUDIO FIRST
+      // ═══════════════════════════════════════════════════════════════════════
+      log('AUDIO_ENABLE_START');
+      
+      // Enable audio module
+      engine.enableAudio();
+      log('AUDIO_MODULE_ENABLED');
+      
+      // Enable local audio (microphone)
+      engine.enableLocalAudio(true);
+      log('LOCAL_AUDIO_ENABLED');
+      
+      // Unmute local audio stream
+      engine.muteLocalAudioStream(false);
+      log('LOCAL_AUDIO_UNMUTED');
+      
+      // Set volume levels
+      engine.adjustRecordingSignalVolume(100);
+      engine.adjustPlaybackSignalVolume(100);
+      log('AUDIO_VOLUMES_SET', { recording: 100, playback: 100 });
+      
+      // Enable speaker
+      engine.setEnableSpeakerphone(true);
+      engine.setDefaultAudioRouteToSpeakerphone(true);
+      log('SPEAKER_ENABLED');
+      
+      setAudioPublished(true);
+      setLocalAudioState('ON');
+      log('AUDIO_PUBLISH_COMPLETE');
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // STEP 2: Enable and publish VIDEO SECOND (if video call)
+      // ═══════════════════════════════════════════════════════════════════════
+      if (isVideo) {
+        log('VIDEO_ENABLE_START');
+        
+        // Small delay to ensure audio is stable
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Enable video module
+        engine.enableVideo();
+        log('VIDEO_MODULE_ENABLED');
+        
+        // Enable local video (camera)
+        engine.enableLocalVideo(true);
+        log('LOCAL_VIDEO_ENABLED');
+        
+        // Unmute local video stream
+        engine.muteLocalVideoStream(false);
+        log('LOCAL_VIDEO_UNMUTED');
+        
+        // Start preview
+        engine.startPreview();
+        log('VIDEO_PREVIEW_STARTED');
+        
+        setVideoPublished(true);
+        setLocalVideoState('ON');
+        log('VIDEO_PUBLISH_COMPLETE');
+      }
+
+      log('ALL_TRACKS_PUBLISHED', { 
+        audioPublished: true, 
+        videoPublished: isVideo,
+        elapsed: Date.now() - callStartTs.current 
+      });
+
+    } catch (e) {
+      log('PUBLISH_TRACKS_ERROR', { error: String(e) });
+    }
+  }, [isVideo]);
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════════
+  // INITIALIZE RTC - Create engine and join channel
   // ════════════════════════════════════════════════════════════════════════════
   // ══════════════════════════════════════════════════════════════════════════════
   const initializeRTC = useCallback(async (token: string, channel: string) => {
@@ -372,235 +478,290 @@ export default function CallScreen({
     log('RTC_INIT_START', { channel, uid: localUid.current, isVideo, mode });
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 1: Check Permissions BEFORE creating engine (already granted at app start)
+    // STEP 1: Check permissions
     // ═══════════════════════════════════════════════════════════════════════════
     const hasPermission = await checkPermissions(isVideo);
     if (!hasPermission) {
-      log('PERMISSION_NOT_GRANTED_ABORT');
+      log('PERMISSION_DENIED');
       isInitializing.current = false;
-      failCall('Mikrofon izni gerekli. Lütfen ayarlardan izin verin.');
+      failCall('Mikrofon izni gerekli');
       return;
     }
-    log('RTC_PERMISSION_OK', { elapsed: Date.now() - startTime });
+    log('PERMISSION_OK', { elapsed: Date.now() - startTime });
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 2: Create and Configure Engine
+    // STEP 2: Create Agora engine
     // ═══════════════════════════════════════════════════════════════════════════
     try {
-      log('AGORA_ENGINE_CREATE');
+      log('ENGINE_CREATE_START');
       const engine = createAgoraRtcEngine();
       
-      // Initialize with communication profile
+      // Initialize engine
       engine.initialize({
         appId: AGORA_APP_ID,
         channelProfile: ChannelProfileType.ChannelProfileCommunication,
       });
-      log('AGORA_ENGINE_INITIALIZED', { elapsed: Date.now() - startTime });
+      log('ENGINE_INITIALIZED', { elapsed: Date.now() - startTime });
 
-      // ═══════════════════════════════════════════════════════════════════════
-      // CRITICAL AUDIO CONFIGURATION - DO NOT MODIFY ORDER
-      // ═══════════════════════════════════════════════════════════════════════
-      
-      // 1. Set audio profile FIRST
+      // Set audio profile BEFORE enabling audio
       engine.setAudioProfile(
         AudioProfileType.AudioProfileDefault,
         AudioScenarioType.AudioScenarioDefault
       );
       log('AUDIO_PROFILE_SET');
 
-      // 2. Enable audio module
-      engine.enableAudio();
-      log('AUDIO_ENABLED');
-
-      // 3. Enable local audio capture (microphone)
-      engine.enableLocalAudio(true);
-      log('LOCAL_AUDIO_ENABLED');
-
-      // 4. Unmute local audio stream
-      engine.muteLocalAudioStream(false);
-      log('LOCAL_AUDIO_UNMUTED');
-
-      // 5. Set recording volume (microphone input) - 100 = normal
-      engine.adjustRecordingSignalVolume(100);
-      log('RECORDING_VOLUME_SET');
-
-      // 6. Set playback volume (speaker output) - 100 = normal
-      engine.adjustPlaybackSignalVolume(100);
-      log('PLAYBACK_VOLUME_SET');
-
-      // 7. Route audio to speaker
-      engine.setDefaultAudioRouteToSpeakerphone(true);
-      engine.setEnableSpeakerphone(true);
-      log('SPEAKER_ENABLED');
-
-      setLocalAudioEnabled(true);
-      log('AUDIO_SETUP_COMPLETE', { elapsed: Date.now() - startTime });
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // Video configuration (if video call)
-      // ═══════════════════════════════════════════════════════════════════════
-      if (isVideo) {
-        engine.enableVideo();
-        engine.enableLocalVideo(true);
-        engine.muteLocalVideoStream(false);
-        engine.setVideoEncoderConfiguration({
-          dimensions: { width: 480, height: 640 },
-          frameRate: 15,
-          bitrate: 400,
-          mirrorMode: VideoMirrorModeType.VideoMirrorModeDisabled,
-        });
-        engine.startPreview();
-        log('VIDEO_SETUP_COMPLETE', { elapsed: Date.now() - startTime });
-      }
-
-      // Set as broadcaster to publish tracks
+      // Set client role
       engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+      log('CLIENT_ROLE_SET');
 
-      // ═══════════════════════════════════════════════════════════════════════════
-      // STEP 3: Register Event Handlers
-      // ═══════════════════════════════════════════════════════════════════════════
+      // ═══════════════════════════════════════════════════════════════════════
+      // STEP 3: Register event handlers BEFORE joining
+      // ═══════════════════════════════════════════════════════════════════════
       const handler: IRtcEngineEventHandler = {
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // JOIN SUCCESS - Publish tracks here
+        // ─────────────────────────────────────────────────────────────────────
         onJoinChannelSuccess: (connection, elapsed) => {
-          log('RTC_JOIN_SUCCESS', { 
+          log('JOIN_CHANNEL_SUCCESS', { 
             channel: connection.channelId, 
             uid: connection.localUid, 
             elapsed,
             totalMs: Date.now() - callStartTs.current
           });
+          
           hasInitialized.current = true;
           setRtcJoined(true);
           
-          // Double-check audio is enabled after join
-          if (engineRef.current) {
-            engineRef.current.enableLocalAudio(true);
-            engineRef.current.muteLocalAudioStream(false);
-            log('POST_JOIN_AUDIO_CHECK');
-          }
+          // CRITICAL: Publish tracks AFTER join success
+          setTimeout(() => {
+            publishTracks();
+          }, TRACK_PUBLISH_DELAY_MS);
         },
 
+        // ─────────────────────────────────────────────────────────────────────
+        // REMOTE USER JOINED
+        // ─────────────────────────────────────────────────────────────────────
         onUserJoined: (connection, uid, elapsed) => {
           log('REMOTE_USER_JOINED', { uid, elapsed, totalMs: Date.now() - callStartTs.current });
           setRemoteUid(uid);
-        },
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // CRITICAL: Subscribe to remote tracks and ensure audio is unmuted
-        // ═══════════════════════════════════════════════════════════════════════
-        onUserPublished: async (connection, uid, mediaType) => {
-          log('REMOTE_USER_PUBLISHED', { uid, mediaType, totalMs: Date.now() - callStartTs.current });
           
-          if (!engineRef.current) {
-            log('SUBSCRIBE_ERROR_NO_ENGINE');
-            return;
-          }
-          
-          try {
-            // Subscribe to the remote user's track
-            await engineRef.current.subscribe(uid, mediaType);
-            log('SUBSCRIBE_SUCCESS', { uid, mediaType });
-            
-            if (mediaType === 1) { // Audio = 1
-              // CRITICAL: Unmute remote audio
-              engineRef.current.muteRemoteAudioStream(uid, false);
-              // Ensure playback volume is up
-              engineRef.current.adjustPlaybackSignalVolume(100);
-              log('REMOTE_AUDIO_SUBSCRIBED_AND_UNMUTED', { uid });
-              setRemoteAudioReceived(true);
-            } else if (mediaType === 2) { // Video = 2
+          // Ensure we're subscribed to remote streams
+          if (engineRef.current) {
+            engineRef.current.muteRemoteAudioStream(uid, false);
+            if (isVideo) {
               engineRef.current.muteRemoteVideoStream(uid, false);
-              log('REMOTE_VIDEO_SUBSCRIBED_AND_UNMUTED', { uid });
             }
-            
-            setRemoteUid(uid);
-            
-          } catch (e) {
-            log('SUBSCRIBE_ERROR', { uid, mediaType, error: String(e) });
+            log('REMOTE_STREAMS_UNMUTED', { uid });
           }
         },
 
-        onUserUnpublished: (connection, uid, mediaType) => {
-          log('REMOTE_USER_UNPUBLISHED', { uid, mediaType });
-          if (mediaType === 1) {
-            setRemoteAudioReceived(false);
-          }
-        },
-
+        // ─────────────────────────────────────────────────────────────────────
+        // REMOTE USER OFFLINE
+        // ─────────────────────────────────────────────────────────────────────
         onUserOffline: (connection, uid, reason) => {
           log('REMOTE_USER_OFFLINE', { uid, reason });
           setRemoteUid(null);
-          setRemoteAudioReceived(false);
+          setRemoteAudioState('OFF');
+          setRemoteVideoState('OFF');
           endCall();
         },
 
+        // ─────────────────────────────────────────────────────────────────────
+        // LOCAL AUDIO STATE - Critical for debugging
+        // ─────────────────────────────────────────────────────────────────────
+        onLocalAudioStateChanged: (state, reason) => {
+          const stateNames: Record<number, string> = {
+            0: 'STOPPED',
+            1: 'RECORDING',
+            2: 'ENCODING',
+            3: 'FAILED'
+          };
+          const reasonNames: Record<number, string> = {
+            0: 'OK',
+            1: 'FAILURE',
+            2: 'NO_PERMISSION',
+            3: 'BUSY',
+            4: 'CAPTURE_FAIL',
+            5: 'ENCODE_FAIL'
+          };
+          
+          const stateName = stateNames[state] || `UNKNOWN(${state})`;
+          const reasonName = reasonNames[reason] || `UNKNOWN(${reason})`;
+          
+          log('LOCAL_AUDIO_STATE', { state: stateName, reason: reasonName });
+          
+          if (state === 1 || state === 2) { // RECORDING or ENCODING
+            setLocalAudioState('ON');
+          } else if (state === 0 || state === 3) { // STOPPED or FAILED
+            setLocalAudioState('OFF');
+          }
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // REMOTE AUDIO STATE - Critical for debugging
+        // ─────────────────────────────────────────────────────────────────────
+        onRemoteAudioStateChanged: (connection, uid, state, reason, elapsed) => {
+          const stateNames: Record<number, string> = {
+            0: 'STOPPED',
+            1: 'STARTING',
+            2: 'DECODING',
+            3: 'FROZEN',
+            4: 'FAILED'
+          };
+          const reasonNames: Record<number, string> = {
+            0: 'INTERNAL',
+            1: 'NETWORK_CONGESTION',
+            2: 'NETWORK_RECOVERY',
+            3: 'LOCAL_MUTED',
+            4: 'LOCAL_UNMUTED',
+            5: 'REMOTE_MUTED',
+            6: 'REMOTE_UNMUTED',
+            7: 'REMOTE_OFFLINE'
+          };
+          
+          const stateName = stateNames[state] || `UNKNOWN(${state})`;
+          const reasonName = reasonNames[reason] || `UNKNOWN(${reason})`;
+          
+          log('REMOTE_AUDIO_STATE', { uid, state: stateName, reason: reasonName, elapsed });
+          
+          if (state === 2) { // DECODING = receiving audio
+            setRemoteAudioState('ON');
+            setRemoteUid(uid);
+            
+            // Audio is flowing - transition to connected
+            log('REMOTE_AUDIO_FLOWING', { uid, elapsed: Date.now() - callStartTs.current });
+            transitionToConnected();
+          } else if (state === 0 || state === 4) { // STOPPED or FAILED
+            setRemoteAudioState('OFF');
+          }
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // LOCAL VIDEO STATE
+        // ─────────────────────────────────────────────────────────────────────
+        onLocalVideoStateChanged: (source, state, reason) => {
+          const stateNames: Record<number, string> = {
+            0: 'STOPPED',
+            1: 'CAPTURING',
+            2: 'ENCODING',
+            3: 'FAILED'
+          };
+          const stateName = stateNames[state] || `UNKNOWN(${state})`;
+          
+          log('LOCAL_VIDEO_STATE', { source, state: stateName, reason });
+          
+          if (state === 1 || state === 2) { // CAPTURING or ENCODING
+            setLocalVideoState('ON');
+          } else {
+            setLocalVideoState('OFF');
+          }
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // REMOTE VIDEO STATE
+        // ─────────────────────────────────────────────────────────────────────
+        onRemoteVideoStateChanged: (connection, uid, state, reason, elapsed) => {
+          const stateNames: Record<number, string> = {
+            0: 'STOPPED',
+            1: 'STARTING',
+            2: 'DECODING',
+            3: 'FROZEN',
+            4: 'FAILED'
+          };
+          const stateName = stateNames[state] || `UNKNOWN(${state})`;
+          
+          log('REMOTE_VIDEO_STATE', { uid, state: stateName, reason, elapsed });
+          
+          if (state === 2) { // DECODING = receiving video
+            setRemoteVideoState('ON');
+            setRemoteUid(uid);
+          } else if (state === 0 || state === 4) {
+            setRemoteVideoState('OFF');
+          }
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // FIRST REMOTE AUDIO FRAME
+        // ─────────────────────────────────────────────────────────────────────
+        onFirstRemoteAudioFrame: (connection, uid, elapsed) => {
+          log('FIRST_REMOTE_AUDIO_FRAME', { uid, elapsed, totalMs: Date.now() - callStartTs.current });
+          setRemoteAudioState('ON');
+          setRemoteUid(uid);
+          transitionToConnected();
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // FIRST LOCAL AUDIO FRAME PUBLISHED
+        // ─────────────────────────────────────────────────────────────────────
+        onFirstLocalAudioFramePublished: (connection, elapsed) => {
+          log('FIRST_LOCAL_AUDIO_PUBLISHED', { elapsed, totalMs: Date.now() - callStartTs.current });
+          setLocalAudioState('ON');
+          setAudioPublished(true);
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // FIRST REMOTE VIDEO FRAME
+        // ─────────────────────────────────────────────────────────────────────
+        onFirstRemoteVideoFrame: (connection, uid, width, height, elapsed) => {
+          log('FIRST_REMOTE_VIDEO_FRAME', { uid, width, height, elapsed, totalMs: Date.now() - callStartTs.current });
+          setRemoteVideoState('ON');
+          setRemoteUid(uid);
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // FIRST LOCAL VIDEO FRAME PUBLISHED
+        // ─────────────────────────────────────────────────────────────────────
+        onFirstLocalVideoFramePublished: (connection, elapsed) => {
+          log('FIRST_LOCAL_VIDEO_PUBLISHED', { elapsed, totalMs: Date.now() - callStartTs.current });
+          setLocalVideoState('ON');
+          setVideoPublished(true);
+        },
+
+        // ─────────────────────────────────────────────────────────────────────
+        // CONNECTION STATE
+        // ─────────────────────────────────────────────────────────────────────
         onConnectionStateChanged: (connection, state, reason) => {
-          log('CONNECTION_STATE', { state, reason });
-          if (state === ConnectionStateType.ConnectionStateFailed) {
+          const stateNames: Record<number, string> = {
+            1: 'DISCONNECTED',
+            2: 'CONNECTING',
+            3: 'CONNECTED',
+            4: 'RECONNECTING',
+            5: 'FAILED'
+          };
+          log('CONNECTION_STATE', { state: stateNames[state] || state, reason });
+          
+          if (state === 5) { // FAILED
             failCall('Bağlantı kurulamadı');
           }
         },
 
+        // ─────────────────────────────────────────────────────────────────────
+        // ERROR
+        // ─────────────────────────────────────────────────────────────────────
         onError: (err, msg) => {
           log('AGORA_ERROR', { err, msg });
         },
 
-        onLeaveChannel: () => {
-          log('AGORA_LEAVE_CHANNEL_EVENT');
+        // ─────────────────────────────────────────────────────────────────────
+        // LEAVE CHANNEL
+        // ─────────────────────────────────────────────────────────────────────
+        onLeaveChannel: (connection, stats) => {
+          log('LEAVE_CHANNEL', { duration: stats.duration, txBytes: stats.txBytes, rxBytes: stats.rxBytes });
           hasInitialized.current = false;
           setRtcJoined(false);
-          setLocalAudioEnabled(false);
+          setAudioPublished(false);
+          setVideoPublished(false);
         },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // Audio state tracking - CRITICAL FOR DEBUGGING
-        // ═══════════════════════════════════════════════════════════════════════
-        onLocalAudioStateChanged: (state, reason) => {
-          log('LOCAL_AUDIO_STATE_CHANGED', { state, reason });
-          // state: 0=stopped, 1=recording, 2=encoding, 3=failed
-          // reason: 0=ok, 1=failure, 2=no_permission, 3=busy, 4=capture_fail, 5=encode_fail
-          if (state === 3) { // Failed
-            log('LOCAL_AUDIO_FAILED', { reason });
-          }
-          if (state === 1) { // Recording
-            setLocalAudioEnabled(true);
-          }
-        },
-
-        onRemoteAudioStateChanged: (connection, uid, state, reason, elapsed) => {
-          log('REMOTE_AUDIO_STATE_CHANGED', { uid, state, reason, elapsed });
-          // state: 0=stopped, 1=starting, 2=decoding, 3=frozen, 4=failed
-          if (state === 2) { // Decoding = receiving audio
-            setRemoteAudioReceived(true);
-            log('REMOTE_AUDIO_NOW_PLAYING', { uid });
-          } else if (state === 0 || state === 4) {
-            setRemoteAudioReceived(false);
-          }
-        },
-
-        onLocalVideoStateChanged: (source, state, reason) => {
-          log('LOCAL_VIDEO_STATE', { source, state, reason });
-        },
-
-        onRemoteVideoStateChanged: (connection, uid, state, reason, elapsed) => {
-          log('REMOTE_VIDEO_STATE', { uid, state, reason });
-        },
-
-        // Audio volume indication (useful for debugging)
+        // ─────────────────────────────────────────────────────────────────────
+        // AUDIO VOLUME INDICATION
+        // ─────────────────────────────────────────────────────────────────────
         onAudioVolumeIndication: (connection, speakers, speakerNumber, totalVolume) => {
-          if (totalVolume > 0) {
+          if (totalVolume > 10) {
+            // Only log when there's actual audio
             log('AUDIO_VOLUME', { speakerNumber, totalVolume });
           }
-        },
-
-        // First remote audio frame received
-        onFirstRemoteAudioFrame: (connection, uid, elapsed) => {
-          log('FIRST_REMOTE_AUDIO_FRAME', { uid, elapsed });
-          setRemoteAudioReceived(true);
-        },
-
-        // First local audio frame published
-        onFirstLocalAudioFramePublished: (connection, elapsed) => {
-          log('FIRST_LOCAL_AUDIO_FRAME_PUBLISHED', { elapsed });
-          setLocalAudioEnabled(true);
         },
       };
 
@@ -608,35 +769,36 @@ export default function CallScreen({
       engine.registerEventHandler(handler);
       engineRef.current = engine;
       
-      // Enable audio volume indication for debugging
+      // Enable volume indication for debugging
       engine.enableAudioVolumeIndication(2000, 3, true);
       
-      log('AGORA_HANDLERS_REGISTERED', { elapsed: Date.now() - startTime });
+      log('EVENT_HANDLERS_REGISTERED', { elapsed: Date.now() - startTime });
 
-      // ═══════════════════════════════════════════════════════════════════════════
-      // STEP 4: JOIN CHANNEL WITH AUDIO ENABLED
-      // ═══════════════════════════════════════════════════════════════════════════
-      log('RTC_JOIN_CHANNEL', { channel, uid: localUid.current });
+      // ═══════════════════════════════════════════════════════════════════════
+      // STEP 4: Join channel (NO auto-publish)
+      // ═══════════════════════════════════════════════════════════════════════
+      log('JOIN_CHANNEL_START', { channel, uid: localUid.current });
       
+      // Join WITHOUT auto-publish - we'll publish manually after join success
       engine.joinChannel(token, channel, localUid.current, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,           // PUBLISH AUDIO
-        publishCameraTrack: isVideo,            // PUBLISH VIDEO (if video call)
-        autoSubscribeAudio: true,               // AUTO SUBSCRIBE TO REMOTE AUDIO
-        autoSubscribeVideo: isVideo,            // AUTO SUBSCRIBE TO REMOTE VIDEO
+        publishMicrophoneTrack: false,  // DO NOT auto-publish
+        publishCameraTrack: false,      // DO NOT auto-publish
+        autoSubscribeAudio: true,       // Auto-subscribe to remote audio
+        autoSubscribeVideo: true,       // Auto-subscribe to remote video
       });
 
-      log('RTC_JOIN_EXECUTED', { elapsed: Date.now() - startTime });
+      log('JOIN_CHANNEL_CALLED', { elapsed: Date.now() - startTime });
 
     } catch (e) {
       log('RTC_INIT_ERROR', { error: String(e) });
       isInitializing.current = false;
       failCall('RTC başlatılamadı');
     }
-  }, [isVideo, mode, failCall, endCall]);
+  }, [isVideo, mode, failCall, endCall, publishTracks, transitionToConnected]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: INITIALIZE ON MOUNT - IMMEDIATELY START RTC
+  // EFFECT: INITIALIZE ON MOUNT
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!visible || !callId) return;
@@ -648,15 +810,19 @@ export default function CallScreen({
     setCallState(mode === 'caller' ? 'calling' : 'ringing');
     setDuration(0);
     setRtcJoined(false);
-    setLocalAudioEnabled(false);
-    setRemoteAudioReceived(false);
+    setAudioPublished(false);
+    setVideoPublished(false);
+    setLocalAudioState('OFF');
+    setLocalVideoState('OFF');
+    setRemoteAudioState('OFF');
+    setRemoteVideoState('OFF');
     setRemoteUid(null);
     setErrorMessage('');
+    tracksPublished.current = false;
 
     // Start sounds
     if (mode === 'caller') {
       startRingback();
-      // Start pulse animation
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
@@ -670,14 +836,13 @@ export default function CallScreen({
     // Connect timeout
     connectTimeoutRef.current = setTimeout(() => {
       if (callState !== 'connected' && callState !== 'ended') {
-        log('CONNECT_TIMEOUT_EXPIRED');
+        log('CONNECT_TIMEOUT');
         failCall('Bağlantı zaman aşımı');
       }
     }, CONNECT_TIMEOUT_MS);
 
-    // Initialize RTC IMMEDIATELY for BOTH caller AND callee
+    // Initialize RTC immediately
     if (agoraToken && channelName) {
-      log('RTC_INIT_IMMEDIATE', { mode });
       initializeRTC(agoraToken, channelName);
     }
 
@@ -688,24 +853,25 @@ export default function CallScreen({
   }, [visible, callId]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: TOKEN ARRIVES LATER (backup)
+  // EFFECT: TOKEN ARRIVES LATER
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (visible && agoraToken && channelName && !hasInitialized.current && !isInitializing.current) {
-      log('TOKEN_ARRIVED_LATE_INIT', { channel: channelName });
+      log('TOKEN_LATE_INIT');
       initializeRTC(agoraToken, channelName);
     }
   }, [visible, agoraToken, channelName, initializeRTC]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: CALL ACCEPTED (CALLER RECEIVES THIS FROM CALLEE)
+  // EFFECT: CALL ACCEPTED
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (callAccepted && mode === 'caller') {
-      log('CALL_ACCEPTED_SIGNAL', { ms: Date.now() - callStartTs.current });
-      transitionToConnected();
+      log('CALL_ACCEPTED_SIGNAL', { elapsed: Date.now() - callStartTs.current });
+      stopRingback();
+      setCallState('connecting');
     }
-  }, [callAccepted, mode, transitionToConnected]);
+  }, [callAccepted, mode, stopRingback]);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // EFFECT: EXTERNAL EVENTS
@@ -751,40 +917,32 @@ export default function CallScreen({
   // HANDLERS
   // ══════════════════════════════════════════════════════════════════════════════
   
-  // ACCEPT - ONLY changes UI state, RTC is already running!
   const handleAccept = useCallback(() => {
-    log('ACCEPT_PRESSED', { callId, ms: Date.now() - callStartTs.current, rtcJoined });
+    log('ACCEPT_PRESSED', { elapsed: Date.now() - callStartTs.current, rtcJoined });
     haptic('medium');
     
     stopRingtone();
-    
-    // Emit socket event to notify caller
+    setCallState('connecting');
     onAccept();
     
-    // Transition to connected
-    transitionToConnected();
-    
-  }, [callId, rtcJoined, stopRingtone, onAccept, transitionToConnected]);
+  }, [rtcJoined, stopRingtone, onAccept]);
 
-  // REJECT (Callee only)
   const handleReject = useCallback(() => {
-    log('REJECT_PRESSED', { callId });
+    log('REJECT_PRESSED');
     haptic('heavy');
     
     stopRingtone();
     setCallState('ended');
     onReject();
     setTimeout(() => onClose(), 300);
-  }, [callId, stopRingtone, onReject, onClose]);
+  }, [stopRingtone, onReject, onClose]);
 
-  // END (Both)
   const handleEnd = useCallback(() => {
     log('END_PRESSED');
     haptic('heavy');
     endCall();
   }, [endCall]);
 
-  // In-call controls
   const toggleMute = useCallback(() => {
     if (!engineRef.current) return;
     haptic('light');
@@ -827,11 +985,12 @@ export default function CallScreen({
   const formatTime = (s: number) => 
     `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  // Status text
   const getStatusText = () => {
     switch (callState) {
+      case 'idle': return '';
       case 'calling': return 'Aranıyor...';
       case 'ringing': return 'Gelen Arama';
+      case 'connecting': return 'Bağlanıyor...';
       case 'connected': return formatTime(duration);
       case 'ended': return errorMessage || 'Arama Bitti';
       case 'error': return errorMessage || 'Bağlantı kurulamadı';
@@ -843,6 +1002,7 @@ export default function CallScreen({
     switch (callState) {
       case 'calling': return '#FFA500';
       case 'ringing': return '#4CAF50';
+      case 'connecting': return '#2196F3';
       case 'connected': return '#4CAF50';
       case 'ended':
       case 'error': return '#f44336';
@@ -864,7 +1024,7 @@ export default function CallScreen({
           />
         )}
 
-        {/* Local Video (PIP) - Show when RTC joined and camera is on */}
+        {/* Local Video (PIP) */}
         {isVideo && rtcJoined && !isCameraOff && (
           <View style={styles.localVideoPip}>
             <RtcSurfaceView
@@ -886,15 +1046,25 @@ export default function CallScreen({
           <Text style={styles.badgeText}>{isVideo ? 'Görüntülü' : 'Sesli'}</Text>
         </View>
 
-        {/* Audio Status Badge - Debug info */}
-        <View style={styles.audioBadge}>
-          <View style={[styles.audioIndicator, localAudioEnabled ? styles.audioOn : styles.audioOff]} />
-          <Text style={styles.audioText}>MIC</Text>
-          <View style={[styles.audioIndicator, remoteAudioReceived ? styles.audioOn : styles.audioOff]} />
-          <Text style={styles.audioText}>SPK</Text>
+        {/* Track Status Debug Badge */}
+        <View style={styles.debugBadge}>
+          <View style={styles.debugRow}>
+            <View style={[styles.indicator, localAudioState === 'ON' ? styles.indicatorOn : styles.indicatorOff]} />
+            <Text style={styles.debugText}>MIC</Text>
+            <View style={[styles.indicator, remoteAudioState === 'ON' ? styles.indicatorOn : styles.indicatorOff]} />
+            <Text style={styles.debugText}>SPK</Text>
+          </View>
+          {isVideo && (
+            <View style={styles.debugRow}>
+              <View style={[styles.indicator, localVideoState === 'ON' ? styles.indicatorOn : styles.indicatorOff]} />
+              <Text style={styles.debugText}>CAM</Text>
+              <View style={[styles.indicator, remoteVideoState === 'ON' ? styles.indicatorOn : styles.indicatorOff]} />
+              <Text style={styles.debugText}>REM</Text>
+            </View>
+          )}
         </View>
 
-        {/* Avatar (shown when no remote video) */}
+        {/* Avatar */}
         {!(isVideo && remoteUid && isCallActive) && (
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <View style={[styles.avatar, isVideo && styles.avatarVideo]}>
@@ -922,7 +1092,6 @@ export default function CallScreen({
         {/* Controls */}
         <View style={styles.controls}>
           {callState === 'ringing' && mode === 'receiver' ? (
-            // Incoming call buttons
             <View style={styles.incomingRow}>
               <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
                 <Ionicons name="close" size={32} color="#fff" />
@@ -937,7 +1106,6 @@ export default function CallScreen({
               </TouchableOpacity>
             </View>
           ) : isCallActive ? (
-            // In-call controls
             <View style={styles.callRow}>
               <TouchableOpacity 
                 style={[styles.ctrlBtn, isMuted && styles.ctrlActive]} 
@@ -972,7 +1140,6 @@ export default function CallScreen({
               </TouchableOpacity>
             </View>
           ) : (
-            // Calling/error - end button only
             <TouchableOpacity style={styles.endBtn} onPress={handleEnd}>
               <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
@@ -1012,15 +1179,9 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     backgroundColor: '#000',
     zIndex: 100,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
     elevation: 10,
   },
-  localVideoInner: { 
-    flex: 1 
-  },
+  localVideoInner: { flex: 1 },
   localVideoLabel: {
     position: 'absolute',
     bottom: 8,
@@ -1047,30 +1208,33 @@ const styles = StyleSheet.create({
   badgeVideo: { backgroundColor: '#9C27B0' },
   badgeAudio: { backgroundColor: '#4361ee' },
   badgeText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  audioBadge: {
+  debugBadge: {
     position: 'absolute',
     top: 50,
     left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 12,
     gap: 4,
   },
-  audioIndicator: {
+  debugRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  indicator: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
-  audioOn: { backgroundColor: '#4CAF50' },
-  audioOff: { backgroundColor: '#f44336' },
-  audioText: {
+  indicatorOn: { backgroundColor: '#4CAF50' },
+  indicatorOff: { backgroundColor: '#f44336' },
+  debugText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '700',
-    marginRight: 6,
+    marginRight: 8,
   },
   avatar: {
     width: 130,
@@ -1080,10 +1244,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#4361ee',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
     elevation: 10,
   },
   avatarVideo: { backgroundColor: '#9C27B0' },
@@ -1092,9 +1252,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     marginBottom: 8,
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   callStatus: {
     fontSize: 20,
@@ -1136,10 +1293,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#4CAF50',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
     elevation: 8,
   },
   acceptBtnVideo: { backgroundColor: '#9C27B0' },
@@ -1150,10 +1303,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f44336',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#f44336',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
     elevation: 8,
   },
   btnLabel: {
@@ -1169,10 +1318,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f44336',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#f44336',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
     elevation: 8,
   },
   ctrlBtn: {
