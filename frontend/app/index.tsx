@@ -3416,7 +3416,8 @@ function PassengerDashboard({
                     if (data.success && data.approved) {
                       Alert.alert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
                       setActiveTag(null);
-                      loadActiveTag();
+                      setDestination(null);
+                      setScreen('role-select');
                     }
                   } catch (error) {
                     Alert.alert('Hata', 'İşlem başarısız');
