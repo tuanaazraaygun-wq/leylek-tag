@@ -194,6 +194,38 @@ export default function CallScreen({
   const isJoining = useRef(false);
   const hasJoined = useRef(false);
   const isCleaningUp = useRef(false);
+  
+  // Ringback tone ref
+  const ringbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // RINGBACK TONE (Caller için - "Aranıyor" sırasında çalacak)
+  // ══════════════════════════════════════════════════════════════════════════════
+  const startRingback = useCallback(() => {
+    if (mode !== 'caller') return;
+    if (ringbackIntervalRef.current) return;
+    
+    log('RINGBACK_START');
+    
+    // Vibration pattern ile ringback simülasyonu (gerçek ses yerine)
+    // Her 3 saniyede bir kısa titreşim
+    const playRingPattern = () => {
+      Vibration.vibrate([0, 200, 200, 200], false);
+    };
+    
+    playRingPattern();
+    ringbackIntervalRef.current = setInterval(playRingPattern, 3000);
+  }, [mode]);
+
+  const stopRingback = useCallback(() => {
+    log('RINGBACK_STOP');
+    if (ringbackIntervalRef.current) {
+      clearInterval(ringbackIntervalRef.current);
+      ringbackIntervalRef.current = null;
+    }
+    Vibration.cancel();
+  }, []);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // TIMERS
