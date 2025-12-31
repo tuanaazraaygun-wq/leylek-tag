@@ -309,7 +309,7 @@ export default function CallScreen({
     hasJoined.current = false;
     isCleaningUp.current = false;
     log('CLEANUP_DONE');
-  }, [clearAllTimers, stopRingtone]);
+  }, [clearAllTimers, stopRingtone, stopRingback]);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // END CALL
