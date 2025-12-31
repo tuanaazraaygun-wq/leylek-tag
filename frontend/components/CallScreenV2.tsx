@@ -557,11 +557,12 @@ export default function CallScreen({
         });
         setCallState('in_call');
         stopRingtone();
+        stopRingback();  // Bağlanınca ringback'i durdur
         startDurationTimer();
         haptic('light');
       }
     }
-  }, [audioPlaying, videoPlaying, userAccepted, localPublished, remoteSubscribed, callState, isVideo, stopRingtone, startDurationTimer]);
+  }, [audioPlaying, videoPlaying, userAccepted, localPublished, remoteSubscribed, callState, isVideo, stopRingtone, stopRingback, startDurationTimer]);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // EFFECT: COMPONENT MOUNT - HEMEN RTC JOIN BAŞLAT (ACCEPT BEKLEMİYOR!)
@@ -575,6 +576,18 @@ export default function CallScreen({
     // Ringtone (sadece callee)
     if (mode === 'receiver') {
       startRingtone();
+    }
+    
+    // Ringback (sadece caller - "Aranıyor" sırasında)
+    if (mode === 'caller') {
+      startRingback();
+      // Pulse animation başlat
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
     }
 
     // ════════════════════════════════════════════════════════════════════════════
