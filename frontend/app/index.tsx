@@ -4070,9 +4070,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                         );
                         const data = await response.json();
                         if (data.success) {
-                          
+                          Alert.alert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
                           setActiveTag(null);
-                          loadRequests();
+                          setScreen('role-select');
                         }
                       } catch (error) {
                         Alert.alert('Hata', 'İşlem başarısız');
@@ -4093,7 +4093,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 if (data.success) {
                   Alert.alert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
                   setActiveTag(null);
-                  loadRequests();
+                  setScreen('role-select');
                 }
               } catch (error) {
                 Alert.alert('Hata', 'İşlem başarısız');
