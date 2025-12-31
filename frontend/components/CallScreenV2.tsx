@@ -376,13 +376,13 @@ export default function CallScreen({
     log('RTC_INIT_START', { channel, uid: localUid.current, isVideo, mode });
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 1: Request Permissions BEFORE creating engine
+    // STEP 1: Check Permissions BEFORE creating engine (already granted at app start)
     // ═══════════════════════════════════════════════════════════════════════════
-    const hasPermission = await requestPermissions(isVideo);
+    const hasPermission = await checkPermissions(isVideo);
     if (!hasPermission) {
-      log('PERMISSION_DENIED_ABORT');
+      log('PERMISSION_NOT_GRANTED_ABORT');
       isInitializing.current = false;
-      failCall('Mikrofon izni gerekli');
+      failCall('Mikrofon izni gerekli. Lütfen ayarlardan izin verin.');
       return;
     }
     log('RTC_PERMISSION_OK', { elapsed: Date.now() - startTime });
