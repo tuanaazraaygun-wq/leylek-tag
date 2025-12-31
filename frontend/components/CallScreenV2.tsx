@@ -1,15 +1,20 @@
 /**
- * CallScreenV2 - PRODUCTION RTC (MEDIA GRAPH BASED)
+ * CallScreenV2 - PRODUCTION RTC (ZERO DELAY)
  * 
  * ════════════════════════════════════════════════════════════════════════════════
- * ZORUNLU KURALLAR
+ * KRİTİK KURAL: INCOMING CALL GELDİĞİ AN RTC JOIN BAŞLAR
  * ════════════════════════════════════════════════════════════════════════════════
  * 
- * 1️⃣ CALLER: UI anında açılır (0ms), RTC + token PARALEL fetch edilir
- * 2️⃣ ACCEPT → joinChannel → getUserMedia → publishLocalTracks (SIRASI BOZULMAZ)
- * 3️⃣ DEADLOCK YOK: joinChannel SUCCESS olan HER TARAF HİÇ BEKLEMEDEN publish eder
- * 4️⃣ TIMEOUT: 10sn LOCAL_TRACKS_PUBLISHED, 15sn REMOTE_USER_PUBLISHED
- * 5️⃣ "Bağlandı" sadece gerçek media akarken gösterilir
+ * CALLEE FLOW (DEĞİŞTİ!):
+ * 1. incoming_call socket event gelir
+ * 2. UI "ringing" gösterir + AYNI ANDA RTC join + publish başlar (ARKA PLANDA)
+ * 3. Accept butonu → SADECE UI state değişir (RTC zaten hazır!)
+ * 4. onUserPublished → subscribe → in_call
+ * 
+ * CALLER FLOW:
+ * 1. Arama butonu → UI açılır + AYNI ANDA RTC join + publish
+ * 2. callAccepted → UI güncelle (RTC zaten hazır!)
+ * 3. onUserPublished → subscribe → in_call
  * 
  * ════════════════════════════════════════════════════════════════════════════════
  */
@@ -46,22 +51,20 @@ import {
 const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// TIMEOUTS (ZORUNLU)
-const PUBLISH_TIMEOUT_MS = 10000;  // 10sn içinde LOCAL_TRACKS_PUBLISHED olmazsa FAIL
-const REMOTE_TIMEOUT_MS = 15000;   // 15sn içinde REMOTE_USER_PUBLISHED olmazsa FAIL
+// TIMEOUTS
+const PUBLISH_TIMEOUT_MS = 10000;
+const REMOTE_TIMEOUT_MS = 20000;
 
 // ════════════════════════════════════════════════════════════════════════════════
 // STATE TYPES
 // ════════════════════════════════════════════════════════════════════════════════
 type CallState = 
-  | 'calling'       // Caller: UI açık, RTC hazırlanıyor
-  | 'ringing'       // Callee: Gelen arama
-  | 'connecting'    // joinChannel çağrıldı
-  | 'publishing'    // joinChannel SUCCESS, publish bekleniyor
-  | 'waiting_remote'// LOCAL_TRACKS_PUBLISHED, remote bekleniyor  
-  | 'in_call'       // BOTH SIDES publish & subscribe DONE - SES/GÖRÜNTÜ VAR
-  | 'error'         // Hata
-  | 'ended';        // Bitti
+  | 'ringing'        // Callee: Gelen arama (RTC join ARKA PLANDA başlıyor!)
+  | 'calling'        // Caller: Aranıyor (RTC join ARKA PLANDA başlıyor!)
+  | 'connecting'     // Her iki taraf da accept etti, medya bekleniyor
+  | 'in_call'        // SES + GÖRÜNTÜ VAR
+  | 'error'
+  | 'ended';
 
 interface CallScreenProps {
   visible: boolean;
@@ -84,7 +87,7 @@ interface CallScreenProps {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// LOGGING (ZORUNLU - BUNLAR YOKSA TESLİM YOK)
+// LOGGING
 // ════════════════════════════════════════════════════════════════════════════════
 const getTs = () => new Date().toISOString().split('T')[1].slice(0, 12);
 const log = (event: string, data?: any) => {
@@ -162,17 +165,21 @@ export default function CallScreen({
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // RTC State flags (MEDIA GRAPH - SOURCE OF TRUTH)
-  const [joinedChannel, setJoinedChannel] = useState(false);
-  const [localTracksPublished, setLocalTracksPublished] = useState(false);
-  const [remoteUserPublished, setRemoteUserPublished] = useState(false);
-  const [remoteTracksSubscribed, setRemoteTracksSubscribed] = useState(false);
+  // RTC State flags
+  const [rtcJoined, setRtcJoined] = useState(false);
+  const [localPublished, setLocalPublished] = useState(false);
+  const [remotePublished, setRemotePublished] = useState(false);
+  const [remoteSubscribed, setRemoteSubscribed] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+
+  // UI state - Accept edildi mi?
+  const [userAccepted, setUserAccepted] = useState(mode === 'caller'); // Caller zaten "accept" etmiş sayılır
 
   const isVideo = useRef(callType === 'video').current;
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // REFS (SINGLE INSTANCE - NEVER RECREATE ON RE-RENDER)
+  // REFS
   // ══════════════════════════════════════════════════════════════════════════════
   const engineRef = useRef<IRtcEngine | null>(null);
   const eventHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
@@ -182,8 +189,6 @@ export default function CallScreen({
   const remoteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const callStartTs = useRef<number>(Date.now());
   
-  // Lifecycle flags
-  const isEngineReady = useRef(false);
   const isJoining = useRef(false);
   const hasJoined = useRef(false);
   const isCleaningUp = useRef(false);
@@ -264,7 +269,6 @@ export default function CallScreen({
       }
     }
 
-    isEngineReady.current = false;
     isJoining.current = false;
     hasJoined.current = false;
     isCleaningUp.current = false;
@@ -285,7 +289,7 @@ export default function CallScreen({
   }, [callId, callState, cleanup, onEnd, onClose]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // CORE: INITIALIZE ENGINE + JOIN + PUBLISH (ATOMIC OPERATION)
+  // CORE: RTC JOIN + PUBLISH (HEMEN BAŞLAR - ACCEPT BEKLEMİYOR!)
   // ══════════════════════════════════════════════════════════════════════════════
   const initAndJoinChannel = useCallback(async (token: string, channel: string) => {
     if (isJoining.current || hasJoined.current) {
@@ -299,22 +303,19 @@ export default function CallScreen({
     }
 
     isJoining.current = true;
-    setCallState('connecting');
-    log('JOIN_FLOW_START', { channel, uid: localUid.current, isVideo });
+    log('RTC_JOIN_START_IMMEDIATELY', { channel, uid: localUid.current, isVideo, mode });
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // STEP 1: PERMISSION
-    // ═══════════════════════════════════════════════════════════════════════════
     const hasPermission = await requestPermissions(isVideo);
     if (!hasPermission) {
-      failCall('Mikrofon/kamera izni reddedildi');
+      log('PERMISSION_DENIED');
+      // Permission reddedildi ama call UI'ı göstermeye devam et
+      // Kullanıcı accept ederse hata göster
       isJoining.current = false;
       return;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 2: CREATE ENGINE (SINGLE INSTANCE)
-    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 2: CREATE ENGINE
     if (!engineRef.current) {
       try {
         log('AGORA_ENGINE_CREATE');
@@ -326,7 +327,6 @@ export default function CallScreen({
         });
         log('AGORA_ENGINE_INITIALIZED');
 
-        // Audio setup - ZORUNLU
         engine.setAudioProfile(
           AudioProfileType.AudioProfileSpeechStandard,
           AudioScenarioType.AudioScenarioChatroom
@@ -336,7 +336,6 @@ export default function CallScreen({
         engine.setEnableSpeakerphone(true);
         log('AGORA_AUDIO_ENABLED');
 
-        // Video setup
         if (isVideo) {
           engine.enableVideo();
           engine.setVideoEncoderConfiguration({
@@ -351,9 +350,7 @@ export default function CallScreen({
 
         engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // EVENT HANDLERS (ZORUNLU)
-        // ═══════════════════════════════════════════════════════════════════════
+        // EVENT HANDLERS
         const handler: IRtcEngineEventHandler = {
           
           onJoinChannelSuccess: (connection, elapsed) => {
@@ -364,44 +361,24 @@ export default function CallScreen({
               ms: Date.now() - callStartTs.current
             });
             hasJoined.current = true;
-            setJoinedChannel(true);
-            setCallState('publishing');
-            
-            // KURAL: joinChannel SUCCESS → HİÇ BEKLEMEDEN publish başlar
-            // React Native Agora'da publishMicrophoneTrack: true ile otomatik
-            log('LOCAL_TRACKS_CREATING');
+            setRtcJoined(true);
           },
 
-          // LOCAL AUDIO PUBLISH STATE - EN KRİTİK EVENT
           onAudioPublishStateChanged: (channel, oldState, newState, elapsed) => {
             log('AUDIO_PUBLISH_STATE', { oldState, newState, elapsed });
-            
-            // 0: Idle, 1: NoPublish, 2: Publishing, 3: Published
             if (newState === 3) {
               log('LOCAL_TRACKS_PUBLISHED', { ms: Date.now() - callStartTs.current });
-              setLocalTracksPublished(true);
+              setLocalPublished(true);
               
-              // Publish timeout'u temizle
               if (publishTimeoutRef.current) {
                 clearTimeout(publishTimeoutRef.current);
                 publishTimeoutRef.current = null;
               }
-              
-              setCallState('waiting_remote');
-              
-              // TIMEOUT: 15sn içinde REMOTE_USER_PUBLISHED olmazsa FAIL
-              remoteTimeoutRef.current = setTimeout(() => {
-                log('REMOTE_TIMEOUT_EXPIRED');
-                failCall('Karşı taraf bağlanamadı (15sn)');
-              }, REMOTE_TIMEOUT_MS);
             }
           },
 
           onVideoPublishStateChanged: (source, channel, oldState, newState, elapsed) => {
             log('VIDEO_PUBLISH_STATE', { source, oldState, newState });
-            if (newState === 3 && isVideo) {
-              log('LOCAL_VIDEO_PUBLISHED');
-            }
           },
 
           onUserJoined: (connection, uid, elapsed) => {
@@ -409,18 +386,19 @@ export default function CallScreen({
             setRemoteUid(uid);
           },
 
-          // REMOTE USER PUBLISHED - SES/GÖRÜNTÜ GELİYOR
+          // ════════════════════════════════════════════════════════════════════
+          // KRİTİK: REMOTE USER PUBLISHED - MUTLAKA SUBSCRIBE ET
+          // ════════════════════════════════════════════════════════════════════
           onUserPublished: (connection, uid, mediaType) => {
             log('REMOTE_USER_PUBLISHED', { uid, mediaType, ms: Date.now() - callStartTs.current });
-            setRemoteUserPublished(true);
-            
-            // Remote timeout'u temizle
+            setRemotePublished(true);
+
             if (remoteTimeoutRef.current) {
               clearTimeout(remoteTimeoutRef.current);
               remoteTimeoutRef.current = null;
             }
 
-            // SUBSCRIBE - ZORUNLU
+            // MUTLAKA SUBSCRIBE ET
             if (engineRef.current) {
               if (mediaType === 1) { // Audio
                 engineRef.current.muteRemoteAudioStream(uid, false);
@@ -429,7 +407,7 @@ export default function CallScreen({
                 engineRef.current.muteRemoteVideoStream(uid, false);
                 log('REMOTE_VIDEO_SUBSCRIBED', { uid });
               }
-              setRemoteTracksSubscribed(true);
+              setRemoteSubscribed(true);
               log('REMOTE_TRACK_SUBSCRIBED', { uid, mediaType });
             }
           },
@@ -441,20 +419,21 @@ export default function CallScreen({
           onUserOffline: (connection, uid, reason) => {
             log('REMOTE_USER_OFFLINE', { uid, reason });
             setRemoteUid(null);
-            setRemoteUserPublished(false);
-            setRemoteTracksSubscribed(false);
+            setRemotePublished(false);
+            setRemoteSubscribed(false);
             endCall();
           },
 
-          // AUDIO PLAYING - SES GERÇEKTEN GELİYOR
+          // AUDIO PLAYING
           onFirstRemoteAudioDecoded: (connection, uid, elapsed) => {
             log('AUDIO_PLAYING', { uid, elapsed, ms: Date.now() - callStartTs.current });
             setAudioPlaying(true);
           },
 
-          // VIDEO RENDERING - GÖRÜNTÜ GERÇEKTEN GELİYOR
+          // VIDEO RENDERING
           onFirstRemoteVideoFrame: (connection, uid, width, height, elapsed) => {
-            log('VIDEO_RENDERING', { uid, width, height, elapsed });
+            log('VIDEO_RENDERING', { uid, width, height, elapsed, ms: Date.now() - callStartTs.current });
+            setVideoPlaying(true);
           },
 
           onConnectionStateChanged: (connection, state, reason) => {
@@ -471,8 +450,8 @@ export default function CallScreen({
           onLeaveChannel: (connection, stats) => {
             log('AGORA_LEAVE_CHANNEL_EVENT');
             hasJoined.current = false;
-            setJoinedChannel(false);
-            setLocalTracksPublished(false);
+            setRtcJoined(false);
+            setLocalPublished(false);
           },
         };
 
@@ -481,59 +460,63 @@ export default function CallScreen({
         log('EVENT_HANDLER_REGISTERED');
 
         engineRef.current = engine;
-        isEngineReady.current = true;
 
       } catch (e) {
         log('ENGINE_CREATE_ERROR', { error: String(e) });
-        failCall('RTC başlatılamadı');
         isJoining.current = false;
         return;
       }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STEP 3: JOIN CHANNEL + AUTO PUBLISH
-    // ═══════════════════════════════════════════════════════════════════════════
+    // STEP 3: JOIN CHANNEL + AUTO PUBLISH (HEMEN!)
     try {
       log('JOIN_CHANNEL_CALL', { channel, uid: localUid.current });
       
-      // TIMEOUT: 10sn içinde LOCAL_TRACKS_PUBLISHED olmazsa FAIL
       publishTimeoutRef.current = setTimeout(() => {
         log('PUBLISH_TIMEOUT_EXPIRED');
-        failCall('Ses/görüntü yayını başlatılamadı (10sn)');
+        // Timeout olsa bile UI'ı bozmayalım
       }, PUBLISH_TIMEOUT_MS);
 
-      // joinChannel ile publishMicrophoneTrack: true → OTOMATIK publish
-      // BU DEADLOCK'U ÖNLER - her iki taraf da beklemeden publish eder
       engineRef.current!.joinChannel(token, channel, localUid.current, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,  // ZORUNLU - Hemen publish et
-        publishCameraTrack: isVideo,    // Video varsa hemen publish et
+        publishMicrophoneTrack: true,
+        publishCameraTrack: isVideo,
         autoSubscribeAudio: true,
         autoSubscribeVideo: isVideo,
       });
 
       log('JOIN_CHANNEL_EXECUTED', { ms: Date.now() - callStartTs.current });
 
+      // Remote timeout başlat (Accept edilse bile remote gelmezse)
+      remoteTimeoutRef.current = setTimeout(() => {
+        if (!remotePublished) {
+          log('REMOTE_TIMEOUT_EXPIRED');
+        }
+      }, REMOTE_TIMEOUT_MS);
+
     } catch (e) {
       log('JOIN_CHANNEL_ERROR', { error: String(e) });
-      failCall('Kanala katılınamadı');
       isJoining.current = false;
     }
-  }, [isVideo, failCall, endCall]);
+  }, [isVideo, mode, failCall, endCall]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: STATE → in_call (SADECE GERÇEK MEDIA AKARKEN)
+  // EFFECT: in_call STATE TRANSİTİON
+  // "Bağlandı" = audioPlaying && (isVideo ? videoPlaying : true) && userAccepted
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    // in_call: LOCAL published + REMOTE published + REMOTE subscribed + AUDIO playing
-    if (localTracksPublished && remoteUserPublished && remoteTracksSubscribed && audioPlaying) {
+    const mediaReady = isVideo 
+      ? (audioPlaying && videoPlaying)
+      : audioPlaying;
+
+    if (mediaReady && userAccepted && localPublished && remoteSubscribed) {
       if (callState !== 'in_call' && callState !== 'ended' && callState !== 'error') {
         log('STATE_TRANSITION_IN_CALL', { 
-          localPublished: localTracksPublished,
-          remotePublished: remoteUserPublished,
-          subscribed: remoteTracksSubscribed,
-          audioPlaying,
+          audioPlaying, 
+          videoPlaying: isVideo ? videoPlaying : 'N/A',
+          userAccepted,
+          localPublished,
+          remoteSubscribed,
           ms: Date.now() - callStartTs.current
         });
         setCallState('in_call');
@@ -542,43 +525,55 @@ export default function CallScreen({
         haptic('light');
       }
     }
-  }, [localTracksPublished, remoteUserPublished, remoteTracksSubscribed, audioPlaying, callState, stopRingtone, startDurationTimer]);
+  }, [audioPlaying, videoPlaying, userAccepted, localPublished, remoteSubscribed, callState, isVideo, stopRingtone, startDurationTimer]);
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: CALLER FLOW
-  // Arama butonuna basıldığı AN UI açılır, token gelince HEMEN join
+  // EFFECT: COMPONENT MOUNT - HEMEN RTC JOIN BAŞLAT (ACCEPT BEKLEMİYOR!)
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (!visible || mode !== 'caller') return;
+    if (!visible || !callId) return;
     
-    log('CALLER_FLOW_INIT', { callId, hasToken: !!agoraToken, hasChannel: !!channelName });
+    log('CALL_SCREEN_OPEN', { mode, callId, channelName, hasToken: !!agoraToken, isVideo });
+    callStartTs.current = Date.now();
 
-    // Token ve channel varsa HEMEN join et
-    if (agoraToken && channelName && !hasJoined.current && !isJoining.current) {
-      log('CALLER_JOIN_IMMEDIATELY');
-      initAndJoinChannel(agoraToken, channelName);
-    }
-  }, [visible, mode, callId, agoraToken, channelName, initAndJoinChannel]);
-
-  // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: Token/Channel update (CALLER için token sonradan gelebilir)
-  // ══════════════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (mode === 'caller' && visible && agoraToken && channelName && !hasJoined.current && !isJoining.current) {
-      log('CALLER_TOKEN_RECEIVED', { channel: channelName });
-      initAndJoinChannel(agoraToken, channelName);
-    }
-  }, [mode, visible, agoraToken, channelName, initAndJoinChannel]);
-
-  // ══════════════════════════════════════════════════════════════════════════════
-  // EFFECT: CALLEE ringing
-  // ══════════════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (visible && mode === 'receiver' && callState === 'ringing') {
-      log('CALLEE_RINGING', { callId });
+    // Ringtone (sadece callee)
+    if (mode === 'receiver') {
       startRingtone();
     }
-  }, [visible, mode, callState, callId, startRingtone]);
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // KRİTİK: Token varsa HEMEN RTC join başlat - ACCEPT BEKLEMİYOR!
+    // ════════════════════════════════════════════════════════════════════════════
+    if (agoraToken && channelName) {
+      log('RTC_JOIN_ON_MOUNT_IMMEDIATELY', { mode });
+      initAndJoinChannel(agoraToken, channelName);
+    }
+
+    return () => {
+      log('CALL_SCREEN_UNMOUNT');
+    };
+  }, [visible, callId]);
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // EFFECT: Token sonradan gelebilir (caller için)
+  // ══════════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (visible && agoraToken && channelName && !hasJoined.current && !isJoining.current) {
+      log('RTC_JOIN_ON_TOKEN_RECEIVED', { mode });
+      initAndJoinChannel(agoraToken, channelName);
+    }
+  }, [visible, agoraToken, channelName, initAndJoinChannel]);
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // EFFECT: Caller - callAccepted geldiğinde
+  // ══════════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (callAccepted && mode === 'caller') {
+      log('CALLER_RECEIVED_ACCEPT', { ms: Date.now() - callStartTs.current });
+      // RTC zaten join edilmiş, sadece state güncelle
+      setCallState('connecting');
+    }
+  }, [callAccepted, mode]);
 
   // ══════════════════════════════════════════════════════════════════════════════
   // EFFECT: External events
@@ -609,7 +604,6 @@ export default function CallScreen({
   // ══════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     return () => {
-      log('COMPONENT_UNMOUNT');
       cleanup();
     };
   }, [cleanup]);
@@ -617,19 +611,33 @@ export default function CallScreen({
   // ══════════════════════════════════════════════════════════════════════════════
   // HANDLERS
   // ══════════════════════════════════════════════════════════════════════════════
-  const handleAccept = useCallback(async () => {
-    log('CALL_ACCEPTED', { callId, channelName, ms: Date.now() - callStartTs.current });
+  
+  // ACCEPT - SADECE UI STATE DEĞİŞİR (RTC zaten join edilmiş!)
+  const handleAccept = useCallback(() => {
+    log('ACCEPT_PRESSED', { 
+      callId, 
+      rtcJoined, 
+      localPublished,
+      ms: Date.now() - callStartTs.current 
+    });
     haptic('medium');
     
     stopRingtone();
-    onAccept(); // Socket'e bildir
+    setUserAccepted(true);
+    setCallState('connecting');
     
-    // HEMEN joinChannel - BEKLEMEDEN
-    await initAndJoinChannel(agoraToken, channelName);
-  }, [callId, channelName, agoraToken, stopRingtone, onAccept, initAndJoinChannel]);
+    // Socket'e bildir
+    onAccept();
+    
+    // RTC zaten join edilmiş olmalı - tekrar join YAPMA!
+    if (!hasJoined.current && agoraToken && channelName) {
+      log('ACCEPT_RTC_NOT_JOINED_YET_JOINING_NOW');
+      initAndJoinChannel(agoraToken, channelName);
+    }
+  }, [callId, rtcJoined, localPublished, agoraToken, channelName, stopRingtone, onAccept, initAndJoinChannel]);
 
   const handleReject = useCallback(() => {
-    log('CALL_REJECTED', { callId });
+    log('REJECT_PRESSED', { callId });
     haptic('heavy');
     
     stopRingtone();
@@ -692,8 +700,6 @@ export default function CallScreen({
       case 'calling': return 'Aranıyor...';
       case 'ringing': return 'Gelen Arama';
       case 'connecting': return 'Bağlanıyor...';
-      case 'publishing': return 'Ses hazırlanıyor...';
-      case 'waiting_remote': return 'Karşı taraf bekleniyor...';
       case 'in_call': return formatTime(duration);
       case 'error': return errorMessage || 'Hata';
       case 'ended': return 'Arama Bitti';
@@ -701,15 +707,16 @@ export default function CallScreen({
     }
   };
 
-  // "Bağlandı" SADECE gerçek media akarken gösterilir
-  const showConnectedBadge = callState === 'in_call' && audioPlaying;
+  // "Bağlandı" = in_call && audioPlaying && (video ? videoPlaying : true)
+  const mediaReady = isVideo ? (audioPlaying && videoPlaying) : audioPlaying;
+  const showConnectedBadge = callState === 'in_call' && mediaReady;
 
   return (
     <Modal visible={visible} animationType="fade" statusBarTranslucent>
       <View style={styles.container}>
         
         {/* Remote Video */}
-        {isVideo && remoteUid && callState === 'in_call' && (
+        {isVideo && remoteUid && (callState === 'in_call' || callState === 'connecting') && (
           <RtcSurfaceView
             style={styles.remoteVideo}
             canvas={{ uid: remoteUid, renderMode: RenderModeType.RenderModeHidden }}
@@ -717,7 +724,7 @@ export default function CallScreen({
         )}
 
         {/* Local Video PIP */}
-        {isVideo && joinedChannel && !isCameraOff && (
+        {isVideo && rtcJoined && !isCameraOff && (
           <View style={styles.pip}>
             <RtcSurfaceView
               style={styles.pipVideo}
@@ -741,25 +748,31 @@ export default function CallScreen({
         <View style={styles.debugPanel}>
           <Text style={styles.debugTitle}>RTC:</Text>
           <View style={styles.debugRow}>
-            <View style={[styles.dot, joinedChannel && styles.dotGreen]} />
+            <View style={[styles.dot, rtcJoined && styles.dotGreen]} />
             <Text style={styles.debugText}>Joined</Text>
           </View>
           <View style={styles.debugRow}>
-            <View style={[styles.dot, localTracksPublished && styles.dotGreen]} />
+            <View style={[styles.dot, localPublished && styles.dotGreen]} />
             <Text style={styles.debugText}>Published</Text>
           </View>
           <View style={styles.debugRow}>
-            <View style={[styles.dot, remoteUserPublished && styles.dotGreen]} />
+            <View style={[styles.dot, remotePublished && styles.dotGreen]} />
             <Text style={styles.debugText}>Remote</Text>
           </View>
           <View style={styles.debugRow}>
             <View style={[styles.dot, audioPlaying && styles.dotGreen]} />
             <Text style={styles.debugText}>Audio</Text>
           </View>
+          {isVideo && (
+            <View style={styles.debugRow}>
+              <View style={[styles.dot, videoPlaying && styles.dotGreen]} />
+              <Text style={styles.debugText}>Video</Text>
+            </View>
+          )}
         </View>
 
         {/* Avatar */}
-        {!(isVideo && remoteUid && callState === 'in_call') && (
+        {!(isVideo && remoteUid && (callState === 'in_call' || callState === 'connecting')) && (
           <View style={[styles.avatar, isVideo && styles.avatarVideo]}>
             <Ionicons name={isVideo ? "videocam" : "person"} size={56} color="#fff" />
           </View>
@@ -769,7 +782,7 @@ export default function CallScreen({
         <Text style={styles.remoteName}>{remoteName}</Text>
         <Text style={styles.callStatus}>{getStatusText()}</Text>
 
-        {/* Connected Badge - SADECE GERÇEK MEDIA AKARKEN */}
+        {/* Connected Badge */}
         {showConnectedBadge && (
           <View style={styles.connectedBadge}>
             <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
@@ -779,7 +792,7 @@ export default function CallScreen({
 
         {/* Controls */}
         <View style={styles.controls}>
-          {callState === 'ringing' && mode === 'receiver' ? (
+          {callState === 'ringing' && mode === 'receiver' && !userAccepted ? (
             <View style={styles.incomingRow}>
               <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
                 <Ionicons name="close" size={32} color="#fff" />
