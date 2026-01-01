@@ -104,6 +104,7 @@ export default function CallScreen({
   const [speakerOn, setSpeakerOn] = useState(true);
   const [cameraOff, setCameraOff] = useState(false);
   const [statusText, setStatusText] = useState('');
+  const [token, setToken] = useState<string>('');
   
   const isVideo = callType === 'video';
   const engineRef = useRef<IRtcEngine | null>(null);
@@ -123,6 +124,29 @@ export default function CallScreen({
   };
 
   const myUid = getUid(userId);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOKEN AL - Backend'den Agora token al
+  // ═══════════════════════════════════════════════════════════════════════════
+  const fetchToken = async (channel: string, uid: number): Promise<string> => {
+    try {
+      log('🎫 Token alınıyor...', { channel, uid });
+      const url = `${BACKEND_URL}/api/agora/token?channel_name=${encodeURIComponent(channel)}&uid=${uid}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.success && data.token) {
+        log('✅ Token alındı', { tokenLength: data.token.length });
+        return data.token;
+      } else {
+        log('❌ Token alınamadı', data);
+        return '';
+      }
+    } catch (error) {
+      log('❌ Token fetch hatası', error);
+      return '';
+    }
+  };
 
   // ═══════════════════════════════════════════════════════════════════════════
   // İZİN KONTROLÜ
