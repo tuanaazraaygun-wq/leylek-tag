@@ -1,23 +1,27 @@
 /**
- * useSocket - Socket.IO Hook for Real-time Call Signaling
+ * useSocket - Socket.IO Hook for Real-time Communication
  * 
- * Arama sinyalleri için Socket.IO yönetimi:
- * - Bağlantı yönetimi
- * - Kullanıcı kaydı
- * - Arama olayları (call_user, incoming_call, accept, reject, end)
+ * ÖZELLIKLER:
+ * - Arama sinyalleri (call_user, incoming_call, accept, reject, end)
+ * - TAG sistemi (new_tag, cancel_tag, tag_created, tag_cancelled)
+ * - Teklif sistemi (send_offer, accept_offer, reject_offer)
+ * - Konum takibi (location_update)
+ * - Yolculuk yönetimi (trip_started, trip_ended)
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
-import Constants from 'expo-constants';
 
-// Socket.IO Sunucusu - Kullanıcının VPS'i (socket.leylektag.com)
-// FastAPI + Python Socket.IO + Uvicorn + Nginx + Let's Encrypt SSL
+// Socket.IO Sunucusu
 const SOCKET_URL = 'https://socket.leylektag.com';
 const SOCKET_PATH = '/socket.io';
 
-console.log('🔌 Socket URL:', SOCKET_URL, 'Path:', SOCKET_PATH);
+console.log('🔌 Socket URL:', SOCKET_URL);
+
+// ════════════════════════════════════════════════════════════════════
+// INTERFACES
+// ════════════════════════════════════════════════════════════════════
 
 interface CallData {
   call_id: string;
@@ -29,44 +33,104 @@ interface CallData {
   call_type: 'audio' | 'video';
 }
 
+interface TagData {
+  tag_id: string;
+  passenger_id: string;
+  passenger_name?: string;
+  pickup_lat: number;
+  pickup_lng: number;
+  pickup_address?: string;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
+  dropoff_address?: string;
+  city?: string;
+  status?: string;
+}
+
+interface OfferData {
+  offer_id?: string;
+  tag_id: string;
+  driver_id: string;
+  driver_name?: string;
+  passenger_id: string;
+  price?: number;
+  eta_minutes?: number;
+  distance_km?: number;
+}
+
+interface LocationData {
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  target_id?: string;
+}
+
 interface UseSocketProps {
   userId: string | null;
+  userRole?: 'passenger' | 'driver' | null;
+  // Arama eventleri
   onIncomingCall?: (data: CallData) => void;
   onCallAccepted?: (data: { call_id: string; accepted_by: string }) => void;
   onCallRejected?: (data: { call_id: string; rejected_by: string }) => void;
   onCallEnded?: (data: { call_id: string; ended_by: string }) => void;
   onCallRinging?: (data: { success: boolean; receiver_online: boolean; reason?: string }) => void;
-  // Trip end events
-  onTripEndRequest?: (data: { tag_id: string; requester_id: string; requester_type: string }) => void;
-  onTripCompleted?: (data: { tag_id: string; completed_at: string }) => void;
-  onTripEndRejected?: (data: { tag_id: string; rejected_by: string }) => void;
+  // TAG eventleri
+  onTagCreated?: (data: TagData) => void;
+  onTagCancelled?: (data: { tag_id: string }) => void;
+  onTagUpdated?: (data: TagData) => void;
+  onTagMatched?: (data: { tag_id: string; driver_id: string }) => void;
+  // Teklif eventleri
+  onNewOffer?: (data: OfferData) => void;
+  onOfferAccepted?: (data: OfferData) => void;
+  onOfferRejected?: (data: OfferData) => void;
+  onOfferSentAck?: (data: { success: boolean; passenger_online: boolean }) => void;
+  // Konum eventleri
+  onLocationUpdated?: (data: LocationData) => void;
+  // Yolculuk eventleri
+  onTripStarted?: (data: { tag_id: string; passenger_id: string; driver_id: string }) => void;
+  onTripEnded?: (data: { tag_id: string }) => void;
+  onTripEndRequested?: (data: { tag_id: string; requester_id: string }) => void;
+  onTripEndResponse?: (data: { tag_id: string; accepted: boolean }) => void;
 }
 
 export default function useSocket({
   userId,
+  userRole,
   onIncomingCall,
   onCallAccepted,
   onCallRejected,
   onCallEnded,
   onCallRinging,
-  onTripEndRequest,
-  onTripCompleted,
-  onTripEndRejected,
+  onTagCreated,
+  onTagCancelled,
+  onTagUpdated,
+  onTagMatched,
+  onNewOffer,
+  onOfferAccepted,
+  onOfferRejected,
+  onOfferSentAck,
+  onLocationUpdated,
+  onTripStarted,
+  onTripEnded,
+  onTripEndRequested,
+  onTripEndResponse,
 }: UseSocketProps) {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
 
-  // Socket bağlantısını kur
+  // ════════════════════════════════════════════════════════════════════
+  // BAĞLANTI YÖNETİMİ
+  // ════════════════════════════════════════════════════════════════════
+
   const connect = useCallback(() => {
     if (socketRef.current?.connected) {
       console.log('🔌 Socket zaten bağlı');
       return;
     }
 
-    console.log('🔌 Socket.IO bağlanıyor:', SOCKET_URL, 'Path:', SOCKET_PATH);
+    console.log('🔌 Socket.IO bağlanıyor...');
 
     const socket = io(SOCKET_URL, {
       path: SOCKET_PATH,
@@ -78,15 +142,16 @@ export default function useSocket({
       timeout: 20000,
     });
 
+    // ══════════ BAĞLANTI EVENTLERİ ══════════
+    
     socket.on('connect', () => {
       console.log('✅ Socket.IO bağlandı:', socket.id);
       setIsConnected(true);
       reconnectAttempts.current = 0;
 
-      // Kullanıcıyı HEMEN kaydet
       if (userId) {
-        console.log('📱 Register gönderiliyor:', userId);
-        socket.emit('register', { user_id: userId });
+        console.log('📱 Register gönderiliyor:', userId, 'Role:', userRole);
+        socket.emit('register', { user_id: userId, role: userRole });
       }
     });
 
@@ -106,74 +171,116 @@ export default function useSocket({
       setIsRegistered(true);
     });
 
-    // Gelen arama
+    // ══════════ ARAMA EVENTLERİ ══════════
+
     socket.on('incoming_call', (data: CallData) => {
       console.log('📞 GELEN ARAMA:', data);
-      if (onIncomingCall) {
-        onIncomingCall(data);
-      }
+      onIncomingCall?.(data);
     });
 
-    // Arama kabul edildi
     socket.on('call_accepted', (data) => {
       console.log('✅ ARAMA KABUL EDİLDİ:', data);
-      if (onCallAccepted) {
-        onCallAccepted(data);
-      }
+      onCallAccepted?.(data);
     });
 
-    // Arama reddedildi
     socket.on('call_rejected', (data) => {
       console.log('❌ ARAMA REDDEDİLDİ:', data);
-      if (onCallRejected) {
-        onCallRejected(data);
-      }
+      onCallRejected?.(data);
     });
 
-    // Arama sonlandırıldı
     socket.on('call_ended', (data) => {
       console.log('📴 ARAMA SONLANDIRILDI:', data);
-      if (onCallEnded) {
-        onCallEnded(data);
-      }
+      onCallEnded?.(data);
     });
 
-    // Arama çalıyor (arayan için)
     socket.on('call_ringing', (data) => {
       console.log('🔔 ARAMA ÇALIYOR:', data);
-      if (onCallRinging) {
-        onCallRinging(data);
-      }
+      onCallRinging?.(data);
     });
 
-    // Trip end request (karşı taraf sonlandırma istedi)
-    socket.on('trip_end_request', (data) => {
-      console.log('🔚 TRIP END REQUEST:', data);
-      if (onTripEndRequest) {
-        onTripEndRequest(data);
-      }
+    // ══════════ TAG EVENTLERİ ══════════
+
+    socket.on('tag_created', (data: TagData) => {
+      console.log('🏷️ YENİ TAG:', data);
+      onTagCreated?.(data);
     });
 
-    // Trip completed (yolculuk tamamlandı)
-    socket.on('trip_completed', (data) => {
-      console.log('✅ TRIP COMPLETED:', data);
-      if (onTripCompleted) {
-        onTripCompleted(data);
-      }
+    socket.on('tag_cancelled', (data) => {
+      console.log('🚫 TAG İPTAL:', data);
+      onTagCancelled?.(data);
     });
 
-    // Trip end rejected (sonlandırma reddedildi)
-    socket.on('trip_end_rejected', (data) => {
-      console.log('❌ TRIP END REJECTED:', data);
-      if (onTripEndRejected) {
-        onTripEndRejected(data);
-      }
+    socket.on('tag_updated', (data: TagData) => {
+      console.log('🔄 TAG GÜNCELLENDİ:', data);
+      onTagUpdated?.(data);
+    });
+
+    socket.on('tag_matched', (data) => {
+      console.log('🤝 TAG EŞLEŞTİ:', data);
+      onTagMatched?.(data);
+    });
+
+    socket.on('tag_created_ack', (data) => {
+      console.log('✅ TAG ACK:', data);
+    });
+
+    // ══════════ TEKLİF EVENTLERİ ══════════
+
+    socket.on('new_offer', (data: OfferData) => {
+      console.log('💰 YENİ TEKLİF:', data);
+      onNewOffer?.(data);
+    });
+
+    socket.on('offer_accepted', (data: OfferData) => {
+      console.log('✅ TEKLİF KABUL EDİLDİ:', data);
+      onOfferAccepted?.(data);
+    });
+
+    socket.on('offer_rejected', (data: OfferData) => {
+      console.log('❌ TEKLİF REDDEDİLDİ:', data);
+      onOfferRejected?.(data);
+    });
+
+    socket.on('offer_sent_ack', (data) => {
+      console.log('📤 TEKLİF GÖNDERİLDİ ACK:', data);
+      onOfferSentAck?.(data);
+    });
+
+    // ══════════ KONUM EVENTLERİ ══════════
+
+    socket.on('location_updated', (data: LocationData) => {
+      // Çok sık log basmasın
+      onLocationUpdated?.(data);
+    });
+
+    // ══════════ YOLCULUK EVENTLERİ ══════════
+
+    socket.on('trip_started', (data) => {
+      console.log('🚗 YOLCULUK BAŞLADI:', data);
+      onTripStarted?.(data);
+    });
+
+    socket.on('trip_ended', (data) => {
+      console.log('🏁 YOLCULUK BİTTİ:', data);
+      onTripEnded?.(data);
+    });
+
+    socket.on('trip_end_requested', (data) => {
+      console.log('🛑 YOLCULUK BİTİRME TALEBİ:', data);
+      onTripEndRequested?.(data);
+    });
+
+    socket.on('trip_end_response', (data) => {
+      console.log('📝 YOLCULUK BİTİRME YANITI:', data);
+      onTripEndResponse?.(data);
     });
 
     socketRef.current = socket;
-  }, [userId, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging, onTripEndRequest, onTripCompleted, onTripEndRejected]);
+  }, [userId, userRole, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
+      onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer, onOfferAccepted, 
+      onOfferRejected, onOfferSentAck, onLocationUpdated, onTripStarted, onTripEnded,
+      onTripEndRequested, onTripEndResponse]);
 
-  // Bağlantıyı kes
   const disconnect = useCallback(() => {
     if (socketRef.current) {
       console.log('🔌 Socket.IO bağlantısı kesiliyor...');
@@ -184,15 +291,17 @@ export default function useSocket({
     }
   }, []);
 
-  // Kullanıcıyı kaydet
-  const registerUser = useCallback((uid: string) => {
+  const registerUser = useCallback((uid: string, role?: string) => {
     if (socketRef.current?.connected) {
-      console.log('📱 Kullanıcı kaydediliyor:', uid);
-      socketRef.current.emit('register', { user_id: uid });
+      console.log('📱 Kullanıcı kaydediliyor:', uid, role);
+      socketRef.current.emit('register', { user_id: uid, role });
     }
   }, []);
 
-  // Arama başlat
+  // ════════════════════════════════════════════════════════════════════
+  // ARAMA FONKSİYONLARI
+  // ════════════════════════════════════════════════════════════════════
+
   const startCall = useCallback((data: {
     caller_id: string;
     caller_name: string;
@@ -206,11 +315,10 @@ export default function useSocket({
       console.log('📞 Arama başlatılıyor:', data);
       socketRef.current.emit('call_user', data);
     } else {
-      console.error('❌ Socket bağlı değil, arama başlatılamadı');
+      console.error('❌ Socket bağlı değil');
     }
   }, []);
 
-  // Aramayı kabul et
   const acceptCall = useCallback((data: {
     call_id: string;
     caller_id: string;
@@ -222,7 +330,6 @@ export default function useSocket({
     }
   }, []);
 
-  // Aramayı reddet
   const rejectCall = useCallback((data: {
     call_id: string;
     caller_id: string;
@@ -234,7 +341,6 @@ export default function useSocket({
     }
   }, []);
 
-  // Aramayı sonlandır
   const endCall = useCallback((data: {
     call_id: string;
     caller_id: string;
@@ -247,96 +353,186 @@ export default function useSocket({
     }
   }, []);
 
-  // Trip sonlandırma isteği gönder (Socket üzerinden - ANINDA)
-  const requestTripEnd = useCallback((data: {
-    tag_id: string;
-    requester_id: string;
-    requester_type: 'passenger' | 'driver';
-    target_user_id: string;
-  }) => {
+  // ════════════════════════════════════════════════════════════════════
+  // TAG FONKSİYONLARI
+  // ════════════════════════════════════════════════════════════════════
+
+  const emitNewTag = useCallback((data: TagData) => {
     if (socketRef.current?.connected) {
-      console.log('🔚 Trip end request gönderiliyor:', data);
-      socketRef.current.emit('request_trip_end_socket', data);
+      console.log('🏷️ Yeni TAG yayınlanıyor:', data);
+      socketRef.current.emit('new_tag', data);
     } else {
-      console.error('❌ Socket bağlı değil, trip end request gönderilemedi');
+      console.error('❌ Socket bağlı değil, TAG yayınlanamadı');
     }
   }, []);
 
-  // Trip sonlandırma isteğine cevap ver (Socket üzerinden - ANINDA)
-  const respondTripEnd = useCallback((data: {
-    tag_id: string;
-    responder_id: string;
-    approved: boolean;
-    requester_id: string;
-  }) => {
+  const emitCancelTag = useCallback((tagId: string) => {
     if (socketRef.current?.connected) {
-      console.log('🔚 Trip end response gönderiliyor:', data);
-      socketRef.current.emit('respond_trip_end_socket', data);
-    } else {
-      console.error('❌ Socket bağlı değil, trip end response gönderilemedi');
+      console.log('🚫 TAG iptal ediliyor:', tagId);
+      socketRef.current.emit('cancel_tag', { tag_id: tagId });
     }
   }, []);
+
+  const emitUpdateTag = useCallback((data: Partial<TagData> & { tag_id: string }) => {
+    if (socketRef.current?.connected) {
+      console.log('🔄 TAG güncelleniyor:', data);
+      socketRef.current.emit('update_tag', data);
+    }
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════
+  // TEKLİF FONKSİYONLARI
+  // ════════════════════════════════════════════════════════════════════
+
+  const emitSendOffer = useCallback((data: OfferData) => {
+    if (socketRef.current?.connected) {
+      console.log('💰 Teklif gönderiliyor:', data);
+      socketRef.current.emit('send_offer', data);
+    } else {
+      console.error('❌ Socket bağlı değil, teklif gönderilemedi');
+    }
+  }, []);
+
+  const emitAcceptOffer = useCallback((data: OfferData) => {
+    if (socketRef.current?.connected) {
+      console.log('✅ Teklif kabul ediliyor:', data);
+      socketRef.current.emit('accept_offer', data);
+    }
+  }, []);
+
+  const emitRejectOffer = useCallback((data: { driver_id: string; tag_id: string }) => {
+    if (socketRef.current?.connected) {
+      console.log('❌ Teklif reddediliyor:', data);
+      socketRef.current.emit('reject_offer', data);
+    }
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════
+  // KONUM FONKSİYONLARI
+  // ════════════════════════════════════════════════════════════════════
+
+  const emitLocationUpdate = useCallback((data: LocationData) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('location_update', data);
+    }
+  }, []);
+
+  const subscribeToLocation = useCallback((targetId: string) => {
+    if (socketRef.current?.connected && userId) {
+      console.log('📍 Konum takibi başlatılıyor:', targetId);
+      socketRef.current.emit('subscribe_location', { 
+        target_id: targetId,
+        subscriber_id: userId 
+      });
+    }
+  }, [userId]);
+
+  // ════════════════════════════════════════════════════════════════════
+  // YOLCULUK FONKSİYONLARI
+  // ════════════════════════════════════════════════════════════════════
+
+  const emitTripStarted = useCallback((data: { 
+    tag_id: string; 
+    passenger_id: string; 
+    driver_id: string 
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🚗 Yolculuk başladı yayınlanıyor:', data);
+      socketRef.current.emit('trip_started', data);
+    }
+  }, []);
+
+  const emitTripEnded = useCallback((data: { 
+    tag_id: string; 
+    passenger_id: string; 
+    driver_id: string 
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🏁 Yolculuk bitti yayınlanıyor:', data);
+      socketRef.current.emit('trip_ended', data);
+    }
+  }, []);
+
+  const requestTripEnd = useCallback((data: {
+    tag_id: string;
+    requester_id: string;
+    target_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🛑 Trip end request gönderiliyor:', data);
+      socketRef.current.emit('request_trip_end', data);
+    }
+  }, []);
+
+  const respondTripEnd = useCallback((data: {
+    tag_id: string;
+    accepted: boolean;
+    target_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('📝 Trip end response gönderiliyor:', data);
+      socketRef.current.emit('respond_trip_end', data);
+    }
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════
+  // EFFECTS
+  // ════════════════════════════════════════════════════════════════════
 
   // App state değişikliklerini dinle
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        // Uygulama ön plana geldi
         if (!socketRef.current?.connected && userId) {
           console.log('📱 Uygulama aktif, Socket.IO yeniden bağlanıyor...');
           connect();
         }
-      } else if (nextAppState === 'background') {
-        // Uygulama arka plana gitti - bağlantıyı KORU (arama gelebilir)
-        console.log('📱 Uygulama arka planda, Socket.IO bağlantısı korunuyor');
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
-
-    return () => {
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, [userId, connect]);
 
-  // Kullanıcı değiştiğinde bağlan/kayıt ol
+  // Kullanıcı değiştiğinde bağlan
   useEffect(() => {
     if (userId) {
       connect();
-      
-      // Eğer zaten bağlıysa, kullanıcıyı kaydet
       if (socketRef.current?.connected) {
-        console.log('📱 Zaten bağlı, register gönderiliyor:', userId);
-        socketRef.current.emit('register', { user_id: userId });
+        socketRef.current.emit('register', { user_id: userId, role: userRole });
       }
     } else {
       disconnect();
     }
-
-    return () => {
-      // Component unmount olduğunda bağlantıyı kesme (uygulama kapanmadı)
-    };
-  }, [userId, connect, disconnect]);
-  
-  // userId değiştiğinde ve socket bağlıysa register gönder
-  useEffect(() => {
-    if (userId && socketRef.current?.connected) {
-      console.log('📱 UserId değişti, register gönderiliyor:', userId);
-      socketRef.current.emit('register', { user_id: userId });
-    }
-  }, [userId]);
+  }, [userId, userRole, connect, disconnect]);
 
   return {
     socket: socketRef.current,
     isConnected,
     isRegistered,
+    // Bağlantı
     connect,
     disconnect,
     registerUser,
+    // Arama
     startCall,
     acceptCall,
     rejectCall,
     endCall,
+    // TAG
+    emitNewTag,
+    emitCancelTag,
+    emitUpdateTag,
+    // Teklif
+    emitSendOffer,
+    emitAcceptOffer,
+    emitRejectOffer,
+    // Konum
+    emitLocationUpdate,
+    subscribeToLocation,
+    // Yolculuk
+    emitTripStarted,
+    emitTripEnded,
     requestTripEnd,
     respondTripEnd,
   };
