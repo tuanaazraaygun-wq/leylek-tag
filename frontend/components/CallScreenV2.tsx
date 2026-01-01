@@ -1,11 +1,13 @@
 /**
- * CallScreenV2 - MINIMAL & SIMPLE v7.0
+ * CallScreenV2 - WebRTC + Socket.IO
  * 
- * Basit mantık:
- * 1. Engine oluştur
- * 2. Audio/Video aç
- * 3. Kanala katıl
- * 4. Agora gerisini halleder
+ * Agora YOK - Kendi sunucumuz ile peer-to-peer bağlantı
+ * 
+ * Akış:
+ * 1. Caller: createOffer → socket emit
+ * 2. Callee: receive offer → createAnswer → socket emit
+ * 3. ICE candidates exchange via socket
+ * 4. P2P connection established → Audio/Video flows
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -22,24 +24,30 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  createAgoraRtcEngine,
-  IRtcEngine,
-  ChannelProfileType,
-  ClientRoleType,
-  RtcSurfaceView,
-  VideoSourceType,
-  RenderModeType,
-  VideoMirrorModeType,
-} from 'react-native-agora';
+  RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+  mediaDevices,
+  RTCView,
+  MediaStream,
+} from 'react-native-webrtc';
+import { useSocket } from '../hooks/useSocket';
 
-const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
+// Google STUN sunucuları (ücretsiz)
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ],
+};
 
 interface CallScreenProps {
   visible: boolean;
   mode: 'caller' | 'receiver';
   callId: string;
   channelName: string;
-  agoraToken: string;
+  agoraToken: string; // Kullanılmayacak ama prop olarak kalacak
   userId: string;
   remoteUserId: string;
   remoteName: string;
@@ -54,12 +62,15 @@ interface CallScreenProps {
   receiverOffline?: boolean;
 }
 
+const log = (msg: string, data?: any) => {
+  console.log(`📞 WebRTC: ${msg}`, data || '');
+};
+
 export default function CallScreen({
   visible,
   mode,
   callId,
   channelName,
-  agoraToken,
   userId,
   remoteUserId,
   remoteName,
@@ -74,9 +85,11 @@ export default function CallScreen({
   receiverOffline,
 }: CallScreenProps) {
   
-  // Basit state'ler
-  const [joined, setJoined] = useState(false);
-  const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const { socket } = useSocket();
+  
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [connected, setConnected] = useState(false);
   const [callActive, setCallActive] = useState(false);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
@@ -85,138 +98,332 @@ export default function CallScreen({
   const [error, setError] = useState('');
 
   const isVideo = callType === 'video';
-  const engineRef = useRef<IRtcEngine | null>(null);
-  const uidRef = useRef(Math.floor(Math.random() * 100000) + 1);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
   const timerRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const iceCandidatesQueue = useRef<RTCIceCandidate[]>([]);
 
   // ════════════════════════════════════════════════════════════════════════════
-  // AGORA SETUP - Basit ve temiz
+  // MEDIA STREAM
   // ════════════════════════════════════════════════════════════════════════════
-  const setupAgora = useCallback(async () => {
-    if (!agoraToken || !channelName || engineRef.current) return;
-    
-    console.log('🎙️ AGORA SETUP START');
-
+  const getMediaStream = useCallback(async () => {
     try {
-      // 1. Engine oluştur
-      const engine = createAgoraRtcEngine();
-      engine.initialize({
-        appId: AGORA_APP_ID,
-        channelProfile: ChannelProfileType.ChannelProfileCommunication,
+      log('Getting media stream...', { isVideo });
+      
+      const constraints: any = {
+        audio: true,
+        video: isVideo ? { facingMode: 'user', width: 640, height: 480 } : false,
+      };
+
+      const stream = await mediaDevices.getUserMedia(constraints);
+      log('Media stream obtained', { 
+        audioTracks: stream.getAudioTracks().length,
+        videoTracks: stream.getVideoTracks().length 
       });
-      console.log('🎙️ Engine created');
+      
+      return stream;
+    } catch (e) {
+      log('Media stream error', e);
+      throw e;
+    }
+  }, [isVideo]);
 
-      // 2. Event handlers
-      engine.registerEventHandler({
-        onJoinChannelSuccess: (conn, elapsed) => {
-          console.log('🎙️ JOIN SUCCESS', { uid: conn.localUid, elapsed });
-          setJoined(true);
-        },
-        onUserJoined: (conn, uid) => {
-          console.log('🎙️ USER JOINED', { uid });
-          setRemoteUid(uid);
-        },
-        onUserOffline: (conn, uid) => {
-          console.log('🎙️ USER LEFT', { uid });
-          setRemoteUid(null);
-          endCall();
-        },
-        onError: (err, msg) => {
-          console.log('🎙️ ERROR', { err, msg });
-        },
-      });
+  // ════════════════════════════════════════════════════════════════════════════
+  // PEER CONNECTION SETUP
+  // ════════════════════════════════════════════════════════════════════════════
+  const createPeerConnection = useCallback((stream: MediaStream) => {
+    log('Creating peer connection...');
+    
+    const pc = new RTCPeerConnection(ICE_SERVERS);
 
-      // 3. Audio aç - BASİT
-      engine.enableAudio();
-      engine.setEnableSpeakerphone(true);
-      console.log('🎙️ Audio enabled');
+    // Local stream ekle
+    stream.getTracks().forEach(track => {
+      log('Adding track to PC', { kind: track.kind });
+      pc.addTrack(track, stream);
+    });
 
-      // 4. Video aç (gerekirse)
-      if (isVideo) {
-        engine.enableVideo();
-        engine.startPreview();
-        console.log('🎙️ Video enabled');
+    // Remote stream al
+    pc.ontrack = (event) => {
+      log('Received remote track', { kind: event.track.kind });
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+        setConnected(true);
+        setCallActive(true);
+        
+        // Süre sayacı başlat
+        if (!timerRef.current) {
+          timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
+        }
       }
+    };
 
-      // 5. Kanala katıl
-      engine.joinChannel(agoraToken, channelName, uidRef.current, {
-        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: isVideo,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: true,
+    // ICE candidate
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        log('Sending ICE candidate');
+        socket?.emit('webrtc_ice_candidate', {
+          callId,
+          candidate: event.candidate,
+          to: remoteUserId,
+        });
+      }
+    };
+
+    // Connection state
+    pc.onconnectionstatechange = () => {
+      log('Connection state:', pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        setConnected(true);
+        setCallActive(true);
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        setError('Bağlantı kesildi');
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      log('ICE state:', pc.iceConnectionState);
+    };
+
+    return pc;
+  }, [socket, callId, remoteUserId]);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CALLER: Create and send offer
+  // ════════════════════════════════════════════════════════════════════════════
+  const startCall = useCallback(async () => {
+    try {
+      log('Starting call as CALLER...');
+      
+      const stream = await getMediaStream();
+      setLocalStream(stream);
+      
+      const pc = createPeerConnection(stream);
+      pcRef.current = pc;
+
+      // Create offer
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: isVideo,
       });
-      console.log('🎙️ Joining channel:', channelName);
+      
+      await pc.setLocalDescription(offer);
+      log('Offer created and set');
 
-      engineRef.current = engine;
+      // Send offer via socket
+      socket?.emit('webrtc_offer', {
+        callId,
+        offer: offer,
+        to: remoteUserId,
+        from: userId,
+        callType,
+      });
+      log('Offer sent via socket');
 
     } catch (e) {
-      console.log('🎙️ SETUP ERROR:', e);
-      setError('Bağlantı hatası');
+      log('Start call error', e);
+      setError('Arama başlatılamadı');
     }
-  }, [agoraToken, channelName, isVideo]);
+  }, [getMediaStream, createPeerConnection, socket, callId, remoteUserId, userId, callType, isVideo]);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CALLEE: Receive offer and send answer
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleOffer = useCallback(async (offer: RTCSessionDescription) => {
+    try {
+      log('Handling offer as CALLEE...');
+      
+      const stream = await getMediaStream();
+      setLocalStream(stream);
+      
+      const pc = createPeerConnection(stream);
+      pcRef.current = pc;
+
+      // Set remote description (offer)
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      log('Remote description set');
+
+      // Process queued ICE candidates
+      for (const candidate of iceCandidatesQueue.current) {
+        await pc.addIceCandidate(candidate);
+      }
+      iceCandidatesQueue.current = [];
+
+      // Create answer
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      log('Answer created and set');
+
+      // Send answer via socket
+      socket?.emit('webrtc_answer', {
+        callId,
+        answer: answer,
+        to: remoteUserId,
+      });
+      log('Answer sent via socket');
+
+    } catch (e) {
+      log('Handle offer error', e);
+      setError('Arama kabul edilemedi');
+    }
+  }, [getMediaStream, createPeerConnection, socket, callId, remoteUserId]);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CALLER: Receive answer
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleAnswer = useCallback(async (answer: RTCSessionDescription) => {
+    try {
+      log('Handling answer...');
+      if (pcRef.current) {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        log('Remote description (answer) set');
+        
+        // Process queued ICE candidates
+        for (const candidate of iceCandidatesQueue.current) {
+          await pcRef.current.addIceCandidate(candidate);
+        }
+        iceCandidatesQueue.current = [];
+      }
+    } catch (e) {
+      log('Handle answer error', e);
+    }
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // ICE Candidate handling
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleIceCandidate = useCallback(async (candidate: RTCIceCandidate) => {
+    try {
+      if (pcRef.current && pcRef.current.remoteDescription) {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        log('ICE candidate added');
+      } else {
+        iceCandidatesQueue.current.push(new RTCIceCandidate(candidate));
+        log('ICE candidate queued');
+      }
+    } catch (e) {
+      log('ICE candidate error', e);
+    }
+  }, []);
 
   // ════════════════════════════════════════════════════════════════════════════
   // CLEANUP
   // ════════════════════════════════════════════════════════════════════════════
-  const cleanup = useCallback(async () => {
-    console.log('🎙️ CLEANUP');
-    if (timerRef.current) clearInterval(timerRef.current);
-    Vibration.cancel();
+  const cleanup = useCallback(() => {
+    log('Cleanup...');
     
-    if (engineRef.current) {
-      try {
-        await engineRef.current.leaveChannel();
-        engineRef.current.release();
-      } catch (e) {}
-      engineRef.current = null;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-  }, []);
+    
+    Vibration.cancel();
 
-  const endCall = useCallback(async () => {
-    console.log('🎙️ END CALL');
-    await cleanup();
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null);
+    }
+
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    setRemoteStream(null);
+    setConnected(false);
+    setCallActive(false);
+  }, [localStream]);
+
+  const endCall = useCallback(() => {
+    log('End call');
+    cleanup();
+    socket?.emit('webrtc_end_call', { callId, to: remoteUserId });
     onEnd();
     setTimeout(onClose, 300);
-  }, [cleanup, onEnd, onClose]);
+  }, [cleanup, socket, callId, remoteUserId, onEnd, onClose]);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SOCKET EVENTS
+  // ════════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!socket || !visible) return;
+
+    // Receive offer (for callee)
+    const onOffer = (data: any) => {
+      if (data.callId === callId) {
+        log('Received offer');
+        // Offer geldiğinde otomatik işleme - kabul butonuna basınca bağlan
+      }
+    };
+
+    // Receive answer (for caller)
+    const onAnswer = (data: any) => {
+      if (data.callId === callId) {
+        log('Received answer');
+        handleAnswer(data.answer);
+      }
+    };
+
+    // Receive ICE candidate
+    const onIceCandidate = (data: any) => {
+      if (data.callId === callId) {
+        handleIceCandidate(data.candidate);
+      }
+    };
+
+    // Call ended by remote
+    const onCallEnded = (data: any) => {
+      if (data.callId === callId) {
+        log('Call ended by remote');
+        cleanup();
+        onClose();
+      }
+    };
+
+    socket.on('webrtc_offer', onOffer);
+    socket.on('webrtc_answer', onAnswer);
+    socket.on('webrtc_ice_candidate', onIceCandidate);
+    socket.on('webrtc_call_ended', onCallEnded);
+
+    return () => {
+      socket.off('webrtc_offer', onOffer);
+      socket.off('webrtc_answer', onAnswer);
+      socket.off('webrtc_ice_candidate', onIceCandidate);
+      socket.off('webrtc_call_ended', onCallEnded);
+    };
+  }, [socket, visible, callId, handleAnswer, handleIceCandidate, cleanup, onClose]);
 
   // ════════════════════════════════════════════════════════════════════════════
   // EFFECTS
   // ════════════════════════════════════════════════════════════════════════════
-  
-  // Arama ekranı açıldığında
   useEffect(() => {
     if (!visible || !callId) return;
     
-    console.log('🎙️ CALL SCREEN OPEN', { mode, callId, isVideo });
+    log('Call screen open', { mode, callId, isVideo });
     
-    // Reset
-    setJoined(false);
-    setRemoteUid(null);
+    setConnected(false);
     setCallActive(false);
     setDuration(0);
     setError('');
 
-    // Zil/Titreşim
     if (mode === 'caller') {
+      // Caller: Hemen arama başlat
       Vibration.vibrate([0, 200, 200, 200], false);
       const interval = setInterval(() => Vibration.vibrate([0, 200, 200, 200], false), 3000);
       timerRef.current = interval;
       
-      // Pulse animation
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.1, duration: 500, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
         ])
       ).start();
+
+      // Offer gönder
+      startCall();
     } else {
+      // Callee: Zil çal, kabul bekle
       Vibration.vibrate([0, 500, 200, 500], true);
     }
-
-    // Agora'yı başlat
-    setupAgora();
 
     return () => {
       pulseAnim.stopAnimation();
@@ -224,50 +431,36 @@ export default function CallScreen({
     };
   }, [visible, callId]);
 
-  // Arama kabul edildiğinde
+  // Call accepted (for caller - callee accepted)
   useEffect(() => {
     if (callAccepted && mode === 'caller') {
-      console.log('🎙️ CALL ACCEPTED');
+      log('Call accepted by callee');
       Vibration.cancel();
       if (timerRef.current) clearInterval(timerRef.current);
-      setCallActive(true);
-      
-      // Süre sayacı başlat
-      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     }
   }, [callAccepted, mode]);
 
-  // Uzak kullanıcı katıldığında (receiver için)
-  useEffect(() => {
-    if (remoteUid && mode === 'receiver' && !callActive) {
-      console.log('🎙️ REMOTE JOINED - CALL ACTIVE');
-      Vibration.cancel();
-      setCallActive(true);
-      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-    }
-  }, [remoteUid, mode, callActive]);
-
-  // Reddedildi
+  // Call rejected
   useEffect(() => {
     if (callRejected) {
-      console.log('🎙️ CALL REJECTED');
+      log('Call rejected');
       setError('Arama reddedildi');
       setTimeout(endCall, 1500);
     }
   }, [callRejected]);
 
-  // Sonlandırıldı
+  // Call ended
   useEffect(() => {
     if (callEnded) {
-      console.log('🎙️ CALL ENDED');
+      log('Call ended');
       endCall();
     }
   }, [callEnded]);
 
-  // Çevrimdışı
+  // Receiver offline
   useEffect(() => {
     if (receiverOffline) {
-      console.log('🎙️ RECEIVER OFFLINE');
+      log('Receiver offline');
       setError('Karşı taraf çevrimdışı');
       setTimeout(endCall, 1500);
     }
@@ -276,40 +469,68 @@ export default function CallScreen({
   // ════════════════════════════════════════════════════════════════════════════
   // HANDLERS
   // ════════════════════════════════════════════════════════════════════════════
-  const handleAccept = () => {
-    console.log('🎙️ ACCEPT');
+  const handleAccept = async () => {
+    log('Accept pressed');
     Vibration.cancel();
+    
+    // Socket'e kabul bildir
     onAccept();
+    
+    // WebRTC bağlantısını başlat (offer zaten gelmiş olmalı)
+    // Offer'ı al ve answer gönder
+    socket?.once('webrtc_offer_for_answer', (data: any) => {
+      if (data.callId === callId) {
+        handleOffer(data.offer);
+      }
+    });
+    
+    // Caller'a offer'ı tekrar göndermesini iste
+    socket?.emit('webrtc_ready_for_offer', { callId, to: remoteUserId });
   };
 
   const handleReject = () => {
-    console.log('🎙️ REJECT');
+    log('Reject pressed');
     Vibration.cancel();
     onReject();
     setTimeout(onClose, 300);
   };
 
   const toggleMute = () => {
-    if (!engineRef.current) return;
-    engineRef.current.muteLocalAudioStream(!muted);
-    setMuted(!muted);
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setMuted(!audioTrack.enabled);
+        log('Mute toggled', { muted: !audioTrack.enabled });
+      }
+    }
   };
 
   const toggleSpeaker = () => {
-    if (!engineRef.current) return;
-    engineRef.current.setEnableSpeakerphone(!speakerOn);
+    // React Native WebRTC'de speaker değiştirme
+    // InCallManager kullanılabilir ama şimdilik basit tutalım
     setSpeakerOn(!speakerOn);
   };
 
   const toggleCamera = () => {
-    if (!engineRef.current || !isVideo) return;
-    engineRef.current.muteLocalVideoStream(!cameraOff);
-    setCameraOff(!cameraOff);
+    if (localStream && isVideo) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setCameraOff(!videoTrack.enabled);
+        log('Camera toggled', { off: !videoTrack.enabled });
+      }
+    }
   };
 
-  const switchCamera = () => {
-    if (!engineRef.current || !isVideo) return;
-    engineRef.current.switchCamera();
+  const switchCamera = async () => {
+    if (localStream && isVideo) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        (videoTrack as any)._switchCamera();
+        log('Camera switched');
+      }
+    }
   };
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -327,24 +548,22 @@ export default function CallScreen({
       <View style={styles.container}>
         
         {/* Remote Video */}
-        {isVideo && remoteUid && callActive && (
-          <RtcSurfaceView
+        {isVideo && remoteStream && callActive && (
+          <RTCView
+            streamURL={remoteStream.toURL()}
             style={styles.remoteVideo}
-            canvas={{ uid: remoteUid, renderMode: RenderModeType.RenderModeHidden }}
+            objectFit="cover"
           />
         )}
 
         {/* Local Video PIP */}
-        {isVideo && joined && !cameraOff && (
+        {isVideo && localStream && (
           <View style={styles.localPip}>
-            <RtcSurfaceView
+            <RTCView
+              streamURL={localStream.toURL()}
               style={{ flex: 1 }}
-              canvas={{ 
-                uid: 0, 
-                sourceType: VideoSourceType.VideoSourceCamera,
-                renderMode: RenderModeType.RenderModeHidden,
-                mirrorMode: VideoMirrorModeType.VideoMirrorModeEnabled,
-              }}
+              objectFit="cover"
+              mirror={true}
             />
           </View>
         )}
@@ -357,12 +576,12 @@ export default function CallScreen({
 
         {/* Status */}
         <View style={styles.status}>
-          <View style={[styles.dot, joined ? styles.dotGreen : styles.dotRed]} />
-          <Text style={styles.statusText}>{joined ? 'Bağlı' : 'Bağlanıyor'}</Text>
+          <View style={[styles.dot, connected ? styles.dotGreen : styles.dotRed]} />
+          <Text style={styles.statusText}>{connected ? 'Bağlı' : 'Bağlanıyor'}</Text>
         </View>
 
         {/* Avatar */}
-        {!(isVideo && remoteUid && callActive) && (
+        {!(isVideo && remoteStream && callActive) && (
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <View style={[styles.avatar, isVideo && styles.avatarVideo]}>
               <Ionicons name={isVideo ? "videocam" : "person"} size={56} color="#fff" />
@@ -391,7 +610,6 @@ export default function CallScreen({
         {/* Controls */}
         <View style={styles.controls}>
           {showIncoming ? (
-            // Gelen arama
             <View style={styles.incomingRow}>
               <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
                 <Ionicons name="close" size={32} color="#fff" />
@@ -401,7 +619,6 @@ export default function CallScreen({
               </TouchableOpacity>
             </View>
           ) : callActive ? (
-            // Aktif arama
             <View style={styles.activeRow}>
               <TouchableOpacity style={[styles.ctrl, muted && styles.ctrlActive]} onPress={toggleMute}>
                 <Ionicons name={muted ? "mic-off" : "mic"} size={24} color="#fff" />
@@ -427,7 +644,6 @@ export default function CallScreen({
               </TouchableOpacity>
             </View>
           ) : (
-            // Arıyor
             <TouchableOpacity style={styles.endBtn} onPress={endCall}>
               <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
