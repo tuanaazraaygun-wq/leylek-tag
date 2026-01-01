@@ -3582,55 +3582,6 @@ async def account_delete_request(request: dict):
     except Exception as e:
         return {"success": False, "detail": str(e)}
 
-# ==================== AGORA TOKEN ENDPOINT ====================
-# Agora App Credentials
-AGORA_APP_ID = "86eb50030f954355bc57696d45b343bd"
-AGORA_APP_CERTIFICATE = "39bbddeb0cd94cd89acf6ed9196b8fcd"
-
-@api_router.get("/agora/token")
-async def get_agora_token(channel_name: str, user_id: str):
-    """
-    Agora RTC Token üret
-    - channel_name: Arama için kanal adı
-    - user_id: Kullanıcı ID'si
-    - Token 24 saat geçerli
-    """
-    try:
-        if not channel_name or not user_id:
-            raise HTTPException(status_code=400, detail="channel_name ve user_id gerekli")
-        
-        # User ID'den UID oluştur (Agora integer UID istiyor)
-        uid = abs(hash(user_id)) % 1000000 + 1
-        
-        # Token geçerlilik süresi (24 saat)
-        expire_time_in_seconds = 86400
-        current_timestamp = int(time.time())
-        privilege_expired_ts = current_timestamp + expire_time_in_seconds
-        
-        # Token oluştur (Role = 1 = Publisher)
-        token = RtcTokenBuilder.buildTokenWithUid(
-            AGORA_APP_ID,
-            AGORA_APP_CERTIFICATE,
-            channel_name,
-            uid,
-            1,  # Role_Publisher = 1
-            privilege_expired_ts
-        )
-        
-        logger.info(f"🎫 Agora token oluşturuldu: channel={channel_name}, uid={uid}")
-        
-        return {
-            "success": True,
-            "token": token,
-            "channel": channel_name,
-            "uid": uid,
-            "appId": AGORA_APP_ID,
-            "expireAt": privilege_expired_ts
-        }
-    except Exception as e:
-        logger.error(f"Agora token error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 # ==================== SOCKET.IO ENABLED APP ====================
 # Supervisor server:app olarak çalıştırıyor, bu yüzden app'i socket_app ile değiştiriyoruz
 # Bu sayede Socket.IO otomatik olarak çalışacak
