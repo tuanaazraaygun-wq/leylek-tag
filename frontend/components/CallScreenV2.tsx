@@ -1,13 +1,13 @@
 /**
- * CallScreenV2 - WebRTC + Socket.IO
+ * CallScreenV2 - Agora RTC + Socket.IO Signaling
  * 
- * Agora YOK - Kendi sunucumuz ile peer-to-peer bağlantı
+ * BASIT VE SAĞLAM SES/GÖRÜNTÜ SİSTEMİ
  * 
  * Akış:
- * 1. Caller: createOffer → socket emit
- * 2. Callee: receive offer → createAnswer → socket emit
- * 3. ICE candidates exchange via socket
- * 4. P2P connection established → Audio/Video flows
+ * 1. Ekran açılır → Agora engine başlatılır
+ * 2. Socket ile karşı tarafa sinyal gönderilir
+ * 3. Her iki taraf aynı Agora kanalına katılır
+ * 4. 3 saniye içinde ses/görüntü bağlantısı
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -19,35 +19,32 @@ import {
   Modal,
   Vibration,
   Platform,
-  PermissionsAndroid,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  RTCPeerConnection,
-  RTCIceCandidate,
-  RTCSessionDescription,
-  mediaDevices,
-  RTCView,
-  MediaStream,
-} from 'react-native-webrtc';
-import { useSocket } from '../hooks/useSocket';
+  createAgoraRtcEngine,
+  IRtcEngine,
+  ChannelProfileType,
+  ClientRoleType,
+  RtcSurfaceView,
+  VideoSourceType,
+} from 'react-native-agora';
 
-// Google STUN sunucuları (ücretsiz)
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-  ],
-};
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGORA CONFIG - Tokenless Mode (Test için)
+// ═══════════════════════════════════════════════════════════════════════════
+const AGORA_APP_ID = '86eb50030f954355bc57696d45b343bd';
 
 interface CallScreenProps {
   visible: boolean;
   mode: 'caller' | 'receiver';
   callId: string;
   channelName: string;
-  agoraToken: string; // Kullanılmayacak ama prop olarak kalacak
+  agoraToken?: string;
   userId: string;
   remoteUserId: string;
   remoteName: string;
@@ -63,7 +60,8 @@ interface CallScreenProps {
 }
 
 const log = (msg: string, data?: any) => {
-  console.log(`📞 WebRTC: ${msg}`, data || '');
+  const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+  console.log(`📞 [${timestamp}] ${msg}`, data !== undefined ? data : '');
 };
 
 export default function CallScreen({
@@ -71,6 +69,7 @@ export default function CallScreen({
   mode,
   callId,
   channelName,
+  agoraToken,
   userId,
   remoteUserId,
   remoteName,
@@ -85,503 +84,431 @@ export default function CallScreen({
   receiverOffline,
 }: CallScreenProps) {
   
-  const { socket } = useSocket();
-  
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [callActive, setCallActive] = useState(false);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STATE
+  // ═══════════════════════════════════════════════════════════════════════════
+  const [engineReady, setEngineReady] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const [remoteJoined, setRemoteJoined] = useState(false);
+  const [remoteUid, setRemoteUid] = useState<number | null>(null);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [cameraOff, setCameraOff] = useState(false);
+  const [statusText, setStatusText] = useState('Bağlanıyor...');
   const [error, setError] = useState('');
-
+  
   const isVideo = callType === 'video';
-  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const engineRef = useRef<IRtcEngine | null>(null);
   const timerRef = useRef<any>(null);
+  const vibrationRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const iceCandidatesQueue = useRef<RTCIceCandidate[]>([]);
+  const joinAttempted = useRef(false);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // MEDIA STREAM
-  // ════════════════════════════════════════════════════════════════════════════
-  const getMediaStream = useCallback(async () => {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGORA ENGINE SETUP
+  // ═══════════════════════════════════════════════════════════════════════════
+  const initEngine = useCallback(async () => {
+    if (engineRef.current) {
+      log('Engine zaten var, tekrar oluşturulmuyor');
+      return engineRef.current;
+    }
+
     try {
-      log('Getting media stream...', { isVideo });
+      log('Agora Engine başlatılıyor...', { appId: AGORA_APP_ID.substring(0, 8) + '...' });
       
-      const constraints: any = {
-        audio: true,
-        video: isVideo ? { facingMode: 'user', width: 640, height: 480 } : false,
-      };
-
-      const stream = await mediaDevices.getUserMedia(constraints);
-      log('Media stream obtained', { 
-        audioTracks: stream.getAudioTracks().length,
-        videoTracks: stream.getVideoTracks().length 
+      const engine = createAgoraRtcEngine();
+      
+      engine.initialize({
+        appId: AGORA_APP_ID,
+        channelProfile: ChannelProfileType.ChannelProfileCommunication,
       });
+
+      // Event listeners
+      engine.registerEventHandler({
+        onJoinChannelSuccess: (connection, elapsed) => {
+          log('✅ Kanala katıldım!', { channel: connection.channelId, elapsed });
+          setJoined(true);
+          setStatusText('Bağlandı, karşı taraf bekleniyor...');
+        },
+        
+        onUserJoined: (connection, uid, elapsed) => {
+          log('✅ Karşı taraf katıldı!', { uid, elapsed });
+          setRemoteJoined(true);
+          setRemoteUid(uid);
+          setStatusText('Bağlandı');
+          Vibration.cancel();
+          
+          // Süre sayacı başlat
+          if (!timerRef.current) {
+            timerRef.current = setInterval(() => {
+              setDuration(d => d + 1);
+            }, 1000);
+          }
+        },
+        
+        onUserOffline: (connection, uid, reason) => {
+          log('❌ Karşı taraf ayrıldı', { uid, reason });
+          setRemoteJoined(false);
+          setRemoteUid(null);
+          setStatusText('Bağlantı kesildi');
+        },
+        
+        onError: (err, msg) => {
+          log('❌ Agora hatası', { err, msg });
+          setError(`Hata: ${msg}`);
+        },
+        
+        onConnectionStateChanged: (connection, state, reason) => {
+          log('Bağlantı durumu değişti', { state, reason });
+        },
+        
+        onAudioRouteChanged: (route) => {
+          log('Ses yolu değişti', { route });
+        },
+      });
+
+      // Audio ve Video ayarları
+      engine.enableAudio();
+      engine.setDefaultAudioRouteToSpeakerphone(true);
+      engine.setEnableSpeakerphone(true);
       
-      return stream;
-    } catch (e) {
-      log('Media stream error', e);
-      throw e;
+      if (isVideo) {
+        engine.enableVideo();
+        engine.startPreview();
+      }
+
+      engineRef.current = engine;
+      setEngineReady(true);
+      log('✅ Agora Engine hazır');
+      
+      return engine;
+    } catch (e: any) {
+      log('❌ Engine init hatası', e);
+      setError('Ses sistemi başlatılamadı');
+      return null;
     }
   }, [isVideo]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // PEER CONNECTION SETUP
-  // ════════════════════════════════════════════════════════════════════════════
-  const createPeerConnection = useCallback((stream: MediaStream) => {
-    log('Creating peer connection...');
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KANALA KATIL
+  // ═══════════════════════════════════════════════════════════════════════════
+  const joinChannel = useCallback(async () => {
+    if (joinAttempted.current) {
+      log('Join zaten denendi, tekrar denenmeyecek');
+      return;
+    }
     
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-
-    // Local stream ekle
-    stream.getTracks().forEach(track => {
-      log('Adding track to PC', { kind: track.kind });
-      pc.addTrack(track, stream);
-    });
-
-    // Remote stream al
-    pc.ontrack = (event) => {
-      log('Received remote track', { kind: event.track.kind });
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-        setConnected(true);
-        setCallActive(true);
-        
-        // Süre sayacı başlat
-        if (!timerRef.current) {
-          timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-        }
-      }
-    };
-
-    // ICE candidate
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        log('Sending ICE candidate');
-        socket?.emit('webrtc_ice_candidate', {
-          callId,
-          candidate: event.candidate,
-          to: remoteUserId,
-        });
-      }
-    };
-
-    // Connection state
-    pc.onconnectionstatechange = () => {
-      log('Connection state:', pc.connectionState);
-      if (pc.connectionState === 'connected') {
-        setConnected(true);
-        setCallActive(true);
-      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        setError('Bağlantı kesildi');
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      log('ICE state:', pc.iceConnectionState);
-    };
-
-    return pc;
-  }, [socket, callId, remoteUserId]);
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // CALLER: Create and send offer
-  // ════════════════════════════════════════════════════════════════════════════
-  const startCall = useCallback(async () => {
+    if (!engineRef.current) {
+      log('Engine yok, önce init edilecek');
+      await initEngine();
+    }
+    
+    if (!engineRef.current) {
+      log('Engine hala yok, join iptal');
+      return;
+    }
+    
+    joinAttempted.current = true;
+    
     try {
-      log('Starting call as CALLER...');
+      // UID oluştur (user_id'nin hash'i)
+      const uid = Math.abs(userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 100000) + 1;
       
-      const stream = await getMediaStream();
-      setLocalStream(stream);
-      
-      const pc = createPeerConnection(stream);
-      pcRef.current = pc;
-
-      // Create offer
-      const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: isVideo,
+      log('Kanala katılınıyor...', { 
+        channel: channelName, 
+        uid,
+        token: agoraToken ? 'VAR' : 'YOK (tokenless)',
+        mode 
       });
       
-      await pc.setLocalDescription(offer);
-      log('Offer created and set');
+      setStatusText('Kanala bağlanıyor...');
 
-      // Send offer via socket
-      socket?.emit('webrtc_offer', {
-        callId,
-        offer: offer,
-        to: remoteUserId,
-        from: userId,
-        callType,
-      });
-      log('Offer sent via socket');
-
-    } catch (e) {
-      log('Start call error', e);
-      setError('Arama başlatılamadı');
-    }
-  }, [getMediaStream, createPeerConnection, socket, callId, remoteUserId, userId, callType, isVideo]);
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // CALLEE: Receive offer and send answer
-  // ════════════════════════════════════════════════════════════════════════════
-  const handleOffer = useCallback(async (offer: RTCSessionDescription) => {
-    try {
-      log('Handling offer as CALLEE...');
+      // Token varsa kullan, yoksa null (tokenless mode)
+      const token = agoraToken || null;
       
-      const stream = await getMediaStream();
-      setLocalStream(stream);
-      
-      const pc = createPeerConnection(stream);
-      pcRef.current = pc;
-
-      // Set remote description (offer)
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      log('Remote description set');
-
-      // Process queued ICE candidates
-      for (const candidate of iceCandidatesQueue.current) {
-        await pc.addIceCandidate(candidate);
-      }
-      iceCandidatesQueue.current = [];
-
-      // Create answer
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      log('Answer created and set');
-
-      // Send answer via socket
-      socket?.emit('webrtc_answer', {
-        callId,
-        answer: answer,
-        to: remoteUserId,
+      engineRef.current.joinChannel(token, channelName, uid, {
+        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+        publishMicrophoneTrack: true,
+        publishCameraTrack: isVideo,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: isVideo,
       });
-      log('Answer sent via socket');
-
-    } catch (e) {
-      log('Handle offer error', e);
-      setError('Arama kabul edilemedi');
+      
+      log('joinChannel çağrıldı, callback bekleniyor...');
+    } catch (e: any) {
+      log('❌ Join hatası', e);
+      setError('Kanala katılınamadı');
+      joinAttempted.current = false;
     }
-  }, [getMediaStream, createPeerConnection, socket, callId, remoteUserId]);
+  }, [channelName, userId, agoraToken, isVideo, initEngine]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // CALLER: Receive answer
-  // ════════════════════════════════════════════════════════════════════════════
-  const handleAnswer = useCallback(async (answer: RTCSessionDescription) => {
-    try {
-      log('Handling answer...');
-      if (pcRef.current) {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        log('Remote description (answer) set');
-        
-        // Process queued ICE candidates
-        for (const candidate of iceCandidatesQueue.current) {
-          await pcRef.current.addIceCandidate(candidate);
-        }
-        iceCandidatesQueue.current = [];
-      }
-    } catch (e) {
-      log('Handle answer error', e);
-    }
-  }, []);
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // ICE Candidate handling
-  // ════════════════════════════════════════════════════════════════════════════
-  const handleIceCandidate = useCallback(async (candidate: RTCIceCandidate) => {
-    try {
-      if (pcRef.current && pcRef.current.remoteDescription) {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        log('ICE candidate added');
-      } else {
-        iceCandidatesQueue.current.push(new RTCIceCandidate(candidate));
-        log('ICE candidate queued');
-      }
-    } catch (e) {
-      log('ICE candidate error', e);
-    }
-  }, []);
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // CLEANUP
-  // ════════════════════════════════════════════════════════════════════════════
-  const cleanup = useCallback(() => {
-    log('Cleanup...');
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KANALDAN AYRIL
+  // ═══════════════════════════════════════════════════════════════════════════
+  const leaveChannel = useCallback(async () => {
+    log('Kanaldan ayrılınıyor...');
     
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     
+    if (vibrationRef.current) {
+      clearInterval(vibrationRef.current);
+      vibrationRef.current = null;
+    }
+    
     Vibration.cancel();
-
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-      setLocalStream(null);
+    
+    if (engineRef.current) {
+      try {
+        engineRef.current.leaveChannel();
+        if (isVideo) {
+          engineRef.current.stopPreview();
+        }
+        engineRef.current.release();
+        engineRef.current = null;
+      } catch (e) {
+        log('Leave hatası (görmezden geliniyor)', e);
+      }
     }
+    
+    setJoined(false);
+    setRemoteJoined(false);
+    setRemoteUid(null);
+    setEngineReady(false);
+    setDuration(0);
+    joinAttempted.current = false;
+  }, [isVideo]);
 
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-
-    setRemoteStream(null);
-    setConnected(false);
-    setCallActive(false);
-  }, [localStream]);
-
-  const endCall = useCallback(() => {
-    log('End call');
-    cleanup();
-    socket?.emit('webrtc_end_call', { callId, to: remoteUserId });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CALL END
+  // ═══════════════════════════════════════════════════════════════════════════
+  const handleEndCall = useCallback(async () => {
+    log('Arama sonlandırılıyor...');
+    await leaveChannel();
     onEnd();
     setTimeout(onClose, 300);
-  }, [cleanup, socket, callId, remoteUserId, onEnd, onClose]);
+  }, [leaveChannel, onEnd, onClose]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // SOCKET EVENTS
-  // ════════════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!socket || !visible) return;
-
-    // Receive offer (for callee)
-    const onOffer = (data: any) => {
-      if (data.callId === callId) {
-        log('Received offer');
-        // Offer geldiğinde otomatik işleme - kabul butonuna basınca bağlan
-      }
-    };
-
-    // Receive answer (for caller)
-    const onAnswer = (data: any) => {
-      if (data.callId === callId) {
-        log('Received answer');
-        handleAnswer(data.answer);
-      }
-    };
-
-    // Receive ICE candidate
-    const onIceCandidate = (data: any) => {
-      if (data.callId === callId) {
-        handleIceCandidate(data.candidate);
-      }
-    };
-
-    // Call ended by remote
-    const onCallEnded = (data: any) => {
-      if (data.callId === callId) {
-        log('Call ended by remote');
-        cleanup();
-        onClose();
-      }
-    };
-
-    socket.on('webrtc_offer', onOffer);
-    socket.on('webrtc_answer', onAnswer);
-    socket.on('webrtc_ice_candidate', onIceCandidate);
-    socket.on('webrtc_call_ended', onCallEnded);
-
-    return () => {
-      socket.off('webrtc_offer', onOffer);
-      socket.off('webrtc_answer', onAnswer);
-      socket.off('webrtc_ice_candidate', onIceCandidate);
-      socket.off('webrtc_call_ended', onCallEnded);
-    };
-  }, [socket, visible, callId, handleAnswer, handleIceCandidate, cleanup, onClose]);
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // EFFECTS
-  // ════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EFFECTS - Ana akış
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  // Ekran açıldığında
   useEffect(() => {
     if (!visible || !callId) return;
     
-    log('Call screen open', { mode, callId, isVideo });
+    log('═══════════════════════════════════════════════════');
+    log('ARAMA EKRANI AÇILDI', { mode, callId, channelName, callType });
+    log('═══════════════════════════════════════════════════');
     
-    setConnected(false);
-    setCallActive(false);
+    // State'leri sıfırla
+    setJoined(false);
+    setRemoteJoined(false);
+    setRemoteUid(null);
     setDuration(0);
     setError('');
+    setMuted(false);
+    setCameraOff(false);
+    joinAttempted.current = false;
+    
+    // Pulse animasyonu
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.1, duration: 500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ])
+    ).start();
 
     if (mode === 'caller') {
-      // Caller: Hemen arama başlat
+      // ARAYAN: Hemen engine başlat ve kanala katıl
+      setStatusText('Aranıyor...');
       Vibration.vibrate([0, 200, 200, 200], false);
-      const interval = setInterval(() => Vibration.vibrate([0, 200, 200, 200], false), 3000);
-      timerRef.current = interval;
+      vibrationRef.current = setInterval(() => {
+        Vibration.vibrate([0, 200, 200, 200], false);
+      }, 3000);
       
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.1, duration: 500, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        ])
-      ).start();
-
-      // Offer gönder
-      startCall();
+      // Engine başlat ve katıl
+      initEngine().then(() => {
+        joinChannel();
+      });
     } else {
-      // Callee: Zil çal, kabul bekle
+      // ALINAN: Zil çal, kabul bekle
+      setStatusText('Gelen Arama');
       Vibration.vibrate([0, 500, 200, 500], true);
     }
 
     return () => {
+      log('Cleanup - ekran kapatılıyor');
       pulseAnim.stopAnimation();
-      cleanup();
     };
-  }, [visible, callId]);
+  }, [visible, callId, mode, channelName, callType]);
 
-  // Call accepted (for caller - callee accepted)
+  // Aranan taraf kabul ettiğinde (caller için)
   useEffect(() => {
     if (callAccepted && mode === 'caller') {
-      log('Call accepted by callee');
+      log('✅ Karşı taraf aramayı KABUL ETTİ');
+      setStatusText('Kabul edildi, bağlanıyor...');
       Vibration.cancel();
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (vibrationRef.current) {
+        clearInterval(vibrationRef.current);
+        vibrationRef.current = null;
+      }
     }
   }, [callAccepted, mode]);
 
-  // Call rejected
+  // Arama reddedildiğinde
   useEffect(() => {
     if (callRejected) {
-      log('Call rejected');
+      log('❌ Arama reddedildi');
+      setStatusText('Arama reddedildi');
       setError('Arama reddedildi');
-      setTimeout(endCall, 1500);
+      setTimeout(() => {
+        leaveChannel().then(() => {
+          onClose();
+        });
+      }, 1500);
     }
-  }, [callRejected]);
+  }, [callRejected, leaveChannel, onClose]);
 
-  // Call ended
+  // Arama sonlandırıldığında (karşı taraf kapattı)
   useEffect(() => {
     if (callEnded) {
-      log('Call ended');
-      endCall();
+      log('📴 Karşı taraf aramayı kapattı');
+      setStatusText('Arama sonlandırıldı');
+      setTimeout(() => {
+        leaveChannel().then(() => {
+          onClose();
+        });
+      }, 500);
     }
-  }, [callEnded]);
+  }, [callEnded, leaveChannel, onClose]);
 
-  // Receiver offline
+  // Karşı taraf çevrimdışı
   useEffect(() => {
     if (receiverOffline) {
-      log('Receiver offline');
+      log('⚠️ Karşı taraf çevrimdışı');
+      setStatusText('Kullanıcı çevrimdışı');
       setError('Karşı taraf çevrimdışı');
-      setTimeout(endCall, 1500);
+      setTimeout(() => {
+        leaveChannel().then(() => {
+          onClose();
+        });
+      }, 2000);
     }
-  }, [receiverOffline]);
+  }, [receiverOffline, leaveChannel, onClose]);
 
-  // ════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   // HANDLERS
-  // ════════════════════════════════════════════════════════════════════════════
-  const handleAccept = async () => {
-    log('Accept pressed');
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  const handleAccept = useCallback(async () => {
+    log('✅ Arama kabul ediliyor...');
     Vibration.cancel();
+    setStatusText('Bağlanıyor...');
     
     // Socket'e kabul bildir
     onAccept();
     
-    // WebRTC bağlantısını başlat (offer zaten gelmiş olmalı)
-    // Offer'ı al ve answer gönder
-    socket?.once('webrtc_offer_for_answer', (data: any) => {
-      if (data.callId === callId) {
-        handleOffer(data.offer);
-      }
-    });
-    
-    // Caller'a offer'ı tekrar göndermesini iste
-    socket?.emit('webrtc_ready_for_offer', { callId, to: remoteUserId });
-  };
+    // Engine başlat ve kanala katıl
+    await initEngine();
+    await joinChannel();
+  }, [onAccept, initEngine, joinChannel]);
 
-  const handleReject = () => {
-    log('Reject pressed');
+  const handleReject = useCallback(() => {
+    log('❌ Arama reddediliyor');
     Vibration.cancel();
     onReject();
     setTimeout(onClose, 300);
-  };
+  }, [onReject, onClose]);
 
-  const toggleMute = () => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setMuted(!audioTrack.enabled);
-        log('Mute toggled', { muted: !audioTrack.enabled });
-      }
+  const toggleMute = useCallback(() => {
+    if (engineRef.current) {
+      const newMuted = !muted;
+      engineRef.current.muteLocalAudioStream(newMuted);
+      setMuted(newMuted);
+      log(newMuted ? 'Mikrofon kapatıldı' : 'Mikrofon açıldı');
     }
-  };
+  }, [muted]);
 
-  const toggleSpeaker = () => {
-    // React Native WebRTC'de speaker değiştirme
-    // InCallManager kullanılabilir ama şimdilik basit tutalım
-    setSpeakerOn(!speakerOn);
-  };
-
-  const toggleCamera = () => {
-    if (localStream && isVideo) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setCameraOff(!videoTrack.enabled);
-        log('Camera toggled', { off: !videoTrack.enabled });
-      }
+  const toggleSpeaker = useCallback(() => {
+    if (engineRef.current) {
+      const newSpeaker = !speakerOn;
+      engineRef.current.setEnableSpeakerphone(newSpeaker);
+      setSpeakerOn(newSpeaker);
+      log(newSpeaker ? 'Hoparlör açıldı' : 'Hoparlör kapatıldı');
     }
-  };
+  }, [speakerOn]);
 
-  const switchCamera = async () => {
-    if (localStream && isVideo) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        (videoTrack as any)._switchCamera();
-        log('Camera switched');
-      }
+  const toggleCamera = useCallback(() => {
+    if (engineRef.current && isVideo) {
+      const newOff = !cameraOff;
+      engineRef.current.muteLocalVideoStream(newOff);
+      setCameraOff(newOff);
+      log(newOff ? 'Kamera kapatıldı' : 'Kamera açıldı');
     }
-  };
+  }, [cameraOff, isVideo]);
 
-  // ════════════════════════════════════════════════════════════════════════════
+  const switchCamera = useCallback(() => {
+    if (engineRef.current && isVideo) {
+      engineRef.current.switchCamera();
+      log('Kamera değiştirildi');
+    }
+  }, [isVideo]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
-  // ════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
   if (!visible) return null;
 
   const formatTime = (s: number) => 
     `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  const showIncoming = mode === 'receiver' && !callActive;
+  const showIncoming = mode === 'receiver' && !joined;
+  const callActive = joined && remoteJoined;
 
   return (
     <Modal visible={visible} animationType="fade" statusBarTranslucent>
       <View style={styles.container}>
         
-        {/* Remote Video */}
-        {isVideo && remoteStream && callActive && (
-          <RTCView
-            streamURL={remoteStream.toURL()}
-            style={styles.remoteVideo}
-            objectFit="cover"
-          />
-        )}
-
-        {/* Local Video PIP */}
-        {isVideo && localStream && (
-          <View style={styles.localPip}>
-            <RTCView
-              streamURL={localStream.toURL()}
-              style={{ flex: 1 }}
-              objectFit="cover"
-              mirror={true}
+        {/* Remote Video (arka plan) */}
+        {isVideo && remoteUid && callActive && (
+          <View style={styles.remoteVideoContainer}>
+            <RtcSurfaceView
+              canvas={{ uid: remoteUid, sourceType: VideoSourceType.VideoSourceRemote }}
+              style={styles.remoteVideo}
             />
           </View>
         )}
 
-        {/* Badge */}
+        {/* Local Video (PIP) */}
+        {isVideo && joined && !cameraOff && (
+          <View style={styles.localPip}>
+            <RtcSurfaceView
+              canvas={{ uid: 0, sourceType: VideoSourceType.VideoSourceCamera }}
+              style={{ flex: 1 }}
+            />
+          </View>
+        )}
+
+        {/* Badge - Sesli/Görüntülü */}
         <View style={[styles.badge, isVideo ? styles.badgeVideo : styles.badgeAudio]}>
           <Ionicons name={isVideo ? "videocam" : "call"} size={14} color="#fff" />
           <Text style={styles.badgeText}>{isVideo ? 'Görüntülü' : 'Sesli'}</Text>
         </View>
 
-        {/* Status */}
+        {/* Bağlantı Durumu */}
         <View style={styles.status}>
-          <View style={[styles.dot, connected ? styles.dotGreen : styles.dotRed]} />
-          <Text style={styles.statusText}>{connected ? 'Bağlı' : 'Bağlanıyor'}</Text>
+          <View style={[styles.dot, callActive ? styles.dotGreen : styles.dotYellow]} />
+          <Text style={styles.statusText}>
+            {callActive ? 'Bağlı' : (joined ? 'Bekleniyor' : 'Bağlanıyor')}
+          </Text>
         </View>
 
-        {/* Avatar */}
-        {!(isVideo && remoteStream && callActive) && (
+        {/* Avatar (video yoksa veya bağlanmadıysa) */}
+        {(!isVideo || !callActive) && (
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <View style={[styles.avatar, isVideo && styles.avatarVideo]}>
               <Ionicons name={isVideo ? "videocam" : "person"} size={56} color="#fff" />
@@ -589,44 +516,53 @@ export default function CallScreen({
           </Animated.View>
         )}
 
-        {/* Name */}
+        {/* İsim */}
         <Text style={styles.name}>{remoteName}</Text>
 
-        {/* Status Text */}
+        {/* Durum Metni */}
         <Text style={styles.stateText}>
-          {error ? error : 
-           callActive ? formatTime(duration) :
-           showIncoming ? 'Gelen Arama' : 'Aranıyor...'}
+          {error ? error : (callActive ? formatTime(duration) : statusText)}
         </Text>
 
-        {/* Connected Badge */}
+        {/* Bağlandı Badge */}
         {callActive && (
           <View style={styles.connectedBadge}>
             <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-            <Text style={styles.connectedText}>Bağlandı</Text>
+            <Text style={styles.connectedText}>Ses Bağlandı</Text>
           </View>
         )}
 
-        {/* Controls */}
+        {/* Kontroller */}
         <View style={styles.controls}>
           {showIncoming ? (
+            // Gelen arama - Kabul/Red
             <View style={styles.incomingRow}>
               <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
                 <Ionicons name="close" size={32} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.acceptBtn, isVideo && styles.acceptVideo]} onPress={handleAccept}>
+              <TouchableOpacity 
+                style={[styles.acceptBtn, isVideo && styles.acceptVideo]} 
+                onPress={handleAccept}
+              >
                 <Ionicons name={isVideo ? "videocam" : "call"} size={32} color="#fff" />
               </TouchableOpacity>
             </View>
           ) : callActive ? (
+            // Aktif arama - Kontroller
             <View style={styles.activeRow}>
-              <TouchableOpacity style={[styles.ctrl, muted && styles.ctrlActive]} onPress={toggleMute}>
+              <TouchableOpacity 
+                style={[styles.ctrl, muted && styles.ctrlActive]} 
+                onPress={toggleMute}
+              >
                 <Ionicons name={muted ? "mic-off" : "mic"} size={24} color="#fff" />
               </TouchableOpacity>
               
               {isVideo && (
                 <>
-                  <TouchableOpacity style={[styles.ctrl, cameraOff && styles.ctrlActive]} onPress={toggleCamera}>
+                  <TouchableOpacity 
+                    style={[styles.ctrl, cameraOff && styles.ctrlActive]} 
+                    onPress={toggleCamera}
+                  >
                     <Ionicons name={cameraOff ? "videocam-off" : "videocam"} size={24} color="#fff" />
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.ctrl} onPress={switchCamera}>
@@ -635,16 +571,20 @@ export default function CallScreen({
                 </>
               )}
               
-              <TouchableOpacity style={styles.endBtn} onPress={endCall}>
+              <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
                 <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
               </TouchableOpacity>
               
-              <TouchableOpacity style={[styles.ctrl, speakerOn && styles.ctrlActive]} onPress={toggleSpeaker}>
+              <TouchableOpacity 
+                style={[styles.ctrl, speakerOn && styles.ctrlActive]} 
+                onPress={toggleSpeaker}
+              >
                 <Ionicons name={speakerOn ? "volume-high" : "volume-low"} size={24} color="#fff" />
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity style={styles.endBtn} onPress={endCall}>
+            // Bağlanıyor - Sadece kapat butonu
+            <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
               <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
             </TouchableOpacity>
           )}
@@ -654,49 +594,132 @@ export default function CallScreen({
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' },
-  remoteVideo: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#1a1a2e', 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  remoteVideoContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  remoteVideo: {
+    flex: 1,
+  },
   localPip: {
-    position: 'absolute', top: 100, right: 16, width: 120, height: 160,
-    borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#fff',
-    backgroundColor: '#000', zIndex: 100,
+    position: 'absolute', 
+    top: 100, 
+    right: 16, 
+    width: 120, 
+    height: 160,
+    borderRadius: 12, 
+    overflow: 'hidden', 
+    borderWidth: 2, 
+    borderColor: '#fff',
+    backgroundColor: '#000', 
+    zIndex: 100,
   },
   badge: {
-    position: 'absolute', top: 50, right: 16, flexDirection: 'row',
-    alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 4,
+    position: 'absolute', 
+    top: 50, 
+    right: 16, 
+    flexDirection: 'row',
+    alignItems: 'center', 
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 16, 
+    gap: 4,
   },
   badgeVideo: { backgroundColor: '#9C27B0' },
   badgeAudio: { backgroundColor: '#4361ee' },
   badgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   status: {
-    position: 'absolute', top: 50, left: 16, flexDirection: 'row',
-    alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10,
-    paddingVertical: 6, borderRadius: 12, gap: 6,
+    position: 'absolute', 
+    top: 50, 
+    left: 16, 
+    flexDirection: 'row',
+    alignItems: 'center', 
+    backgroundColor: 'rgba(0,0,0,0.5)', 
+    paddingHorizontal: 10,
+    paddingVertical: 6, 
+    borderRadius: 12, 
+    gap: 6,
   },
   dot: { width: 10, height: 10, borderRadius: 5 },
   dotGreen: { backgroundColor: '#4CAF50' },
-  dotRed: { backgroundColor: '#f44336' },
+  dotYellow: { backgroundColor: '#FFC107' },
   statusText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   avatar: {
-    width: 120, height: 120, borderRadius: 60, backgroundColor: '#4361ee',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 20,
+    width: 120, 
+    height: 120, 
+    borderRadius: 60, 
+    backgroundColor: '#4361ee',
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 20,
   },
   avatarVideo: { backgroundColor: '#9C27B0' },
   name: { fontSize: 26, fontWeight: '700', color: '#fff', marginBottom: 8 },
   stateText: { fontSize: 18, color: '#aaa', marginBottom: 12 },
   connectedBadge: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(76,175,80,0.2)',
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, gap: 6,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: 'rgba(76,175,80,0.2)',
+    paddingHorizontal: 14, 
+    paddingVertical: 6, 
+    borderRadius: 16, 
+    gap: 6,
   },
   connectedText: { color: '#4CAF50', fontSize: 14, fontWeight: '600' },
-  controls: { position: 'absolute', bottom: 50, left: 0, right: 0, alignItems: 'center' },
+  controls: { 
+    position: 'absolute', 
+    bottom: 50, 
+    left: 0, 
+    right: 0, 
+    alignItems: 'center' 
+  },
   incomingRow: { flexDirection: 'row', justifyContent: 'center', gap: 60 },
   activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
-  acceptBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#4CAF50', justifyContent: 'center', alignItems: 'center' },
+  acceptBtn: { 
+    width: 70, 
+    height: 70, 
+    borderRadius: 35, 
+    backgroundColor: '#4CAF50', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   acceptVideo: { backgroundColor: '#9C27B0' },
-  rejectBtn: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#f44336', justifyContent: 'center', alignItems: 'center' },
-  endBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f44336', justifyContent: 'center', alignItems: 'center' },
-  ctrl: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center' },
+  rejectBtn: { 
+    width: 70, 
+    height: 70, 
+    borderRadius: 35, 
+    backgroundColor: '#f44336', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  endBtn: { 
+    width: 64, 
+    height: 64, 
+    borderRadius: 32, 
+    backgroundColor: '#f44336', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  ctrl: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 25, 
+    backgroundColor: 'rgba(255,255,255,0.15)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   ctrlActive: { backgroundColor: 'rgba(255,255,255,0.35)' },
 });
