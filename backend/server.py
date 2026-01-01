@@ -2909,18 +2909,18 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 
 # ==================== VOICE/VIDEO CALL ENDPOINTS ====================
 
-# Agora credentials
-AGORA_APP_ID = os.getenv("AGORA_APP_ID", "")
-AGORA_APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "")
+# Agora credentials - HARDCODED (güvenli değil ama çalışır)
+AGORA_APP_ID = "86eb50030f954355bc57696d45b343bd"
+AGORA_APP_CERTIFICATE = "39bbddeb0cd94cd89acf6ed9196b8fcd"
 
-def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: int = 3600) -> str:
-    """Agora RTC token üret"""
-    if not AGORA_TOKEN_AVAILABLE or not AGORA_APP_CERTIFICATE:
-        logger.warning("⚠️ Agora token üretilemiyor - certificate eksik veya library yok")
+def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: int = 86400) -> str:
+    """Agora RTC token üret - 24 saat geçerli"""
+    if not AGORA_APP_CERTIFICATE:
+        logger.warning("⚠️ Agora token üretilemiyor - certificate eksik")
         return ""
     
     try:
-        # Token süresi (Unix timestamp)
+        # Token süresi (Unix timestamp) - 24 saat
         privilege_expired_ts = int(time.time()) + expiration_seconds
         
         # Role = 1 (Publisher), 2 (Subscriber)
