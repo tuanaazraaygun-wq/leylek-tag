@@ -1,11 +1,11 @@
 /**
  * CallScreenV2 - Agora RTC Sesli/Görüntülü Arama
  * 
- * ✅ ÇÖZÜLEN SORUNLAR:
- * - Ses gitmiyor → Audio track publish düzeltildi
- * - Karşı tarafı görmüyor → Remote video render düzeltildi
- * - Tekrar arama ekranı → State yönetimi düzeltildi
- * - Zil sesi yok → InCallManager eklendi
+ * DÜZELTMELER:
+ * - State phase yönetimi eklendi (incoming → connecting → active)
+ * - Agora initialization sırası düzeltildi
+ * - UI state conflicts çözüldü
+ * - Remote video render düzeltildi
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -37,10 +37,11 @@ import InCallManager from 'react-native-incall-manager';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// ═══════════════════════════════════════════════════════════════════════════
 // AGORA CONFIG
-// ═══════════════════════════════════════════════════════════════════════════
 const AGORA_APP_ID = '86eb50030f954355bc57696d45b343bd';
+
+// CALL PHASES - Arama aşamaları
+type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'ended';
 
 interface CallScreenProps {
   visible: boolean;
@@ -62,7 +63,7 @@ interface CallScreenProps {
   receiverOffline?: boolean;
 }
 
-// Log helper
+// Logger
 const log = (msg: string, data?: any) => {
   const time = new Date().toISOString().split('T')[1].split('.')[0];
   console.log(`📞 [${time}] ${msg}`, data !== undefined ? JSON.stringify(data) : '');
@@ -89,60 +90,58 @@ export default function CallScreen({
 }: CallScreenProps) {
   
   // ═══════════════════════════════════════════════════════════════════════════
-  // STATE
+  // STATE - Phase-based state management
   // ═══════════════════════════════════════════════════════════════════════════
-  const [joined, setJoined] = useState(false);
+  const [phase, setPhase] = useState<CallPhase>('idle');
   const [remoteUid, setRemoteUid] = useState<number>(0);
-  const [remoteJoined, setRemoteJoined] = useState(false);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [cameraOff, setCameraOff] = useState(false);
   const [statusText, setStatusText] = useState('');
-  const [connectionState, setConnectionState] = useState('');
   
   const isVideo = callType === 'video';
   const engineRef = useRef<IRtcEngine | null>(null);
   const timerRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const isInitialized = useRef(false);
-  const hasJoined = useRef(false);
+  const initialized = useRef(false);
+  const joinedChannel = useRef(false);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // UID OLUŞTUR - Her kullanıcı için benzersiz
-  // ═══════════════════════════════════════════════════════════════════════════
-  const getUid = useCallback((id: string): number => {
+  // UID oluştur
+  const getUid = (id: string): number => {
     let hash = 0;
     for (let i = 0; i < id.length; i++) {
       hash = ((hash << 5) - hash) + id.charCodeAt(i);
       hash = hash & hash;
     }
     return Math.abs(hash % 1000000) + 1;
-  }, []);
+  };
 
   const myUid = getUid(userId);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // İZİN KONTROLÜ - Runtime'da izin al
+  // İZİN KONTROLÜ
   // ═══════════════════════════════════════════════════════════════════════════
-  const checkPermissions = async (): Promise<boolean> => {
+  const requestPermissions = async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
 
     try {
       const permissions = [
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        PermissionsAndroid.PERMISSIONS.CAMERA,
       ];
+      
+      if (isVideo) {
+        permissions.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+      }
 
       const results = await PermissionsAndroid.requestMultiple(permissions);
+      const audioOk = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
+      const cameraOk = !isVideo || results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
       
-      const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
-      const cameraGranted = results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
+      log('İzinler', { audio: audioOk, camera: cameraOk });
       
-      log('İzin sonuçları', { audio: audioGranted, camera: cameraGranted });
-      
-      if (!audioGranted) {
-        Alert.alert('İzin Gerekli', 'Sesli arama için mikrofon izni gereklidir.');
+      if (!audioOk) {
+        Alert.alert('İzin Gerekli', 'Arama için mikrofon izni gereklidir.');
         return false;
       }
       
@@ -154,54 +153,46 @@ export default function CallScreen({
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // AGORA ENGINE BAŞLAT
+  // AGORA ENGINE
   // ═══════════════════════════════════════════════════════════════════════════
-  const initializeEngine = useCallback(async () => {
-    if (isInitialized.current && engineRef.current) {
+  const setupEngine = useCallback(async (): Promise<boolean> => {
+    if (initialized.current && engineRef.current) {
       log('Engine zaten hazır');
       return true;
     }
 
     try {
-      log('Engine başlatılıyor...', { appId: AGORA_APP_ID.substring(0, 8) });
+      log('Engine başlatılıyor...');
       
-      // İzinleri kontrol et
-      const hasPermissions = await checkPermissions();
-      if (!hasPermissions) {
-        log('İzinler alınamadı');
-        return false;
-      }
-
       const engine = createAgoraRtcEngine();
       
-      // Initialize
       engine.initialize({
         appId: AGORA_APP_ID,
         channelProfile: ChannelProfileType.ChannelProfileCommunication,
       });
 
       // Event Handler
-      const eventHandler: IRtcEngineEventHandler = {
+      const handler: IRtcEngineEventHandler = {
         onJoinChannelSuccess: (connection: RtcConnection, elapsed: number) => {
-          log('✅ KANALA KATILDIM', { channel: connection.channelId, uid: connection.localUid, elapsed });
-          setJoined(true);
+          log('✅ KANALA KATILDIM', { channel: connection.channelId, uid: connection.localUid });
+          joinedChannel.current = true;
           setStatusText('Bağlandı, karşı taraf bekleniyor...');
-          hasJoined.current = true;
         },
         
         onUserJoined: (connection: RtcConnection, uid: number, elapsed: number) => {
-          log('✅ KARŞI TARAF KATILDI', { uid, elapsed });
+          log('✅ KARŞI TARAF KATILDI', { uid });
           setRemoteUid(uid);
-          setRemoteJoined(true);
+          setPhase('active');
           setStatusText('Görüşme başladı');
           
-          // Zil sesini durdur, görüşme sesi başlat
+          // Ses yönetimi
           InCallManager.stopRingtone();
+          InCallManager.stop();
           InCallManager.start({ media: 'audio' });
           InCallManager.setForceSpeakerphoneOn(true);
           Vibration.cancel();
           
-          // Süre sayacı başlat
+          // Süre sayacı
           if (!timerRef.current) {
             timerRef.current = setInterval(() => {
               setDuration(d => d + 1);
@@ -213,8 +204,8 @@ export default function CallScreen({
           log('❌ KARŞI TARAF AYRILDI', { uid, reason });
           if (uid === remoteUid) {
             setRemoteUid(0);
-            setRemoteJoined(false);
             setStatusText('Bağlantı kesildi');
+            setPhase('ended');
           }
         },
         
@@ -222,38 +213,24 @@ export default function CallScreen({
           log('❌ AGORA HATA', { err, msg });
         },
         
-        onConnectionStateChanged: (connection: RtcConnection, state: number, reason: number) => {
-          const states = ['Disconnected', 'Connecting', 'Connected', 'Reconnecting', 'Failed'];
-          log('Bağlantı durumu', { state: states[state] || state, reason });
-          setConnectionState(states[state] || `State: ${state}`);
-        },
-        
-        onRemoteAudioStateChanged: (connection: RtcConnection, uid: number, state: number, reason: number, elapsed: number) => {
-          log('Remote ses durumu', { uid, state, reason });
-        },
-        
-        onRemoteVideoStateChanged: (connection: RtcConnection, uid: number, state: number, reason: number, elapsed: number) => {
-          log('Remote video durumu', { uid, state, reason });
-        },
-        
         onFirstRemoteAudioFrame: (connection: RtcConnection, uid: number, elapsed: number) => {
-          log('✅ İLK SES FRAME GELDİ', { uid, elapsed });
+          log('✅ SES GELİYOR', { uid });
         },
         
         onFirstRemoteVideoFrame: (connection: RtcConnection, uid: number, width: number, height: number, elapsed: number) => {
-          log('✅ İLK VIDEO FRAME GELDİ', { uid, width, height, elapsed });
+          log('✅ VIDEO GELİYOR', { uid, width, height });
         },
       };
 
-      engine.registerEventHandler(eventHandler);
+      engine.registerEventHandler(handler);
 
-      // Audio ayarları - ÖNEMLİ
+      // Audio ayarları
       engine.enableAudio();
-      engine.setAudioProfile(0, 1); // Default profile, Chatroom scenario
+      engine.setAudioProfile(0, 1);
       engine.setDefaultAudioRouteToSpeakerphone(true);
       engine.setEnableSpeakerphone(true);
-      engine.adjustRecordingSignalVolume(400); // Mikrofon hassasiyeti artır
-      engine.adjustPlaybackSignalVolume(400); // Hoparlör sesi artır
+      engine.adjustRecordingSignalVolume(400);
+      engine.adjustPlaybackSignalVolume(400);
       
       // Video ayarları
       if (isVideo) {
@@ -263,46 +240,35 @@ export default function CallScreen({
       }
 
       engineRef.current = engine;
-      isInitialized.current = true;
+      initialized.current = true;
       log('✅ Engine hazır');
       return true;
     } catch (error) {
-      log('❌ Engine init hatası', error);
+      log('❌ Engine hatası', error);
       return false;
     }
-  }, [isVideo]);
+  }, [isVideo, remoteUid]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // KANALA KATIL
   // ═══════════════════════════════════════════════════════════════════════════
   const joinChannel = useCallback(async () => {
     if (!engineRef.current) {
-      log('Engine yok, önce başlatılacak');
-      const success = await initializeEngine();
-      if (!success) return;
+      log('Engine yok!');
+      return;
     }
 
-    if (hasJoined.current) {
-      log('Zaten kanala katılmış');
+    if (joinedChannel.current) {
+      log('Zaten kanalda');
       return;
     }
 
     try {
-      const engine = engineRef.current!;
-      
-      // Channel name'i logla - DEBUG
-      log('🔗 KANALA KATILINIYOR', { 
-        channel: channelName, 
-        uid: myUid, 
-        token: agoraToken ? 'VAR' : 'YOK',
-        isVideo,
-      });
-
+      log('🔗 KANALA KATILINIYOR', { channel: channelName, uid: myUid });
       setStatusText('Kanala bağlanıyor...');
 
-      // Kanala katıl
-      engine.joinChannel(
-        agoraToken || '', // Token (boş string = tokenless)
+      engineRef.current.joinChannel(
+        agoraToken || '',
         channelName,
         myUid,
         {
@@ -313,27 +279,102 @@ export default function CallScreen({
           autoSubscribeVideo: isVideo,
         }
       );
-
-      log('joinChannel çağrıldı');
     } catch (error) {
       log('❌ Join hatası', error);
-      setStatusText('Bağlantı hatası');
     }
-  }, [channelName, myUid, agoraToken, isVideo, initializeEngine]);
+  }, [channelName, myUid, agoraToken, isVideo]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // KANALDAN AYRIL VE TEMİZLE
+  // ARAMAYA BAŞLA (Caller için)
   // ═══════════════════════════════════════════════════════════════════════════
-  const cleanup = useCallback(() => {
-    log('Temizlik yapılıyor...');
+  const startCall = useCallback(async () => {
+    log('📞 ARAMA BAŞLATILIYOR (Caller)');
     
-    // Timer'ları temizle
+    setPhase('outgoing');
+    setStatusText('Aranıyor...');
+    
+    // Arama sesi
+    InCallManager.start({ media: 'audio', ringback: '_DEFAULT_' });
+    Vibration.vibrate([0, 300, 200, 300], true);
+    
+    // İzinler
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      setPhase('ended');
+      return;
+    }
+    
+    // Engine başlat
+    const engineOk = await setupEngine();
+    if (!engineOk) {
+      setPhase('ended');
+      return;
+    }
+    
+    // Kanala katıl
+    await joinChannel();
+  }, [requestPermissions, setupEngine, joinChannel]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ARAMAYI KABUL ET (Receiver için)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const acceptCall = useCallback(async () => {
+    log('✅ ARAMA KABUL EDİLİYOR (Receiver)');
+    
+    // Önce phase'i değiştir - UI hemen güncellenir
+    setPhase('connecting');
+    setStatusText('Bağlanıyor...');
+    
+    // Zil ve titreşimi durdur
+    Vibration.cancel();
+    InCallManager.stopRingtone();
+    
+    // Socket'e kabul bildir
+    onAccept();
+    
+    // İzinler
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) {
+      setPhase('ended');
+      return;
+    }
+    
+    // Engine başlat
+    const engineOk = await setupEngine();
+    if (!engineOk) {
+      setPhase('ended');
+      return;
+    }
+    
+    // Kanala katıl
+    await joinChannel();
+  }, [onAccept, requestPermissions, setupEngine, joinChannel]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ARAMAYI REDDET
+  // ═══════════════════════════════════════════════════════════════════════════
+  const rejectCall = useCallback(() => {
+    log('❌ ARAMA REDDEDİLİYOR');
+    Vibration.cancel();
+    InCallManager.stopRingtone();
+    setPhase('ended');
+    onReject();
+    setTimeout(onClose, 300);
+  }, [onReject, onClose]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ARAMAYI BİTİR
+  // ═══════════════════════════════════════════════════════════════════════════
+  const endCall = useCallback(() => {
+    log('📴 ARAMA BİTİRİLİYOR');
+    
+    // Timer'ı durdur
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     
-    // Vibration ve ses durdur
+    // Ses yönetimini durdur
     Vibration.cancel();
     InCallManager.stop();
     InCallManager.stopRingtone();
@@ -348,64 +389,19 @@ export default function CallScreen({
         engineRef.current.unregisterEventHandler({});
         engineRef.current.release();
       } catch (e) {
-        log('Cleanup hatası (görmezden geliniyor)', e);
+        log('Cleanup hatası', e);
       }
       engineRef.current = null;
     }
     
-    // State'leri sıfırla
-    setJoined(false);
-    setRemoteUid(0);
-    setRemoteJoined(false);
-    setDuration(0);
-    setMuted(false);
-    setCameraOff(false);
-    isInitialized.current = false;
-    hasJoined.current = false;
+    // State reset
+    initialized.current = false;
+    joinedChannel.current = false;
+    setPhase('ended');
     
-    log('Temizlik tamamlandı');
-  }, [isVideo]);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ARAMA SONLANDIR
-  // ═══════════════════════════════════════════════════════════════════════════
-  const endCall = useCallback(() => {
-    log('Arama sonlandırılıyor...');
-    cleanup();
     onEnd();
     setTimeout(onClose, 300);
-  }, [cleanup, onEnd, onClose]);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // GELEN ARAMAYI KABUL ET
-  // ═══════════════════════════════════════════════════════════════════════════
-  const handleAccept = useCallback(async () => {
-    log('Arama KABUL ediliyor...');
-    
-    // Zil ve titreşimi durdur
-    Vibration.cancel();
-    InCallManager.stopRingtone();
-    
-    setStatusText('Bağlanıyor...');
-    
-    // Socket'e kabul bildir
-    onAccept();
-    
-    // Engine başlat ve kanala katıl
-    await initializeEngine();
-    await joinChannel();
-  }, [onAccept, initializeEngine, joinChannel]);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // GELEN ARAMAYI REDDET
-  // ═══════════════════════════════════════════════════════════════════════════
-  const handleReject = useCallback(() => {
-    log('Arama REDDEDİLİYOR');
-    Vibration.cancel();
-    InCallManager.stopRingtone();
-    onReject();
-    setTimeout(onClose, 300);
-  }, [onReject, onClose]);
+  }, [isVideo, onEnd, onClose]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // KONTROLLER
@@ -446,14 +442,25 @@ export default function CallScreen({
   }, [isVideo]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // EFFECT: Ekran açıldığında
+  // EFFECTS
   // ═══════════════════════════════════════════════════════════════════════════
+  
+  // Ekran açıldığında
   useEffect(() => {
     if (!visible || !callId) return;
 
     log('═══════════════════════════════════════════════════════════');
-    log('ARAMA EKRANI AÇILDI', { mode, callId, channelName, callType, userId, remoteUserId });
+    log('ARAMA EKRANI AÇILDI', { mode, callId, channelName, callType });
     log('═══════════════════════════════════════════════════════════');
+
+    // State'leri sıfırla
+    setRemoteUid(0);
+    setDuration(0);
+    setMuted(false);
+    setCameraOff(false);
+    setSpeakerOn(true);
+    initialized.current = false;
+    joinedChannel.current = false;
 
     // Pulse animasyonu
     Animated.loop(
@@ -464,94 +471,71 @@ export default function CallScreen({
     ).start();
 
     if (mode === 'caller') {
-      // ARAYAN: Hemen bağlan
-      setStatusText('Aranıyor...');
-      
-      // Arama sesi başlat
-      InCallManager.start({ media: 'audio', ringback: '_DEFAULT_' });
-      
-      // Titreşim
-      Vibration.vibrate([0, 300, 200, 300], true);
-      
-      // Engine başlat ve katıl
-      (async () => {
-        await initializeEngine();
-        await joinChannel();
-      })();
+      // ARAYAN - Hemen başlat
+      startCall();
     } else {
-      // ALINAN: Zil çal
-      setStatusText('Gelen Arama...');
-      
-      // Zil sesi
+      // ALINAN - Zil çal, bekle
+      setPhase('incoming');
+      setStatusText('Gelen Arama');
       InCallManager.startRingtone('_DEFAULT_');
-      
-      // Titreşim
       Vibration.vibrate([0, 500, 300, 500], true);
     }
 
     return () => {
-      log('Ekran kapatılıyor - cleanup');
       pulseAnim.stopAnimation();
     };
-  }, [visible, callId]);
+  }, [visible, callId, mode]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // EFFECT: Karşı taraf kabul etti (caller için)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Karşı taraf kabul etti (caller için)
   useEffect(() => {
-    if (callAccepted && mode === 'caller') {
+    if (callAccepted && mode === 'caller' && phase === 'outgoing') {
       log('✅ Karşı taraf KABUL ETTİ');
+      setPhase('connecting');
       setStatusText('Kabul edildi, bağlanıyor...');
-      InCallManager.stopRingback();
+      InCallManager.stop();
       Vibration.cancel();
     }
-  }, [callAccepted, mode]);
+  }, [callAccepted, mode, phase]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // EFFECT: Arama reddedildi
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Arama reddedildi
   useEffect(() => {
-    if (callRejected) {
+    if (callRejected && phase !== 'ended') {
       log('❌ Arama REDDEDİLDİ');
       setStatusText('Arama reddedildi');
+      setPhase('ended');
       InCallManager.stop();
       Vibration.cancel();
       setTimeout(() => {
-        cleanup();
-        onClose();
+        endCall();
       }, 1500);
     }
-  }, [callRejected]);
+  }, [callRejected, phase]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // EFFECT: Arama sonlandı (karşı taraf kapattı)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Karşı taraf kapattı
   useEffect(() => {
-    if (callEnded) {
+    if (callEnded && phase !== 'ended') {
       log('📴 Karşı taraf KAPATTI');
       setStatusText('Arama sonlandı');
+      setPhase('ended');
       setTimeout(() => {
-        cleanup();
-        onClose();
+        endCall();
       }, 500);
     }
-  }, [callEnded]);
+  }, [callEnded, phase]);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // EFFECT: Karşı taraf çevrimdışı
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Karşı taraf çevrimdışı
   useEffect(() => {
-    if (receiverOffline) {
+    if (receiverOffline && phase !== 'ended') {
       log('⚠️ Karşı taraf ÇEVRİMDIŞI');
       setStatusText('Kullanıcı çevrimdışı');
+      setPhase('ended');
       InCallManager.stop();
       Vibration.cancel();
       setTimeout(() => {
-        cleanup();
-        onClose();
+        endCall();
       }, 2000);
     }
-  }, [receiverOffline]);
+  }, [receiverOffline, phase]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -561,15 +545,17 @@ export default function CallScreen({
   const formatTime = (s: number) => 
     `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  const showIncoming = mode === 'receiver' && !joined;
-  const callActive = joined && remoteJoined;
+  // Phase'e göre UI
+  const showIncomingUI = phase === 'incoming';
+  const showConnectingUI = phase === 'outgoing' || phase === 'connecting';
+  const showActiveUI = phase === 'active';
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <View style={styles.container}>
         
         {/* ARKA PLAN - Remote Video */}
-        {isVideo && remoteUid > 0 && callActive && (
+        {isVideo && remoteUid > 0 && showActiveUI && (
           <RtcSurfaceView
             style={styles.remoteVideo}
             canvas={{ 
@@ -580,7 +566,7 @@ export default function CallScreen({
         )}
 
         {/* PIP - Local Video */}
-        {isVideo && joined && !cameraOff && (
+        {isVideo && (phase === 'connecting' || showActiveUI) && !cameraOff && (
           <View style={styles.localPip}>
             <RtcSurfaceView
               style={styles.localVideo}
@@ -595,15 +581,18 @@ export default function CallScreen({
 
         {/* ÜST BAR */}
         <View style={styles.topBar}>
-          {/* Sol - Bağlantı durumu */}
           <View style={styles.statusBadge}>
-            <View style={[styles.dot, callActive ? styles.dotGreen : joined ? styles.dotYellow : styles.dotRed]} />
+            <View style={[
+              styles.dot, 
+              showActiveUI ? styles.dotGreen : 
+              showConnectingUI ? styles.dotYellow : 
+              styles.dotRed
+            ]} />
             <Text style={styles.statusBadgeText}>
-              {callActive ? 'Bağlı' : joined ? 'Bekleniyor' : 'Bağlanıyor'}
+              {showActiveUI ? 'Bağlı' : showConnectingUI ? 'Bağlanıyor' : 'Gelen'}
             </Text>
           </View>
           
-          {/* Sağ - Arama tipi */}
           <View style={[styles.typeBadge, isVideo ? styles.typeBadgeVideo : styles.typeBadgeAudio]}>
             <Ionicons name={isVideo ? "videocam" : "call"} size={14} color="#fff" />
             <Text style={styles.typeBadgeText}>{isVideo ? 'Görüntülü' : 'Sesli'}</Text>
@@ -611,7 +600,7 @@ export default function CallScreen({
         </View>
 
         {/* ORTA - Avatar ve bilgiler */}
-        {(!isVideo || !callActive) && (
+        {(!isVideo || !showActiveUI || remoteUid === 0) && (
           <View style={styles.centerContent}>
             <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
               <View style={[styles.avatar, isVideo && styles.avatarVideo]}>
@@ -624,10 +613,10 @@ export default function CallScreen({
             <Text style={styles.remoteName}>{remoteName}</Text>
             
             <Text style={styles.statusText}>
-              {callActive ? formatTime(duration) : statusText}
+              {showActiveUI ? formatTime(duration) : statusText}
             </Text>
             
-            {callActive && (
+            {showActiveUI && (
               <View style={styles.connectedBadge}>
                 <Ionicons name="checkmark-circle" size={18} color="#4CAF50" />
                 <Text style={styles.connectedText}>
@@ -638,8 +627,8 @@ export default function CallScreen({
           </View>
         )}
 
-        {/* VIDEO MODUNDA - Üstte isim */}
-        {isVideo && callActive && (
+        {/* VIDEO MODUNDA - Overlay */}
+        {isVideo && showActiveUI && remoteUid > 0 && (
           <View style={styles.videoOverlay}>
             <Text style={styles.videoName}>{remoteName}</Text>
             <Text style={styles.videoTime}>{formatTime(duration)}</Text>
@@ -648,24 +637,37 @@ export default function CallScreen({
 
         {/* ALT KONTROLLER */}
         <View style={styles.controls}>
-          {showIncoming ? (
-            // GELEN ARAMA - Kabul / Red
+          
+          {/* GELEN ARAMA - Kabul / Red */}
+          {showIncomingUI && (
             <View style={styles.incomingControls}>
-              <TouchableOpacity style={styles.rejectButton} onPress={handleReject}>
+              <TouchableOpacity style={styles.rejectButton} onPress={rejectCall}>
                 <Ionicons name="close" size={36} color="#fff" />
                 <Text style={styles.buttonLabel}>Reddet</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
                 style={[styles.acceptButton, isVideo && styles.acceptButtonVideo]} 
-                onPress={handleAccept}
+                onPress={acceptCall}
               >
                 <Ionicons name={isVideo ? "videocam" : "call"} size={36} color="#fff" />
                 <Text style={styles.buttonLabel}>Kabul</Text>
               </TouchableOpacity>
             </View>
-          ) : callActive ? (
-            // AKTİF GÖRÜŞME - Kontroller
+          )}
+          
+          {/* BAĞLANIYOR - Sadece kapat */}
+          {showConnectingUI && (
+            <View style={styles.connectingControls}>
+              <TouchableOpacity style={styles.endButton} onPress={endCall}>
+                <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+              </TouchableOpacity>
+              <Text style={styles.endLabel}>Aramayı Bitir</Text>
+            </View>
+          )}
+          
+          {/* AKTİF GÖRÜŞME - Kontroller */}
+          {showActiveUI && (
             <View style={styles.activeControls}>
               <TouchableOpacity 
                 style={[styles.controlButton, muted && styles.controlButtonActive]} 
@@ -700,23 +702,15 @@ export default function CallScreen({
                 <Ionicons name={speakerOn ? "volume-high" : "volume-low"} size={26} color="#fff" />
               </TouchableOpacity>
             </View>
-          ) : (
-            // BAĞLANIYOR - Sadece kapat
-            <View style={styles.connectingControls}>
-              <TouchableOpacity style={styles.endButton} onPress={endCall}>
-                <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-              </TouchableOpacity>
-              <Text style={styles.endLabel}>Aramayı Bitir</Text>
-            </View>
           )}
         </View>
 
-        {/* DEBUG - Bağlantı bilgisi */}
+        {/* DEBUG INFO */}
         {__DEV__ && (
           <View style={styles.debugInfo}>
+            <Text style={styles.debugText}>Phase: {phase}</Text>
             <Text style={styles.debugText}>CH: {channelName}</Text>
             <Text style={styles.debugText}>UID: {myUid} | Remote: {remoteUid}</Text>
-            <Text style={styles.debugText}>{connectionState}</Text>
           </View>
         )}
       </View>
@@ -732,8 +726,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1a1a2e',
   },
-  
-  // Remote Video
   remoteVideo: {
     position: 'absolute',
     top: 0,
@@ -741,8 +733,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  
-  // Local PIP
   localPip: {
     position: 'absolute',
     top: 100,
@@ -760,8 +750,6 @@ const styles = StyleSheet.create({
   localVideo: {
     flex: 1,
   },
-  
-  // Top Bar
   topBar: {
     position: 'absolute',
     top: 50,
@@ -809,8 +797,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  
-  // Center Content
   centerContent: {
     flex: 1,
     justifyContent: 'center',
@@ -861,8 +847,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  
-  // Video Overlay
   videoOverlay: {
     position: 'absolute',
     top: 120,
@@ -884,8 +868,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
   },
-  
-  // Controls
   controls: {
     position: 'absolute',
     bottom: 50,
@@ -893,8 +875,6 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
   },
-  
-  // Incoming Controls
   incomingControls: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -925,8 +905,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '600',
   },
-  
-  // Active Controls
+  connectingControls: {
+    alignItems: 'center',
+  },
   activeControls: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -953,18 +934,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 8,
   },
-  
-  // Connecting Controls
-  connectingControls: {
-    alignItems: 'center',
-  },
   endLabel: {
     color: '#fff',
     fontSize: 14,
     marginTop: 8,
   },
-  
-  // Debug
   debugInfo: {
     position: 'absolute',
     bottom: 140,
