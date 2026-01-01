@@ -3674,16 +3674,35 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     // Yeni TAG eventi - Yolcudan gelen TAG'ler
     onTagCreated: (data) => {
       console.log('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
-      // TAG listesini yenile
-      loadData();
+      // TAG listesini ANINDA güncelle
+      setRequests(prev => {
+        // Zaten varsa ekleme
+        if (prev.some(r => r.id === data.tag_id)) return prev;
+        // Yeni TAG'i ekle
+        return [...prev, {
+          id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name,
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          pickup_address: data.pickup_address,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          dropoff_address: data.dropoff_address,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }];
+      });
     },
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
-      loadData();
+      // TAG'i listeden ANINDA kaldır
+      setRequests(prev => prev.filter(r => r.id !== data.tag_id));
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
-      loadData();
+      // TAG'i listeden ANINDA kaldır
+      setRequests(prev => prev.filter(r => r.id !== data.tag_id));
     },
     // Teklif kabul/red
     onOfferAccepted: (data) => {
