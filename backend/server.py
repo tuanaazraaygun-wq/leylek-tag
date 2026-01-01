@@ -26,7 +26,7 @@ import socketio
 from supabase import create_client, Client
 
 # Agora Token Builder
-from agora_token_builder import RtcTokenBuilder, Role_Publisher
+from agora_token_builder import RtcTokenBuilder
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
