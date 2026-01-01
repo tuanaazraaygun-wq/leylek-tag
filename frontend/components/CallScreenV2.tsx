@@ -279,7 +279,7 @@ export default function CallScreen({
   }, [isVideo, remoteUid]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // KANALA KATIL
+  // KANALA KATIL - Token ile
   // ═══════════════════════════════════════════════════════════════════════════
   const joinChannel = useCallback(async () => {
     if (!engineRef.current) {
@@ -293,11 +293,23 @@ export default function CallScreen({
     }
 
     try {
-      log('🔗 KANALA KATILINIYOR', { channel: channelName, uid: myUid });
+      setStatusText('Token alınıyor...');
+      
+      // Backend'den token al
+      const fetchedToken = await fetchToken(channelName, myUid);
+      if (!fetchedToken) {
+        log('❌ Token alınamadı!');
+        setStatusText('Token hatası');
+        return;
+      }
+      
+      setToken(fetchedToken);
+      
+      log('🔗 KANALA KATILINIYOR', { channel: channelName, uid: myUid, tokenLength: fetchedToken.length });
       setStatusText('Kanala bağlanıyor...');
 
       engineRef.current.joinChannel(
-        agoraToken || '',
+        fetchedToken,
         channelName,
         myUid,
         {
@@ -310,8 +322,9 @@ export default function CallScreen({
       );
     } catch (error) {
       log('❌ Join hatası', error);
+      setStatusText('Bağlantı hatası');
     }
-  }, [channelName, myUid, agoraToken, isVideo]);
+  }, [channelName, myUid, isVideo]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ARAMAYA BAŞLA (Caller için)
