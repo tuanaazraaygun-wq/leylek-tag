@@ -3940,14 +3940,36 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   const submitOffer = async () => {
     if (!offerPrice || !selectedTagForOffer || offerSending) return;
-    setOfferSending(true);
     
+    const tagId = selectedTagForOffer;
+    const price = Number(offerPrice);
+    const tag = requests.find(r => r.id === tagId);
+    
+    // 🚀 HEMEN UI'ı güncelle - Bekleme yok!
+    setOfferSending(true);
+    setOfferModalVisible(false);
+    setOfferPrice('');
+    setRequests(prev => prev.filter(r => r.id !== tagId)); // Kartı hemen kaldır
+    
+    // 🔥 Socket ile HEMEN yolcuya bildir
+    if (socketSendOffer && tag) {
+      socketSendOffer({
+        tag_id: tagId,
+        driver_id: user.id,
+        driver_name: user.name || user.phone,
+        passenger_id: tag.passenger_id,
+        price: price,
+      });
+      console.log('🔥 Socket teklif GÖNDERİLDİ!');
+    }
+    
+    // 📝 REST API arka planda kaydet (bekleme yok)
     fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        tag_id: selectedTagForOffer,
-        price: Number(offerPrice),
+        tag_id: tagId,
+        price: price,
         latitude: userLocation?.latitude || 0,
         longitude: userLocation?.longitude || 0
       })
@@ -3956,17 +3978,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     .then(data => {
       setOfferSending(false);
       if (data.success || data.offer_id) {
-        setOfferModalVisible(false);
-        setOfferPrice('');
-        Alert.alert('Başarılı', 'Teklif gönderildi!');
-        loadRequests();
+        console.log('✅ Teklif Supabase\'e kaydedildi');
       } else {
-        Alert.alert('Hata', data.detail || 'Gönderilemedi');
+        console.log('⚠️ Supabase kayıt hatası:', data.detail);
+        // Hata olursa geri ekle (opsiyonel)
       }
     })
-    .catch(() => {
+    .catch((err) => {
       setOfferSending(false);
-      Alert.alert('Hata', 'Bağlantı hatası');
+      console.log('⚠️ REST API hatası (socket zaten gönderdi):', err);
     });
   };
 
