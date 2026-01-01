@@ -2739,6 +2739,24 @@ function PassengerDashboard({
       const data = await response.json();
       if (data.success) {
         setActiveTag(data.tag);
+        
+        // 🔥 Socket ile TAG'i anında tüm şoförlere yayınla
+        if (emitNewTag && data.tag) {
+          emitNewTag({
+            tag_id: data.tag.id,
+            passenger_id: user.id,
+            passenger_name: user.name || user.phone,
+            pickup_lat: pickupLat,
+            pickup_lng: pickupLng,
+            pickup_address: 'Mevcut Konumunuz',
+            dropoff_lat: destination.latitude,
+            dropoff_lng: destination.longitude,
+            dropoff_address: destination.address,
+            status: 'pending'
+          });
+          console.log('🔥 TAG Socket ile yayınlandı!');
+        }
+        
         // Toast notification göster - otomatik kaybolur
         setToastMessage('Teklif isteği gönderildi ✓');
         setShowToast(true);
