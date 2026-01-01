@@ -3852,6 +3852,21 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       
       if (data.success || data.offer_id) {
         console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
+        
+        // 🔥 Socket ile teklifi anında yolcuya gönder
+        if (socketSendOffer) {
+          const tag = requests.find(r => r.id === tagId);
+          socketSendOffer({
+            offer_id: data.offer_id,
+            tag_id: tagId,
+            driver_id: user.id,
+            driver_name: user.name || user.phone,
+            passenger_id: tag?.passenger_id || '',
+            price: price,
+          });
+          console.log('🔥 TEKLİF Socket ile yayınlandı!');
+        }
+        
         setRequests(prev => prev.filter(r => r.id !== tagId));
         return true;
       } else {
