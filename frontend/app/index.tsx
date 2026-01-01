@@ -3614,8 +3614,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     acceptCall: socketAcceptCall,
     rejectCall: socketRejectCall,
     endCall: socketEndCall,
+    // TAG & Teklif için yeni fonksiyonlar
+    emitSendOffer: socketSendOffer,
   } = useSocket({
     userId: user?.id || null,
+    userRole: 'driver',
     onIncomingCall: (data) => {
       console.log('📞 ŞOFÖR - GELEN ARAMA (Socket.IO):', data);
       if (isCallActiveRef.current || showCallScreen) return;
@@ -3654,6 +3657,30 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       if (!data.success && !data.receiver_online) {
         setReceiverOffline(true);
       }
+    },
+    // Yeni TAG eventi - Yolcudan gelen TAG'ler
+    onTagCreated: (data) => {
+      console.log('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
+      // TAG listesini yenile
+      loadData();
+    },
+    onTagCancelled: (data) => {
+      console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
+      loadData();
+    },
+    onTagMatched: (data) => {
+      console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
+      loadData();
+    },
+    // Teklif kabul/red
+    onOfferAccepted: (data) => {
+      console.log('✅ ŞOFÖR - TEKLİF KABUL EDİLDİ (Socket):', data);
+      loadData();
+      Alert.alert('🎉 Teklif Kabul Edildi!', 'Yolcu teklifinizi kabul etti.');
+    },
+    onOfferRejected: (data) => {
+      console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
+      loadData();
     },
   });
   
