@@ -2511,8 +2511,14 @@ function PassengerDashboard({
     acceptCall: socketAcceptCall,
     rejectCall: socketRejectCall,
     endCall: socketEndCall,
+    // TAG & Teklif için yeni fonksiyonlar
+    emitNewTag,
+    emitCancelTag,
+    emitAcceptOffer: socketAcceptOffer,
+    emitRejectOffer: socketRejectOffer,
   } = useSocket({
     userId: user?.id || null,
+    userRole: 'passenger',
     onIncomingCall: (data) => {
       console.log('📞 YOLCU - GELEN ARAMA (Socket.IO):', data);
       if (isCallActiveRef.current || showCallScreen) return;
@@ -2551,6 +2557,12 @@ function PassengerDashboard({
       if (!data.success && !data.receiver_online) {
         setReceiverOffline(true);
       }
+    },
+    // Yeni teklif eventi - Şoförden gelen teklifler
+    onNewOffer: (data) => {
+      console.log('💰 YOLCU - YENİ TEKLİF GELDİ (Socket):', data);
+      // Offers listesini yenile
+      loadData();
     },
   });
   
