@@ -3607,13 +3607,13 @@ async def get_agora_token(channel_name: str, user_id: str):
         current_timestamp = int(time.time())
         privilege_expired_ts = current_timestamp + expire_time_in_seconds
         
-        # Token oluştur
+        # Token oluştur (Role = 1 = Publisher)
         token = RtcTokenBuilder.buildTokenWithUid(
             AGORA_APP_ID,
             AGORA_APP_CERTIFICATE,
             channel_name,
             uid,
-            Role_Publisher,
+            1,  # Role_Publisher = 1
             privilege_expired_ts
         )
         
