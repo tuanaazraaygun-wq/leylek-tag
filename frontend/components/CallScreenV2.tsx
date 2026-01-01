@@ -6,6 +6,7 @@
  * - Agora initialization sırası düzeltildi
  * - UI state conflicts çözüldü
  * - Remote video render düzeltildi
+ * - TOKEN SUPPORT: Backend'den token alınıyor
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -34,11 +35,15 @@ import {
   IRtcEngineEventHandler,
 } from 'react-native-agora';
 import InCallManager from 'react-native-incall-manager';
+import Constants from 'expo-constants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // AGORA CONFIG
 const AGORA_APP_ID = '86eb50030f954355bc57696d45b343bd';
+
+// Backend URL
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 'https://rideshare-rtc.preview.emergentagent.com';
 
 // CALL PHASES - Arama aşamaları
 type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'ended';
