@@ -3846,7 +3846,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
-  // ==================== BASİT ARAMA SİSTEMİ - ŞOFÖR ====================
+  // ==================== DAILY.CO ARAMA SİSTEMİ - ŞOFÖR ====================
+  const [dailyCallActive, setDailyCallActive] = useState(false);
+  const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
+  const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('audio');
+  const [dailyCallerName, setDailyCallerName] = useState<string>('');
+  const [dailyCallerId, setDailyCallerId] = useState<string>('');
+  const [incomingDailyCall, setIncomingDailyCall] = useState(false);
+  const [dailyRoomName, setDailyRoomName] = useState<string>('');
+  
+  // Eski Agora state'leri (artık kullanılmıyor ama kaldırılmadı)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
     mode: 'caller' | 'receiver';
@@ -3866,9 +3875,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   
   // Arama kilidi
   const isCallActiveRef = useRef(false);
-  
-  // NOT: Agora engine artık CallScreenV2 içinde singleton olarak yönetiliyor
-  // useAgoraEngine hook'u kaldırıldı - çakışma önlendi
   
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
