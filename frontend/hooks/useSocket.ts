@@ -549,5 +549,6 @@ export default function useSocket({
     emitTripEnded,
     requestTripEnd,
     respondTripEnd,
+    forceEndTrip,  // 🆕 Anlık bitirme
   };
 }
