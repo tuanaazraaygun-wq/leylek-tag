@@ -2424,6 +2424,15 @@ function PassengerDashboard({
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
   
+  // 🆕 Daily.co Video/Audio Call State'leri
+  const [dailyCallActive, setDailyCallActive] = useState(false);
+  const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
+  const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('video');
+  const [dailyCallerName, setDailyCallerName] = useState<string>('');
+  const [dailyCallerId, setDailyCallerId] = useState<string>('');
+  const [incomingDailyCall, setIncomingDailyCall] = useState(false);
+  const [dailyRoomName, setDailyRoomName] = useState<string>('');
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
