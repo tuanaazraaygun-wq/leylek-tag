@@ -2573,6 +2573,10 @@ function PassengerDashboard({
     emitCancelTag,
     emitAcceptOffer: socketAcceptOffer,
     emitRejectOffer: socketRejectOffer,
+    // 🆕 Daily.co fonksiyonları
+    acceptDailyCall,
+    rejectDailyCall,
+    endDailyCall,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'passenger',
@@ -2596,6 +2600,35 @@ function PassengerDashboard({
         callType: data.call_type || 'audio'
       });
       setShowCallScreen(true);
+    },
+    // 🆕 Daily.co Gelen Arama
+    onIncomingDailyCall: (data) => {
+      console.log('📹 YOLCU - DAILY.CO GELEN ARAMA:', data);
+      setDailyRoomUrl(data.room_url);
+      setDailyRoomName(data.room_name);
+      setDailyCallType(data.call_type);
+      setDailyCallerId(data.caller_id);
+      setDailyCallerName('Sürücü'); // İleride isimlendirme eklenebilir
+      setIncomingDailyCall(true);
+    },
+    onDailyCallAccepted: (data) => {
+      console.log('✅ YOLCU - DAILY.CO ARAMA KABUL EDİLDİ:', data);
+      // Arama başlat
+      setDailyCallActive(true);
+      setIncomingDailyCall(false);
+    },
+    onDailyCallRejected: (data) => {
+      console.log('❌ YOLCU - DAILY.CO ARAMA REDDEDİLDİ:', data);
+      setDailyCallActive(false);
+      setIncomingDailyCall(false);
+      setDailyRoomUrl(null);
+      Alert.alert('Arama Reddedildi', 'Karşı taraf aramayı reddetti.');
+    },
+    onDailyCallEnded: (data) => {
+      console.log('📴 YOLCU - DAILY.CO ARAMA BİTTİ:', data);
+      setDailyCallActive(false);
+      setIncomingDailyCall(false);
+      setDailyRoomUrl(null);
     },
     onCallAccepted: (data) => {
       console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
