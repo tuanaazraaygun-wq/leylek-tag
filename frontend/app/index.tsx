@@ -1742,16 +1742,30 @@ function TikTokOfferCard({
         </View>
       )}
 
-      {/* ŞOFÖR: Yolcunun Hedef Adresi */}
-      {!isPassenger && offer.dropoff_location && (
-        <View style={destinationStyles.container}>
-          <View style={destinationStyles.iconRow}>
-            <Ionicons name="flag" size={20} color="#10B981" />
-            <Text style={destinationStyles.label}>Yolcunun Gideceği Adres</Text>
+      {/* ŞOFÖR: Yolcunun Bulunduğu ve Gideceği Adres - ANINDA GÖSTERİLİR */}
+      {!isPassenger && (
+        <View style={destinationStyles.wrapper}>
+          {/* Alış Adresi - Yolcunun Bulunduğu Yer */}
+          <View style={[destinationStyles.container, { backgroundColor: '#EFF6FF', marginBottom: 8 }]}>
+            <View style={destinationStyles.iconRow}>
+              <Ionicons name="location" size={20} color="#3B82F6" />
+              <Text style={[destinationStyles.label, { color: '#3B82F6' }]}>Yolcunun Bulunduğu Adres</Text>
+            </View>
+            <Text style={destinationStyles.address} numberOfLines={2}>
+              {offer.pickup_location || offer.pickup_address || 'Konum alınıyor...'}
+            </Text>
           </View>
-          <Text style={destinationStyles.address} numberOfLines={2}>
-            {offer.dropoff_location}
-          </Text>
+          
+          {/* Varış Adresi - Yolcunun Gideceği Yer */}
+          <View style={destinationStyles.container}>
+            <View style={destinationStyles.iconRow}>
+              <Ionicons name="flag" size={20} color="#10B981" />
+              <Text style={destinationStyles.label}>Yolcunun Gideceği Adres</Text>
+            </View>
+            <Text style={destinationStyles.address} numberOfLines={2}>
+              {offer.dropoff_location || offer.dropoff_address || 'Hedef alınıyor...'}
+            </Text>
+          </View>
         </View>
       )}
 
