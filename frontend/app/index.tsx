@@ -4399,103 +4399,48 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             price={activeTag?.final_price}
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
-              // 🔒 Arama kilidi kontrol
-              if (isCallActiveRef.current || showCallScreen) {
-                Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
-                return;
-              }
-              
-              isCallActiveRef.current = true;
-              const passengerName = activeTag.passenger_name || 'Yolcu';
-              const passengerId = activeTag.passenger_id || '';
-              
-              if (!passengerId) {
+              // 🆕 Daily.co ile arama başlat - ŞOFÖR
+              if (!activeTag?.passenger_id || !user?.id) {
                 Alert.alert('Hata', 'Yolcu bilgisi bulunamadı');
-                isCallActiveRef.current = false;
                 return;
               }
               
-              // State sıfırla
-              setCallAccepted(false);
-              setCallRejected(false);
-              setCallEnded(false);
-              setReceiverOffline(false);
+              setCalling(true);
               
-              // ════════════════════════════════════════════════════════════
-              // 🚀 CRITICAL FIX: Socket emit HEMEN, backend PARALEL
-              // ════════════════════════════════════════════════════════════
-              
-              // 1. Geçici call ID ve channel oluştur
-              const tempCallId = `call_${user.id}_${passengerId}_${Date.now()}`;
-              const tempChannelName = `ch_${user.id}_${passengerId}_${Date.now()}`;
-              
-              console.log('📞 ŞOFÖR - HEMEN Socket emit + UI açılıyor');
-              
-              // 2. UI ANINDA AÇ
-              setCallScreenData({
-                mode: 'caller',
-                callId: tempCallId,
-                channelName: tempChannelName,
-                agoraToken: '',
-                remoteName: passengerName,
-                remoteUserId: passengerId,
-                callType: type
-              });
-              setShowCallScreen(true);
-              
-              // 3. Socket emit HEMEN (backend beklenmez!)
-              if (socketConnected && socketRegistered) {
-                console.log('📞 Socket emit HEMEN yapılıyor - karşı taraf ≤3sn içinde görecek');
-                socketStartCall({
-                  caller_id: user.id,
-                  caller_name: user.name || 'Şoför',
-                  receiver_id: passengerId,
-                  call_id: tempCallId,
-                  channel_name: tempChannelName,
-                  agora_token: '',
-                  call_type: type
-                });
-              } else {
-                console.error('❌ Socket bağlı değil!');
-                setShowCallScreen(false);
-                isCallActiveRef.current = false;
-                Alert.alert('Hata', 'Bağlantı hatası - lütfen tekrar deneyin');
-                return;
-              }
-              
-              // 4. Backend'e PARALEL istek (token almak için)
               try {
-                const response = await fetch(`${API_URL}/voice/start-call`, {
+                const response = await fetch(`${API_URL}/daily/create-room`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                    tag_id: activeTag.id,
                     caller_id: user.id,
-                    caller_name: user.name,
+                    receiver_id: activeTag.passenger_id,
                     call_type: type,
-                    call_id: tempCallId,
-                    channel_name: tempChannelName
+                    tag_id: activeTag.id
                   })
                 });
+                
                 const data = await response.json();
                 
-                if (!data.success) {
-                  console.error('❌ Backend hatası:', data);
-                  return;
+                if (data.success && data.room_url) {
+                  // Daily.co arama ekranını aç
+                  setDailyRoomUrl(data.room_url);
+                  setDailyRoomName(data.room_name);
+                  setDailyCallType(type);
+                  setDailyCallerName(activeTag.passenger_name || 'Yolcu');
+                  setDailyCallActive(true);
+                  setCalling(false);
+                  
+                  if (!data.receiver_online) {
+                    Alert.alert('Bilgi', 'Yolcu şu an çevrimdışı görünüyor. Arama başlatıldı.');
+                  }
+                } else {
+                  setCalling(false);
+                  Alert.alert('Hata', 'Arama başlatılamadı');
                 }
-                
-                console.log('📞 Backend token geldi:', data.agora_token ? 'VAR' : 'YOK');
-                
-                // 5. Token gelince CallScreen'i güncelle
-                setCallScreenData(prev => prev ? {
-                  ...prev,
-                  agoraToken: data.agora_token || '',
-                  callId: data.call_id || tempCallId,
-                  channelName: data.channel_name || tempChannelName
-                } : null);
-                
               } catch (error) {
-                console.error('Backend token hatası:', error);
+                console.error('Daily.co arama hatası:', error);
+                setCalling(false);
+                Alert.alert('Hata', 'Arama başlatılırken bir sorun oluştu');
               }
             }}
             onForceEnd={async () => {
