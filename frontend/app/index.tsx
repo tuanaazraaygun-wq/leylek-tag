@@ -2909,21 +2909,95 @@ function PassengerDashboard({
   };
 
   // SESLİ ARAMA - Mock fonksiyon
-  const handleVoiceCall = () => {
+  // 🆕 Daily.co ile Sesli/Görüntülü Arama Başlat
+  const startDailyCall = async (callType: 'audio' | 'video') => {
+    if (!activeTag?.driver_id || !user?.id) {
+      Alert.alert('Hata', 'Sürücü bilgisi bulunamadı');
+      return;
+    }
+    
     setCalling(true);
-    Alert.alert(
-      '📞 Sesli Arama',
-      'Sürücünüzle bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
-      [
-        {
-          text: 'Aramayı Sonlandır',
-          onPress: () => {
-            setCalling(false);
-            
-          }
+    
+    try {
+      const response = await fetch(`${API_URL}/daily/create-room`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caller_id: user.id,
+          receiver_id: activeTag.driver_id,
+          call_type: callType,
+          tag_id: activeTag.id
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.room_url) {
+        // Daily.co arama ekranını aç
+        setDailyRoomUrl(data.room_url);
+        setDailyRoomName(data.room_name);
+        setDailyCallType(callType);
+        setDailyCallerName(activeTag.driver_name || 'Sürücü');
+        setDailyCallActive(true);
+        setCalling(false);
+        
+        if (!data.receiver_online) {
+          Alert.alert('Bilgi', 'Sürücü şu an çevrimdışı görünüyor. Arama başlatıldı.');
         }
-      ]
-    );
+      } else {
+        setCalling(false);
+        Alert.alert('Hata', 'Arama başlatılamadı');
+      }
+    } catch (error) {
+      console.error('Daily.co arama hatası:', error);
+      setCalling(false);
+      Alert.alert('Hata', 'Arama başlatılırken bir sorun oluştu');
+    }
+  };
+
+  const handleVoiceCall = () => {
+    startDailyCall('audio');
+  };
+
+  const handleVideoCall = () => {
+    startDailyCall('video');
+  };
+
+  // Daily.co arama bittiğinde
+  const handleDailyCallEnd = () => {
+    if (dailyRoomName && activeTag?.driver_id) {
+      endDailyCall({
+        other_user_id: activeTag.driver_id,
+        room_name: dailyRoomName
+      });
+    }
+    setDailyCallActive(false);
+    setIncomingDailyCall(false);
+    setDailyRoomUrl(null);
+    setDailyRoomName('');
+  };
+
+  // Daily.co gelen arama kabul
+  const handleAcceptDailyCall = () => {
+    if (dailyCallerId && dailyRoomUrl) {
+      acceptDailyCall({
+        caller_id: dailyCallerId,
+        room_url: dailyRoomUrl
+      });
+      setIncomingDailyCall(false);
+      setDailyCallActive(true);
+    }
+  };
+
+  // Daily.co gelen arama reddet
+  const handleRejectDailyCall = () => {
+    if (dailyCallerId) {
+      rejectDailyCall({
+        caller_id: dailyCallerId
+      });
+    }
+    setIncomingDailyCall(false);
+    setDailyRoomUrl(null);
   };
 
   // Teklifi 10 dakikalığına gizle (çarpı butonu)
