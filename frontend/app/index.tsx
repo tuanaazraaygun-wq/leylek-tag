@@ -3886,40 +3886,56 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitSendOffer: socketSendOffer,
+    // 🆕 Daily.co fonksiyonları
+    acceptDailyCall,
+    rejectDailyCall,
+    endDailyCall,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'driver',
+    // 🆕 Daily.co Gelen Arama - ŞOFÖR
+    onIncomingDailyCall: (data) => {
+      console.log('📹 ŞOFÖR - DAILY.CO GELEN ARAMA:', data);
+      setDailyRoomUrl(data.room_url);
+      setDailyRoomName(data.room_name);
+      setDailyCallType(data.call_type);
+      setDailyCallerId(data.caller_id);
+      setDailyCallerName('Yolcu');
+      setIncomingDailyCall(true);
+    },
+    onDailyCallAccepted: (data) => {
+      console.log('✅ ŞOFÖR - DAILY.CO ARAMA KABUL EDİLDİ:', data);
+      setDailyCallActive(true);
+      setIncomingDailyCall(false);
+    },
+    onDailyCallRejected: (data) => {
+      console.log('❌ ŞOFÖR - DAILY.CO ARAMA REDDEDİLDİ:', data);
+      setDailyCallActive(false);
+      setIncomingDailyCall(false);
+      setDailyRoomUrl(null);
+      Alert.alert('Bilgi', 'Arama reddedildi');
+    },
+    onDailyCallEnded: (data) => {
+      console.log('📴 ŞOFÖR - DAILY.CO ARAMA BİTTİ:', data);
+      setDailyCallActive(false);
+      setIncomingDailyCall(false);
+      setDailyRoomUrl(null);
+    },
+    // Eski Agora eventleri - artık kullanılmıyor
     onIncomingCall: (data) => {
-      console.log('📞 ŞOFÖR - GELEN ARAMA (Socket.IO):', data);
-      if (isCallActiveRef.current || showCallScreen) return;
-      
-      isCallActiveRef.current = true;
-      setCallAccepted(false);
-      setCallRejected(false);
-      setCallEnded(false);
-      setReceiverOffline(false);
-      
-      setCallScreenData({
-        mode: 'receiver',
-        callId: data.call_id,
-        channelName: data.channel_name,
-        agoraToken: data.agora_token,
-        remoteName: data.caller_name || 'Yolcu',
-        remoteUserId: data.caller_id,
-        callType: data.call_type || 'audio'
-      });
-      setShowCallScreen(true);
+      console.log('📞 ŞOFÖR - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
+      // Artık Daily.co kullanılıyor
     },
     onCallAccepted: (data) => {
-      console.log('✅ ŞOFÖR - ARAMA KABUL EDİLDİ:', data);
+      console.log('✅ ŞOFÖR - ESKİ ARAMA KABUL:', data);
       setCallAccepted(true);
     },
     onCallRejected: (data) => {
-      console.log('❌ ŞOFÖR - ARAMA REDDEDİLDİ:', data);
+      console.log('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
       setCallRejected(true);
     },
     onCallEnded: (data) => {
-      console.log('📴 ŞOFÖR - ARAMA SONLANDIRILDI:', data);
+      console.log('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
       setCallEnded(true);
     },
     onCallRinging: (data) => {
