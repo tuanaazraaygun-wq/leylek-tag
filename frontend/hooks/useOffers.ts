@@ -58,6 +58,7 @@ export interface UseOffersReturn {
   acceptOffer: (offerId: string) => Promise<boolean>;
   rejectOffer: (offerId: string) => Promise<boolean>;
   refetch: () => void;
+  addOfferFromSocket: (offer: Partial<Offer>) => void; // 🆕 Socket'ten teklif ekle
 }
 
 // ==================== HOOK ====================
