@@ -3681,6 +3681,175 @@ async def account_delete_request(request: dict):
     except Exception as e:
         return {"success": False, "detail": str(e)}
 
+# ==================== DAILY.CO VIDEO/AUDIO CALL API ====================
+
+@api_router.post("/daily/create-room")
+async def create_daily_room(request: dict):
+    """
+    Daily.co'da yeni bir arama odası oluştur
+    Socket ile karşı tarafa bildirim gönder
+    """
+    try:
+        caller_id = request.get("caller_id")
+        receiver_id = request.get("receiver_id")
+        call_type = request.get("call_type", "video")  # "video" veya "audio"
+        tag_id = request.get("tag_id", "")
+        
+        # Benzersiz oda adı oluştur
+        room_name = f"leylektag_{tag_id}_{int(time.time())}"
+        
+        # Daily.co API'ye istek at
+        headers = {
+            "Authorization": f"Bearer {DAILY_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "name": room_name,
+            "privacy": "public",
+            "properties": {
+                "max_participants": 2,
+                "enable_chat": False,
+                "enable_screenshare": False,
+                "exp": int(time.time()) + 3600,  # 1 saat geçerli
+                "enable_knocking": False,
+                "start_video_off": call_type == "audio",
+                "start_audio_off": False
+            }
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{DAILY_API_URL}/rooms",
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"Daily.co room creation failed: {response.text}")
+                raise HTTPException(status_code=500, detail="Arama odası oluşturulamadı")
+            
+            room_data = response.json()
+            room_url = room_data.get("url")
+            
+            logger.info(f"📹 Daily.co oda oluşturuldu: {room_url}")
+            
+            # Socket ile karşı tarafa bildirim gönder
+            receiver_sid = connected_users.get(receiver_id)
+            if receiver_sid:
+                await sio.emit('incoming_daily_call', {
+                    'room_url': room_url,
+                    'room_name': room_name,
+                    'caller_id': caller_id,
+                    'call_type': call_type,
+                    'tag_id': tag_id
+                }, room=receiver_sid)
+                logger.info(f"📲 Daily.co arama bildirimi gönderildi: {receiver_id}")
+            
+            return {
+                "success": True,
+                "room_url": room_url,
+                "room_name": room_name,
+                "call_type": call_type,
+                "receiver_online": receiver_sid is not None
+            }
+            
+    except Exception as e:
+        logger.error(f"Daily.co room creation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.delete("/daily/delete-room/{room_name}")
+async def delete_daily_room(room_name: str):
+    """
+    Daily.co odasını sil (arama bitince)
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {DAILY_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{DAILY_API_URL}/rooms/{room_name}",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"🗑️ Daily.co oda silindi: {room_name}")
+                return {"success": True, "message": "Oda silindi"}
+            else:
+                logger.warning(f"Daily.co room deletion failed: {response.text}")
+                return {"success": False, "message": "Oda silinemedi"}
+                
+    except Exception as e:
+        logger.error(f"Daily.co room deletion error: {e}")
+        return {"success": False, "detail": str(e)}
+
+# Socket event: Daily.co arama kabul
+@sio.event
+async def accept_daily_call(sid, data):
+    """Daily.co araması kabul edildi"""
+    caller_id = data.get('caller_id')
+    room_url = data.get('room_url')
+    
+    logger.info(f"✅ Daily.co arama kabul edildi: {room_url}")
+    
+    caller_sid = connected_users.get(caller_id)
+    if caller_sid:
+        await sio.emit('daily_call_accepted', {
+            'room_url': room_url,
+            'accepted': True
+        }, room=caller_sid)
+
+# Socket event: Daily.co arama reddet
+@sio.event
+async def reject_daily_call(sid, data):
+    """Daily.co araması reddedildi"""
+    caller_id = data.get('caller_id')
+    
+    logger.info(f"❌ Daily.co arama reddedildi")
+    
+    caller_sid = connected_users.get(caller_id)
+    if caller_sid:
+        await sio.emit('daily_call_rejected', {
+            'rejected': True
+        }, room=caller_sid)
+
+# Socket event: Daily.co arama bitti
+@sio.event
+async def end_daily_call(sid, data):
+    """Daily.co araması sonlandırıldı"""
+    other_user_id = data.get('other_user_id')
+    room_name = data.get('room_name')
+    
+    logger.info(f"📴 Daily.co arama sonlandırıldı: {room_name}")
+    
+    # Karşı tarafa bildir
+    other_sid = connected_users.get(other_user_id)
+    if other_sid:
+        await sio.emit('daily_call_ended', {
+            'ended': True,
+            'room_name': room_name
+        }, room=other_sid)
+    
+    # Odayı sil (arka planda)
+    try:
+        headers = {
+            "Authorization": f"Bearer {DAILY_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"{DAILY_API_URL}/rooms/{room_name}",
+                headers=headers,
+                timeout=5
+            )
+    except:
+        pass  # Silme başarısız olsa da önemli değil
+
 # ==================== SOCKET.IO ENABLED APP ====================
 # Supervisor server:app olarak çalıştırıyor, bu yüzden app'i socket_app ile değiştiriyoruz
 # Bu sayede Socket.IO otomatik olarak çalışacak
