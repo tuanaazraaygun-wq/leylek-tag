@@ -3850,6 +3850,9 @@ async def end_daily_call(sid, data):
         pass  # Silme başarısız olsa da önemli değil
 
 # ==================== SOCKET.IO ENABLED APP ====================
+# socket_app burada oluşturuluyor (route'lar eklendikten sonra)
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/api/socket.io')
+
 # Supervisor server:app olarak çalıştırıyor, bu yüzden app'i socket_app ile değiştiriyoruz
 # Bu sayede Socket.IO otomatik olarak çalışacak
 app = socket_app
