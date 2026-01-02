@@ -311,11 +311,33 @@ export default function useSocket({
       onTripEnded?.(data);
     });
 
+    // 🆕 DAILY.CO VIDEO/AUDIO CALL EVENTLERİ
+    socket.on('incoming_daily_call', (data) => {
+      console.log('📹 DAILY.CO GELEN ARAMA:', data);
+      onIncomingDailyCall?.(data);
+    });
+
+    socket.on('daily_call_accepted', (data) => {
+      console.log('✅ DAILY.CO ARAMA KABUL EDİLDİ:', data);
+      onDailyCallAccepted?.(data);
+    });
+
+    socket.on('daily_call_rejected', (data) => {
+      console.log('❌ DAILY.CO ARAMA REDDEDİLDİ:', data);
+      onDailyCallRejected?.(data);
+    });
+
+    socket.on('daily_call_ended', (data) => {
+      console.log('📴 DAILY.CO ARAMA BİTTİ:', data);
+      onDailyCallEnded?.(data);
+    });
+
     socketRef.current = socket;
   }, [userId, userRole, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
       onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer, onOfferAccepted, 
       onOfferRejected, onOfferSentAck, onLocationUpdated, onTripStarted, onTripEnded,
-      onTripEndRequested, onTripEndResponse, onTripForceEnded]);
+      onTripEndRequested, onTripEndResponse, onTripForceEnded,
+      onIncomingDailyCall, onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
