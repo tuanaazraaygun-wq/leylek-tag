@@ -2869,17 +2869,32 @@ function PassengerDashboard({
     const selectedOffer = offers.find(o => o.id === offerId);
     if (!selectedOffer) return;
 
+    // 🆕 "Eşleşme sağlanıyor..." göster
+    setMatchingInProgress(true);
+
     try {
       // useOffers hook'undan gelen acceptOffer kullan
       const success = await acceptOfferRealtime(offerId);
       if (success) {
+        // 🔊 Eşleşme sesi çal
+        await playMatchSound();
+        
         // Sadece sürücü adını kaydet, arama başlatma
         setSelectedDriverName(selectedOffer.driver_name);
-        loadActiveTag();
+        
+        // 2 saniye sonra "Eşleşme sağlanıyor..." kapat ve harita aç
+        setTimeout(async () => {
+          setMatchingInProgress(false);
+          // 🔊 Harita açılırken başlama sesi
+          await playStartSound();
+          loadActiveTag();
+        }, 2000);
       } else {
+        setMatchingInProgress(false);
         Alert.alert('Hata', 'Teklif kabul edilemedi');
       }
     } catch (error) {
+      setMatchingInProgress(false);
       Alert.alert('Hata', 'Teklif kabul edilemedi');
     }
   };
