@@ -91,6 +91,15 @@ interface UseSocketProps {
   onTripEnded?: (data: { tag_id: string }) => void;
   onTripEndRequested?: (data: { tag_id: string; requester_id: string }) => void;
   onTripEndResponse?: (data: { tag_id: string; accepted: boolean }) => void;
+  // 🆕 Anlık bitirme eventi
+  onTripForceEnded?: (data: { 
+    tag_id: string; 
+    ended_by: string; 
+    ender_type: string;
+    points_deducted: number;
+    new_points?: number;
+    new_rating?: number;
+  }) => void;
 }
 
 export default function useSocket({
@@ -114,6 +123,7 @@ export default function useSocket({
   onTripEnded,
   onTripEndRequested,
   onTripEndResponse,
+  onTripForceEnded,
 }: UseSocketProps) {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
