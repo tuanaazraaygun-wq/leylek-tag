@@ -100,6 +100,17 @@ interface UseSocketProps {
     new_points?: number;
     new_rating?: number;
   }) => void;
+  // 🆕 Daily.co Video/Audio Call eventleri
+  onIncomingDailyCall?: (data: {
+    room_url: string;
+    room_name: string;
+    caller_id: string;
+    call_type: 'video' | 'audio';
+    tag_id: string;
+  }) => void;
+  onDailyCallAccepted?: (data: { room_url: string; accepted: boolean }) => void;
+  onDailyCallRejected?: (data: { rejected: boolean }) => void;
+  onDailyCallEnded?: (data: { ended: boolean; room_name: string }) => void;
 }
 
 export default function useSocket({
@@ -124,6 +135,10 @@ export default function useSocket({
   onTripEndRequested,
   onTripEndResponse,
   onTripForceEnded,
+  onIncomingDailyCall,
+  onDailyCallAccepted,
+  onDailyCallRejected,
+  onDailyCallEnded,
 }: UseSocketProps) {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
