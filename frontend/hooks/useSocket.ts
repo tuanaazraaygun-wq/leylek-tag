@@ -475,6 +475,20 @@ export default function useSocket({
     }
   }, []);
 
+  // 🚀 FORCE END TRIP - Anlık bitirme (-3 puan)
+  const forceEndTrip = useCallback((data: {
+    tag_id: string;
+    ender_id: string;
+    ender_type: 'passenger' | 'driver';
+    passenger_id: string;
+    driver_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('⚡ FORCE END TRIP gönderiliyor:', data);
+      socketRef.current.emit('force_end_trip', data);
+    }
+  }, []);
+
   // ════════════════════════════════════════════════════════════════════
   // EFFECTS
   // ════════════════════════════════════════════════════════════════════
