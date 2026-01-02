@@ -2501,7 +2501,8 @@ function PassengerDashboard({
     isLoading: offersLoading,
     acceptOffer: acceptOfferRealtime,
     rejectOffer: rejectOfferRealtime,
-    refetch: refetchOffers
+    refetch: refetchOffers,
+    addOfferFromSocket  // 🆕 Socket'ten teklif ekle
   } = useOffers({
     userId: user?.id || '',
     tagId: activeTag?.id,
