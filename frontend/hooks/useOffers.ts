@@ -393,7 +393,29 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     sendOffer,
     acceptOffer,
     rejectOffer,
-    refetch
+    refetch,
+    // 🆕 Socket'ten gelen teklifi direkt ekle
+    addOfferFromSocket: (offer: Partial<Offer>) => {
+      setOffers(prev => {
+        // Zaten varsa ekleme
+        if (prev.some(o => o.id === offer.id || (o.driver_id === offer.driver_id && o.price === offer.price))) {
+          return prev;
+        }
+        const newOffer: Offer = {
+          id: offer.id || `socket_${Date.now()}`,
+          tag_id: offer.tag_id || tagId || '',
+          driver_id: offer.driver_id || '',
+          driver_name: offer.driver_name || 'Sürücü',
+          driver_rating: offer.driver_rating || 5,
+          price: offer.price || 0,
+          status: offer.status || 'pending',
+          created_at: offer.created_at || new Date().toISOString(),
+          _optimistic: false
+        };
+        console.log('🚀 Socket teklifi ANINDA eklendi:', newOffer.price, 'TL');
+        return [newOffer, ...prev];
+      });
+    }
   };
 }
 
