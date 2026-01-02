@@ -3000,6 +3000,17 @@ function PassengerDashboard({
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* 🆕 Eşleşme Sağlanıyor Modal */}
+      {matchingInProgress && (
+        <View style={styles.matchingOverlay}>
+          <View style={styles.matchingBox}>
+            <ActivityIndicator size="large" color="#3FA9F5" />
+            <Text style={styles.matchingTitle}>🎉 Eşleşme Sağlanıyor...</Text>
+            <Text style={styles.matchingSubtitle}>Lütfen bekleyin</Text>
+          </View>
+        </View>
+      )}
+      
       {/* Toast Notification - Otomatik Kaybolan */}
       {showToast && (
         <Animated.View style={styles.toastContainer}>
