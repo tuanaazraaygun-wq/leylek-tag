@@ -3962,13 +3962,60 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       }
     },
     // Yeni TAG eventi - Yolcudan gelen TAG'ler
-    onTagCreated: (data) => {
+    onTagCreated: async (data) => {
       console.log('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
-      // TAG listesini ANINDA güncelle
+      
+      // Mesafe hesaplama fonksiyonu
+      const calculateRouteForTag = async (tagData: any) => {
+        try {
+          // Şoför konumu al
+          let driverLat = userLocation?.latitude;
+          let driverLng = userLocation?.longitude;
+          
+          if (!driverLat || !driverLng) {
+            const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+            driverLat = location.coords.latitude;
+            driverLng = location.coords.longitude;
+          }
+          
+          // OSRM ile şoförden yolcuya mesafe
+          let distanceToPassenger = null;
+          let timeToPassenger = null;
+          if (driverLat && driverLng && tagData.pickup_lat && tagData.pickup_lng) {
+            const response1 = await fetch(
+              `https://router.project-osrm.org/route/v1/driving/${driverLng},${driverLat};${tagData.pickup_lng},${tagData.pickup_lat}?overview=false`
+            );
+            const route1 = await response1.json();
+            if (route1.code === 'Ok' && route1.routes?.[0]) {
+              distanceToPassenger = (route1.routes[0].distance / 1000).toFixed(1);
+              timeToPassenger = Math.round(route1.routes[0].duration / 60);
+            }
+          }
+          
+          // OSRM ile yolculuk mesafesi (pickup -> dropoff)
+          let tripDistance = null;
+          let tripDuration = null;
+          if (tagData.pickup_lat && tagData.pickup_lng && tagData.dropoff_lat && tagData.dropoff_lng) {
+            const response2 = await fetch(
+              `https://router.project-osrm.org/route/v1/driving/${tagData.pickup_lng},${tagData.pickup_lat};${tagData.dropoff_lng},${tagData.dropoff_lat}?overview=false`
+            );
+            const route2 = await response2.json();
+            if (route2.code === 'Ok' && route2.routes?.[0]) {
+              tripDistance = (route2.routes[0].distance / 1000).toFixed(1);
+              tripDuration = Math.round(route2.routes[0].duration / 60);
+            }
+          }
+          
+          return { distanceToPassenger, timeToPassenger, tripDistance, tripDuration };
+        } catch (error) {
+          console.log('Route calculation error:', error);
+          return { distanceToPassenger: null, timeToPassenger: null, tripDistance: null, tripDuration: null };
+        }
+      };
+      
+      // TAG'i ANINDA ekle (adresler ile)
       setRequests(prev => {
-        // Zaten varsa ekleme
         if (prev.some(r => r.id === data.tag_id)) return prev;
-        // Yeni TAG'i ekle
         return [...prev, {
           id: data.tag_id,
           passenger_id: data.passenger_id,
@@ -3976,13 +4023,37 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           pickup_lat: data.pickup_lat,
           pickup_lng: data.pickup_lng,
           pickup_address: data.pickup_address,
+          pickup_location: data.pickup_address,
           dropoff_lat: data.dropoff_lat,
           dropoff_lng: data.dropoff_lng,
           dropoff_address: data.dropoff_address,
+          dropoff_location: data.dropoff_address,
           status: 'pending',
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          // Mesafeler hesaplanıyor işareti
+          distance_to_passenger_km: null,
+          time_to_passenger_min: null,
+          trip_distance_km: null,
+          trip_duration_min: null,
         }];
       });
+      
+      // Mesafeleri arka planda hesapla ve güncelle
+      const routes = await calculateRouteForTag(data);
+      console.log('📍 Rota hesaplandı:', routes);
+      
+      setRequests(prev => prev.map(r => {
+        if (r.id === data.tag_id) {
+          return {
+            ...r,
+            distance_to_passenger_km: routes.distanceToPassenger ? parseFloat(routes.distanceToPassenger) : null,
+            time_to_passenger_min: routes.timeToPassenger,
+            trip_distance_km: routes.tripDistance ? parseFloat(routes.tripDistance) : null,
+            trip_duration_min: routes.tripDuration,
+          };
+        }
+        return r;
+      }));
     },
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
