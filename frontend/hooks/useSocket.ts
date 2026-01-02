@@ -641,5 +641,9 @@ export default function useSocket({
     requestTripEnd,
     respondTripEnd,
     forceEndTrip,  // 🆕 Anlık bitirme
+    // 🆕 Daily.co Video/Audio Call
+    acceptDailyCall,
+    rejectDailyCall,
+    endDailyCall,
   };
 }
