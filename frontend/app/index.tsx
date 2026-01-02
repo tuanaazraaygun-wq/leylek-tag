@@ -2414,6 +2414,7 @@ function PassengerDashboard({
   const [currentOfferIndex, setCurrentOfferIndex] = useState(0);
   const [showArrowHint, setShowArrowHint] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  const [selectedDriverName, setSelectedDriverName] = useState<string | null>(null);
   
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
