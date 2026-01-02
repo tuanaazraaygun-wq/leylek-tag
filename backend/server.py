@@ -3853,10 +3853,11 @@ async def end_daily_call(sid, data):
 # socket_app burada oluşturuluyor (route'lar eklendikten sonra)
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/api/socket.io')
 
+# Supervisor server:socket_app olarak çalıştırmalı
+# Eğer server:app olarak çalışıyorsa, app'i socket_app ile değiştir
+# Bu sayede hem FastAPI route'ları hem Socket.IO çalışır
+
 if __name__ == "__main__":
     import uvicorn
     # Socket.IO + FastAPI birlikte çalıştır
     uvicorn.run(socket_app, host="0.0.0.0", port=8001)
-else:
-    # Supervisor veya gunicorn için - app yerine socket_app kullan
-    app = socket_app
