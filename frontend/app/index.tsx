@@ -2607,21 +2607,12 @@ function PassengerDashboard({
     // Yeni teklif eventi - Şoförden gelen teklifler
     onNewOffer: (data) => {
       console.log('💰 YOLCU - YENİ TEKLİF GELDİ (Socket):', data);
-      // Offers listesini ANINDA güncelle - polling bekleme
-      setOffers(prev => {
-        // Zaten varsa ekleme
-        if (prev.some(o => o.id === data.offer_id)) return prev;
-        // Yeni teklifi ekle
-        return [...prev, {
-          id: data.offer_id,
-          tag_id: data.tag_id,
-          driver_id: data.driver_id,
-          driver_name: data.driver_name,
-          price: data.price,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        }];
-      });
+      // Ses çal ve toast göster
+      playOfferSound();
+      setToastMessage(`${data.driver_name} teklifinize ${data.price}₺ önerdi!`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+      // Not: useOffers hook'u Supabase Realtime ile otomatik günceller
     },
   });
   
