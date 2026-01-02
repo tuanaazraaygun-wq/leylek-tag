@@ -163,7 +163,98 @@ async def end_call(sid, data):
                     'ended_by': ended_by
                 }, room=user_sid)
 
+# ==================== PUAN SİSTEMİ ====================
+# 100 puan = 5 yıldız
+# Her kullanıcı 100 puanla başlar
+# Tek taraflı bitirme = -3 puan
+
+def points_to_rating(points: int) -> float:
+    """Puanı yıldıza çevir (100 puan = 5 yıldız)"""
+    if points >= 100:
+        return 5.0
+    elif points <= 0:
+        return 1.0
+    else:
+        # 0-100 arası = 1-5 yıldız
+        return 1.0 + (points / 100) * 4.0
+
+async def deduct_points(user_id: str, points: int, reason: str):
+    """Kullanıcıdan puan düş"""
+    try:
+        # Mevcut puanı al
+        result = supabase.table("users").select("points, rating").eq("id", user_id).execute()
+        if result.data:
+            current_points = result.data[0].get("points", 100)
+            new_points = max(0, current_points - points)
+            new_rating = points_to_rating(new_points)
+            
+            # Güncelle
+            supabase.table("users").update({
+                "points": new_points,
+                "rating": new_rating,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", user_id).execute()
+            
+            logger.info(f"📉 Puan düşürüldü: {user_id} -{points} puan ({reason}). Yeni: {new_points} puan, {new_rating:.1f} yıldız")
+            return new_points, new_rating
+    except Exception as e:
+        logger.error(f"Puan düşürme hatası: {e}")
+    return None, None
+
 # ==================== TRIP END SOCKET EVENTS ====================
+
+@sio.event
+async def force_end_trip(sid, data):
+    """Yolculuğu ANINDA bitir - İki tarafa da bildir, bitiren -3 puan alır"""
+    tag_id = data.get('tag_id')
+    ender_id = data.get('ender_id')
+    ender_type = data.get('ender_type')  # 'passenger' veya 'driver'
+    passenger_id = data.get('passenger_id')
+    driver_id = data.get('driver_id')
+    
+    logger.info(f"🔚 FORCE END TRIP: {tag_id} by {ender_id} ({ender_type})")
+    
+    try:
+        # Trip'i tamamla
+        supabase.table("tags").update({
+            "status": "completed",
+            "completed_at": datetime.utcnow().isoformat(),
+            "ended_by": ender_id,
+            "end_type": "force"
+        }).eq("id", tag_id).execute()
+        
+        # Bitiren kişiden -3 puan düş
+        new_points, new_rating = await deduct_points(ender_id, 3, "Tek taraflı yolculuk bitirme")
+        
+        # Her iki tarafa da ANINDA bildir
+        for user_id in [passenger_id, driver_id]:
+            if user_id:
+                user_sid = connected_users.get(user_id)
+                if user_sid:
+                    await sio.emit('trip_force_ended', {
+                        'tag_id': tag_id,
+                        'ended_by': ender_id,
+                        'ender_type': ender_type,
+                        'completed_at': datetime.utcnow().isoformat(),
+                        'points_deducted': 3 if user_id == ender_id else 0,
+                        'new_points': new_points if user_id == ender_id else None,
+                        'new_rating': new_rating if user_id == ender_id else None
+                    }, room=user_sid)
+        
+        # İsteği gönderene onay
+        await sio.emit('trip_end_confirmed', {
+            'success': True,
+            'tag_id': tag_id,
+            'points_deducted': 3,
+            'new_points': new_points,
+            'new_rating': new_rating
+        }, room=sid)
+        
+        logger.info(f"✅ Trip force ended: {tag_id}, {ender_type} lost 3 points")
+        
+    except Exception as e:
+        logger.error(f"Force end trip error: {e}")
+        await sio.emit('trip_end_confirmed', {'success': False, 'error': str(e)}, room=sid)
 
 @sio.event
 async def request_trip_end_socket(sid, data):
@@ -218,7 +309,8 @@ async def respond_trip_end_socket(sid, data):
             supabase.table("tags").update({
                 "status": "completed",
                 "completed_at": datetime.utcnow().isoformat(),
-                "end_request": None
+                "end_request": None,
+                "end_type": "mutual"
             }).eq("id", tag_id).execute()
             
             # Her iki tarafa da bildir
@@ -227,10 +319,11 @@ async def respond_trip_end_socket(sid, data):
                 if user_sid:
                     await sio.emit('trip_completed', {
                         'tag_id': tag_id,
-                        'completed_at': datetime.utcnow().isoformat()
+                        'completed_at': datetime.utcnow().isoformat(),
+                        'mutual': True
                     }, room=user_sid)
             
-            logger.info(f"✅ Trip completed via socket: {tag_id}")
+            logger.info(f"✅ Trip completed via socket (mutual): {tag_id}")
         else:
             # İsteği reddet
             result = supabase.table("tags").select("end_request").eq("id", tag_id).execute()
