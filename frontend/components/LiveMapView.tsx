@@ -210,15 +210,8 @@ export default function LiveMapView({
         end = userLocation;
       }
       
-      // Önce düz çizgi mesafesini hesapla
-      const straightDistance = calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
-      
-      // Hemen düz çizgi göster (anlık geri bildirim)
-      if (meetingRoute.length === 0) {
-        setMeetingRoute([start, end]);
-        setMeetingDistance(straightDistance * 1.3);
-        setMeetingDuration(Math.round((straightDistance * 1.3 / 40) * 60));
-      }
+      // 🚫 Kuş uçuşu mesafe KALDIRILDI - kullanıcı isteği
+      // Sadece gerçek OSRM rotasını göster
       
       // Gerçek rotayı al
       const result = await fetchRoute(start, end);
