@@ -4662,6 +4662,40 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
+  // 🆕 Eşleşme Sağlanıyor Stili
+  matchingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  matchingBox: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  matchingTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1B1B1E',
+    marginTop: 20,
+  },
+  matchingSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF'
