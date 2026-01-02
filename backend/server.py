@@ -3602,7 +3602,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
+# NOT: app.include_router en sonda olmalı - tüm route'lar tanımlandıktan sonra
 
 # ==================== WEB SAYFALARI ====================
 from fastapi.responses import HTMLResponse, FileResponse
