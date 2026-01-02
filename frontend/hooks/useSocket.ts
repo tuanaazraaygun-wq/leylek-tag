@@ -285,11 +285,22 @@ export default function useSocket({
       onTripEndResponse?.(data);
     });
 
+    // 🆕 ANLIK BİTİRME EVENTİ
+    socket.on('trip_force_ended', (data) => {
+      console.log('⚡ YOLCULUK ANINDA BİTİRİLDİ:', data);
+      onTripForceEnded?.(data);
+    });
+
+    socket.on('trip_completed', (data) => {
+      console.log('✅ YOLCULUK TAMAMLANDI:', data);
+      onTripEnded?.(data);
+    });
+
     socketRef.current = socket;
   }, [userId, userRole, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
       onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer, onOfferAccepted, 
       onOfferRejected, onOfferSentAck, onLocationUpdated, onTripStarted, onTripEnded,
-      onTripEndRequested, onTripEndResponse]);
+      onTripEndRequested, onTripEndResponse, onTripForceEnded]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
