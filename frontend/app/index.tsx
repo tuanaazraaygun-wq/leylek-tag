@@ -3151,6 +3151,33 @@ function PassengerDashboard({
     );
   }
 
+  // 🆕 Daily.co Aktif Arama Ekranı
+  if (dailyCallActive && dailyRoomUrl) {
+    return (
+      <DailyCallScreen
+        roomUrl={dailyRoomUrl}
+        callType={dailyCallType}
+        callerName={dailyCallerName}
+        onCallEnd={handleDailyCallEnd}
+      />
+    );
+  }
+
+  // 🆕 Daily.co Gelen Arama Ekranı
+  if (incomingDailyCall && dailyRoomUrl) {
+    return (
+      <DailyCallScreen
+        roomUrl={dailyRoomUrl}
+        callType={dailyCallType}
+        callerName={dailyCallerName}
+        onCallEnd={handleDailyCallEnd}
+        isIncoming={true}
+        onAccept={handleAcceptDailyCall}
+        onReject={handleRejectDailyCall}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* 🆕 Eşleşme Sağlanıyor Modal */}
