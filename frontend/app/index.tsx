@@ -2419,8 +2419,53 @@ function PassengerDashboard({
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   
+  // 🆕 Eşleşme sağlanıyor state'i
+  const [matchingInProgress, setMatchingInProgress] = useState(false);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
+  
+  // 🔊 EŞLEŞME SESİ - Modern ding-dong
+  const playMatchSound = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' }, // Ding-dong notification
+        { shouldPlay: true, volume: 0.8 }
+      );
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log('Eşleşme sesi hatası:', error);
+    }
+  };
+
+  // 🔊 HARİTA AÇILMA SESİ - Başlama düdüğü
+  const playStartSound = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3' }, // Start chime
+        { shouldPlay: true, volume: 0.7 }
+      );
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log('Başlama sesi hatası:', error);
+    }
+  };
   
   // Teklif geldiğinde ses çal
   const playOfferSound = async () => {
