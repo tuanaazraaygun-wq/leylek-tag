@@ -548,6 +548,39 @@ export default function useSocket({
   }, []);
 
   // ════════════════════════════════════════════════════════════════════
+  // 🆕 DAILY.CO VIDEO/AUDIO CALL FONKSİYONLARI
+  // ════════════════════════════════════════════════════════════════════
+
+  const acceptDailyCall = useCallback((data: {
+    caller_id: string;
+    room_url: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('✅ Daily.co arama kabul ediliyor:', data);
+      socketRef.current.emit('accept_daily_call', data);
+    }
+  }, []);
+
+  const rejectDailyCall = useCallback((data: {
+    caller_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('❌ Daily.co arama reddediliyor:', data);
+      socketRef.current.emit('reject_daily_call', data);
+    }
+  }, []);
+
+  const endDailyCall = useCallback((data: {
+    other_user_id: string;
+    room_name: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('📴 Daily.co arama sonlandırılıyor:', data);
+      socketRef.current.emit('end_daily_call', data);
+    }
+  }, []);
+
+  // ════════════════════════════════════════════════════════════════════
   // EFFECTS
   // ════════════════════════════════════════════════════════════════════
 
