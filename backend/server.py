@@ -1300,7 +1300,8 @@ async def register_user(request: RegisterRequest):
             "last_name": last_name,
             "city": request.city,
             "pin_hash": pin_hash,
-            "rating": 5.0,
+            "points": 100,  # Herkes 100 puanla başlar
+            "rating": 5.0,  # 100 puan = 5 yıldız
             "total_ratings": 0,
             "total_trips": 0,
             "is_active": True
