@@ -2767,31 +2767,73 @@ function PassengerDashboard({
 
     console.log('✅ Hedef var, loading başlıyor...');
     setLoading(true);
-    try {
-      // GPS konumu varsa kullan, yoksa mock konum
-      const pickupLat = userLocation?.latitude || 41.0082;
-      const pickupLng = userLocation?.longitude || 28.9784;
-
-      const response = await fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pickup_location: 'Mevcut Konumunuz',
-          dropoff_location: destination.address,
-          pickup_lat: pickupLat,
-          pickup_lng: pickupLng,
-          dropoff_lat: destination.latitude,
-          dropoff_lng: destination.longitude,
-          notes: 'Hedef belirlendi'
-        })
+    
+    // GPS konumu varsa kullan, yoksa mock konum
+    const pickupLat = userLocation?.latitude || 41.0082;
+    const pickupLng = userLocation?.longitude || 28.9784;
+    
+    // 🚀 OPTIMISTIC UI - Geçici TAG oluştur ve ANINDA göster
+    const tempTagId = `temp_${Date.now()}`;
+    const tempTag = {
+      id: tempTagId,
+      user_id: user.id,
+      pickup_location: 'Mevcut Konumunuz',
+      dropoff_location: destination.address,
+      pickup_lat: pickupLat,
+      pickup_lng: pickupLng,
+      dropoff_lat: destination.latitude,
+      dropoff_lng: destination.longitude,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    
+    // 1️⃣ ANINDA UI'ı güncelle
+    setActiveTag(tempTag as any);
+    setLoading(false);
+    
+    // 2️⃣ ANINDA Socket ile şoförlere yayınla (REST API'yi BEKLEME!)
+    if (emitNewTag) {
+      emitNewTag({
+        tag_id: tempTagId,
+        passenger_id: user.id,
+        passenger_name: user.name || user.phone,
+        pickup_lat: pickupLat,
+        pickup_lng: pickupLng,
+        pickup_address: 'Mevcut Konumunuz',
+        dropoff_lat: destination.latitude,
+        dropoff_lng: destination.longitude,
+        dropoff_address: destination.address,
+        status: 'pending'
       });
-
-      const data = await response.json();
-      if (data.success) {
+      console.log('🔥 TAG Socket ile ANINDA yayınlandı!');
+    }
+    
+    // Toast ANINDA göster
+    setToastMessage('Teklif isteği gönderildi ✓');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2500);
+    
+    // 3️⃣ REST API'yi ARKA PLANDA çağır (bekleme yok!)
+    fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pickup_location: 'Mevcut Konumunuz',
+        dropoff_location: destination.address,
+        pickup_lat: pickupLat,
+        pickup_lng: pickupLng,
+        dropoff_lat: destination.latitude,
+        dropoff_lng: destination.longitude,
+        notes: 'Hedef belirlendi'
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success && data.tag) {
+        // Gerçek TAG ID ile güncelle
         setActiveTag(data.tag);
-        
-        // 🔥 Socket ile TAG'i anında tüm şoförlere yayınla
-        if (emitNewTag && data.tag) {
+        // Socket'e de gerçek ID'yi gönder
+        if (emitNewTag) {
           emitNewTag({
             tag_id: data.tag.id,
             passenger_id: user.id,
@@ -2804,21 +2846,14 @@ function PassengerDashboard({
             dropoff_address: destination.address,
             status: 'pending'
           });
-          console.log('🔥 TAG Socket ile yayınlandı!');
         }
-        
-        // Toast notification göster - otomatik kaybolur
-        setToastMessage('Teklif isteği gönderildi ✓');
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 2500);
-      } else {
-        Alert.alert('Hata', data.detail || 'Teklif isteği gönderilemedi');
+        console.log('✅ TAG veritabanına kaydedildi:', data.tag.id);
       }
-    } catch (error) {
-      Alert.alert('Hata', 'Teklif isteği gönderilemedi');
-    } finally {
-      setLoading(false);
-    }
+    })
+    .catch(err => {
+      console.error('❌ TAG kayıt hatası (arka plan):', err);
+      // Hata olsa bile UI'da TAG gösterilmeye devam eder
+    });
   };
 
   // SESLİ ARAMA - Mock fonksiyon
