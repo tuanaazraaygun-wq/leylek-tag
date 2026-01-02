@@ -2841,12 +2841,33 @@ function PassengerDashboard({
     const pickupLat = userLocation?.latitude || 41.0082;
     const pickupLng = userLocation?.longitude || 28.9784;
     
+    // 📍 Yolcunun bulunduğu adresi reverse geocoding ile al
+    let pickupAddress = 'Mevcut Konumunuz';
+    try {
+      const geocodeResult = await Location.reverseGeocodeAsync({
+        latitude: pickupLat,
+        longitude: pickupLng
+      });
+      if (geocodeResult && geocodeResult.length > 0) {
+        const addr = geocodeResult[0];
+        const parts = [];
+        if (addr.street) parts.push(addr.street);
+        if (addr.streetNumber) parts.push(`No: ${addr.streetNumber}`);
+        if (addr.district) parts.push(addr.district);
+        if (addr.subregion) parts.push(addr.subregion);
+        if (addr.city) parts.push(addr.city);
+        pickupAddress = parts.length > 0 ? parts.join(', ') : 'Mevcut Konumunuz';
+      }
+    } catch (err) {
+      console.log('Reverse geocoding hatası:', err);
+    }
+    
     // 🚀 OPTIMISTIC UI - Geçici TAG oluştur ve ANINDA göster
     const tempTagId = `temp_${Date.now()}`;
     const tempTag = {
       id: tempTagId,
       user_id: user.id,
-      pickup_location: 'Mevcut Konumunuz',
+      pickup_location: pickupAddress,
       dropoff_location: destination.address,
       pickup_lat: pickupLat,
       pickup_lng: pickupLng,
@@ -2868,7 +2889,7 @@ function PassengerDashboard({
         passenger_name: user.name || user.phone,
         pickup_lat: pickupLat,
         pickup_lng: pickupLng,
-        pickup_address: 'Mevcut Konumunuz',
+        pickup_address: pickupAddress,
         dropoff_lat: destination.latitude,
         dropoff_lng: destination.longitude,
         dropoff_address: destination.address,
