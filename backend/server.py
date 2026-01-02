@@ -357,7 +357,7 @@ except ImportError as e:
     logger.warning(f"⚠️ agora_token_builder yüklenemedi: {e}")
 
 # ==================== DAILY.CO CONFIG ====================
-DAILY_API_KEY = os.getenv("DAILY_API_KEY", "0a97cfd3334d4a3902dc05722cca1ab57c9d89191469e45e65e32dbfe2a8b3b7")
+DAILY_API_KEY = os.getenv("DAILY_API_KEY", "")
 DAILY_API_URL = "https://api.daily.co/v1"
 logger.info("✅ Daily.co API yapılandırıldı")
 
