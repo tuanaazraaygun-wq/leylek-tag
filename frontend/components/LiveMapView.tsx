@@ -235,18 +235,8 @@ export default function LiveMapView({
     if (!passengerLocation) return;
     
     const updateDestinationRoute = async () => {
-      // Düz çizgi mesafesi
-      const straightDistance = calculateDistance(
-        passengerLocation.latitude, passengerLocation.longitude,
-        destinationLocation.latitude, destinationLocation.longitude
-      );
-      
-      // Hemen göster
-      if (destinationRoute.length === 0) {
-        setDestinationRoute([passengerLocation, destinationLocation]);
-        setDestinationDistance(straightDistance * 1.3);
-        setDestinationDuration(Math.round((straightDistance * 1.3 / 40) * 60));
-      }
+      // 🚫 Kuş uçuşu mesafe KALDIRILDI - kullanıcı isteği
+      // Sadece gerçek OSRM rotasını göster
       
       // Gerçek rota
       const result = await fetchRoute(passengerLocation, destinationLocation);
