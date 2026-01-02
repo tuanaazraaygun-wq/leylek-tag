@@ -1859,11 +1859,14 @@ function TikTokOfferCard({
 
 // Şoför Hedef Adresi Stilleri
 const destinationStyles = StyleSheet.create({
+  wrapper: {
+    marginBottom: 4,
+  },
   container: {
     backgroundColor: '#ECFDF5',
     borderRadius: 12,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: 0,
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
