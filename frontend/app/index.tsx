@@ -3046,8 +3046,8 @@ function PassengerDashboard({
       // useOffers hook'undan gelen acceptOffer kullan
       const success = await acceptOfferRealtime(offerId);
       if (success) {
-        // 🔊 Eşleşme sesi çal
-        await playMatchSound();
+        // 🔇 Ses devre dışı - kullanıcı isteği
+        // await playMatchSound();
         
         // Sadece sürücü adını kaydet, arama başlatma
         setSelectedDriverName(selectedOffer.driver_name);
@@ -3055,8 +3055,8 @@ function PassengerDashboard({
         // 2 saniye sonra "Eşleşme sağlanıyor..." kapat ve harita aç
         setTimeout(async () => {
           setMatchingInProgress(false);
-          // 🔊 Harita açılırken başlama sesi
-          await playStartSound();
+          // 🔇 Ses devre dışı - kullanıcı isteği
+          // await playStartSound();
           loadActiveTag();
         }, 2000);
       } else {
