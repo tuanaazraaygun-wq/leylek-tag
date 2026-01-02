@@ -450,8 +450,7 @@ api_router = APIRouter(prefix="/api")
 
 # ==================== SOCKET.IO ASGI APP ====================
 # Socket.IO'yu /api/socket.io path'inde çalıştır
-# Emergent /api/* proxy'si var, bu yüzden frontend /api/socket.io'ya bağlanacak
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/api/socket.io')
+# NOT: socket_app dosyanın sonunda oluşturulacak (route'lar eklendikten sonra)
 
 # Son temizlik zamanı (global)
 last_cleanup_time = None
