@@ -3445,10 +3445,10 @@ function PassengerDashboard({
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
-                    // 🔴 SIMPLE DAILY.CO CALL - No socket, no complex logic
+                    // 🔴 DAILY.CO CALL WITH SOCKET INVITE SIGNALING
                     // ════════════════════════════════════════════════════════════
                     
-                    if (dailyCallActive) {
+                    if (dailyCallActive || incomingCall) {
                       Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
                       return;
                     }
@@ -3464,7 +3464,7 @@ function PassengerDashboard({
                     setCalling(true);
                     
                     try {
-                      // Call backend to create Daily.co room
+                      // 1. Backend'den Daily.co room oluştur
                       const response = await fetch(`${API_URL}/calls/start`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3479,7 +3479,18 @@ function PassengerDashboard({
                       const data = await response.json();
                       
                       if (data.success && data.room_url) {
-                        // Open Daily.co call screen
+                        // 2. Socket ile karşı tarafa call_invite gönder
+                        emitCallInvite({
+                          caller_id: user.id,
+                          caller_name: user.name || 'Yolcu',
+                          receiver_id: driverId,
+                          room_url: data.room_url,
+                          room_name: data.room_name,
+                          call_type: type,
+                          tag_id: activeTag?.id || '',
+                        });
+                        
+                        // 3. Daily.co aç (arayan hemen girer)
                         setDailyRoomUrl(data.room_url);
                         setDailyRoomName(data.room_name);
                         setDailyCallType(type);
