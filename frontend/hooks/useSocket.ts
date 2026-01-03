@@ -678,8 +678,11 @@ export default function useSocket({
     emitTripEnded,
     requestTripEnd,
     respondTripEnd,
-    forceEndTrip,  // 🆕 Anlık bitirme
-    // 🆕 Daily.co Video/Audio Call
+    forceEndTrip,
+    // 🆕 Daily.co Call Invite Signaling
+    emitCallInvite,
+    emitCallAccepted,
+    emitCallRejected,
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
