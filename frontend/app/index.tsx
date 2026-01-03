@@ -2637,7 +2637,7 @@ function PassengerDashboard({
       // Artık Daily.co kullanılıyor
     },
     onDailyCallEnded: (data) => {
-      console.log('📴 YOLCU - DAILY.CO ARAMA BİTTİ:', data);
+      console.log('YOLCU - DAILY.CO ARAMA BITTI:', data);
       setDailyCallActive(false);
       setIncomingDailyCall(false);
       setDailyRoomUrl(null);
