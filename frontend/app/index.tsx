@@ -3463,7 +3463,7 @@ function PassengerDashboard({
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
-                    // INSTANT CALLING UI - Daily room arka planda olusturulur
+                    // INSTANT CALL - Socket HEMEN, Daily.co SADECE KABUL EDILINCE
                     // ════════════════════════════════════════════════════════════
                     
                     if (dailyCallActive || incomingCall || outgoingCall) {
@@ -3479,51 +3479,50 @@ function PassengerDashboard({
                       return;
                     }
                     
-                    // 1. HEMEN "Araniyor..." ekranini goster
-                    setOutgoingCallData({
-                      receiverName: driverName,
-                      callType: type,
-                      roomUrl: '', // Henuz yok, arka planda olusturulacak
-                      roomName: '',
-                      receiverId: driverId,
-                    });
-                    setOutgoingCall(true);
-                    
-                    // 2. HEMEN socket call_invite gonder (room URL olmadan)
+                    // 1. HEMEN socket call_invite gonder (0ms)
+                    console.log('CALL_INVITE EMITTING NOW', { caller: user.id, receiver: driverId });
                     emitCallInvite({
                       caller_id: user.id,
                       caller_name: user.name || 'Yolcu',
                       receiver_id: driverId,
-                      room_url: '', // Henuz yok
+                      room_url: '',
                       room_name: '',
                       call_type: type,
                       tag_id: activeTag?.id || '',
                     });
                     
-                    // 3. Arka planda Daily room olustur
-                    try {
-                      const response = await fetch(`${API_URL}/calls/start`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          caller_id: user.id,
-                          receiver_id: driverId,
-                          call_type: type,
-                          tag_id: activeTag?.id
-                        })
-                      });
-                      
-                      const data = await response.json();
-                      
+                    // 2. HEMEN "Araniyor..." ekranini goster (0ms)
+                    setOutgoingCallData({
+                      receiverName: driverName,
+                      callType: type,
+                      roomUrl: '',
+                      roomName: '',
+                      receiverId: driverId,
+                    });
+                    setOutgoingCall(true);
+                    
+                    // 3. Arka planda Daily room olustur (UI'yi BLOKLAMAZ)
+                    fetch(`${API_URL}/calls/start`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        caller_id: user.id,
+                        receiver_id: driverId,
+                        call_type: type,
+                        tag_id: activeTag?.id
+                      })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
                       if (data.success && data.room_url) {
+                        console.log('DAILY ROOM READY', data.room_url);
                         // Room hazir - state guncelle
                         setOutgoingCallData(prev => prev ? {
                           ...prev,
                           roomUrl: data.room_url,
                           roomName: data.room_name,
                         } : null);
-                        
-                        // Socket ile room URL gonder (aranan icin)
+                        // Socket ile room URL gonder
                         emitCallInvite({
                           caller_id: user.id,
                           caller_name: user.name || 'Yolcu',
@@ -3533,18 +3532,9 @@ function PassengerDashboard({
                           call_type: type,
                           tag_id: activeTag?.id || '',
                         });
-                      } else {
-                        // Room olusturulamadi - iptal et
-                        setOutgoingCall(false);
-                        setOutgoingCallData(null);
-                        Alert.alert('Hata', 'Arama baslatilamadi');
                       }
-                    } catch (error) {
-                      console.error('Call start error:', error);
-                      setOutgoingCall(false);
-                      setOutgoingCallData(null);
-                      Alert.alert('Hata', 'Arama baslatilirken bir sorun olustu');
-                    }
+                    })
+                    .catch(err => console.error('Daily room error:', err));
                   }}
                   onRequestTripEnd={async () => {
                     // Karşılıklı iptal isteği gönder - YOLCU
