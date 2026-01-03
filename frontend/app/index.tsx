@@ -2582,6 +2582,16 @@ function PassengerDashboard({
     callerId: string;
   } | null>(null);
   
+  // 🆕 Giden Arama State'leri (Aranıyor...)
+  const [outgoingCall, setOutgoingCall] = useState(false);
+  const [outgoingCallData, setOutgoingCallData] = useState<{
+    receiverName: string;
+    callType: 'audio' | 'video';
+    roomUrl: string;
+    roomName: string;
+    receiverId: string;
+  } | null>(null);
+  
   // Arama kilidi
   const isCallActiveRef = useRef(false);
   
