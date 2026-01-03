@@ -3208,6 +3208,43 @@ function PassengerDashboard({
     );
   }
 
+  // 🆕 GELEN ARAMA EKRANI - YOLCU (Vibration + Accept/Reject)
+  if (incomingCall && incomingCallData) {
+    return (
+      <IncomingCallScreen
+        callerName={incomingCallData.callerName}
+        callType={incomingCallData.callType}
+        onAccept={() => {
+          // Socket ile kabul sinyali gönder
+          emitCallAccepted({
+            caller_id: incomingCallData.callerId,
+            receiver_id: user.id,
+            room_url: incomingCallData.roomUrl,
+          });
+          // Daily.co aç
+          setDailyRoomUrl(incomingCallData.roomUrl);
+          setDailyRoomName(incomingCallData.roomName);
+          setDailyCallType(incomingCallData.callType);
+          setDailyCallerName(incomingCallData.callerName);
+          setDailyCallActive(true);
+          // Reset incoming call
+          setIncomingCall(false);
+          setIncomingCallData(null);
+        }}
+        onReject={() => {
+          // Socket ile red sinyali gönder
+          emitCallRejected({
+            caller_id: incomingCallData.callerId,
+            receiver_id: user.id,
+          });
+          // Reset
+          setIncomingCall(false);
+          setIncomingCallData(null);
+        }}
+      />
+    );
+  }
+
   // 🔴 SIMPLE DAILY.CO CALL SCREEN - YOLCU
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
