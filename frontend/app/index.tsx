@@ -4527,7 +4527,22 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   }
 
-  // 🔴 SIMPLE DAILY.CO CALL SCREEN - ŞOFÖR
+  // ARANIYOR EKRANI - SOFOR (Aranan kabul edene kadar bekle)
+  if (outgoingCall && outgoingCallData) {
+    return (
+      <OutgoingCallScreen
+        receiverName={outgoingCallData.receiverName}
+        callType={outgoingCallData.callType}
+        onCancel={() => {
+          // Aramayi iptal et
+          setOutgoingCall(false);
+          setOutgoingCallData(null);
+        }}
+      />
+    );
+  }
+
+  // DAILY.CO CALL SCREEN - SOFOR
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
       <DailyCallScreen
