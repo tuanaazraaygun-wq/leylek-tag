@@ -3442,26 +3442,26 @@ function PassengerDashboard({
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
-                    // 🔴 DAILY.CO CALL WITH SOCKET INVITE SIGNALING
+                    // DAILY.CO CALL - ARAYAN KABUL EDILENE KADAR BEKLER
                     // ════════════════════════════════════════════════════════════
                     
-                    if (dailyCallActive || incomingCall) {
-                      Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+                    if (dailyCallActive || incomingCall || outgoingCall) {
+                      Alert.alert('Uyari', 'Zaten bir arama devam ediyor');
                       return;
                     }
                     
                     const driverId = activeTag?.driver_id || '';
-                    const driverName = activeTag?.driver_name || 'Şoför';
+                    const driverName = activeTag?.driver_name || 'Sofor';
                     
                     if (!driverId) {
-                      Alert.alert('Hata', 'Şoför bilgisi bulunamadı');
+                      Alert.alert('Hata', 'Sofor bilgisi bulunamadi');
                       return;
                     }
                     
                     setCalling(true);
                     
                     try {
-                      // 1. Backend'den Daily.co room oluştur
+                      // 1. Backend'den Daily.co room olustur
                       const response = await fetch(`${API_URL}/calls/start`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3476,7 +3476,7 @@ function PassengerDashboard({
                       const data = await response.json();
                       
                       if (data.success && data.room_url) {
-                        // 2. Socket ile karşı tarafa call_invite gönder
+                        // 2. Socket ile karsi tarafa call_invite gonder
                         emitCallInvite({
                           caller_id: user.id,
                           caller_name: user.name || 'Yolcu',
@@ -3487,18 +3487,22 @@ function PassengerDashboard({
                           tag_id: activeTag?.id || '',
                         });
                         
-                        // 3. Daily.co aç (arayan hemen girer)
-                        setDailyRoomUrl(data.room_url);
-                        setDailyRoomName(data.room_name);
-                        setDailyCallType(type);
-                        setDailyCallerName(driverName);
-                        setDailyCallActive(true);
+                        // 3. "Araniyor..." ekrani goster - Daily.co ACMA
+                        setOutgoingCallData({
+                          receiverName: driverName,
+                          callType: type,
+                          roomUrl: data.room_url,
+                          roomName: data.room_name,
+                          receiverId: driverId,
+                        });
+                        setOutgoingCall(true);
+                        // setDailyCallActive(true) YAPMA - aranan kabul edene kadar bekle
                       } else {
-                        Alert.alert('Hata', 'Arama başlatılamadı');
+                        Alert.alert('Hata', 'Arama baslatilamadi');
                       }
                     } catch (error) {
                       console.error('Call start error:', error);
-                      Alert.alert('Hata', 'Arama başlatılırken bir sorun oluştu');
+                      Alert.alert('Hata', 'Arama baslatilirken bir sorun olustu');
                     } finally {
                       setCalling(false);
                     }
