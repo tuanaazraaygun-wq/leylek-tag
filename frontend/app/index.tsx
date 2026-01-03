@@ -3916,7 +3916,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
-  // ==================== DAILY.CO ARAMA SİSTEMİ - ŞOFÖR ====================
+  // ==================== DAILY.CO ARAMA SISTEMI - SOFOR ====================
   const [dailyCallActive, setDailyCallActive] = useState(false);
   const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
   const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('audio');
@@ -3925,7 +3925,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [incomingDailyCall, setIncomingDailyCall] = useState(false);
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   
-  // Eski Agora state'leri (artık kullanılmıyor ama kaldırılmadı)
+  // Giden Arama State (Araniyor...) - SOFOR
+  const [outgoingCall, setOutgoingCall] = useState(false);
+  const [outgoingCallData, setOutgoingCallData] = useState<{
+    receiverName: string;
+    callType: 'audio' | 'video';
+    roomUrl: string;
+    roomName: string;
+    receiverId: string;
+  } | null>(null);
+  
+  // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
     mode: 'caller' | 'receiver';
@@ -3937,7 +3947,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     callType: 'audio' | 'video';
   } | null>(null);
   
-  // Socket.IO arama durumları
+  // Socket.IO arama durumlari
   const [callAccepted, setCallAccepted] = useState(false);
   const [callRejected, setCallRejected] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
