@@ -4657,7 +4657,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
-              // DAILY.CO CALL - ARAYAN KABUL EDILENE KADAR BEKLER - SOFOR
+              // INSTANT CALLING UI - Daily room arka planda olusturulur - SOFOR
               // ════════════════════════════════════════════════════════════
               
               if (dailyCallActive || incomingDailyCall || outgoingCall) {
@@ -4670,16 +4670,38 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 return;
               }
               
-              setCalling(true);
+              const passengerId = activeTag.passenger_id;
+              const passengerName = activeTag.passenger_name || 'Yolcu';
               
+              // 1. HEMEN "Araniyor..." ekranini goster
+              setOutgoingCallData({
+                receiverName: passengerName,
+                callType: type,
+                roomUrl: '', // Henuz yok
+                roomName: '',
+                receiverId: passengerId,
+              });
+              setOutgoingCall(true);
+              
+              // 2. HEMEN socket call_invite gonder
+              emitCallInvite({
+                caller_id: user.id,
+                caller_name: user.name || 'Sofor',
+                receiver_id: passengerId,
+                room_url: '',
+                room_name: '',
+                call_type: type,
+                tag_id: activeTag.id || '',
+              });
+              
+              // 3. Arka planda Daily room olustur
               try {
-                // 1. Backend'den Daily.co room olustur
                 const response = await fetch(`${API_URL}/calls/start`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     caller_id: user.id,
-                    receiver_id: activeTag.passenger_id,
+                    receiver_id: passengerId,
                     call_type: type,
                     tag_id: activeTag.id
                   })
@@ -4688,35 +4710,33 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 const data = await response.json();
                 
                 if (data.success && data.room_url) {
-                  // 2. Socket ile karsi tarafa call_invite gonder
+                  // Room hazir - state guncelle
+                  setOutgoingCallData(prev => prev ? {
+                    ...prev,
+                    roomUrl: data.room_url,
+                    roomName: data.room_name,
+                  } : null);
+                  
+                  // Socket ile room URL gonder
                   emitCallInvite({
                     caller_id: user.id,
                     caller_name: user.name || 'Sofor',
-                    receiver_id: activeTag.passenger_id,
+                    receiver_id: passengerId,
                     room_url: data.room_url,
                     room_name: data.room_name,
                     call_type: type,
                     tag_id: activeTag.id || '',
                   });
-                  
-                  // 3. "Araniyor..." ekrani goster - Daily.co ACMA
-                  setOutgoingCallData({
-                    receiverName: activeTag.passenger_name || 'Yolcu',
-                    callType: type,
-                    roomUrl: data.room_url,
-                    roomName: data.room_name,
-                    receiverId: activeTag.passenger_id,
-                  });
-                  setOutgoingCall(true);
-                  // setDailyCallActive(true) YAPMA - aranan kabul edene kadar bekle
                 } else {
+                  setOutgoingCall(false);
+                  setOutgoingCallData(null);
                   Alert.alert('Hata', 'Arama baslatilamadi');
                 }
               } catch (error) {
                 console.error('Call start error:', error);
+                setOutgoingCall(false);
+                setOutgoingCallData(null);
                 Alert.alert('Hata', 'Arama baslatilirken bir sorun olustu');
-              } finally {
-                setCalling(false);
               }
             }}
             onForceEnd={async () => {
