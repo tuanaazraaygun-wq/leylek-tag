@@ -4457,6 +4457,39 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   };
 
+  // 🆕 GELEN ARAMA EKRANI - ŞOFÖR (Vibration + Accept/Reject)
+  if (incomingDailyCall && dailyRoomUrl && dailyRoomName) {
+    return (
+      <IncomingCallScreen
+        callerName={dailyCallerName}
+        callType={dailyCallType}
+        onAccept={() => {
+          // Socket ile kabul sinyali gönder
+          emitCallAccepted({
+            caller_id: dailyCallerId,
+            receiver_id: user.id,
+            room_url: dailyRoomUrl,
+          });
+          // Daily.co aç
+          setDailyCallActive(true);
+          // Reset incoming call
+          setIncomingDailyCall(false);
+        }}
+        onReject={() => {
+          // Socket ile red sinyali gönder
+          emitCallRejected({
+            caller_id: dailyCallerId,
+            receiver_id: user.id,
+          });
+          // Reset
+          setIncomingDailyCall(false);
+          setDailyRoomUrl(null);
+          setDailyRoomName('');
+        }}
+      />
+    );
+  }
+
   // 🔴 SIMPLE DAILY.CO CALL SCREEN - ŞOFÖR
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
