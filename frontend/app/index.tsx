@@ -3987,12 +3987,22 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setIncomingDailyCall(true);
     },
     onDailyCallAccepted: (data) => {
-      console.log('✅ ŞOFÖR - DAILY.CO ARAMA KABUL EDİLDİ:', data);
-      setDailyCallActive(true);
-      setIncomingDailyCall(false);
+      console.log('SOFOR - DAILY.CO ARAMA KABUL EDILDI:', data);
+      // Aranan kabul etti - Daily.co'ya gir
+      if (outgoingCall && outgoingCallData) {
+        setDailyRoomUrl(outgoingCallData.roomUrl);
+        setDailyRoomName(outgoingCallData.roomName);
+        setDailyCallType(outgoingCallData.callType);
+        setDailyCallerName(outgoingCallData.receiverName);
+        setDailyCallActive(true);
+        setOutgoingCall(false);
+        setOutgoingCallData(null);
+      }
     },
     onDailyCallRejected: (data) => {
-      console.log('❌ ŞOFÖR - DAILY.CO ARAMA REDDEDİLDİ:', data);
+      console.log('SOFOR - DAILY.CO ARAMA REDDEDILDI:', data);
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
       setDailyCallActive(false);
       setIncomingDailyCall(false);
       setDailyRoomUrl(null);
