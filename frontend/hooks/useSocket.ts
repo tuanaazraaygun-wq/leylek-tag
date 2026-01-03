@@ -548,8 +548,46 @@ export default function useSocket({
   }, []);
 
   // ════════════════════════════════════════════════════════════════════
-  // 🆕 DAILY.CO VIDEO/AUDIO CALL FONKSİYONLARI
+  // 🆕 DAILY.CO CALL INVITE SIGNALING (Socket only for ringing)
   // ════════════════════════════════════════════════════════════════════
+
+  const emitCallInvite = useCallback((data: {
+    caller_id: string;
+    caller_name: string;
+    receiver_id: string;
+    room_url: string;
+    room_name: string;
+    call_type: 'audio' | 'video';
+    tag_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('📞 CALL INVITE gönderiliyor:', data);
+      socketRef.current.emit('call_invite', data);
+    } else {
+      console.error('❌ Socket bağlı değil, call invite gönderilemedi');
+    }
+  }, []);
+
+  const emitCallAccepted = useCallback((data: {
+    caller_id: string;
+    receiver_id: string;
+    room_url: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('✅ CALL ACCEPTED gönderiliyor:', data);
+      socketRef.current.emit('call_accepted_signal', data);
+    }
+  }, []);
+
+  const emitCallRejected = useCallback((data: {
+    caller_id: string;
+    receiver_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('❌ CALL REJECTED gönderiliyor:', data);
+      socketRef.current.emit('call_rejected_signal', data);
+    }
+  }, []);
 
   const acceptDailyCall = useCallback((data: {
     caller_id: string;
