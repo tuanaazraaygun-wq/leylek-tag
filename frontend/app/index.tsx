@@ -4387,66 +4387,29 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   };
 
-  // 🆕 Daily.co Arama Bitirme - ŞOFÖR
-  const handleDriverDailyCallEnd = () => {
-    if (dailyRoomName && activeTag?.passenger_id) {
-      endDailyCall({
-        other_user_id: activeTag.passenger_id,
-        room_name: dailyRoomName
-      });
-    }
-    setDailyCallActive(false);
-    setIncomingDailyCall(false);
-    setDailyRoomUrl(null);
-    setDailyRoomName('');
-  };
-
-  // 🆕 Daily.co Gelen Arama Kabul - ŞOFÖR
-  const handleDriverAcceptDailyCall = () => {
-    if (dailyCallerId && dailyRoomUrl) {
-      acceptDailyCall({
-        caller_id: dailyCallerId,
-        room_url: dailyRoomUrl
-      });
-      setIncomingDailyCall(false);
-      setDailyCallActive(true);
-    }
-  };
-
-  // 🆕 Daily.co Gelen Arama Reddet - ŞOFÖR
-  const handleDriverRejectDailyCall = () => {
-    if (dailyCallerId) {
-      rejectDailyCall({
-        caller_id: dailyCallerId
-      });
-    }
-    setIncomingDailyCall(false);
-    setDailyRoomUrl(null);
-  };
-
-  // 🆕 Daily.co Aktif Arama Ekranı - ŞOFÖR
-  if (dailyCallActive && dailyRoomUrl) {
+  // 🔴 SIMPLE DAILY.CO CALL SCREEN - ŞOFÖR
+  if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
       <DailyCallScreen
         roomUrl={dailyRoomUrl}
+        roomName={dailyRoomName}
         callType={dailyCallType}
-        callerName={dailyCallerName}
-        onCallEnd={handleDriverDailyCallEnd}
-      />
-    );
-  }
-
-  // 🆕 Daily.co Gelen Arama Ekranı - ŞOFÖR
-  if (incomingDailyCall && dailyRoomUrl) {
-    return (
-      <DailyCallScreen
-        roomUrl={dailyRoomUrl}
-        callType={dailyCallType}
-        callerName={dailyCallerName}
-        onCallEnd={handleDriverDailyCallEnd}
-        isIncoming={true}
-        onAccept={handleDriverAcceptDailyCall}
-        onReject={handleDriverRejectDailyCall}
+        otherUserName={dailyCallerName}
+        onCallEnd={async (roomName) => {
+          // End call and cleanup
+          try {
+            await fetch(`${API_URL}/calls/end`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ room_name: roomName })
+            });
+          } catch (e) {
+            console.log('Call end error:', e);
+          }
+          setDailyCallActive(false);
+          setDailyRoomUrl(null);
+          setDailyRoomName('');
+        }}
       />
     );
   }
