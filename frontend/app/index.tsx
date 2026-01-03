@@ -4520,7 +4520,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             price={activeTag?.final_price}
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
-              // 🆕 Daily.co ile arama başlat - ŞOFÖR
+              // ════════════════════════════════════════════════════════════
+              // 🔴 SIMPLE DAILY.CO CALL - ŞOFÖR
+              // ════════════════════════════════════════════════════════════
+              
+              if (dailyCallActive) {
+                Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+                return;
+              }
+              
               if (!activeTag?.passenger_id || !user?.id) {
                 Alert.alert('Hata', 'Yolcu bilgisi bulunamadı');
                 return;
@@ -4529,7 +4537,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               setCalling(true);
               
               try {
-                const response = await fetch(`${API_URL}/daily/create-room`, {
+                const response = await fetch(`${API_URL}/calls/start`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -4543,25 +4551,20 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 const data = await response.json();
                 
                 if (data.success && data.room_url) {
-                  // Daily.co arama ekranını aç
+                  // Open Daily.co call screen
                   setDailyRoomUrl(data.room_url);
                   setDailyRoomName(data.room_name);
                   setDailyCallType(type);
                   setDailyCallerName(activeTag.passenger_name || 'Yolcu');
                   setDailyCallActive(true);
-                  setCalling(false);
-                  
-                  if (!data.receiver_online) {
-                    Alert.alert('Bilgi', 'Yolcu şu an çevrimdışı görünüyor. Arama başlatıldı.');
-                  }
                 } else {
-                  setCalling(false);
                   Alert.alert('Hata', 'Arama başlatılamadı');
                 }
               } catch (error) {
-                console.error('Daily.co arama hatası:', error);
-                setCalling(false);
+                console.error('Call start error:', error);
                 Alert.alert('Hata', 'Arama başlatılırken bir sorun oluştu');
+              } finally {
+                setCalling(false);
               }
             }}
             onForceEnd={async () => {
