@@ -3939,21 +3939,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitSendOffer: socketSendOffer,
-    // 🆕 Daily.co fonksiyonları
+    // 🆕 Daily.co Call Signaling
+    emitCallInvite,
+    emitCallAccepted,
+    emitCallRejected,
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'driver',
-    // 🆕 Daily.co Gelen Arama - ŞOFÖR
+    // 🆕 Daily.co Gelen Arama - ŞOFÖR (VİBRASYON + Accept/Reject)
     onIncomingDailyCall: (data) => {
       console.log('📹 ŞOFÖR - DAILY.CO GELEN ARAMA:', data);
       setDailyRoomUrl(data.room_url);
       setDailyRoomName(data.room_name);
       setDailyCallType(data.call_type);
       setDailyCallerId(data.caller_id);
-      setDailyCallerName('Yolcu');
+      setDailyCallerName(data.caller_name || 'Yolcu');
       setIncomingDailyCall(true);
     },
     onDailyCallAccepted: (data) => {
