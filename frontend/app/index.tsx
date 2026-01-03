@@ -4587,10 +4587,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
-              // 🔴 SIMPLE DAILY.CO CALL - ŞOFÖR
+              // 🔴 DAILY.CO CALL WITH SOCKET INVITE SIGNALING - ŞOFÖR
               // ════════════════════════════════════════════════════════════
               
-              if (dailyCallActive) {
+              if (dailyCallActive || incomingDailyCall) {
                 Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
                 return;
               }
@@ -4603,6 +4603,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               setCalling(true);
               
               try {
+                // 1. Backend'den Daily.co room oluştur
                 const response = await fetch(`${API_URL}/calls/start`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -4617,7 +4618,18 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 const data = await response.json();
                 
                 if (data.success && data.room_url) {
-                  // Open Daily.co call screen
+                  // 2. Socket ile karşı tarafa call_invite gönder
+                  emitCallInvite({
+                    caller_id: user.id,
+                    caller_name: user.name || 'Şoför',
+                    receiver_id: activeTag.passenger_id,
+                    room_url: data.room_url,
+                    room_name: data.room_name,
+                    call_type: type,
+                    tag_id: activeTag.id || '',
+                  });
+                  
+                  // 3. Daily.co aç (arayan hemen girer)
                   setDailyRoomUrl(data.room_url);
                   setDailyRoomName(data.room_name);
                   setDailyCallType(type);
