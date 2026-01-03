@@ -3189,29 +3189,29 @@ function PassengerDashboard({
     );
   }
 
-  // 🆕 Daily.co Aktif Arama Ekranı
-  if (dailyCallActive && dailyRoomUrl) {
+  // 🔴 SIMPLE DAILY.CO CALL SCREEN - YOLCU
+  if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
       <DailyCallScreen
         roomUrl={dailyRoomUrl}
+        roomName={dailyRoomName}
         callType={dailyCallType}
-        callerName={dailyCallerName}
-        onCallEnd={handleDailyCallEnd}
-      />
-    );
-  }
-
-  // 🆕 Daily.co Gelen Arama Ekranı
-  if (incomingDailyCall && dailyRoomUrl) {
-    return (
-      <DailyCallScreen
-        roomUrl={dailyRoomUrl}
-        callType={dailyCallType}
-        callerName={dailyCallerName}
-        onCallEnd={handleDailyCallEnd}
-        isIncoming={true}
-        onAccept={handleAcceptDailyCall}
-        onReject={handleRejectDailyCall}
+        otherUserName={dailyCallerName}
+        onCallEnd={async (roomName) => {
+          // End call and cleanup
+          try {
+            await fetch(`${API_URL}/calls/end`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ room_name: roomName })
+            });
+          } catch (e) {
+            console.log('Call end error:', e);
+          }
+          setDailyCallActive(false);
+          setDailyRoomUrl(null);
+          setDailyRoomName('');
+        }}
       />
     );
   }
