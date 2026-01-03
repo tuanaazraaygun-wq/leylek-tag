@@ -2572,11 +2572,18 @@ function PassengerDashboard({
   const [callEnded, setCallEnded] = useState(false);
   const [receiverOffline, setReceiverOffline] = useState(false);
   
+  // 🆕 Gelen Arama State'leri
+  const [incomingCall, setIncomingCall] = useState(false);
+  const [incomingCallData, setIncomingCallData] = useState<{
+    callerName: string;
+    callType: 'audio' | 'video';
+    roomUrl: string;
+    roomName: string;
+    callerId: string;
+  } | null>(null);
+  
   // Arama kilidi
   const isCallActiveRef = useRef(false);
-  
-  // NOT: Agora engine artık CallScreenV2 içinde singleton olarak yönetiliyor
-  // useAgoraEngine hook'u kaldırıldı - çakışma önlendi
   
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
@@ -2591,33 +2598,44 @@ function PassengerDashboard({
     emitCancelTag,
     emitAcceptOffer: socketAcceptOffer,
     emitRejectOffer: socketRejectOffer,
-    // 🆕 Daily.co fonksiyonları
+    // 🆕 Daily.co Call Signaling
+    emitCallInvite,
+    emitCallAccepted,
+    emitCallRejected,
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'passenger',
-    onIncomingCall: (data) => {
-      console.log('📞 YOLCU - GELEN ARAMA (Socket.IO):', data);
-      if (isCallActiveRef.current || showCallScreen) return;
+    // 🆕 Gelen Daily.co Arama - VİBRASYON + IncomingCallScreen
+    onIncomingDailyCall: (data) => {
+      console.log('📞 YOLCU - GELEN DAILY.CO ARAMA:', data);
+      if (dailyCallActive || incomingCall) return;
       
-      isCallActiveRef.current = true;
-      setCallAccepted(false);
-      setCallRejected(false);
-      setCallEnded(false);
-      setReceiverOffline(false);
-      
-      setCallScreenData({
-        mode: 'receiver',
-        callId: data.call_id,
-        channelName: data.channel_name,
-        agoraToken: data.agora_token,
-        remoteName: data.caller_name || 'Sürücü',
-        remoteUserId: data.caller_id,
-        callType: data.call_type || 'audio'
+      setIncomingCallData({
+        callerName: data.caller_name || 'Şoför',
+        callType: data.call_type || 'audio',
+        roomUrl: data.room_url,
+        roomName: data.room_name,
+        callerId: data.caller_id,
       });
-      setShowCallScreen(true);
+      setIncomingCall(true);
+    },
+    onDailyCallAccepted: (data) => {
+      console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
+      // Karşı taraf kabul etti - artık konuşabilirler
+    },
+    onDailyCallRejected: (data) => {
+      console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
+      setDailyCallActive(false);
+      setDailyRoomUrl(null);
+      Alert.alert('Bilgi', 'Arama reddedildi');
+    },
+    onIncomingCall: (data) => {
+      console.log('📞 YOLCU - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
+      // Artık Daily.co kullanılıyor
+    },
     },
     // 🆕 Daily.co Gelen Arama
     onIncomingDailyCall: (data) => {
