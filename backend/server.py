@@ -3758,6 +3758,137 @@ async def create_daily_room(request: dict):
         logger.error(f"Daily.co room creation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================== SIMPLE DAILY.CO CALL SYSTEM ====================
+@api_router.post("/calls/start")
+async def start_call(request: dict):
+    """
+    Simple Daily.co call - No socket signaling, no complex logic
+    Just create room and return URL
+    """
+    try:
+        caller_id = request.get("caller_id")
+        receiver_id = request.get("receiver_id")
+        call_type = request.get("call_type", "audio")  # "audio" or "video"
+        tag_id = request.get("tag_id", "")
+        
+        if not caller_id or not receiver_id:
+            raise HTTPException(status_code=400, detail="caller_id and receiver_id required")
+        
+        # Create unique room name
+        room_name = f"leylek_{tag_id}_{int(time.time())}"
+        
+        # Daily.co API request
+        headers = {
+            "Authorization": f"Bearer {DAILY_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        # Room expires in 10 minutes
+        expiration_time = int(time.time()) + 600  # 10 minutes
+        
+        payload = {
+            "name": room_name,
+            "privacy": "public",
+            "properties": {
+                "max_participants": 2,
+                "enable_chat": False,
+                "enable_screenshare": False,
+                "exp": expiration_time,
+                "enable_knocking": False,
+                "start_video_off": call_type == "audio",
+                "start_audio_off": False,
+                "enable_prejoin_ui": False,  # No waiting screen
+                "enable_network_ui": False,
+                "enable_pip_ui": False,
+            }
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{DAILY_API_URL}/rooms",
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"Daily.co room creation failed: {response.text}")
+                raise HTTPException(status_code=500, detail="Could not create call room")
+            
+            room_data = response.json()
+            room_url = room_data.get("url")
+            
+            logger.info(f"📞 Call started: {room_url} (type: {call_type})")
+            
+            # Save call record to Supabase (async, don't wait)
+            try:
+                supabase.table("call_logs").insert({
+                    "caller_id": caller_id,
+                    "receiver_id": receiver_id,
+                    "tag_id": tag_id,
+                    "call_type": call_type,
+                    "room_name": room_name,
+                    "room_url": room_url,
+                    "status": "started",
+                    "created_at": datetime.utcnow().isoformat()
+                }).execute()
+            except Exception as log_err:
+                logger.warning(f"Call log save failed (non-critical): {log_err}")
+            
+            return {
+                "success": True,
+                "room_url": room_url,
+                "room_name": room_name,
+                "call_type": call_type,
+                "expires_in": 600  # 10 minutes
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Call start error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/calls/end")
+async def end_call(request: dict):
+    """
+    End call - Delete Daily.co room and update log
+    """
+    try:
+        room_name = request.get("room_name")
+        
+        if not room_name:
+            return {"success": True, "message": "No room to delete"}
+        
+        # Delete room from Daily.co
+        headers = {
+            "Authorization": f"Bearer {DAILY_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"{DAILY_API_URL}/rooms/{room_name}",
+                headers=headers,
+                timeout=10
+            )
+        
+        # Update call log
+        try:
+            supabase.table("call_logs").update({
+                "status": "ended",
+                "ended_at": datetime.utcnow().isoformat()
+            }).eq("room_name", room_name).execute()
+        except:
+            pass
+            
+        logger.info(f"📴 Call ended: {room_name}")
+        return {"success": True}
+        
+    except Exception as e:
+        logger.error(f"Call end error: {e}")
+        return {"success": True}  # Always return success to not block UI
+
 @api_router.delete("/daily/delete-room/{room_name}")
 async def delete_daily_room(room_name: str):
     """
