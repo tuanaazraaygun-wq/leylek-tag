@@ -2633,11 +2633,22 @@ function PassengerDashboard({
       setIncomingCall(true);
     },
     onDailyCallAccepted: (data) => {
-      console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
-      // Karşı taraf kabul etti - artık konuşabilirler
+      console.log('YOLCU - ARAMA KABUL EDILDI:', data);
+      // Aranan kabul etti - Daily.co'ya gir
+      if (outgoingCall && outgoingCallData) {
+        setDailyRoomUrl(outgoingCallData.roomUrl);
+        setDailyRoomName(outgoingCallData.roomName);
+        setDailyCallType(outgoingCallData.callType);
+        setDailyCallerName(outgoingCallData.receiverName);
+        setDailyCallActive(true);
+        setOutgoingCall(false);
+        setOutgoingCallData(null);
+      }
     },
     onDailyCallRejected: (data) => {
-      console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
+      console.log('YOLCU - ARAMA REDDEDILDI:', data);
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
       setDailyCallActive(false);
       setDailyRoomUrl(null);
       Alert.alert('Bilgi', 'Arama reddedildi');
