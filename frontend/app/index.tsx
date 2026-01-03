@@ -12,6 +12,7 @@ import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
 import DailyCallScreen from '../components/DailyCallScreen'; // 🆕 Daily.co Video/Audio
+import IncomingCallScreen from '../components/IncomingCallScreen'; // 🆕 Gelen Arama Ekranı
 import useSocket from '../hooks/useSocket';
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
