@@ -2636,7 +2636,6 @@ function PassengerDashboard({
       console.log('📞 YOLCU - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
       // Artık Daily.co kullanılıyor
     },
-    },
     // 🆕 Daily.co Gelen Arama
     onIncomingDailyCall: (data) => {
       console.log('📹 YOLCU - DAILY.CO GELEN ARAMA:', data);
