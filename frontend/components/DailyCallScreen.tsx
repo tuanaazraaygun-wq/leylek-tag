@@ -1,6 +1,7 @@
 /**
  * Daily.co Video/Audio Call Screen
- * WebView tabanlı - Stabil ve hızlı
+ * SIMPLE VERSION - No incoming call logic, no socket signaling
+ * Direct WebView to Daily.co room
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -11,44 +12,46 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Alert,
-  Dimensions,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width, height } = Dimensions.get('window');
-
 interface DailyCallScreenProps {
   roomUrl: string;
+  roomName: string;
   callType: 'video' | 'audio';
-  callerName: string;
-  onCallEnd: () => void;
-  isIncoming?: boolean;
-  onAccept?: () => void;
-  onReject?: () => void;
+  otherUserName: string;
+  onCallEnd: (roomName: string) => void;
 }
 
 export default function DailyCallScreen({
   roomUrl,
+  roomName,
   callType,
-  callerName,
+  otherUserName,
   onCallEnd,
-  isIncoming = false,
-  onAccept,
-  onReject,
 }: DailyCallScreenProps) {
   const [loading, setLoading] = useState(true);
-  const [callStarted, setCallStarted] = useState(!isIncoming);
   const [callDuration, setCallDuration] = useState(0);
+  const [connected, setConnected] = useState(false);
   const webViewRef = useRef<WebView>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const maxDuration = 600; // 10 minutes in seconds
 
-  // Arama süresi sayacı
+  // Start timer when connected
   useEffect(() => {
-    if (callStarted && !loading) {
+    if (connected) {
       timerRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1);
+        setCallDuration(prev => {
+          const newDuration = prev + 1;
+          // Auto-end call at 10 minutes
+          if (newDuration >= maxDuration) {
+            handleEndCall(true);
+          }
+          return newDuration;
+        });
       }, 1000);
     }
 
@@ -57,17 +60,34 @@ export default function DailyCallScreen({
         clearInterval(timerRef.current);
       }
     };
-  }, [callStarted, loading]);
+  }, [connected]);
 
-  // Süreyi formatla
+  // Handle back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleEndCall(false);
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, []);
+
+  // Format duration as MM:SS
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Aramayı bitir
-  const handleEndCall = () => {
+  // End call
+  const handleEndCall = (auto: boolean = false) => {
+    if (auto) {
+      // Auto-end - no confirmation
+      cleanup();
+      onCallEnd(roomName);
+      return;
+    }
+
     Alert.alert(
       'Aramayı Bitir',
       'Aramayı sonlandırmak istediğinize emin misiniz?',
@@ -77,75 +97,46 @@ export default function DailyCallScreen({
           text: 'Bitir', 
           style: 'destructive',
           onPress: () => {
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-            }
-            onCallEnd();
+            cleanup();
+            onCallEnd(roomName);
           }
         },
       ]
     );
   };
 
-  // Gelen arama ekranı
-  if (isIncoming && !callStarted) {
-    return (
-      <SafeAreaView style={styles.incomingContainer}>
-        <StatusBar barStyle="light-content" />
-        
-        {/* Arayan bilgisi */}
-        <View style={styles.callerInfo}>
-          <View style={styles.avatarLarge}>
-            <Ionicons name={callType === 'video' ? 'videocam' : 'call'} size={60} color="#FFF" />
-          </View>
-          <Text style={styles.callerName}>{callerName}</Text>
-          <Text style={styles.callTypeText}>
-            {callType === 'video' ? 'Görüntülü Arama' : 'Sesli Arama'}
-          </Text>
-        </View>
+  const cleanup = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+  };
 
-        {/* Butonlar */}
-        <View style={styles.incomingButtons}>
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => {
-              onReject?.();
-              onCallEnd();
-            }}
-          >
-            <Ionicons name="close" size={40} color="#FFF" />
-            <Text style={styles.actionButtonText}>Reddet</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.acceptButton]}
-            onPress={() => {
-              setCallStarted(true);
-              onAccept?.();
-            }}
-          >
-            <Ionicons name={callType === 'video' ? 'videocam' : 'call'} size={40} color="#FFF" />
-            <Text style={styles.actionButtonText}>Kabul Et</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Daily.co Prebuilt URL oluştur
-  const dailyUrl = roomUrl;
+  // Remaining time warning
+  const remainingTime = maxDuration - callDuration;
+  const showWarning = remainingTime <= 60 && remainingTime > 0;
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#1B1B1E" />
       
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Ionicons name={callType === 'video' ? 'videocam' : 'call'} size={24} color="#FFF" />
-          <Text style={styles.headerTitle}>{callerName}</Text>
+          <Ionicons 
+            name={callType === 'video' ? 'videocam' : 'call'} 
+            size={22} 
+            color="#3FA9F5" 
+          />
+          <Text style={styles.headerTitle}>{otherUserName}</Text>
         </View>
-        <Text style={styles.duration}>{formatDuration(callDuration)}</Text>
+        <View style={styles.headerRight}>
+          <Text style={[styles.duration, showWarning && styles.durationWarning]}>
+            {formatDuration(callDuration)}
+          </Text>
+          {showWarning && (
+            <Text style={styles.warningText}>Son 1 dk!</Text>
+          )}
+        </View>
       </View>
 
       {/* WebView - Daily.co */}
@@ -154,38 +145,54 @@ export default function DailyCallScreen({
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#3FA9F5" />
             <Text style={styles.loadingText}>Bağlanıyor...</Text>
+            <Text style={styles.loadingSubtext}>Lütfen bekleyin</Text>
           </View>
         )}
         
         <WebView
           ref={webViewRef}
-          source={{ uri: dailyUrl }}
+          source={{ uri: roomUrl }}
           style={styles.webView}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           mediaPlaybackRequiresUserAction={false}
           allowsInlineMediaPlayback={true}
           onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
+          onLoadEnd={() => {
+            setLoading(false);
+            setConnected(true);
+          }}
           onError={(syntheticEvent) => {
             const { nativeEvent } = syntheticEvent;
             console.error('WebView error:', nativeEvent);
-            Alert.alert('Hata', 'Arama bağlantısı kurulamadı');
+            Alert.alert('Bağlantı Hatası', 'Arama bağlantısı kurulamadı', [
+              { text: 'Tamam', onPress: () => onCallEnd(roomName) }
+            ]);
           }}
-          // Kamera ve mikrofon izinleri
+          // Camera and microphone permissions
           allowsProtectedMedia={true}
-          mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
+          mediaCapturePermissionGrantType="grant"
+          // Performance
+          cacheEnabled={false}
+          incognito={true}
         />
       </View>
 
-      {/* Alt Kontroller */}
+      {/* Bottom Controls */}
       <View style={styles.controls}>
         <TouchableOpacity 
-          style={[styles.controlButton, styles.endCallButton]}
-          onPress={handleEndCall}
+          style={styles.endCallButton}
+          onPress={() => handleEndCall(false)}
+          activeOpacity={0.7}
         >
-          <Ionicons name="call" size={32} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
+          <Ionicons 
+            name="call" 
+            size={32} 
+            color="#FFF" 
+            style={{ transform: [{ rotate: '135deg' }] }} 
+          />
         </TouchableOpacity>
+        <Text style={styles.endCallText}>Aramayı Bitir</Text>
       </View>
     </SafeAreaView>
   );
@@ -196,66 +203,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1B1B1E',
   },
-  incomingContainer: {
-    flex: 1,
-    backgroundColor: '#1B1B1E',
-    justifyContent: 'space-between',
-    paddingVertical: 60,
-  },
-  callerInfo: {
-    alignItems: 'center',
-    marginTop: 60,
-  },
-  avatarLarge: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: '#3FA9F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  callerName: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 10,
-  },
-  callTypeText: {
-    fontSize: 18,
-    color: '#AAA',
-  },
-  incomingButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 40,
-    marginBottom: 40,
-  },
-  actionButton: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rejectButton: {
-    backgroundColor: '#FF3B30',
-  },
-  acceptButton: {
-    backgroundColor: '#34C759',
-  },
-  actionButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    marginTop: 5,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 12,
     backgroundColor: '#2C2C2E',
+    borderBottomWidth: 1,
+    borderBottomColor: '#3C3C3E',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -267,10 +223,22 @@ const styles = StyleSheet.create({
     color: '#FFF',
     marginLeft: 10,
   },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
   duration: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#3FA9F5',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  durationWarning: {
+    color: '#FF9500',
+  },
+  warningText: {
+    fontSize: 12,
+    color: '#FF9500',
+    marginTop: 2,
   },
   webViewContainer: {
     flex: 1,
@@ -278,6 +246,7 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
+    backgroundColor: '#000',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -288,24 +257,38 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: '#FFF',
-    fontSize: 16,
-    marginTop: 15,
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 20,
+  },
+  loadingSubtext: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 8,
   },
   controls: {
-    flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 25,
+    paddingVertical: 20,
     backgroundColor: '#2C2C2E',
+    borderTopWidth: 1,
+    borderTopColor: '#3C3C3E',
   },
-  controlButton: {
+  endCallButton: {
     width: 70,
     height: 70,
     borderRadius: 35,
+    backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  endCallButton: {
-    backgroundColor: '#FF3B30',
+  endCallText: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 10,
   },
 });
