@@ -3458,7 +3458,7 @@ function PassengerDashboard({
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
-                    // DAILY.CO CALL - ARAYAN KABUL EDILENE KADAR BEKLER
+                    // INSTANT CALLING UI - Daily room arka planda olusturulur
                     // ════════════════════════════════════════════════════════════
                     
                     if (dailyCallActive || incomingCall || outgoingCall) {
@@ -3474,10 +3474,29 @@ function PassengerDashboard({
                       return;
                     }
                     
-                    setCalling(true);
+                    // 1. HEMEN "Araniyor..." ekranini goster
+                    setOutgoingCallData({
+                      receiverName: driverName,
+                      callType: type,
+                      roomUrl: '', // Henuz yok, arka planda olusturulacak
+                      roomName: '',
+                      receiverId: driverId,
+                    });
+                    setOutgoingCall(true);
                     
+                    // 2. HEMEN socket call_invite gonder (room URL olmadan)
+                    emitCallInvite({
+                      caller_id: user.id,
+                      caller_name: user.name || 'Yolcu',
+                      receiver_id: driverId,
+                      room_url: '', // Henuz yok
+                      room_name: '',
+                      call_type: type,
+                      tag_id: activeTag?.id || '',
+                    });
+                    
+                    // 3. Arka planda Daily room olustur
                     try {
-                      // 1. Backend'den Daily.co room olustur
                       const response = await fetch(`${API_URL}/calls/start`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3492,7 +3511,14 @@ function PassengerDashboard({
                       const data = await response.json();
                       
                       if (data.success && data.room_url) {
-                        // 2. Socket ile karsi tarafa call_invite gonder
+                        // Room hazir - state guncelle
+                        setOutgoingCallData(prev => prev ? {
+                          ...prev,
+                          roomUrl: data.room_url,
+                          roomName: data.room_name,
+                        } : null);
+                        
+                        // Socket ile room URL gonder (aranan icin)
                         emitCallInvite({
                           caller_id: user.id,
                           caller_name: user.name || 'Yolcu',
@@ -3502,25 +3528,17 @@ function PassengerDashboard({
                           call_type: type,
                           tag_id: activeTag?.id || '',
                         });
-                        
-                        // 3. "Araniyor..." ekrani goster - Daily.co ACMA
-                        setOutgoingCallData({
-                          receiverName: driverName,
-                          callType: type,
-                          roomUrl: data.room_url,
-                          roomName: data.room_name,
-                          receiverId: driverId,
-                        });
-                        setOutgoingCall(true);
-                        // setDailyCallActive(true) YAPMA - aranan kabul edene kadar bekle
                       } else {
+                        // Room olusturulamadi - iptal et
+                        setOutgoingCall(false);
+                        setOutgoingCallData(null);
                         Alert.alert('Hata', 'Arama baslatilamadi');
                       }
                     } catch (error) {
                       console.error('Call start error:', error);
+                      setOutgoingCall(false);
+                      setOutgoingCallData(null);
                       Alert.alert('Hata', 'Arama baslatilirken bir sorun olustu');
-                    } finally {
-                      setCalling(false);
                     }
                   }}
                   onRequestTripEnd={async () => {
