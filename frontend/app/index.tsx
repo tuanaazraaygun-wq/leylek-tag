@@ -3230,7 +3230,7 @@ function PassengerDashboard({
           setIncomingCallData(null);
         }}
         onReject={() => {
-          // Socket ile red sinyali gönder
+          // Socket ile red sinyali gonder
           emitCallRejected({
             caller_id: incomingCallData.callerId,
             receiver_id: user.id,
@@ -3243,7 +3243,22 @@ function PassengerDashboard({
     );
   }
 
-  // 🔴 SIMPLE DAILY.CO CALL SCREEN - YOLCU
+  // ARANIYOR EKRANI - YOLCU (Aranan kabul edene kadar bekle)
+  if (outgoingCall && outgoingCallData) {
+    return (
+      <OutgoingCallScreen
+        receiverName={outgoingCallData.receiverName}
+        callType={outgoingCallData.callType}
+        onCancel={() => {
+          // Aramayı iptal et
+          setOutgoingCall(false);
+          setOutgoingCallData(null);
+        }}
+      />
+    );
+  }
+
+  // DAILY.CO CALL SCREEN - YOLCU
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
       <DailyCallScreen
