@@ -3943,6 +3943,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('audio');
   const [dailyCallerName, setDailyCallerName] = useState<string>('');
   const [dailyCallerId, setDailyCallerId] = useState<string>('');
+  const [dailyReceiverId, setDailyReceiverId] = useState<string>('');  // 🆕 Added for proper termination
   const [incomingDailyCall, setIncomingDailyCall] = useState(false);
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
