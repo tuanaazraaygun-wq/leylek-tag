@@ -1,14 +1,17 @@
 /**
- * WhatsApp Benzeri Custom Arama Ekranı - WebView Version
- * Daily.co WebView ile ancak UI tamamen özelleştirilmiş
+ * WhatsApp Benzeri Custom Arama Ekranı v2
+ * Daily.co SADECE audio/video stream sağlayıcı
+ * SIFIR Daily UI - Tamamen Custom Native UI
  * 
  * Özellikler:
- * - Daily default UI CSS ile gizleniyor
- * - Özel kontrol butonları
- * - Türkçe arayüz
+ * - Daily default UI %100 gizli (Leave, Guest, Home page YOK)
+ * - Daily popup/warning YOK
+ * - Self-view (küçük kamera önizlemesi)
  * - Sesli ↔ Görüntülü geçiş
+ * - Türkçe arayüz
+ * - Store uyumlu (branding yok)
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,13 +21,13 @@ import {
   StatusBar,
   Dimensions,
   BackHandler,
-  Alert,
   Animated,
   Platform,
-  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -37,115 +40,312 @@ interface WhatsAppCallScreenProps {
   currentUserId?: string;
 }
 
-type CallStatus = 'connecting' | 'connected' | 'reconnecting' | 'ended';
+type CallStatus = 'connecting' | 'ringing' | 'connected' | 'reconnecting' | 'ended';
 
-// Daily UI'ını gizlemek için CSS
-const HIDE_DAILY_UI_CSS = `
-  /* Daily.co tüm UI'ını gizle */
-  .daily-prejoin, 
-  .leave-btn,
-  .leave-button,
-  .daily-buttons,
-  [class*="leave"],
-  [class*="prejoin"],
-  [class*="toolbar"],
-  [class*="header"],
-  [class*="footer"],
-  button[data-action="leave"],
-  .tray,
-  .tray-button,
-  .cam-btn,
-  .mic-btn,
-  .chat-btn,
-  .screen-share-btn,
-  .settings-btn,
-  .participants-btn,
-  .daily-co-branding,
-  .daily-branding,
-  div[class*="Tray"],
-  div[class*="Control"],
-  div[class*="Header"],
-  div[class*="Leave"],
-  div[class*="Button"],
-  nav,
-  header,
-  footer {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-  }
-  
-  /* Video container tam ekran */
-  .daily-video-container,
-  .call-wrapper,
-  #call-wrapper,
-  #videos,
-  .videos,
-  video {
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: 100vw !important;
-    max-height: 100vh !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    z-index: 1 !important;
-    object-fit: cover !important;
-  }
-  
-  body {
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    background: #000 !important;
-  }
-`;
-
-// Inject CSS script
-const INJECT_CSS_SCRIPT = `
-  (function() {
-    var style = document.createElement('style');
-    style.type = 'text/css';
-    style.innerHTML = \`${HIDE_DAILY_UI_CSS}\`;
-    document.head.appendChild(style);
+// Daily UI'ı TAMAMEN gizleyen ve sadece video stream gösteren HTML
+const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { 
+      width: 100%; 
+      height: 100%; 
+      overflow: hidden; 
+      background: #000;
+      -webkit-user-select: none;
+      user-select: none;
+    }
     
-    // MutationObserver ile sürekli kontrol et
-    var observer = new MutationObserver(function(mutations) {
-      var buttons = document.querySelectorAll('button, [class*="leave"], [class*="btn"], nav, header, footer');
-      buttons.forEach(function(el) {
-        if (el.textContent && (
-          el.textContent.includes('Leave') || 
-          el.textContent.includes('leave') ||
-          el.textContent.includes('Home') ||
-          el.textContent.includes('Guest')
-        )) {
-          el.style.display = 'none';
-          el.style.visibility = 'hidden';
+    /* Video containers */
+    #remote-video {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #1a1a1a;
+    }
+    
+    #local-video {
+      position: fixed;
+      top: 100px;
+      right: 16px;
+      width: 110px;
+      height: 160px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: #333;
+      z-index: 100;
+    }
+    
+    /* Audio-only avatar */
+    #audio-avatar {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 140px;
+      height: 140px;
+      border-radius: 70px;
+      background: linear-gradient(135deg, #3FA9F5, #1E88E5);
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 0 40px rgba(63, 169, 245, 0.4);
+    }
+    
+    #audio-avatar.show {
+      display: flex;
+    }
+    
+    #avatar-letter {
+      font-size: 60px;
+      font-weight: bold;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    /* Hide everything from Daily */
+    iframe, .daily-video-modal, [class*="Daily"], [class*="daily"],
+    [class*="prejoin"], [class*="leave"], [class*="modal"],
+    [class*="popup"], [class*="warning"], [class*="error"],
+    [class*="toast"], [class*="notification"], [class*="banner"],
+    [class*="toolbar"], [class*="control"], [class*="button"],
+    [class*="menu"], [class*="panel"], [class*="overlay"],
+    dialog, aside, nav, header, footer {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+  </style>
+  <script src="https://unpkg.com/@daily-co/daily-js"></script>
+</head>
+<body>
+  <div id="audio-avatar">
+    <span id="avatar-letter">?</span>
+  </div>
+  <video id="remote-video" autoplay playsinline></video>
+  <video id="local-video" autoplay playsinline muted></video>
+  
+  <script>
+    // Global state
+    let callObject = null;
+    let localVideoTrack = null;
+    let remoteVideoTrack = null;
+    let isVideoEnabled = ${startWithVideo};
+    let isAudioEnabled = true;
+    let hasRemoteVideo = false;
+    
+    const remoteVideo = document.getElementById('remote-video');
+    const localVideo = document.getElementById('local-video');
+    const audioAvatar = document.getElementById('audio-avatar');
+    const avatarLetter = document.getElementById('avatar-letter');
+    
+    // Send message to React Native
+    function sendToRN(type, data = {}) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...data }));
+      }
+    }
+    
+    // Update UI based on video state
+    function updateVideoUI() {
+      if (hasRemoteVideo) {
+        remoteVideo.style.display = 'block';
+        audioAvatar.classList.remove('show');
+      } else {
+        remoteVideo.style.display = 'none';
+        audioAvatar.classList.add('show');
+      }
+      
+      localVideo.style.display = isVideoEnabled ? 'block' : 'none';
+    }
+    
+    // Initialize Daily call
+    async function initCall() {
+      try {
+        sendToRN('status', { status: 'connecting' });
+        
+        // Create call object - NO UI
+        callObject = DailyIframe.createCallObject({
+          showLeaveButton: false,
+          showFullscreenButton: false,
+          showLocalVideo: false,
+          showParticipantsBar: false,
+          iframeStyle: { display: 'none' }
+        });
+        
+        // Event handlers
+        callObject.on('joining-meeting', () => {
+          sendToRN('status', { status: 'connecting' });
+        });
+        
+        callObject.on('joined-meeting', async (event) => {
+          sendToRN('status', { status: 'connected' });
+          sendToRN('joined', { participants: Object.keys(event.participants).length });
+          
+          // Get local tracks
+          const localParticipant = callObject.participants().local;
+          if (localParticipant.tracks.video.persistentTrack) {
+            const stream = new MediaStream([localParticipant.tracks.video.persistentTrack]);
+            localVideo.srcObject = stream;
+            localVideoTrack = localParticipant.tracks.video.persistentTrack;
+          }
+          
+          updateVideoUI();
+        });
+        
+        callObject.on('participant-joined', (event) => {
+          if (!event.participant.local) {
+            sendToRN('participant-joined', { id: event.participant.user_id });
+            updateRemoteVideo(event.participant);
+          }
+        });
+        
+        callObject.on('participant-updated', (event) => {
+          if (event.participant.local) {
+            // Local participant updated
+            if (event.participant.tracks.video.persistentTrack) {
+              const stream = new MediaStream([event.participant.tracks.video.persistentTrack]);
+              localVideo.srcObject = stream;
+            }
+            isVideoEnabled = event.participant.video;
+            isAudioEnabled = event.participant.audio;
+            sendToRN('local-updated', { video: isVideoEnabled, audio: isAudioEnabled });
+          } else {
+            // Remote participant updated
+            updateRemoteVideo(event.participant);
+          }
+          updateVideoUI();
+        });
+        
+        callObject.on('participant-left', (event) => {
+          if (!event.participant.local) {
+            sendToRN('participant-left', { id: event.participant.user_id });
+            hasRemoteVideo = false;
+            remoteVideo.srcObject = null;
+            updateVideoUI();
+            // Other participant left - notify RN
+            sendToRN('call-ended', { reason: 'participant-left' });
+          }
+        });
+        
+        callObject.on('error', (event) => {
+          console.error('Daily error:', event);
+          sendToRN('error', { message: event.errorMsg || 'Bağlantı hatası' });
+        });
+        
+        callObject.on('left-meeting', () => {
+          sendToRN('left', {});
+        });
+        
+        // Join the room
+        await callObject.join({ 
+          url: '${roomUrl}',
+          videoSource: ${startWithVideo},
+          audioSource: true
+        });
+        
+      } catch (error) {
+        console.error('Init error:', error);
+        sendToRN('error', { message: error.message || 'Bağlantı kurulamadı' });
+      }
+    }
+    
+    // Update remote video
+    function updateRemoteVideo(participant) {
+      if (participant.tracks.video.persistentTrack && participant.tracks.video.state === 'playable') {
+        const stream = new MediaStream([participant.tracks.video.persistentTrack]);
+        remoteVideo.srcObject = stream;
+        remoteVideoTrack = participant.tracks.video.persistentTrack;
+        hasRemoteVideo = true;
+      } else {
+        hasRemoteVideo = false;
+      }
+      updateVideoUI();
+    }
+    
+    // Control functions (called from RN)
+    window.toggleVideo = async function(enable) {
+      if (callObject) {
+        await callObject.setLocalVideo(enable);
+        isVideoEnabled = enable;
+        updateVideoUI();
+        sendToRN('video-toggled', { enabled: enable });
+      }
+    };
+    
+    window.toggleAudio = async function(enable) {
+      if (callObject) {
+        await callObject.setLocalAudio(enable);
+        isAudioEnabled = enable;
+        sendToRN('audio-toggled', { enabled: enable });
+      }
+    };
+    
+    window.cycleCamera = async function() {
+      if (callObject) {
+        await callObject.cycleCamera();
+        sendToRN('camera-cycled', {});
+      }
+    };
+    
+    window.endCall = async function() {
+      if (callObject) {
+        try {
+          await callObject.leave();
+          await callObject.destroy();
+          callObject = null;
+        } catch (e) {
+          console.error('End call error:', e);
         }
+        sendToRN('call-ended', { reason: 'user-ended' });
+      }
+    };
+    
+    window.setAvatarLetter = function(letter) {
+      avatarLetter.textContent = letter || '?';
+    };
+    
+    // Prevent any popup/alert
+    window.alert = function() {};
+    window.confirm = function() { return false; };
+    window.prompt = function() { return null; };
+    
+    // Block all Daily modals/popups via MutationObserver
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === 1) {
+            const className = node.className || '';
+            const id = node.id || '';
+            if (className.includes('daily') || className.includes('modal') || 
+                className.includes('popup') || className.includes('dialog') ||
+                className.includes('overlay') || className.includes('toast') ||
+                id.includes('daily') || node.tagName === 'DIALOG' ||
+                node.tagName === 'ASIDE') {
+              node.remove();
+            }
+          }
+        });
       });
     });
     
     observer.observe(document.body, { childList: true, subtree: true });
     
-    // İlk yüklemede de çalıştır
-    setTimeout(function() {
-      var buttons = document.querySelectorAll('button, [class*="leave"], [class*="btn"], nav, header, footer');
-      buttons.forEach(function(el) {
-        el.style.display = 'none';
-        el.style.visibility = 'hidden';
-      });
-    }, 500);
-    
-    setTimeout(function() {
-      var buttons = document.querySelectorAll('button, [class*="leave"], [class*="btn"], nav, header, footer');
-      buttons.forEach(function(el) {
-        el.style.display = 'none';
-        el.style.visibility = 'hidden';
-      });
-    }, 1500);
-  })();
-  true;
+    // Start
+    initCall();
+  </script>
+</body>
+</html>
 `;
 
 export default function WhatsAppCallScreen({
@@ -164,15 +364,39 @@ export default function WhatsAppCallScreen({
   const [isVideoEnabled, setIsVideoEnabled] = useState(callType === 'video');
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [hasRemoteParticipant, setHasRemoteParticipant] = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
   
   // UI state
   const [showControls, setShowControls] = useState(true);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Max call duration (10 minutes)
   const maxDuration = 600;
+
+  // Set avatar letter on mount
+  useEffect(() => {
+    const letter = otherUserName?.charAt(0)?.toUpperCase() || '?';
+    setTimeout(() => {
+      webViewRef.current?.injectJavaScript(`window.setAvatarLetter('${letter}'); true;`);
+    }, 500);
+  }, [otherUserName]);
+
+  // Pulse animation for connecting state
+  useEffect(() => {
+    if (status === 'connecting') {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [status]);
 
   // Start timer when connected
   useEffect(() => {
@@ -204,7 +428,7 @@ export default function WhatsAppCallScreen({
     return () => backHandler.remove();
   }, []);
 
-  // Auto-hide controls after 5 seconds (only in video mode)
+  // Auto-hide controls after 5 seconds
   useEffect(() => {
     if (isVideoEnabled && status === 'connected' && showControls) {
       const timeout = setTimeout(() => {
@@ -219,56 +443,73 @@ export default function WhatsAppCallScreen({
     }
   }, [isVideoEnabled, status, showControls]);
 
-  const handleEndCall = (auto: boolean = false) => {
+  // Handle messages from WebView
+  const handleWebViewMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      console.log('📞 WebView Message:', data.type, data);
+      
+      switch (data.type) {
+        case 'status':
+          setStatus(data.status);
+          break;
+        case 'joined':
+          setStatus('connected');
+          break;
+        case 'participant-joined':
+          setHasRemoteParticipant(true);
+          break;
+        case 'participant-left':
+        case 'call-ended':
+          handleEndCall(true);
+          break;
+        case 'local-updated':
+          setIsVideoEnabled(data.video);
+          setIsAudioEnabled(data.audio);
+          break;
+        case 'video-toggled':
+          setIsVideoEnabled(data.enabled);
+          break;
+        case 'audio-toggled':
+          setIsAudioEnabled(data.enabled);
+          break;
+        case 'camera-cycled':
+          setIsFrontCamera(prev => !prev);
+          break;
+        case 'error':
+          console.error('Call error:', data.message);
+          handleEndCall(true);
+          break;
+      }
+    } catch (e) {
+      console.error('Parse error:', e);
+    }
+  };
+
+  const handleEndCall = useCallback((immediate: boolean = false) => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
     
-    if (auto) {
-      onCallEnd(roomName);
-      return;
-    }
+    // Call leave() and destroy() in WebView
+    webViewRef.current?.injectJavaScript('window.endCall(); true;');
+    
+    // Immediately close - no delay, no popup
+    onCallEnd(roomName);
+  }, [roomName, onCallEnd]);
 
-    Alert.alert(
-      'Aramayı Bitir',
-      'Aramayı sonlandırmak istediğinize emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        { 
-          text: 'Bitir', 
-          style: 'destructive',
-          onPress: () => {
-            onCallEnd(roomName);
-          }
-        },
-      ]
-    );
-  };
-
-  // Toggle video via WebView message
+  // Toggle video
   const toggleVideo = () => {
     const newState = !isVideoEnabled;
+    webViewRef.current?.injectJavaScript(`window.toggleVideo(${newState}); true;`);
     setIsVideoEnabled(newState);
-    // Daily.co JS API - toggle camera
-    webViewRef.current?.injectJavaScript(`
-      if (window.call && window.call.setLocalVideo) {
-        window.call.setLocalVideo(${newState});
-      }
-      true;
-    `);
   };
 
-  // Toggle audio via WebView message
+  // Toggle audio
   const toggleAudio = () => {
     const newState = !isAudioEnabled;
+    webViewRef.current?.injectJavaScript(`window.toggleAudio(${newState}); true;`);
     setIsAudioEnabled(newState);
-    // Daily.co JS API - toggle microphone
-    webViewRef.current?.injectJavaScript(`
-      if (window.call && window.call.setLocalAudio) {
-        window.call.setLocalAudio(${newState});
-      }
-      true;
-    `);
   };
 
   // Toggle speaker
@@ -278,27 +519,7 @@ export default function WhatsAppCallScreen({
 
   // Switch camera
   const switchCamera = () => {
-    webViewRef.current?.injectJavaScript(`
-      if (window.call && window.call.cycleCamera) {
-        window.call.cycleCamera();
-      }
-      true;
-    `);
-  };
-
-  // Request video upgrade (sesli → görüntülü)
-  const requestVideoUpgrade = () => {
-    Alert.alert(
-      'Görüntülü Arama',
-      'Görüntülü aramaya geçmek istiyor musunuz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        { 
-          text: 'Evet', 
-          onPress: () => toggleVideo()
-        },
-      ]
-    );
+    webViewRef.current?.injectJavaScript('window.cycleCamera(); true;');
   };
 
   // Format duration as MM:SS
@@ -320,7 +541,8 @@ export default function WhatsAppCallScreen({
   const getStatusText = () => {
     switch (status) {
       case 'connecting': return 'Bağlanıyor...';
-      case 'connected': return 'Bağlandı';
+      case 'ringing': return 'Çalıyor...';
+      case 'connected': return hasRemoteParticipant ? 'Bağlandı' : 'Bekleniyor...';
       case 'reconnecting': return 'Yeniden bağlanıyor...';
       case 'ended': return 'Arama bitti';
       default: return '';
@@ -331,11 +553,14 @@ export default function WhatsAppCallScreen({
   const remainingTime = maxDuration - callDuration;
   const showWarning = remainingTime <= 60 && remainingTime > 0;
 
+  // HTML content
+  const htmlContent = createCallHTML(roomUrl, callType === 'video');
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" translucent />
       
-      {/* WebView - Daily.co (Hidden UI) */}
+      {/* WebView - Daily Video Stream (HIDDEN UI) */}
       <TouchableOpacity 
         style={styles.webViewContainer} 
         activeOpacity={1} 
@@ -343,76 +568,74 @@ export default function WhatsAppCallScreen({
       >
         <WebView
           ref={webViewRef}
-          source={{ uri: roomUrl }}
+          source={{ html: htmlContent }}
           style={styles.webView}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           mediaPlaybackRequiresUserAction={false}
           allowsInlineMediaPlayback={true}
-          onLoadStart={() => {
-            setLoading(true);
-            setStatus('connecting');
-          }}
-          onLoadEnd={() => {
-            setLoading(false);
-            setStatus('connected');
-          }}
-          onError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            console.error('WebView error:', nativeEvent);
-            Alert.alert('Bağlantı Hatası', 'Arama bağlantısı kurulamadı', [
-              { text: 'Tamam', onPress: () => onCallEnd(roomName) }
-            ]);
-          }}
-          injectedJavaScript={INJECT_CSS_SCRIPT}
+          onMessage={handleWebViewMessage}
           allowsProtectedMedia={true}
           mediaCapturePermissionGrantType="grant"
           cacheEnabled={false}
-          incognito={true}
+          scrollEnabled={false}
+          bounces={false}
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
         />
-        
-        {/* Loading Overlay */}
-        {loading && (
-          <View style={styles.loadingOverlay}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {otherUserName?.charAt(0)?.toUpperCase() || '?'}
-              </Text>
-            </View>
-            <Text style={styles.loadingName}>{otherUserName}</Text>
-            <ActivityIndicator size="large" color="#3FA9F5" style={{ marginTop: 20 }} />
-            <Text style={styles.loadingText}>Bağlanıyor...</Text>
-          </View>
-        )}
       </TouchableOpacity>
 
-      {/* Header - Always visible */}
+      {/* Gradient Overlays for better visibility */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.7)', 'transparent']}
+        style={styles.topGradient}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.8)']}
+        style={styles.bottomGradient}
+        pointerEvents="none"
+      />
+
+      {/* Header */}
       <Animated.View style={[styles.header, { opacity: showControls ? 1 : fadeAnim }]}>
         <View style={styles.headerContent}>
           <Text style={styles.callerName}>{otherUserName}</Text>
-          <Text style={styles.statusText}>{getStatusText()}</Text>
+          <View style={styles.statusContainer}>
+            {status === 'connecting' && (
+              <Animated.View style={[styles.statusDot, { transform: [{ scale: pulseAnim }] }]} />
+            )}
+            {status === 'connected' && <View style={[styles.statusDot, styles.statusDotConnected]} />}
+            <Text style={[styles.statusText, status === 'connected' && styles.statusTextConnected]}>
+              {getStatusText()}
+            </Text>
+          </View>
           {status === 'connected' && (
             <View style={styles.durationContainer}>
+              <Ionicons name="time-outline" size={16} color="#FFF" style={{ marginRight: 6 }} />
               <Text style={[styles.duration, showWarning && styles.durationWarning]}>
                 {formatDuration(callDuration)}
               </Text>
-              {showWarning && (
-                <Text style={styles.warningText}>Son 1 dakika!</Text>
-              )}
+            </View>
+          )}
+          {showWarning && (
+            <View style={styles.warningBadge}>
+              <Text style={styles.warningText}>Son 1 dakika!</Text>
             </View>
           )}
         </View>
       </Animated.View>
 
-      {/* Controls - Bottom */}
+      {/* Controls */}
       <Animated.View style={[styles.controlsContainer, { opacity: showControls ? 1 : fadeAnim }]}>
-        {/* Video upgrade button (only in audio call) */}
+        {/* Video upgrade button (only in audio call when connected) */}
         {!isVideoEnabled && status === 'connected' && (
           <TouchableOpacity 
             style={styles.upgradeButton}
-            onPress={requestVideoUpgrade}
+            onPress={toggleVideo}
+            activeOpacity={0.8}
           >
-            <Ionicons name="videocam" size={20} color="#FFF" />
+            <Ionicons name="videocam" size={22} color="#FFF" />
             <Text style={styles.upgradeText}>Görüntülüye Geç</Text>
           </TouchableOpacity>
         )}
@@ -422,12 +645,15 @@ export default function WhatsAppCallScreen({
           <TouchableOpacity 
             style={[styles.controlButton, !isVideoEnabled && styles.controlButtonOff]}
             onPress={toggleVideo}
+            activeOpacity={0.7}
           >
-            <Ionicons 
-              name={isVideoEnabled ? 'videocam' : 'videocam-off'} 
-              size={28} 
-              color="#FFF" 
-            />
+            <View style={styles.controlIconWrapper}>
+              <Ionicons 
+                name={isVideoEnabled ? 'videocam' : 'videocam-off'} 
+                size={26} 
+                color="#FFF" 
+              />
+            </View>
             <Text style={styles.controlLabel}>
               {isVideoEnabled ? 'Kamera' : 'Kapalı'}
             </Text>
@@ -437,12 +663,15 @@ export default function WhatsAppCallScreen({
           <TouchableOpacity 
             style={[styles.controlButton, !isAudioEnabled && styles.controlButtonOff]}
             onPress={toggleAudio}
+            activeOpacity={0.7}
           >
-            <Ionicons 
-              name={isAudioEnabled ? 'mic' : 'mic-off'} 
-              size={28} 
-              color="#FFF" 
-            />
+            <View style={styles.controlIconWrapper}>
+              <Ionicons 
+                name={isAudioEnabled ? 'mic' : 'mic-off'} 
+                size={26} 
+                color="#FFF" 
+              />
+            </View>
             <Text style={styles.controlLabel}>
               {isAudioEnabled ? 'Mikrofon' : 'Sessiz'}
             </Text>
@@ -452,12 +681,15 @@ export default function WhatsAppCallScreen({
           <TouchableOpacity 
             style={[styles.controlButton, !isSpeakerOn && styles.controlButtonOff]}
             onPress={toggleSpeaker}
+            activeOpacity={0.7}
           >
-            <Ionicons 
-              name={isSpeakerOn ? 'volume-high' : 'volume-mute'} 
-              size={28} 
-              color="#FFF" 
-            />
+            <View style={styles.controlIconWrapper}>
+              <Ionicons 
+                name={isSpeakerOn ? 'volume-high' : 'ear-outline'} 
+                size={26} 
+                color="#FFF" 
+              />
+            </View>
             <Text style={styles.controlLabel}>
               {isSpeakerOn ? 'Hoparlör' : 'Kulaklık'}
             </Text>
@@ -468,200 +700,208 @@ export default function WhatsAppCallScreen({
             <TouchableOpacity 
               style={styles.controlButton}
               onPress={switchCamera}
+              activeOpacity={0.7}
             >
-              <Ionicons name="camera-reverse" size={28} color="#FFF" />
+              <View style={styles.controlIconWrapper}>
+                <Ionicons name="camera-reverse-outline" size={26} color="#FFF" />
+              </View>
               <Text style={styles.controlLabel}>Çevir</Text>
             </TouchableOpacity>
           )}
 
-          {/* End Call */}
+          {/* End Call - Always visible, bigger */}
           <TouchableOpacity 
             style={styles.endCallButton}
             onPress={() => handleEndCall(false)}
+            activeOpacity={0.8}
           >
             <Ionicons 
               name="call" 
-              size={32} 
+              size={30} 
               color="#FFF" 
               style={{ transform: [{ rotate: '135deg' }] }}
             />
-            <Text style={styles.endCallLabel}>Bitir</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000',
   },
   webViewContainer: {
-    flex: 1,
-    backgroundColor: '#000',
+    ...StyleSheet.absoluteFillObject,
   },
   webView: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: 'transparent',
   },
-  // Loading Overlay
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  avatar: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: '#3FA9F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#3FA9F5',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  avatarText: {
-    fontSize: 60,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  loadingName: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#FFF',
-    marginTop: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#888',
-    marginTop: 10,
-  },
-  // Header
-  header: {
+  // Gradients
+  topGradient: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    height: 180,
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 220,
+  },
+  // Header
+  header: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
   headerContent: {
     alignItems: 'center',
   },
   callerName: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '700',
     color: '#FFF',
-    textShadowColor: 'rgba(0,0,0,0.7)',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  statusText: {
-    fontSize: 16,
-    color: '#4CAF50',
-    marginTop: 6,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  durationContainer: {
+  statusContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
     marginTop: 8,
   },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFA500',
+    marginRight: 8,
+  },
+  statusDotConnected: {
+    backgroundColor: '#4CAF50',
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#FFA500',
+    fontWeight: '500',
+  },
+  statusTextConnected: {
+    color: '#4CAF50',
+  },
+  durationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
   duration: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: '#FFF',
     fontVariant: ['tabular-nums'],
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
   durationWarning: {
     color: '#FF9500',
   },
+  warningBadge: {
+    marginTop: 10,
+    backgroundColor: 'rgba(255, 149, 0, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
   warningText: {
-    fontSize: 12,
-    color: '#FF9500',
-    marginTop: 4,
+    fontSize: 13,
+    color: '#FFF',
+    fontWeight: '600',
   },
   // Controls
   controlsContainer: {
     position: 'absolute',
-    bottom: 0,
+    bottom: Platform.OS === 'ios' ? 50 : 30,
     left: 0,
     right: 0,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
-    paddingHorizontal: 16,
+    alignItems: 'center',
   },
   upgradeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(63, 169, 245, 0.9)',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    marginBottom: 20,
-    alignSelf: 'center',
+    backgroundColor: 'rgba(63, 169, 245, 0.95)',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 28,
+    marginBottom: 24,
+    shadowColor: '#3FA9F5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   upgradeText: {
     color: '#FFF',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: 10,
   },
   controlsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 30,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30, 30, 30, 0.85)',
+    borderRadius: 36,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
   },
   controlButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 8,
   },
   controlButtonOff: {
-    backgroundColor: 'rgba(255,59,48,0.4)',
+    opacity: 0.7,
+  },
+  controlIconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   controlLabel: {
     color: '#FFF',
-    fontSize: 10,
-    marginTop: 4,
+    fontSize: 11,
+    marginTop: 6,
     textAlign: 'center',
+    fontWeight: '500',
   },
   endCallButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
     width: 64,
     height: 64,
     borderRadius: 32,
     backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
     shadowColor: '#FF3B30',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 8,
-  },
-  endCallLabel: {
-    color: '#FFF',
-    fontSize: 11,
-    marginTop: 4,
-    fontWeight: '600',
   },
 });
