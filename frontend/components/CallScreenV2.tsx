@@ -43,7 +43,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const AGORA_APP_ID = '86eb50030f954355bc57696d45b343bd';
 
 // Backend URL
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 'https://tagride.preview.emergentagent.com';
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 'https://dailyco-fix.preview.emergentagent.com';
 
 // CALL PHASES - Arama aşamaları
 type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'ended';

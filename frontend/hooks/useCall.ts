@@ -16,7 +16,7 @@ import Constants from 'expo-constants';
 // ==================== CONFIG ====================
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    'https://tagride.preview.emergentagent.com';
+                    'https://dailyco-fix.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';

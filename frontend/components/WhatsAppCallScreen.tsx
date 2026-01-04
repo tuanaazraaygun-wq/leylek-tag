@@ -282,7 +282,7 @@ export default function WhatsAppCallScreen({
   // API URL
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
     ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
-    : 'https://tagride.preview.emergentagent.com/api';
+    : 'https://dailyco-fix.preview.emergentagent.com/api';
   
   const maxDuration = 600;
 
