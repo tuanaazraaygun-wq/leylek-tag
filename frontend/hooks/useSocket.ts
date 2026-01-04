@@ -148,9 +148,12 @@ export default function useSocket({
   onTripEndResponse,
   onTripForceEnded,
   onIncomingDailyCall,
+  onCallAcceptedNew,
   onDailyCallAccepted,
   onDailyCallRejected,
   onDailyCallEnded,
+  onCallCancelled,
+  onCallEndedNew,
 }: UseSocketProps) {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
