@@ -3321,8 +3321,8 @@ function PassengerDashboard({
           setDailyCallActive(false);
           setDailyRoomUrl(null);
           setDailyRoomName('');
-          setDailyCallerId('');
-          setDailyReceiverId('');
+          setPassengerDailyCallerId('');
+          setPassengerDailyReceiverId('');
         }}
       />
     );
