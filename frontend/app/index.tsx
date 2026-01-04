@@ -2573,6 +2573,10 @@ function PassengerDashboard({
   const [callEnded, setCallEnded] = useState(false);
   const [receiverOffline, setReceiverOffline] = useState(false);
   
+  // 🆕 Daily Call IDs (for proper termination)
+  const [dailyCallerId, setDailyCallerId] = useState<string>('');
+  const [dailyReceiverId, setDailyReceiverId] = useState<string>('');
+  
   // 🆕 Gelen Arama State'leri
   const [incomingCall, setIncomingCall] = useState(false);
   const [incomingCallData, setIncomingCallData] = useState<{
