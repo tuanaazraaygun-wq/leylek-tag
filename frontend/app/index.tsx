@@ -3090,9 +3090,9 @@ function PassengerDashboard({
 
   // Daily.co gelen arama reddet
   const handleRejectDailyCall = () => {
-    if (dailyCallerId) {
+    if (passengerDailyCallerId) {
       rejectDailyCall({
-        caller_id: dailyCallerId
+        caller_id: passengerDailyCallerId
       });
     }
     setIncomingDailyCall(false);
