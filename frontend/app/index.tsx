@@ -4601,10 +4601,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   }
 
-  // WHATSAPP CALL SCREEN - SOFOR
+  // DAILY CALL SCREEN - SOFOR (Backend-driven termination)
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
-      <WhatsAppCallScreen
+      <DailyCallScreen
         roomUrl={dailyRoomUrl}
         roomName={dailyRoomName}
         callType={dailyCallType}
@@ -4613,8 +4613,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         receiverId={dailyReceiverId}
         currentUserId={user?.id || ''}
         onCallEnd={(roomName) => {
-          // WhatsAppCallScreen handles backend call internally
-          // Just cleanup local state
+          // Clear all local call state
           setDailyCallActive(false);
           setDailyRoomUrl(null);
           setDailyRoomName('');
