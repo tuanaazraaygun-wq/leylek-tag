@@ -11,7 +11,7 @@ import LiveMapView from '../components/LiveMapView';
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
-import WhatsAppCallScreen from '../components/WhatsAppCallScreen'; // 🆕 WhatsApp benzeri özel arama ekranı
+import DailyCallScreen from '../components/DailyCallScreen'; // Backend-driven termination
 import IncomingCallScreen from '../components/IncomingCallScreen'; // 🆕 Gelen Arama Ekrani
 import OutgoingCallScreen from '../components/OutgoingCallScreen'; // 🆕 Araniyor Ekrani
 import useSocket from '../hooks/useSocket';
