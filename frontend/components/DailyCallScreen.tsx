@@ -274,7 +274,8 @@ export default function DailyCallScreen({
     const message = JSON.stringify({
       type: 'join',
       roomUrl: roomUrlRef.current,
-      isVideo: isVideo
+      isVideo: isVideo,
+      userName: otherUserName || 'Kullanıcı'
     });
     
     webViewRef.current?.postMessage(message);
