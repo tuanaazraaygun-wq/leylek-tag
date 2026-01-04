@@ -3248,25 +3248,22 @@ function PassengerDashboard({
         callerName={incomingCallData.callerName}
         callType={incomingCallData.callType}
         onAccept={() => {
-          // Socket ile kabul sinyali gönder
-          emitCallAccepted({
+          // 🆕 YENİ: Socket ile call_accept gönder - Backend Daily room oluşturacak
+          // Sonra HER İKİ TARAFA call_accepted gelecek
+          console.log('📞 YOLCU - ARAMAYI KABUL EDİYOR, call_accept gönderiliyor...');
+          emitCallAccept({
             caller_id: incomingCallData.callerId,
             receiver_id: user.id,
-            room_url: incomingCallData.roomUrl,
+            call_type: incomingCallData.callType,
+            tag_id: incomingCallData.tagId || activeTag?.id || '',
           });
-          // Daily.co aç
-          setDailyRoomUrl(incomingCallData.roomUrl);
-          setDailyRoomName(incomingCallData.roomName);
-          setDailyCallType(incomingCallData.callType);
-          setDailyCallerName(incomingCallData.callerName);
-          setDailyCallActive(true);
-          // Reset incoming call
-          setIncomingCall(false);
-          setIncomingCallData(null);
+          // NOT: Daily.co'ya giriş onCallAcceptedNew event'i ile yapılacak
+          // Navigation YOK - sadece bekle
         }}
         onReject={() => {
-          // Socket ile red sinyali gonder
-          emitCallRejected({
+          // 🆕 YENİ: call_reject kullan
+          console.log('📞 YOLCU - ARAMAYI REDDEDİYOR');
+          emitCallReject({
             caller_id: incomingCallData.callerId,
             receiver_id: user.id,
           });
@@ -3285,7 +3282,12 @@ function PassengerDashboard({
         receiverName={outgoingCallData.receiverName}
         callType={outgoingCallData.callType}
         onCancel={() => {
-          // Aramayı iptal et
+          // 🆕 YENİ: call_cancel kullan
+          console.log('📞 YOLCU - ARAMAYI İPTAL EDİYOR');
+          emitCallCancel({
+            caller_id: user.id,
+            receiver_id: outgoingCallData.receiverId,
+          });
           setOutgoingCall(false);
           setOutgoingCallData(null);
         }}
