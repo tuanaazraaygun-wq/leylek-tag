@@ -332,8 +332,33 @@ export default function useSocket({
       onIncomingDailyCall?.(data);
     });
 
+    // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda gönderiliyor
+    socket.on('call_accepted', (data) => {
+      console.log('✅ CALL_ACCEPTED (SYNC) - DAILY ODASI HAZIR:', data);
+      onCallAcceptedNew?.(data);
+    });
+
+    // 🆕 YENİ: call_rejected
+    socket.on('call_rejected', (data) => {
+      console.log('❌ CALL_REJECTED:', data);
+      onDailyCallRejected?.(data);
+    });
+
+    // 🆕 YENİ: call_cancelled - Arayan iptal etti
+    socket.on('call_cancelled', (data) => {
+      console.log('🚫 CALL_CANCELLED:', data);
+      onCallCancelled?.(data);
+    });
+
+    // 🆕 YENİ: call_ended - Görüşme bitti
+    socket.on('call_ended', (data) => {
+      console.log('📴 CALL_ENDED:', data);
+      onCallEndedNew?.(data);
+    });
+
+    // Eski eventler (geriye uyumluluk)
     socket.on('daily_call_accepted', (data) => {
-      console.log('✅ DAILY.CO ARAMA KABUL EDİLDİ:', data);
+      console.log('✅ DAILY.CO ARAMA KABUL EDİLDİ (ESKİ):', data);
       onDailyCallAccepted?.(data);
     });
 
@@ -352,7 +377,8 @@ export default function useSocket({
       onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer, onOfferAccepted, 
       onOfferRejected, onOfferSentAck, onLocationUpdated, onTripStarted, onTripEnded,
       onTripEndRequested, onTripEndResponse, onTripForceEnded,
-      onIncomingDailyCall, onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded]);
+      onIncomingDailyCall, onCallAcceptedNew, onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
+      onCallCancelled, onCallEndedNew]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
