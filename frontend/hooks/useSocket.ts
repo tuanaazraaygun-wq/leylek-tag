@@ -775,6 +775,12 @@ export default function useSocket({
     emitCallInvite,
     emitCallAccepted,
     emitCallRejected,
+    // 🆕 YENİ: Sync Call Events
+    emitCallAccept,
+    emitCallReject,
+    emitCallCancel,
+    emitCallEnd,
+    // Eski Daily events (geriye uyumluluk)
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
