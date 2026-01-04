@@ -105,12 +105,24 @@ interface UseSocketProps {
     room_url: string;
     room_name: string;
     caller_id: string;
+    caller_name: string;
     call_type: 'video' | 'audio';
     tag_id: string;
+  }) => void;
+  // 🆕 YENİ: call_accepted - Her iki tarafa aynı anda gönderiliyor
+  onCallAcceptedNew?: (data: {
+    room_url: string;
+    room_name: string;
+    call_type: string;
+    caller_id: string;
+    receiver_id: string;
   }) => void;
   onDailyCallAccepted?: (data: { room_url: string; accepted: boolean }) => void;
   onDailyCallRejected?: (data: { rejected: boolean }) => void;
   onDailyCallEnded?: (data: { ended: boolean; room_name: string }) => void;
+  // 🆕 YENİ: call_cancelled, call_ended
+  onCallCancelled?: (data: { cancelled: boolean; by: string }) => void;
+  onCallEndedNew?: (data: { ended: boolean; by: string; room_name: string }) => void;
 }
 
 export default function useSocket({
