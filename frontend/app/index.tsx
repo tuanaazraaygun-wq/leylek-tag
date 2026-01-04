@@ -4576,7 +4576,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         receiverName={outgoingCallData.receiverName}
         callType={outgoingCallData.callType}
         onCancel={() => {
-          // Aramayi iptal et
+          // 🆕 YENİ: call_cancel kullan
+          console.log('📞 ŞOFÖR - ARAMAYI İPTAL EDİYOR');
+          emitCallCancel({
+            caller_id: user.id,
+            receiver_id: outgoingCallData.receiverId,
+          });
           setOutgoingCall(false);
           setOutgoingCallData(null);
         }}
