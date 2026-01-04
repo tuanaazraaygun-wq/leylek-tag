@@ -4611,21 +4611,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         roomName={dailyRoomName}
         callType={dailyCallType}
         otherUserName={dailyCallerName}
-        currentUserId={user?.id}
-        onCallEnd={async (roomName) => {
-          // End call and cleanup
-          try {
-            await fetch(`${API_URL}/calls/end`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ room_name: roomName })
-            });
-          } catch (e) {
-            console.log('Call end error:', e);
-          }
+        callerId={dailyCallerId}
+        receiverId={dailyReceiverId}
+        currentUserId={user?.id || ''}
+        onCallEnd={(roomName) => {
+          // WhatsAppCallScreen handles backend call internally
+          // Just cleanup local state
           setDailyCallActive(false);
           setDailyRoomUrl(null);
           setDailyRoomName('');
+          setDailyCallerId('');
+          setDailyReceiverId('');
         }}
       />
     );
