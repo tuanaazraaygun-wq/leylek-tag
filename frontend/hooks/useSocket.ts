@@ -630,6 +630,57 @@ export default function useSocket({
     }
   }, []);
 
+  // 🆕 YENİ: call_accept - Aranan kabul ettiğinde
+  // Bu, Daily room oluşturulması ve HER İKİ TARAFA call_accepted gönderilmesini tetikler
+  const emitCallAccept = useCallback((data: {
+    caller_id: string;
+    receiver_id: string;
+    call_type: 'audio' | 'video';
+    tag_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('✅ CALL_ACCEPT gönderiliyor (Room oluşturulacak):', data);
+      socketRef.current.emit('call_accept', data);
+    } else {
+      console.error('❌ Socket bağlı değil, call accept gönderilemedi');
+    }
+  }, []);
+
+  // 🆕 YENİ: call_reject - Aranan reddetti
+  const emitCallReject = useCallback((data: {
+    caller_id: string;
+    receiver_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('❌ CALL_REJECT gönderiliyor:', data);
+      socketRef.current.emit('call_reject', data);
+    }
+  }, []);
+
+  // 🆕 YENİ: call_cancel - Arayan iptal etti
+  const emitCallCancel = useCallback((data: {
+    caller_id: string;
+    receiver_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🚫 CALL_CANCEL gönderiliyor:', data);
+      socketRef.current.emit('call_cancel', data);
+    }
+  }, []);
+
+  // 🆕 YENİ: call_end - Görüşme bitti
+  const emitCallEnd = useCallback((data: {
+    caller_id: string;
+    receiver_id: string;
+    ended_by: string;
+    room_name: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('📴 CALL_END gönderiliyor:', data);
+      socketRef.current.emit('call_end', data);
+    }
+  }, []);
+
   const acceptDailyCall = useCallback((data: {
     caller_id: string;
     room_url: string;
