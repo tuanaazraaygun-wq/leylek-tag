@@ -1,7 +1,12 @@
 /**
  * Daily.co Call Screen
- * CRITICAL FIX: daily.join() called IMMEDIATELY when WebView loads
- * No React state dependency for join
+ * CRITICAL: Single iframe creation, single join call
+ * 
+ * Rules:
+ * - Daily iframe created ONCE (empty useEffect [])
+ * - daily.join() called EXACTLY ONCE (hasJoinedRef)
+ * - No destroy until callEnded event
+ * - Media starts after joined-meeting
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -41,15 +46,18 @@ export default function DailyCallScreen({
   const [status, setStatus] = useState<'loading' | 'joining' | 'connected' | 'error'>('loading');
   const [callDuration, setCallDuration] = useState(0);
   const [isEnding, setIsEnding] = useState(false);
+  
   const webViewRef = useRef<WebView>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasJoinedRef = useRef(false);  // CRITICAL: Prevent multiple joins
+  const isDestroyedRef = useRef(false); // CRITICAL: Prevent multiple destroys
+  
   const maxDuration = 600;
-
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
     ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
     : 'https://tagride.preview.emergentagent.com/api';
 
-  // Timer - starts when connected
+  // Timer - only when connected
   useEffect(() => {
     if (status === 'connected') {
       timerRef.current = setInterval(() => {
@@ -66,7 +74,7 @@ export default function DailyCallScreen({
     };
   }, [status]);
 
-  // Back button
+  // Back button handler
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!isEnding) endCallProperly();
@@ -75,11 +83,37 @@ export default function DailyCallScreen({
     return () => handler.remove();
   }, [isEnding]);
 
+  // CRITICAL: Send join command ONCE after WebView is ready
+  const onWebViewLoad = useCallback(() => {
+    if (hasJoinedRef.current) {
+      console.log('⚠️ Already joined, skipping');
+      return;
+    }
+    
+    console.log('📞 Sending join command...');
+    hasJoinedRef.current = true;
+    
+    // Send join command with room URL and call type
+    webViewRef.current?.injectJavaScript(`
+      window.JOIN_CONFIG = {
+        roomUrl: "${roomUrl}",
+        startVideoOff: ${callType === 'audio'}
+      };
+      if (window.startJoin) {
+        window.startJoin();
+      }
+      true;
+    `);
+  }, [roomUrl, callType]);
+
   const endCallProperly = useCallback(async () => {
-    if (isEnding) return;
+    if (isEnding || isDestroyedRef.current) return;
     setIsEnding(true);
+    isDestroyedRef.current = true;
+    
     if (timerRef.current) clearInterval(timerRef.current);
 
+    // 1. Notify backend
     try {
       await fetch(`${API_URL}/calls/end`, {
         method: 'POST',
@@ -91,32 +125,51 @@ export default function DailyCallScreen({
           ended_by: currentUserId,
         }),
       });
-    } catch (e) {}
+    } catch (e) {
+      console.log('Backend notify error:', e);
+    }
 
+    // 2. Destroy Daily
     webViewRef.current?.injectJavaScript(`
-      if(window.daily){try{window.daily.leave();window.daily.destroy();}catch(e){}}true;
+      if (window.daily && !window.isDestroyed) {
+        window.isDestroyed = true;
+        window.daily.leave().then(function() {
+          window.daily.destroy();
+        }).catch(function() {
+          try { window.daily.destroy(); } catch(e) {}
+        });
+      }
+      true;
     `);
     
-    setTimeout(() => onCallEnd(roomName), 1000);
+    // 3. Close UI after short delay
+    setTimeout(() => onCallEnd(roomName), 500);
   }, [isEnding, roomName, callerId, receiverId, currentUserId, API_URL, onCallEnd]);
 
   const handleMessage = (event: any) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
-      console.log('📞 Daily:', msg.type, msg.data || '');
+      console.log('📞 Daily event:', msg.type);
       
       switch(msg.type) {
+        case 'ready':
+          // WebView is ready, send join command
+          onWebViewLoad();
+          break;
         case 'joining':
           setStatus('joining');
           break;
         case 'joined':
           setStatus('connected');
           break;
-        case 'left':
         case 'participant-left':
-          // Don't auto-close, wait for backend
+          // Other participant left - end call
+          if (!isDestroyedRef.current) {
+            endCallProperly();
+          }
           break;
         case 'error':
+          console.error('Daily error:', msg.data);
           setStatus('error');
           break;
       }
@@ -129,27 +182,39 @@ export default function DailyCallScreen({
     return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
   };
 
-  // CRITICAL: HTML that joins IMMEDIATELY when script loads
-  // No waiting for React state, no useEffect dependency
+  // CRITICAL: Static HTML - no React state interpolation
+  // Join command sent via postMessage after load
   const html = `<!DOCTYPE html>
 <html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:#000;overflow:hidden}
-#container{width:100%;height:100%;position:relative}
-video{width:100%;height:100%;object-fit:cover}
+#container{width:100%;height:100%}
 </style>
 </head><body>
 <div id="container"></div>
+<script src="https://unpkg.com/@daily-co/daily-js@0.67.0/dist/daily-iframe.min.js"></script>
 <script>
-// STEP 1: Load Daily.js from CDN
-var script = document.createElement('script');
-script.src = 'https://unpkg.com/@daily-co/daily-js@0.67.0/dist/daily-iframe.min.js';
-script.onload = function() {
-  // STEP 2: Create call frame IMMEDIATELY after script loads
+(function() {
+  var daily = null;
+  var hasJoined = false;
+  var isDestroyed = false;
+  
+  function log(msg) {
+    console.log('[Daily] ' + msg);
+  }
+  
+  function send(type, data) {
+    try {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type: type, data: data || ''}));
+    } catch(e) {}
+  }
+  
+  // Create Daily iframe ONCE
   try {
-    window.daily = DailyIframe.createFrame(document.getElementById('container'), {
+    log('Creating iframe...');
+    daily = DailyIframe.createFrame(document.getElementById('container'), {
       showLeaveButton: false,
       showFullscreenButton: false,
       iframeStyle: {
@@ -159,55 +224,83 @@ script.onload = function() {
       }
     });
     
-    // STEP 3: Set up event listeners
-    window.daily.on('joining-meeting', function() {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'joining'}));
+    window.daily = daily;
+    
+    // Event listeners
+    daily.on('joining-meeting', function() {
+      log('joining-meeting');
+      send('joining');
     });
     
-    window.daily.on('joined-meeting', function(e) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'joined'}));
-      // STEP 4: Enable audio/video after joining
-      window.daily.setLocalAudio(true);
-      window.daily.setLocalVideo(${callType === 'video'});
-    });
-    
-    window.daily.on('participant-joined', function(e) {
-      if(!e.participant.local) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({type:'participant-joined'}));
+    daily.on('joined-meeting', function() {
+      log('joined-meeting');
+      send('joined');
+      // Enable audio/video immediately
+      daily.setLocalAudio(true);
+      if (window.JOIN_CONFIG && !window.JOIN_CONFIG.startVideoOff) {
+        daily.setLocalVideo(true);
       }
     });
     
-    window.daily.on('participant-left', function(e) {
-      if(!e.participant.local) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({type:'participant-left'}));
+    daily.on('participant-joined', function(e) {
+      if (e && e.participant && !e.participant.local) {
+        log('participant-joined: ' + (e.participant.user_id || 'unknown'));
+        send('participant-joined');
       }
     });
     
-    window.daily.on('left-meeting', function() {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'left'}));
+    daily.on('participant-left', function(e) {
+      if (e && e.participant && !e.participant.local) {
+        log('participant-left');
+        send('participant-left');
+      }
     });
     
-    window.daily.on('error', function(e) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'error',data:e.errorMsg||'error'}));
+    daily.on('left-meeting', function() {
+      log('left-meeting');
     });
     
-    // STEP 5: JOIN IMMEDIATELY - no waiting
-    window.daily.join({
-      url: '${roomUrl}',
-      startAudioOff: false,
-      startVideoOff: ${callType === 'audio'}
-    }).catch(function(err) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'error',data:err.message||'join failed'}));
+    daily.on('error', function(e) {
+      log('error: ' + (e.errorMsg || 'unknown'));
+      send('error', e.errorMsg || 'unknown');
     });
+    
+    // Join function - called from React Native
+    window.startJoin = function() {
+      if (hasJoined) {
+        log('Already joined, skipping');
+        return;
+      }
+      if (!window.JOIN_CONFIG || !window.JOIN_CONFIG.roomUrl) {
+        log('No room URL');
+        send('error', 'No room URL');
+        return;
+      }
+      
+      hasJoined = true;
+      log('Joining: ' + window.JOIN_CONFIG.roomUrl);
+      
+      daily.join({
+        url: window.JOIN_CONFIG.roomUrl,
+        startAudioOff: false,
+        startVideoOff: window.JOIN_CONFIG.startVideoOff
+      }).then(function() {
+        log('Join promise resolved');
+      }).catch(function(err) {
+        log('Join error: ' + (err.message || err));
+        send('error', err.message || 'Join failed');
+      });
+    };
+    
+    // Notify React Native that we're ready
+    log('Ready, waiting for join command...');
+    send('ready');
     
   } catch(err) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'error',data:err.message||'init failed'}));
+    log('Init error: ' + (err.message || err));
+    send('error', err.message || 'Init failed');
   }
-};
-script.onerror = function() {
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'error',data:'script load failed'}));
-};
-document.head.appendChild(script);
+})();
 </script>
 </body></html>`;
 
@@ -234,14 +327,17 @@ document.head.appendChild(script);
         <WebView
           ref={webViewRef}
           source={{ html }}
-          style={{ flex: 1 }}
-          javaScriptEnabled
-          domStorageEnabled
+          style={{ flex: 1, backgroundColor: '#000' }}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
           mediaPlaybackRequiresUserAction={false}
-          allowsInlineMediaPlayback
+          allowsInlineMediaPlayback={true}
           onMessage={handleMessage}
-          allowsProtectedMedia
+          allowsProtectedMedia={true}
           mediaCapturePermissionGrantType="grant"
+          originWhitelist={['*']}
+          mixedContentMode="always"
+          cacheEnabled={false}
         />
         
         {(status === 'loading' || status === 'joining') && (
