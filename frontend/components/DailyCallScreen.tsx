@@ -204,7 +204,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
         log('RN doc message: ' + msg.type);
         
         if (msg.type === 'join' && msg.roomUrl) {
-          window.joinRoom(msg.roomUrl, msg.isVideo);
+          window.joinRoom(msg.roomUrl, msg.isVideo, msg.userName);
         } else if (msg.type === 'destroy') {
           window.destroyDaily();
         }
