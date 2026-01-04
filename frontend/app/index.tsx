@@ -4590,14 +4590,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   }
 
-  // DAILY.CO CALL SCREEN - SOFOR
+  // WHATSAPP CALL SCREEN - SOFOR
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
-      <DailyCallScreen
+      <WhatsAppCallScreen
         roomUrl={dailyRoomUrl}
         roomName={dailyRoomName}
         callType={dailyCallType}
         otherUserName={dailyCallerName}
+        currentUserId={user?.id}
         onCallEnd={async (roomName) => {
           // End call and cleanup
           try {
