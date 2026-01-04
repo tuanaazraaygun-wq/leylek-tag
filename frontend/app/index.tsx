@@ -3303,10 +3303,10 @@ function PassengerDashboard({
     );
   }
 
-  // WHATSAPP CALL SCREEN - YOLCU
+  // DAILY CALL SCREEN - YOLCU (Backend-driven termination)
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
-      <WhatsAppCallScreen
+      <DailyCallScreen
         roomUrl={dailyRoomUrl}
         roomName={dailyRoomName}
         callType={dailyCallType}
@@ -3315,8 +3315,7 @@ function PassengerDashboard({
         receiverId={passengerDailyReceiverId}
         currentUserId={user?.id || ''}
         onCallEnd={(roomName) => {
-          // WhatsAppCallScreen handles backend call internally
-          // Just cleanup local state
+          // Clear all local call state
           setDailyCallActive(false);
           setDailyRoomUrl(null);
           setDailyRoomName('');
