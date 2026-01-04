@@ -2613,6 +2613,11 @@ function PassengerDashboard({
     emitCallInvite,
     emitCallAccepted,
     emitCallRejected,
+    // 🆕 YENİ: Sync Call Events
+    emitCallAccept,
+    emitCallReject,
+    emitCallCancel,
+    emitCallEnd,
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
@@ -2627,32 +2632,56 @@ function PassengerDashboard({
       setIncomingCallData({
         callerName: data.caller_name || 'Şoför',
         callType: data.call_type || 'audio',
-        roomUrl: data.room_url,
-        roomName: data.room_name,
+        roomUrl: '',  // Henüz yok, kabul sonrası gelecek
+        roomName: '',  // Henüz yok
         callerId: data.caller_id,
+        tagId: data.tag_id || '',
       });
       setIncomingCall(true);
     },
+    // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
+    onCallAcceptedNew: (data) => {
+      console.log('✅ YOLCU - CALL_ACCEPTED (SYNC) - Daily odası hazır:', data);
+      // Her iki taraf da bu eventi alıyor - Daily.co'ya gir
+      setDailyRoomUrl(data.room_url);
+      setDailyRoomName(data.room_name);
+      setDailyCallType(data.call_type as 'audio' | 'video');
+      // Arayan mı aranan mı?
+      const isCaller = user?.id === data.caller_id;
+      setDailyCallerName(isCaller ? (activeTag?.driver_name || 'Şoför') : (incomingCallData?.callerName || 'Yolcu'));
+      setDailyCallActive(true);
+      // Reset states - navigation YOK
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
+      setIncomingCall(false);
+      setIncomingCallData(null);
+    },
     onDailyCallAccepted: (data) => {
-      console.log('YOLCU - ARAMA KABUL EDILDI:', data);
-      // Aranan kabul etti - Daily.co'ya gir
-      if (outgoingCall && outgoingCallData) {
-        setDailyRoomUrl(outgoingCallData.roomUrl);
-        setDailyRoomName(outgoingCallData.roomName);
-        setDailyCallType(outgoingCallData.callType);
-        setDailyCallerName(outgoingCallData.receiverName);
-        setDailyCallActive(true);
-        setOutgoingCall(false);
-        setOutgoingCallData(null);
-      }
+      console.log('YOLCU - ARAMA KABUL EDILDI (ESKİ):', data);
+      // Eski event - artık onCallAcceptedNew kullanılıyor
     },
     onDailyCallRejected: (data) => {
       console.log('YOLCU - ARAMA REDDEDILDI:', data);
       setOutgoingCall(false);
       setOutgoingCallData(null);
+      setIncomingCall(false);
+      setIncomingCallData(null);
       setDailyCallActive(false);
       setDailyRoomUrl(null);
       Alert.alert('Bilgi', 'Arama reddedildi');
+    },
+    // 🆕 YENİ: call_cancelled - Arayan iptal etti
+    onCallCancelled: (data) => {
+      console.log('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
+      setIncomingCall(false);
+      setIncomingCallData(null);
+    },
+    // 🆕 YENİ: call_ended - Görüşme bitti
+    onCallEndedNew: (data) => {
+      console.log('📴 YOLCU - CALL_ENDED:', data);
+      setDailyCallActive(false);
+      setDailyRoomUrl(null);
+      setDailyRoomName('');
     },
     onIncomingCall: (data) => {
       console.log('📞 YOLCU - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
