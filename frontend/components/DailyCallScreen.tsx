@@ -460,6 +460,7 @@ export default function DailyCallScreen({
           mixedContentMode="always"
           cacheEnabled={false}
           incognito={true}
+          onPermissionRequest={(event) => event.grant(event.resources)}
         />
         
         {/* Loading overlay */}
