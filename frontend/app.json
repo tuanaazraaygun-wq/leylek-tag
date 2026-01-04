@@ -104,7 +104,9 @@
         {
           "microphonePermission": "Sesli görüşme için mikrofon izni gereklidir."
         }
-      ]
+      ],
+      "@config-plugins/react-native-webrtc",
+      "@daily-co/config-plugin-rn-daily-js"
     ],
     "experiments": {
       "typedRoutes": true
