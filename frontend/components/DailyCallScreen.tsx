@@ -176,7 +176,7 @@ export default function DailyCallScreen({
   const remainingTime = maxDuration - callDuration;
   const showWarning = remainingTime <= 60 && remainingTime > 0;
 
-  // Simple HTML to load Daily without UI interference
+  // Simple HTML to load Daily with WORKING audio/video
   const dailyHtml = `
     <!DOCTYPE html>
     <html>
@@ -192,6 +192,8 @@ export default function DailyCallScreen({
       <div id="call"></div>
       <script src="https://unpkg.com/@daily-co/daily-js"></script>
       <script>
+        console.log('📞 Daily.js loading...');
+        
         const callFrame = DailyIframe.createFrame(document.getElementById('call'), {
           showLeaveButton: false,
           showFullscreenButton: false,
@@ -204,21 +206,51 @@ export default function DailyCallScreen({
         
         window.callFrame = callFrame;
         
-        callFrame.on('joined-meeting', () => {
+        // CRITICAL: Event listeners for connection status
+        callFrame.on('joining-meeting', () => {
+          console.log('📞 Joining meeting...');
+          window.ReactNativeWebView.postMessage(JSON.stringify({type: 'joining'}));
+        });
+        
+        callFrame.on('joined-meeting', (e) => {
+          console.log('✅ Joined meeting!', e);
           window.ReactNativeWebView.postMessage(JSON.stringify({type: 'joined'}));
+        });
+        
+        callFrame.on('participant-joined', (e) => {
+          console.log('👤 Participant joined:', e.participant.user_id);
+          window.ReactNativeWebView.postMessage(JSON.stringify({type: 'participant-joined'}));
         });
         
         callFrame.on('participant-left', (e) => {
           if (!e.participant.local) {
+            console.log('👤 Participant left');
             window.ReactNativeWebView.postMessage(JSON.stringify({type: 'left'}));
           }
         });
         
         callFrame.on('left-meeting', () => {
+          console.log('📞 Left meeting');
           window.ReactNativeWebView.postMessage(JSON.stringify({type: 'left'}));
         });
         
-        callFrame.join({ url: '${roomUrl}' });
+        callFrame.on('error', (e) => {
+          console.error('❌ Daily error:', e);
+          window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.errorMsg}));
+        });
+        
+        // CRITICAL: Join with audio/video enabled
+        console.log('📞 Joining room: ${roomUrl}');
+        callFrame.join({ 
+          url: '${roomUrl}',
+          startVideoOff: ${callType === 'audio'},
+          startAudioOff: false
+        }).then(() => {
+          console.log('✅ Join promise resolved');
+        }).catch((err) => {
+          console.error('❌ Join error:', err);
+          window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: err.message}));
+        });
       </script>
     </body>
     </html>
