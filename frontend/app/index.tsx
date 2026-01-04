@@ -2651,6 +2651,9 @@ function PassengerDashboard({
       setDailyRoomUrl(data.room_url);
       setDailyRoomName(data.room_name);
       setDailyCallType(data.call_type as 'audio' | 'video');
+      // CRITICAL: Store caller/receiver IDs for proper termination
+      setDailyCallerId(data.caller_id);
+      setDailyReceiverId(data.receiver_id);
       // Arayan mı aranan mı?
       const isCaller = user?.id === data.caller_id;
       setDailyCallerName(isCaller ? (activeTag?.driver_name || 'Şoför') : (incomingCallData?.callerName || 'Yolcu'));
@@ -2673,6 +2676,8 @@ function PassengerDashboard({
       setIncomingCallData(null);
       setDailyCallActive(false);
       setDailyRoomUrl(null);
+      setDailyCallerId('');
+      setDailyReceiverId('');
       Alert.alert('Bilgi', 'Arama reddedildi');
     },
     // 🆕 YENİ: call_cancelled - Arayan iptal etti
