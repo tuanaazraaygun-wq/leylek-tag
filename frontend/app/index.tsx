@@ -2448,7 +2448,6 @@ function PassengerDashboard({
   const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
   const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('video');
   const [dailyCallerName, setDailyCallerName] = useState<string>('');
-  const [dailyCallerId, setDailyCallerId] = useState<string>('');
   const [incomingDailyCall, setIncomingDailyCall] = useState(false);
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   
