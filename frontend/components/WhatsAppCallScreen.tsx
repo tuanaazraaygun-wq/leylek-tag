@@ -1,15 +1,14 @@
 /**
- * WhatsApp Benzeri Custom Arama Ekranı v2
- * Daily.co SADECE audio/video stream sağlayıcı
- * SIFIR Daily UI - Tamamen Custom Native UI
+ * WhatsApp Benzeri Custom Arama Ekranı v3
+ * CRITICAL: Proper Call Termination
  * 
- * Özellikler:
- * - Daily default UI %100 gizli (Leave, Guest, Home page YOK)
- * - Daily popup/warning YOK
- * - Self-view (küçük kamera önizlemesi)
- * - Sesli ↔ Görüntülü geçiş
- * - Türkçe arayüz
- * - Store uyumlu (branding yok)
+ * Termination Flow:
+ * 1. User presses "Bitir" → Call backend /api/calls/end
+ * 2. Backend broadcasts call_ended to BOTH participants
+ * 3. After backend confirms → Daily leave() + destroy()
+ * 4. After Daily destroyed → Unmount UI
+ * 
+ * UI lifecycle is controlled by BACKEND, not Daily events
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -17,13 +16,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Dimensions,
   BackHandler,
   Animated,
   Platform,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
@@ -36,13 +33,15 @@ interface WhatsAppCallScreenProps {
   roomName: string;
   callType: 'video' | 'audio';
   otherUserName: string;
+  callerId: string;
+  receiverId: string;
+  currentUserId: string;
   onCallEnd: (roomName: string) => void;
-  currentUserId?: string;
 }
 
-type CallStatus = 'connecting' | 'ringing' | 'connected' | 'reconnecting' | 'ended';
+type CallStatus = 'connecting' | 'connected' | 'ending' | 'ended';
 
-// Daily UI'ı TAMAMEN gizleyen ve sadece video stream gösteren HTML
+// Daily UI'ı TAMAMEN gizleyen HTML - sadece video stream
 const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
 <!DOCTYPE html>
 <html>
@@ -58,105 +57,67 @@ const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
       -webkit-user-select: none;
       user-select: none;
     }
-    
-    /* Video containers */
     #remote-video {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       object-fit: cover;
       background: #1a1a1a;
     }
-    
     #local-video {
       position: fixed;
-      top: 100px;
-      right: 16px;
-      width: 110px;
-      height: 160px;
+      top: 100px; right: 16px;
+      width: 110px; height: 160px;
       object-fit: cover;
       border-radius: 12px;
       border: 2px solid rgba(255,255,255,0.3);
       background: #333;
       z-index: 100;
     }
-    
-    /* Audio-only avatar */
     #audio-avatar {
       display: none;
       position: fixed;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 140px;
-      height: 140px;
+      width: 140px; height: 140px;
       border-radius: 70px;
       background: linear-gradient(135deg, #3FA9F5, #1E88E5);
       justify-content: center;
       align-items: center;
       box-shadow: 0 0 40px rgba(63, 169, 245, 0.4);
     }
-    
-    #audio-avatar.show {
-      display: flex;
-    }
-    
+    #audio-avatar.show { display: flex; }
     #avatar-letter {
       font-size: 60px;
       font-weight: bold;
       color: white;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
-    /* Hide everything from Daily */
-    iframe, .daily-video-modal, [class*="Daily"], [class*="daily"],
-    [class*="prejoin"], [class*="leave"], [class*="modal"],
-    [class*="popup"], [class*="warning"], [class*="error"],
-    [class*="toast"], [class*="notification"], [class*="banner"],
-    [class*="toolbar"], [class*="control"], [class*="button"],
-    [class*="menu"], [class*="panel"], [class*="overlay"],
-    dialog, aside, nav, header, footer {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
   </style>
   <script src="https://unpkg.com/@daily-co/daily-js"></script>
 </head>
 <body>
-  <div id="audio-avatar">
-    <span id="avatar-letter">?</span>
-  </div>
+  <div id="audio-avatar"><span id="avatar-letter">?</span></div>
   <video id="remote-video" autoplay playsinline></video>
   <video id="local-video" autoplay playsinline muted></video>
   
   <script>
-    // Global state
     let callObject = null;
-    let localVideoTrack = null;
-    let remoteVideoTrack = null;
     let isVideoEnabled = ${startWithVideo};
-    let isAudioEnabled = true;
     let hasRemoteVideo = false;
+    let isDestroyed = false;
     
     const remoteVideo = document.getElementById('remote-video');
     const localVideo = document.getElementById('local-video');
     const audioAvatar = document.getElementById('audio-avatar');
     const avatarLetter = document.getElementById('avatar-letter');
     
-    // Send message to React Native
     function sendToRN(type, data = {}) {
-      if (window.ReactNativeWebView) {
+      if (window.ReactNativeWebView && !isDestroyed) {
         window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...data }));
       }
     }
     
-    // Update UI based on video state
     function updateVideoUI() {
       if (hasRemoteVideo) {
         remoteVideo.style.display = 'block';
@@ -165,16 +126,14 @@ const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
         remoteVideo.style.display = 'none';
         audioAvatar.classList.add('show');
       }
-      
       localVideo.style.display = isVideoEnabled ? 'block' : 'none';
     }
     
-    // Initialize Daily call
     async function initCall() {
+      if (isDestroyed) return;
       try {
         sendToRN('status', { status: 'connecting' });
         
-        // Create call object - NO UI
         callObject = DailyIframe.createCallObject({
           showLeaveButton: false,
           showFullscreenButton: false,
@@ -183,71 +142,53 @@ const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
           iframeStyle: { display: 'none' }
         });
         
-        // Event handlers
-        callObject.on('joining-meeting', () => {
-          sendToRN('status', { status: 'connecting' });
-        });
-        
-        callObject.on('joined-meeting', async (event) => {
+        callObject.on('joined-meeting', async () => {
+          if (isDestroyed) return;
           sendToRN('status', { status: 'connected' });
-          sendToRN('joined', { participants: Object.keys(event.participants).length });
           
-          // Get local tracks
           const localParticipant = callObject.participants().local;
-          if (localParticipant.tracks.video.persistentTrack) {
+          if (localParticipant?.tracks?.video?.persistentTrack) {
             const stream = new MediaStream([localParticipant.tracks.video.persistentTrack]);
             localVideo.srcObject = stream;
-            localVideoTrack = localParticipant.tracks.video.persistentTrack;
           }
-          
           updateVideoUI();
         });
         
-        callObject.on('participant-joined', (event) => {
-          if (!event.participant.local) {
-            sendToRN('participant-joined', { id: event.participant.user_id });
-            updateRemoteVideo(event.participant);
-          }
-        });
-        
         callObject.on('participant-updated', (event) => {
+          if (isDestroyed) return;
           if (event.participant.local) {
-            // Local participant updated
-            if (event.participant.tracks.video.persistentTrack) {
+            if (event.participant.tracks?.video?.persistentTrack) {
               const stream = new MediaStream([event.participant.tracks.video.persistentTrack]);
               localVideo.srcObject = stream;
             }
             isVideoEnabled = event.participant.video;
-            isAudioEnabled = event.participant.audio;
-            sendToRN('local-updated', { video: isVideoEnabled, audio: isAudioEnabled });
           } else {
-            // Remote participant updated
-            updateRemoteVideo(event.participant);
+            if (event.participant.tracks?.video?.persistentTrack && 
+                event.participant.tracks.video.state === 'playable') {
+              const stream = new MediaStream([event.participant.tracks.video.persistentTrack]);
+              remoteVideo.srcObject = stream;
+              hasRemoteVideo = true;
+            } else {
+              hasRemoteVideo = false;
+            }
           }
           updateVideoUI();
         });
         
-        callObject.on('participant-left', (event) => {
-          if (!event.participant.local) {
-            sendToRN('participant-left', { id: event.participant.user_id });
-            hasRemoteVideo = false;
-            remoteVideo.srcObject = null;
-            updateVideoUI();
-            // Other participant left - notify RN
-            sendToRN('call-ended', { reason: 'participant-left' });
-          }
+        callObject.on('participant-left', () => {
+          if (isDestroyed) return;
+          hasRemoteVideo = false;
+          remoteVideo.srcObject = null;
+          updateVideoUI();
+          // NOTE: Do NOT end call here - wait for backend signal
+          sendToRN('participant-left', {});
         });
         
         callObject.on('error', (event) => {
-          console.error('Daily error:', event);
+          if (isDestroyed) return;
           sendToRN('error', { message: event.errorMsg || 'Bağlantı hatası' });
         });
         
-        callObject.on('left-meeting', () => {
-          sendToRN('left', {});
-        });
-        
-        // Join the room
         await callObject.join({ 
           url: '${roomUrl}',
           videoSource: ${startWithVideo},
@@ -255,59 +196,45 @@ const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
         });
         
       } catch (error) {
-        console.error('Init error:', error);
+        if (isDestroyed) return;
         sendToRN('error', { message: error.message || 'Bağlantı kurulamadı' });
       }
     }
     
-    // Update remote video
-    function updateRemoteVideo(participant) {
-      if (participant.tracks.video.persistentTrack && participant.tracks.video.state === 'playable') {
-        const stream = new MediaStream([participant.tracks.video.persistentTrack]);
-        remoteVideo.srcObject = stream;
-        remoteVideoTrack = participant.tracks.video.persistentTrack;
-        hasRemoteVideo = true;
-      } else {
-        hasRemoteVideo = false;
-      }
-      updateVideoUI();
-    }
-    
-    // Control functions (called from RN)
-    window.toggleVideo = async function(enable) {
-      if (callObject) {
-        await callObject.setLocalVideo(enable);
-        isVideoEnabled = enable;
-        updateVideoUI();
-        sendToRN('video-toggled', { enabled: enable });
-      }
-    };
-    
-    window.toggleAudio = async function(enable) {
-      if (callObject) {
-        await callObject.setLocalAudio(enable);
-        isAudioEnabled = enable;
-        sendToRN('audio-toggled', { enabled: enable });
-      }
-    };
-    
-    window.cycleCamera = async function() {
-      if (callObject) {
-        await callObject.cycleCamera();
-        sendToRN('camera-cycled', {});
-      }
-    };
-    
-    window.endCall = async function() {
+    // CRITICAL: Properly destroy Daily call
+    window.destroyCall = async function() {
+      isDestroyed = true;
       if (callObject) {
         try {
           await callObject.leave();
           await callObject.destroy();
           callObject = null;
+          sendToRN('destroyed', {});
         } catch (e) {
-          console.error('End call error:', e);
+          sendToRN('destroyed', { error: e.message });
         }
-        sendToRN('call-ended', { reason: 'user-ended' });
+      } else {
+        sendToRN('destroyed', {});
+      }
+    };
+    
+    window.toggleVideo = async function(enable) {
+      if (callObject && !isDestroyed) {
+        await callObject.setLocalVideo(enable);
+        isVideoEnabled = enable;
+        updateVideoUI();
+      }
+    };
+    
+    window.toggleAudio = async function(enable) {
+      if (callObject && !isDestroyed) {
+        await callObject.setLocalAudio(enable);
+      }
+    };
+    
+    window.cycleCamera = async function() {
+      if (callObject && !isDestroyed) {
+        await callObject.cycleCamera();
       }
     };
     
@@ -315,33 +242,11 @@ const createCallHTML = (roomUrl: string, startWithVideo: boolean) => `
       avatarLetter.textContent = letter || '?';
     };
     
-    // Prevent any popup/alert
+    // Prevent popups
     window.alert = function() {};
     window.confirm = function() { return false; };
     window.prompt = function() { return null; };
     
-    // Block all Daily modals/popups via MutationObserver
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === 1) {
-            const className = node.className || '';
-            const id = node.id || '';
-            if (className.includes('daily') || className.includes('modal') || 
-                className.includes('popup') || className.includes('dialog') ||
-                className.includes('overlay') || className.includes('toast') ||
-                id.includes('daily') || node.tagName === 'DIALOG' ||
-                node.tagName === 'ASIDE') {
-              node.remove();
-            }
-          }
-        });
-      });
-    });
-    
-    observer.observe(document.body, { childList: true, subtree: true });
-    
-    // Start
     initCall();
   </script>
 </body>
@@ -353,8 +258,10 @@ export default function WhatsAppCallScreen({
   roomName,
   callType,
   otherUserName,
-  onCallEnd,
+  callerId,
+  receiverId,
   currentUserId,
+  onCallEnd,
 }: WhatsAppCallScreenProps) {
   const webViewRef = useRef<WebView>(null);
   
@@ -364,19 +271,22 @@ export default function WhatsAppCallScreen({
   const [isVideoEnabled, setIsVideoEnabled] = useState(callType === 'video');
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
-  const [hasRemoteParticipant, setHasRemoteParticipant] = useState(false);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [isEnding, setIsEnding] = useState(false);
   
   // UI state
   const [showControls, setShowControls] = useState(true);
   const fadeAnim = useRef(new Animated.Value(1)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Max call duration (10 minutes)
+  // API URL
+  const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
+    ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
+    : 'https://tagride.preview.emergentagent.com/api';
+  
   const maxDuration = 600;
 
-  // Set avatar letter on mount
+  // Set avatar letter
   useEffect(() => {
     const letter = otherUserName?.charAt(0)?.toUpperCase() || '?';
     setTimeout(() => {
@@ -384,51 +294,36 @@ export default function WhatsAppCallScreen({
     }, 500);
   }, [otherUserName]);
 
-  // Pulse animation for connecting state
-  useEffect(() => {
-    if (status === 'connecting') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [status]);
-
-  // Start timer when connected
+  // Timer
   useEffect(() => {
     if (status === 'connected') {
       timerRef.current = setInterval(() => {
         setCallDuration(prev => {
           const newDuration = prev + 1;
           if (newDuration >= maxDuration) {
-            handleEndCall(true);
+            endCallProperly();
           }
           return newDuration;
         });
       }, 1000);
     }
-
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [status]);
 
-  // Handle back button
+  // Back button
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleEndCall(false);
+      if (!isEnding) {
+        endCallProperly();
+      }
       return true;
     });
     return () => backHandler.remove();
-  }, []);
+  }, [isEnding]);
 
-  // Auto-hide controls after 5 seconds
+  // Auto-hide controls
   useEffect(() => {
     if (isVideoEnabled && status === 'connected' && showControls) {
       const timeout = setTimeout(() => {
@@ -438,47 +333,32 @@ export default function WhatsAppCallScreen({
           useNativeDriver: true,
         }).start(() => setShowControls(false));
       }, 5000);
-      
       return () => clearTimeout(timeout);
     }
   }, [isVideoEnabled, status, showControls]);
 
-  // Handle messages from WebView
+  // Handle WebView messages
   const handleWebViewMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      console.log('📞 WebView Message:', data.type, data);
+      console.log('📞 WebView:', data.type);
       
       switch (data.type) {
         case 'status':
           setStatus(data.status);
           break;
-        case 'joined':
-          setStatus('connected');
-          break;
-        case 'participant-joined':
-          setHasRemoteParticipant(true);
-          break;
-        case 'participant-left':
-        case 'call-ended':
-          handleEndCall(true);
-          break;
-        case 'local-updated':
-          setIsVideoEnabled(data.video);
-          setIsAudioEnabled(data.audio);
-          break;
-        case 'video-toggled':
-          setIsVideoEnabled(data.enabled);
-          break;
-        case 'audio-toggled':
-          setIsAudioEnabled(data.enabled);
-          break;
-        case 'camera-cycled':
-          setIsFrontCamera(prev => !prev);
+        case 'destroyed':
+          // Daily destroyed - NOW we can unmount
+          console.log('✅ Daily destroyed, unmounting UI');
+          onCallEnd(roomName);
           break;
         case 'error':
           console.error('Call error:', data.message);
-          handleEndCall(true);
+          onCallEnd(roomName);
+          break;
+        case 'participant-left':
+          // Don't auto-end, wait for backend
+          console.log('⚠️ Participant left, waiting for backend signal');
           break;
       }
     } catch (e) {
@@ -486,50 +366,84 @@ export default function WhatsAppCallScreen({
     }
   };
 
-  const handleEndCall = useCallback((immediate: boolean = false) => {
+  /**
+   * CRITICAL: Proper call termination flow
+   * 1. Call backend API
+   * 2. Backend broadcasts to other participant
+   * 3. Destroy Daily
+   * 4. Unmount UI
+   */
+  const endCallProperly = useCallback(async () => {
+    if (isEnding) return;
+    setIsEnding(true);
+    setStatus('ending');
+    
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
     
-    // Call leave() and destroy() in WebView
-    webViewRef.current?.injectJavaScript('window.endCall(); true;');
+    console.log('📴 Ending call properly...');
     
-    // Immediately close - no delay, no popup
-    onCallEnd(roomName);
-  }, [roomName, onCallEnd]);
+    try {
+      // Step 1: Call backend to notify other participant
+      const response = await fetch(`${API_URL}/calls/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          room_name: roomName,
+          caller_id: callerId,
+          receiver_id: receiverId,
+          ended_by: currentUserId,
+        }),
+      });
+      
+      const result = await response.json();
+      console.log('✅ Backend notified:', result);
+      
+    } catch (error) {
+      console.error('Backend call error:', error);
+    }
+    
+    // Step 2: Destroy Daily call
+    console.log('🔄 Destroying Daily...');
+    webViewRef.current?.injectJavaScript('window.destroyCall(); true;');
+    
+    // Step 3: Fallback - if destroy doesn't respond in 2s, force unmount
+    setTimeout(() => {
+      console.log('⏰ Fallback unmount');
+      onCallEnd(roomName);
+    }, 2000);
+    
+  }, [isEnding, roomName, callerId, receiverId, currentUserId, API_URL, onCallEnd]);
 
-  // Toggle video
+  // Toggle functions
   const toggleVideo = () => {
     const newState = !isVideoEnabled;
     webViewRef.current?.injectJavaScript(`window.toggleVideo(${newState}); true;`);
     setIsVideoEnabled(newState);
   };
 
-  // Toggle audio
   const toggleAudio = () => {
     const newState = !isAudioEnabled;
     webViewRef.current?.injectJavaScript(`window.toggleAudio(${newState}); true;`);
     setIsAudioEnabled(newState);
   };
 
-  // Toggle speaker
   const toggleSpeaker = () => {
     setIsSpeakerOn(!isSpeakerOn);
   };
 
-  // Switch camera
   const switchCamera = () => {
     webViewRef.current?.injectJavaScript('window.cycleCamera(); true;');
+    setIsFrontCamera(!isFrontCamera);
   };
 
-  // Format duration as MM:SS
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Show controls on tap
   const handleScreenTap = () => {
     if (!showControls) {
       setShowControls(true);
@@ -537,30 +451,24 @@ export default function WhatsAppCallScreen({
     }
   };
 
-  // Status text
   const getStatusText = () => {
     switch (status) {
       case 'connecting': return 'Bağlanıyor...';
-      case 'ringing': return 'Çalıyor...';
-      case 'connected': return hasRemoteParticipant ? 'Bağlandı' : 'Bekleniyor...';
-      case 'reconnecting': return 'Yeniden bağlanıyor...';
+      case 'connected': return 'Bağlandı';
+      case 'ending': return 'Sonlandırılıyor...';
       case 'ended': return 'Arama bitti';
       default: return '';
     }
   };
 
-  // Remaining time warning
   const remainingTime = maxDuration - callDuration;
   const showWarning = remainingTime <= 60 && remainingTime > 0;
-
-  // HTML content
   const htmlContent = createCallHTML(roomUrl, callType === 'video');
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" translucent />
       
-      {/* WebView - Daily Video Stream (HIDDEN UI) */}
       <TouchableOpacity 
         style={styles.webViewContainer} 
         activeOpacity={1} 
@@ -579,13 +487,9 @@ export default function WhatsAppCallScreen({
           mediaCapturePermissionGrantType="grant"
           cacheEnabled={false}
           scrollEnabled={false}
-          bounces={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
         />
       </TouchableOpacity>
 
-      {/* Gradient Overlays for better visibility */}
       <LinearGradient
         colors={['rgba(0,0,0,0.7)', 'transparent']}
         style={styles.topGradient}
@@ -602,10 +506,7 @@ export default function WhatsAppCallScreen({
         <View style={styles.headerContent}>
           <Text style={styles.callerName}>{otherUserName}</Text>
           <View style={styles.statusContainer}>
-            {status === 'connecting' && (
-              <Animated.View style={[styles.statusDot, { transform: [{ scale: pulseAnim }] }]} />
-            )}
-            {status === 'connected' && <View style={[styles.statusDot, styles.statusDotConnected]} />}
+            <View style={[styles.statusDot, status === 'connected' && styles.statusDotConnected]} />
             <Text style={[styles.statusText, status === 'connected' && styles.statusTextConnected]}>
               {getStatusText()}
             </Text>
@@ -628,7 +529,6 @@ export default function WhatsAppCallScreen({
 
       {/* Controls */}
       <Animated.View style={[styles.controlsContainer, { opacity: showControls ? 1 : fadeAnim }]}>
-        {/* Video upgrade button (only in audio call when connected) */}
         {!isVideoEnabled && status === 'connected' && (
           <TouchableOpacity 
             style={styles.upgradeButton}
@@ -641,11 +541,11 @@ export default function WhatsAppCallScreen({
         )}
 
         <View style={styles.controlsRow}>
-          {/* Camera Toggle */}
           <TouchableOpacity 
             style={[styles.controlButton, !isVideoEnabled && styles.controlButtonOff]}
             onPress={toggleVideo}
             activeOpacity={0.7}
+            disabled={isEnding}
           >
             <View style={styles.controlIconWrapper}>
               <Ionicons 
@@ -659,11 +559,11 @@ export default function WhatsAppCallScreen({
             </Text>
           </TouchableOpacity>
 
-          {/* Microphone Toggle */}
           <TouchableOpacity 
             style={[styles.controlButton, !isAudioEnabled && styles.controlButtonOff]}
             onPress={toggleAudio}
             activeOpacity={0.7}
+            disabled={isEnding}
           >
             <View style={styles.controlIconWrapper}>
               <Ionicons 
@@ -677,11 +577,11 @@ export default function WhatsAppCallScreen({
             </Text>
           </TouchableOpacity>
 
-          {/* Speaker Toggle */}
           <TouchableOpacity 
             style={[styles.controlButton, !isSpeakerOn && styles.controlButtonOff]}
             onPress={toggleSpeaker}
             activeOpacity={0.7}
+            disabled={isEnding}
           >
             <View style={styles.controlIconWrapper}>
               <Ionicons 
@@ -695,12 +595,12 @@ export default function WhatsAppCallScreen({
             </Text>
           </TouchableOpacity>
 
-          {/* Switch Camera (only when video enabled) */}
           {isVideoEnabled && (
             <TouchableOpacity 
               style={styles.controlButton}
               onPress={switchCamera}
               activeOpacity={0.7}
+              disabled={isEnding}
             >
               <View style={styles.controlIconWrapper}>
                 <Ionicons name="camera-reverse-outline" size={26} color="#FFF" />
@@ -709,11 +609,11 @@ export default function WhatsAppCallScreen({
             </TouchableOpacity>
           )}
 
-          {/* End Call - Always visible, bigger */}
           <TouchableOpacity 
-            style={styles.endCallButton}
-            onPress={() => handleEndCall(false)}
+            style={[styles.endCallButton, isEnding && styles.endCallButtonDisabled]}
+            onPress={endCallProperly}
             activeOpacity={0.8}
+            disabled={isEnding}
           >
             <Ionicons 
               name="call" 
@@ -740,27 +640,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
-  // Gradients
   topGradient: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 0, left: 0, right: 0,
     height: 180,
   },
   bottomGradient: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 0, left: 0, right: 0,
     height: 220,
   },
-  // Header
   header: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 60 : 40,
-    left: 0,
-    right: 0,
+    left: 0, right: 0,
     alignItems: 'center',
   },
   headerContent: {
@@ -781,8 +674,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   statusDot: {
-    width: 8,
-    height: 8,
+    width: 8, height: 8,
     borderRadius: 4,
     backgroundColor: '#FFA500',
     marginRight: 8,
@@ -828,12 +720,10 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '600',
   },
-  // Controls
   controlsContainer: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 50 : 30,
-    left: 0,
-    right: 0,
+    left: 0, right: 0,
     alignItems: 'center',
   },
   upgradeButton: {
@@ -876,8 +766,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   controlIconWrapper: {
-    width: 52,
-    height: 52,
+    width: 52, height: 52,
     borderRadius: 26,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
@@ -891,8 +780,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   endCallButton: {
-    width: 64,
-    height: 64,
+    width: 64, height: 64,
     borderRadius: 32,
     backgroundColor: '#FF3B30',
     alignItems: 'center',
@@ -903,5 +791,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 8,
+  },
+  endCallButtonDisabled: {
+    backgroundColor: '#888',
+    shadowOpacity: 0,
   },
 });
