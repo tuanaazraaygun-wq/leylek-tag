@@ -1,14 +1,15 @@
 /**
  * Daily.co Call Screen
- * CRITICAL: Single iframe creation, single join call
+ * CRITICAL FIX: Single iframe creation, single join call
  * 
- * Rules:
- * - Daily iframe created ONCE (empty useEffect [])
- * - daily.join() called EXACTLY ONCE (hasJoinedRef)
- * - No destroy until callEnded event
- * - Media starts after joined-meeting
+ * Rules (MANDATORY):
+ * 1. Daily iframe created ONCE (empty useEffect [])
+ * 2. daily.join() called EXACTLY ONCE (hasJoinedRef)
+ * 3. No destroy until callEnded event
+ * 4. Media starts after joined-meeting
+ * 5. HTML is STATIC - no React state interpolation
  */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -33,6 +34,208 @@ interface DailyCallScreenProps {
   onCallEnd: (roomName: string) => void;
 }
 
+// CRITICAL: Static HTML - defined OUTSIDE component to prevent recreation
+const DAILY_HTML = `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#000;overflow:hidden}
+#container{width:100%;height:100%}
+</style>
+</head><body>
+<div id="container"></div>
+<script src="https://unpkg.com/@daily-co/daily-js@0.67.0/dist/daily-iframe.min.js"></script>
+<script>
+(function() {
+  var daily = null;
+  var hasJoined = false;
+  var isDestroyed = false;
+  
+  function log(msg) {
+    console.log('[Daily] ' + msg);
+  }
+  
+  function send(type, data) {
+    try {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type: type, data: data || ''}));
+    } catch(e) {}
+  }
+  
+  // Create Daily iframe ONCE on page load
+  try {
+    log('Creating iframe ONCE...');
+    daily = DailyIframe.createFrame(document.getElementById('container'), {
+      showLeaveButton: false,
+      showFullscreenButton: false,
+      iframeStyle: {
+        width: '100%',
+        height: '100%',
+        border: 'none'
+      }
+    });
+    
+    window.daily = daily;
+    window.isDestroyed = false;
+    
+    // Event listeners
+    daily.on('joining-meeting', function() {
+      log('joining-meeting event');
+      send('joining');
+    });
+    
+    daily.on('joined-meeting', function() {
+      log('joined-meeting event - enabling media');
+      send('joined');
+      // CRITICAL: Enable media immediately after join
+      try {
+        daily.setLocalAudio(true);
+        log('Audio enabled');
+      } catch(e) {
+        log('Audio enable error: ' + e);
+      }
+      // Video will be enabled via postMessage based on callType
+    });
+    
+    daily.on('participant-joined', function(e) {
+      if (e && e.participant && !e.participant.local) {
+        log('remote participant joined');
+        send('participant-joined');
+      }
+    });
+    
+    daily.on('participant-left', function(e) {
+      if (e && e.participant && !e.participant.local) {
+        log('remote participant left');
+        send('participant-left');
+      }
+    });
+    
+    daily.on('left-meeting', function() {
+      log('left-meeting event');
+      send('left');
+    });
+    
+    daily.on('error', function(e) {
+      log('error: ' + (e.errorMsg || JSON.stringify(e)));
+      send('error', e.errorMsg || 'unknown');
+    });
+    
+    daily.on('camera-error', function(e) {
+      log('camera-error: ' + JSON.stringify(e));
+    });
+    
+    // Join function - called ONCE from React Native via postMessage
+    window.joinRoom = function(roomUrl, isVideoCall) {
+      if (hasJoined) {
+        log('SKIP: Already joined');
+        return;
+      }
+      if (isDestroyed) {
+        log('SKIP: Already destroyed');
+        return;
+      }
+      if (!roomUrl) {
+        log('ERROR: No room URL');
+        send('error', 'No room URL');
+        return;
+      }
+      
+      hasJoined = true;
+      log('JOINING: ' + roomUrl + ' (video: ' + isVideoCall + ')');
+      
+      daily.join({
+        url: roomUrl,
+        startAudioOff: false,
+        startVideoOff: !isVideoCall
+      }).then(function() {
+        log('Join promise resolved');
+        // Enable video if video call
+        if (isVideoCall) {
+          setTimeout(function() {
+            try {
+              daily.setLocalVideo(true);
+              log('Video enabled');
+            } catch(e) {
+              log('Video enable error: ' + e);
+            }
+          }, 500);
+        }
+      }).catch(function(err) {
+        log('Join error: ' + (err.message || err));
+        send('error', err.message || 'Join failed');
+        hasJoined = false; // Allow retry on error
+      });
+    };
+    
+    // Destroy function - called ONLY on callEnded
+    window.destroyDaily = function() {
+      if (isDestroyed) {
+        log('SKIP: Already destroyed');
+        return;
+      }
+      isDestroyed = true;
+      window.isDestroyed = true;
+      log('DESTROYING Daily...');
+      
+      try {
+        daily.leave().then(function() {
+          log('Left meeting');
+          try { daily.destroy(); log('Destroyed'); } catch(e) {}
+        }).catch(function() {
+          try { daily.destroy(); log('Destroyed after leave error'); } catch(e) {}
+        });
+      } catch(e) {
+        log('Destroy error: ' + e);
+      }
+    };
+    
+    // Message handler from React Native
+    window.addEventListener('message', function(e) {
+      try {
+        var msg = JSON.parse(e.data);
+        log('RN message: ' + msg.type);
+        
+        if (msg.type === 'join' && msg.roomUrl) {
+          window.joinRoom(msg.roomUrl, msg.isVideo);
+        } else if (msg.type === 'destroy') {
+          window.destroyDaily();
+        } else if (msg.type === 'toggleAudio') {
+          daily.setLocalAudio(msg.enabled);
+        } else if (msg.type === 'toggleVideo') {
+          daily.setLocalVideo(msg.enabled);
+        }
+      } catch(e) {
+        log('Message parse error: ' + e);
+      }
+    });
+    
+    // Also listen to document message (for Android)
+    document.addEventListener('message', function(e) {
+      try {
+        var msg = JSON.parse(e.data);
+        log('RN doc message: ' + msg.type);
+        
+        if (msg.type === 'join' && msg.roomUrl) {
+          window.joinRoom(msg.roomUrl, msg.isVideo);
+        } else if (msg.type === 'destroy') {
+          window.destroyDaily();
+        }
+      } catch(e) {}
+    });
+    
+    // Notify React Native that page is ready
+    log('Page ready, waiting for join command...');
+    send('ready');
+    
+  } catch(err) {
+    log('INIT ERROR: ' + (err.message || err));
+    send('error', err.message || 'Init failed');
+  }
+})();
+</script>
+</body></html>`;
+
 export default function DailyCallScreen({
   roomUrl,
   roomName,
@@ -51,11 +254,44 @@ export default function DailyCallScreen({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasJoinedRef = useRef(false);  // CRITICAL: Prevent multiple joins
   const isDestroyedRef = useRef(false); // CRITICAL: Prevent multiple destroys
+  const isReadyRef = useRef(false);     // Track if WebView is ready
   
   const maxDuration = 600;
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
     ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
     : 'https://dailyco-fix.preview.emergentagent.com/api';
+
+  // CRITICAL: Store initial values in refs to prevent closure issues
+  const roomUrlRef = useRef(roomUrl);
+  const callTypeRef = useRef(callType);
+  
+  // CRITICAL: Use useMemo for HTML source to prevent WebView recreation
+  const htmlSource = useMemo(() => ({ html: DAILY_HTML }), []);
+
+  // CRITICAL: Send join command EXACTLY ONCE when ready
+  const sendJoinCommand = () => {
+    if (hasJoinedRef.current) {
+      console.log('⚠️ [DailyCallScreen] Already sent join, skipping');
+      return;
+    }
+    if (!isReadyRef.current) {
+      console.log('⚠️ [DailyCallScreen] WebView not ready yet');
+      return;
+    }
+    
+    hasJoinedRef.current = true;
+    const isVideo = callTypeRef.current === 'video';
+    
+    console.log(`📞 [DailyCallScreen] Sending JOIN command: ${roomUrlRef.current}, video: ${isVideo}`);
+    
+    const message = JSON.stringify({
+      type: 'join',
+      roomUrl: roomUrlRef.current,
+      isVideo: isVideo
+    });
+    
+    webViewRef.current?.postMessage(message);
+  };
 
   // Timer - only when connected
   useEffect(() => {
@@ -83,38 +319,33 @@ export default function DailyCallScreen({
     return () => handler.remove();
   }, [isEnding]);
 
-  // CRITICAL: Send join command ONCE after WebView is ready
-  const onWebViewLoad = useCallback(() => {
-    if (hasJoinedRef.current) {
-      console.log('⚠️ Already joined, skipping');
+  // Cleanup on unmount - BUT only if not already destroyed
+  useEffect(() => {
+    return () => {
+      console.log('🧹 [DailyCallScreen] Unmounting...');
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const endCallProperly = async () => {
+    if (isEnding || isDestroyedRef.current) {
+      console.log('⚠️ [DailyCallScreen] Already ending/destroyed, skipping');
       return;
     }
     
-    console.log('📞 Sending join command...');
-    hasJoinedRef.current = true;
-    
-    // Send join command with room URL and call type
-    webViewRef.current?.injectJavaScript(`
-      window.JOIN_CONFIG = {
-        roomUrl: "${roomUrl}",
-        startVideoOff: ${callType === 'audio'}
-      };
-      if (window.startJoin) {
-        window.startJoin();
-      }
-      true;
-    `);
-  }, [roomUrl, callType]);
-
-  const endCallProperly = useCallback(async () => {
-    if (isEnding || isDestroyedRef.current) return;
+    console.log('🔴 [DailyCallScreen] Ending call properly...');
     setIsEnding(true);
     isDestroyedRef.current = true;
     
     if (timerRef.current) clearInterval(timerRef.current);
 
-    // 1. Notify backend
+    // 1. Destroy Daily FIRST
+    console.log('📤 [DailyCallScreen] Sending destroy command to WebView');
+    webViewRef.current?.postMessage(JSON.stringify({ type: 'destroy' }));
+
+    // 2. Notify backend
     try {
+      console.log('📤 [DailyCallScreen] Notifying backend...');
       await fetch(`${API_URL}/calls/end`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,55 +356,65 @@ export default function DailyCallScreen({
           ended_by: currentUserId,
         }),
       });
+      console.log('✅ [DailyCallScreen] Backend notified');
     } catch (e) {
-      console.log('Backend notify error:', e);
+      console.log('❌ [DailyCallScreen] Backend notify error:', e);
     }
-
-    // 2. Destroy Daily
-    webViewRef.current?.injectJavaScript(`
-      if (window.daily && !window.isDestroyed) {
-        window.isDestroyed = true;
-        window.daily.leave().then(function() {
-          window.daily.destroy();
-        }).catch(function() {
-          try { window.daily.destroy(); } catch(e) {}
-        });
-      }
-      true;
-    `);
     
     // 3. Close UI after short delay
-    setTimeout(() => onCallEnd(roomName), 500);
-  }, [isEnding, roomName, callerId, receiverId, currentUserId, API_URL, onCallEnd]);
+    setTimeout(() => {
+      console.log('👋 [DailyCallScreen] Calling onCallEnd');
+      onCallEnd(roomName);
+    }, 300);
+  };
 
   const handleMessage = (event: any) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
-      console.log('📞 Daily event:', msg.type);
+      console.log('📨 [DailyCallScreen] Message from WebView:', msg.type, msg.data || '');
       
       switch(msg.type) {
         case 'ready':
-          // WebView is ready, send join command
-          onWebViewLoad();
+          // WebView is ready - send join command ONCE
+          console.log('✅ [DailyCallScreen] WebView ready');
+          isReadyRef.current = true;
+          sendJoinCommand();
           break;
+          
         case 'joining':
+          console.log('🔄 [DailyCallScreen] Status: joining');
           setStatus('joining');
           break;
+          
         case 'joined':
+          console.log('✅ [DailyCallScreen] Status: connected');
           setStatus('connected');
           break;
+          
+        case 'participant-joined':
+          console.log('👤 [DailyCallScreen] Remote participant joined');
+          break;
+          
         case 'participant-left':
           // Other participant left - end call
+          console.log('👤 [DailyCallScreen] Remote participant left, ending call');
           if (!isDestroyedRef.current) {
             endCallProperly();
           }
           break;
+          
+        case 'left':
+          console.log('📞 [DailyCallScreen] Left meeting');
+          break;
+          
         case 'error':
-          console.error('Daily error:', msg.data);
+          console.error('❌ [DailyCallScreen] Daily error:', msg.data);
           setStatus('error');
           break;
       }
-    } catch(e) {}
+    } catch(e) {
+      console.log('❌ [DailyCallScreen] Message parse error:', e);
+    }
   };
 
   const formatDuration = (s: number) => {
@@ -182,134 +423,13 @@ export default function DailyCallScreen({
     return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
   };
 
-  // CRITICAL: Static HTML - no React state interpolation
-  // Join command sent via postMessage after load
-  const html = `<!DOCTYPE html>
-<html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;background:#000;overflow:hidden}
-#container{width:100%;height:100%}
-</style>
-</head><body>
-<div id="container"></div>
-<script src="https://unpkg.com/@daily-co/daily-js@0.67.0/dist/daily-iframe.min.js"></script>
-<script>
-(function() {
-  var daily = null;
-  var hasJoined = false;
-  var isDestroyed = false;
-  
-  function log(msg) {
-    console.log('[Daily] ' + msg);
-  }
-  
-  function send(type, data) {
-    try {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type: type, data: data || ''}));
-    } catch(e) {}
-  }
-  
-  // Create Daily iframe ONCE
-  try {
-    log('Creating iframe...');
-    daily = DailyIframe.createFrame(document.getElementById('container'), {
-      showLeaveButton: false,
-      showFullscreenButton: false,
-      iframeStyle: {
-        width: '100%',
-        height: '100%',
-        border: 'none'
-      }
-    });
-    
-    window.daily = daily;
-    
-    // Event listeners
-    daily.on('joining-meeting', function() {
-      log('joining-meeting');
-      send('joining');
-    });
-    
-    daily.on('joined-meeting', function() {
-      log('joined-meeting');
-      send('joined');
-      // Enable audio/video immediately
-      daily.setLocalAudio(true);
-      if (window.JOIN_CONFIG && !window.JOIN_CONFIG.startVideoOff) {
-        daily.setLocalVideo(true);
-      }
-    });
-    
-    daily.on('participant-joined', function(e) {
-      if (e && e.participant && !e.participant.local) {
-        log('participant-joined: ' + (e.participant.user_id || 'unknown'));
-        send('participant-joined');
-      }
-    });
-    
-    daily.on('participant-left', function(e) {
-      if (e && e.participant && !e.participant.local) {
-        log('participant-left');
-        send('participant-left');
-      }
-    });
-    
-    daily.on('left-meeting', function() {
-      log('left-meeting');
-    });
-    
-    daily.on('error', function(e) {
-      log('error: ' + (e.errorMsg || 'unknown'));
-      send('error', e.errorMsg || 'unknown');
-    });
-    
-    // Join function - called from React Native
-    window.startJoin = function() {
-      if (hasJoined) {
-        log('Already joined, skipping');
-        return;
-      }
-      if (!window.JOIN_CONFIG || !window.JOIN_CONFIG.roomUrl) {
-        log('No room URL');
-        send('error', 'No room URL');
-        return;
-      }
-      
-      hasJoined = true;
-      log('Joining: ' + window.JOIN_CONFIG.roomUrl);
-      
-      daily.join({
-        url: window.JOIN_CONFIG.roomUrl,
-        startAudioOff: false,
-        startVideoOff: window.JOIN_CONFIG.startVideoOff
-      }).then(function() {
-        log('Join promise resolved');
-      }).catch(function(err) {
-        log('Join error: ' + (err.message || err));
-        send('error', err.message || 'Join failed');
-      });
-    };
-    
-    // Notify React Native that we're ready
-    log('Ready, waiting for join command...');
-    send('ready');
-    
-  } catch(err) {
-    log('Init error: ' + (err.message || err));
-    send('error', err.message || 'Init failed');
-  }
-})();
-</script>
-</body></html>`;
-
   const showWarning = maxDuration - callDuration <= 60 && callDuration > 0;
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
       
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.name}>{otherUserName}</Text>
         <Text style={styles.type}>{callType === 'video' ? 'Görüntülü' : 'Sesli'} Arama</Text>
@@ -323,11 +443,12 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
         {status === 'error' && <Text style={[styles.status, styles.error]}>Bağlantı Hatası</Text>}
       </View>
 
+      {/* WebView - CRITICAL: source is memoized, never changes */}
       <View style={styles.webview}>
         <WebView
           ref={webViewRef}
-          source={{ html }}
-          style={{ flex: 1, backgroundColor: '#000' }}
+          source={htmlSource}
+          style={styles.webviewInner}
           javaScriptEnabled={true}
           domStorageEnabled={true}
           mediaPlaybackRequiresUserAction={false}
@@ -338,8 +459,10 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
           originWhitelist={['*']}
           mixedContentMode="always"
           cacheEnabled={false}
+          incognito={true}
         />
         
+        {/* Loading overlay */}
         {(status === 'loading' || status === 'joining') && (
           <View style={styles.overlay}>
             <ActivityIndicator size="large" color="#3FA9F5" />
@@ -350,6 +473,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
         )}
       </View>
 
+      {/* Controls */}
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.endBtn, isEnding && styles.disabled]}
@@ -374,6 +498,7 @@ const styles = StyleSheet.create({
   status: { fontSize: 14, color: '#3FA9F5', marginTop: 8 },
   error: { color: '#FF3B30' },
   webview: { flex: 1, backgroundColor: '#000' },
+  webviewInner: { flex: 1, backgroundColor: '#000' },
   overlay: { 
     ...StyleSheet.absoluteFillObject, 
     backgroundColor: '#1a1a1a', 
