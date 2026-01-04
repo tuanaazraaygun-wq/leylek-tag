@@ -2685,12 +2685,20 @@ function PassengerDashboard({
       setIncomingCall(false);
       setIncomingCallData(null);
     },
-    // 🆕 YENİ: call_ended - Görüşme bitti
+    // 🆕 CRITICAL: call_ended - Görüşme bitti (Backend'den)
+    // Bu event karşı taraf aramayı sonlandırdığında gelir
     onCallEndedNew: (data) => {
-      console.log('📴 YOLCU - CALL_ENDED:', data);
+      console.log('📴 YOLCU - CALL_ENDED (Backend-driven):', data);
+      // Clear ALL call state
       setDailyCallActive(false);
       setDailyRoomUrl(null);
       setDailyRoomName('');
+      setPassengerDailyCallerId('');
+      setPassengerDailyReceiverId('');
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
+      setIncomingCall(false);
+      setIncomingCallData(null);
     },
     onIncomingCall: (data) => {
       console.log('📞 YOLCU - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
@@ -2698,9 +2706,13 @@ function PassengerDashboard({
     },
     onDailyCallEnded: (data) => {
       console.log('YOLCU - DAILY.CO ARAMA BITTI:', data);
+      // Clear ALL call state
       setDailyCallActive(false);
       setIncomingDailyCall(false);
       setDailyRoomUrl(null);
+      setDailyRoomName('');
+      setPassengerDailyCallerId('');
+      setPassengerDailyReceiverId('');
     },
     onCallAccepted: (data) => {
       console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
