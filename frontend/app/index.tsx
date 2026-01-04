@@ -3078,9 +3078,9 @@ function PassengerDashboard({
 
   // Daily.co gelen arama kabul
   const handleAcceptDailyCall = () => {
-    if (dailyCallerId && dailyRoomUrl) {
+    if (passengerDailyCallerId && dailyRoomUrl) {
       acceptDailyCall({
-        caller_id: dailyCallerId,
+        caller_id: passengerDailyCallerId,
         room_url: dailyRoomUrl
       });
       setIncomingDailyCall(false);
