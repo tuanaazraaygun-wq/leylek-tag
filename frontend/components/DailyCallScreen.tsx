@@ -63,19 +63,24 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
   }
   
   // Create Daily iframe ONCE on page load
-  // CRITICAL: Allow camera, microphone, autoplay for Android WebView
   try {
-    log('Creating iframe ONCE with permissions...');
+    log('Creating iframe ONCE...');
     daily = DailyIframe.createFrame(document.getElementById('container'), {
       showLeaveButton: false,
       showFullscreenButton: false,
       iframeStyle: {
         width: '100%',
         height: '100%',
-        border: 'none',
-        allow: 'camera; microphone; autoplay; display-capture'
+        border: 'none'
       }
     });
+    
+    // CRITICAL: Add allow attribute to iframe for Android WebView permissions
+    var iframe = document.querySelector('iframe');
+    if (iframe) {
+      iframe.setAttribute('allow', 'camera; microphone; autoplay; display-capture');
+      log('Allow attribute added to iframe');
+    }
     
     window.daily = daily;
     window.isDestroyed = false;
