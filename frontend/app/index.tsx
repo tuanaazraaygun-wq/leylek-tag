@@ -3295,14 +3295,15 @@ function PassengerDashboard({
     );
   }
 
-  // DAILY.CO CALL SCREEN - YOLCU
+  // WHATSAPP CALL SCREEN - YOLCU
   if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
     return (
-      <DailyCallScreen
+      <WhatsAppCallScreen
         roomUrl={dailyRoomUrl}
         roomName={dailyRoomName}
         callType={dailyCallType}
         otherUserName={dailyCallerName}
+        currentUserId={user?.id}
         onCallEnd={async (roomName) => {
           // End call and cleanup
           try {
