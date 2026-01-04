@@ -4702,19 +4702,20 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               const passengerId = activeTag.passenger_id;
               const passengerName = activeTag.passenger_name || 'Yolcu';
               
-              // 1. HEMEN socket call_invite gonder (0ms)
-              console.log('CALL_INVITE EMITTING NOW', { caller: user.id, receiver: passengerId });
+              // 🆕 YENİ AKIŞ: Sadece call_invite gönder, room oluşturma YOK
+              // Room, aranan kabul ettiğinde socket server tarafından oluşturulacak
+              console.log('📞 ŞOFÖR ARIYOR - call_invite gönderiliyor', { caller: user.id, receiver: passengerId });
               emitCallInvite({
                 caller_id: user.id,
                 caller_name: user.name || 'Sofor',
                 receiver_id: passengerId,
-                room_url: '',
-                room_name: '',
+                room_url: '',  // Henüz yok
+                room_name: '',  // Henüz yok
                 call_type: type,
                 tag_id: activeTag.id || '',
               });
               
-              // 2. HEMEN "Araniyor..." ekranini goster (0ms)
+              // "Aranıyor..." ekranını göster
               setOutgoingCallData({
                 receiverName: passengerName,
                 callType: type,
@@ -4724,39 +4725,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               });
               setOutgoingCall(true);
               
-              // 3. Arka planda Daily room olustur (UI'yi BLOKLAMAZ)
-              fetch(`${API_URL}/calls/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  caller_id: user.id,
-                  receiver_id: passengerId,
-                  call_type: type,
-                  tag_id: activeTag.id
-                })
-              })
-              .then(res => res.json())
-              .then(data => {
-                if (data.success && data.room_url) {
-                  console.log('DAILY ROOM READY', data.room_url);
-                  setOutgoingCallData(prev => prev ? {
-                    ...prev,
-                    roomUrl: data.room_url,
-                    roomName: data.room_name,
-                  } : null);
-                  // Socket ile room URL gonder
-                  emitCallInvite({
-                    caller_id: user.id,
-                    caller_name: user.name || 'Sofor',
-                    receiver_id: passengerId,
-                    room_url: data.room_url,
-                    room_name: data.room_name,
-                    call_type: type,
-                    tag_id: activeTag.id || '',
-                  });
-                }
-              })
-              .catch(err => console.error('Daily room error:', err));
+              // NOT: Daily room oluşturma YOK
+              // Aranan kabul ettiğinde socket server room oluşturup
+              // HER İKİ TARAFA call_accepted gönderecek
             }}
             onForceEnd={async () => {
               try {
