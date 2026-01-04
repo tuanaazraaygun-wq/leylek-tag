@@ -2676,8 +2676,8 @@ function PassengerDashboard({
       setIncomingCallData(null);
       setDailyCallActive(false);
       setDailyRoomUrl(null);
-      setDailyCallerId('');
-      setDailyReceiverId('');
+      setPassengerDailyCallerId('');
+      setPassengerDailyReceiverId('');
       Alert.alert('Bilgi', 'Arama reddedildi');
     },
     // 🆕 YENİ: call_cancelled - Arayan iptal etti
