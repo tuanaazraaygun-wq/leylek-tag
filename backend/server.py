@@ -3852,28 +3852,60 @@ async def start_call(request: dict):
 @api_router.post("/calls/end")
 async def end_call(request: dict):
     """
-    End call - Delete Daily.co room and update log
+    End call - CRITICAL: Must broadcast to other participant before cleanup
+    
+    Flow:
+    1. Receive end request with caller_id, receiver_id, room_name
+    2. Broadcast call_ended to BOTH participants via socket
+    3. Delete Daily.co room
+    4. Return success
     """
     try:
-        room_name = request.get("room_name")
+        room_name = request.get("room_name", "")
+        caller_id = request.get("caller_id", "")
+        receiver_id = request.get("receiver_id", "")
+        ended_by = request.get("ended_by", "")
         
-        if not room_name:
-            return {"success": True, "message": "No room to delete"}
+        logger.info(f"📴 Call end request: room={room_name}, ended_by={ended_by}")
         
-        # Delete room from Daily.co
-        headers = {
-            "Authorization": f"Bearer {DAILY_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        # 1. Broadcast call_ended to BOTH participants via socket server
+        # This ensures the other participant knows to close their UI
+        if caller_id or receiver_id:
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    # Call socket server to broadcast
+                    socket_data = {
+                        "caller_id": caller_id,
+                        "receiver_id": receiver_id,
+                        "ended_by": ended_by,
+                        "room_name": room_name
+                    }
+                    # Emit via our local socket.io
+                    await sio.emit('call_ended_broadcast', socket_data)
+                    logger.info(f"✅ Call ended broadcast sent")
+            except Exception as e:
+                logger.error(f"Socket broadcast error: {e}")
         
-        async with httpx.AsyncClient() as client:
-            await client.delete(
-                f"{DAILY_API_URL}/rooms/{room_name}",
-                headers=headers,
-                timeout=10
-            )
+        # 2. Delete room from Daily.co
+        if room_name:
+            headers = {
+                "Authorization": f"Bearer {DAILY_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            async with httpx.AsyncClient() as client:
+                try:
+                    await client.delete(
+                        f"{DAILY_API_URL}/rooms/{room_name}",
+                        headers=headers,
+                        timeout=10
+                    )
+                    logger.info(f"🗑️ Daily room deleted: {room_name}")
+                except:
+                    pass
         
-        # Update call log
+        # 3. Update call log
         try:
             supabase.table("call_logs").update({
                 "status": "ended",
@@ -3882,8 +3914,7 @@ async def end_call(request: dict):
         except:
             pass
             
-        logger.info(f"📴 Call ended: {room_name}")
-        return {"success": True}
+        return {"success": True, "message": "Call ended"}
         
     except Exception as e:
         logger.error(f"Call end error: {e}")
