@@ -3312,8 +3312,8 @@ function PassengerDashboard({
         roomName={dailyRoomName}
         callType={dailyCallType}
         otherUserName={dailyCallerName}
-        callerId={dailyCallerId}
-        receiverId={dailyReceiverId}
+        callerId={passengerDailyCallerId}
+        receiverId={passengerDailyReceiverId}
         currentUserId={user?.id || ''}
         onCallEnd={(roomName) => {
           // WhatsAppCallScreen handles backend call internally
