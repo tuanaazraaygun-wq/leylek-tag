@@ -63,15 +63,17 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
   }
   
   // Create Daily iframe ONCE on page load
+  // CRITICAL: Allow camera, microphone, autoplay for Android WebView
   try {
-    log('Creating iframe ONCE...');
+    log('Creating iframe ONCE with permissions...');
     daily = DailyIframe.createFrame(document.getElementById('container'), {
       showLeaveButton: false,
       showFullscreenButton: false,
       iframeStyle: {
         width: '100%',
         height: '100%',
-        border: 'none'
+        border: 'none',
+        allow: 'camera; microphone; autoplay; display-capture'
       }
     });
     
@@ -85,16 +87,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
     });
     
     daily.on('joined-meeting', function() {
-      log('joined-meeting event - enabling media');
+      log('joined-meeting event - CONNECTED!');
       send('joined');
-      // CRITICAL: Enable media immediately after join
-      try {
-        daily.setLocalAudio(true);
-        log('Audio enabled');
-      } catch(e) {
-        log('Audio enable error: ' + e);
-      }
-      // Video will be enabled via postMessage based on callType
     });
     
     daily.on('participant-joined', function(e) {
@@ -126,7 +120,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
     });
     
     // Join function - called ONCE from React Native via postMessage
-    window.joinRoom = function(roomUrl, isVideoCall) {
+    // CRITICAL: startAudioOff and startVideoOff MUST be false for Android WebView
+    window.joinRoom = function(roomUrl, isVideoCall, userName) {
       if (hasJoined) {
         log('SKIP: Already joined');
         return;
@@ -142,29 +137,21 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden}
       }
       
       hasJoined = true;
-      log('JOINING: ' + roomUrl + ' (video: ' + isVideoCall + ')');
+      log('JOINING: ' + roomUrl + ' (video: ' + isVideoCall + ', user: ' + userName + ')');
       
+      // CRITICAL: For Android WebView, audio/video MUST start ON
       daily.join({
         url: roomUrl,
         startAudioOff: false,
-        startVideoOff: !isVideoCall
+        startVideoOff: false,
+        userName: userName || 'Kullanıcı'
       }).then(function() {
-        log('Join promise resolved');
-        // Enable video if video call
-        if (isVideoCall) {
-          setTimeout(function() {
-            try {
-              daily.setLocalVideo(true);
-              log('Video enabled');
-            } catch(e) {
-              log('Video enable error: ' + e);
-            }
-          }, 500);
-        }
+        log('Join SUCCESS - connected to room');
+        send('joined');
       }).catch(function(err) {
         log('Join error: ' + (err.message || err));
         send('error', err.message || 'Join failed');
-        hasJoined = false; // Allow retry on error
+        hasJoined = false;
       });
     };
     
