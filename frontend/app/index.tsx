@@ -3939,6 +3939,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [dailyCallerId, setDailyCallerId] = useState<string>('');
   const [incomingDailyCall, setIncomingDailyCall] = useState(false);
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
+  const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
   
   // Giden Arama State (Araniyor...) - SOFOR
   const [outgoingCall, setOutgoingCall] = useState(false);
