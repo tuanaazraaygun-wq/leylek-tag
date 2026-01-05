@@ -2937,13 +2937,17 @@ function PassengerDashboard({
       console.log('Reverse geocoding hatası:', err);
     }
     
-    // 🚀 OPTIMISTIC UI - Geçici TAG oluştur ve ANINDA göster
+    // 🚀 OPTIMISTIC UI - Geçici TAG ve request_id oluştur
     // UUID v4 formatında geçici ID oluştur (backend uyumlu)
-    const tempTagId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const generateUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = Math.random() * 16 | 0;
       const v = c === 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
     });
+    
+    const tempTagId = generateUUID();
+    const newRequestId = generateUUID();  // 🆕 Her TAG için unique request_id
+    
     const tempTag = {
       id: tempTagId,
       user_id: user.id,
@@ -2959,10 +2963,27 @@ function PassengerDashboard({
     
     // 1️⃣ ANINDA UI'ı güncelle
     setActiveTag(tempTag as any);
+    setCurrentRequestId(newRequestId);  // 🆕 request_id kaydet
     setLoading(false);
     
-    // 2️⃣ ANINDA Socket ile şoförlere yayınla (REST API'yi BEKLEME!)
-    if (emitNewTag) {
+    // 2️⃣ 🆕 YENİ: Socket ile 20km içindeki şoförlere yayınla
+    if (emitCreateTagRequest) {
+      emitCreateTagRequest({
+        request_id: newRequestId,
+        tag_id: tempTagId,
+        passenger_id: user.id,
+        passenger_name: user.name || user.phone,
+        pickup_location: pickupAddress,
+        pickup_lat: pickupLat,
+        pickup_lng: pickupLng,
+        dropoff_location: destination.address,
+        dropoff_lat: destination.latitude,
+        dropoff_lng: destination.longitude,
+        notes: 'Hedef belirlendi'
+      });
+      console.log('🔥 TAG REQUEST Socket ile 20km şoförlere yayınlandı! request_id:', newRequestId);
+    } else if (emitNewTag) {
+      // Fallback: Eski yöntem (tüm şoförlere)
       emitNewTag({
         tag_id: tempTagId,
         passenger_id: user.id,
