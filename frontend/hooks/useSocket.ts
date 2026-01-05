@@ -568,25 +568,28 @@ export default function useSocket({
   // ════════════════════════════════════════════════════════════════════
 
   const emitSendOffer = useCallback((data: OfferData) => {
-    if (socketRef.current?.connected) {
-      console.log('💰 Teklif gönderiliyor:', data);
-      socketRef.current.emit('send_offer', data);
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
+      console.log('💰 TEKLİF GÖNDERİLİYOR (send_offer):', JSON.stringify(data));
+      socket.emit('send_offer', data);
     } else {
-      console.error('❌ Socket bağlı değil, teklif gönderilemedi');
+      console.error('❌ Socket bağlı değil! globalSocket:', !!globalSocket, 'socketRef:', !!socketRef.current);
     }
   }, []);
 
   const emitAcceptOffer = useCallback((data: OfferData) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('✅ Teklif kabul ediliyor:', data);
-      socketRef.current.emit('accept_offer', data);
+      socket.emit('accept_offer', data);
     }
   }, []);
 
   const emitRejectOffer = useCallback((data: { driver_id: string; tag_id: string }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('❌ Teklif reddediliyor:', data);
-      socketRef.current.emit('reject_offer', data);
+      socket.emit('reject_offer', data);
     }
   }, []);
 
