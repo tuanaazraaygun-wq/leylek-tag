@@ -5870,16 +5870,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         if (prev.some(r => r.id === data.tag_id)) return prev;
         return [...prev, {
           id: data.tag_id,
+          request_id: data.request_id,  // 🔥 KRİTİK - ZORUNLU
           passenger_id: data.passenger_id,
           passenger_name: data.passenger_name,
           pickup_lat: data.pickup_lat,
           pickup_lng: data.pickup_lng,
-          pickup_address: data.pickup_address,
-          pickup_location: data.pickup_address,
+          pickup_address: data.pickup_address || data.pickup_location,
+          pickup_location: data.pickup_location || data.pickup_address,
           dropoff_lat: data.dropoff_lat,
           dropoff_lng: data.dropoff_lng,
-          dropoff_address: data.dropoff_address,
-          dropoff_location: data.dropoff_address,
+          dropoff_address: data.dropoff_address || data.dropoff_location,
+          dropoff_location: data.dropoff_location || data.dropoff_address,
           status: 'pending',
           created_at: new Date().toISOString(),
           // Mesafeler hesaplanıyor işareti
