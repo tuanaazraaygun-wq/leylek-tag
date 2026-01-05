@@ -6122,10 +6122,11 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       if (data.success || data.offer_id) {
         console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
         
-        // 🔥 Socket ile teklifi anında yolcuya gönder - REQUEST_ID ZORUNLU
-        if (socketSendOffer && requestId) {
-          socketSendOffer({
-            request_id: requestId,  // 🔥 KRİTİK - ZORUNLU
+        // 🔥 Socket ile teklifi anında yolcuya gönder
+        // request_id varsa kullan, yoksa tag_id ile devam et
+        if (socketSendOffer) {
+          const offerPayload = {
+            request_id: requestId || tagId,  // 🔥 Fallback to tagId
             offer_id: data.offer_id,
             tag_id: tagId,
             driver_id: user.id,
@@ -6133,12 +6134,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             driver_rating: user.rating || 5.0,
             passenger_id: tag?.passenger_id || '',
             price: price,
-            vehicle_model: user.vehicle_model,
-            vehicle_color: user.vehicle_color,
-          });
-          console.log('🔥 TEKLİF Socket ile yayınlandı! request_id:', requestId);
-        } else if (!requestId) {
-          console.warn('⚠️ Socket emit yapılamadı - request_id yok');
+          };
+          console.log('🔥 [DRIVER] Socket emit YAPILIYOR:', JSON.stringify(offerPayload));
+          socketSendOffer(offerPayload);
+          console.log('✅ [DRIVER] Socket emit TAMAMLANDI! request_id:', requestId || 'N/A (tagId kullanıldı)');
+        } else {
+          console.error('❌ [DRIVER] socketSendOffer fonksiyonu YOK!');
         }
         
         setRequests(prev => prev.filter(r => r.id !== tagId));
