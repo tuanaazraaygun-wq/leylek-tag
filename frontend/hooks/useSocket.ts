@@ -465,6 +465,40 @@ export default function useSocket({
     }
   }, []);
 
+  // 🆕 YENİ: create_tag_request - 20km radius şoförlere gönder
+  const emitCreateTagRequest = useCallback((data: {
+    request_id: string;
+    tag_id: string;
+    passenger_id: string;
+    passenger_name: string;
+    pickup_location: string;
+    pickup_lat: number;
+    pickup_lng: number;
+    dropoff_location: string;
+    dropoff_lat: number;
+    dropoff_lng: number;
+    notes?: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🏷️ TAG REQUEST gönderiliyor (20km radius):', data);
+      socketRef.current.emit('create_tag_request', data);
+    } else {
+      console.error('❌ Socket bağlı değil, TAG REQUEST gönderilemedi');
+    }
+  }, []);
+
+  // 🆕 YENİ: cancel_tag_request - request_id ile iptal
+  const emitCancelTagRequest = useCallback((data: {
+    request_id: string;
+    tag_id: string;
+    passenger_id: string;
+  }) => {
+    if (socketRef.current?.connected) {
+      console.log('🚫 TAG REQUEST iptal ediliyor:', data);
+      socketRef.current.emit('cancel_tag_request', data);
+    }
+  }, []);
+
   const emitCancelTag = useCallback((tagId: string) => {
     if (socketRef.current?.connected) {
       console.log('🚫 TAG iptal ediliyor:', tagId);
