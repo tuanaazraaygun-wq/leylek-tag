@@ -435,13 +435,9 @@ export default function useSocket({
   }, [userId, userRole]);
 
   const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      console.log('🔌 Socket.IO bağlantısı kesiliyor...');
-      socketRef.current.disconnect();
-      socketRef.current = null;
-      setIsConnected(false);
-      setIsRegistered(false);
-    }
+    // 🔥 KALICI SOCKET - disconnect YAPMA, sadece log bas
+    console.log('⚠️ disconnect() çağrıldı ama socket kalıcı, kapatılmıyor');
+    // Global socket'i koruyoruz - ekran değişiminde kapanmasın
   }, []);
 
   const registerUser = useCallback((uid: string, role?: string) => {
