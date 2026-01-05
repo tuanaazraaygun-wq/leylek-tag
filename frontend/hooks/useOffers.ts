@@ -118,11 +118,15 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
         return;
       }
       
-      // REQUEST ID CHECK
-      if (requestId && incomingRequestId && incomingRequestId !== requestId) {
-        console.log('⚠️ [useOffers] Wrong request_id, ignoring offer');
+      // REQUEST ID CHECK - Gevşetilmiş kontrol
+      // Sadece HER İKİSİ de varsa ve FARKLI ise ignore et
+      if (incomingRequestId && currentRequestIdRef.current && incomingRequestId !== currentRequestIdRef.current) {
+        console.log('⚠️ [useOffers] Wrong request_id, ignoring offer:', incomingRequestId, 'vs', currentRequestIdRef.current);
         return;
       }
+      
+      // Log successful pass
+      console.log('✅ [useOffers] Request ID check passed:', incomingRequestId || 'none', '/', currentRequestIdRef.current || 'none');
       
       seenOfferIdsRef.current.add(offerId);
       
