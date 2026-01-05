@@ -1854,8 +1854,9 @@ function TikTokOfferCard({
           {/* ÖNERİLEN TEKLİF Etiketi */}
           {isBest && (
             <View style={uberCardStyles.recommendedBadge}>
-              <Ionicons name="star" size={14} color="#F59E0B" />
+              <Ionicons name="trophy" size={16} color="#F59E0B" />
               <Text style={uberCardStyles.recommendedText}>ÖNERİLEN TEKLİF</Text>
+              <View style={uberCardStyles.recommendedGlow} />
             </View>
           )}
 
