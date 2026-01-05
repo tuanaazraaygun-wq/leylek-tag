@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Config
-const BACKEND_URL = 'https://dailyco-fix.preview.emergentagent.com';
+const BACKEND_URL = 'https://taxiapp-cards.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
 
