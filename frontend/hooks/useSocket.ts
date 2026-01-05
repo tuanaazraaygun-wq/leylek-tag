@@ -271,49 +271,49 @@ export default function useSocket({
 
     socket.on('incoming_call', (data: CallData) => {
       console.log('📞 GELEN ARAMA:', data);
-      onIncomingCall?.(data);
+      callbackRefs.current.onIncomingCall?.(data);
     });
 
     socket.on('call_accepted', (data) => {
       console.log('✅ ARAMA KABUL EDİLDİ:', data);
-      onCallAccepted?.(data);
+      callbackRefs.current.onCallAccepted?.(data);
     });
 
     socket.on('call_rejected', (data) => {
       console.log('❌ ARAMA REDDEDİLDİ:', data);
-      onCallRejected?.(data);
+      callbackRefs.current.onCallRejected?.(data);
     });
 
     socket.on('call_ended', (data) => {
       console.log('📴 ARAMA SONLANDIRILDI:', data);
-      onCallEnded?.(data);
+      callbackRefs.current.onCallEnded?.(data);
     });
 
     socket.on('call_ringing', (data) => {
       console.log('🔔 ARAMA ÇALIYOR:', data);
-      onCallRinging?.(data);
+      callbackRefs.current.onCallRinging?.(data);
     });
 
     // ══════════ TAG EVENTLERİ ══════════
 
     socket.on('tag_created', (data: TagData) => {
       console.log('🏷️ YENİ TAG:', data);
-      onTagCreated?.(data);
+      callbackRefs.current.onTagCreated?.(data);
     });
 
     socket.on('tag_cancelled', (data) => {
       console.log('🚫 TAG İPTAL:', data);
-      onTagCancelled?.(data);
+      callbackRefs.current.onTagCancelled?.(data);
     });
 
     socket.on('tag_updated', (data: TagData) => {
       console.log('🔄 TAG GÜNCELLENDİ:', data);
-      onTagUpdated?.(data);
+      callbackRefs.current.onTagUpdated?.(data);
     });
 
     socket.on('tag_matched', (data) => {
       console.log('🤝 TAG EŞLEŞTİ:', data);
-      onTagMatched?.(data);
+      callbackRefs.current.onTagMatched?.(data);
     });
 
     socket.on('tag_created_ack', (data) => {
@@ -323,23 +323,23 @@ export default function useSocket({
     // ══════════ TEKLİF EVENTLERİ ══════════
 
     socket.on('new_offer', (data: OfferData) => {
-      console.log('💰 YENİ TEKLİF:', data);
-      onNewOffer?.(data);
+      console.log('💰 YENİ TEKLİF ALINDI:', data);
+      callbackRefs.current.onNewOffer?.(data);
     });
 
     socket.on('offer_accepted', (data: OfferData) => {
       console.log('✅ TEKLİF KABUL EDİLDİ:', data);
-      onOfferAccepted?.(data);
+      callbackRefs.current.onOfferAccepted?.(data);
     });
 
     socket.on('offer_rejected', (data: OfferData) => {
       console.log('❌ TEKLİF REDDEDİLDİ:', data);
-      onOfferRejected?.(data);
+      callbackRefs.current.onOfferRejected?.(data);
     });
 
     socket.on('offer_sent_ack', (data) => {
       console.log('📤 TEKLİF GÖNDERİLDİ ACK:', data);
-      onOfferSentAck?.(data);
+      callbackRefs.current.onOfferSentAck?.(data);
     });
 
     // ══════════ KONUM EVENTLERİ ══════════
