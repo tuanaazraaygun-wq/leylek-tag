@@ -6087,7 +6087,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const sendOfferInstant = async (tagId: string, price: number): Promise<boolean> => {
     if (!user?.id || !tagId || price < 10) return false;
     
-    console.log('🚀 TEKLİF GÖNDERİLİYOR:', price, '₺', 'TAG:', tagId);
+    // 🔥 TAG'den request_id al
+    const tag = requests.find(r => r.id === tagId);
+    const requestId = tag?.request_id;
+    
+    console.log('🚀 TEKLİF GÖNDERİLİYOR:', price, '₺', 'TAG:', tagId, 'REQUEST_ID:', requestId);
+    
+    if (!requestId) {
+      console.error('❌ request_id YOK! TAG:', tag);
+      Alert.alert('Hata', 'Talep bulunamadı, lütfen sayfayı yenileyin');
+      return false;
+    }
     
     try {
       const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
@@ -6107,18 +6117,21 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       if (data.success || data.offer_id) {
         console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
         
-        // 🔥 Socket ile teklifi anında yolcuya gönder
+        // 🔥 Socket ile teklifi anında yolcuya gönder - REQUEST_ID ZORUNLU
         if (socketSendOffer) {
-          const tag = requests.find(r => r.id === tagId);
           socketSendOffer({
+            request_id: requestId,  // 🔥 KRİTİK - ZORUNLU
             offer_id: data.offer_id,
             tag_id: tagId,
             driver_id: user.id,
             driver_name: user.name || user.phone,
+            driver_rating: user.rating || 5.0,
             passenger_id: tag?.passenger_id || '',
             price: price,
+            vehicle_model: user.vehicle_model,
+            vehicle_color: user.vehicle_color,
           });
-          console.log('🔥 TEKLİF Socket ile yayınlandı!');
+          console.log('🔥 TEKLİF Socket ile yayınlandı! request_id:', requestId);
         }
         
         setRequests(prev => prev.filter(r => r.id !== tagId));
