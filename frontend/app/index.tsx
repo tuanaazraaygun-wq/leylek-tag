@@ -4328,7 +4328,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     return () => clearInterval(interval);
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
-  // GPS konum güncellemesi
+  // GPS konum güncellemesi + Socket.IO location update
   useEffect(() => {
     const updateLocation = async () => {
       try {
@@ -4343,7 +4343,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           };
           setUserLocation(coords);
           
-          // Backend'e gönder
+          // 🆕 Socket.IO ile konum güncelle (RAM'de tutulur - 20km radius için)
+          if (emitDriverLocationUpdate && user?.id) {
+            emitDriverLocationUpdate({
+              driver_id: user.id,
+              lat: coords.latitude,
+              lng: coords.longitude
+            });
+          }
+          
+          // Backend'e gönder (DB için)
           await fetch(`${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`, {
             method: 'POST'
           });
@@ -4356,7 +4365,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     updateLocation();
     const locationInterval = setInterval(updateLocation, 10000); // 10 saniyede bir
     return () => clearInterval(locationInterval);
-  }, [user.id]);
+  }, [user.id, emitDriverLocationUpdate]);
 
   const loadData = async () => {
     await Promise.all([loadActiveTag(), loadRequests()]);
