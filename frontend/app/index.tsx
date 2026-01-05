@@ -3817,6 +3817,29 @@ function PassengerDashboard({
   // Teklifleri fiyata göre sırala (ucuzdan pahalıya)
   const offers = [...realtimeOffers].sort((a, b) => (a.price || 0) - (b.price || 0));
   
+  // 🆕 Teklif veren sürücülerin konumlarını offers'tan güncelle
+  useEffect(() => {
+    if (offers.length === 0) {
+      setOfferDriverLocations([]);
+      return;
+    }
+    
+    // Her teklif için sürücü konumu oluştur
+    const newDriverLocations: DriverLocation[] = offers
+      .filter(offer => offer.driver_id)
+      .map(offer => ({
+        driver_id: offer.driver_id,
+        driver_name: offer.driver_name || 'Sürücü',
+        // Offer'daki konum bilgisi veya varsayılan
+        latitude: (offer as any).driver_latitude || (offer as any).latitude || userLocation?.latitude || 0,
+        longitude: (offer as any).driver_longitude || (offer as any).longitude || userLocation?.longitude || 0,
+        vehicle_model: offer.vehicle_model,
+        price: offer.price,
+      }));
+    
+    setOfferDriverLocations(newDriverLocations);
+  }, [offers.length, offers.map(o => o.driver_id).join(',')]);
+  
   // Mesafe ve süre state'leri
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
