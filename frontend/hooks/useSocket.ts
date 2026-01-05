@@ -643,7 +643,7 @@ export default function useSocket({
     const socket = globalSocket || socketRef.current;
     if (socket?.connected) {
       console.log('🚗 Yolculuk başladı yayınlanıyor:', data);
-      socketRef.current.emit('trip_started', data);
+      socket.emit('trip_started', data);
     }
   }, []);
 
@@ -652,9 +652,10 @@ export default function useSocket({
     passenger_id: string; 
     driver_id: string 
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🏁 Yolculuk bitti yayınlanıyor:', data);
-      socketRef.current.emit('trip_ended', data);
+      socket.emit('trip_ended', data);
     }
   }, []);
 
@@ -663,9 +664,10 @@ export default function useSocket({
     requester_id: string;
     target_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🛑 Trip end request gönderiliyor:', data);
-      socketRef.current.emit('request_trip_end', data);
+      socket.emit('request_trip_end', data);
     }
   }, []);
 
@@ -674,9 +676,10 @@ export default function useSocket({
     accepted: boolean;
     target_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('📝 Trip end response gönderiliyor:', data);
-      socketRef.current.emit('respond_trip_end', data);
+      socket.emit('respond_trip_end', data);
     }
   }, []);
 
@@ -688,9 +691,10 @@ export default function useSocket({
     passenger_id: string;
     driver_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('⚡ FORCE END TRIP gönderiliyor:', data);
-      socketRef.current.emit('force_end_trip', data);
+      socket.emit('force_end_trip', data);
     }
   }, []);
 
