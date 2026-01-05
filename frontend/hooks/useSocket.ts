@@ -711,9 +711,10 @@ export default function useSocket({
     call_type: 'audio' | 'video';
     tag_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('📞 CALL INVITE gönderiliyor:', data);
-      socketRef.current.emit('call_invite', data);
+      socket.emit('call_invite', data);
     } else {
       console.error('❌ Socket bağlı değil, call invite gönderilemedi');
     }
@@ -724,9 +725,10 @@ export default function useSocket({
     receiver_id: string;
     room_url: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('✅ CALL ACCEPTED gönderiliyor:', data);
-      socketRef.current.emit('call_accepted_signal', data);
+      socket.emit('call_accepted_signal', data);
     }
   }, []);
 
@@ -734,9 +736,10 @@ export default function useSocket({
     caller_id: string;
     receiver_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('❌ CALL REJECTED gönderiliyor:', data);
-      socketRef.current.emit('call_rejected_signal', data);
+      socket.emit('call_rejected_signal', data);
     }
   }, []);
 
@@ -748,9 +751,10 @@ export default function useSocket({
     call_type: 'audio' | 'video';
     tag_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('✅ CALL_ACCEPT gönderiliyor (Room oluşturulacak):', data);
-      socketRef.current.emit('call_accept', data);
+      socket.emit('call_accept', data);
     } else {
       console.error('❌ Socket bağlı değil, call accept gönderilemedi');
     }
@@ -761,9 +765,10 @@ export default function useSocket({
     caller_id: string;
     receiver_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('❌ CALL_REJECT gönderiliyor:', data);
-      socketRef.current.emit('call_reject', data);
+      socket.emit('call_reject', data);
     }
   }, []);
 
@@ -772,9 +777,10 @@ export default function useSocket({
     caller_id: string;
     receiver_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🚫 CALL_CANCEL gönderiliyor:', data);
-      socketRef.current.emit('call_cancel', data);
+      socket.emit('call_cancel', data);
     }
   }, []);
 
