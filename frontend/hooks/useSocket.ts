@@ -1,6 +1,12 @@
 /**
  * useSocket - Socket.IO Hook for Real-time Communication
  * 
+ * v2.1 - DRIVER SOCKET FIX
+ * - Socket connection GLOBAL ve KALICI
+ * - forceNew: false - aynı socket instance kullanılır
+ * - Cleanup'ta disconnect YOK
+ * - Register her zaman yapılır
+ * 
  * ÖZELLIKLER:
  * - Arama sinyalleri (call_user, incoming_call, accept, reject, end)
  * - TAG sistemi (new_tag, cancel_tag, tag_created, tag_cancelled)
@@ -18,6 +24,11 @@ const SOCKET_URL = 'https://socket.leylektag.com';
 const SOCKET_PATH = '/socket.io';
 
 console.log('🔌 Socket URL:', SOCKET_URL);
+
+// 🔥 GLOBAL SOCKET INSTANCE - Tüm componentler arasında paylaşılır
+let globalSocket: Socket | null = null;
+let globalUserId: string | null = null;
+let globalUserRole: string | null = null;
 
 // ════════════════════════════════════════════════════════════════════
 // INTERFACES
