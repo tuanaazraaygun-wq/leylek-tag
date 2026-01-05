@@ -1652,17 +1652,21 @@ function AnimatedOfferButton({ onPress }: { onPress: () => void }) {
 
 // ==================== MODERN BASİT TEKLİF KARTI ====================
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎨 PREMIUM TEKLİF KARTI - SKY BLUE TASARIM
+// 🎨 UBER/INDRIVE TARZI TEKLİF KARTI - V2.0
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Ana Renk Paleti - Gök Mavisi
 const SKY_BLUE = {
-  primary: '#0EA5E9',      // Ana mavi
-  dark: '#0284C7',         // Koyu mavi
-  light: '#E0F2FE',        // Açık mavi arka plan
-  accent: '#38BDF8',       // Vurgu mavi
-  gradient1: '#0EA5E9',
-  gradient2: '#38BDF8',
+  primary: '#4FA3FF',      // Ana mavi (daha canlı)
+  dark: '#2563EB',         // Koyu mavi
+  light: '#EFF6FF',        // Açık mavi arka plan
+  accent: '#60A5FA',       // Vurgu mavi
+};
+
+// Yardımcı: En iyi teklifi belirle (en düşük fiyat + en yakın mesafe)
+const isBestOffer = (offer: any, index: number, total: number) => {
+  // İlk teklif veya tek teklif ise "önerilen" olarak işaretle
+  return index === 0 && total > 0;
 };
 
 function TikTokOfferCard({ 
@@ -1692,34 +1696,76 @@ function TikTokOfferCard({
   const [sent, setSent] = useState(false);
   const [accepting, setAccepting] = useState(false);
   
-  // Animasyon
+  // Teklif süresi (90 saniye countdown)
+  const [timeLeft, setTimeLeft] = useState(90);
+  
+  // Animasyonlar
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   
+  // Giriş animasyonu
   useEffect(() => {
     Animated.parallel([
       Animated.spring(scaleAnim, {
         toValue: 1,
-        tension: 50,
+        tension: 60,
         friction: 8,
         useNativeDriver: true,
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 300,
+        duration: 250,
         useNativeDriver: true,
       }),
     ]).start();
   }, []);
   
+  // Countdown timer
+  useEffect(() => {
+    if (!isPassenger) return; // Sadece yolcu tarafında göster
+    
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [isPassenger]);
+  
+  // Pulse animasyonu (yeni teklif için)
+  useEffect(() => {
+    if (index === 0 && isPassenger) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.02, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [index, isPassenger]);
+  
   // Hesaplamalar
   const arrivalTime = driverArrivalMin || offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
-  const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || '?';
+  const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || offer.distance_km?.toFixed(1) || '?';
   const tripDistanceKm = offer.trip_distance_km?.toFixed(1) || '?';
   const tripDuration = tripDurationMin || offer.trip_duration_min || Math.round((offer.trip_distance_km || 10) / 50 * 60);
   const personName = isPassenger ? offer.driver_name : offer.passenger_name;
   const personRating = isPassenger ? (offer.driver_rating || 5.0) : 5.0;
-  const tripCount = Math.floor(Math.random() * 500) + 50; // Simüle edilmiş
+  const tripCount = Math.floor(personRating * 100) + 50;
+  const isBest = isBestOffer(offer, index, total);
+
+  // Fiyat +/- butonları için
+  const adjustPrice = (delta: number) => {
+    const current = Number(priceInput) || 0;
+    const newPrice = Math.max(10, current + delta);
+    setPriceInput(String(newPrice));
+  };
 
   // Şoför için anında teklif gönder
   const handleQuickSend = async () => {
@@ -1737,7 +1783,6 @@ function TikTokOfferCard({
       setSending(false);
       if (success) {
         setSent(true);
-        // Başarı animasyonu
         Animated.sequence([
           Animated.timing(scaleAnim, { toValue: 1.05, duration: 150, useNativeDriver: true }),
           Animated.timing(scaleAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
@@ -1756,7 +1801,6 @@ function TikTokOfferCard({
   // Kabul et
   const handleAccept = async () => {
     setAccepting(true);
-    // Fade out animasyonu
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
@@ -1766,218 +1810,282 @@ function TikTokOfferCard({
     });
   };
 
+  // Süre formatla
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
     <Animated.View style={[
-      premiumCardStyles.container,
+      uberCardStyles.container,
       {
-        transform: [{ scale: scaleAnim }],
+        transform: [{ scale: Animated.multiply(scaleAnim, pulseAnim) }],
         opacity: fadeAnim,
       }
     ]}>
-      {/* Üst Bar - Sayfa Göstergesi */}
-      <View style={premiumCardStyles.topBar}>
-        <TouchableOpacity onPress={onDismiss} style={premiumCardStyles.closeBtn}>
-          <Ionicons name="close" size={22} color="#64748B" />
-        </TouchableOpacity>
-        <View style={premiumCardStyles.pageDots}>
-          {Array.from({ length: Math.min(total, 5) }).map((_, i) => (
-            <View 
-              key={i} 
-              style={[
-                premiumCardStyles.dot,
-                i === index % 5 && premiumCardStyles.dotActive
-              ]} 
-            />
-          ))}
-        </View>
-        <Text style={premiumCardStyles.pageNum}>{index + 1}/{total}</Text>
-      </View>
-
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {/* 👤 YOLCU GÖRÜNÜMÜ - Şoför Teklifini Görüyor */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {isPassenger && (
         <>
-          {/* Şoför Profili */}
-          <View style={premiumCardStyles.profileSection}>
-            <View style={premiumCardStyles.avatarContainer}>
-              {offer.driver_photo ? (
-                <Image source={{ uri: offer.driver_photo }} style={premiumCardStyles.avatarImage} />
-              ) : (
-                <View style={premiumCardStyles.avatarPlaceholder}>
-                  <Text style={premiumCardStyles.avatarLetter}>{personName?.charAt(0) || '?'}</Text>
-                </View>
-              )}
-              <View style={premiumCardStyles.onlineDot} />
+          {/* Üst Bar - Teklif Sayısı ve Süre */}
+          <View style={uberCardStyles.topBar}>
+            <View style={uberCardStyles.offerCountBadge}>
+              <Ionicons name="car" size={16} color={SKY_BLUE.primary} />
+              <Text style={uberCardStyles.offerCountText}>{total} sürücü teklif verdi</Text>
             </View>
-            <View style={premiumCardStyles.profileInfo}>
-              <Text style={premiumCardStyles.profileName}>{personName}</Text>
-              <View style={premiumCardStyles.ratingRow}>
-                <Ionicons name="star" size={16} color="#FBBF24" />
-                <Text style={premiumCardStyles.ratingText}>{personRating.toFixed(1)}</Text>
-                <Text style={premiumCardStyles.tripCountText}>• {tripCount} yolculuk</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Yolculuk Bilgisi */}
-          <View style={premiumCardStyles.tripInfoSection}>
-            <View style={premiumCardStyles.tripInfoRow}>
-              <View style={premiumCardStyles.tripInfoItem}>
-                <Ionicons name="navigate-circle" size={24} color={SKY_BLUE.primary} />
-                <View style={premiumCardStyles.tripInfoText}>
-                  <Text style={premiumCardStyles.tripInfoLabel}>Sana Uzaklık</Text>
-                  <Text style={premiumCardStyles.tripInfoValue}>{distanceToPassengerKm} km</Text>
-                </View>
-              </View>
-              <View style={premiumCardStyles.tripInfoDivider} />
-              <View style={premiumCardStyles.tripInfoItem}>
-                <Ionicons name="time" size={24} color={SKY_BLUE.primary} />
-                <View style={premiumCardStyles.tripInfoText}>
-                  <Text style={premiumCardStyles.tripInfoLabel}>Tahmini Varış</Text>
-                  <Text style={premiumCardStyles.tripInfoValue}>{arrivalTime} dk</Text>
-                </View>
-              </View>
-            </View>
-            <View style={[premiumCardStyles.tripInfoRow, { marginTop: 12 }]}>
-              <View style={premiumCardStyles.tripInfoItem}>
-                <Ionicons name="car" size={24} color="#F59E0B" />
-                <View style={premiumCardStyles.tripInfoText}>
-                  <Text style={premiumCardStyles.tripInfoLabel}>Yolculuk</Text>
-                  <Text style={premiumCardStyles.tripInfoValue}>{tripDistanceKm} km • {tripDuration} dk</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Araç Bilgisi */}
-          {offer.vehicle_model && (
-            <View style={premiumCardStyles.vehicleSection}>
-              <Ionicons name="car-sport" size={20} color="#64748B" />
-              <Text style={premiumCardStyles.vehicleText}>
-                {offer.vehicle_model} {offer.vehicle_color ? `• ${offer.vehicle_color}` : ''}
+            <View style={[uberCardStyles.timerBadge, timeLeft <= 30 && uberCardStyles.timerWarning]}>
+              <Ionicons name="time-outline" size={14} color={timeLeft <= 30 ? '#EF4444' : '#64748B'} />
+              <Text style={[uberCardStyles.timerText, timeLeft <= 30 && uberCardStyles.timerTextWarning]}>
+                {formatTime(timeLeft)}
               </Text>
+            </View>
+          </View>
+
+          {/* ÖNERİLEN TEKLİF Etiketi */}
+          {isBest && (
+            <View style={uberCardStyles.recommendedBadge}>
+              <Ionicons name="star" size={14} color="#F59E0B" />
+              <Text style={uberCardStyles.recommendedText}>ÖNERİLEN TEKLİF</Text>
             </View>
           )}
 
-          {/* FİYAT - En Vurucu Alan */}
-          <View style={premiumCardStyles.priceSection}>
-            <Text style={premiumCardStyles.priceLabel}>Teklif Tutarı</Text>
-            <View style={premiumCardStyles.priceBox}>
-              <Text style={premiumCardStyles.priceCurrency}>₺</Text>
-              <Text style={premiumCardStyles.priceAmount}>{offer.price || '?'}</Text>
+          {/* Ana Kart */}
+          <View style={[uberCardStyles.mainCard, isBest && uberCardStyles.mainCardBest]}>
+            {/* Şoför Profili */}
+            <View style={uberCardStyles.driverRow}>
+              <View style={uberCardStyles.avatarContainer}>
+                {offer.driver_photo ? (
+                  <Image source={{ uri: offer.driver_photo }} style={uberCardStyles.avatar} />
+                ) : (
+                  <View style={uberCardStyles.avatarPlaceholder}>
+                    <Text style={uberCardStyles.avatarLetter}>{personName?.charAt(0) || '?'}</Text>
+                  </View>
+                )}
+                <View style={uberCardStyles.onlineDot} />
+              </View>
+              
+              <View style={uberCardStyles.driverInfo}>
+                <Text style={uberCardStyles.driverName}>{personName}</Text>
+                <View style={uberCardStyles.ratingRow}>
+                  <Ionicons name="star" size={14} color="#FBBF24" />
+                  <Text style={uberCardStyles.ratingText}>{personRating.toFixed(1)}</Text>
+                  <Text style={uberCardStyles.tripCount}>• {tripCount} yolculuk</Text>
+                </View>
+                {offer.vehicle_model && (
+                  <Text style={uberCardStyles.vehicleText}>
+                    {offer.vehicle_model} {offer.vehicle_color ? `• ${offer.vehicle_color}` : ''}
+                  </Text>
+                )}
+              </View>
+
+              {/* Fiyat - Sağda */}
+              <View style={uberCardStyles.priceContainer}>
+                <Text style={uberCardStyles.priceLabel}>Teklif</Text>
+                <Text style={uberCardStyles.priceAmount}>₺{offer.price || '?'}</Text>
+              </View>
+            </View>
+
+            {/* Mesafe ve Süre Bilgileri */}
+            <View style={uberCardStyles.statsRow}>
+              <View style={uberCardStyles.statItem}>
+                <Ionicons name="navigate-circle" size={20} color={SKY_BLUE.primary} />
+                <Text style={uberCardStyles.statValue}>{distanceToPassengerKm} km</Text>
+                <Text style={uberCardStyles.statLabel}>uzaklık</Text>
+              </View>
+              <View style={uberCardStyles.statDivider} />
+              <View style={uberCardStyles.statItem}>
+                <Ionicons name="time" size={20} color={SKY_BLUE.primary} />
+                <Text style={uberCardStyles.statValue}>{arrivalTime} dk</Text>
+                <Text style={uberCardStyles.statLabel}>varış</Text>
+              </View>
+              <View style={uberCardStyles.statDivider} />
+              <View style={uberCardStyles.statItem}>
+                <Ionicons name="car" size={20} color="#F59E0B" />
+                <Text style={uberCardStyles.statValue}>{tripDistanceKm} km</Text>
+                <Text style={uberCardStyles.statLabel}>yolculuk</Text>
+              </View>
+            </View>
+
+            {/* Aksiyon Butonları */}
+            <View style={uberCardStyles.actionRow}>
+              <TouchableOpacity 
+                style={uberCardStyles.rejectBtn} 
+                onPress={onDismiss} 
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[uberCardStyles.acceptBtn, isBest && uberCardStyles.acceptBtnBest]} 
+                onPress={handleAccept} 
+                activeOpacity={0.85}
+                disabled={accepting}
+              >
+                {accepting ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={22} color="#FFF" />
+                    <Text style={uberCardStyles.acceptBtnText}>Kabul Et</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Aksiyon Butonları */}
-          <View style={premiumCardStyles.actionSection}>
-            <TouchableOpacity 
-              style={premiumCardStyles.acceptBtn} 
-              onPress={handleAccept} 
-              activeOpacity={0.85}
-              disabled={accepting}
-            >
-              {accepting ? (
-                <ActivityIndicator color="#FFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={24} color="#FFF" />
-                  <Text style={premiumCardStyles.acceptBtnText}>Kabul Et</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={premiumCardStyles.rejectBtn} 
-              onPress={onDismiss} 
-              activeOpacity={0.7}
-            >
-              <Text style={premiumCardStyles.rejectBtnText}>Reddet</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Sayfa Göstergesi */}
+          {total > 1 && (
+            <View style={uberCardStyles.pagination}>
+              {Array.from({ length: Math.min(total, 5) }).map((_, i) => (
+                <View 
+                  key={i} 
+                  style={[
+                    uberCardStyles.paginationDot,
+                    i === index % 5 && uberCardStyles.paginationDotActive
+                  ]} 
+                />
+              ))}
+              <Text style={uberCardStyles.paginationText}>
+                Kaydırarak diğer teklifleri gör ({index + 1}/{total})
+              </Text>
+            </View>
+          )}
         </>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* 🚖 ŞOFÖR GÖRÜNÜMÜ - Yolcu Teklifi Gönderiyor */}
+      {/* 🚖 ŞOFÖR GÖRÜNÜMÜ - Yolcu Talebi + Teklif Gönder */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {!isPassenger && (
         <>
-          {/* Yolcu Bilgisi */}
-          <View style={premiumCardStyles.passengerHeader}>
-            <View style={premiumCardStyles.passengerIcon}>
-              <Ionicons name="person" size={28} color={SKY_BLUE.primary} />
+          {/* Başlık */}
+          <View style={driverViewStyles.header}>
+            <View style={driverViewStyles.headerIcon}>
+              <Ionicons name="person" size={24} color="#FFF" />
             </View>
-            <Text style={premiumCardStyles.passengerTitle}>Yeni Yolcu Talebi</Text>
+            <View>
+              <Text style={driverViewStyles.headerTitle}>Yeni Yolcu Talebi</Text>
+              <Text style={driverViewStyles.headerSubtitle}>Hızlı teklif ver, yolcuyu kazan!</Text>
+            </View>
           </View>
 
-          {/* Adres Bilgileri */}
-          <View style={driverCardStyles.addressSection}>
+          {/* Adres Kartı */}
+          <View style={driverViewStyles.addressCard}>
             {/* Alış Noktası */}
-            <View style={driverCardStyles.addressRow}>
-              <View style={driverCardStyles.addressDot}>
-                <View style={[driverCardStyles.dot, { backgroundColor: SKY_BLUE.primary }]} />
-              </View>
-              <View style={driverCardStyles.addressContent}>
-                <Text style={driverCardStyles.addressLabel}>Alış Noktası</Text>
-                <Text style={driverCardStyles.addressText} numberOfLines={2}>
+            <View style={driverViewStyles.addressRow}>
+              <View style={[driverViewStyles.addressDot, { backgroundColor: SKY_BLUE.primary }]} />
+              <View style={driverViewStyles.addressContent}>
+                <Text style={driverViewStyles.addressLabel}>ALIŞ NOKTASI</Text>
+                <Text style={driverViewStyles.addressText} numberOfLines={2}>
                   {offer.pickup_location || offer.pickup_address || 'Konum alınıyor...'}
                 </Text>
               </View>
             </View>
             
-            {/* Çizgi */}
-            <View style={driverCardStyles.addressLine} />
+            <View style={driverViewStyles.addressLine}>
+              <View style={driverViewStyles.addressLineDashed} />
+            </View>
             
             {/* Varış Noktası */}
-            <View style={driverCardStyles.addressRow}>
-              <View style={driverCardStyles.addressDot}>
-                <View style={[driverCardStyles.dot, { backgroundColor: '#22C55E' }]} />
-              </View>
-              <View style={driverCardStyles.addressContent}>
-                <Text style={driverCardStyles.addressLabel}>Varış Noktası</Text>
-                <Text style={driverCardStyles.addressText} numberOfLines={2}>
+            <View style={driverViewStyles.addressRow}>
+              <View style={[driverViewStyles.addressDot, { backgroundColor: '#22C55E' }]} />
+              <View style={driverViewStyles.addressContent}>
+                <Text style={driverViewStyles.addressLabel}>VARIŞ NOKTASI</Text>
+                <Text style={driverViewStyles.addressText} numberOfLines={2}>
                   {offer.dropoff_location || offer.dropoff_address || 'Hedef alınıyor...'}
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Mesafe Bilgisi */}
-          <View style={driverCardStyles.distanceSection}>
-            <View style={driverCardStyles.distanceItem}>
-              <Ionicons name="location" size={20} color={SKY_BLUE.primary} />
-              <Text style={driverCardStyles.distanceText}>Yolcuya: {distanceToPassengerKm} km • {arrivalTime} dk</Text>
+          {/* Mesafe ve Kazanç Bilgileri */}
+          <View style={driverViewStyles.statsRow}>
+            <View style={driverViewStyles.statBox}>
+              <Ionicons name="location" size={22} color={SKY_BLUE.primary} />
+              <Text style={driverViewStyles.statValue}>{distanceToPassengerKm} km</Text>
+              <Text style={driverViewStyles.statLabel}>Yolcuya</Text>
             </View>
-            <View style={driverCardStyles.distanceItem}>
-              <Ionicons name="navigate" size={20} color="#F59E0B" />
-              <Text style={driverCardStyles.distanceText}>Yolculuk: {tripDistanceKm} km • {tripDuration} dk</Text>
+            <View style={driverViewStyles.statBox}>
+              <Ionicons name="time" size={22} color={SKY_BLUE.primary} />
+              <Text style={driverViewStyles.statValue}>{arrivalTime} dk</Text>
+              <Text style={driverViewStyles.statLabel}>Varış</Text>
+            </View>
+            <View style={driverViewStyles.statBox}>
+              <Ionicons name="navigate" size={22} color="#F59E0B" />
+              <Text style={driverViewStyles.statValue}>{tripDistanceKm} km</Text>
+              <Text style={driverViewStyles.statLabel}>Yolculuk</Text>
             </View>
           </View>
 
-          {/* Fiyat Girişi */}
-          <View style={driverCardStyles.priceInputSection}>
-            <Text style={driverCardStyles.priceInputLabel}>Teklifini Gir</Text>
-            <View style={driverCardStyles.priceInputBox}>
-              <Text style={driverCardStyles.priceInputCurrency}>₺</Text>
-              <TextInput
-                style={driverCardStyles.priceInput}
-                placeholder="0"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={priceInput}
-                onChangeText={setPriceInput}
-                editable={!sending && !sent}
-                maxLength={5}
-              />
+          {/* Fiyat Girişi - +/- Butonları ile */}
+          <View style={driverViewStyles.priceSection}>
+            <Text style={driverViewStyles.priceSectionTitle}>💰 Teklif Tutarını Belirle</Text>
+            
+            <View style={driverViewStyles.priceInputRow}>
+              {/* Eksi Butonu */}
+              <TouchableOpacity 
+                style={driverViewStyles.adjustBtn}
+                onPress={() => adjustPrice(-10)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="remove" size={28} color={SKY_BLUE.primary} />
+              </TouchableOpacity>
+              
+              {/* Fiyat Input */}
+              <View style={driverViewStyles.priceInputContainer}>
+                <Text style={driverViewStyles.priceCurrency}>₺</Text>
+                <TextInput
+                  style={driverViewStyles.priceInput}
+                  placeholder="0"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={priceInput}
+                  onChangeText={setPriceInput}
+                  editable={!sending && !sent}
+                  maxLength={5}
+                />
+              </View>
+              
+              {/* Artı Butonu */}
+              <TouchableOpacity 
+                style={driverViewStyles.adjustBtn}
+                onPress={() => adjustPrice(10)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add" size={28} color={SKY_BLUE.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Hızlı Fiyat Seçenekleri */}
+            <View style={driverViewStyles.quickPrices}>
+              {[50, 100, 150, 200].map(price => (
+                <TouchableOpacity 
+                  key={price}
+                  style={[
+                    driverViewStyles.quickPriceBtn,
+                    priceInput === String(price) && driverViewStyles.quickPriceBtnActive
+                  ]}
+                  onPress={() => setPriceInput(String(price))}
+                >
+                  <Text style={[
+                    driverViewStyles.quickPriceText,
+                    priceInput === String(price) && driverViewStyles.quickPriceTextActive
+                  ]}>₺{price}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
           {/* Gönder Butonu */}
           <TouchableOpacity 
             style={[
-              driverCardStyles.sendBtn,
-              sent && driverCardStyles.sendBtnSuccess,
-              (!priceInput || sending) && driverCardStyles.sendBtnDisabled
+              driverViewStyles.sendBtn,
+              sent && driverViewStyles.sendBtnSuccess,
+              (!priceInput || sending) && driverViewStyles.sendBtnDisabled
             ]} 
             onPress={handleQuickSend} 
             activeOpacity={0.85}
@@ -1986,25 +2094,514 @@ function TikTokOfferCard({
             {sending ? (
               <ActivityIndicator size="small" color="#FFF" />
             ) : (
-              <Ionicons name={sent ? "checkmark-done" : "send"} size={22} color="#FFF" />
+              <Ionicons name={sent ? "checkmark-done" : "send"} size={24} color="#FFF" />
             )}
-            <Text style={driverCardStyles.sendBtnText}>
-              {sent ? 'Gönderildi!' : sending ? 'Gönderiliyor...' : 'Teklif Gönder'}
+            <Text style={driverViewStyles.sendBtnText}>
+              {sent ? 'Teklif Gönderildi!' : sending ? 'Gönderiliyor...' : 'Teklif Gönder'}
             </Text>
+          </TouchableOpacity>
+
+          {/* İptal/Kapat Butonu */}
+          <TouchableOpacity 
+            style={driverViewStyles.cancelBtn}
+            onPress={onDismiss}
+            activeOpacity={0.7}
+          >
+            <Text style={driverViewStyles.cancelBtnText}>Vazgeç</Text>
           </TouchableOpacity>
         </>
       )}
-
-      {/* Kaydır İpucu */}
-      <View style={premiumCardStyles.swipeHint}>
-        <Ionicons name="swap-vertical" size={16} color="#94A3B8" />
-        <Text style={premiumCardStyles.swipeHintText}>
-          {total > 1 ? `${isPassenger ? 'Diğer teklifler' : 'Diğer yolcular'} için kaydır` : ''}
-        </Text>
-      </View>
     </Animated.View>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎨 UBER/INDRIVE TARZI STİLLER - YOLCU
+// ═══════════════════════════════════════════════════════════════════════════
+const uberCardStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 16,
+  },
+  // Üst Bar
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  offerCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: SKY_BLUE.light,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  offerCountText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: SKY_BLUE.dark,
+  },
+  timerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  timerWarning: {
+    backgroundColor: '#FEF2F2',
+  },
+  timerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  timerTextWarning: {
+    color: '#EF4444',
+  },
+  // Önerilen Badge
+  recommendedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 4,
+  },
+  recommendedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+    letterSpacing: 0.5,
+  },
+  // Ana Kart
+  mainCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  mainCardBest: {
+    borderColor: '#F59E0B',
+    borderWidth: 2,
+  },
+  // Şoför Satırı
+  driverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: SKY_BLUE.light,
+  },
+  avatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: SKY_BLUE.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarLetter: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  driverInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  driverName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  ratingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginLeft: 3,
+  },
+  tripCount: {
+    fontSize: 12,
+    color: '#64748B',
+    marginLeft: 6,
+  },
+  vehicleText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  // Fiyat Container
+  priceContainer: {
+    alignItems: 'flex-end',
+  },
+  priceLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  priceAmount: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: SKY_BLUE.dark,
+  },
+  // Stats Satırı
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 8,
+  },
+  // Aksiyon Satırı
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  rejectBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  acceptBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: SKY_BLUE.primary,
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+  },
+  acceptBtnBest: {
+    backgroundColor: '#22C55E',
+  },
+  acceptBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  // Pagination
+  pagination: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 6,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E2E8F0',
+  },
+  paginationDotActive: {
+    backgroundColor: SKY_BLUE.primary,
+    width: 20,
+  },
+  paginationText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginLeft: 8,
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎨 ŞOFÖR GÖRÜNÜMÜ STİLLERİ
+// ═══════════════════════════════════════════════════════════════════════════
+const driverViewStyles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 14,
+  },
+  headerIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: SKY_BLUE.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  // Adres Kartı
+  addressCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  addressDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  addressContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  addressLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  addressText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1E293B',
+    lineHeight: 22,
+  },
+  addressLine: {
+    marginLeft: 5,
+    marginVertical: 6,
+    height: 24,
+    justifyContent: 'center',
+  },
+  addressLineDashed: {
+    width: 2,
+    height: '100%',
+    backgroundColor: '#E2E8F0',
+    borderStyle: 'dashed',
+  },
+  // Stats
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 6,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  // Fiyat Section
+  priceSection: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  priceSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  priceInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  adjustBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: SKY_BLUE.light,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  priceInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: SKY_BLUE.dark,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+    minWidth: 160,
+    justifyContent: 'center',
+  },
+  priceCurrency: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  priceInput: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#FFF',
+    minWidth: 80,
+    textAlign: 'center',
+    paddingVertical: 0,
+  },
+  // Hızlı Fiyatlar
+  quickPrices: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 16,
+  },
+  quickPriceBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+  },
+  quickPriceBtnActive: {
+    backgroundColor: SKY_BLUE.light,
+    borderWidth: 1,
+    borderColor: SKY_BLUE.primary,
+  },
+  quickPriceText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  quickPriceTextActive: {
+    color: SKY_BLUE.dark,
+  },
+  // Gönder Butonu
+  sendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: SKY_BLUE.primary,
+    paddingVertical: 18,
+    borderRadius: 16,
+    gap: 10,
+    shadowColor: SKY_BLUE.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  sendBtnSuccess: {
+    backgroundColor: '#22C55E',
+    shadowColor: '#22C55E',
+  },
+  sendBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sendBtnText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  // İptal Butonu
+  cancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 8,
+  },
+  cancelBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎨 PREMIUM KART STİLLERİ - YOLCU
