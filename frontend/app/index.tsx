@@ -2715,6 +2715,417 @@ const driverViewStyles = StyleSheet.create({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 🆕 YOLCU TEKLİF KARTI - SEARCHING PHASE
+// ═══════════════════════════════════════════════════════════════════════════
+function PassengerOfferCard({ 
+  offer, 
+  index, 
+  total, 
+  onAccept, 
+  onDismiss,
+  isBest = false
+}: { 
+  offer: any; 
+  index: number; 
+  total: number; 
+  onAccept: () => void;
+  onDismiss?: () => void;
+  isBest?: boolean;
+}) {
+  const [accepting, setAccepting] = useState(false);
+  
+  const personName = offer.driver_name || 'Sürücü';
+  const personRating = offer.driver_rating || 5.0;
+  const tripCount = Math.floor(personRating * 100) + 50;
+  const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || offer.distance_km?.toFixed(1) || '?';
+  const arrivalTime = offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
+
+  const handleAccept = async () => {
+    setAccepting(true);
+    onAccept();
+  };
+
+  return (
+    <View style={[passengerCardStyles.card, isBest && passengerCardStyles.cardBest]}>
+      {/* ÖNERİLEN Etiketi */}
+      {isBest && (
+        <View style={passengerCardStyles.bestBadge}>
+          <Ionicons name="trophy" size={14} color="#F59E0B" />
+          <Text style={passengerCardStyles.bestText}>ÖNERİLEN</Text>
+        </View>
+      )}
+      
+      {/* Üst Kısım - Sürücü Bilgisi + Fiyat */}
+      <View style={passengerCardStyles.topRow}>
+        {/* Avatar */}
+        <View style={passengerCardStyles.avatarContainer}>
+          {offer.driver_photo ? (
+            <Image source={{ uri: offer.driver_photo }} style={passengerCardStyles.avatar} />
+          ) : (
+            <View style={passengerCardStyles.avatarPlaceholder}>
+              <Text style={passengerCardStyles.avatarLetter}>{personName.charAt(0)}</Text>
+            </View>
+          )}
+          <View style={passengerCardStyles.onlineDot} />
+        </View>
+        
+        {/* Sürücü Bilgileri */}
+        <View style={passengerCardStyles.driverInfo}>
+          <Text style={passengerCardStyles.driverName}>{personName}</Text>
+          <View style={passengerCardStyles.ratingRow}>
+            <Ionicons name="star" size={12} color="#FBBF24" />
+            <Text style={passengerCardStyles.ratingText}>{personRating.toFixed(1)}</Text>
+            <Text style={passengerCardStyles.tripCount}>• {tripCount} yolculuk</Text>
+          </View>
+          {offer.vehicle_model && (
+            <Text style={passengerCardStyles.vehicleText}>{offer.vehicle_model}</Text>
+          )}
+        </View>
+        
+        {/* Fiyat */}
+        <View style={passengerCardStyles.priceBox}>
+          <Text style={passengerCardStyles.priceAmount}>₺{offer.price || '?'}</Text>
+        </View>
+      </View>
+      
+      {/* Alt Kısım - Mesafe + Süre + Butonlar */}
+      <View style={passengerCardStyles.bottomRow}>
+        <View style={passengerCardStyles.statsRow}>
+          <View style={passengerCardStyles.statItem}>
+            <Ionicons name="navigate-circle-outline" size={16} color="#64748B" />
+            <Text style={passengerCardStyles.statText}>{distanceToPassengerKm} km</Text>
+          </View>
+          <View style={passengerCardStyles.statItem}>
+            <Ionicons name="time-outline" size={16} color="#64748B" />
+            <Text style={passengerCardStyles.statText}>{arrivalTime} dk</Text>
+          </View>
+        </View>
+        
+        <View style={passengerCardStyles.actionRow}>
+          {onDismiss && (
+            <TouchableOpacity style={passengerCardStyles.dismissBtn} onPress={onDismiss}>
+              <Ionicons name="close" size={18} color="#64748B" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity 
+            style={[passengerCardStyles.acceptBtn, isBest && passengerCardStyles.acceptBtnBest]}
+            onPress={handleAccept}
+            disabled={accepting}
+          >
+            {accepting ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={18} color="#FFF" />
+                <Text style={passengerCardStyles.acceptText}>Kabul Et</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// 🎨 YOLCU TEKLİF KARTI STİLLERİ
+const passengerCardStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cardBest: {
+    borderColor: '#F59E0B',
+    borderWidth: 2,
+    backgroundColor: '#FFFBEB',
+  },
+  bestBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 4,
+  },
+  bestText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+  },
+  avatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#3FA9F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarLetter: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  onlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  driverInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  driverName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginLeft: 3,
+  },
+  tripCount: {
+    fontSize: 11,
+    color: '#64748B',
+    marginLeft: 4,
+  },
+  vehicleText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  priceBox: {
+    backgroundColor: '#3FA9F5',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  priceAmount: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dismissBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  acceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3FA9F5',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  acceptBtnBest: {
+    backgroundColor: '#22C55E',
+  },
+  acceptText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+});
+
+// 🎨 SEARCHING PHASE STİLLERİ
+const searchingStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  cancelBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapContainer: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  routeCard: {
+    backgroundColor: '#FFF',
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  routeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  routeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  offersContainer: {
+    flex: 1,
+    marginTop: 12,
+    paddingHorizontal: 16,
+  },
+  offersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  offersTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  liveText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#22C55E',
+  },
+  emptyOffersContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 🎨 PREMIUM KART STİLLERİ - YOLCU
 // ═══════════════════════════════════════════════════════════════════════════
 const premiumCardStyles = StyleSheet.create({
