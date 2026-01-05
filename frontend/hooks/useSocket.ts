@@ -345,96 +345,94 @@ export default function useSocket({
     // ══════════ KONUM EVENTLERİ ══════════
 
     socket.on('location_updated', (data: LocationData) => {
-      // Çok sık log basmasın
-      onLocationUpdated?.(data);
+      callbackRefs.current.onLocationUpdated?.(data);
     });
 
     // ══════════ YOLCULUK EVENTLERİ ══════════
 
     socket.on('trip_started', (data) => {
       console.log('🚗 YOLCULUK BAŞLADI:', data);
-      onTripStarted?.(data);
+      callbackRefs.current.onTripStarted?.(data);
     });
 
     socket.on('trip_ended', (data) => {
       console.log('🏁 YOLCULUK BİTTİ:', data);
-      onTripEnded?.(data);
+      callbackRefs.current.onTripEnded?.(data);
     });
 
     socket.on('trip_end_requested', (data) => {
       console.log('🛑 YOLCULUK BİTİRME TALEBİ:', data);
-      onTripEndRequested?.(data);
+      callbackRefs.current.onTripEndRequested?.(data);
     });
 
     socket.on('trip_end_response', (data) => {
       console.log('📝 YOLCULUK BİTİRME YANITI:', data);
-      onTripEndResponse?.(data);
+      callbackRefs.current.onTripEndResponse?.(data);
     });
 
     // 🆕 ANLIK BİTİRME EVENTİ
     socket.on('trip_force_ended', (data) => {
       console.log('⚡ YOLCULUK ANINDA BİTİRİLDİ:', data);
-      onTripForceEnded?.(data);
+      callbackRefs.current.onTripForceEnded?.(data);
     });
 
     socket.on('trip_completed', (data) => {
       console.log('✅ YOLCULUK TAMAMLANDI:', data);
-      onTripEnded?.(data);
+      callbackRefs.current.onTripEnded?.(data);
     });
 
     // 🆕 DAILY.CO VIDEO/AUDIO CALL EVENTLERİ
     socket.on('incoming_daily_call', (data) => {
       console.log('📹 DAILY.CO GELEN ARAMA:', data);
-      onIncomingDailyCall?.(data);
+      callbackRefs.current.onIncomingDailyCall?.(data);
     });
 
     // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda gönderiliyor
     socket.on('call_accepted', (data) => {
       console.log('✅ CALL_ACCEPTED (SYNC) - DAILY ODASI HAZIR:', data);
-      onCallAcceptedNew?.(data);
+      callbackRefs.current.onCallAcceptedNew?.(data);
     });
 
     // 🆕 YENİ: call_rejected
     socket.on('call_rejected', (data) => {
       console.log('❌ CALL_REJECTED:', data);
-      onDailyCallRejected?.(data);
+      callbackRefs.current.onDailyCallRejected?.(data);
     });
 
     // 🆕 YENİ: call_cancelled - Arayan iptal etti
     socket.on('call_cancelled', (data) => {
       console.log('🚫 CALL_CANCELLED:', data);
-      onCallCancelled?.(data);
+      callbackRefs.current.onCallCancelled?.(data);
     });
 
     // 🆕 YENİ: call_ended - Görüşme bitti
     socket.on('call_ended', (data) => {
       console.log('📴 CALL_ENDED:', data);
-      onCallEndedNew?.(data);
+      callbackRefs.current.onCallEndedNew?.(data);
     });
 
     // Eski eventler (geriye uyumluluk)
     socket.on('daily_call_accepted', (data) => {
       console.log('✅ DAILY.CO ARAMA KABUL EDİLDİ (ESKİ):', data);
-      onDailyCallAccepted?.(data);
+      callbackRefs.current.onDailyCallAccepted?.(data);
     });
 
     socket.on('daily_call_rejected', (data) => {
       console.log('❌ DAILY.CO ARAMA REDDEDİLDİ:', data);
-      onDailyCallRejected?.(data);
+      callbackRefs.current.onDailyCallRejected?.(data);
     });
 
     socket.on('daily_call_ended', (data) => {
       console.log('📴 DAILY.CO ARAMA BİTTİ:', data);
-      onDailyCallEnded?.(data);
+      callbackRefs.current.onDailyCallEnded?.(data);
     });
 
+    // 🔥 GLOBAL SOCKET'I SET ET
+    globalSocket = socket;
+    globalUserId = userId;
+    globalUserRole = userRole;
     socketRef.current = socket;
-  }, [userId, userRole, onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-      onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer, onOfferAccepted, 
-      onOfferRejected, onOfferSentAck, onLocationUpdated, onTripStarted, onTripEnded,
-      onTripEndRequested, onTripEndResponse, onTripForceEnded,
-      onIncomingDailyCall, onCallAcceptedNew, onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
-      onCallCancelled, onCallEndedNew]);
+  }, [userId, userRole]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
