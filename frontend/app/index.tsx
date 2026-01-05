@@ -2633,10 +2633,10 @@ const driverViewStyles = StyleSheet.create({
     color: '#FFF',
   },
   priceInput: {
-    fontSize: 36,
+    fontSize: 42,
     fontWeight: '800',
     color: '#FFF',
-    minWidth: 80,
+    minWidth: 100,
     textAlign: 'center',
     paddingVertical: 0,
   },
@@ -2644,8 +2644,8 @@ const driverViewStyles = StyleSheet.create({
   quickPrices: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 10,
-    marginTop: 16,
+    gap: 12,
+    marginTop: 20,
   },
   quickPriceBtn: {
     paddingHorizontal: 18,
