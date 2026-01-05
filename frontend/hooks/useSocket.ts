@@ -170,26 +170,60 @@ export default function useSocket({
   const [isConnected, setIsConnected] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const reconnectAttempts = useRef(0);
+  
+  // Callback refs - dependency array'i küçültmek için
+  const callbackRefs = useRef({
+    onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
+    onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer,
+    onOfferAccepted, onOfferRejected, onOfferSentAck, onLocationUpdated,
+    onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
+    onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
+    onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
+    onCallCancelled, onCallEndedNew
+  });
+  
+  // Callback'leri güncelle
+  useEffect(() => {
+    callbackRefs.current = {
+      onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
+      onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer,
+      onOfferAccepted, onOfferRejected, onOfferSentAck, onLocationUpdated,
+      onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
+      onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
+      onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
+      onCallCancelled, onCallEndedNew
+    };
+  });
 
   // ════════════════════════════════════════════════════════════════════
-  // BAĞLANTI YÖNETİMİ
+  // BAĞLANTI YÖNETİMİ - GLOBAL SOCKET
   // ════════════════════════════════════════════════════════════════════
 
   const connect = useCallback(() => {
-    if (socketRef.current?.connected) {
-      console.log('🔌 Socket zaten bağlı');
+    // 🔥 Global socket varsa ve bağlıysa, yeniden bağlanma
+    if (globalSocket?.connected) {
+      console.log('🔌 Global socket zaten bağlı, register yapılıyor...');
+      socketRef.current = globalSocket;
+      setIsConnected(true);
+      
+      // Her zaman register yap
+      if (userId) {
+        console.log('📱 RE-REGISTER gönderiliyor:', userId, 'Role:', userRole);
+        globalSocket.emit('register', { user_id: userId, role: userRole });
+      }
       return;
     }
 
-    console.log('🔌 Socket.IO bağlanıyor...');
+    console.log('🔌 Global Socket.IO bağlanıyor...');
 
     const socket = io(SOCKET_URL, {
       path: SOCKET_PATH,
       transports: ['websocket', 'polling'],
-      forceNew: true,
+      forceNew: false,  // 🔥 KRITIK: Aynı socket instance kullan
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,  // 🔥 Sonsuz reconnect
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       timeout: 20000,
     });
 
@@ -200,16 +234,27 @@ export default function useSocket({
       setIsConnected(true);
       reconnectAttempts.current = 0;
 
+      // 🔥 ZORUNLU REGISTER - Her bağlantıda
       if (userId) {
-        console.log('📱 Register gönderiliyor:', userId, 'Role:', userRole);
+        console.log('📱 REGISTER gönderiliyor (connect):', userId, 'Role:', userRole);
         socket.emit('register', { user_id: userId, role: userRole });
       }
     });
 
     socket.on('disconnect', (reason) => {
-      console.log('❌ Socket.IO bağlantı kesildi:', reason);
+      console.log('⚠️ Socket.IO bağlantı kesildi:', reason);
       setIsConnected(false);
       setIsRegistered(false);
+      // 🔥 DISCONNECT'TE SOCKET'I NULL YAPMA - otomatik reconnect olacak
+    });
+
+    socket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Socket.IO yeniden bağlandı, attempt:', attemptNumber);
+      // 🔥 Reconnect'te de register yap
+      if (userId) {
+        console.log('📱 REGISTER gönderiliyor (reconnect):', userId, 'Role:', userRole);
+        socket.emit('register', { user_id: userId, role: userRole });
+      }
     });
 
     socket.on('connect_error', (error) => {
@@ -218,7 +263,7 @@ export default function useSocket({
     });
 
     socket.on('registered', (data) => {
-      console.log('📱 Socket.IO kullanıcı kayıtlı:', data);
+      console.log('✅ Socket.IO kullanıcı KAYITLI:', data);
       setIsRegistered(true);
     });
 
