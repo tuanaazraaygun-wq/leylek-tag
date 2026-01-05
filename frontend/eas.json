@@ -26,7 +26,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_NO_CAPABILITY_SYNC": "1"
+        "EXPO_NO_CAPABILITY_SYNC": "1",
+        "EXPO_PUBLIC_BACKEND_URL": "https://socket-singleton.preview.emergentagent.com"
       }
     },
     "production": {
