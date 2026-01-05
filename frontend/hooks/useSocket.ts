@@ -602,8 +602,9 @@ export default function useSocket({
   // ════════════════════════════════════════════════════════════════════
 
   const emitLocationUpdate = useCallback((data: LocationData) => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('location_update', data);
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
+      socket.emit('location_update', data);
     }
   }, []);
 
@@ -613,15 +614,17 @@ export default function useSocket({
     lat: number;
     lng: number;
   }) => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('driver_location_update', data);
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
+      socket.emit('driver_location_update', data);
     }
   }, []);
 
   const subscribeToLocation = useCallback((targetId: string) => {
-    if (socketRef.current?.connected && userId) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected && userId) {
       console.log('📍 Konum takibi başlatılıyor:', targetId);
-      socketRef.current.emit('subscribe_location', { 
+      socket.emit('subscribe_location', { 
         target_id: targetId,
         subscriber_id: userId 
       });
@@ -637,7 +640,8 @@ export default function useSocket({
     passenger_id: string; 
     driver_id: string 
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🚗 Yolculuk başladı yayınlanıyor:', data);
       socketRef.current.emit('trip_started', data);
     }
