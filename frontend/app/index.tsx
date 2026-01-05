@@ -5203,80 +5203,9 @@ function PassengerDashboard({
               loading={loading}
             />
           </View>
-        ) : activeTag.status === 'matched' || activeTag.status === 'in_progress' ? null : (
-          <View style={styles.waitingOffersContainer}>
-            {/* Animated Waiting Icon */}
-            <View style={styles.waitingIconContainer}>
-              <Animated.View>
-                <LinearGradient
-                  colors={['#3FA9F5', '#2196F3', '#1976D2']}
-                  style={styles.waitingIconGradient}
-                >
-                  {activeTag.status === 'pending' ? (
-                    <ActivityIndicator size="large" color="#FFF" />
-                  ) : (
-                    <Ionicons name="mail-open" size={40} color="#FFF" />
-                  )}
-                </LinearGradient>
-              </Animated.View>
-            </View>
-            
-            {/* Status Text */}
-            <Text style={styles.waitingTitle}>
-              {activeTag.status === 'pending' ? 'Teklifler Bekleniyor' : 'Teklifler Alındı!'}
-            </Text>
-            <Text style={styles.waitingSubtitle}>
-              {activeTag.status === 'pending' 
-                ? 'Yakındaki sürücüler tekliflerini hazırlıyor...' 
-                : `${offers.length} teklif geldi! Yukarı kaydırarak görüntüleyin.`
-              }
-            </Text>
-            
-            {/* Route Info Card */}
-            <View style={styles.waitingRouteCard}>
-              <View style={styles.waitingRouteRow}>
-                <View style={styles.waitingRouteDot} />
-                <View style={styles.waitingRouteTextContainer}>
-                  <Text style={styles.waitingRouteLabel}>Nereden</Text>
-                  <Text style={styles.waitingRouteText} numberOfLines={1}>{activeTag.pickup_location}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.waitingRouteLine} />
-              
-              <View style={styles.waitingRouteRow}>
-                <View style={[styles.waitingRouteDot, { backgroundColor: '#EF4444' }]} />
-                <View style={styles.waitingRouteTextContainer}>
-                  <Text style={styles.waitingRouteLabel}>Nereye</Text>
-                  <Text style={styles.waitingRouteText} numberOfLines={1}>{activeTag.dropoff_location}</Text>
-                </View>
-              </View>
-            </View>
+        ) : null}
 
-            {/* Action Buttons */}
-            {(activeTag.status === 'pending' || activeTag.status === 'offers_received') && (
-              <View style={styles.waitingActionsContainer}>
-                <TouchableOpacity
-                  style={styles.waitingEditButton}
-                  onPress={() => setShowDestinationPicker(true)}
-                >
-                  <Ionicons name="create-outline" size={20} color="#3FA9F5" />
-                  <Text style={styles.waitingEditButtonText}>Hedefi Düzenle</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.waitingCancelButton}
-                  onPress={handleCancelTag}
-                >
-                  <Ionicons name="close-circle-outline" size={20} color="#EF4444" />
-                  <Text style={styles.waitingCancelButtonText}>İptal Et</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-            {/* CANLI HARİTA - Tam Ekran (Yolcu) */}
+            {/* CANLI HARİTA - Tam Ekran (Yolcu) - SADECE MATCHED/IN_PROGRESS'DE */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
                 <LiveMapView
