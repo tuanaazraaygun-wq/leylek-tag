@@ -2525,15 +2525,15 @@ function PassengerDashboard({
     }
   };
   
-  // ========== SUPABASE REALTIME - TEKLİF YÖNETİMİ ==========
-  // useOffers hook'u ile anlık teklif güncellemeleri (polling yerine)
+  // ========== SOCKET.IO - TEKLİF YÖNETİMİ (REALTIME) ==========
+  // useOffers hook'u - Supabase Realtime KALDIRILDI, Socket.IO ONLY
   const { 
     offers: realtimeOffers, 
     isLoading: offersLoading,
     acceptOffer: acceptOfferRealtime,
     rejectOffer: rejectOfferRealtime,
-    refetch: refetchOffers,
-    addOfferFromSocket  // 🆕 Socket'ten teklif ekle
+    clearOffers,
+    addOffer: addOfferFromSocket  // 🆕 Socket'ten teklif ekle
   } = useOffers({
     userId: user?.id || '',
     tagId: activeTag?.id,
