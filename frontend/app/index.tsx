@@ -3698,6 +3698,9 @@ function PassengerDashboard({
   // 🆕 request_id - Teklif sistemi için unique ID
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
   
+  // 🆕 Teklif veren sürücülerin konumları (SEARCHING phase için)
+  const [offerDriverLocations, setOfferDriverLocations] = useState<DriverLocation[]>([]);
+  
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
