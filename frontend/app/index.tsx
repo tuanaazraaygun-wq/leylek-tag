@@ -6092,12 +6092,16 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     const tag = requests.find(r => r.id === tagId);
     const requestId = tag?.request_id;
     
-    console.log('🚀 TEKLİF GÖNDERİLİYOR:', price, '₺', 'TAG:', tagId, 'REQUEST_ID:', requestId);
+    console.log('🚀 TEKLİF GÖNDERİLİYOR:', {
+      price,
+      tagId,
+      requestId,
+      tag: tag ? { id: tag.id, request_id: tag.request_id, passenger_id: tag.passenger_id } : 'NOT FOUND'
+    });
     
+    // request_id yoksa socket server'a gitmez ama backend'e gönderebiliriz
     if (!requestId) {
-      console.error('❌ request_id YOK! TAG:', tag);
-      Alert.alert('Hata', 'Talep bulunamadı, lütfen sayfayı yenileyin');
-      return false;
+      console.warn('⚠️ request_id YOK ama backend ile devam ediyoruz');
     }
     
     try {
@@ -6119,7 +6123,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
         
         // 🔥 Socket ile teklifi anında yolcuya gönder - REQUEST_ID ZORUNLU
-        if (socketSendOffer) {
+        if (socketSendOffer && requestId) {
           socketSendOffer({
             request_id: requestId,  // 🔥 KRİTİK - ZORUNLU
             offer_id: data.offer_id,
@@ -6133,6 +6137,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             vehicle_color: user.vehicle_color,
           });
           console.log('🔥 TEKLİF Socket ile yayınlandı! request_id:', requestId);
+        } else if (!requestId) {
+          console.warn('⚠️ Socket emit yapılamadı - request_id yok');
         }
         
         setRequests(prev => prev.filter(r => r.id !== tagId));
