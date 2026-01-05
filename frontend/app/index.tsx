@@ -4020,6 +4020,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
+    socket: driverSocket,  // 🆕 Socket instance
     isConnected: socketConnected,
     isRegistered: socketRegistered,
     startCall: socketStartCall,
@@ -4028,6 +4029,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitSendOffer: socketSendOffer,
+    emitDriverLocationUpdate,  // 🆕 YENİ: Şoför konum güncelleme (RAM)
     // 🆕 Daily.co Call Signaling
     emitCallInvite,
     emitCallAccepted,
