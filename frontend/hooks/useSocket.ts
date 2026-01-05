@@ -813,8 +813,12 @@ export default function useSocket({
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        if (!socketRef.current?.connected && userId) {
-          console.log('📱 Uygulama aktif, Socket.IO yeniden bağlanıyor...');
+        // 🔥 App aktif olunca her zaman register yap
+        if (globalSocket?.connected && userId) {
+          console.log('📱 App aktif, RE-REGISTER yapılıyor...');
+          globalSocket.emit('register', { user_id: userId, role: userRole });
+        } else if (userId) {
+          console.log('📱 App aktif, socket bağlantısı kontrol ediliyor...');
           connect();
         }
       }
@@ -822,19 +826,20 @@ export default function useSocket({
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
-  }, [userId, connect]);
+  }, [userId, userRole, connect]);
 
-  // Kullanıcı değiştiğinde bağlan
+  // Kullanıcı değiştiğinde bağlan - CLEANUP'TA DISCONNECT YOK
   useEffect(() => {
     if (userId) {
       connect();
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('register', { user_id: userId, role: userRole });
+      // 🔥 Her zaman register yap
+      if (globalSocket?.connected) {
+        console.log('📱 useEffect: REGISTER gönderiliyor', userId, userRole);
+        globalSocket.emit('register', { user_id: userId, role: userRole });
       }
-    } else {
-      disconnect();
     }
-  }, [userId, userRole, connect, disconnect]);
+    // 🔥 CLEANUP YOK - socket kalıcı
+  }, [userId, userRole, connect]);
 
   return {
     socket: socketRef.current,
