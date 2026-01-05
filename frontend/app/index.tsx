@@ -2438,26 +2438,57 @@ const driverViewStyles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 14,
+    marginBottom: 16,
+    gap: 12,
+  },
+  headerIconPulse: {
+    // Animasyonlu wrapper
   },
   headerIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: SKY_BLUE.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: SKY_BLUE.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  headerContent: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1E293B',
   },
   headerSubtitle: {
     fontSize: 13,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 3,
+  },
+  // Yolcu Badge
+  passengerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: SKY_BLUE.light,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 14,
+    gap: 6,
+  },
+  passengerName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: SKY_BLUE.dark,
+  },
+  verifiedBadge: {
+    marginLeft: 2,
   },
   // Adres Kartı
   addressCard: {
