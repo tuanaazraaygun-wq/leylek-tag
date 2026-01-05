@@ -529,9 +529,10 @@ export default function useSocket({
     dropoff_lng: number;
     notes?: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🏷️ TAG REQUEST gönderiliyor (20km radius):', data);
-      socketRef.current.emit('create_tag_request', data);
+      socket.emit('create_tag_request', data);
     } else {
       console.error('❌ Socket bağlı değil, TAG REQUEST gönderilemedi');
     }
@@ -543,23 +544,26 @@ export default function useSocket({
     tag_id: string;
     passenger_id: string;
   }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🚫 TAG REQUEST iptal ediliyor:', data);
-      socketRef.current.emit('cancel_tag_request', data);
+      socket.emit('cancel_tag_request', data);
     }
   }, []);
 
   const emitCancelTag = useCallback((tagId: string) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🚫 TAG iptal ediliyor:', tagId);
-      socketRef.current.emit('cancel_tag', { tag_id: tagId });
+      socket.emit('cancel_tag', { tag_id: tagId });
     }
   }, []);
 
   const emitUpdateTag = useCallback((data: Partial<TagData> & { tag_id: string }) => {
-    if (socketRef.current?.connected) {
+    const socket = globalSocket || socketRef.current;
+    if (socket?.connected) {
       console.log('🔄 TAG güncelleniyor:', data);
-      socketRef.current.emit('update_tag', data);
+      socket.emit('update_tag', data);
     }
   }, []);
 
