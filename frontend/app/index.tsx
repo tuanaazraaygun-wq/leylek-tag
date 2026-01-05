@@ -1835,6 +1835,7 @@ function TikTokOfferCard({
             <View style={uberCardStyles.offerCountBadge}>
               <Ionicons name="car" size={16} color={SKY_BLUE.primary} />
               <Text style={uberCardStyles.offerCountText}>{total} sürücü teklif verdi</Text>
+              <View style={uberCardStyles.liveDot} />
             </View>
             <View style={[uberCardStyles.timerBadge, timeLeft <= 30 && uberCardStyles.timerWarning]}>
               <Ionicons name="time-outline" size={14} color={timeLeft <= 30 ? '#EF4444' : '#64748B'} />
@@ -1842,6 +1843,12 @@ function TikTokOfferCard({
                 {formatTime(timeLeft)}
               </Text>
             </View>
+          </View>
+          
+          {/* Canlı Güncelleme Göstergesi */}
+          <View style={uberCardStyles.liveUpdateBar}>
+            <ActivityIndicator size="small" color={SKY_BLUE.primary} />
+            <Text style={uberCardStyles.liveUpdateText}>Yeni teklifler geliyor...</Text>
           </View>
 
           {/* ÖNERİLEN TEKLİF Etiketi */}
