@@ -8,6 +8,7 @@ import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
+import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
