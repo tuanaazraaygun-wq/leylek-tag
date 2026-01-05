@@ -25,7 +25,7 @@ const AGORA_APP_ID = Constants.expoConfig?.extra?.agoraAppId ||
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://taxiapp-cards.preview.emergentagent.com';
+                    'https://socket-singleton.preview.emergentagent.com';
 
 console.log('🎙️ Agora App ID:', AGORA_APP_ID);
 

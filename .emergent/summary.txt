@@ -1,157 +1,135 @@
 <analysis>
 <original_problem_statement>
-The user's initial goal for this session was to refactor the ride-hailing offer system to address issues with duplicate offers and a non-real-time feel. The root cause was identified as a conflicting architecture using both Supabase Realtime and Socket.IO. The user mandated a move to a **Socket.IO-only** architecture for all real-time events.
+The initial task was a complete UI/UX refactor of the passenger and driver offer cards to achieve a more premium, Uber-like feel. The user provided a detailed design brief. However, during testing of a previous implementation, a critical bug emerged: drivers would send offers, but they would never reach the passenger.
 
-After a major and successful refactoring of the backend, socket server, and frontend hooks to implement this new architecture, the user's focus shifted entirely to the UI/UX.
+After extensive debugging, the root cause was identified as a flawed socket connection lifecycle on the frontend. The  hook was creating new, non-persistent connections within different components, causing the driver's socket to disconnect before the  event could be successfully emitted to the server.
 
-The current and final task is a **purely visual refactor** of the offer cards for both passengers and drivers. The user has provided a detailed design brief aiming for a premium, trustworthy, and modern feel, similar to Uber, BiTaksi, or InDrive. The underlying, newly-refactored logic is now considered the stable baseline and **must not be changed**.
-
-**Key UI/UX Requirements (Message 390):**
-- **Theme:** Sky blue primary color, light grey/white backgrounds, rounded cards with shadows.
-- **Passenger UI:**
-    - Replace the Teklifler Alındı screen with a small info bar at the top (4 sürücü teklif verdi...).
-    - Display offer cards in a vertical list.
-    - Cards should include driver photo, name, rating, vehicle model, price, distance, and ETA.
-    - Add a RECOMMENDED OFFER tag for the best option.
-    - Show a 90-second countdown for offer validity.
-- **Driver UI:**
-    - A clear New Ride Request card.
-    - Display pickup/dropoff points, distance to passenger, and trip duration.
-    - Use a large price input field with +/- buttons for quick adjustments.
-    - A prominent, sky-blue Send Offer button with a loading state.
-- **Core Rule:** DO NOT change any logic in , the socket server, or the backend. This is a visual-only task.
+The user has explicitly approved a new plan: a major refactor to implement a **singleton socket architecture using a React Context ()**. This will create one global, persistent socket connection at the application's root level, decoupling the socket's lifecycle from any individual component's lifecycle. This is the current and only priority.
 </original_problem_statement>
 
 **User's preferred language**: Turkish. The next agent MUST respond in Turkish.
 
 **what currently exists?**
-The application is a full-stack Expo (React Native) and FastAPI project. The offer system has been successfully refactored to use a **Socket.IO-only** architecture for all real-time events, eliminating previous issues with duplicate data.
+The application is a full-stack Expo (React Native) and FastAPI project. The backend uses a custom Python Socket.IO server () on a VPS for all real-time communication.
 
-- **Socket Server ( on VPS):** Manages all real-time communication. It tracks driver locations in-memory (RAM), uses the Haversine formula to filter drivers within a 20km radius for new ride requests, and uses a  system to prevent duplicate offers.
-- **Frontend ():** A large, monolithic file that contains the UI and logic for both passenger and driver roles. It now uses refactored hooks (, ) that communicate exclusively via Socket.IO.
-- **Offer Cards ( in ):** The agent has started refactoring the UI of this component to meet the new design specifications.
+The frontend is currently in a broken state due to the socket lifecycle issue. The agent has begun the approved refactor by creating a new file: . The rest of the frontend code (, ) still uses the old, flawed approach where socket connections are tied to component lifecycles.
 
 **Last working item**:
-    - Last item agent was working: The agent was in the middle of a purely visual refactoring of the offer card components () located inside the monolithic  file. The goal is to align the UI with a detailed, premium design brief from the user (Uber/InDrive style).
+    - Last item agent was working: The agent started a major refactoring of the socket connection management. The goal is to create a single, persistent, global socket instance using a React Context Provider () to fix the critical bug where  events were not reaching the server. The agent had just created the new context file .
     - Status: **IN PROGRESS**
     - Agent Testing Done: N
-    - Which testing method agent to use? The next agent should first use the  to visually inspect the current state of the UI. Afterwards, it must build an APK for the user to test on a physical device.
+    - Which testing method agent to use? After the refactor is complete, the agent must test the core offer flow end-to-end. This involves checking server logs ( on the VPS) to confirm  is received and  is emitted. Then, an APK build must be provided to the user for final verification.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  - There are no outstanding bugs. The only pending item is the UI refactoring task.
+  - **Issue 1: CRITICAL BUG - Driver offers do not reach the passenger (P0)**
+    - **Description:** When a driver sends an offer, the  event is not received by the socket server. Server logs show the driver connects, receives the , but then either disconnects or fails to emit the  event. Debug endpoints confirmed  remains 0.
+    - **Attempted fixes:**
+        - Relaxing  validation in .
+        - Ensuring  is passed in all relevant payloads (, ).
+        - Attempting to create a pseudo-global socket instance within . These fixes failed because they did not address the root cause.
+    - **Root Cause:** The socket connection lifecycle is tied to React component lifecycles. When a component (e.g., the offer card modal) unmounts, the socket connection is lost.
+    - **Next debug checklist:** This is now an implementation task, not a debug task. The  refactor must be completed.
+    - **Why fix this issue and what will be achieved with the fix?** This bug breaks the application's primary function. Fixing it will make the ride-hailing system operational.
+    - **Status:** **IN PROGRESS** (Fix is being implemented via the  refactor).
+    - **Is recurring issue?** Y
+    - **Should Test frontend/backend/both after fix?** Both. Backend logs are essential for verification, and the frontend flow must be tested by the user.
 
 **In progress Task List**:
-  - **Task 1: Complete the UI/UX Refactor of the Offer Cards (P0 - HIGHEST PRIORITY)**
-     - **Where to resume:** The agent has just edited the  component and its styles within  (as per Message 396). The next step is to verify the changes, ensure all design requirements from the user's brief (Message 390) are met (like +/- buttons for drivers, ÖNERİLEN TEKLİF tag for passengers), and then build a new APK for user testing.
-     - **What will be achieved with this?** The application's offer system will have a more professional, trustworthy, and modern user interface, enhancing the user experience without altering the stable underlying logic.
+  - **Task 1: Complete the Singleton Socket Refactor using  (P0)**
+     - **Where to resume:**
+         1. Edit  to wrap the root  or  component with the newly created . This will instantiate the socket at the app's entry point.
+         2. Heavily refactor . It should no longer create its own connection (). Instead, it should use the  hook to access the single socket instance provided by . The hook will now only be responsible for returning the socket instance and memoized  functions.
+         3. Ensure all components that use  (primarily ) function correctly with the refactored hook, without any changes to their own logic.
+     - **What will be achieved with this?** A stable, persistent socket connection that is independent of component mount/unmount cycles, which will fix the critical  bug.
      - **Status:** IN PROGRESS
-     - **Should Test frontend/backend/both after fix?** Frontend only.
+     - **Should Test frontend/backend/both after fix?** Both.
      - **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
-- **Future Tasks (Low Priority - from previous sessions):**
-    - **P2:** Re-enable and Fix Sound Effects for app events.
-    - **P2:** Correctly Implement the Point System (may require DB schema changes).
-    - **P3:** Implement In-App Account Deletion to comply with Apple Store requirements.
+- **Upcoming Tasks (Blocked by P0 Bug):**
+    - **P1:** Complete the UI/UX Refactor of the Offer Cards (Passenger & Driver). This was the original task before the critical bug was discovered. The goal is a premium, Uber/InDrive-like feel, as per the user's detailed brief.
+    - **P1:** Implement the new Searching Phase UI for passengers: a persistent map at the top showing all offering drivers, and a scrollable list of offer cards below. This replaces the old full-screen Offers Received page.
+- **Future Tasks (Low Priority):**
+    - **P2:** Re-enable and Fix Sound Effects.
+    - **P2:** Correctly Implement the Point System.
+    - **P3:** Implement In-App Account Deletion (Apple Store requirement).
 
 **Completed work in this session**
-- **Major Logic Refactor of Offer System:** The entire system was successfully migrated from a faulty hybrid (Supabase Realtime + Socket.IO) architecture to a stable **Socket.IO-only** architecture.
-- **Deployed New Socket Server (v7.0):** A new  was deployed to the VPS () with significant new logic:
-    - In-memory (RAM) tracking of active driver locations.
-    - Haversine formula for 20km radius-based filtering of drivers.
-    - A  system to prevent duplicate offers and tag notifications.
-- **Frontend Refactoring:**
-    -  was rewritten to remove all Supabase Realtime subscriptions and rely solely on socket events.
-    -  was updated with new event emitters like  and .
-    - The monolithic  was heavily modified to integrate this new socket-driven logic for both passenger and driver flows.
-- **Initial UI Refactor Pass:** An initial version of the redesigned offer card UI was implemented and an APK was delivered to the user. The user then provided more detailed feedback, leading to the current in-progress task.
+- Numerous failed attempts to fix the socket bug, which were crucial for correctly diagnosing the root cause (flawed lifecycle management).
+- Deployed  v7.2 to the VPS, which includes better logging and ensures  is passed in the  event.
+- Successfully identified and got user approval for the correct architectural solution: a  context.
+- Created the initial file for the new architecture: .
 
 **Earlier issues found/mentioned but not fixed**
-- All previously mentioned critical issues regarding the Daily.co call feature and the offer system's logic have been resolved. The remaining unfixed items are low-priority future tasks.
+- All other issues have been deprioritized in favor of fixing the P0 critical bug.
 
 **Known issue recurrence from previous fork**
-- None. The previous major issues with Daily.co have been resolved and the work has pivoted to the offer system.
+- None.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Socket.IO as Single Source of Truth:** The architecture was explicitly refactored to use the external Python Socket.IO server as the one and only engine for all real-time events (new tags, new offers, etc.), ensuring data consistency.
-- **In-Memory State on Server:** The socket server tracks active driver locations in RAM for extremely fast geospatial querying, rather than hitting the database for every request.
-- **Haversine Formula:** Used on the socket server to perform efficient radius-based filtering of drivers.
-- **Duplicate Prevention ():** A unique  (UUID) is generated on the client for each ride request. This ID is passed through the system and checked on the server and client to prevent users from seeing duplicate data.
-- **Monolithic Frontend Component:**  is a massive file containing multiple components, extensive state logic, and styles for different user roles. The offer card () is embedded within it, not in a separate file.
+- **Socket.IO:** Used for all real-time communication.
+- **Singleton Pattern (via React Context):** The approved architecture to ensure a single, persistent socket connection.
+- **Socket Lifecycle Management:** The core problem being solved. The socket's life must be tied to the application's life, not a component's.
+- **Expo (React Native):** The frontend framework.
+- **FastAPI:** The backend framework.
 
 **key DB schema**
-- : Stores ride requests.
-- : Stores offers made by drivers for a specific tag.
-No schema changes were made in this session.
+- No schema changes have occurred.  and  tables are still in use.
 
 **All files of reference**
-- : This is the only file that should be modified for the current task. The  component and its associated styles are inside this file.
-- : Recently refactored. Should **not** be modified.
--  (on VPS): The core of the real-time logic. Should **not** be modified.
-
-**Areas that need refactoring**:
-- **CRITICAL:**  is a monolith and is extremely difficult to maintain. The  component and other embedded components should be extracted into their own files under . This would dramatically improve code readability and maintainability.
-
-**key api endpoints**
-- **Socket Events (on ):**
-    -  (driver -> server): Sends driver's current lat/lng.
-    -  (passenger -> server): Initiates a new ride request with a unique .
-    -  (server -> drivers): Notifies nearby drivers of a new ride request.
-    -  (driver -> server): Submits an offer for a tag.
-    -  (server -> passenger): Notifies the passenger of a new offer.
-    -  (passenger -> server): Confirms acceptance of an offer.
-    -  (server -> driver): Notifies the winning driver.
+- : The new file for the socket provider.
+- : Needs to be wrapped with the .
+- : Needs a major refactor to consume the context.
+- : The primary consumer of the  hook.
 
 **Critical Info for New Agent**
-1.  **UI/UX ONLY:** Your one and only task is to complete the visual refactoring of the offer cards ( inside ). **DO NOT TOUCH ANY LOGIC**. The backend, socket server, and hook logic have been recently finalized and are a stable baseline.
-2.  **FOLLOW THE DESIGN BRIEF:** Refer to the user's detailed instructions in Message 390. The goal is a premium, Uber/InDrive-like feel with a sky-blue theme, specific card layouts, and elements like +/- buttons for drivers and a Recommended Offer tag for passengers.
-3.  **WORK IN THE MONOLITH:** Be aware that you are working inside a massive file, . The component you need to modify is . Be careful not to break unrelated parts of the file.
-4.  **RESUME AND BUILD:** The previous agent already started editing the component. Your first action should be to review those edits, complete the implementation according to the brief, and then start an APK build for the user to test.
+1.  **Your ONLY Task:** Complete the  refactor. The user is frustrated with the recurring bug, and this is the agreed-upon, correct architectural fix. Do not get sidetracked.
+2.  **Implementation Steps:**
+    *   Wrap the application root in  with the  you will build in .
+    *   Refactor  to get the socket instance from the context. It should **not** create a new connection.
+    *   Verify that all  functions in  use the single, global socket instance.
+3.  **Do NOT Repeat Mistakes:** Do not try to fix the bug by making small changes inside  or . The previous attempts failed. The only path forward is the full architectural refactor.
+4.  **Verification is Key:** After the refactor, you must test the full flow and check the server logs on the VPS () to confirm that , , and  logs appear correctly.
 
 **documents created in this job**
-- The agent provided multiple comprehensive markdown documents in the chat explaining the call system and the new offer system architecture (e.g., Message 389). These are not saved files but are valuable for context.
+- 
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (Msg 390):** RE-ITERATED a very detailed design brief for the offer card UI refactor. This is the current and most important instruction. **(In Progress)**
-2.  **User (Msg 388):** send me the detailed offer system, Ill give it to gbt, there are problems, dont do anything until I say so. **(Completed by agent in Msg 389)**
-3.  **User (Msg 382, 383, 384, 385, 386):** Asking for status updates on the APK build for the first UI refactor attempt. **(Completed)**
-4.  **User (Msg 377):** Asks the agent to restart the frontend and start an APK build. **(Completed)**
-5.  **User (Msg 375):** Instructs the agent to start the premium UI design. **(In Progress)**
-6.  **User (Msg 362):** The first detailed request for the UI/UX refactor of the offer cards. Stresses that no logic should be changed. **(Superseded by the more detailed Msg 390, but the core request is the same)**.
-7.  **User (Msg 361):** Provides the APK link for the logic-refactored version and outlines the test scenario. **(Completed)**
-8.  **User (Msg 352):** yes build an apk I have expo to test. **(Completed)**
-9.  **User (Msg 351):** Asks if an APK build should be started to test the new logic refactor. **(Answered in Msg 352)**
-10. **User (Msg 347, 348):** User gives the go-ahead for the  integration and provides clear instructions on what to implement. **(Completed)**
+1.  **User (Msg 454):** Explicitly approves the  + singleton socket architecture and urges the agent to finish the job, acknowledging the high credit usage. **(This is the current mandate).**
+2.  **User (Msg 452):** Asks the agent for a diagnosis and a plan to fix the recurring issue. **(Answered by agent in Msg 453).**
+3.  **User (Msg 450):** Reports the fix failed again and asks for a complete explanation of the system to ask ChatGPT. **(Agent provided a detailed breakdown).**
+4.  **User (Msg 446):** Asks for the APK. **(Completed).**
+5.  **User (Msg 404):** Reports the fix failed again, expressing frustration and demanding a working solution. **(In Progress).**
+6.  **User (Msg 400):** Asks if the build is finished. **(Completed).**
+7.  **User (Msg 382):** Reports a new error (Talep bulunamadı) after the previous fix. **(This led to the discovery of the missing  in the state).**
+8.  **User (Msg 328):** Reports the offer is sending but never arrives after the global socket refactor attempt. **(In Progress).**
+9.  **User (Msg 318):** Asks to be notified when the APK is ready. **(Completed).**
+10. **User (Msg 285):** Provides a very clear, technical mandate to fix the driver socket lifecycle, demanding a persistent global socket and specific logging to be present. **(This is the core of the current task).**
 
 **Project Health Check:**
-- **Working:** The core functionality (calling, offer system logic) is stable.
-- **In-Progress:** The UI for the offer system is currently undergoing a major visual refactor.
+- **Broken:** The core feature (sending/receiving offers) is non-functional due to the socket lifecycle bug.
 
 **3rd Party Integrations**
-- **Supabase:** Used as a standard PostgreSQL database for data persistence. **(Realtime features are now disabled).**
-- **Daily.co:** Used for voice/video calls, now stable using a direct WebView URL.
-- **Custom Socket.IO Server:** A user-hosted VPS at  (v7.0) serves as the exclusive real-time engine for the app.
-- **OSRM:** For routing.
-- **NETGSM:** For SMS.
+- **Supabase:** PostgreSQL database.
+- **Daily.co:** Voice/video calls.
+- **Custom Socket.IO Server:** User-hosted VPS at  (v7.2).
 
 **Testing status**
-  - Testing agent used after significant changes: NO (User tests manually via APKs).
-  - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: []
-  - Known regressions: None. The previous regressions with the call feature were fixed. The offer system logic was a planned refactor, not a regression.
+- Testing agent used after significant changes: NO
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: []
+- Known regressions: The entire offer system is currently broken.
 
 **Credentials to test flow:**
 - **Socket Server SSH:**
     - IP: 
     - User: 
     - Pass: 
-- **Daily.co API Key (New Account):**  (Used in )
 
 **What agent forgot to execute**
-- The agent has correctly followed the user's shifting priorities, moving from the call feature fix to the offer system logic refactor, and finally to the offer system UI refactor. No major tasks seem to have been forgotten; they were intentionally de-prioritized.
-
+- The agent has been repeatedly stuck on the same critical bug, trying incremental fixes instead of addressing the architectural flaw sooner. The current task is to finally implement the correct architecture that was identified and approved. All other feature work (like UI refactoring) has been correctly postponed.
 </analysis>
