@@ -516,6 +516,17 @@ export default function useSocket({
     }
   }, []);
 
+  // 🆕 YENİ: driver_location_update - Şoför konumu güncelleme (RAM'de tutulur)
+  const emitDriverLocationUpdate = useCallback((data: {
+    driver_id: string;
+    lat: number;
+    lng: number;
+  }) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('driver_location_update', data);
+    }
+  }, []);
+
   const subscribeToLocation = useCallback((targetId: string) => {
     if (socketRef.current?.connected && userId) {
       console.log('📍 Konum takibi başlatılıyor:', targetId);
