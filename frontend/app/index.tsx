@@ -4543,35 +4543,90 @@ function PassengerDashboard({
     }
   };
 
-  // TEKLİFLER VARSA TAM EKRAN GÖS TER
-  // TikTok tarzı tam ekran teklif listesi - YOLCU
-  if (offers.length > 0 && activeTag && activeTag.status !== 'matched' && activeTag.status !== 'in_progress') {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 SEARCHING PHASE - HARİTA + TEKLİF LİSTESİ (YENİ UI)
+  // Üstte harita (tüm sürücüler) + Altta scrollable teklif listesi
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (activeTag && activeTag.status !== 'matched' && activeTag.status !== 'in_progress') {
+    const isSearching = activeTag.status === 'pending' || activeTag.status === 'offers_received';
+    
     return (
-      <View style={styles.tikTokContainer}>
-        <FlatList
-          data={offers}
-          keyExtractor={(item, index) => item.id || index.toString()}
-          renderItem={({ item, index }) => (
-            <TikTokOfferCard
-              offer={item}
-              index={index}
-              total={offers.length}
-              onAccept={() => handleAcceptOffer(item.id)}
-              onDismiss={() => handleDismissOffer(item.id)}
-              isPassenger={true}
+      <SafeAreaView style={searchingStyles.container}>
+        {/* Üst Bar - Geri + Durum + İptal */}
+        <View style={searchingStyles.topBar}>
+          <TouchableOpacity onPress={() => setScreen('role-select')} style={searchingStyles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
+          </TouchableOpacity>
+          <View style={searchingStyles.statusCenter}>
+            <Text style={searchingStyles.statusText}>
+              {offers.length > 0 ? `${offers.length} teklif geldi` : 'Teklifler bekleniyor...'}
+            </Text>
+            {offers.length === 0 && <ActivityIndicator size="small" color="#3FA9F5" style={{ marginLeft: 8 }} />}
+          </View>
+          <TouchableOpacity onPress={handleCancelTag} style={searchingStyles.cancelBtn}>
+            <Ionicons name="close" size={22} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+
+        {/* HARİTA - Üstte Sabit */}
+        <View style={searchingStyles.mapContainer}>
+          <SearchingMapView
+            userLocation={userLocation}
+            destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
+            driverLocations={offerDriverLocations}
+            height={SCREEN_HEIGHT * 0.32}
+          />
+        </View>
+
+        {/* Rota Bilgisi - Küçük Kart */}
+        <View style={searchingStyles.routeCard}>
+          <View style={searchingStyles.routeRow}>
+            <View style={[searchingStyles.routeDot, { backgroundColor: '#3FA9F5' }]} />
+            <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.pickup_location}</Text>
+          </View>
+          <Ionicons name="arrow-down" size={14} color="#94A3B8" style={{ marginLeft: 5 }} />
+          <View style={searchingStyles.routeRow}>
+            <View style={[searchingStyles.routeDot, { backgroundColor: '#EF4444' }]} />
+            <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.dropoff_location}</Text>
+          </View>
+        </View>
+
+        {/* TEKLİF LİSTESİ - Scrollable */}
+        {offers.length > 0 ? (
+          <View style={searchingStyles.offersContainer}>
+            <View style={searchingStyles.offersHeader}>
+              <Text style={searchingStyles.offersTitle}>Teklifler</Text>
+              <View style={searchingStyles.liveIndicator}>
+                <View style={searchingStyles.liveDot} />
+                <Text style={searchingStyles.liveText}>Canlı</Text>
+              </View>
+            </View>
+            
+            <FlatList
+              data={offers}
+              keyExtractor={(item, index) => item.id || index.toString()}
+              renderItem={({ item, index }) => (
+                <PassengerOfferCard
+                  offer={item}
+                  index={index}
+                  total={offers.length}
+                  onAccept={() => handleAcceptOffer(item.id)}
+                  onDismiss={() => handleDismissOffer(item.id)}
+                  isBest={index === 0}
+                />
+              )}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 20 }}
             />
-          )}
-          pagingEnabled={true}
-          showsVerticalScrollIndicator={false}
-          snapToInterval={SCREEN_HEIGHT}
-          decelerationRate="fast"
-          bounces={false}
-          onMomentumScrollEnd={(e) => {
-            const index = Math.round(e.nativeEvent.contentOffset.y / SCREEN_HEIGHT);
-            setCurrentOfferIndex(index);
-          }}
-        />
-      </View>
+          </View>
+        ) : (
+          <View style={searchingStyles.emptyOffersContainer}>
+            <ActivityIndicator size="large" color="#3FA9F5" />
+            <Text style={searchingStyles.emptyTitle}>Yakındaki sürücüler bilgilendiriliyor...</Text>
+            <Text style={searchingStyles.emptySubtitle}>Teklifler birkaç saniye içinde gelecek</Text>
+          </View>
+        )}
+      </SafeAreaView>
     );
   }
 
