@@ -2436,6 +2436,9 @@ function PassengerDashboard({
   const [driverLocation, setDriverLocation] = useState<{latitude: number; longitude: number} | null>(null);
   const [selectedDriverName, setSelectedDriverName] = useState<string | null>(null);
   
+  // 🆕 request_id - Teklif sistemi için unique ID
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+  
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
