@@ -801,6 +801,8 @@ export default function useSocket({
     endCall,
     // TAG
     emitNewTag,
+    emitCreateTagRequest,      // 🆕 YENİ
+    emitCancelTagRequest,      // 🆕 YENİ
     emitCancelTag,
     emitUpdateTag,
     // Teklif
@@ -809,6 +811,7 @@ export default function useSocket({
     emitRejectOffer,
     // Konum
     emitLocationUpdate,
+    emitDriverLocationUpdate,  // 🆕 YENİ
     subscribeToLocation,
     // Yolculuk
     emitTripStarted,
