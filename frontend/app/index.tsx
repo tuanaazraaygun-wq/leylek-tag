@@ -2537,10 +2537,12 @@ function PassengerDashboard({
   } = useOffers({
     userId: user?.id || '',
     tagId: activeTag?.id,
+    requestId: currentRequestId || undefined,  // 🆕 request_id for duplicate prevention
+    socket: passengerSocket,  // 🆕 Socket instance for realtime
     isDriver: false,
     enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'pending' || activeTag?.status === 'offers_received')),
     onNewOffer: async (offer) => {
-      console.log('🔔 YENİ TEKLİF GELDİ (Realtime):', offer.price, 'TL');
+      console.log('🔔 YENİ TEKLİF GELDİ (Socket):', offer.price, 'TL');
       // Ses çal
       await playOfferSound();
       // Bildirim göster
