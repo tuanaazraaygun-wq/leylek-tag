@@ -1970,16 +1970,29 @@ function TikTokOfferCard({
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {!isPassenger && (
         <>
-          {/* Başlık */}
+          {/* Başlık - Premium Tasarım */}
           <View style={driverViewStyles.header}>
-            <View style={driverViewStyles.headerIcon}>
-              <Ionicons name="person" size={24} color="#FFF" />
-            </View>
-            <View>
-              <Text style={driverViewStyles.headerTitle}>Yeni Yolcu Talebi</Text>
-              <Text style={driverViewStyles.headerSubtitle}>Hızlı teklif ver, yolcuyu kazan!</Text>
+            <Animated.View style={[driverViewStyles.headerIconPulse, { transform: [{ scale: pulseAnim }] }]}>
+              <View style={driverViewStyles.headerIcon}>
+                <Ionicons name="person-add" size={26} color="#FFF" />
+              </View>
+            </Animated.View>
+            <View style={driverViewStyles.headerContent}>
+              <Text style={driverViewStyles.headerTitle}>🚨 Yeni Yolcu Talebi!</Text>
+              <Text style={driverViewStyles.headerSubtitle}>Hızlı teklif ver, yolcuyu kazan</Text>
             </View>
           </View>
+
+          {/* Yolcu İsmi Badge */}
+          {personName && (
+            <View style={driverViewStyles.passengerBadge}>
+              <Ionicons name="person" size={16} color={SKY_BLUE.primary} />
+              <Text style={driverViewStyles.passengerName}>{personName}</Text>
+              <View style={driverViewStyles.verifiedBadge}>
+                <Ionicons name="checkmark-circle" size={14} color="#22C55E" />
+              </View>
+            </View>
+          )}
 
           {/* Adres Kartı */}
           <View style={driverViewStyles.addressCard}>
