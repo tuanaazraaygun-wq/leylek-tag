@@ -2602,6 +2602,7 @@ function PassengerDashboard({
   
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
+    socket: passengerSocket,
     isConnected: socketConnected,
     isRegistered: socketRegistered,
     startCall: socketStartCall,
@@ -2610,6 +2611,8 @@ function PassengerDashboard({
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitNewTag,
+    emitCreateTagRequest,      // 🆕 YENİ: 20km radius TAG
+    emitCancelTagRequest,      // 🆕 YENİ: request_id ile iptal
     emitCancelTag,
     emitAcceptOffer: socketAcceptOffer,
     emitRejectOffer: socketRejectOffer,
