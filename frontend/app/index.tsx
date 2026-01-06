@@ -5866,9 +5866,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       };
       
       // TAG'i ANINDA ekle (adresler ile)
+      // 🔥 AYNI YOLCUDAN ESKİ TAG'I SİL - Yeni request_id geçerli olacak
       setRequests(prev => {
+        // Aynı tag_id varsa ekleme
         if (prev.some(r => r.id === data.tag_id)) return prev;
-        return [...prev, {
+        
+        // 🔥 Aynı yolcudan eski TAG'ları sil (yeni request_id geçerli)
+        const filtered = prev.filter(r => r.passenger_id !== data.passenger_id);
+        
+        return [...filtered, {
           id: data.tag_id,
           request_id: data.request_id,  // 🔥 KRİTİK - ZORUNLU
           passenger_id: data.passenger_id,
