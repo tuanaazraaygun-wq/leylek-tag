@@ -4212,6 +4212,8 @@ function PassengerDashboard({
     tagId: activeTag?.id,
     requestId: currentRequestId || undefined,  // 🆕 request_id for duplicate prevention
     socket: passengerSocket,  // 🆕 Socket instance for realtime
+    emitAcceptOffer: socketAcceptOffer,  // 🔥 NEW: Direct emit function
+    emitRejectOffer: socketRejectOffer,  // 🔥 NEW: Direct emit function
     isDriver: false,
     enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'pending' || activeTag?.status === 'offers_received')),
     onNewOffer: async (offer) => {
