@@ -77,6 +77,8 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     isDriver = false, 
     enabled = true, 
     socket,
+    emitAcceptOffer,  // 🔥 NEW
+    emitRejectOffer,  // 🔥 NEW
     onNewOffer,
     onOfferAccepted,
     onOfferRejected
