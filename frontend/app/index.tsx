@@ -4454,6 +4454,19 @@ function PassengerDashboard({
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     },
+    // 🆕 TAG EŞLEŞTİ - Yolcu teklifi kabul ettiğinde
+    onTagMatched: (data) => {
+      console.log('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
+      // Eşleşme sağlandı - activeTag'i güncelle
+      loadActiveTag();
+      // Matched ekranına geçiş için activeTag.status = 'matched' olacak
+    },
+    // 🆕 TEKLİF KABUL EDİLDİ - Ack (backend confirmation)
+    onOfferAccepted: (data) => {
+      console.log('✅ YOLCU - TEKLİF KABUL EDILDI (Socket Ack):', data);
+      // Backend'den onay geldi - tag'i yenile
+      loadActiveTag();
+    },
   });
   
   // Karşılıklı iptal sistemi state'leri
