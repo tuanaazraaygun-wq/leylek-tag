@@ -49,6 +49,8 @@ export interface UseOffersOptions {
   isDriver?: boolean;
   enabled?: boolean;
   socket?: any;  // Socket.IO instance
+  emitAcceptOffer?: (data: any) => void;  // 🔥 NEW: Direct emit function from useSocket
+  emitRejectOffer?: (data: any) => void;  // 🔥 NEW: Direct emit function from useSocket
   onNewOffer?: (offer: Offer) => void;
   onOfferAccepted?: (data: any) => void;
   onOfferRejected?: (data: any) => void;
