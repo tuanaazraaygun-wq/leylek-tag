@@ -342,7 +342,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
   // ==================== ACCEPT OFFER (Passenger) ====================
   
   const acceptOffer = useCallback(async (offerId: string, driverId: string): Promise<boolean> => {
-    if (!userId || !socket) return false;
+    if (!userId) return false;
     
     // Optimistic UI
     setOffers(prev => prev.map(o => 
@@ -363,14 +363,26 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       const data = await response.json();
       
       if (data.success) {
-        // Emit via socket
-        socket.emit('accept_offer', {
+        // 🔥 FIX: Use emitAcceptOffer from useSocket if available, otherwise try socket
+        const acceptPayload = {
           request_id: requestId,
           offer_id: offerId,
           driver_id: driverId,
           tag_id: tagId,
           passenger_id: userId
-        });
+        };
+        
+        console.log('🔥 [useOffers] Accept offer payload:', acceptPayload);
+        
+        if (emitAcceptOffer) {
+          console.log('✅ [useOffers] Using emitAcceptOffer from useSocket');
+          emitAcceptOffer(acceptPayload);
+        } else if (socket?.connected) {
+          console.log('✅ [useOffers] Using socket.emit directly');
+          socket.emit('accept_offer', acceptPayload);
+        } else {
+          console.warn('⚠️ [useOffers] No socket available for accept_offer!');
+        }
         
         // Keep only accepted offer
         setOffers(prev => prev.filter(o => o.id === offerId || o.offer_id === offerId));
@@ -395,7 +407,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       Alert.alert('Hata', 'Bağlantı hatası');
       return false;
     }
-  }, [userId, socket, requestId, tagId]);
+  }, [userId, socket, emitAcceptOffer, requestId, tagId]);
 
   // ==================== REJECT OFFER (Passenger) ====================
   
