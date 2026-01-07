@@ -383,6 +383,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emitCallReject,
     emitCallCancel,
     emitCallEnd,
+    emitSendMessage,  // 🆕 Mesajlaşma
   };
 
   return (
