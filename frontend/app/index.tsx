@@ -4476,6 +4476,21 @@ function PassengerDashboard({
       // Backend'den onay geldi - tag'i yenile
       loadActiveTag();
     },
+    // 🆕 Mesajlaşma
+    onNewMessage: (data) => {
+      console.log('💬 YOLCU - YENİ MESAJ GELDİ:', data);
+      // Gelen mesajı chat'e ekle
+      setPassengerChatMessages(prev => [...prev, {
+        id: data.id,
+        text: data.message,
+        sender: 'other',
+        timestamp: new Date(data.timestamp),
+      }]);
+      // Bildirim göster
+      setToastMessage(`💬 ${data.sender_name}: ${data.message.substring(0, 30)}...`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    },
   });
   
   // Karşılıklı iptal sistemi state'leri
