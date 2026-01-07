@@ -101,6 +101,7 @@ export default function LiveMapView({
   onBlock,
   onReport,
   onCall,
+  onChat,  // 🆕 Chat butonu
   onComplete,
   onRequestTripEnd,
   onForceEnd,
