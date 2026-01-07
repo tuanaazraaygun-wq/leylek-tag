@@ -5459,15 +5459,26 @@ function PassengerDashboard({
                   otherUserId={activeTag?.driver_id || ''}
                   onSendMessage={(text, receiverId) => {
                     // Socket üzerinden mesaj gönder
-                    console.log('📤 MESAJ GÖNDERİLİYOR:', { text, receiverId });
+                    console.log('📤 [YOLCU] MESAJ GÖNDERİLİYOR:', { text, receiverId, activeTagDriverId: activeTag?.driver_id, socketConnected });
+                    
+                    // Debug: receiverId kontrolü
+                    const finalReceiverId = receiverId || activeTag?.driver_id;
+                    if (!finalReceiverId) {
+                      console.error('❌ [YOLCU] receiver_id YOK!', { receiverId, activeTag });
+                      return;
+                    }
+                    
                     if (passengerEmitSendMessage) {
+                      console.log('📤 [YOLCU] passengerEmitSendMessage ÇAĞRILIYOR');
                       passengerEmitSendMessage({
                         sender_id: user?.id || '',
                         sender_name: user?.name || 'Yolcu',
-                        receiver_id: receiverId,
+                        receiver_id: finalReceiverId,
                         message: text,
                         tag_id: activeTag?.id,
                       });
+                    } else {
+                      console.error('❌ [YOLCU] passengerEmitSendMessage TANIMLI DEĞİL!');
                     }
                   }}
                   incomingMessages={passengerChatMessages}
