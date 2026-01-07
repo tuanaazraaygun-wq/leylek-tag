@@ -159,6 +159,8 @@ export default function useSocket({
   onDailyCallEnded,
   onCallCancelled,
   onCallEndedNew,
+  onNewMessage,  // 🆕 Mesajlaşma
+  onMessageSent,  // 🆕 Mesajlaşma
 }: UseSocketProps) {
   
   // ════════════════════════════════════════════════════════════════════
