@@ -4336,6 +4336,8 @@ function PassengerDashboard({
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
+    // 🆕 Mesajlaşma
+    emitSendMessage: passengerEmitSendMessage,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'passenger',
