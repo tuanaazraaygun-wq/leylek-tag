@@ -4128,6 +4128,10 @@ function PassengerDashboard({
   const [incomingDailyCall, setIncomingDailyCall] = useState(false);
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   
+  // 🆕 Chat State'leri (Yolcu)
+  const [passengerChatVisible, setPassengerChatVisible] = useState(false);
+  const [passengerChatMessages, setPassengerChatMessages] = useState<any[]>([]);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
