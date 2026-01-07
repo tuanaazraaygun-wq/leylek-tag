@@ -349,6 +349,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emit('call_end', data);
   }, [emit]);
 
+  // 🆕 Mesajlaşma
+  const emitSendMessage = useCallback((data: any) => {
+    console.log('💬 [SocketProvider] emitSendMessage:', JSON.stringify(data));
+    emit('send_message', data);
+  }, [emit]);
+
   // ══════════════════════════════════════════════════════════════════
   // CONTEXT VALUE
   // ══════════════════════════════════════════════════════════════════
