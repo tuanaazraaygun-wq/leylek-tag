@@ -190,6 +190,7 @@ export default function useSocket({
     emitCallReject: contextEmitCallReject,
     emitCallCancel: contextEmitCallCancel,
     emitCallEnd: contextEmitCallEnd,
+    emitSendMessage: contextEmitSendMessage,  // 🆕 Mesajlaşma
   } = socketContext;
 
   // Callback refs - dependency array'i küçültmek için
