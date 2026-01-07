@@ -5283,6 +5283,10 @@ function PassengerDashboard({
                     // Aranan kabul ettiğinde socket server room oluşturup
                     // HER İKİ TARAFA call_accepted gönderecek
                   }}
+                  onChat={() => {
+                    // 🆕 Chat aç - Yolcu → Sürücüye Yaz
+                    setPassengerChatVisible(true);
+                  }}
                   onRequestTripEnd={async () => {
                     // Karşılıklı iptal isteği gönder - YOLCU
                     try {
