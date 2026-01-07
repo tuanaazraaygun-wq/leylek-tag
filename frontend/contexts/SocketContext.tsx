@@ -107,6 +107,9 @@ interface SocketContextType {
   emitCallReject: (data: any) => void;
   emitCallCancel: (data: any) => void;
   emitCallEnd: (data: any) => void;
+  
+  // 🆕 Mesajlaşma
+  emitSendMessage: (data: any) => void;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
