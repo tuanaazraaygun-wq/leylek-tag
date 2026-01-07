@@ -14,7 +14,7 @@ import Constants from 'expo-constants';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://socket-singleton.preview.emergentagent.com';
+                    'https://rideconvo.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 // ==================== TYPES ====================
