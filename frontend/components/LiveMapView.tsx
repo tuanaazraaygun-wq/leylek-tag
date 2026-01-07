@@ -606,7 +606,60 @@ const styles = StyleSheet.create({
   navButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 14 },
   navButtonText: { color: '#FFF', fontSize: 17, fontWeight: '600', marginLeft: 10 },
   callButtons: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 14 },
-  callButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#F0FDF4', borderRadius: 12, borderWidth: 1.5, borderColor: '#22C55E' },
+  callButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#F0FDF4', borderRadius: 16, borderWidth: 1.5, borderColor: '#22C55E' },
+  
+  // 🆕 Modern Butonlar
+  mainCallButton: { 
+    backgroundColor: '#3B82F6', 
+    borderColor: '#3B82F6',
+    paddingVertical: 16,
+    borderRadius: 16,
+    elevation: 4,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  callButtonIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  mainCallButtonText: { 
+    fontSize: 15, 
+    fontWeight: '700', 
+    color: '#FFF' 
+  },
+  chatButton: { 
+    backgroundColor: '#10B981', 
+    borderColor: '#10B981',
+    paddingVertical: 16,
+    borderRadius: 16,
+    elevation: 4,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  chatButtonIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  chatButtonText: { 
+    fontSize: 15, 
+    fontWeight: '700', 
+    color: '#FFF' 
+  },
+  
   videoCallButton: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
   callButtonText: { fontSize: 15, fontWeight: '600', marginLeft: 8, color: '#374151' },
   callButtonDisabled: { opacity: 0.6 },
