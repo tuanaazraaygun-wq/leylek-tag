@@ -6005,6 +6005,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
       loadData();
     },
+    // 🆕 Mesajlaşma
+    onNewMessage: (data) => {
+      console.log('💬 ŞOFÖR - YENİ MESAJ GELDİ:', data);
+      // Gelen mesajı chat'e ekle
+      setDriverChatMessages(prev => [...prev, {
+        id: data.id,
+        text: data.message,
+        sender: 'other',
+        timestamp: new Date(data.timestamp),
+      }]);
+      // Bildirim göster (Toast)
+      Alert.alert('💬 Yeni Mesaj', `${data.sender_name}: ${data.message}`);
+    },
   });
   
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
