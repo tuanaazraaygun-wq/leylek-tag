@@ -200,7 +200,7 @@ export default function useSocket({
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
     onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
-    onCallCancelled, onCallEndedNew
+    onCallCancelled, onCallEndedNew, onNewMessage, onMessageSent
   });
   
   // Callback'leri güncelle
@@ -212,7 +212,7 @@ export default function useSocket({
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
       onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
-      onCallCancelled, onCallEndedNew
+      onCallCancelled, onCallEndedNew, onNewMessage, onMessageSent
     };
   });
 
