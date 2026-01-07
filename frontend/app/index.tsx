@@ -6539,6 +6539,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               // Aranan kabul ettiğinde socket server room oluşturup
               // HER İKİ TARAFA call_accepted gönderecek
             }}
+            onChat={() => {
+              // 🆕 Chat aç - Sürücü → Yolcuya Yaz
+              setDriverChatVisible(true);
+            }}
             onForceEnd={async () => {
               try {
                 const response = await fetch(
