@@ -6685,6 +6685,21 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               }
             }}
           />
+          
+          {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz */}
+          <ChatBubble
+            visible={driverChatVisible}
+            onClose={() => setDriverChatVisible(false)}
+            isDriver={true}
+            otherUserName={activeTag?.passenger_name || 'Yolcu'}
+            userId={user?.id || ''}
+            otherUserId={activeTag?.passenger_id || ''}
+            onSendMessage={(text, receiverId) => {
+              // Socket üzerinden mesaj gönder
+              console.log('📤 MESAJ GÖNDERİLİYOR:', { text, receiverId });
+              // TODO: Socket emit eklenecek
+            }}
+          />
         </View>
       ) : requests.length === 0 ? (
         <ScrollView style={styles.content}>
