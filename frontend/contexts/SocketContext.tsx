@@ -270,50 +270,22 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // Her zaman singleton socket'i al
     const socket = getOrCreateSocket();
     
-    console.log(`🔍 [SocketProvider] Emit check: ${event}, connected: ${socket?.connected}, id: ${socket?.id}`);
-    
-    // Eğer socket bağlıysa hemen gönder
+    // Socket bağlıysa HEMEN gönder
     if (socket?.connected) {
-      console.log(`📤 [SocketProvider] Emit: ${event}`, JSON.stringify(data).substring(0, 200));
+      console.log(`📤 [SocketProvider] Emit: ${event}`);
       socket.emit(event, data);
       return;
     }
     
-    // Socket bağlı değilse, bağlan ve bekle
-    console.warn(`⚠️ [SocketProvider] Socket bağlı değil, bağlanılıyor... Event: ${event}`);
+    // Socket bağlı değilse, bağlan ve HEMEN gönder
+    console.warn(`⚠️ [SocketProvider] Socket bağlı değil, bağlanıp gönderiliyor: ${event}`);
+    socket.connect();
     
-    if (!socket.connected) {
-      socket.connect();
-    }
-    
-    // Bağlantı kurulunca gönder
-    const sendOnConnect = () => {
-      console.log(`📤 [SocketProvider] Emit (on connect): ${event}`, JSON.stringify(data).substring(0, 200));
+    // Bağlantı olur olmaz gönder
+    socket.once('connect', () => {
+      console.log(`📤 [SocketProvider] Emit (after connect): ${event}`);
       socket.emit(event, data);
-      socket.off('connect', sendOnConnect);
-    };
-    
-    // Zaten bağlıysa veya hemen bağlanırsa
-    if (socket.connected) {
-      console.log(`📤 [SocketProvider] Emit (immediate): ${event}`, JSON.stringify(data).substring(0, 200));
-      socket.emit(event, data);
-    } else {
-      // Bağlantı eventini dinle
-      socket.once('connect', sendOnConnect);
-      
-      // 3 saniye timeout - bağlanamazsa hata ver
-      setTimeout(() => {
-        if (!socket.connected) {
-          socket.off('connect', sendOnConnect);
-          console.error(`❌ [SocketProvider] Socket 3sn içinde bağlanamadı! Event: ${event}`);
-          // Son bir deneme daha yap
-          if (socket.connected) {
-            console.log(`📤 [SocketProvider] Emit (final retry): ${event}`);
-            socket.emit(event, data);
-          }
-        }
-      }, 3000);
-    }
+    });
   }, []);
 
   const emitSendOffer = useCallback((data: any) => {
