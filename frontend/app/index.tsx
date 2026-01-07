@@ -6748,17 +6748,28 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             otherUserId={activeTag?.passenger_id || ''}
             onSendMessage={(text, receiverId) => {
               // Socket üzerinden mesaj gönder
-              console.log('📤 MESAJ GÖNDERİLİYOR:', { text, receiverId });
+              console.log('📤 [SÜRÜCÜ] MESAJ GÖNDERİLİYOR:', { text, receiverId, activeTagPassengerId: activeTag?.passenger_id });
+              
+              // Debug: receiverId kontrolü
+              const finalReceiverId = receiverId || activeTag?.passenger_id;
+              if (!finalReceiverId) {
+                console.error('❌ [SÜRÜCÜ] receiver_id YOK!', { receiverId, activeTag });
+                return;
+              }
+              
               if (driverEmitSendMessage) {
+                console.log('📤 [SÜRÜCÜ] driverEmitSendMessage ÇAĞRILIYOR');
                 driverEmitSendMessage({
                   sender_id: user?.id || '',
                   sender_name: user?.name || 'Sürücü',
-                  receiver_id: receiverId,
+                  receiver_id: finalReceiverId,
                   message: text,
                   tag_id: activeTag?.id,
                 });
+              } else {
+                console.error('❌ [SÜRÜCÜ] driverEmitSendMessage TANIMLI DEĞİL!');
               }
-            }}
+            }}}
             incomingMessages={driverChatMessages}
           />
         </View>
