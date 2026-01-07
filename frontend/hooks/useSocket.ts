@@ -776,13 +776,9 @@ export default function useSocket({
     message: string;
     tag_id?: string;
   }) => {
-    if (socket?.connected) {
-      console.log('💬 [useSocket] Mesaj gönderiliyor:', data);
-      socket.emit('send_message', data);
-    } else {
-      console.error('❌ [useSocket] Socket bağlı değil, mesaj gönderilemedi!');
-    }
-  }, [socket]);
+    console.log('💬 [useSocket] Mesaj gönderiliyor (context emit):', data);
+    contextEmitSendMessage(data);
+  }, [contextEmitSendMessage]);
 
   // ════════════════════════════════════════════════════════════════════
   // RETURN - Eski API ile tam uyumlu

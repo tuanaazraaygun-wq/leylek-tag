@@ -47,7 +47,6 @@ interface ChatBubbleProps {
 // Öneri mesajları
 const PASSENGER_SUGGESTIONS = [
   "Ne zamana gelirsiniz?",
-  "Yol paylaşım ücreti ne kadar?",
   "Bekliyorum",
   "Neredesiniz?",
   "Geldiniz mi?",
