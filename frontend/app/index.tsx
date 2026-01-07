@@ -5445,8 +5445,17 @@ function PassengerDashboard({
                   onSendMessage={(text, receiverId) => {
                     // Socket üzerinden mesaj gönder
                     console.log('📤 MESAJ GÖNDERİLİYOR:', { text, receiverId });
-                    // TODO: Socket emit eklenecek
+                    if (passengerEmitSendMessage) {
+                      passengerEmitSendMessage({
+                        sender_id: user?.id || '',
+                        sender_name: user?.name || 'Yolcu',
+                        receiver_id: receiverId,
+                        message: text,
+                        tag_id: activeTag?.id,
+                      });
+                    }
                   }}
+                  incomingMessages={passengerChatMessages}
                 />
               </View>
             ) : null}
