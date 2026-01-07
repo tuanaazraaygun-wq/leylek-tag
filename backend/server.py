@@ -4011,6 +4011,114 @@ async def end_daily_call(sid, data):
     except:
         pass  # Silme başarısız olsa da önemli değil
 
+# ==================== CHAT MESSAGING SYSTEM (HYBRID) ====================
+# Supabase = Source of Truth, Socket = Real-time notification (best-effort)
+
+class ChatMessageCreate(BaseModel):
+    tag_id: str
+    sender_id: str
+    receiver_id: str
+    message: str
+    sender_name: Optional[str] = None
+
+@api_router.post("/chat/send-message")
+async def send_chat_message(msg: ChatMessageCreate):
+    """
+    HYBRID CHAT: 
+    1. FIRST save to Supabase (source of truth)
+    2. THEN emit socket event (best-effort, non-blocking)
+    """
+    try:
+        # 1. Supabase'e kaydet (SOURCE OF TRUTH)
+        message_data = {
+            "tag_id": msg.tag_id,
+            "sender_id": msg.sender_id,
+            "receiver_id": msg.receiver_id,
+            "message": msg.message,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table("chat_messages").insert(message_data).execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to save message")
+        
+        saved_message = result.data[0]
+        logger.info(f"💬 Chat message saved to Supabase: {saved_message['id']}")
+        
+        # 2. Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
+        try:
+            # External socket server'a HTTP ile bildir
+            socket_notify_url = "https://socket.leylektag.com"
+            # Socket server'a direkt emit yapamıyoruz, ama receiver polling yapacak
+            logger.info(f"📤 Socket notification skipped (receiver will poll)")
+        except Exception as socket_err:
+            logger.warning(f"⚠️ Socket notification failed (non-blocking): {socket_err}")
+            # Socket hatası mesaj kaydını ETKİLEMEZ
+        
+        return {
+            "success": True,
+            "message_id": saved_message["id"],
+            "created_at": saved_message["created_at"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Chat send error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/chat/messages")
+async def get_chat_messages(tag_id: str, limit: int = 50, offset: int = 0):
+    """
+    Supabase'den mesajları çek (SOURCE OF TRUTH)
+    Pagination destekli
+    """
+    try:
+        result = supabase.table("chat_messages")\
+            .select("*")\
+            .eq("tag_id", tag_id)\
+            .order("created_at", desc=False)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+        
+        messages = result.data or []
+        
+        return {
+            "success": True,
+            "messages": messages,
+            "count": len(messages),
+            "tag_id": tag_id
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Chat fetch error: {e}")
+        # Hata durumunda boş array dön (UI kırılmasın)
+        return {
+            "success": False,
+            "messages": [],
+            "count": 0,
+            "error": str(e)
+        }
+
+@api_router.post("/chat/mark-read")
+async def mark_messages_read(tag_id: str, user_id: str):
+    """
+    Kullanıcının okuduğu mesajları işaretle
+    """
+    try:
+        result = supabase.table("chat_messages")\
+            .update({"read_at": datetime.utcnow().isoformat()})\
+            .eq("tag_id", tag_id)\
+            .eq("receiver_id", user_id)\
+            .is_("read_at", "null")\
+            .execute()
+        
+        return {"success": True, "updated": len(result.data or [])}
+    except Exception as e:
+        logger.error(f"❌ Mark read error: {e}")
+        return {"success": False, "error": str(e)}
+
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
 app.include_router(api_router)
