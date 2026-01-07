@@ -6289,14 +6289,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     const price = Number(offerPrice);
     const tag = requests.find(r => r.id === tagId);
     
-    // 🚀 HEMEN UI'ı güncelle - Bekleme yok!
+    // UI'ı güncelle
     setOfferSending(true);
     setOfferModalVisible(false);
     setOfferPrice('');
-    setRequests(prev => prev.filter(r => r.id !== tagId)); // Kartı hemen kaldır
     
-    // 🔥 Socket ile HEMEN yolcuya bildir
+    // 🔥 Socket ile yolcuya bildir
     if (socketSendOffer && tag) {
+      console.log('🔥 [SÜRÜCÜ] Socket teklif gönderiliyor...', { tagId, price, socketConnected });
       socketSendOffer({
         tag_id: tagId,
         driver_id: user.id,
@@ -6304,10 +6304,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         passenger_id: tag.passenger_id,
         price: price,
       });
-      console.log('🔥 Socket teklif GÖNDERİLDİ!');
+      console.log('🔥 [SÜRÜCÜ] Socket teklif ÇAĞRILDI!');
+      
+      // Kartı 1 saniye sonra kaldır (socket gönderim için zaman ver)
+      setTimeout(() => {
+        setRequests(prev => prev.filter(r => r.id !== tagId));
+      }, 1000);
+    } else {
+      console.error('❌ [SÜRÜCÜ] socketSendOffer YOK veya tag bulunamadı!', { socketSendOffer: !!socketSendOffer, tag: !!tag });
     }
     
-    // 📝 REST API arka planda kaydet (bekleme yok)
+    // 📝 REST API arka planda kaydet
     fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
