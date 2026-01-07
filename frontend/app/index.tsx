@@ -5457,31 +5457,25 @@ function PassengerDashboard({
                   otherUserName={activeTag?.driver_name || 'Sürücü'}
                   userId={user?.id || ''}
                   otherUserId={activeTag?.driver_id || ''}
+                  tagId={activeTag?.id || ''}
                   onSendMessage={(text, receiverId) => {
-                    // Socket üzerinden mesaj gönder
-                    console.log('📤 [YOLCU] MESAJ GÖNDERİLİYOR:', { text, receiverId, activeTagDriverId: activeTag?.driver_id, socketConnected });
-                    
-                    // Debug: receiverId kontrolü
+                    // Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
+                    console.log('📤 [YOLCU] Socket notification (best-effort):', { text, receiverId });
                     const finalReceiverId = receiverId || activeTag?.driver_id;
-                    if (!finalReceiverId) {
-                      console.error('❌ [YOLCU] receiver_id YOK!', { receiverId, activeTag });
-                      return;
-                    }
-                    
-                    if (passengerEmitSendMessage) {
-                      console.log('📤 [YOLCU] passengerEmitSendMessage ÇAĞRILIYOR');
-                      passengerEmitSendMessage({
-                        sender_id: user?.id || '',
-                        sender_name: user?.name || 'Yolcu',
-                        receiver_id: finalReceiverId,
-                        message: text,
-                        tag_id: activeTag?.id,
-                      });
-                    } else {
-                      console.error('❌ [YOLCU] passengerEmitSendMessage TANIMLI DEĞİL!');
+                    if (passengerEmitSendMessage && finalReceiverId) {
+                      try {
+                        passengerEmitSendMessage({
+                          sender_id: user?.id || '',
+                          sender_name: user?.name || 'Yolcu',
+                          receiver_id: finalReceiverId,
+                          message: text,
+                          tag_id: activeTag?.id,
+                        });
+                      } catch (e) {
+                        console.warn('⚠️ Socket notification failed (non-blocking)');
+                      }
                     }
                   }}
-                  incomingMessages={passengerChatMessages}
                 />
               </View>
             ) : null}
