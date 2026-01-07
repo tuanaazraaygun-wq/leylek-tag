@@ -241,12 +241,12 @@ export default function ChatBubble({
       // Initial fetch
       fetchMessages();
       
-      // Poll every 3 seconds
+      // Poll every 1 second for near real-time
       pollingInterval.current = setInterval(() => {
         fetchMessages();
-      }, 3000);
+      }, 1000);
       
-      console.log('🔄 [ChatBubble] Polling started (3s)');
+      console.log('🔄 [ChatBubble] Polling started (1s)');
     }
     
     return () => {
