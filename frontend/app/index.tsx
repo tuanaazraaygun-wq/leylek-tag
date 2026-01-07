@@ -6769,7 +6769,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               } else {
                 console.error('❌ [SÜRÜCÜ] driverEmitSendMessage TANIMLI DEĞİL!');
               }
-            }}}
+            }}
             incomingMessages={driverChatMessages}
           />
         </View>
