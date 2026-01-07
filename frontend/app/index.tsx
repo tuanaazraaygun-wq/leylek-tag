@@ -5791,6 +5791,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
+    // 🆕 Mesajlaşma
+    emitSendMessage: driverEmitSendMessage,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'driver',
