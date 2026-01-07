@@ -5716,6 +5716,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     receiverId: string;
   } | null>(null);
   
+  // 🆕 Chat State'leri (Sürücü)
+  const [driverChatVisible, setDriverChatVisible] = useState(false);
+  const [driverChatMessages, setDriverChatMessages] = useState<any[]>([]);
+  
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
