@@ -117,6 +117,17 @@ interface UseSocketProps {
   onDailyCallEnded?: (data: { ended: boolean; room_name: string }) => void;
   onCallCancelled?: (data: { cancelled: boolean; by: string }) => void;
   onCallEndedNew?: (data: { ended: boolean; by: string; room_name: string }) => void;
+  // 🆕 Mesajlaşma eventleri
+  onNewMessage?: (data: {
+    id: string;
+    sender_id: string;
+    sender_name: string;
+    receiver_id: string;
+    message: string;
+    tag_id?: string;
+    timestamp: string;
+  }) => void;
+  onMessageSent?: (data: { success: boolean; message_id: string }) => void;
 }
 
 export default function useSocket({
