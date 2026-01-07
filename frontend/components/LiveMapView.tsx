@@ -474,23 +474,33 @@ export default function LiveMapView({
             </TouchableOpacity>
           )}
 
-          {/* Arama Butonları - HER İKİ ROL İÇİN */}
+          {/* Arama ve Mesaj Butonları - MODERN */}
           <View style={styles.callButtons}>
+            {/* Sesli Görüntülü Ara Butonu */}
             <TouchableOpacity 
-              style={[styles.callButton, isCallLoading && styles.callButtonDisabled]} 
-              onPress={() => handleCall('audio')}
-              disabled={isCallLoading}
-            >
-              <Ionicons name="call" size={22} color="#22C55E" />
-              <Text style={styles.callButtonText}>{isCallLoading ? 'Aranıyor...' : 'Sesli Ara'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.callButton, styles.videoCallButton, isCallLoading && styles.callButtonDisabled]} 
+              style={[styles.callButton, styles.mainCallButton, isCallLoading && styles.callButtonDisabled]} 
               onPress={() => handleCall('video')}
               disabled={isCallLoading}
             >
-              <Ionicons name="videocam" size={22} color="#3B82F6" />
-              <Text style={styles.callButtonText}>{isCallLoading ? 'Aranıyor...' : 'Görüntülü Ara'}</Text>
+              <View style={styles.callButtonIcon}>
+                <Ionicons name="videocam" size={24} color="#FFF" />
+              </View>
+              <Text style={styles.mainCallButtonText}>
+                {isCallLoading ? 'Aranıyor...' : 'Sesli Görüntülü Ara'}
+              </Text>
+            </TouchableOpacity>
+            
+            {/* Yaz Butonu */}
+            <TouchableOpacity 
+              style={[styles.callButton, styles.chatButton]} 
+              onPress={() => onChat?.()}
+            >
+              <View style={styles.chatButtonIcon}>
+                <Ionicons name="chatbubble-ellipses" size={22} color="#FFF" />
+              </View>
+              <Text style={styles.chatButtonText}>
+                {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
+              </Text>
             </TouchableOpacity>
           </View>
 
