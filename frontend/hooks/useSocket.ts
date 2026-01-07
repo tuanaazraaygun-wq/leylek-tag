@@ -442,6 +442,10 @@ export default function useSocket({
       socket.off('daily_call_accepted', handleDailyCallAccepted);
       socket.off('daily_call_rejected', handleCallRejected);
       socket.off('daily_call_ended', handleDailyCallEnded);
+      
+      // 🆕 Mesajlaşma
+      socket.off('new_message', handleNewMessage);
+      socket.off('message_sent', handleMessageSent);
     };
   }, [socket, userRole]);
 
