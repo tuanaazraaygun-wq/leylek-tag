@@ -766,6 +766,23 @@ export default function useSocket({
     }
   }, [socket]);
 
+  // ══════════ MESAJLAŞMA FONKSİYONLARI ══════════
+
+  const emitSendMessage = useCallback((data: {
+    sender_id: string;
+    sender_name: string;
+    receiver_id: string;
+    message: string;
+    tag_id?: string;
+  }) => {
+    if (socket?.connected) {
+      console.log('💬 [useSocket] Mesaj gönderiliyor:', data);
+      socket.emit('send_message', data);
+    } else {
+      console.error('❌ [useSocket] Socket bağlı değil, mesaj gönderilemedi!');
+    }
+  }, [socket]);
+
   // ════════════════════════════════════════════════════════════════════
   // RETURN - Eski API ile tam uyumlu
   // ════════════════════════════════════════════════════════════════════
