@@ -6738,8 +6738,17 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             onSendMessage={(text, receiverId) => {
               // Socket üzerinden mesaj gönder
               console.log('📤 MESAJ GÖNDERİLİYOR:', { text, receiverId });
-              // TODO: Socket emit eklenecek
+              if (driverEmitSendMessage) {
+                driverEmitSendMessage({
+                  sender_id: user?.id || '',
+                  sender_name: user?.name || 'Sürücü',
+                  receiver_id: receiverId,
+                  message: text,
+                  tag_id: activeTag?.id,
+                });
+              }
             }}
+            incomingMessages={driverChatMessages}
           />
         </View>
       ) : requests.length === 0 ? (
