@@ -402,6 +402,10 @@ export default function useSocket({
     socket.on('daily_call_accepted', handleDailyCallAccepted);
     socket.on('daily_call_rejected', handleCallRejected);
     socket.on('daily_call_ended', handleDailyCallEnded);
+    
+    // 🆕 Mesajlaşma eventleri
+    socket.on('new_message', handleNewMessage);
+    socket.on('message_sent', handleMessageSent);
 
     // Cleanup - listener'ları kaldır
     return () => {
