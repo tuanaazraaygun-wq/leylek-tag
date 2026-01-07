@@ -358,6 +358,18 @@ export default function useSocket({
       callbackRefs.current.onDailyCallEnded?.(data);
     };
 
+    // ══════════ MESAJLAŞMA EVENTLERİ ══════════
+
+    const handleNewMessage = (data: any) => {
+      console.log('💬 [useSocket] YENİ MESAJ GELDİ:', data);
+      callbackRefs.current.onNewMessage?.(data);
+    };
+
+    const handleMessageSent = (data: any) => {
+      console.log('✅ [useSocket] MESAJ GÖNDERİLDİ:', data);
+      callbackRefs.current.onMessageSent?.(data);
+    };
+
     // Event listener'ları ekle
     socket.on('incoming_call', handleIncomingCall);
     socket.on('call_accepted', handleCallAccepted);
