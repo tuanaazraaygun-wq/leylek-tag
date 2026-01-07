@@ -835,5 +835,7 @@ export default function useSocket({
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
+    // 🆕 Mesajlaşma
+    emitSendMessage,
   };
 }
