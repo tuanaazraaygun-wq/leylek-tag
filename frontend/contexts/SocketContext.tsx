@@ -267,12 +267,29 @@ export function SocketProvider({ children }: SocketProviderProps) {
   // ══════════════════════════════════════════════════════════════════
   
   const emit = useCallback((event: string, data: any) => {
-    const socket = socketRef.current;
+    // Her zaman singleton socket'i al
+    const socket = getOrCreateSocket();
+    
+    console.log(`🔍 [SocketProvider] Emit check: ${event}, connected: ${socket?.connected}, id: ${socket?.id}`);
+    
     if (socket?.connected) {
       console.log(`📤 [SocketProvider] Emit: ${event}`, JSON.stringify(data).substring(0, 200));
       socket.emit(event, data);
     } else {
-      console.error(`❌ [SocketProvider] Socket bağlı değil! Event: ${event}`);
+      console.warn(`⚠️ [SocketProvider] Socket bağlı değil, yeniden bağlanılıyor... Event: ${event}`);
+      // Bağlantıyı yeniden kur
+      if (!socket.connected) {
+        socket.connect();
+      }
+      // 500ms sonra tekrar dene
+      setTimeout(() => {
+        if (socket?.connected) {
+          console.log(`📤 [SocketProvider] Emit (retry): ${event}`, JSON.stringify(data).substring(0, 200));
+          socket.emit(event, data);
+        } else {
+          console.error(`❌ [SocketProvider] Socket hala bağlı değil! Event: ${event}`);
+        }
+      }, 500);
     }
   }, []);
 
