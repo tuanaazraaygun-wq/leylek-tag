@@ -6747,31 +6747,25 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
             userId={user?.id || ''}
             otherUserId={activeTag?.passenger_id || ''}
+            tagId={activeTag?.id || ''}
             onSendMessage={(text, receiverId) => {
-              // Socket üzerinden mesaj gönder
-              console.log('📤 [SÜRÜCÜ] MESAJ GÖNDERİLİYOR:', { text, receiverId, activeTagPassengerId: activeTag?.passenger_id });
-              
-              // Debug: receiverId kontrolü
+              // Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
+              console.log('📤 [SÜRÜCÜ] Socket notification (best-effort):', { text, receiverId });
               const finalReceiverId = receiverId || activeTag?.passenger_id;
-              if (!finalReceiverId) {
-                console.error('❌ [SÜRÜCÜ] receiver_id YOK!', { receiverId, activeTag });
-                return;
-              }
-              
-              if (driverEmitSendMessage) {
-                console.log('📤 [SÜRÜCÜ] driverEmitSendMessage ÇAĞRILIYOR');
-                driverEmitSendMessage({
-                  sender_id: user?.id || '',
-                  sender_name: user?.name || 'Sürücü',
-                  receiver_id: finalReceiverId,
-                  message: text,
-                  tag_id: activeTag?.id,
-                });
-              } else {
-                console.error('❌ [SÜRÜCÜ] driverEmitSendMessage TANIMLI DEĞİL!');
+              if (driverEmitSendMessage && finalReceiverId) {
+                try {
+                  driverEmitSendMessage({
+                    sender_id: user?.id || '',
+                    sender_name: user?.name || 'Sürücü',
+                    receiver_id: finalReceiverId,
+                    message: text,
+                    tag_id: activeTag?.id,
+                  });
+                } catch (e) {
+                  console.warn('⚠️ Socket notification failed (non-blocking)');
+                }
               }
             }}
-            incomingMessages={driverChatMessages}
           />
         </View>
       ) : requests.length === 0 ? (
