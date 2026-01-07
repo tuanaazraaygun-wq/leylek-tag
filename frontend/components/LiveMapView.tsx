@@ -36,6 +36,7 @@ interface LiveMapViewProps {
   onBlock?: () => void;
   onReport?: () => void;
   onCall?: (type: 'audio' | 'video') => void;
+  onChat?: () => void;  // 🆕 Chat butonu
   onComplete?: () => void;
   onRequestTripEnd?: () => void;
   onForceEnd?: () => void;
