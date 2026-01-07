@@ -5431,6 +5431,21 @@ function PassengerDashboard({
                     }
                   }}
                 />
+                
+                {/* 🆕 Chat Bubble - Yolcu → Sürücüye Yaz */}
+                <ChatBubble
+                  visible={passengerChatVisible}
+                  onClose={() => setPassengerChatVisible(false)}
+                  isDriver={false}
+                  otherUserName={activeTag?.driver_name || 'Sürücü'}
+                  userId={user?.id || ''}
+                  otherUserId={activeTag?.driver_id || ''}
+                  onSendMessage={(text, receiverId) => {
+                    // Socket üzerinden mesaj gönder
+                    console.log('📤 MESAJ GÖNDERİLİYOR:', { text, receiverId });
+                    // TODO: Socket emit eklenecek
+                  }}
+                />
               </View>
             ) : null}
       </ScrollView>
