@@ -4130,7 +4130,7 @@ function PassengerDashboard({
   
   // 🆕 Chat State'leri (Yolcu)
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
-  const [passengerChatMessages, setPassengerChatMessages] = useState<any[]>([]);
+  const [passengerIncomingMessage, setPassengerIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
   
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
