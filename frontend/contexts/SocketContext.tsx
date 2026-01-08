@@ -361,11 +361,16 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emit('call_end', data);
   }, [emit]);
 
-  // 🆕 Mesajlaşma
+  // 🆕 Mesajlaşma - SOCKET BAĞLANTISINA BAKMADAN GÖNDER
   const emitSendMessage = useCallback((data: any) => {
-    console.log('💬 [SocketProvider] emitSendMessage:', JSON.stringify(data));
-    emit('send_message', data);
-  }, [emit]);
+    const socket = getOrCreateSocket();
+    console.log('💬 [SocketProvider] emitSendMessage:', JSON.stringify(data).substring(0, 100));
+    
+    // Direkt emit - bağlantı kontrolü YOK
+    // Socket.IO kendi buffer'ına alır, bağlanınca gönderir
+    socket.emit('send_message', data);
+    console.log('✅ [SocketProvider] send_message EMIT edildi!');
+  }, []);
 
   // ══════════════════════════════════════════════════════════════════
   // CONTEXT VALUE
