@@ -5450,7 +5450,7 @@ function PassengerDashboard({
                   }}
                 />
                 
-                {/* 🆕 Chat Bubble - Yolcu → Sürücüye Yaz */}
+                {/* 🆕 Chat Bubble - Yolcu → Sürücüye Yaz (PURE SOCKET - ANLIK) */}
                 <ChatBubble
                   visible={passengerChatVisible}
                   onClose={() => setPassengerChatVisible(false)}
@@ -5459,22 +5459,19 @@ function PassengerDashboard({
                   userId={user?.id || ''}
                   otherUserId={activeTag?.driver_id || ''}
                   tagId={activeTag?.id || ''}
+                  incomingMessage={passengerIncomingMessage}
                   onSendMessage={(text, receiverId) => {
-                    // Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
-                    console.log('📤 [YOLCU] Socket notification (best-effort):', { text, receiverId });
+                    // Socket ile ANLIK gönder
+                    console.log('📤 [YOLCU] Socket ANLIK mesaj:', text);
                     const finalReceiverId = receiverId || activeTag?.driver_id;
                     if (passengerEmitSendMessage && finalReceiverId) {
-                      try {
-                        passengerEmitSendMessage({
-                          sender_id: user?.id || '',
-                          sender_name: user?.name || 'Yolcu',
-                          receiver_id: finalReceiverId,
-                          message: text,
-                          tag_id: activeTag?.id,
-                        });
-                      } catch (e) {
-                        console.warn('⚠️ Socket notification failed (non-blocking)');
-                      }
+                      passengerEmitSendMessage({
+                        sender_id: user?.id || '',
+                        sender_name: user?.name || 'Yolcu',
+                        receiver_id: finalReceiverId,
+                        message: text,
+                        tag_id: activeTag?.id,
+                      });
                     }
                   }}
                 />
