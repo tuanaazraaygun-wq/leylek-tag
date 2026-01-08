@@ -6763,9 +6763,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             incomingMessage={driverIncomingMessage}
             onSendMessage={(text, receiverId) => {
               // Socket ile ANLIK gönder
-              console.log('📤 [SÜRÜCÜ] Socket ANLIK mesaj:', text);
+              console.log('📤 [SÜRÜCÜ] onSendMessage callback:', { 
+                text, 
+                receiverId, 
+                activeTagPassengerId: activeTag?.passenger_id,
+                driverEmitSendMessage: !!driverEmitSendMessage 
+              });
               const finalReceiverId = receiverId || activeTag?.passenger_id;
-              if (driverEmitSendMessage && finalReceiverId) {
+              if (!finalReceiverId) {
+                console.error('❌ [SÜRÜCÜ] finalReceiverId BOŞ!');
+                return;
+              }
+              if (driverEmitSendMessage) {
+                console.log('📤 [SÜRÜCÜ] driverEmitSendMessage çağrılıyor...');
                 driverEmitSendMessage({
                   sender_id: user?.id || '',
                   sender_name: user?.name || 'Sürücü',
@@ -6773,6 +6783,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   message: text,
                   tag_id: activeTag?.id,
                 });
+                console.log('✅ [SÜRÜCÜ] driverEmitSendMessage çağrıldı!');
+              } else {
+                console.error('❌ [SÜRÜCÜ] driverEmitSendMessage TANIMLI DEĞİL!');
               }
             }}
           />
