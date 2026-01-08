@@ -6011,18 +6011,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
       loadData();
     },
-    // 🆕 Mesajlaşma
+    // 🆕 Mesajlaşma - PURE SOCKET (ANLIK)
     onNewMessage: (data) => {
-      console.log('💬 ŞOFÖR - YENİ MESAJ GELDİ:', data);
-      // Gelen mesajı chat'e ekle
-      setDriverChatMessages(prev => [...prev, {
-        id: data.id,
+      console.log('💬 ŞOFÖR - YENİ MESAJ GELDİ (ANLIK):', data);
+      // Gelen mesajı ChatBubble'a ilet
+      setDriverIncomingMessage({
         text: data.message,
-        sender: 'other',
-        timestamp: new Date(data.timestamp),
-      }]);
-      // Bildirim göster (Toast)
-      Alert.alert('💬 Yeni Mesaj', `${data.sender_name}: ${data.message}`);
+        senderId: data.sender_id,
+        timestamp: data.timestamp || Date.now(),
+      });
+      // Bildirim göster (chat kapalıysa)
+      if (!driverChatVisible) {
+        Alert.alert('💬 Yeni Mesaj', `${data.sender_name}: ${data.message}`);
+      }
     },
   });
   
