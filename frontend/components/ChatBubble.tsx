@@ -118,6 +118,19 @@ export default function ChatBubble({
     
     const trimmedText = text.trim();
     
+    // DEBUG: otherUserId kontrolü
+    console.log('📤 [ChatBubble] sendMessage çağrıldı:', {
+      text: trimmedText,
+      otherUserId: otherUserId,
+      tagId: tagId,
+      userId: userId
+    });
+    
+    if (!otherUserId) {
+      console.error('❌ [ChatBubble] otherUserId BOŞ! Mesaj gönderilemez.');
+      return;
+    }
+    
     // 1. Lokal olarak ekle (anlık UI güncelleme)
     const newMessage: Message = {
       id: `msg-${Date.now()}-${Math.random()}`,
@@ -129,7 +142,7 @@ export default function ChatBubble({
     setInputText('');
     
     // 2. Socket ile ANLIK gönder
-    console.log('📤 [ChatBubble] Socket mesaj gönderiliyor:', trimmedText);
+    console.log('📤 [ChatBubble] onSendMessage ÇAĞRILIYOR:', trimmedText, otherUserId);
     onSendMessage(trimmedText, otherUserId);
     
     // Scroll to bottom
