@@ -20,6 +20,8 @@ const SOCKET_URL = 'https://socket.leylektag.com';
 // ═══════════════════════════════════════════════════════════════════
 let singletonSocket: Socket | null = null;
 let isSocketRegistered = false;
+let lastRegisteredUserId: string | null = null;
+let registerInProgress = false;
 
 function createSocket(): Socket {
   if (singletonSocket) {
