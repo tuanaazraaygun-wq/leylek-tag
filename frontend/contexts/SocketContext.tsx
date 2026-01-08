@@ -270,22 +270,21 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // Her zaman singleton socket'i al
     const socket = getOrCreateSocket();
     
-    // Socket bağlıysa HEMEN gönder
-    if (socket?.connected) {
-      console.log(`📤 [SocketProvider] Emit: ${event}`);
+    console.log(`🔍 [SocketProvider] Emit attempt: ${event}, connected: ${socket?.connected}`);
+    
+    // Socket'i her zaman emit et - bağlı olmasa bile socket.io queue'ya alır
+    try {
       socket.emit(event, data);
-      return;
+      console.log(`📤 [SocketProvider] Emit sent: ${event}`);
+    } catch (err) {
+      console.error(`❌ [SocketProvider] Emit error: ${event}`, err);
     }
     
-    // Socket bağlı değilse, bağlan ve HEMEN gönder
-    console.warn(`⚠️ [SocketProvider] Socket bağlı değil, bağlanıp gönderiliyor: ${event}`);
-    socket.connect();
-    
-    // Bağlantı olur olmaz gönder
-    socket.once('connect', () => {
-      console.log(`📤 [SocketProvider] Emit (after connect): ${event}`);
-      socket.emit(event, data);
-    });
+    // Bağlı değilse yeniden bağlan
+    if (!socket.connected) {
+      console.warn(`⚠️ [SocketProvider] Socket disconnected, reconnecting...`);
+      socket.connect();
+    }
   }, []);
 
   const emitSendOffer = useCallback((data: any) => {
