@@ -149,12 +149,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIsConnected(true);
       
       // Otomatik register
-      if (userIdRef.current && userRoleRef.current) {
+      if (userIdRef.current && userRoleRef.current && !isSocketRegistered) {
         console.log('📱 [SocketProvider] Auto-register:', userIdRef.current);
         socket.emit('register', { 
           user_id: userIdRef.current, 
           role: userRoleRef.current 
         });
+        lastRegisteredUserId = userIdRef.current;
       }
     };
 
@@ -163,16 +164,18 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIsConnected(false);
       setIsRegistered(false);
       isSocketRegistered = false;
+      registerInProgress = false;
     };
 
     const handleReconnect = (attemptNumber: number) => {
       console.log('🔄 [SocketProvider] Reconnect başarılı:', attemptNumber);
-      // Reconnect'te register yap
-      if (userIdRef.current && userRoleRef.current) {
+      // Reconnect'te register yap (eğer zaten kayıtlı değilse)
+      if (userIdRef.current && userRoleRef.current && !isSocketRegistered) {
         socket.emit('register', { 
           user_id: userIdRef.current, 
           role: userRoleRef.current 
         });
+        lastRegisteredUserId = userIdRef.current;
       }
     };
 
@@ -180,6 +183,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       console.log('✅ [SocketProvider] KAYIT BAŞARILI:', data);
       setIsRegistered(true);
       isSocketRegistered = true;
+      registerInProgress = false;
     };
 
     // ─────────────────────────────────────────────────────────────────
