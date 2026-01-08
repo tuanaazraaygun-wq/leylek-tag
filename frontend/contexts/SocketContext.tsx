@@ -342,10 +342,23 @@ export function SocketProvider({ children }: SocketProviderProps) {
       return;
     }
     
+    // GUARD: Aynı kullanıcı zaten register edilmişse atla
+    if (lastRegisteredUserId === userId && isSocketRegistered) {
+      console.log('⏭️ [SocketProvider] Aynı kullanıcı zaten kayıtlı, atlanıyor:', userId);
+      return;
+    }
+    
+    // GUARD: Register işlemi devam ediyorsa atla
+    if (registerInProgress) {
+      console.log('⏭️ [SocketProvider] Register işlemi devam ediyor, atlanıyor');
+      return;
+    }
+    
     console.log('🔌 [SocketProvider] connectAndRegister:', userId, userRole);
     
     userIdRef.current = userId;
     userRoleRef.current = userRole;
+    registerInProgress = true;
     
     if (!socket.connected) {
       console.log('🔌 [SocketProvider] Socket bağlanıyor...');
@@ -354,6 +367,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       // Zaten bağlıysa direkt register
       console.log('📱 [SocketProvider] Zaten bağlı, register yapılıyor...');
       socket.emit('register', { user_id: userId, role: userRole });
+      lastRegisteredUserId = userId;
     }
   }, []);
 
