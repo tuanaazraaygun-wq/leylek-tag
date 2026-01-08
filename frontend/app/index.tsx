@@ -5462,9 +5462,19 @@ function PassengerDashboard({
                   incomingMessage={passengerIncomingMessage}
                   onSendMessage={(text, receiverId) => {
                     // Socket ile ANLIK gönder
-                    console.log('📤 [YOLCU] Socket ANLIK mesaj:', text);
+                    console.log('📤 [YOLCU] onSendMessage callback:', { 
+                      text, 
+                      receiverId, 
+                      activeTagDriverId: activeTag?.driver_id,
+                      passengerEmitSendMessage: !!passengerEmitSendMessage 
+                    });
                     const finalReceiverId = receiverId || activeTag?.driver_id;
-                    if (passengerEmitSendMessage && finalReceiverId) {
+                    if (!finalReceiverId) {
+                      console.error('❌ [YOLCU] finalReceiverId BOŞ!');
+                      return;
+                    }
+                    if (passengerEmitSendMessage) {
+                      console.log('📤 [YOLCU] passengerEmitSendMessage çağrılıyor...');
                       passengerEmitSendMessage({
                         sender_id: user?.id || '',
                         sender_name: user?.name || 'Yolcu',
@@ -5472,6 +5482,9 @@ function PassengerDashboard({
                         message: text,
                         tag_id: activeTag?.id,
                       });
+                      console.log('✅ [YOLCU] passengerEmitSendMessage çağrıldı!');
+                    } else {
+                      console.error('❌ [YOLCU] passengerEmitSendMessage TANIMLI DEĞİL!');
                     }
                   }}
                 />
