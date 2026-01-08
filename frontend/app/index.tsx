@@ -6738,7 +6738,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             }}
           />
           
-          {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz */}
+          {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz (PURE SOCKET - ANLIK) */}
           <ChatBubble
             visible={driverChatVisible}
             onClose={() => setDriverChatVisible(false)}
@@ -6747,22 +6747,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             userId={user?.id || ''}
             otherUserId={activeTag?.passenger_id || ''}
             tagId={activeTag?.id || ''}
+            incomingMessage={driverIncomingMessage}
             onSendMessage={(text, receiverId) => {
-              // Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
-              console.log('📤 [SÜRÜCÜ] Socket notification (best-effort):', { text, receiverId });
+              // Socket ile ANLIK gönder
+              console.log('📤 [SÜRÜCÜ] Socket ANLIK mesaj:', text);
               const finalReceiverId = receiverId || activeTag?.passenger_id;
               if (driverEmitSendMessage && finalReceiverId) {
-                try {
-                  driverEmitSendMessage({
-                    sender_id: user?.id || '',
-                    sender_name: user?.name || 'Sürücü',
-                    receiver_id: finalReceiverId,
-                    message: text,
-                    tag_id: activeTag?.id,
-                  });
-                } catch (e) {
-                  console.warn('⚠️ Socket notification failed (non-blocking)');
-                }
+                driverEmitSendMessage({
+                  sender_id: user?.id || '',
+                  sender_name: user?.name || 'Sürücü',
+                  receiver_id: finalReceiverId,
+                  message: text,
+                  tag_id: activeTag?.id,
+                });
               }
             }}
           />
