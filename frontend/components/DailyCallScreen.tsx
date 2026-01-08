@@ -60,7 +60,7 @@ export default function DailyCallScreen({
   const maxDuration = 600;
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
     ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
-    : 'https://rideconvo.preview.emergentagent.com/api';
+    : 'https://socketmsgs.preview.emergentagent.com/api';
 
   // Timer - only when connected
   useEffect(() => {

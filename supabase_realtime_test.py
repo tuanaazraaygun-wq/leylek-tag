@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 
 # Test Configuration from review request
-BACKEND_URL = "https://rideconvo.preview.emergentagent.com/api"
+BACKEND_URL = "https://socketmsgs.preview.emergentagent.com/api"
 TEST_PHONE = "5321234567"
 TEST_OTP = "123456"
 

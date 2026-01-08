@@ -40,7 +40,7 @@ interface VideoCallProps {
 
 // Hardcoded değerler - APK için güvenli
 const AGORA_APP_ID = '43c07f0cef814fd4a5ae3283c8bd77de';
-const BACKEND_URL = 'https://rideconvo.preview.emergentagent.com';
+const BACKEND_URL = 'https://socketmsgs.preview.emergentagent.com';
 const MAX_CALL_DURATION = 600; // 10 dakika
 const RING_TIMEOUT = 60; // 60 saniye
 const FAST_POLL_INTERVAL = 500; // 500ms - HIZLI POLLING
