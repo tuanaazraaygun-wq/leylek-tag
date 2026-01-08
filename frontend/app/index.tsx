@@ -4476,20 +4476,21 @@ function PassengerDashboard({
       // Backend'den onay geldi - tag'i yenile
       loadActiveTag();
     },
-    // 🆕 Mesajlaşma
+    // 🆕 Mesajlaşma - PURE SOCKET (ANLIK)
     onNewMessage: (data) => {
-      console.log('💬 YOLCU - YENİ MESAJ GELDİ:', data);
-      // Gelen mesajı chat'e ekle
-      setPassengerChatMessages(prev => [...prev, {
-        id: data.id,
+      console.log('💬 YOLCU - YENİ MESAJ GELDİ (ANLIK):', data);
+      // Gelen mesajı ChatBubble'a ilet
+      setPassengerIncomingMessage({
         text: data.message,
-        sender: 'other',
-        timestamp: new Date(data.timestamp),
-      }]);
+        senderId: data.sender_id,
+        timestamp: data.timestamp || Date.now(),
+      });
       // Bildirim göster
-      setToastMessage(`💬 ${data.sender_name}: ${data.message.substring(0, 30)}...`);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
+      if (!passengerChatVisible) {
+        setToastMessage(`💬 ${data.sender_name}: ${data.message.substring(0, 30)}...`);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
     },
   });
   
