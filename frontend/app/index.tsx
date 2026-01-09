@@ -5493,6 +5493,66 @@ function PassengerDashboard({
                     }
                   }}
                 />
+                
+                {/* 🆕 End Trip Modal - Yolcu */}
+                <EndTripModal
+                  visible={passengerEndTripModalVisible}
+                  onClose={() => setPassengerEndTripModalVisible(false)}
+                  isDriver={false}
+                  otherUserName={activeTag?.driver_name || 'Sürücü'}
+                  onComplete={async () => {
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/driver/complete-tag/${activeTag?.id}?user_id=${user?.id}&approved=true`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        setActiveTag(null);
+                        setDestination(null);
+                        setScreen('role-select');
+                      } else {
+                        Alert.alert('Hata', data.detail);
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İşlem başarısız');
+                    }
+                  }}
+                  onRequestApproval={async () => {
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/request-end?tag_id=${activeTag?.id}&user_id=${user?.id}&user_type=passenger`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        Alert.alert('✅ İstek Gönderildi', 'Sürücünün onayı bekleniyor...');
+                      } else {
+                        Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İstek gönderilemedi');
+                    }
+                  }}
+                  onForceEnd={async () => {
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/force-end?tag_id=${activeTag?.id}&user_id=${user?.id}`,
+                        { method: 'POST' }
+                      );
+                      const data = await response.json();
+                      if (data.success) {
+                        setActiveTag(null);
+                        setDestination(null);
+                        setScreen('role-select');
+                      } else {
+                        Alert.alert('Hata', data.detail);
+                      }
+                    } catch (error) {
+                      Alert.alert('Hata', 'İşlem başarısız');
+                    }
+                  }}
+                />
               </View>
             ) : null}
       </ScrollView>
