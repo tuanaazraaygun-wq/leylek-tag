@@ -361,11 +361,22 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emit('call_end', data);
   }, [emit]);
 
-  // 🆕 Mesajlaşma - Diğer emit'ler gibi aynı pattern
+  // 🆕 Mesajlaşma - Socket connected kontrolü OLMADAN direkt emit
   const emitSendMessage = useCallback((data: any) => {
+    const socket = getOrCreateSocket();
     console.log('💬 [SocketProvider] emitSendMessage:', JSON.stringify(data).substring(0, 100));
-    emit('send_message', data);
-  }, [emit]);
+    console.log('💬 [SocketProvider] Socket connected:', socket.connected);
+    
+    // Bağlı değilse bağlan
+    if (!socket.connected) {
+      console.log('🔌 [SocketProvider] Socket bağlı değil, bağlanıyor...');
+      socket.connect();
+    }
+    
+    // Her durumda emit yap - Socket.IO buffer'a alır
+    socket.emit('send_message', data);
+    console.log('✅ [SocketProvider] send_message emit edildi!');
+  }, []);
 
   // ══════════════════════════════════════════════════════════════════
   // CONTEXT VALUE
