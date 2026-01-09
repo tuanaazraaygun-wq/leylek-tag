@@ -2288,6 +2288,13 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
                     current = user_result.data[0].get("total_trips", 0) or 0
                     supabase.table("users").update({"total_trips": current + 1}).eq("id", uid).execute()
         
+        # 🆕 Trip bittiğinde chat mesajlarını sil
+        try:
+            delete_result = supabase.table("chat_messages").delete().eq("tag_id", tag_id).execute()
+            logger.info(f"🗑️ Chat mesajları silindi: tag_id={tag_id}")
+        except Exception as chat_err:
+            logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
+        
         logger.info(f"✅ Yolculuk tamamlandı: {tag_id}")
         return {"success": True, "message": "Yolculuk tamamlandı"}
     except HTTPException:
