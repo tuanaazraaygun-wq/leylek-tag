@@ -226,13 +226,54 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Professional Phone Call System"
-    - "Supabase Realtime for Calls"
+    - "Offer System Fix - Double Listener Bug"
+    - "Passenger Receiving Offers"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: |
+      ## 🔥 TEKLİF SİSTEMİ DÜZELTME - Haziran 2025
+      
+      ### SORUN:
+      Şoför teklif gönderiyor, sunucu logları teklifin gönderildiğini doğruluyor,
+      AMA yolcu teklifleri alamıyordu.
+      
+      ### KÖK NEDEN:
+      ÇİFT LISTENER SORUNU:
+      1. `useSocket` hook'u → `socket.on('new_offer')` listener'ı ekliyordu (satır 388)
+      2. `useOffers` hook'u → kendi `socket.on('new_offer')` listener'ını ekliyordu
+      
+      Bu iki listener çakışıyordu ve teklifler düzgün işlenemiyordu.
+      
+      ### ÇÖZÜM:
+      #### 1. useOffers.ts - TAMAMEN YENİDEN YAZILDI (v3.0)
+      - ❌ Socket listener'lar KALDIRILDI
+      - ✅ Sadece state management yapıyor
+      - ✅ addOffer() fonksiyonu ile dışarıdan teklif ekleniyor
+      - ✅ Daha basit ve anlaşılır kod
+      
+      #### 2. index.tsx - useOffers hook çağrısı basitleştirildi
+      - ❌ socket parametresi kaldırıldı
+      - ❌ emitAcceptOffer/emitRejectOffer parametreleri kaldırıldı
+      - ✅ enabled kontrolü gevşetildi
+      
+      ### YENİ TEKLİF AKIŞI:
+      1. Şoför teklif gönderiyor → socket server'a
+      2. Socket server → yolcuya `new_offer` event'i
+      3. useSocket hook'u event'i yakalıyor (TEK listener)
+      4. onNewOffer callback'ı çağrılıyor
+      5. addOfferFromSocket() ile teklif listeye ekleniyor
+      6. UI ANINDA güncelleniyor
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. Yolcu teklif isteği oluştursun
+      2. Şoför teklif göndersin
+      3. Yolcu tarafında teklif ANINDA görünmeli (< 1 saniye)
+      4. Teklif kabul/red işlemleri çalışmalı
+
   - agent: "main"
     message: |
       ## 📞 YENİ PROFESYONEL ARAMA SİSTEMİ - Aralık 2024
