@@ -4209,29 +4209,25 @@ function PassengerDashboard({
     }
   };
   
-  // ========== SOCKET.IO - TEKLİF YÖNETİMİ (REALTIME) ==========
-  // useOffers hook'u - Socket.IO ONLY
-  // 🔥 BUGFIX: onNewOffer callback KALDIRILDI - useSocket'teki callback yeterli
-  // Bu çift listener sorununu çözer
+  // ========== TEKLİF YÖNETİMİ (STATE ONLY) ==========
+  // useOffers hook'u - SIMPLIFIED v3
+  // Socket listener'lar KALDIRILDI - Sadece state management
+  // Teklifler useSocket'teki onNewOffer callback'ından addOffer ile ekleniyor
   const { 
     offers: realtimeOffers, 
     isLoading: offersLoading,
-    acceptOffer: acceptOfferRealtime,
-    rejectOffer: rejectOfferRealtime,
+    acceptOffer: acceptOfferAPI,
+    rejectOffer: rejectOfferAPI,
     clearOffers,
-    addOffer: addOfferFromSocket  // 🆕 Socket'ten teklif ekle (useSocket onNewOffer callback'ından çağrılır)
+    addOffer: addOfferFromSocket,
+    removeOffer,
+    updateOfferStatus
   } = useOffers({
     userId: user?.id || '',
     tagId: activeTag?.id,
     requestId: currentRequestId || undefined,
-    socket: passengerSocket,
-    emitAcceptOffer: socketAcceptOffer,
-    emitRejectOffer: socketRejectOffer,
     isDriver: false,
-    // 🔥 BUGFIX: enabled kontrolü gevşetildi - activeTag.id yerine user.id yeterli
-    // Çünkü teklifler request_id ile eşleşiyor, tag_id ile değil
-    enabled: !!(user?.id && currentRequestId)
-    // 🔥 REMOVED: onNewOffer - artık useSocket'teki onNewOffer callback'ı addOfferFromSocket çağırıyor
+    enabled: !!(user?.id)
   });
   
   // Teklifleri fiyata göre sırala (ucuzdan pahalıya)
