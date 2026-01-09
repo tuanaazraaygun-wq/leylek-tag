@@ -5831,6 +5831,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   
   // 🆕 End Trip Modal State'leri (Sürücü)
   const [driverEndTripModalVisible, setDriverEndTripModalVisible] = useState(false);
+  const [driverForceEndConfirmVisible, setDriverForceEndConfirmVisible] = useState(false);
   
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
