@@ -4210,32 +4210,28 @@ function PassengerDashboard({
   };
   
   // ========== SOCKET.IO - TEKLİF YÖNETİMİ (REALTIME) ==========
-  // useOffers hook'u - Supabase Realtime KALDIRILDI, Socket.IO ONLY
+  // useOffers hook'u - Socket.IO ONLY
+  // 🔥 BUGFIX: onNewOffer callback KALDIRILDI - useSocket'teki callback yeterli
+  // Bu çift listener sorununu çözer
   const { 
     offers: realtimeOffers, 
     isLoading: offersLoading,
     acceptOffer: acceptOfferRealtime,
     rejectOffer: rejectOfferRealtime,
     clearOffers,
-    addOffer: addOfferFromSocket  // 🆕 Socket'ten teklif ekle
+    addOffer: addOfferFromSocket  // 🆕 Socket'ten teklif ekle (useSocket onNewOffer callback'ından çağrılır)
   } = useOffers({
     userId: user?.id || '',
     tagId: activeTag?.id,
-    requestId: currentRequestId || undefined,  // 🆕 request_id for duplicate prevention
-    socket: passengerSocket,  // 🆕 Socket instance for realtime
-    emitAcceptOffer: socketAcceptOffer,  // 🔥 NEW: Direct emit function
-    emitRejectOffer: socketRejectOffer,  // 🔥 NEW: Direct emit function
+    requestId: currentRequestId || undefined,
+    socket: passengerSocket,
+    emitAcceptOffer: socketAcceptOffer,
+    emitRejectOffer: socketRejectOffer,
     isDriver: false,
-    enabled: !!(user?.id && activeTag?.id && (activeTag?.status === 'pending' || activeTag?.status === 'offers_received')),
-    onNewOffer: async (offer) => {
-      console.log('🔔 YENİ TEKLİF GELDİ (Socket):', offer.price, 'TL');
-      // Ses çal
-      await playOfferSound();
-      // Bildirim göster
-      setToastMessage(`💰 Yeni teklif: ${offer.price} TL`);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
-    }
+    // 🔥 BUGFIX: enabled kontrolü gevşetildi - activeTag.id yerine user.id yeterli
+    // Çünkü teklifler request_id ile eşleşiyor, tag_id ile değil
+    enabled: !!(user?.id && currentRequestId)
+    // 🔥 REMOVED: onNewOffer - artık useSocket'teki onNewOffer callback'ı addOfferFromSocket çağırıyor
   });
   
   // Teklifleri fiyata göre sırala (ucuzdan pahalıya)
