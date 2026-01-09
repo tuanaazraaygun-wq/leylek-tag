@@ -4136,6 +4136,7 @@ function PassengerDashboard({
   
   // 🆕 End Trip Modal State'leri (Yolcu)
   const [passengerEndTripModalVisible, setPassengerEndTripModalVisible] = useState(false);
+  const [passengerForceEndConfirmVisible, setPassengerForceEndConfirmVisible] = useState(false);
   
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
