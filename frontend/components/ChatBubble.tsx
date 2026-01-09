@@ -1,10 +1,10 @@
 /**
- * ChatBubble.tsx - SUPABASE CHAT
+ * ChatBubble.tsx - PURE REALTIME CHAT (NO DATABASE)
  * 
- * ✅ HTTP API ile mesaj gönder
- * ✅ Supabase Realtime ile anlık mesaj al
- * ✅ Tag bitince mesajlar silinir
- * ✅ Güvenilir ve kararlı
+ * ✅ Supabase Realtime Broadcast ile anlık mesajlaşma
+ * ✅ Database'e HİÇ kaydetmez
+ * ✅ Mesajlar sadece bellekte tutulur
+ * ✅ Trip bitince otomatik temizlenir
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -20,10 +20,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -32,9 +31,6 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const supabaseUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// API URL
-const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 interface Message {
   id: string;
@@ -52,8 +48,8 @@ interface ChatBubbleProps {
   userId: string;
   otherUserId: string;
   tagId: string;
-  onSendMessage?: (text: string, receiverId: string) => void; // Artık kullanılmıyor ama uyumluluk için
-  incomingMessage?: { text: string; senderId: string; timestamp: number } | null; // Artık kullanılmıyor
+  onSendMessage?: (text: string, receiverId: string) => void;
+  incomingMessage?: { text: string; senderId: string; timestamp: number } | null;
 }
 
 // Öneri mesajları
@@ -85,149 +81,106 @@ export default function ChatBubble({
   const [inputText, setInputText] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSending, setIsSending] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const flatListRef = useRef<FlatList>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
   
   const suggestions = isDriver ? DRIVER_SUGGESTIONS : PASSENGER_SUGGESTIONS;
 
   // ═══════════════════════════════════════════════════════════════
-  // MESAJLARI YÜKLE (İlk açılışta)
+  // SUPABASE REALTIME BROADCAST - DATABASE'E KAYDETMEZ!
   // ═══════════════════════════════════════════════════════════════
   
-  const loadMessages = useCallback(async () => {
-    if (!tagId || !visible) return;
+  useEffect(() => {
+    if (!tagId || !visible || !userId) return;
     
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/api/chat/messages?tag_id=${tagId}&limit=50`);
-      const data = await response.json();
-      
-      if (data.success && data.messages) {
-        const loadedMessages: Message[] = data.messages.map((msg: any) => ({
-          id: msg.id,
-          text: msg.message,
-          sender: msg.sender_id === userId ? 'me' : 'other',
-          timestamp: new Date(msg.created_at),
-          senderName: msg.sender_name,
-        }));
-        setMessages(loadedMessages);
+    console.log('🔔 [ChatBubble] Realtime Broadcast başlatılıyor:', { tagId, userId });
+    
+    // Broadcast channel oluştur - HER İKİ KULLANICI AYNI CHANNEL'A BAĞLANIR
+    const channel = supabase.channel(`chat-broadcast-${tagId}`, {
+      config: {
+        broadcast: {
+          self: false, // Kendi mesajlarını alma
+        },
+      },
+    });
+    
+    // Mesaj dinle
+    channel
+      .on('broadcast', { event: 'new-message' }, (payload) => {
+        console.log('📩 [ChatBubble] Broadcast mesaj geldi:', payload);
+        
+        const msg = payload.payload;
+        
+        // Kendi mesajımı tekrar ekleme
+        if (msg.senderId === userId) {
+          console.log('📩 [ChatBubble] Kendi mesajım, atlanıyor');
+          return;
+        }
+        
+        const newMessage: Message = {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          text: msg.text,
+          sender: 'other',
+          timestamp: new Date(msg.timestamp),
+          senderName: msg.senderName,
+        };
+        
+        setMessages(prev => [...prev, newMessage]);
+        
+        // Minimized ise unread count artır
+        if (isMinimized) {
+          setUnreadCount(prev => prev + 1);
+        }
         
         // Scroll to bottom
         setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
+          flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
-      }
-    } catch (error) {
-      console.error('❌ Mesajlar yüklenemedi:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [tagId, userId, visible]);
-
-  // ═══════════════════════════════════════════════════════════════
-  // SUPABASE REALTIME - YENİ MESAJLARI DİNLE
-  // ═══════════════════════════════════════════════════════════════
-  
-  useEffect(() => {
-    if (!tagId || !visible) return;
-    
-    console.log('🔔 [ChatBubble] Supabase Realtime başlatılıyor, tagId:', tagId);
-    
-    // Realtime subscription
-    const channel = supabase
-      .channel(`chat_${tagId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `tag_id=eq.${tagId}`,
-        },
-        (payload) => {
-          console.log('📩 [ChatBubble] Yeni mesaj geldi:', payload);
-          const newMsg = payload.new as any;
-          
-          // Kendi gönderdiğim mesajı tekrar ekleme
-          if (newMsg.sender_id === userId) {
-            console.log('📩 [ChatBubble] Kendi mesajım, atlanıyor');
-            return;
-          }
-          
-          const message: Message = {
-            id: newMsg.id,
-            text: newMsg.message,
-            sender: 'other',
-            timestamp: new Date(newMsg.created_at),
-            senderName: newMsg.sender_name,
-          };
-          
-          setMessages(prev => {
-            // Duplicate kontrolü
-            if (prev.some(m => m.id === message.id)) {
-              return prev;
-            }
-            return [...prev, message];
-          });
-          
-          // Minimized ise unread count artır
-          if (isMinimized) {
-            setUnreadCount(prev => prev + 1);
-          }
-          
-          // Scroll to bottom
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }
-      )
+      })
       .subscribe((status) => {
-        console.log('🔔 [ChatBubble] Realtime subscription status:', status);
+        console.log('🔔 [ChatBubble] Broadcast subscription status:', status);
+        setIsConnected(status === 'SUBSCRIBED');
       });
     
+    channelRef.current = channel;
+    
     return () => {
-      console.log('🔔 [ChatBubble] Realtime subscription kapatılıyor');
-      supabase.removeChannel(channel);
+      console.log('🔔 [ChatBubble] Broadcast channel kapatılıyor');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [tagId, userId, visible, isMinimized]);
 
-  // İlk açılışta mesajları yükle
-  useEffect(() => {
-    if (visible && tagId) {
-      loadMessages();
-    }
-  }, [visible, tagId, loadMessages]);
-
   // ═══════════════════════════════════════════════════════════════
-  // MESAJ GÖNDER (HTTP API ile)
+  // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
   // ═══════════════════════════════════════════════════════════════
   
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || isSending) return;
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || !channelRef.current) return;
     
     const trimmedText = text.trim();
-    setIsSending(true);
     
-    console.log('📤 [ChatBubble] Mesaj gönderiliyor:', {
+    console.log('📤 [ChatBubble] Mesaj gönderiliyor (broadcast):', {
       text: trimmedText,
       tagId,
       userId,
       otherUserId,
     });
     
-    // Optimistic UI - hemen ekranda göster
-    const tempId = `temp-${Date.now()}-${Math.random()}`;
-    const tempMessage: Message = {
-      id: tempId,
+    // 1. Lokal olarak ekle (anlık UI güncelleme)
+    const newMessage: Message = {
+      id: `msg-${Date.now()}-${Math.random()}`,
       text: trimmedText,
       sender: 'me',
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, tempMessage]);
+    setMessages(prev => [...prev, newMessage]);
     setInputText('');
     
     // Scroll to bottom
@@ -235,44 +188,26 @@ export default function ChatBubble({
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
     
+    // 2. Broadcast ile gönder - DATABASE'E KAYDETMEZ!
     try {
-      const response = await fetch(`${API_URL}/api/chat/send-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      await channelRef.current.send({
+        type: 'broadcast',
+        event: 'new-message',
+        payload: {
+          text: trimmedText,
+          senderId: userId,
+          senderName: isDriver ? 'Sürücü' : 'Yolcu',
+          receiverId: otherUserId,
+          timestamp: new Date().toISOString(),
         },
-        body: JSON.stringify({
-          tag_id: tagId,
-          sender_id: userId,
-          sender_name: isDriver ? 'Sürücü' : 'Yolcu',
-          receiver_id: otherUserId,
-          message: trimmedText,
-        }),
       });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('✅ [ChatBubble] Mesaj gönderildi:', data);
-        
-        // Temp mesajı gerçek ID ile güncelle
-        setMessages(prev => prev.map(m => 
-          m.id === tempId ? { ...m, id: data.message?.id || tempId } : m
-        ));
-      } else {
-        console.error('❌ [ChatBubble] Mesaj gönderilemedi:', data);
-        // Hata durumunda temp mesajı kaldır
-        setMessages(prev => prev.filter(m => m.id !== tempId));
-      }
+      console.log('✅ [ChatBubble] Broadcast mesaj gönderildi!');
     } catch (error) {
-      console.error('❌ [ChatBubble] Mesaj gönderme hatası:', error);
-      // Hata durumunda temp mesajı kaldır
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-    } finally {
-      setIsSending(false);
-      Keyboard.dismiss();
+      console.error('❌ [ChatBubble] Broadcast gönderme hatası:', error);
     }
-  };
+    
+    Keyboard.dismiss();
+  }, [tagId, userId, otherUserId, isDriver]);
 
   // ═══════════════════════════════════════════════════════════════
   // ANİMASYONLAR
@@ -382,8 +317,10 @@ export default function ChatBubble({
             <View style={styles.headerInfo}>
               <Text style={styles.headerName}>{otherUserName}</Text>
               <View style={styles.onlineStatus}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.onlineText}>Çevrimiçi</Text>
+                <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#4CAF50' : '#999' }]} />
+                <Text style={[styles.onlineText, { color: isConnected ? '#4CAF50' : '#999' }]}>
+                  {isConnected ? 'Bağlı' : 'Bağlanıyor...'}
+                </Text>
               </View>
             </View>
           </View>
@@ -398,46 +335,39 @@ export default function ChatBubble({
         </View>
 
         {/* Messages */}
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4CAF50" />
-            <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            style={styles.messageList}
-            contentContainerStyle={styles.messageListContent}
-            renderItem={({ item }) => (
-              <View style={[
-                styles.messageBubble,
-                item.sender === 'me' ? styles.myMessage : styles.otherMessage
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          style={styles.messageList}
+          contentContainerStyle={styles.messageListContent}
+          renderItem={({ item }) => (
+            <View style={[
+              styles.messageBubble,
+              item.sender === 'me' ? styles.myMessage : styles.otherMessage
+            ]}>
+              <Text style={[
+                styles.messageText,
+                item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
               ]}>
-                <Text style={[
-                  styles.messageText,
-                  item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
-                ]}>
-                  {item.text}
-                </Text>
-                <Text style={[
-                  styles.messageTime,
-                  item.sender === 'me' ? styles.myMessageTime : styles.otherMessageTime
-                ]}>
-                  {item.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-              </View>
-            )}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="chatbubbles-outline" size={48} color="#ccc" />
-                <Text style={styles.emptyText}>Henüz mesaj yok</Text>
-                <Text style={styles.emptySubtext}>Bir mesaj göndererek sohbeti başlatın</Text>
-              </View>
-            }
-          />
-        )}
+                {item.text}
+              </Text>
+              <Text style={[
+                styles.messageTime,
+                item.sender === 'me' ? styles.myMessageTime : styles.otherMessageTime
+              ]}>
+                {item.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="chatbubbles-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>Henüz mesaj yok</Text>
+              <Text style={styles.emptySubtext}>Bir mesaj göndererek sohbeti başlatın</Text>
+            </View>
+          }
+        />
 
         {/* Quick suggestions */}
         <View style={styles.suggestionsContainer}>
@@ -450,7 +380,6 @@ export default function ChatBubble({
               <TouchableOpacity 
                 style={styles.suggestionChip}
                 onPress={() => sendMessage(item)}
-                disabled={isSending}
               >
                 <Text style={styles.suggestionText}>{item}</Text>
               </TouchableOpacity>
@@ -468,21 +397,16 @@ export default function ChatBubble({
             onChangeText={setInputText}
             multiline
             maxLength={500}
-            editable={!isSending}
           />
           <TouchableOpacity 
             style={[
               styles.sendButton,
-              (!inputText.trim() || isSending) && styles.sendButtonDisabled
+              !inputText.trim() && styles.sendButtonDisabled
             ]}
             onPress={() => sendMessage(inputText)}
-            disabled={!inputText.trim() || isSending}
+            disabled={!inputText.trim()}
           >
-            {isSending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons name="send" size={20} color="#fff" />
-            )}
+            <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -539,12 +463,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#4CAF50',
     marginRight: 4,
   },
   onlineText: {
     fontSize: 12,
-    color: '#4CAF50',
   },
   headerButtons: {
     flexDirection: 'row',
@@ -552,16 +474,6 @@ const styles = StyleSheet.create({
   headerBtn: {
     padding: 8,
     marginLeft: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#666',
   },
   messageList: {
     flex: 1,
