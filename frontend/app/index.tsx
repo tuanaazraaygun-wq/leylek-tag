@@ -4133,6 +4133,9 @@ function PassengerDashboard({
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
   const [passengerIncomingMessage, setPassengerIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
   
+  // 🆕 End Trip Modal State'leri (Yolcu)
+  const [passengerEndTripModalVisible, setPassengerEndTripModalVisible] = useState(false);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
