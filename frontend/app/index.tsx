@@ -4874,9 +4874,21 @@ function PassengerDashboard({
   // Teklifi 10 dakikalığına gizle (çarpı butonu)
   const handleDismissOffer = async (offerId: string) => {
     try {
+      // Teklifin driver_id'sini bul
+      const offer = offers.find(o => o.id === offerId || o.offer_id === offerId);
+      const driverId = offer?.driver_id || '';
+      
       // useOffers hook'undan gelen rejectOffer kullan
-      const success = await rejectOfferRealtime(offerId);
+      const success = await rejectOfferAPI(offerId, driverId);
       if (success) {
+        // Socket üzerinden de bildir
+        if (socketRejectOffer) {
+          socketRejectOffer({
+            request_id: currentRequestId,
+            offer_id: offerId,
+            driver_id: driverId
+          });
+        }
         // Toast göster
         setToastMessage('Teklif 10 dakika boyunca gizlendi');
         setShowToast(true);
@@ -4898,8 +4910,19 @@ function PassengerDashboard({
 
     try {
       // useOffers hook'undan gelen acceptOffer kullan
-      const success = await acceptOfferRealtime(offerId);
+      const success = await acceptOfferAPI(offerId, selectedOffer.driver_id, activeTag.id, currentRequestId || undefined);
       if (success) {
+        // Socket üzerinden de bildir
+        if (socketAcceptOffer) {
+          socketAcceptOffer({
+            request_id: currentRequestId,
+            offer_id: offerId,
+            driver_id: selectedOffer.driver_id,
+            tag_id: activeTag.id,
+            passenger_id: user?.id
+          });
+        }
+        
         // 🔇 Ses devre dışı - kullanıcı isteği
         // await playMatchSound();
         
