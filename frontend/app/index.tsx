@@ -17,6 +17,7 @@ import IncomingCallScreen from '../components/IncomingCallScreen'; // 🆕 Gelen
 import OutgoingCallScreen from '../components/OutgoingCallScreen'; // 🆕 Araniyor Ekrani
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
+import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
 import useSocket from '../hooks/useSocket';
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
