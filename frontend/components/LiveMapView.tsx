@@ -107,6 +107,7 @@ export default function LiveMapView({
   onRequestTripEnd,
   onForceEnd,
   onAutoComplete,
+  onShowEndTripModal,  // 🆕 Modern modal göster
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   
