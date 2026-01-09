@@ -6817,6 +6817,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 }
               }
             }}
+            onShowEndTripModal={() => setDriverEndTripModalVisible(true)}
           />
           
           {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz (PURE SOCKET - ANLIK) */}
