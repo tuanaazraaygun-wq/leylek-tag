@@ -166,7 +166,7 @@ export default function EndTripModal({
               </LinearGradient>
               <View style={styles.optionTextContainer}>
                 <Text style={styles.optionTitle}>Hemen Tamamla</Text>
-                <Text style={styles.optionDescription}>Yolculuğu şimdi bitir</Text>
+                <Text style={styles.optionDescription}>Yolculuğu şimdi bitir (0 puan)</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
             </TouchableOpacity>
