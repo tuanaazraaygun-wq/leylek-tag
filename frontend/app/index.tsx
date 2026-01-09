@@ -5461,6 +5461,9 @@ function PassengerDashboard({
                   tagId={activeTag?.id || ''}
                   incomingMessage={passengerIncomingMessage}
                   onSendMessage={(text, receiverId) => {
+                    // DEBUG ALERT 2 - Callback'in çalışıp çalışmadığını görmek için
+                    Alert.alert('CALLBACK', `passengerEmitSendMessage: ${!!passengerEmitSendMessage}\nfinalReceiverId: ${receiverId || activeTag?.driver_id || 'BOŞ'}`);
+                    
                     // Socket ile ANLIK gönder
                     console.log('📤 [YOLCU] onSendMessage callback:', { 
                       text, 
@@ -5485,6 +5488,7 @@ function PassengerDashboard({
                       console.log('✅ [YOLCU] passengerEmitSendMessage çağrıldı!');
                     } else {
                       console.error('❌ [YOLCU] passengerEmitSendMessage TANIMLI DEĞİL!');
+                      Alert.alert('HATA', 'passengerEmitSendMessage TANIMLI DEĞİL!');
                     }
                   }}
                 />
