@@ -1,13 +1,13 @@
 /**
- * ChatBubble.tsx - PURE SOCKET CHAT (ANLIK)
+ * ChatBubble.tsx - SUPABASE CHAT
  * 
- * ✅ Sadece Socket - Database YOK
- * ✅ Anlık mesajlaşma (~50ms)
+ * ✅ HTTP API ile mesaj gönder
+ * ✅ Supabase Realtime ile anlık mesaj al
  * ✅ Tag bitince mesajlar silinir
- * ✅ Offline kullanıcıya Push Notification
+ * ✅ Güvenilir ve kararlı
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,16 +20,28 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Supabase client
+const supabaseUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// API URL
+const API_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 interface Message {
   id: string;
   text: string;
   sender: 'me' | 'other';
   timestamp: Date;
+  senderName?: string;
 }
 
 interface ChatBubbleProps {
@@ -40,8 +52,8 @@ interface ChatBubbleProps {
   userId: string;
   otherUserId: string;
   tagId: string;
-  onSendMessage: (text: string, receiverId: string) => void; // Socket emit
-  incomingMessage?: { text: string; senderId: string; timestamp: number } | null; // Socket'ten gelen mesaj
+  onSendMessage?: (text: string, receiverId: string) => void; // Artık kullanılmıyor ama uyumluluk için
+  incomingMessage?: { text: string; senderId: string; timestamp: number } | null; // Artık kullanılmıyor
 }
 
 // Öneri mesajları
@@ -68,13 +80,13 @@ export default function ChatBubble({
   userId,
   otherUserId,
   tagId,
-  onSendMessage,
-  incomingMessage,
 }: ChatBubbleProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -83,269 +95,394 @@ export default function ChatBubble({
   const suggestions = isDriver ? DRIVER_SUGGESTIONS : PASSENGER_SUGGESTIONS;
 
   // ═══════════════════════════════════════════════════════════════
-  // GELEN MESAJI DİNLE (Socket'ten)
+  // MESAJLARI YÜKLE (İlk açılışta)
+  // ═══════════════════════════════════════════════════════════════
+  
+  const loadMessages = useCallback(async () => {
+    if (!tagId || !visible) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/chat/messages?tag_id=${tagId}&limit=50`);
+      const data = await response.json();
+      
+      if (data.success && data.messages) {
+        const loadedMessages: Message[] = data.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.message,
+          sender: msg.sender_id === userId ? 'me' : 'other',
+          timestamp: new Date(msg.created_at),
+          senderName: msg.sender_name,
+        }));
+        setMessages(loadedMessages);
+        
+        // Scroll to bottom
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 100);
+      }
+    } catch (error) {
+      console.error('❌ Mesajlar yüklenemedi:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tagId, userId, visible]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // SUPABASE REALTIME - YENİ MESAJLARI DİNLE
   // ═══════════════════════════════════════════════════════════════
   
   useEffect(() => {
-    if (incomingMessage && incomingMessage.senderId !== userId) {
-      const newMessage: Message = {
-        id: `msg-${Date.now()}-${Math.random()}`,
-        text: incomingMessage.text,
-        sender: 'other',
-        timestamp: new Date(incomingMessage.timestamp),
-      };
-      
-      setMessages(prev => [...prev, newMessage]);
-      
-      // Minimized ise unread count artır
-      if (isMinimized) {
-        setUnreadCount(prev => prev + 1);
-      }
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+    if (!tagId || !visible) return;
+    
+    console.log('🔔 [ChatBubble] Supabase Realtime başlatılıyor, tagId:', tagId);
+    
+    // Realtime subscription
+    const channel = supabase
+      .channel(`chat_${tagId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `tag_id=eq.${tagId}`,
+        },
+        (payload) => {
+          console.log('📩 [ChatBubble] Yeni mesaj geldi:', payload);
+          const newMsg = payload.new as any;
+          
+          // Kendi gönderdiğim mesajı tekrar ekleme
+          if (newMsg.sender_id === userId) {
+            console.log('📩 [ChatBubble] Kendi mesajım, atlanıyor');
+            return;
+          }
+          
+          const message: Message = {
+            id: newMsg.id,
+            text: newMsg.message,
+            sender: 'other',
+            timestamp: new Date(newMsg.created_at),
+            senderName: newMsg.sender_name,
+          };
+          
+          setMessages(prev => {
+            // Duplicate kontrolü
+            if (prev.some(m => m.id === message.id)) {
+              return prev;
+            }
+            return [...prev, message];
+          });
+          
+          // Minimized ise unread count artır
+          if (isMinimized) {
+            setUnreadCount(prev => prev + 1);
+          }
+          
+          // Scroll to bottom
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        }
+      )
+      .subscribe((status) => {
+        console.log('🔔 [ChatBubble] Realtime subscription status:', status);
+      });
+    
+    return () => {
+      console.log('🔔 [ChatBubble] Realtime subscription kapatılıyor');
+      supabase.removeChannel(channel);
+    };
+  }, [tagId, userId, visible, isMinimized]);
+
+  // İlk açılışta mesajları yükle
+  useEffect(() => {
+    if (visible && tagId) {
+      loadMessages();
     }
-  }, [incomingMessage, userId, isMinimized]);
+  }, [visible, tagId, loadMessages]);
 
   // ═══════════════════════════════════════════════════════════════
-  // MESAJ GÖNDER (Socket ile ANLIK)
+  // MESAJ GÖNDER (HTTP API ile)
   // ═══════════════════════════════════════════════════════════════
   
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return;
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isSending) return;
     
     const trimmedText = text.trim();
+    setIsSending(true);
     
-    // DEBUG: otherUserId kontrolü
-    console.log('📤 [ChatBubble] sendMessage çağrıldı:', {
+    console.log('📤 [ChatBubble] Mesaj gönderiliyor:', {
       text: trimmedText,
-      otherUserId: otherUserId,
-      tagId: tagId,
-      userId: userId
+      tagId,
+      userId,
+      otherUserId,
     });
     
-    if (!otherUserId) {
-      console.error('❌ [ChatBubble] otherUserId BOŞ! Mesaj gönderilemez.');
-      return;
-    }
-    
-    // 1. Lokal olarak ekle (anlık UI güncelleme)
-    const newMessage: Message = {
-      id: `msg-${Date.now()}-${Math.random()}`,
+    // Optimistic UI - hemen ekranda göster
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const tempMessage: Message = {
+      id: tempId,
       text: trimmedText,
       sender: 'me',
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, newMessage]);
+    setMessages(prev => [...prev, tempMessage]);
     setInputText('');
-    
-    // 2. Socket ile ANLIK gönder
-    console.log('📤 [ChatBubble] onSendMessage ÇAĞRILIYOR:', trimmedText, otherUserId);
-    onSendMessage(trimmedText, otherUserId);
     
     // Scroll to bottom
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
     
-    // Keyboard kapat
-    Keyboard.dismiss();
+    try {
+      const response = await fetch(`${API_URL}/api/chat/send-message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tag_id: tagId,
+          sender_id: userId,
+          sender_name: isDriver ? 'Sürücü' : 'Yolcu',
+          receiver_id: otherUserId,
+          message: trimmedText,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('✅ [ChatBubble] Mesaj gönderildi:', data);
+        
+        // Temp mesajı gerçek ID ile güncelle
+        setMessages(prev => prev.map(m => 
+          m.id === tempId ? { ...m, id: data.message?.id || tempId } : m
+        ));
+      } else {
+        console.error('❌ [ChatBubble] Mesaj gönderilemedi:', data);
+        // Hata durumunda temp mesajı kaldır
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+      }
+    } catch (error) {
+      console.error('❌ [ChatBubble] Mesaj gönderme hatası:', error);
+      // Hata durumunda temp mesajı kaldır
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } finally {
+      setIsSending(false);
+      Keyboard.dismiss();
+    }
   };
-
-  // ═══════════════════════════════════════════════════════════════
-  // TAG DEĞİŞTİĞİNDE MESAJLARI TEMİZLE
-  // ═══════════════════════════════════════════════════════════════
-  
-  useEffect(() => {
-    // Tag değiştiğinde mesajları sıfırla
-    setMessages([]);
-    setUnreadCount(0);
-  }, [tagId]);
 
   // ═══════════════════════════════════════════════════════════════
   // ANİMASYONLAR
   // ═══════════════════════════════════════════════════════════════
-
+  
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
+      if (isMinimized) {
         Animated.spring(scaleAnim, {
           toValue: 1,
-          friction: 8,
-          tension: 40,
           useNativeDriver: true,
-        }),
+          tension: 100,
+          friction: 8,
+        }).start();
+      } else {
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 300,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      }
     } else {
-      Animated.parallel([
-        Animated.timing(scaleAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+      scaleAnim.setValue(0);
     }
-  }, [visible]);
+  }, [visible, isMinimized]);
 
-  // ═══════════════════════════════════════════════════════════════
-  // UI HELPERS
-  // ═══════════════════════════════════════════════════════════════
-
+  // Minimize/Maximize toggle
   const toggleMinimize = () => {
     if (isMinimized) {
+      setIsMinimized(false);
       setUnreadCount(0);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      setIsMinimized(true);
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => {
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
+      });
     }
-    setIsMinimized(!isMinimized);
   };
-
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[
-      styles.messageBubble,
-      item.sender === 'me' ? styles.myMessage : styles.otherMessage
-    ]}>
-      <Text style={[
-        styles.messageText,
-        item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
-      ]}>
-        {item.text}
-      </Text>
-      <Text style={[
-        styles.messageTime,
-        item.sender === 'me' ? styles.myMessageTime : styles.otherMessageTime
-      ]}>
-        {item.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-      </Text>
-    </View>
-  );
 
   // ═══════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════
-
+  
   if (!visible) return null;
 
-  // Minimized view
+  // Minimized bubble
   if (isMinimized) {
     return (
-      <TouchableOpacity 
-        style={styles.minimizedBubble}
-        onPress={toggleMinimize}
-        activeOpacity={0.8}
+      <Animated.View 
+        style={[
+          styles.minimizedBubble,
+          { transform: [{ scale: scaleAnim }] }
+        ]}
       >
-        <Ionicons name="chatbubble-ellipses" size={28} color="#fff" />
-        {unreadCount > 0 && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{unreadCount}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.minimizedContent}
+          onPress={toggleMinimize}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
     );
   }
 
+  // Full chat panel
   return (
     <Animated.View 
       style={[
         styles.container,
-        {
-          transform: [
-            { scale: scaleAnim },
-            { translateY: slideAnim }
-          ],
-        }
+        { transform: [{ translateY: slideAnim }] }
       ]}
     >
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={toggleMinimize} style={styles.minimizeButton}>
-            <Ionicons name="remove" size={28} color="#666" />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenter}>
-            <Ionicons name="person-circle" size={32} color="#007AFF" />
-            <Text style={styles.headerTitle}>{otherUserName}</Text>
-            <View style={styles.onlineIndicator} />
+          <View style={styles.headerLeft}>
+            <Ionicons name="person-circle" size={32} color="#4CAF50" />
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerName}>{otherUserName}</Text>
+              <View style={styles.onlineStatus}>
+                <View style={styles.onlineDot} />
+                <Text style={styles.onlineText}>Çevrimiçi</Text>
+              </View>
+            </View>
           </View>
-          
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#666" />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity onPress={toggleMinimize} style={styles.headerBtn}>
+              <Ionicons name="remove" size={24} color="#666" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Messages */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
-          style={styles.messageList}
-          contentContainerStyle={styles.messageListContent}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubbles-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>Henüz mesaj yok</Text>
-              <Text style={styles.emptySubtext}>Hızlı mesaj gönderin ⚡</Text>
-            </View>
-          }
-        />
-
-        {/* Suggestions */}
-        {messages.length === 0 && (
-          <View style={styles.suggestionsContainer}>
-            {suggestions.map((suggestion, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.suggestionButton}
-                onPress={() => sendMessage(suggestion)}
-              >
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </TouchableOpacity>
-            ))}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
           </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            style={styles.messageList}
+            contentContainerStyle={styles.messageListContent}
+            renderItem={({ item }) => (
+              <View style={[
+                styles.messageBubble,
+                item.sender === 'me' ? styles.myMessage : styles.otherMessage
+              ]}>
+                <Text style={[
+                  styles.messageText,
+                  item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
+                ]}>
+                  {item.text}
+                </Text>
+                <Text style={[
+                  styles.messageTime,
+                  item.sender === 'me' ? styles.myMessageTime : styles.otherMessageTime
+                ]}>
+                  {item.timestamp.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              </View>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="chatbubbles-outline" size={48} color="#ccc" />
+                <Text style={styles.emptyText}>Henüz mesaj yok</Text>
+                <Text style={styles.emptySubtext}>Bir mesaj göndererek sohbeti başlatın</Text>
+              </View>
+            }
+          />
         )}
+
+        {/* Quick suggestions */}
+        <View style={styles.suggestionsContainer}>
+          <FlatList
+            horizontal
+            data={suggestions}
+            keyExtractor={(item) => item}
+            showsHorizontalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                style={styles.suggestionChip}
+                onPress={() => sendMessage(item)}
+                disabled={isSending}
+              >
+                <Text style={styles.suggestionText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
 
         {/* Input */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
             placeholder="Mesajınızı yazın..."
             placeholderTextColor="#999"
+            value={inputText}
+            onChangeText={setInputText}
             multiline
             maxLength={500}
-            onSubmitEditing={() => sendMessage(inputText)}
-            returnKeyType="send"
+            editable={!isSending}
           />
           <TouchableOpacity 
             style={[
-              styles.sendButton, 
-              !inputText.trim() && styles.sendButtonDisabled
+              styles.sendButton,
+              (!inputText.trim() || isSending) && styles.sendButtonDisabled
             ]}
             onPress={() => sendMessage(inputText)}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isSending}
           >
-            <Ionicons name="send" size={24} color="#fff" />
+            {isSending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="send" size={20} color="#fff" />
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -359,16 +496,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: SCREEN_HEIGHT * 0.65,
+    height: SCREEN_HEIGHT * 0.6,
     backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 20,
-    zIndex: 1000,
+    shadowRadius: 8,
+    elevation: 10,
   },
   keyboardView: {
     flex: 1,
@@ -380,42 +516,66 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#eee',
   },
-  headerCenter: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  headerInfo: {
+    marginLeft: 10,
+  },
+  headerName: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#333',
   },
-  onlineIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#34C759',
+  onlineStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
   },
-  minimizeButton: {
-    padding: 4,
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginRight: 4,
   },
-  closeButton: {
-    padding: 4,
+  onlineText: {
+    fontSize: 12,
+    color: '#4CAF50',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+  },
+  headerBtn: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
   },
   messageList: {
     flex: 1,
-    paddingHorizontal: 16,
   },
   messageListContent: {
-    paddingVertical: 16,
+    padding: 16,
+    paddingBottom: 8,
   },
   messageBubble: {
     maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
-    marginVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    marginBottom: 8,
   },
   myMessage: {
     alignSelf: 'flex-end',
@@ -424,12 +584,12 @@ const styles = StyleSheet.create({
   },
   otherMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#E9E9EB',
     borderBottomLeftRadius: 4,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
   },
   myMessageText: {
     color: '#fff',
@@ -438,7 +598,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   messageTime: {
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 4,
   },
   myMessageTime: {
@@ -450,68 +610,67 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 40,
   },
   emptyText: {
     fontSize: 16,
+    fontWeight: '500',
     color: '#999',
     marginTop: 12,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#ccc',
     marginTop: 4,
   },
   suggestionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
-  suggestionButton: {
-    backgroundColor: '#f5f5f5',
+  suggestionChip: {
+    backgroundColor: '#f0f0f0',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    marginRight: 8,
   },
   suggestionText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
+    fontSize: 13,
+    color: '#333',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#eee',
     backgroundColor: '#fff',
   },
   input: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 40,
     maxHeight: 100,
     backgroundColor: '#f5f5f5',
-    borderRadius: 22,
+    borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    fontSize: 16,
+    fontSize: 15,
     color: '#333',
+    marginRight: 8,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#007AFF',
-    alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
+    alignItems: 'center',
   },
   sendButtonDisabled: {
     backgroundColor: '#ccc',
@@ -519,35 +678,40 @@ const styles = StyleSheet.create({
   minimizedBubble: {
     position: 'absolute',
     bottom: 100,
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    right: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#007AFF',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-    zIndex: 1000,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  minimizedContent: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   badge: {
     position: 'absolute',
     top: -4,
     right: -4,
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#FF3B30',
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
   badgeText: {
-    color: '#fff',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: 'bold',
+    color: '#fff',
   },
 });
