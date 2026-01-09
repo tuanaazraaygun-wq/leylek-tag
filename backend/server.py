@@ -2359,6 +2359,13 @@ async def force_end_trip(tag_id: str, user_id: str):
             "cancelled_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id).execute()
         
+        # 🆕 Trip bittiğinde chat mesajlarını sil
+        try:
+            delete_result = supabase.table("chat_messages").delete().eq("tag_id", tag_id).execute()
+            logger.info(f"🗑️ Chat mesajları silindi (force-end): tag_id={tag_id}")
+        except Exception as chat_err:
+            logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
+        
         logger.info(f"⚠️ Force end: TAG {tag_id} by {user_type} ({resolved_id}) - 5 PUAN CEZA")
         
         return {"success": True, "message": "Yolculuk zorla bitirildi. Puanınız -5 düştü."}
