@@ -524,25 +524,31 @@ export default function LiveMapView({
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.actionButton, styles.endButton]} onPress={() => {
-              Alert.alert(
-                'Yolculuğu Bitir',
-                'Nasıl bitirmek istiyorsunuz?',
-                [
-                  { text: 'İptal', style: 'cancel' },
-                  { text: 'Karşı Taraftan Onay İste', onPress: () => onRequestTripEnd?.() },
-                  { text: 'Tamamla', onPress: () => onComplete?.() },
-                  { text: '⚠️ Zorla Bitir (-5 Puan)', onPress: () => {
-                    Alert.alert(
-                      '⚠️ Dikkat!',
-                      'Zorla bitirme işlemi puanınızı 5 düşürecektir. Devam etmek istiyor musunuz?',
-                      [
-                        { text: 'Vazgeç', style: 'cancel' },
-                        { text: 'Evet, Zorla Bitir', style: 'destructive', onPress: () => onForceEnd?.() }
-                      ]
-                    );
-                  }, style: 'destructive' }
-                ]
-              );
+              // Modern modal göster (eğer varsa)
+              if (onShowEndTripModal) {
+                onShowEndTripModal();
+              } else {
+                // Fallback: Eski Alert
+                Alert.alert(
+                  'Yolculuğu Bitir',
+                  'Nasıl bitirmek istiyorsunuz?',
+                  [
+                    { text: 'İptal', style: 'cancel' },
+                    { text: 'Karşı Taraftan Onay İste', onPress: () => onRequestTripEnd?.() },
+                    { text: 'Tamamla', onPress: () => onComplete?.() },
+                    { text: '⚠️ Zorla Bitir (-5 Puan)', onPress: () => {
+                      Alert.alert(
+                        '⚠️ Dikkat!',
+                        'Zorla bitirme işlemi puanınızı 5 düşürecektir. Devam etmek istiyor musunuz?',
+                        [
+                          { text: 'Vazgeç', style: 'cancel' },
+                          { text: 'Evet, Zorla Bitir', style: 'destructive', onPress: () => onForceEnd?.() }
+                        ]
+                      );
+                    }, style: 'destructive' }
+                  ]
+                );
+              }
             }}>
               <Ionicons name="checkmark-circle" size={18} color="#FFF" />
               <Text style={[styles.actionButtonText, { color: '#FFF' }]}>Bitir</Text>
