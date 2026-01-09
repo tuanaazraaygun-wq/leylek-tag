@@ -186,8 +186,8 @@ export default function EndTripModal({
                 <Ionicons name="hand-left" size={24} color="#FFF" />
               </LinearGradient>
               <View style={styles.optionTextContainer}>
-                <Text style={styles.optionTitle}>Onay İste</Text>
-                <Text style={styles.optionDescription}>{otherUserName}'dan onay bekle</Text>
+                <Text style={styles.optionTitle}>Karşılıklı Onay</Text>
+                <Text style={styles.optionDescription}>{otherUserName}'dan onay bekle (+1 puan)</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
             </TouchableOpacity>
