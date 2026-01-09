@@ -5452,6 +5452,7 @@ function PassengerDashboard({
                       Alert.alert('Hata', 'İşlem başarısız');
                     }
                   }}
+                  onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
                 
                 {/* 🆕 Chat Bubble - Yolcu → Sürücüye Yaz (PURE SOCKET - ANLIK) */}
