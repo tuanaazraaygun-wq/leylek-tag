@@ -41,6 +41,7 @@ interface LiveMapViewProps {
   onRequestTripEnd?: () => void;
   onForceEnd?: () => void;
   onAutoComplete?: () => void;
+  onShowEndTripModal?: () => void;  // 🆕 Modern modal göster
 }
 
 // Haversine mesafe hesaplama (km)
