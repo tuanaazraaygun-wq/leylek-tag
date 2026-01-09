@@ -93,15 +93,14 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
   const currentRequestIdRef = useRef<string | null>(null);
 
   // ==================== SOCKET EVENT LISTENERS ====================
+  // 🔥 REFACTORED: new_offer listener KALDIRILDI
+  // Artık sadece addOffer() fonksiyonu ile dışarıdan ekleniyor (index.tsx'teki onNewOffer callback'ından)
+  // Bu sayede çift listener sorunu çözüldü
   
   useEffect(() => {
     isMountedRef.current = true;
     
-    if (!enabled || !socket) {
-      return;
-    }
-    
-    // Request ID changed - clear old offers
+    // Request ID değiştiğinde eski teklifleri temizle
     if (requestId && requestId !== currentRequestIdRef.current) {
       console.log('🔄 [useOffers] Request ID changed, clearing offers');
       currentRequestIdRef.current = requestId;
@@ -109,65 +108,13 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       seenOfferIdsRef.current.clear();
     }
     
-    // NEW OFFER - from socket
-    const handleNewOffer = (data: any) => {
-      if (!isMountedRef.current) return;
-      
-      const offerId = data.offer_id || data.id;
-      const incomingRequestId = data.request_id;
-      
-      // DUPLICATE PREVENTION
-      if (seenOfferIdsRef.current.has(offerId)) {
-        console.log('⚠️ [useOffers] Duplicate offer ignored:', offerId);
-        return;
-      }
-      
-      // REQUEST ID CHECK - Gevşetilmiş kontrol
-      // Sadece HER İKİSİ de varsa ve FARKLI ise ignore et
-      if (incomingRequestId && currentRequestIdRef.current && incomingRequestId !== currentRequestIdRef.current) {
-        console.log('⚠️ [useOffers] Wrong request_id, ignoring offer:', incomingRequestId, 'vs', currentRequestIdRef.current);
-        return;
-      }
-      
-      // Log successful pass
-      console.log('✅ [useOffers] Request ID check passed:', incomingRequestId || 'none', '/', currentRequestIdRef.current || 'none');
-      
-      seenOfferIdsRef.current.add(offerId);
-      
-      const newOffer: Offer = {
-        id: offerId,
-        offer_id: offerId,
-        request_id: incomingRequestId,
-        tag_id: data.tag_id || tagId || '',
-        driver_id: data.driver_id,
-        driver_name: data.driver_name || 'Şoför',
-        driver_rating: data.driver_rating || 5,
-        driver_photo: data.driver_photo,
-        price: data.price,
-        notes: data.notes,
-        status: data.status || 'pending',
-        vehicle_model: data.vehicle_model,
-        vehicle_color: data.vehicle_color,
-        distance_km: data.distance_km,
-        estimated_arrival_min: data.estimated_arrival_min,
-        created_at: data.created_at || new Date().toISOString(),
-        _optimistic: false
-      };
-      
-      console.log('📥 [useOffers] NEW OFFER received:', newOffer.price, 'TL from', newOffer.driver_name);
-      
-      setOffers(prev => {
-        // Check again for duplicates in state
-        if (prev.some(o => o.id === offerId || o.offer_id === offerId)) {
-          return prev;
-        }
-        return [newOffer, ...prev];
-      });
-      
-      onNewOffer?.(newOffer);
-    };
+    // Socket yoksa veya disabled ise sadece cleanup yap
+    if (!enabled || !socket) {
+      console.log('⚠️ [useOffers] Socket listeners NOT registered (disabled or no socket)');
+      return;
+    }
     
-    // OFFER ACCEPTED - driver side
+    // OFFER ACCEPTED - driver side (şoförün teklifinin kabul edildiği bildirimi)
     const handleOfferAccepted = (data: any) => {
       if (!isMountedRef.current) return;
       console.log('✅ [useOffers] OFFER ACCEPTED:', data);
@@ -181,7 +128,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       onOfferAccepted?.(data);
     };
     
-    // OFFER REJECTED - driver side
+    // OFFER REJECTED - driver side (şoförün teklifinin reddedildiği bildirimi)
     const handleOfferRejected = (data: any) => {
       if (!isMountedRef.current) return;
       console.log('❌ [useOffers] OFFER REJECTED:', data);
@@ -193,7 +140,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       onOfferRejected?.(data);
     };
     
-    // OFFER SENT ACK - driver side
+    // OFFER SENT ACK - driver side (teklif gönderildiğinin onayı)
     const handleOfferSentAck = (data: any) => {
       if (!isMountedRef.current) return;
       console.log('✅ [useOffers] Offer sent acknowledged:', data);
@@ -220,25 +167,24 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       }
     };
     
-    // Register listeners
-    socket.on('new_offer', handleNewOffer);
+    // 🔥 NOT: socket.on('new_offer') KALDIRILDI - useSocket hook'undaki listener yeterli
+    // Register listeners (new_offer HARIC)
     socket.on('offer_accepted', handleOfferAccepted);
     socket.on('offer_rejected', handleOfferRejected);
     socket.on('offer_sent_ack', handleOfferSentAck);
     socket.on('tag_cancelled', handleTagCancelled);
     
-    console.log('📡 [useOffers] Socket listeners registered');
+    console.log('📡 [useOffers] Socket listeners registered (new_offer HARIC - addOffer kullanılıyor)');
     
     return () => {
       isMountedRef.current = false;
-      socket.off('new_offer', handleNewOffer);
       socket.off('offer_accepted', handleOfferAccepted);
       socket.off('offer_rejected', handleOfferRejected);
       socket.off('offer_sent_ack', handleOfferSentAck);
       socket.off('tag_cancelled', handleTagCancelled);
       console.log('🧹 [useOffers] Socket listeners removed');
     };
-  }, [enabled, socket, requestId, tagId, onNewOffer, onOfferAccepted, onOfferRejected]);
+  }, [enabled, socket, requestId, tagId, onOfferAccepted, onOfferRejected]);
 
   // ==================== SEND OFFER (Driver) ====================
   
