@@ -119,6 +119,9 @@ export default function ChatBubble({
     
     const trimmedText = text.trim();
     
+    // DEBUG ALERT - Butonun çalışıp çalışmadığını görmek için
+    Alert.alert('DEBUG', `Mesaj: ${trimmedText}\nAlıcı: ${otherUserId || 'BOŞ!'}\nonSendMessage: ${typeof onSendMessage}`);
+    
     // DEBUG: otherUserId kontrolü
     console.log('📤 [ChatBubble] sendMessage çağrıldı:', {
       text: trimmedText,
@@ -129,6 +132,7 @@ export default function ChatBubble({
     
     if (!otherUserId) {
       console.error('❌ [ChatBubble] otherUserId BOŞ! Mesaj gönderilemez.');
+      Alert.alert('HATA', 'otherUserId BOŞ!');
       return;
     }
     
