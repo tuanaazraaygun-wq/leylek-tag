@@ -178,8 +178,18 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     setIsLoading(true);
     
     try {
+      // 🔥 driver_id ve tag_id de gönder - backend bu bilgilerle teklifi bulabilir
+      const params = new URLSearchParams({
+        user_id: userId,
+        offer_id: offerId,
+      });
+      if (driverId) params.append('driver_id', driverId);
+      if (offerTagId) params.append('tag_id', offerTagId);
+      
+      console.log('🔥 [useOffers] Accept offer API call:', params.toString());
+      
       const response = await fetch(
-        `${API_URL}/passenger/accept-offer?user_id=${userId}&offer_id=${offerId}`,
+        `${API_URL}/passenger/accept-offer?${params.toString()}`,
         { method: 'POST' }
       );
       
@@ -187,6 +197,8 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       
       const data = await response.json();
       setIsLoading(false);
+      
+      console.log('📥 [useOffers] Accept offer API response:', JSON.stringify(data));
       
       if (data.success) {
         // Sadece kabul edilen teklifi tut
@@ -204,6 +216,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       if (!isMountedRef.current) return false;
       setIsLoading(false);
       updateOfferStatus(offerId, 'pending');
+      console.error('❌ [useOffers] Accept offer error:', err);
       Alert.alert('Hata', 'Bağlantı hatası');
       return false;
     }
