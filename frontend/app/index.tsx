@@ -6580,41 +6580,36 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* TAM EKRAN TİKTOK KARTI - SafeAreaView ÜZERİNDE */}
+      {/* 🆕 YENİ SÜRÜCÜ TEKLİF EKRANI - Harita + Kompakt Kartlar */}
       {requests.length > 0 && !(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
-        <View style={styles.absoluteFullScreen}>
-          <FlatList
-            data={requests}
-            keyExtractor={(item, index) => item.id || index.toString()}
-            renderItem={({ item, index }) => {
-              const timeToPassenger = item.time_to_passenger_min || Math.round((item.distance_to_passenger_km || 5) / 40 * 60);
-              const tripDuration = item.trip_duration_min || Math.round((item.trip_distance_km || 10) / 50 * 60);
-              
-              return (
-                <TikTokOfferCard
-                  offer={{
-                    ...item,
-                    estimated_arrival_min: timeToPassenger,
-                    trip_duration_min: tripDuration
-                  }}
-                  index={index}
-                  total={requests.length}
-                  onAccept={() => handleSendOffer(item.id)}
-                  onDismiss={() => handleDismissRequest(item.id)}
-                  isPassenger={false}
-                  driverArrivalMin={timeToPassenger}
-                  tripDurationMin={tripDuration}
-                  onSendOffer={(price) => sendOfferInstant(item.id, price)}
-                />
-              );
-            }}
-            pagingEnabled={true}
-            showsVerticalScrollIndicator={false}
-            snapToInterval={SCREEN_HEIGHT}
-            decelerationRate="fast"
-            bounces={false}
-          />
-        </View>
+        <DriverOfferScreen
+          driverLocation={userLocation}
+          requests={requests.map(req => ({
+            id: req.id,
+            request_id: req.request_id || req.id,
+            tag_id: req.tag_id,
+            passenger_id: req.passenger_id,
+            passenger_name: req.passenger_name || 'Yolcu',
+            pickup_location: req.pickup_location || req.passenger_address || 'Bilinmiyor',
+            pickup_lat: req.pickup_lat || req.passenger_lat,
+            pickup_lng: req.pickup_lng || req.passenger_lng,
+            dropoff_location: req.dropoff_location || req.destination || 'Belirtilmedi',
+            dropoff_lat: req.dropoff_lat,
+            dropoff_lng: req.dropoff_lng,
+            distance_to_passenger_km: req.distance_to_passenger_km,
+            trip_distance_km: req.trip_distance_km,
+            time_to_passenger_min: req.time_to_passenger_min,
+            trip_duration_min: req.trip_duration_min,
+            notes: req.notes,
+            created_at: req.created_at,
+          }))}
+          driverName={user.name}
+          driverRating={user.rating || 5.0}
+          onSendOffer={sendOfferInstant}
+          onDismissRequest={handleDismissRequest}
+          onBack={() => setScreen('role-select')}
+          onLogout={logout}
+        />
       )}
       
       {/* Üst Header - Modern Mavi (Sadece Teklif Listesi Boşsa VE Eşleşme Yoksa Göster) */}
