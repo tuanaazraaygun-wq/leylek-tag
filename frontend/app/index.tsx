@@ -6290,67 +6290,50 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     const tag = requests.find(r => r.id === tagId);
     const requestId = tag?.request_id;
     
-    console.log('🚀 TEKLİF GÖNDERİLİYOR:', {
+    console.log('🚀 TEKLİF GÖNDERİLİYOR (HIZLI):', {
       price,
       tagId,
       requestId,
       tag: tag ? { id: tag.id, request_id: tag.request_id, passenger_id: tag.passenger_id } : 'NOT FOUND'
     });
     
-    // request_id yoksa socket server'a gitmez ama backend'e gönderebiliriz
-    if (!requestId) {
-      console.warn('⚠️ request_id YOK ama backend ile devam ediyoruz');
+    // 🔥 ÖNCE SOCKET - ANINDA YOLCUYA ULAŞSIN
+    if (socketSendOffer && requestId) {
+      const offerPayload = {
+        request_id: requestId,
+        tag_id: tagId,
+        driver_id: user.id,
+        driver_name: user.name || user.phone,
+        driver_rating: user.rating || 5.0,
+        passenger_id: tag?.passenger_id || '',
+        price: price,
+        vehicle_model: user.vehicle_model,
+        vehicle_color: user.vehicle_color,
+      };
+      console.log('🔥 [DRIVER] Socket emit YAPILIYOR (HIZLI):', JSON.stringify(offerPayload));
+      socketSendOffer(offerPayload);
+      console.log('✅ [DRIVER] Socket emit TAMAMLANDI!');
     }
     
-    try {
-      const response = await fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tag_id: tagId,
-          price: price,
-          latitude: userLocation?.latitude || 0,
-          longitude: userLocation?.longitude || 0
-        })
-      });
-      
-      const data = await response.json();
-      console.log('📥 BACKEND YANITI:', JSON.stringify(data));
-      
-      if (data.success || data.offer_id) {
-        console.log('✅ TEKLİF GÖNDERİLDİ:', data.offer_id);
-        
-        // 🔥 Socket ile teklifi anında yolcuya gönder
-        // request_id varsa kullan, yoksa tag_id ile devam et
-        if (socketSendOffer) {
-          const offerPayload = {
-            request_id: requestId || tagId,  // 🔥 Fallback to tagId
-            offer_id: data.offer_id,
-            tag_id: tagId,
-            driver_id: user.id,
-            driver_name: user.name || user.phone,
-            driver_rating: user.rating || 5.0,
-            passenger_id: tag?.passenger_id || '',
-            price: price,
-          };
-          console.log('🔥 [DRIVER] Socket emit YAPILIYOR:', JSON.stringify(offerPayload));
-          socketSendOffer(offerPayload);
-          console.log('✅ [DRIVER] Socket emit TAMAMLANDI! request_id:', requestId || 'N/A (tagId kullanıldı)');
-        } else {
-          console.error('❌ [DRIVER] socketSendOffer fonksiyonu YOK!');
-        }
-        
-        setRequests(prev => prev.filter(r => r.id !== tagId));
-        return true;
-      } else {
-        Alert.alert('Hata', data.detail || 'Teklif gönderilemedi');
-        return false;
-      }
-    } catch (error: any) {
-      console.error('❌ TEKLİF HATASI:', error.message || error);
-      Alert.alert('Bağlantı Hatası', 'İnternet bağlantınızı kontrol edin');
-      return false;
-    }
+    // 🔥 PARALEL BACKEND KAYDI - Beklemeden devam et ama kaydet
+    fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tag_id: tagId,
+        price: price,
+        latitude: userLocation?.latitude || 0,
+        longitude: userLocation?.longitude || 0
+      })
+    }).then(res => res.json()).then(data => {
+      console.log('📥 BACKEND KAYIT:', data.success ? '✅' : '❌', data.offer_id || data.detail);
+    }).catch(err => {
+      console.error('❌ BACKEND KAYIT HATASI:', err.message);
+    });
+    
+    // Kartı listeden kaldır
+    setRequests(prev => prev.filter(r => r.id !== tagId));
+    return true;
   };
 
   const handleSendOffer = (tagId: string) => {
