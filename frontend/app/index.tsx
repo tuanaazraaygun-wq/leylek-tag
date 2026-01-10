@@ -4465,6 +4465,8 @@ function PassengerDashboard({
     // 🆕 TAG EŞLEŞTİ - Yolcu teklifi kabul ettiğinde
     onTagMatched: (data) => {
       console.log('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
+      // 🔥 TÜM TEKLİFLERİ TEMİZLE - Artık yeni teklif alamaz
+      clearOffers();
       // Eşleşme sağlandı - activeTag'i güncelle
       loadActiveTag();
       // Matched ekranına geçiş için activeTag.status = 'matched' olacak
