@@ -6300,36 +6300,37 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const sendOfferInstant = async (tagId: string, price: number): Promise<boolean> => {
     if (!user?.id || !tagId || price < 10) return false;
     
-    // 🔥 TAG'den request_id al
-    const tag = requests.find(r => r.id === tagId);
-    const requestId = tag?.request_id;
+    // 🔥 TAG'den bilgileri al
+    const tag = requests.find(r => r.id === tagId || r.tag_id === tagId);
+    const requestId = tag?.request_id || tagId; // Fallback to tagId
+    const passengerId = tag?.passenger_id;
     
     console.log('🚀 TEKLİF GÖNDERİLİYOR (HIZLI):', {
-      price,
-      tagId,
-      requestId,
-      tag: tag ? { id: tag.id, request_id: tag.request_id, passenger_id: tag.passenger_id } : 'NOT FOUND'
+      price, tagId, requestId, passengerId,
+      socketSendOffer: !!socketSendOffer
     });
     
     // 🔥 ÖNCE SOCKET - ANINDA YOLCUYA ULAŞSIN
-    if (socketSendOffer && requestId) {
+    if (socketSendOffer) {
       const offerPayload = {
         request_id: requestId,
         tag_id: tagId,
         driver_id: user.id,
         driver_name: user.name || user.phone,
         driver_rating: user.rating || 5.0,
-        passenger_id: tag?.passenger_id || '',
+        passenger_id: passengerId || '',
         price: price,
         vehicle_model: user.vehicle_model,
         vehicle_color: user.vehicle_color,
       };
-      console.log('🔥 [DRIVER] Socket emit YAPILIYOR (HIZLI):', JSON.stringify(offerPayload));
+      console.log('🔥 [DRIVER] Socket emit YAPILIYOR:', JSON.stringify(offerPayload));
       socketSendOffer(offerPayload);
       console.log('✅ [DRIVER] Socket emit TAMAMLANDI!');
+    } else {
+      console.error('❌ socketSendOffer TANIMLANMAMIŞ!');
     }
     
-    // 🔥 PARALEL BACKEND KAYDI - Beklemeden devam et ama kaydet
+    // 🔥 PARALEL BACKEND KAYDI
     fetch(`${API_URL}/driver/send-offer?user_id=${user.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
