@@ -400,6 +400,7 @@ const styles = StyleSheet.create({
   overlayText: { color: '#FFF', marginTop: 16, fontSize: 16 },
   controls: { 
     padding: 16, 
+    paddingBottom: 32,  // Alt boşluk artırıldı - "Bitir" butonu görünsün
     alignItems: 'center', 
     borderTopWidth: 1, 
     borderTopColor: '#333',
