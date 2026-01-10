@@ -6091,12 +6091,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
       // TAG'i listeden ANINDA kaldır
-      setRequests(prev => prev.filter(r => r.id !== data.tag_id));
+      setRequests(prev => prev.filter(r => r.id !== data.tag_id && r.request_id !== data.request_id));
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
-      // TAG'i listeden ANINDA kaldır
-      setRequests(prev => prev.filter(r => r.id !== data.tag_id));
+      // 🔥 EŞLEŞTİĞİNDE TÜM LİSTEYİ TEMİZLE - Artık yeni teklif kabul edemez
+      setRequests([]);
+      // Active tag'ı yükle
+      loadData();
     },
     // Teklif kabul/red
     onOfferAccepted: (data) => {
