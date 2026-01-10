@@ -6042,13 +6042,27 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       };
       
       // TAG'i ANINDA ekle (adresler ile)
-      // 🔥 AYNI YOLCUDAN ESKİ TAG'I SİL - Yeni request_id geçerli olacak
+      // 🔥 GÜÇLÜ DE-DUPLICATION - Aynı yolcudan çoklu istek engellenir
       setRequests(prev => {
-        // Aynı tag_id varsa ekleme
-        if (prev.some(r => r.id === data.tag_id)) return prev;
+        // 1. Aynı tag_id varsa EKLEME
+        if (prev.some(r => r.id === data.tag_id)) {
+          console.log('⚠️ DUPLICATE TAG_ID, skipping:', data.tag_id);
+          return prev;
+        }
         
-        // 🔥 Aynı yolcudan eski TAG'ları sil (yeni request_id geçerli)
-        const filtered = prev.filter(r => r.passenger_id !== data.passenger_id);
+        // 2. Aynı request_id varsa EKLEME
+        if (data.request_id && prev.some(r => r.request_id === data.request_id)) {
+          console.log('⚠️ DUPLICATE REQUEST_ID, skipping:', data.request_id);
+          return prev;
+        }
+        
+        // 3. Aynı yolcudan son 10 saniye içinde istek varsa GÜNCELLE (yeni ile değiştir)
+        const filtered = prev.filter(r => {
+          if (r.passenger_id !== data.passenger_id) return true;
+          // Aynı yolcudan eski TAG'ı sil
+          console.log('🔄 REPLACING old request from same passenger:', r.id, '->', data.tag_id);
+          return false;
+        });
         
         return [...filtered, {
           id: data.tag_id,
