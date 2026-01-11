@@ -1807,67 +1807,75 @@ class AcceptOfferRequest(BaseModel):
 
 @api_router.post("/passenger/accept-offer")
 async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, passenger_id: str = None, offer_id: str = None, driver_id: str = None, tag_id: str = None):
-    """Teklifi kabul et - offer_id veya driver_id+tag_id ile çalışır"""
+    """Teklifi kabul et - driver_id+tag_id ile çalışır (offer_id opsiyonel)"""
     try:
         # Body veya query param'dan al
         oid = request.offer_id if request else offer_id
         did = driver_id
         tid = tag_id
         
+        logger.info(f"🔍 Accept offer request: offer_id={oid}, driver_id={did}, tag_id={tid}")
+        
         offer = None
         
-        # 1. offer_id ile bul
-        if oid:
-            offer_result = supabase.table("offers").select("*").eq("id", oid).execute()
-            if offer_result.data:
-                offer = offer_result.data[0]
-        
-        # 2. offer_id ile bulunamazsa, driver_id + tag_id ile bul
-        if not offer and did and tid:
+        # 1. ÖNCE driver_id + tag_id ile bul (en güvenilir yol)
+        if did and tid:
             logger.info(f"🔍 Teklif aranıyor: driver_id={did}, tag_id={tid}")
             offer_result = supabase.table("offers").select("*").eq("driver_id", did).eq("tag_id", tid).eq("status", "pending").execute()
             if offer_result.data:
                 offer = offer_result.data[0]
                 oid = offer["id"]
-                logger.info(f"✅ Teklif bulundu: {oid}")
+                logger.info(f"✅ Teklif bulundu (driver+tag): {oid}")
         
-        # 3. Hala bulunamazsa, sadece tag_id ile en son teklifi bul
+        # 2. driver_id + tag_id ile bulunamazsa, sadece tag_id ile en son teklifi bul
         if not offer and tid:
             logger.info(f"🔍 Son teklif aranıyor: tag_id={tid}")
             offer_result = supabase.table("offers").select("*").eq("tag_id", tid).eq("status", "pending").order("created_at", desc=True).limit(1).execute()
             if offer_result.data:
                 offer = offer_result.data[0]
                 oid = offer["id"]
-                logger.info(f"✅ Son teklif bulundu: {oid}")
+                logger.info(f"✅ Son teklif bulundu (tag): {oid}")
+        
+        # 3. Hala bulunamazsa ve offer_id UUID formatındaysa dene
+        if not offer and oid and not oid.startswith("offer_"):
+            try:
+                offer_result = supabase.table("offers").select("*").eq("id", oid).execute()
+                if offer_result.data:
+                    offer = offer_result.data[0]
+                    logger.info(f"✅ Teklif bulundu (uuid): {oid}")
+            except:
+                pass
         
         if not offer:
+            logger.error(f"❌ Teklif bulunamadı: offer_id={oid}, driver_id={did}, tag_id={tid}")
             raise HTTPException(status_code=404, detail="Teklif bulunamadı")
         
         tag_id_final = offer["tag_id"]
         driver_id_final = offer["driver_id"]
+        real_offer_id = offer["id"]
         
         # Şoför bilgisi
         driver_result = supabase.table("users").select("name").eq("id", driver_id_final).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Şoför"
         
         # Teklifi kabul et
-        supabase.table("offers").update({"status": "accepted"}).eq("id", oid).execute()
+        supabase.table("offers").update({"status": "accepted"}).eq("id", real_offer_id).execute()
         
         # Diğer teklifleri reddet
-        supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tag_id_final).neq("id", oid).execute()
+        supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tag_id_final).neq("id", real_offer_id).execute()
         
         # TAG'i güncelle
         supabase.table("tags").update({
             "status": "matched",
             "driver_id": driver_id_final,
             "driver_name": driver_name,
-            "accepted_offer_id": oid,
+            "accepted_offer_id": real_offer_id,
             "final_price": offer["price"],
             "matched_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id_final).execute()
         
-        logger.info(f"✅ Teklif kabul edildi: {oid} - Driver: {driver_id_final}")
-        return {"success": True, "message": "Teklif kabul edildi", "driver_id": driver_id_final, "offer_id": oid}
+        logger.info(f"✅ Teklif kabul edildi: {real_offer_id} - Driver: {driver_id_final}")
+        return {"success": True, "message": "Teklif kabul edildi", "driver_id": driver_id_final, "offer_id": real_offer_id}
     except HTTPException:
         raise
     except Exception as e:
