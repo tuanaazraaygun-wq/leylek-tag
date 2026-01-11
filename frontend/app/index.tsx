@@ -18,7 +18,8 @@ import OutgoingCallScreen from '../components/OutgoingCallScreen'; // 🆕 Arani
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
-import DriverOfferScreen from '../components/DriverOfferScreen'; // 🆕 Sürücü Teklif Ekranı (Harita + Kartlar)
+import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
+import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import useSocket from '../hooks/useSocket';
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
