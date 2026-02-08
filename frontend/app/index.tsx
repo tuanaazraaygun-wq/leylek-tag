@@ -4813,59 +4813,6 @@ function PassengerDashboard({
       console.log('Backend kayıt hatası:', err);
     }
   };
-        dropoff_address: destination.address,
-        status: 'pending'
-      });
-      console.log('🔥 TAG Socket ile ANINDA yayınlandı!');
-    }
-    
-    // Toast ANINDA göster
-    setToastMessage('Teklif isteği gönderildi ✓');
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2500);
-    
-    // 3️⃣ REST API'yi ARKA PLANDA çağır (bekleme yok!)
-    fetch(`${API_URL}/passenger/create-request?user_id=${user.id}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pickup_location: 'Mevcut Konumunuz',
-        dropoff_location: destination.address,
-        pickup_lat: pickupLat,
-        pickup_lng: pickupLng,
-        dropoff_lat: destination.latitude,
-        dropoff_lng: destination.longitude,
-        notes: 'Hedef belirlendi'
-      })
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.success && data.tag) {
-        // Gerçek TAG ID ile güncelle
-        setActiveTag(data.tag);
-        // Socket'e de gerçek ID'yi gönder
-        if (emitNewTag) {
-          emitNewTag({
-            tag_id: data.tag.id,
-            passenger_id: user.id,
-            passenger_name: user.name || user.phone,
-            pickup_lat: pickupLat,
-            pickup_lng: pickupLng,
-            pickup_address: 'Mevcut Konumunuz',
-            dropoff_lat: destination.latitude,
-            dropoff_lng: destination.longitude,
-            dropoff_address: destination.address,
-            status: 'pending'
-          });
-        }
-        console.log('✅ TAG veritabanına kaydedildi:', data.tag.id);
-      }
-    })
-    .catch(err => {
-      console.error('❌ TAG kayıt hatası (arka plan):', err);
-      // Hata olsa bile UI'da TAG gösterilmeye devam eder
-    });
-  };
 
   // SESLİ ARAMA - Mock fonksiyon
   // 🆕 Daily.co ile Sesli/Görüntülü Arama Başlat
