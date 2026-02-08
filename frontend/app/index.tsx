@@ -4344,13 +4344,22 @@ function PassengerDashboard({
     // 🆕 Gelen Daily.co Arama - VİBRASYON + IncomingCallScreen
     onIncomingDailyCall: (data) => {
       console.log('📞 YOLCU - GELEN DAILY.CO ARAMA:', data);
+      console.log('   room_url:', data.room_url);
+      console.log('   room_name:', data.room_name);
       if (dailyCallActive || incomingCall) return;
+      
+      // Room URL ve name'i kaydet (arayan zaten oluşturdu)
+      if (data.room_url) {
+        setDailyRoomUrl(data.room_url);
+        setDailyRoomName(data.room_name || '');
+      }
+      setPassengerDailyCallerId(data.caller_id);
       
       setIncomingCallData({
         callerName: data.caller_name || 'Şoför',
         callType: data.call_type || 'audio',
-        roomUrl: '',  // Henüz yok, kabul sonrası gelecek
-        roomName: '',  // Henüz yok
+        roomUrl: data.room_url || '',
+        roomName: data.room_name || '',
         callerId: data.caller_id,
         tagId: data.tag_id || '',
       });
