@@ -5957,7 +5957,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     // 🆕 Daily.co Gelen Arama - ŞOFÖR (VİBRASYON + Accept/Reject)
     onIncomingDailyCall: (data) => {
       console.log('📹 ŞOFÖR - DAILY.CO GELEN ARAMA:', data);
-      // Gelen arama state'lerini ayarla - room henüz yok
+      console.log('   room_url:', data.room_url);
+      console.log('   room_name:', data.room_name);
+      
+      // Room URL ve name'i kaydet (arayan zaten oluşturdu)
+      if (data.room_url) {
+        setDailyRoomUrl(data.room_url);
+        setDailyRoomName(data.room_name || '');
+      }
+      
       setDailyCallerId(data.caller_id);
       setDailyCallerName(data.caller_name || 'Yolcu');
       setDailyCallType(data.call_type || 'audio');
