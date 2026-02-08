@@ -829,6 +829,7 @@ export default function useSocket({
     emitSendOffer,
     emitAcceptOffer,
     emitRejectOffer,
+    emitDriverAcceptOffer, // 🆕 MARTI TAG
     // Konum
     emitLocationUpdate,
     emitDriverLocationUpdate,
