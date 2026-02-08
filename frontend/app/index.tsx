@@ -6572,6 +6572,43 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     }
   };
 
+  // 🆕 MARTI TAG: Sürücü teklifi kabul eder - İLK KABUL EDEN KAZANIR
+  const handleDriverAcceptOffer = async (tagId: string) => {
+    const tag = requests.find(r => r.id === tagId);
+    if (!tag) return;
+    
+    console.log('✅ SÜRÜCÜ TEKLİFİ KABUL EDİYOR:', tagId, tag.offered_price, 'TL');
+    
+    // Socket ile kabul gönder
+    if (emitDriverAcceptOffer) {
+      emitDriverAcceptOffer({
+        tag_id: tagId,
+        driver_id: user.id,
+        driver_name: user.name || user.phone || 'Sürücü',
+      });
+    }
+    
+    // Backend'e de kaydet
+    try {
+      const response = await fetch(`${API_URL}/ride/accept?tag_id=${tagId}&driver_id=${user.id}`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        // Eşleşme başarılı
+        setRequests([]);
+        loadData();
+      } else if (data.already_taken) {
+        // Başka sürücü aldı
+        Alert.alert('Üzgünüz', 'Bu teklif başka bir sürücü tarafından kabul edildi');
+        setRequests(prev => prev.filter(r => r.id !== tagId));
+      }
+    } catch (error) {
+      console.error('Accept error:', error);
+    }
+  };
+
   const submitOffer = async () => {
     if (!offerPrice || !selectedTagForOffer || offerSending) return;
     
