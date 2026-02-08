@@ -368,7 +368,7 @@ export default function DriverOfferScreen({
               <RequestCard
                 request={item}
                 driverLocation={driverLocation}
-                onSendOffer={(price) => onSendOffer(item.request_id || item.id, price)}
+                onAccept={() => onAcceptOffer && onAcceptOffer(item.id)}
                 onDismiss={() => onDismissRequest(item.id)}
                 index={index}
               />
