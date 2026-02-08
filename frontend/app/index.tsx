@@ -6579,24 +6579,33 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   };
 
   // 🆕 GELEN ARAMA EKRANI - ŞOFÖR (Vibration + Accept/Reject)
-  // Not: dailyRoomUrl ve dailyRoomName artık gerekli değil - room kabul sonrası oluşturulacak
   if (incomingDailyCall) {
     return (
       <IncomingCallScreen
         callerName={dailyCallerName}
         callType={dailyCallType}
         onAccept={() => {
-          // 🆕 YENİ: Socket ile call_accept gönder - Backend Daily room oluşturacak
-          // Sonra HER İKİ TARAFA call_accepted gelecek
-          console.log('📞 ŞOFÖR - ARAMAYI KABUL EDİYOR, call_accept gönderiliyor...');
-          emitCallAccept({
+          console.log('📞 ŞOFÖR - ARAMAYI KABUL EDİYOR');
+          console.log('   dailyRoomUrl:', dailyRoomUrl);
+          console.log('   dailyCallerId:', dailyCallerId);
+          
+          if (!dailyRoomUrl) {
+            Alert.alert('Hata', 'Room bilgisi bulunamadı');
+            return;
+          }
+          
+          // Arayan'a kabul edildiğini bildir (room_url ile!)
+          acceptDailyCall({
             caller_id: dailyCallerId,
             receiver_id: user.id,
-            call_type: dailyCallType,
-            tag_id: incomingCallTagId || activeTag?.id || '',
+            room_url: dailyRoomUrl,
+            room_name: dailyRoomName || '',
+            call_type: dailyCallType
           });
-          // NOT: Daily.co'ya giriş onCallAcceptedNew event'i ile yapılacak
-          // Navigation YOK - sadece bekle
+          
+          // Gelen arama ekranını kapat, Daily.co'ya gir
+          setIncomingDailyCall(false);
+          setDailyCallActive(true);
         }}
         onReject={() => {
           // 🆕 YENİ: call_reject kullan
@@ -6607,6 +6616,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           });
           // Reset
           setIncomingDailyCall(false);
+          setDailyRoomUrl(null);
+          setDailyRoomName('');
         }}
       />
     );
