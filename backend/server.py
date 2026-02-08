@@ -4164,6 +4164,233 @@ async def mark_messages_read(tag_id: str, user_id: str):
         logger.error(f"❌ Mark read error: {e}")
         return {"success": False, "error": str(e)}
 
+# ==================== MARTI TAG - FİYAT HESAPLAMA ====================
+
+class CalculatePriceRequest(BaseModel):
+    pickup_lat: float
+    pickup_lng: float
+    dropoff_lat: float
+    dropoff_lng: float
+
+def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """İki nokta arası mesafe (km)"""
+    import math
+    R = 6371  # Dünya yarıçapı km
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
+
+def is_peak_hour() -> bool:
+    """Yoğun saat kontrolü (08:00-10:00, 17:00-20:00)"""
+    from datetime import datetime
+    import pytz
+    try:
+        tz = pytz.timezone('Europe/Istanbul')
+        now = datetime.now(tz)
+        hour = now.hour
+        # Yoğun saatler: 08:00-10:00 ve 17:00-20:00
+        return (8 <= hour < 10) or (17 <= hour < 20)
+    except:
+        # Fallback: UTC+3
+        hour = (datetime.utcnow().hour + 3) % 24
+        return (8 <= hour < 10) or (17 <= hour < 20)
+
+@api_router.post("/price/calculate")
+async def calculate_price(request: CalculatePriceRequest):
+    """
+    Martı TAG Fiyat Hesaplama
+    - Normal saatler: 22-36 TL/km
+    - Yoğun saatler: 40-45 TL/km
+    """
+    try:
+        # Mesafe hesapla
+        distance_km = haversine_distance(
+            request.pickup_lat, request.pickup_lng,
+            request.dropoff_lat, request.dropoff_lng
+        )
+        
+        # Minimum mesafe 1 km
+        distance_km = max(1.0, distance_km)
+        
+        # Tahmini süre (ortalama 30 km/h şehir içi)
+        estimated_minutes = int((distance_km / 30) * 60)
+        estimated_minutes = max(5, estimated_minutes)  # Minimum 5 dakika
+        
+        # Yoğun saat kontrolü
+        peak = is_peak_hour()
+        
+        if peak:
+            min_price_per_km = 40
+            max_price_per_km = 45
+        else:
+            min_price_per_km = 22
+            max_price_per_km = 36
+        
+        # Toplam fiyat hesapla
+        min_price = round(distance_km * min_price_per_km)
+        max_price = round(distance_km * max_price_per_km)
+        
+        # Minimum 50 TL
+        min_price = max(50, min_price)
+        max_price = max(min_price + 10, max_price)
+        
+        # Önerilen fiyat (ortası)
+        suggested_price = round((min_price + max_price) / 2)
+        
+        logger.info(f"💰 Fiyat hesaplama: {distance_km:.1f}km, {estimated_minutes}dk, {min_price}-{max_price}TL (peak={peak})")
+        
+        return {
+            "success": True,
+            "distance_km": round(distance_km, 1),
+            "estimated_minutes": estimated_minutes,
+            "min_price": min_price,
+            "max_price": max_price,
+            "suggested_price": suggested_price,
+            "is_peak_hour": peak,
+            "currency": "TL"
+        }
+    except Exception as e:
+        logger.error(f"❌ Price calculation error: {e}")
+        return {"success": False, "error": str(e)}
+
+class CreateRideOfferRequest(BaseModel):
+    passenger_id: str
+    pickup_lat: float
+    pickup_lng: float
+    pickup_location: str
+    dropoff_lat: float
+    dropoff_lng: float
+    dropoff_location: str
+    offered_price: int
+    distance_km: float
+    estimated_minutes: int
+
+@api_router.post("/ride/create-offer")
+async def create_ride_offer(request: CreateRideOfferRequest):
+    """
+    Martı TAG - Yolcu teklif oluşturur
+    Bu teklif tüm yakındaki sürücülere gönderilir
+    """
+    try:
+        # Tag oluştur
+        tag_data = {
+            "user_id": request.passenger_id,
+            "pickup_lat": request.pickup_lat,
+            "pickup_lng": request.pickup_lng,
+            "pickup_location": request.pickup_location,
+            "dropoff_lat": request.dropoff_lat,
+            "dropoff_lng": request.dropoff_lng,
+            "dropoff_location": request.dropoff_location,
+            "offered_price": request.offered_price,  # Yolcunun teklif ettiği fiyat
+            "distance_km": request.distance_km,
+            "estimated_minutes": request.estimated_minutes,
+            "status": "waiting",  # Sürücü bekliyor
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table("tags").insert(tag_data).execute()
+        
+        if result.data:
+            tag = result.data[0]
+            logger.info(f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL")
+            return {
+                "success": True,
+                "tag": tag,
+                "message": "Teklifiniz sürücülere gönderildi"
+            }
+        
+        return {"success": False, "error": "Tag oluşturulamadı"}
+    except Exception as e:
+        logger.error(f"❌ Create ride offer error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.post("/ride/accept")
+async def accept_ride(tag_id: str, driver_id: str):
+    """
+    Martı TAG - Sürücü teklifi kabul eder
+    İLK KABUL EDEN KAZANIR - Atomik işlem
+    """
+    try:
+        # Önce tag'in durumunu kontrol et (race condition önleme)
+        tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        
+        if not tag_result.data:
+            return {"success": False, "error": "Teklif bulunamadı"}
+        
+        tag = tag_result.data[0]
+        
+        # Zaten kabul edilmiş mi?
+        if tag.get("status") != "waiting":
+            return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
+        
+        # Sürücü bilgisini al
+        driver_result = supabase.table("users").select("name, phone").eq("id", driver_id).execute()
+        driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
+        
+        # Yolcu bilgisini al
+        passenger_result = supabase.table("users").select("name, phone").eq("id", tag["user_id"]).execute()
+        passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
+        
+        # Atomik güncelleme - sadece status='waiting' ise güncelle
+        update_result = supabase.table("tags").update({
+            "status": "matched",
+            "driver_id": driver_id,
+            "driver_name": driver_name,
+            "final_price": tag["offered_price"],
+            "matched_at": datetime.utcnow().isoformat()
+        }).eq("id", tag_id).eq("status", "waiting").execute()
+        
+        if not update_result.data:
+            return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
+        
+        updated_tag = update_result.data[0]
+        updated_tag["passenger_name"] = passenger_name
+        
+        logger.info(f"✅ Eşleşme: {tag_id} - Sürücü: {driver_name} - Fiyat: {tag['offered_price']}TL")
+        
+        return {
+            "success": True,
+            "tag": updated_tag,
+            "message": f"Teklif kabul edildi! {tag['offered_price']} TL"
+        }
+    except Exception as e:
+        logger.error(f"❌ Accept ride error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/ride/available-offers")
+async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km: float = 20):
+    """
+    Martı TAG - Sürücü için mevcut teklifleri getir
+    Sadece 'waiting' durumundaki ve yakındaki teklifler
+    """
+    try:
+        # Tüm bekleyen teklifleri al
+        result = supabase.table("tags").select("*, users!tags_user_id_fkey(name, phone)")\
+            .eq("status", "waiting")\
+            .order("created_at", desc=True)\
+            .limit(50)\
+            .execute()
+        
+        offers = []
+        for tag in result.data or []:
+            # Mesafe hesapla
+            distance = haversine_distance(lat, lng, tag["pickup_lat"], tag["pickup_lng"])
+            
+            # Sadece belirli yarıçap içindekiler
+            if distance <= radius_km:
+                tag["distance_to_pickup"] = round(distance, 1)
+                tag["passenger_name"] = tag.get("users", {}).get("name", "Yolcu") if tag.get("users") else "Yolcu"
+                offers.append(tag)
+        
+        # Mesafeye göre sırala (en yakın önce)
+        offers.sort(key=lambda x: x["distance_to_pickup"])
+        
+        return {"success": True, "offers": offers, "count": len(offers)}
+    except Exception as e:
+        logger.error(f"❌ Get available offers error: {e}")
+        return {"success": False, "error": str(e), "offers": []}
+
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
 app.include_router(api_router)
