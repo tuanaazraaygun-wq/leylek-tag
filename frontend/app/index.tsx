@@ -4477,9 +4477,19 @@ function PassengerDashboard({
       console.log('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
       // 🔥 TÜM TEKLİFLERİ TEMİZLE - Artık yeni teklif alamaz
       clearOffers();
-      // Eşleşme sağlandı - activeTag'i güncelle
+      
+      // 🚀 ANLIK GÜNCELLEMEActiveTag'i direkt güncelle - API bekleme!
+      if (activeTag) {
+        setActiveTag(prev => prev ? {
+          ...prev,
+          status: 'matched',
+          driver_id: data.driver_id,
+          matched_at: new Date().toISOString()
+        } : null);
+      }
+      
+      // Ayrıca API'den de çek (sürücü adı vb. için)
       loadActiveTag();
-      // Matched ekranına geçiş için activeTag.status = 'matched' olacak
     },
     // 🆕 TEKLİF KABUL EDİLDİ - Ack (backend confirmation)
     onOfferAccepted: (data) => {
