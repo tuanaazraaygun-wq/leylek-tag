@@ -4664,27 +4664,63 @@ function PassengerDashboard({
     }
   };
 
-  // ÇAĞRI BUTONU - Hedef kontrolü + koordinat gönderimi
+  // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
   const handleCallButton = async () => {
-    console.log('🔵 ÇAĞRI BUTONU TIKLANDI!');
-    console.log('Destination:', destination);
-    console.log('User:', user);
+    console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
     
     // Hedef kontrolü
     if (!destination) {
-      console.log('⚠️ Hedef yok!');
       Alert.alert('⚠️ Hedef Gerekli', 'Lütfen önce nereye gitmek istediğinizi seçin');
       return;
     }
 
-    console.log('✅ Hedef var, loading başlıyor...');
-    setLoading(true);
+    setPriceLoading(true);
     
     // GPS konumu varsa kullan, yoksa mock konum
     const pickupLat = userLocation?.latitude || 41.0082;
     const pickupLng = userLocation?.longitude || 28.9784;
     
-    // 📍 Yolcunun bulunduğu adresi reverse geocoding ile al
+    try {
+      // Fiyat hesaplama API'sini çağır
+      const response = await fetch(`${API_URL}/price/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pickup_lat: pickupLat,
+          pickup_lng: pickupLng,
+          dropoff_lat: destination.latitude,
+          dropoff_lng: destination.longitude
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setPriceInfo(data);
+        setSelectedPrice(data.suggested_price);
+        setShowPriceModal(true);
+      } else {
+        Alert.alert('Hata', 'Fiyat hesaplanamadı');
+      }
+    } catch (error) {
+      console.error('Fiyat hesaplama hatası:', error);
+      Alert.alert('Hata', 'Fiyat hesaplanamadı');
+    } finally {
+      setPriceLoading(false);
+    }
+  };
+  
+  // MARTI TAG: Fiyat teklifi gönder
+  const handleSendPriceOffer = async () => {
+    if (!destination || !priceInfo || !selectedPrice) return;
+    
+    setShowPriceModal(false);
+    setLoading(true);
+    
+    const pickupLat = userLocation?.latitude || 41.0082;
+    const pickupLng = userLocation?.longitude || 28.9784;
+    
+    // Reverse geocoding ile adres al
     let pickupAddress = 'Mevcut Konumunuz';
     try {
       const geocodeResult = await Location.reverseGeocodeAsync({
@@ -4695,9 +4731,7 @@ function PassengerDashboard({
         const addr = geocodeResult[0];
         const parts = [];
         if (addr.street) parts.push(addr.street);
-        if (addr.streetNumber) parts.push(`No: ${addr.streetNumber}`);
         if (addr.district) parts.push(addr.district);
-        if (addr.subregion) parts.push(addr.subregion);
         if (addr.city) parts.push(addr.city);
         pickupAddress = parts.length > 0 ? parts.join(', ') : 'Mevcut Konumunuz';
       }
@@ -4705,19 +4739,19 @@ function PassengerDashboard({
       console.log('Reverse geocoding hatası:', err);
     }
     
-    // 🚀 OPTIMISTIC UI - Geçici TAG ve request_id oluştur
-    // UUID v4 formatında geçici ID oluştur (backend uyumlu)
+    // UUID oluştur
     const generateUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = Math.random() * 16 | 0;
       const v = c === 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
     });
     
-    const tempTagId = generateUUID();
-    const newRequestId = generateUUID();  // 🆕 Her TAG için unique request_id
+    const tagId = generateUUID();
+    const requestId = generateUUID();
     
+    // Geçici TAG oluştur
     const tempTag = {
-      id: tempTagId,
+      id: tagId,
       user_id: user.id,
       pickup_location: pickupAddress,
       dropoff_location: destination.address,
@@ -4725,20 +4759,23 @@ function PassengerDashboard({
       pickup_lng: pickupLng,
       dropoff_lat: destination.latitude,
       dropoff_lng: destination.longitude,
-      status: 'pending',
+      offered_price: selectedPrice,
+      distance_km: priceInfo.distance_km,
+      estimated_minutes: priceInfo.estimated_minutes,
+      status: 'waiting',
       created_at: new Date().toISOString()
     };
     
-    // 1️⃣ ANINDA UI'ı güncelle
+    // UI'ı güncelle
     setActiveTag(tempTag as any);
-    setCurrentRequestId(newRequestId);  // 🆕 request_id kaydet
+    setCurrentRequestId(requestId);
     setLoading(false);
     
-    // 2️⃣ 🆕 YENİ: Socket ile 20km içindeki şoförlere yayınla
+    // Socket ile sürücülere gönder
     if (emitCreateTagRequest) {
       emitCreateTagRequest({
-        request_id: newRequestId,
-        tag_id: tempTagId,
+        request_id: requestId,
+        tag_id: tagId,
         passenger_id: user.id,
         passenger_name: user.name || user.phone,
         pickup_location: pickupAddress,
@@ -4747,20 +4784,35 @@ function PassengerDashboard({
         dropoff_location: destination.address,
         dropoff_lat: destination.latitude,
         dropoff_lng: destination.longitude,
-        notes: 'Hedef belirlendi'
+        offered_price: selectedPrice,
+        distance_km: priceInfo.distance_km,
+        estimated_minutes: priceInfo.estimated_minutes
       });
-      console.log('🔥 TAG REQUEST Socket ile 20km şoförlere yayınlandı! request_id:', newRequestId);
-    } else if (emitNewTag) {
-      // Fallback: Eski yöntem (tüm şoförlere)
-      emitNewTag({
-        tag_id: tempTagId,
-        passenger_id: user.id,
-        passenger_name: user.name || user.phone,
-        pickup_lat: pickupLat,
-        pickup_lng: pickupLng,
-        pickup_address: pickupAddress,
-        dropoff_lat: destination.latitude,
-        dropoff_lng: destination.longitude,
+      console.log('🚀 MARTI TAG: Fiyat teklifi sürücülere gönderildi!', selectedPrice, 'TL');
+    }
+    
+    // Backend'e de kaydet
+    try {
+      await fetch(`${API_URL}/ride/create-offer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          passenger_id: user.id,
+          pickup_lat: pickupLat,
+          pickup_lng: pickupLng,
+          pickup_location: pickupAddress,
+          dropoff_lat: destination.latitude,
+          dropoff_lng: destination.longitude,
+          dropoff_location: destination.address,
+          offered_price: selectedPrice,
+          distance_km: priceInfo.distance_km,
+          estimated_minutes: priceInfo.estimated_minutes
+        })
+      });
+    } catch (err) {
+      console.log('Backend kayıt hatası:', err);
+    }
+  };
         dropoff_address: destination.address,
         status: 'pending'
       });
