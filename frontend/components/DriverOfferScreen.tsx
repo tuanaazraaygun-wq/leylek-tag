@@ -71,6 +71,8 @@ export interface PassengerRequest {
   trip_distance_km?: number;
   time_to_passenger_min?: number;
   trip_duration_min?: number;
+  // 🆕 MARTI TAG
+  offered_price?: number;
   notes?: string;
   created_at?: string;
 }
@@ -81,6 +83,7 @@ interface DriverOfferScreenProps {
   driverName: string;
   driverRating: number;
   onSendOffer: (requestId: string, price: number) => Promise<boolean>;
+  onAcceptOffer?: (requestId: string) => void;  // 🆕 MARTI TAG
   onDismissRequest: (requestId: string) => void;
   onBack: () => void;
   onLogout: () => void;
