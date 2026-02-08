@@ -137,12 +137,14 @@ function RequestCard({
           </View>
           <View style={styles.passengerDetails}>
             <Text style={styles.passengerName}>{request.passenger_name || 'Yolcu'}</Text>
-            <Text style={styles.timeAgo}>Yeni istek</Text>
+            <Text style={styles.timeAgo}>Yeni teklif</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={onDismiss} style={styles.dismissBtn}>
-          <Ionicons name="close" size={20} color="#94A3B8" />
-        </TouchableOpacity>
+        {/* 🆕 MARTI TAG - Yolcunun Teklif Ettiği Fiyat */}
+        <View style={styles.priceTagContainer}>
+          <Text style={styles.priceTagLabel}>Teklif</Text>
+          <Text style={styles.priceTagValue}>{request.offered_price || 0} ₺</Text>
+        </View>
       </View>
 
       {/* Konum Bilgileri */}
@@ -194,40 +196,30 @@ function RequestCard({
         </View>
       </View>
 
-      {/* Teklif Gönder */}
-      {!sent ? (
-        <View style={styles.offerSection}>
-          <View style={styles.priceInputContainer}>
-            <TouchableOpacity 
-              onPress={() => adjustPrice(-10)} 
-              style={styles.priceBtn}
-            >
-              <Ionicons name="remove" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-            
-            <View style={styles.priceInputWrapper}>
-              <Text style={styles.currencySymbol}>₺</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={priceInput}
-                onChangeText={setPriceInput}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor="#CBD5E1"
-              />
-            </View>
-            
-            <TouchableOpacity 
-              onPress={() => adjustPrice(10)} 
-              style={styles.priceBtn}
-            >
-              <Ionicons name="add" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.sendBtn, (!priceInput || sending) && styles.sendBtnDisabled]}
-            onPress={handleSend}
+      {/* 🆕 MARTI TAG - Kabul Et / Geç Butonları */}
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={styles.dismissButton}
+          onPress={onDismiss}
+        >
+          <Text style={styles.dismissButtonText}>Geç</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.acceptButton, accepting && styles.acceptButtonDisabled]}
+          onPress={handleAccept}
+          disabled={accepting}
+        >
+          {accepting ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Text style={styles.acceptButtonText}>Kabul Et</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+}
             disabled={!priceInput || sending}
           >
             {sending ? (
