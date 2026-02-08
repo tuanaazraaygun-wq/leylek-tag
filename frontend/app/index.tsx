@@ -4863,14 +4863,28 @@ function PassengerDashboard({
 
   // Daily.co gelen arama kabul
   const handleAcceptDailyCall = () => {
-    if (passengerDailyCallerId && dailyRoomUrl) {
-      acceptDailyCall({
-        caller_id: passengerDailyCallerId,
-        room_url: dailyRoomUrl
-      });
-      setIncomingDailyCall(false);
-      setDailyCallActive(true);
+    console.log('✅ YOLCU - Arama kabul ediliyor');
+    console.log('   dailyRoomUrl:', dailyRoomUrl);
+    console.log('   passengerDailyCallerId:', passengerDailyCallerId);
+    
+    if (!dailyRoomUrl) {
+      Alert.alert('Hata', 'Room bilgisi bulunamadı');
+      return;
     }
+    
+    // Arayan'a kabul edildiğini bildir
+    acceptDailyCall({
+      caller_id: passengerDailyCallerId,
+      receiver_id: user?.id || '',
+      room_url: dailyRoomUrl,
+      room_name: dailyRoomName || '',
+      call_type: incomingCallData?.callType || 'audio'
+    });
+    
+    // Gelen arama ekranını kapat, Daily.co'ya gir
+    setIncomingCall(false);
+    setDailyCallActive(true);
+    setDailyCallerName(incomingCallData?.callerName || 'Şoför');
   };
 
   // Daily.co gelen arama reddet
