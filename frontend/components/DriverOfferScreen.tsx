@@ -646,7 +646,59 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.border,
   },
 
-  // Offer Section
+  // 🆕 MARTI TAG - Fiyat Etiketi ve Butonlar
+  priceTagContainer: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  priceTagLabel: {
+    fontSize: 10,
+    color: '#FFF',
+    opacity: 0.9,
+    textAlign: 'center',
+  },
+  priceTagValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+    textAlign: 'center',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  dismissButton: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  dismissButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  acceptButton: {
+    flex: 2,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  acceptButtonDisabled: {
+    backgroundColor: '#CBD5E1',
+  },
+  acceptButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+
+  // Offer Section (Eski - artık kullanılmıyor)
   offerSection: {
     flexDirection: 'row',
     alignItems: 'center',
