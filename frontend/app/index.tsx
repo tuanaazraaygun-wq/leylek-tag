@@ -4791,12 +4791,13 @@ function PassengerDashboard({
       console.log('🚀 MARTI TAG: Fiyat teklifi sürücülere gönderildi!', selectedPrice, 'TL');
     }
     
-    // Backend'e de kaydet
+    // Backend'e de kaydet - AYNI TAG_ID İLE
     try {
-      await fetch(`${API_URL}/ride/create-offer`, {
+      const response = await fetch(`${API_URL}/ride/create-offer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          tag_id: tagId,  // 🔥 AYNI TAG ID
           passenger_id: user.id,
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
@@ -4809,6 +4810,11 @@ function PassengerDashboard({
           estimated_minutes: priceInfo.estimated_minutes
         })
       });
+      const data = await response.json();
+      if (data.success && data.tag) {
+        // Backend'den gelen gerçek tag ile güncelle
+        setActiveTag(data.tag);
+      }
     } catch (err) {
       console.log('Backend kayıt hatası:', err);
     }
