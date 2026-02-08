@@ -6475,15 +6475,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   };
 
   const loadRequests = async () => {
-    try {
-      const response = await fetch(`${API_URL}/driver/requests?user_id=${user.id}`);
-      const data = await response.json();
-      if (data.success) {
-        setRequests(data.requests);
-      }
-    } catch (error) {
-      console.error('Talepler yüklenemedi:', error);
-    }
+    // 🆕 MARTI TAG: API'den yükleme devre dışı - sadece socket'ten alıyoruz
+    // Socket'ten gelen tekliflerin ezilmesini önlemek için API çağrısı kaldırıldı
+    // Teklifler onNewTag callback'i ile geliyor
+    console.log('📡 MARTI TAG: Teklifler socket üzerinden alınıyor');
   };
 
   const [offerModalVisible, setOfferModalVisible] = useState(false);
