@@ -381,9 +381,13 @@ export default function useSocket({
     
     socket.on('new_tag', handleNewTag);
     socket.on('tag_created', handleNewTag); // Alias
+    socket.on('new_passenger_offer', handleNewTag); // 🆕 MARTI TAG
     socket.on('tag_cancelled', handleTagCancelled);
+    socket.on('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
+    socket.on('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG - Başka sürücü aldı
     socket.on('tag_updated', handleTagUpdated);
     socket.on('tag_matched', handleTagMatched);
+    socket.on('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG - Sürücü kabul etti
     
     socket.on('new_offer', handleNewOffer);
     socket.on('offer_accepted', handleOfferAccepted);
