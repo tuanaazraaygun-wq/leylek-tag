@@ -6803,16 +6803,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           dropoff_location: req.dropoff_location || req.destination || 'Belirtilmedi',
           dropoff_lat: req.dropoff_lat,
           dropoff_lng: req.dropoff_lng,
-          distance_to_passenger_km: req.distance_to_passenger_km,
-          trip_distance_km: req.trip_distance_km,
+          distance_to_passenger_km: req.distance_to_passenger_km || req.distance_to_pickup,
+          trip_distance_km: req.trip_distance_km || req.distance_km,
           time_to_passenger_min: req.time_to_passenger_min,
-          trip_duration_min: req.trip_duration_min,
+          trip_duration_min: req.trip_duration_min || req.estimated_minutes,
+          // 🆕 MARTI TAG - Yolcu fiyat teklifi
+          offered_price: req.offered_price || 0,
           notes: req.notes,
           created_at: req.created_at,
         }))}
         driverName={user.name}
         driverRating={user.rating || 5.0}
         onSendOffer={sendOfferInstant}
+        onAcceptOffer={handleDriverAcceptOffer}
         onDismissRequest={handleDismissRequest}
         onBack={() => setScreen('role-select')}
         onLogout={logout}
