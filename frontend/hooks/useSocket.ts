@@ -425,9 +425,13 @@ export default function useSocket({
       
       socket.off('new_tag', handleNewTag);
       socket.off('tag_created', handleNewTag);
+      socket.off('new_passenger_offer', handleNewTag); // 🆕 MARTI TAG
       socket.off('tag_cancelled', handleTagCancelled);
+      socket.off('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
+      socket.off('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG
       socket.off('tag_updated', handleTagUpdated);
       socket.off('tag_matched', handleTagMatched);
+      socket.off('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG
       
       socket.off('new_offer', handleNewOffer);
       socket.off('offer_accepted', handleOfferAccepted);
