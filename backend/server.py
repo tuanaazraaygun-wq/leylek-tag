@@ -4255,6 +4255,7 @@ async def calculate_price(request: CalculatePriceRequest):
         return {"success": False, "error": str(e)}
 
 class CreateRideOfferRequest(BaseModel):
+    tag_id: str = None  # 🆕 Frontend'den gelen ID
     passenger_id: str
     pickup_lat: float
     pickup_lng: float
@@ -4273,8 +4274,12 @@ async def create_ride_offer(request: CreateRideOfferRequest):
     Bu teklif tüm yakındaki sürücülere gönderilir
     """
     try:
+        # Tag ID - frontend'den gelen veya yeni oluştur
+        tag_id = request.tag_id or str(uuid.uuid4())
+        
         # Tag oluştur
         tag_data = {
+            "id": tag_id,  # 🔥 Frontend'den gelen ID kullan
             "user_id": request.passenger_id,
             "pickup_lat": request.pickup_lat,
             "pickup_lng": request.pickup_lng,
@@ -4282,10 +4287,10 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             "dropoff_lat": request.dropoff_lat,
             "dropoff_lng": request.dropoff_lng,
             "dropoff_location": request.dropoff_location,
-            "offered_price": request.offered_price,  # Yolcunun teklif ettiği fiyat
+            "offered_price": request.offered_price,
             "distance_km": request.distance_km,
             "estimated_minutes": request.estimated_minutes,
-            "status": "waiting",  # Sürücü bekliyor
+            "status": "waiting",  # 🔥 MARTI TAG: Sürücü bekliyor
             "created_at": datetime.utcnow().isoformat()
         }
         
