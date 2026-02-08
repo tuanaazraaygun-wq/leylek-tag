@@ -597,6 +597,18 @@ export default function useSocket({
     contextEmitRejectOffer(data);
   }, [contextEmitRejectOffer]);
 
+  // 🆕 MARTI TAG: Sürücü teklifi kabul eder
+  const emitDriverAcceptOffer = useCallback((data: {
+    tag_id: string;
+    driver_id: string;
+    driver_name: string;
+  }) => {
+    if (socket?.connected) {
+      console.log('✅ [useSocket] SÜRÜCÜ TEKLİFİ KABUL EDİYOR:', data);
+      socket.emit('driver_accept_offer', data);
+    }
+  }, [socket]);
+
   // ══════════ KONUM FONKSİYONLARI ══════════
 
   const emitLocationUpdate = useCallback((data: LocationData) => {
