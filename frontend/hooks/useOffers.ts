@@ -18,7 +18,7 @@ import Constants from 'expo-constants';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://riderlink-1.preview.emergentagent.com';
+                    'https://driverhub-27.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 // ==================== TYPES ====================
