@@ -393,6 +393,11 @@ export default function useSocket({
     socket.on('offer_accepted', handleOfferAccepted);
     socket.on('offer_rejected', handleOfferRejected);
     socket.on('offer_sent_ack', handleOfferSentAck);
+    socket.on('driver_matched', handleTagMatched); // 🆕 MARTI TAG - Yolcuya sürücü eşleşti
+    socket.on('offer_already_taken', (data: any) => {
+      console.log('❌ Teklif başkası tarafından alındı:', data);
+      if (callbacks.onOfferRejected) callbacks.onOfferRejected(data);
+    }); // 🆕 MARTI TAG
     
     socket.on('location_updated', handleLocationUpdated);
     
