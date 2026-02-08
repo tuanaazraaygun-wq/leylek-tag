@@ -6267,13 +6267,18 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           dropoff_lng: data.dropoff_lng,
           dropoff_address: data.dropoff_address || data.dropoff_location,
           dropoff_location: data.dropoff_location || data.dropoff_address,
+          // 🆕 MARTI TAG - Yolcu fiyat teklifi
+          offered_price: data.offered_price || 0,
+          distance_km: data.distance_km || 0,
+          estimated_minutes: data.estimated_minutes || 0,
+          distance_to_pickup: data.distance_to_pickup || 0,
           status: 'pending',
           created_at: new Date().toISOString(),
           // Mesafeler hesaplanıyor işareti
-          distance_to_passenger_km: null,
+          distance_to_passenger_km: data.distance_to_pickup || null,
           time_to_passenger_min: null,
-          trip_distance_km: null,
-          trip_duration_min: null,
+          trip_distance_km: data.distance_km || null,
+          trip_duration_min: data.estimated_minutes || null,
         }];
       });
       
