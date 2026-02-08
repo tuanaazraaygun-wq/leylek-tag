@@ -6065,6 +6065,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitSendOffer: socketSendOffer,
+    emitDriverAcceptOffer,  // 🆕 MARTI TAG
     emitDriverLocationUpdate,  // 🆕 YENİ: Şoför konum güncelleme (RAM)
     // 🆕 Daily.co Call Signaling
     emitCallInvite,
