@@ -4071,7 +4071,7 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
           ) : (
             <>
               <Ionicons name="call" size={60} color="#FFF" />
-              <Text style={styles.callButtonText}>TEKLİF İSTE</Text>
+              <Text style={styles.callButtonText}>TEKLİF GÖNDER</Text>
             </>
           )}
         </LinearGradient>
