@@ -5317,8 +5317,92 @@ function PassengerDashboard({
             
             <AnimatedPulseButton 
               onPress={handleCallButton} 
-              loading={loading}
+              loading={loading || priceLoading}
             />
+            
+            {/* 🆕 MARTI TAG - Fiyat Teklif Modal */}
+            <Modal
+              visible={showPriceModal}
+              transparent={true}
+              animationType="slide"
+              onRequestClose={() => setShowPriceModal(false)}
+            >
+              <View style={styles.priceModalOverlay}>
+                <View style={styles.priceModalContent}>
+                  <Text style={styles.priceModalTitle}>💰 Fiyat Teklifiniz</Text>
+                  
+                  {priceInfo && (
+                    <>
+                      <View style={styles.priceInfoRow}>
+                        <Text style={styles.priceInfoLabel}>Mesafe:</Text>
+                        <Text style={styles.priceInfoValue}>{priceInfo.distance_km} km</Text>
+                      </View>
+                      <View style={styles.priceInfoRow}>
+                        <Text style={styles.priceInfoLabel}>Tahmini Süre:</Text>
+                        <Text style={styles.priceInfoValue}>{priceInfo.estimated_minutes} dk</Text>
+                      </View>
+                      {priceInfo.is_peak_hour && (
+                        <View style={styles.peakHourBadge}>
+                          <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
+                        </View>
+                      )}
+                      
+                      <View style={styles.priceRangeContainer}>
+                        <Text style={styles.priceRangeLabel}>Fiyat Aralığı:</Text>
+                        <Text style={styles.priceRangeValue}>{priceInfo.min_price} - {priceInfo.max_price} TL</Text>
+                      </View>
+                      
+                      <View style={styles.selectedPriceContainer}>
+                        <Text style={styles.selectedPriceLabel}>Teklifiniz:</Text>
+                        <Text style={styles.selectedPriceValue}>{selectedPrice} TL</Text>
+                      </View>
+                      
+                      {/* Slider */}
+                      <View style={styles.sliderContainer}>
+                        <TouchableOpacity 
+                          style={styles.sliderButton}
+                          onPress={() => setSelectedPrice(Math.max(priceInfo.min_price, selectedPrice - 5))}
+                        >
+                          <Text style={styles.sliderButtonText}>-5</Text>
+                        </TouchableOpacity>
+                        
+                        <View style={styles.sliderTrack}>
+                          <View 
+                            style={[
+                              styles.sliderFill, 
+                              { width: `${((selectedPrice - priceInfo.min_price) / (priceInfo.max_price - priceInfo.min_price)) * 100}%` }
+                            ]} 
+                          />
+                        </View>
+                        
+                        <TouchableOpacity 
+                          style={styles.sliderButton}
+                          onPress={() => setSelectedPrice(Math.min(priceInfo.max_price, selectedPrice + 5))}
+                        >
+                          <Text style={styles.sliderButtonText}>+5</Text>
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <View style={styles.priceModalButtons}>
+                        <TouchableOpacity 
+                          style={styles.priceModalCancelButton}
+                          onPress={() => setShowPriceModal(false)}
+                        >
+                          <Text style={styles.priceModalCancelText}>İptal</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          style={styles.priceModalSendButton}
+                          onPress={handleSendPriceOffer}
+                        >
+                          <Text style={styles.priceModalSendText}>🚀 Teklif Gönder</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            </Modal>
           </View>
         ) : null}
 
