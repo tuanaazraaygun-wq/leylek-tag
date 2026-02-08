@@ -89,23 +89,21 @@ interface DriverOfferScreenProps {
   onLogout: () => void;
 }
 
-// Yolcu Request Kartı Bileşeni
+// Yolcu Request Kartı Bileşeni - MARTI TAG MODELİ
 function RequestCard({ 
   request, 
   driverLocation,
-  onSendOffer, 
+  onAccept, 
   onDismiss,
   index
 }: { 
   request: PassengerRequest; 
   driverLocation: { latitude: number; longitude: number } | null;
-  onSendOffer: (price: number) => Promise<boolean>;
+  onAccept: () => void;
   onDismiss: () => void;
   index: number;
 }) {
-  const [priceInput, setPriceInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
@@ -122,33 +120,11 @@ function RequestCard({
   const timeToPassenger = request.time_to_passenger_min || Math.round((request.distance_to_passenger_km || 5) / 40 * 60);
   const tripDuration = request.trip_duration_min || Math.round((request.trip_distance_km || 10) / 50 * 60);
 
-  // Fiyat ayarla
-  const adjustPrice = (delta: number) => {
-    const current = Number(priceInput) || 0;
-    const newPrice = Math.max(10, current + delta);
-    setPriceInput(String(newPrice));
-  };
-
-  // Teklif gönder
-  const handleSend = async () => {
-    if (!priceInput || sending || sent) return;
-    const price = Number(priceInput);
-    if (price < 10) {
-      Alert.alert('Hata', 'Minimum 10₺ giriniz');
-      return;
-    }
-
-    setSending(true);
-    const success = await onSendOffer(price);
-    setSending(false);
-
-    if (success) {
-      setSent(true);
-      Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 1.02, duration: 100, useNativeDriver: true }),
-        Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
-      ]).start();
-    }
+  // Kabul Et
+  const handleAccept = async () => {
+    if (accepting) return;
+    setAccepting(true);
+    onAccept();
   };
 
   return (
