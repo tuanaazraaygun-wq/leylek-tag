@@ -7403,6 +7403,145 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
+  // 🆕 MARTI TAG - Fiyat Modal Stilleri
+  priceModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  priceModalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  priceModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#1B1B1E',
+  },
+  priceInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  priceInfoLabel: {
+    fontSize: 16,
+    color: '#666',
+  },
+  priceInfoValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1B1B1E',
+  },
+  peakHourBadge: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'center',
+    marginVertical: 10,
+  },
+  peakHourText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  priceRangeContainer: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 16,
+    marginVertical: 16,
+    alignItems: 'center',
+  },
+  priceRangeLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  priceRangeValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1B1B1E',
+  },
+  selectedPriceContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  selectedPriceLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  selectedPriceValue: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#87CEEB',
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  sliderButton: {
+    width: 50,
+    height: 50,
+    backgroundColor: '#87CEEB',
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sliderButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  sliderTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    marginHorizontal: 16,
+    overflow: 'hidden',
+  },
+  sliderFill: {
+    height: '100%',
+    backgroundColor: '#87CEEB',
+    borderRadius: 4,
+  },
+  priceModalButtons: {
+    flexDirection: 'row',
+    marginTop: 20,
+    gap: 12,
+  },
+  priceModalCancelButton: {
+    flex: 1,
+    backgroundColor: '#F0F0F0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  priceModalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  priceModalSendButton: {
+    flex: 2,
+    backgroundColor: '#87CEEB',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  priceModalSendText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
   // 🆕 Eşleşme Sağlanıyor Stili
   matchingOverlay: {
     position: 'absolute',
