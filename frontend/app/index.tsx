@@ -6692,7 +6692,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
-              // INSTANT CALL - Socket HEMEN, Daily.co SADECE KABUL EDILINCE - SOFOR
+              // FIXED CALL FLOW - Room ÖNCE oluştur, SONRA davet gönder - SOFOR
               // ════════════════════════════════════════════════════════════
               
               if (dailyCallActive || incomingDailyCall || outgoingCall) {
@@ -6708,19 +6708,6 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               const passengerId = activeTag.passenger_id;
               const passengerName = activeTag.passenger_name || 'Yolcu';
               
-              // 🆕 YENİ AKIŞ: Sadece call_invite gönder, room oluşturma YOK
-              // Room, aranan kabul ettiğinde socket server tarafından oluşturulacak
-              console.log('📞 ŞOFÖR ARIYOR - call_invite gönderiliyor', { caller: user.id, receiver: passengerId });
-              emitCallInvite({
-                caller_id: user.id,
-                caller_name: user.name || 'Sofor',
-                receiver_id: passengerId,
-                room_url: '',  // Henüz yok
-                room_name: '',  // Henüz yok
-                call_type: type,
-                tag_id: activeTag.id || '',
-              });
-              
               // "Aranıyor..." ekranını göster
               setOutgoingCallData({
                 receiverName: passengerName,
@@ -6731,9 +6718,65 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               });
               setOutgoingCall(true);
               
-              // NOT: Daily room oluşturma YOK
-              // Aranan kabul ettiğinde socket server room oluşturup
-              // HER İKİ TARAFA call_accepted gönderecek
+              try {
+                // 1. Daily.co room oluştur
+                console.log('📞 ŞOFÖR - Daily.co room oluşturuluyor...');
+                const response = await fetch(`${API_URL}/calls/start`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    caller_id: user.id,
+                    receiver_id: passengerId,
+                    call_type: type,
+                    tag_id: activeTag.id || ''
+                  })
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success || !data.room_url) {
+                  setOutgoingCall(false);
+                  setOutgoingCallData(null);
+                  Alert.alert('Hata', 'Arama başlatılamadı');
+                  return;
+                }
+                
+                console.log('📞 ŞOFÖR - Room hazır:', data.room_url);
+                
+                // 2. Socket ile karşı tarafa call_invite gönder (room_url ile birlikte!)
+                emitCallInvite({
+                  caller_id: user.id,
+                  caller_name: user.name || 'Sofor',
+                  receiver_id: passengerId,
+                  room_url: data.room_url,
+                  room_name: data.room_name,
+                  call_type: type,
+                  tag_id: activeTag.id || '',
+                });
+                
+                // 3. Outgoing call verilerini güncelle
+                setOutgoingCallData({
+                  receiverName: passengerName,
+                  callType: type,
+                  roomUrl: data.room_url,
+                  roomName: data.room_name,
+                  receiverId: passengerId,
+                });
+                
+                // 4. Arayan'ın room bilgilerini kaydet
+                setDailyRoomUrl(data.room_url);
+                setDailyRoomName(data.room_name);
+                setDailyCallType(type);
+                setDailyCallerId(user.id);
+                setDailyReceiverId(passengerId);
+                setDailyCallerName(passengerName);
+                
+              } catch (error) {
+                console.error('Arama başlatma hatası:', error);
+                setOutgoingCall(false);
+                setOutgoingCallData(null);
+                Alert.alert('Hata', 'Arama başlatılamadı');
+              }
             }}
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
