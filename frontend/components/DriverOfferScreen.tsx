@@ -220,27 +220,6 @@ function RequestCard({
     </Animated.View>
   );
 }
-            disabled={!priceInput || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <>
-                <Ionicons name="send" size={18} color="#FFF" />
-                <Text style={styles.sendBtnText}>Teklif Gönder</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.sentContainer}>
-          <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
-          <Text style={styles.sentText}>Teklif Gönderildi - ₺{priceInput}</Text>
-        </View>
-      )}
-    </Animated.View>
-  );
-}
 
 export default function DriverOfferScreen({
   driverLocation,
@@ -248,6 +227,7 @@ export default function DriverOfferScreen({
   driverName,
   driverRating,
   onSendOffer,
+  onAcceptOffer,
   onDismissRequest,
   onBack,
   onLogout,
