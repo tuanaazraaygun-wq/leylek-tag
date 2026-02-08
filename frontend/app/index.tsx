@@ -4946,33 +4946,42 @@ function PassengerDashboard({
     setMatchingInProgress(true);
 
     try {
-      // useOffers hook'undan gelen acceptOffer kullan
+      // 🚀 ÖNCE Socket ile anında bildir (hızlı feedback)
+      if (socketAcceptOffer) {
+        socketAcceptOffer({
+          request_id: currentRequestId,
+          offer_id: offerId,
+          driver_id: selectedOffer.driver_id,
+          tag_id: activeTag.id,
+          passenger_id: user?.id
+        });
+      }
+      
+      // Backend API'yi çağır (arka planda)
       const success = await acceptOfferAPI(offerId, selectedOffer.driver_id, activeTag.id, currentRequestId || undefined);
+      
       if (success) {
-        // Socket üzerinden de bildir
-        if (socketAcceptOffer) {
-          socketAcceptOffer({
-            request_id: currentRequestId,
-            offer_id: offerId,
-            driver_id: selectedOffer.driver_id,
-            tag_id: activeTag.id,
-            passenger_id: user?.id
-          });
-        }
-        
-        // 🔇 Ses devre dışı - kullanıcı isteği
-        // await playMatchSound();
-        
-        // Sadece sürücü adını kaydet, arama başlatma
+        // Sadece sürücü adını kaydet
         setSelectedDriverName(selectedOffer.driver_name);
         
-        // 2 saniye sonra "Eşleşme sağlanıyor..." kapat ve harita aç
-        setTimeout(async () => {
-          setMatchingInProgress(false);
-          // 🔇 Ses devre dışı - kullanıcı isteği
-          // await playStartSound();
-          loadActiveTag();
-        }, 2000);
+        // 🚀 ANINDA state'i güncelle - gecikme YOK
+        setActiveTag(prev => prev ? {
+          ...prev,
+          status: 'matched',
+          driver_id: selectedOffer.driver_id,
+          driver_name: selectedOffer.driver_name,
+          final_price: selectedOffer.price,
+          matched_at: new Date().toISOString()
+        } : null);
+        
+        // Teklifleri temizle
+        clearOffers();
+        
+        // "Eşleşme sağlanıyor..." kapat
+        setMatchingInProgress(false);
+        
+        // API'den tam veriyi çek (arka planda)
+        loadActiveTag();
       } else {
         setMatchingInProgress(false);
         Alert.alert('Hata', 'Teklif kabul edilemedi');
