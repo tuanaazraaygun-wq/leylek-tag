@@ -4140,6 +4140,19 @@ function PassengerDashboard({
   const [passengerEndTripModalVisible, setPassengerEndTripModalVisible] = useState(false);
   const [passengerForceEndConfirmVisible, setPassengerForceEndConfirmVisible] = useState(false);
   
+  // 🆕 MARTI TAG - Fiyat Teklifi State'leri
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [priceInfo, setPriceInfo] = useState<{
+    distance_km: number;
+    estimated_minutes: number;
+    min_price: number;
+    max_price: number;
+    suggested_price: number;
+    is_peak_hour: boolean;
+  } | null>(null);
+  const [selectedPrice, setSelectedPrice] = useState<number>(0);
+  const [priceLoading, setPriceLoading] = useState(false);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
