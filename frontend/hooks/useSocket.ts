@@ -396,7 +396,7 @@ export default function useSocket({
     socket.on('driver_matched', handleTagMatched); // 🆕 MARTI TAG - Yolcuya sürücü eşleşti
     socket.on('offer_already_taken', (data: any) => {
       console.log('❌ Teklif başkası tarafından alındı:', data);
-      if (callbacks.onOfferRejected) callbacks.onOfferRejected(data);
+      callbackRefs.current.onOfferRejected?.(data);
     }); // 🆕 MARTI TAG
     
     socket.on('location_updated', handleLocationUpdated);
