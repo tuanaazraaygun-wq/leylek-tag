@@ -556,9 +556,14 @@ export default function useSocket({
     dropoff_location: string;
     dropoff_lat: number;
     dropoff_lng: number;
+    // 🆕 MARTI TAG parametreleri
+    offered_price?: number;
+    distance_km?: number;
+    estimated_minutes?: number;
     notes?: string;
   }) => {
     console.log('🏷️ [useSocket] TAG REQUEST gönderiliyor:', data);
+    console.log('   offered_price:', data.offered_price);
     contextEmitCreateTagRequest(data);
   }, [contextEmitCreateTagRequest]);
 
