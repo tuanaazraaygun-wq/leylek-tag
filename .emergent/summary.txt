@@ -1,176 +1,171 @@
 <analysis>
+<original_problem_statement>
+The user's initial goal was to fix a broken offer and matching system. This request evolved into a major pivot: completely replacing the existing system with a Martı TAG style bidding model.
 
-**original_problem_statement**:
-The user's initial goal was to fix the offer and matching system, which was plagued by numerous issues including offers not being received, duplicate requests, and a slow, non-synchronized End Trip flow. Over the course of the session, the user's requirements became more specific and urgent, culminating in a request for a complete redesign of the driver's offer screen to a map-based UI, mirroring a provided image.
+**PRODUCT REQUIREMENTS (MARTI TAG MODEL):**
+1.  **Passenger-Led Bidding:**
+    *   A passenger enters a pickup and drop-off location.
+    *   The system calculates an estimated distance, time, and a suggested price range (e.g., 22-36 TL/km).
+    *   The passenger enters their own price offer.
+    *   This offer is broadcast in real-time to nearby (20km) drivers.
+2.  **Driver Acceptance:**
+    *   Drivers see a list of passenger offers, including pickup/drop-off, distance, and the passenger's offered price.
+    *   Drivers can only **Accept** or **Ignore** an offer. They cannot make a counter-offer.
+3.  **First-Come, First-Served Matching:**
+    *   The **first** driver to accept the offer is instantly matched with the passenger.
+    *   Once a match occurs, the offer must be immediately removed from all other drivers' screens.
+4.  **Pricing Logic:**
+    *   Normal hours: 22-36 TL/km.
+    *   Peak hours (08:00-10:00, 17:00-20:00): 40-45 TL/km.
+5.  **Core Feature Stability:** The existing voice/video call and messaging systems must remain functional after the new bidding system is implemented.
+6.  **New Driver Visibility:** When a new driver enters an area or comes online, they must immediately see all currently active passenger offers.
 
-**PRODUCT REQUIREMENTS:**
-1.  **Stable Core Loop (P0):** The primary flow (Passenger requests -> Driver sees request -> Driver sends offer -> Passenger receives offer -> Passenger accepts -> Match occurs -> Voice call works) MUST be fast, reliable, and stable.
-2.  **Driver UI Redesign (P0):** Replace the full-screen TikTok style cards with a new screen:
-    *   Top: A map showing all active passenger requests in a 20km radius of the driver.
-    *   Bottom: A scrollable list of compact cards, one for each request, similar to the UI in a user-provided image.
-    *   The driver should be able to send offers to multiple passengers quickly.
-3.  **No Duplicate Requests (P1):** A passenger should not be able to create multiple, identical ride requests that appear as separate cards for the driver.
-4.  **Match Cleanup (P1):** Once a passenger accepts an offer, that ride request must be removed from all other drivers' screens.
-5.  **Voice Call UI Fix (P2):** The End Call button in the Daily.co call screen must be fully visible and not cut off at the bottom.
-6.  **End Trip Sync & Points (P2):** The trip-ending process should be fast and synchronized for both users. A points system (+1 for mutual, -5 for forced end) should be implemented.
-
+</original_problem_statement>
 **User's preferred language**: Turkish
 
 **what currently exists?**
--   The application is a full-stack Expo/FastAPI app.
--   The chat system, using Supabase Realtime Broadcast, is stable and working correctly.
--   The custom Python Socket.IO server () has been heavily modified and rewritten multiple times to fix critical bugs, culminating in **version 9.1**. This version specifically addresses incorrect socket event names for the voice call flow.
--   The frontend features a massive, monolithic component () that handles most of the application's logic for both passenger and driver roles.
--   A new UI component, , has been created based on a user-provided image, but it is not yet fully integrated or populated with live data.
--   The backend API endpoint for accepting offers () was made more robust to handle different  formats.
+The application is a full-stack Expo/FastAPI app with a three-part architecture:
+1.  **Expo Frontend:** A large, monolithic  file contains most of the UI and logic for both passenger and driver roles. It has been heavily modified to implement the Martı TAG UI flow, including a new price offer modal for passengers and a revamped offer list for drivers in .
+2.  **FastAPI Backend ():** Handles user authentication and database operations via Supabase. A new endpoint  was added to provide dynamic price ranges to the passenger.
+3.  **Python Socket.IO Server ():** Located on an external VPS, this server is the brain of the real-time system. It has been rewritten to version  to manage the entire Martı TAG flow: receiving passenger offers, broadcasting them to drivers, and handling the first-to-accept matching logic.
 
 **Last working item**:
--   **Last item agent was working**: Fixing a critical regression where the voice/video call feature was broken. The agent diagnosed that the socket event names being emitted by the server (e.g., ) did not match the event names the frontend was listening for (e.g., ). The agent rewrote the call-related event emitters in  to match the frontend, creating version .
--   **Status**: **USER VERIFICATION PENDING**
--   **Agent Testing Done**: N (The fix was implemented, and an APK was generated, but the agent did not perform a test of the fix itself.)
--   **Which testing method agent to use?**: Manual testing. The entire core flow needs to be tested by two users (one driver, one passenger):
-    1.  Passenger requests a ride.
-    2.  Driver receives the request and sends an offer.
-    3.  Passenger receives the offer and accepts it.
-    4.  A match should be established.
-    5.  One user should initiate a voice call, and the other user's device should ring.
--   **User Testing Done**: N (The user has not yet tested the latest APK with the voice call fix).
+-   **Last item agent was working**: Debugging why, after a driver accepts a passenger's offer, the match is not reflected on the frontend for either user. The agent successfully diagnosed that the socket server () logs a MATCH but fails to emit the subsequent events (, , ) that are necessary to inform the clients of the successful match.
+-   **Status**: **IN PROGRESS**
+-   **Agent Testing Done**: N
+-   **Which testing method agent to use?**: Manual testing. The next agent must SSH into the socket server, monitor the logs, and then use two devices/simulators (one passenger, one driver) with the latest APK to test the full flow.
+-   **User Testing Done**: Y (User confirmed that after accepting, the match does not happen on the UI).
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P0) Voice/Video Call functionality is broken.**
-    -   **Description**: This is a critical regression. When a user tries to initiate a call, the other user does not receive the incoming call notification.
-    -   **Attempted fixes**: The agent identified a mismatch between server-emitted event names () and client-side listeners (). A fix was implemented in  (v9.1) to align the event names. An APK has been built with this fix.
+-   **Issue 1: (P0) Frontend does not update after a successful match.**
+    -   **Description**: The driver can see and accept a passenger's offer. The socket server log correctly shows a  entry, confirming the backend logic works. However, the server then fails to send the necessary confirmation events (, , ) to the clients. As a result, both the driver's and passenger's UIs remain unchanged, and they are not moved to the in-progress ride screen.
+    -   **Attempted fixes**: The agent identified the symptom by reviewing socket logs but did not attempt a code fix.
     -   **Next debug checklist**:
-        1.  User needs to test the latest APK to confirm if the call functionality is restored.
-        2.  If it still fails, monitor the  logs for  events and check the client-side console for logs within the  handler in .
-    -   **Why fix this issue and what will be achieved with the fix?**: This is a core feature of the application. Fixing it is essential for the user experience after a match.
-    -   **Status**: **USER VERIFICATION PENDING**
-    -   **Is recurring issue?**: Y (This feature has broken multiple times).
-    -   **Should Test frontend/backend/both after fix?**: Both (Manual testing of the full flow).
+        1.  SSH into the socket server:  (pass: ).
+        2.  View the file .
+        3.  Inspect the  event handler.
+        4.  Locate the section where the match is confirmed (likely after the  log is printed).
+        5.  Verify that the  calls for , , and  are present, correctly formatted, and being executed. The issue is likely a silent failure or a missing  call in this block.
+    -   **Why fix this issue and what will be achieved with the fix?**: This is the final bug blocking the entire Martı TAG core loop. Fixing it will make the main feature of the application functional.
+    -   **Status**: **IN PROGRESS**
+    -   **Is recurring issue?**: N (Specific to the new Martı TAG flow).
+    -   **Should Test frontend/backend/both after fix?**: Both (Full manual end-to-end test).
     -   **Blocked on other issue**: None.
 
--   **Issue 2: (P1) Core offer flow is unstable.**
-    -   **Description**: Throughout the session, the offer system has been highly unreliable. Issues have included offers not being sent from the driver, offers not being received by the passenger, and matches failing upon acceptance. The latest server-side fixes (v9.0/v9.1) aim to resolve this, but the user's last report indicated it was still not working.
-    -   **Attempted fixes**: Numerous fixes, including:
-        -   Rewriting  to use up-to-date Socket IDs instead of stale ones.
-        -   Removing distance-based filtering on the server to ensure all drivers receive requests.
-        -   Making the backend  API more robust.
+-   **Issue 2: (P2) Inefficient  socket event.**
+    -   **Description**: The frontend client emits a  event every 10 seconds. This creates unnecessary server load and was the source of several bugs that have since been patched with workarounds (e.g., sending all offers on every register). The root cause has not been fixed.
+    -   **Attempted fixes**: None. Identified but deprioritized.
     -   **Next debug checklist**:
-        1.  After the call issue is verified, conduct a full end-to-end test of the offer flow.
-        2.  Monitor server logs for , , , and  events.
-        3.  Monitor client logs to ensure the state updates correctly.
-    -   **Why fix this issue and what will be achieved with the fix?**: This is the absolute core business logic of the app. It must be 100% reliable.
-    -   **Status**: **IN PROGRESS**
-    -   **Is recurring issue?**: Y
-    -   **Should Test frontend/backend/both after fix?**: Both.
-    -   **Blocked on other issue**: Issue 1 (Calls should be fixed first as it was the last reported regression).
-
--   **Issue 3: (P2) Inefficient  socket event.**
-    -   **Description**: Server logs consistently show that clients are emitting the  event every 10 seconds. This creates unnecessary server load and network traffic.
-    -   **Attempted fixes**: None. This was identified but deprioritized in favor of more critical bugs.
-    -   **Next debug checklist**:
-        1.  Locate the  or looping mechanism in the frontend code, likely in  or , that triggers the repeated registration.
-        2.  Modify the logic to register only once upon connection or when the user's role is selected.
+        1.  Find the  in  that calls  or a similar function every 10 seconds.
+        2.  Trace this call to determine why it's triggering a full  event.
+        3.  Modify the logic to register only once upon connection and role selection, and have the interval send a lighter-weight  event instead.
     -   **Why fix this issue and what will be achieved with the fix?**: Improves app performance, reduces server load, and makes the system more stable and scalable.
     -   **Status**: **NOT STARTED**
     -   **Is recurring issue?**: Y
-    -   **Should Test frontend/backend/both after fix?**: Both.
-    -   **Blocked on other issue**: None.
+    -   **Should Test frontend/backend/both after fix?**: Backend (to ensure location updates still work).
+    -   **Blocked on other issue**: Issue 1.
 
 **In progress Task List**:
--   **Task 1: (P0) Stabilize and Verify Core Application Flow**
-    -   **Where to resume**: Waiting for user to test the latest APK () which contains the fix for the voice call system.
-    -   **What will be achieved with this?**: A stable base application where ride requests, offers, matching, and voice calls all function correctly, unblocking further development.
+-   **Task 1: (P0) Finalize and Stabilize the Martı TAG Core Loop**
+    -   **Where to resume**: Debugging the  handler in  to fix the missing post-match socket events.
+    -   **What will be achieved with this?**: A fully functional ride-hailing core loop where a passenger can offer a price, a driver can accept it, and both are correctly moved to a matched state.
     -   **Status**: **IN PROGRESS**
     -   **Should Test frontend/backend/both after fix?**: Both.
-    -   **Blocked on something**: User feedback.
+    -   **Blocked on something**: None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   **(P0) Fully Integrate **: The new UI component exists but is a static placeholder. It needs to be fully integrated for both driver and passenger roles to replace the current screens. This involves:
-        -   Passing the  array to the component for the driver.
-        -   Passing the  array to the component for the passenger.
-        -   Displaying markers on the map for each request/offer.
-        -   Wiring up the  and  buttons on the new cards.
-    -   **(P1) Implement Robust De-duplication:** While server-side checks were added, the user still reports duplicate requests. Implement a client-side control to disable the Request Offer button after it's pressed and show a loading/waiting state to prevent rapid resubmission.
+    -   **(P1) Regression Test Voice/Video Call**: The call system was heavily modified and has a history of being fragile. After the core matching loop is stable, it needs a full end-to-end test.
 -   **Future Tasks:**
-    -   **(P2) End Trip Flow Synchronization**: Implement the socket-based logic to ensure when one user ends a trip, the UI updates for both users simultaneously.
-    -   **(P2) Points System**: Implement the backend logic to award +1 or -5 points based on how a trip ends.
+    -   **(P2) End Trip Flow Synchronization**: Implement socket-based logic to ensure when one user ends a trip, the UI updates for both users simultaneously.
+    -   **(P2) Points System**: Implement backend logic for the points system (+1 for mutual end, -5 for forced end).
     -   **(P2) Username Display Format**: Update UI to show Name Role (e.g., Ahmet Sürücü).
-    -   **(P2) Map Heatmap/Density**: Implement the user's request to show areas with high request density on the driver's map.
+    -   **(P2) Commission System**: The user requested no commission for now, but the architecture should be prepared to add it later.
 
 **Completed work in this session**
--   Rewrote the custom Python Socket.IO server multiple times, culminating in  which addresses critical bugs with stale Socket IDs and mismatched voice call event names.
--   Refactored the  hook to decouple it from the socket context, simplifying state management.
--   Created a new UI component  based on the user's design image.
--   Fixed the backend API () to robustly handle different ID formats from the client.
--   Fixed a minor UI bug where the End Call button in  was not fully visible.
--   Created a comprehensive documentation file () and a deployment guide () for the user.
+-   **Pivoted the entire offer system to the Martı TAG model.**
+-   Created a backend API endpoint () to dynamically calculate price ranges based on distance and time of day.
+-   Rewrote the Python Socket.IO server to  to handle the new passenger-led bidding and first-come-first-served matching logic.
+-   Overhauled the passenger UI in , adding a price offer modal with a slider.
+-   Completely refactored the driver's offer screen () to display passenger offers with Accept / Pass buttons, removing the old driver-bidding UI.
+-   Fixed a critical bug where periodic API calls on the driver's client were overwriting and hiding incoming socket-based offers.
+-   Fixed a critical ID mismatch between the frontend, backend, and socket server, ensuring a consistent  is used throughout the offer lifecycle.
+-   Fixed an issue where newly connected drivers wouldn't see existing offers by making the socket server send all offers on every  event.
+-   Fixed a TypeScript type error where the function to emit the passenger's offer was missing the new price parameters.
+-   Provided the user with a comprehensive, full-system technical documentation.
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1: End Trip is slow and not synchronized.**
-    -   **Debug checklist**: Requires implementing a new socket event flow (, , ) on both the server () and client ().
-    -   **Why to solve this issue and what will be achieved with this?**: Provides a professional and seamless user experience for completing a ride.
+-   **Issue 1: Inefficient  event spam.**
+    -   **Debug checklist**: Locate the  in the frontend () and change it to emit a lightweight  event instead of a full .
+    -   **Why to solve this issue and what will be achieved with this?**: Reduces server load, improves performance, and removes the need for server-side workarounds.
     -   **Should Test frontend/backend/both after fix**: Both.
     -   **Is recurring issue?**: Y
+
+**Known issue recurrence from previous fork**
+-   **Issue recurrence in previous fork**: The core offer/matching flow and the voice call system have been consistently unreliable and have broken multiple times.
+-   **Recurrence count**: High (3+ times during the session).
+-   **Status**: **IN PROGRESS** (The latest iteration, Martı TAG, is currently broken at the final step).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Hybrid Realtime System**: Uses a custom Socket.IO server for core ride logic and Supabase Realtime for chat.
--   **Monolithic Frontend Component**:  is over 7000 lines, making it extremely difficult to debug and maintain.
--   **Event-Driven Mismatches**: A recurring source of bugs has been a mismatch between event names emitted by the server and those listened for by the client (e.g.,  vs. ).
--   **Stateful Server with Stale Data**: A critical bug involved the socket server using stale s for passengers, causing offers to be sent to disconnected clients. This was fixed in v9.0.
+-   **Bidding Model Pivot**: The application logic was completely changed from a driver offers, passenger accepts model to a passenger offers, first driver accepts (Martı TAG) model.
+-   **Hybrid Realtime System**: Uses a custom Python Socket.IO server for the core ride-hailing logic and Supabase Realtime for chat.
+-   **Monolithic Frontend**:  is over 7,000 lines, making it extremely difficult to debug. Changes for passenger and driver roles are intertwined.
+-   **Client-Side ID Generation**: The  for a ride is now generated on the passenger's client and passed to both the backend and socket server to ensure consistency.
 
 **key DB schema**
--   **users**: User profiles, roles, and points.
--   **tags**: Ride requests.
--   **offers**: Offers made by drivers for tags.
+-   **tags**:
+    -   uid=0(root) gid=0(root) groups=0(root) (UUID, PK)
+    -    (INT): The price offered by the passenger.
+    -    (VARCHAR): 'waiting' | 'matched' | 'in_progress' | 'completed' | 'cancelled'
+    -    (FK to users)
+    -    (FK to users)
 
 **All files of reference**
--   **/opt/leylek-socket/socket_server.py**: **CRITICAL**. This file has been rewritten multiple times and is now at version 9.1. It contains the core real-time logic. The correctness of its event names and logic is paramount.
--   **/app/frontend/app/index.tsx**: **CRITICAL**. The source of most client-side logic. The handlers for socket events (, , , ) are all defined here.
--   **/app/frontend/hooks/useSocket.ts**: Defines the socket event listeners. Any changes to server events must be reflected here.
--   **/app/frontend/components/OfferMapScreen.tsx**: The new UI the user wants. The next major task is to integrate this fully.
+-   **/opt/leylek-socket/socket_server.py**: **CRITICAL**. The source of the current bug. The  handler needs to be debugged.
+-   **/app/frontend/app/index.tsx**: **CRITICAL**. Contains the client-side logic for both roles, including the  handlers that are not being called.
+-   **/app/frontend/hooks/useSocket.ts**: Defines all socket event listeners and emitters.
+-   **/app/frontend/components/DriverOfferScreen.tsx**: The UI for the driver's part of the Martı TAG flow.
+-   **/app/backend/server.py**: The FastAPI backend, contains the price calculation logic and DB update logic.
 
 **Critical Info for New Agent**
--   **USER IS EXTREMELY FRUSTRATED.** The top priority is to provide a stable, working application. Do not try to add new features until the core flow (request -> offer -> accept -> call) is confirmed to be working reliably by the user.
--   The last known regression was the **broken voice/video call feature**. A fix has been implemented in  (v9.1) and is pending user verification. Start by confirming this fix.
--   The socket server code () is the most volatile part of the system. It has been changed extensively. Be very careful with any modifications and check the logs () constantly during testing.
--   The monolithic nature of  makes it fragile. Isolate changes as much as possible.
+-   **THE CORE LOOP IS ALMOST COMPLETE.** The last agent did extensive debugging and fixed several major architectural flaws. You are at the final step.
+-   **FOCUS ON THE SOCKET SERVER.** The current bug is almost certainly in . The server correctly identifies a  but fails to  the confirmation events. Do not get distracted by the frontend code until you can prove the server is sending the events.
+-   **USER IS FRUSTRATED BUT RESPONSIVE.** The user tests new APKs promptly. Prioritize getting a working APK to the user.
+-   **IGNORE THE  SPAM FOR NOW.** While it's an issue, it's a P2. The P0 is the broken matching flow. Fixing the  event now could introduce new regressions.
 
 **documents created in this job**
--   /app/FULL_DOCUMENTATION.md
--   /app/DEPLOYMENT_GUIDE.md
+- A full system documentation was provided to the user in chat message 530.
 
 **Last 10 User Messages and any pending HUMAN messages**
--   10. Asks for deployment instructions. (Agent provided a guide).
--   9. Asks about the app's concurrent user capacity. (Agent provided an analysis).
--   8. **(CRITICAL)** Reports voice/video calls are broken, offers are sometimes not seen, and is extremely frustrated with the lack of progress and perceived incompetence, threatening to stop using the service.
--   7. Reports an error when accepting an offer (shows a screenshot with a UUID error).
--   6. Sends an image of the desired UI and reiterates the full list of requirements for the offer system, expressing extreme frustration over the time and cost.
--   5. Asks for a full A-Z documentation of the application.
--   4. Reports the offer system is still broken: offers not reaching the passenger, duplicate requests appearing, and matching failing.
--   3. Reports accepting an offer does not result in a match.
--   2. Reports that the driver sends an offer, but it doesn't arrive at the passenger.
--   1. Reports that the new offer UI is good, but voice calls are now broken (a regression).
+-   10. The driver accepts the offer, but the match is still not happening. (P0 Bug Report)
+-   9. Is the offer system fixed?
+-   8. Provides a detailed, full system documentation as requested.
+-   7. Give me the full detailed structure of the system, I will show it to GPT to understand it.
+-   6. The passenger sends the offer, it appears for the driver but then immediately disappears. I cant press accept." (Bug that was fixed by removing API polling)
+-   5. "The button should be TEKLİF GÖNDER. New drivers entering the area should see the offer. Make it so the first driver to accept gets the ride."
+-   4. Requests a new build.
+-   3. Asks if a new APK is needed.
+-   2. Reports progress: "Offers are now seen instantly, but when the passenger accepts, the match is slow or doesnt happen.
+-   1. User reports call system and offer system are broken again. (This was the trigger for the major debugging session).
 
 **Project Health Check:**
--   **Broken**: Voice/Video Call System (fix is pending verification), Core Offer/Matching Flow (highly unstable).
+-   **Broken**: The final step of the Martı TAG matching flow.
 -   **Mocked**: None.
--   **Working**: User Authentication, Chat System (via Supabase).
+-   **Working**: User Authentication, Chat, Price Calculation API.
 
 **3rd Party Integrations**
 -   **Supabase**: PostgreSQL DB, Auth (SMS), Realtime Broadcast (for chat).
 -   **Daily.co**: In-app voice/video calls.
--   **Custom Socket.IO Server**: On VPS . Handles all core ride-hailing logic.
+-   **Custom Python Socket.IO Server**: On VPS . Handles all core ride-hailing logic.
 
 **Testing status**
 -   Testing agent used after significant changes: NO
 -   Troubleshoot agent used after agent stuck in loop: NO
 -   Test files created: []
--   Known regressions: Voice/video call system was broken in a recent build. A fix has been implemented but is not yet verified by the user.
+-   Known regressions: The voice call system's stability is unknown after the major Martı TAG refactor.
 
 **Credentials to test flow:**
 -   **Socket Server SSH:**
@@ -179,9 +174,7 @@ The user's initial goal was to fix the offer and matching system, which was plag
     -   Pass: 
 
 **What agent forgot to execute**
--   The agent did not fix the inefficient  event being called every 10 seconds, despite identifying it early on.
--   The agent did not implement the End Trip synchronization logic or the associated points system.
--   The agent did not implement the Username Display Format change.
--   These were all correctly deprioritized in favor of fixing the critical, core-loop bugs, but they remain outstanding tasks from the original request list.
+-   The agent correctly identified the inefficient  event being spammed from the client but deprioritized fixing it to focus on the core flow. It remains an outstanding issue.
+-   A full regression test of the voice call system was not performed after the massive Martı TAG refactoring. Its current status is unknown.
 
 </analysis>
