@@ -4280,8 +4280,7 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         # Tag oluştur
         tag_data = {
             "id": tag_id,  # 🔥 Frontend'den gelen ID kullan
-            "user_id": request.passenger_id,
-            "passenger_id": request.passenger_id,  # 🔥 İki kolon da set et - uyumluluk
+            "passenger_id": request.passenger_id,  # 🔥 Sadece passenger_id kullan
             "pickup_lat": request.pickup_lat,
             "pickup_lng": request.pickup_lng,
             "pickup_location": request.pickup_location,
