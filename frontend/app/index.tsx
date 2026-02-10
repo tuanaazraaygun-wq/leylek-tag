@@ -4672,7 +4672,15 @@ function PassengerDashboard({
         setActiveTag(data.tag);
         // useOffers hook'u otomatik olarak teklifleri yükleyecek (Supabase Realtime)
       } else {
-        setActiveTag(null);
+        // 🔥 KRITIK: Eğer socket'ten eşleşme geldiyse ve activeTag matched durumundaysa
+        // API'den gelen null değerini görmezden gel - race condition önleme
+        setActiveTag(prev => {
+          if (prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
+            console.log('🛡️ loadActiveTag: matched/in_progress tag korunuyor, API null dönse bile');
+            return prev;
+          }
+          return null;
+        });
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
