@@ -6522,7 +6522,15 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       if (data.success && data.tag) {
         setActiveTag(data.tag);
       } else {
-        setActiveTag(null);
+        // 🔥 KRITIK: Eğer socket'ten eşleşme geldiyse ve activeTag matched durumundaysa
+        // API'den gelen null değerini görmezden gel - race condition önleme
+        setActiveTag(prev => {
+          if (prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
+            console.log('🛡️ ŞOFÖR loadActiveTag: matched/in_progress tag korunuyor');
+            return prev;
+          }
+          return null;
+        });
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
