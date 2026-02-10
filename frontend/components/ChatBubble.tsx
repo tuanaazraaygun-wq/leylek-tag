@@ -422,6 +422,13 @@ export default function ChatBubble({
           />
         </View>
 
+        {/* 🆕 Spam/Küfür Uyarı Mesajı */}
+        {spamWarning ? (
+          <View style={styles.warningContainer}>
+            <Text style={styles.warningText}>{spamWarning}</Text>
+          </View>
+        ) : null}
+
         {/* Input */}
         <View style={styles.inputContainer}>
           <TextInput
