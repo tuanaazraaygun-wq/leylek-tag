@@ -1713,7 +1713,11 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
         
-        result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
+        result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
+        
+        # Eğer passenger_id ile bulamazsa user_id ile dene (uyumluluk için)
+        if not result.data:
+            result = supabase.table("tags").select("*").eq("user_id", resolved_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
         
         if result.data:
             tag = result.data[0]
