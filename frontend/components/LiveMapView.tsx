@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -36,12 +36,12 @@ interface LiveMapViewProps {
   onBlock?: () => void;
   onReport?: () => void;
   onCall?: (type: 'audio' | 'video') => void;
-  onChat?: () => void;  // 🆕 Chat butonu
+  onChat?: () => void;
   onComplete?: () => void;
   onRequestTripEnd?: () => void;
   onForceEnd?: () => void;
   onAutoComplete?: () => void;
-  onShowEndTripModal?: () => void;  // 🆕 Modern modal göster
+  onShowEndTripModal?: () => void;
 }
 
 // Haversine mesafe hesaplama (km)
@@ -89,6 +89,99 @@ const decodePolyline = (encoded: string): {latitude: number, longitude: number}[
   return points;
 };
 
+// 🆕 Hareketli Çerçeve Componenti
+const AnimatedBorder = ({ color, children }: { color: string; children: React.ReactNode }) => {
+  const rotation = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  
+  useEffect(() => {
+    // Dönen animasyon
+    Animated.loop(
+      Animated.timing(rotation, {
+        toValue: 1,
+        duration: 3000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+    
+    // Nabız animasyonu
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.05,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+  
+  const spin = rotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+  
+  return (
+    <Animated.View style={[{ transform: [{ scale: pulse }] }]}>
+      <View style={[styles.animatedBorderOuter, { borderColor: color }]}>
+        {children}
+      </View>
+      <Animated.View 
+        style={[
+          styles.animatedGlow, 
+          { 
+            borderColor: color,
+            shadowColor: color,
+            transform: [{ rotate: spin }] 
+          }
+        ]} 
+      />
+    </Animated.View>
+  );
+};
+
+// 🆕 Işıklı Navigasyon İkonu
+const NavigationIcon = ({ onPress }: { onPress: () => void }) => {
+  const glow = useRef(new Animated.Value(0.5)).current;
+  
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glow, {
+          toValue: 0.5,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+  
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+      <Animated.View style={[styles.navIconContainer, { opacity: glow }]}>
+        <View style={styles.navIconOuter}>
+          <LinearGradient colors={['#F97316', '#EA580C']} style={styles.navIconInner}>
+            <Ionicons name="navigate" size={28} color="#FFF" />
+          </LinearGradient>
+        </View>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
+
 export default function LiveMapView({
   userLocation,
   otherLocation,
@@ -102,18 +195,19 @@ export default function LiveMapView({
   onBlock,
   onReport,
   onCall,
-  onChat,  // 🆕 Chat butonu
+  onChat,
   onComplete,
   onRequestTripEnd,
   onForceEnd,
   onAutoComplete,
-  onShowEndTripModal,  // 🆕 Modern modal göster
+  onShowEndTripModal,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
   const [lastCallTime, setLastCallTime] = useState<number>(0);
+  const [callingText, setCallingText] = useState('');
   
   // YEŞİL ROTA: Şoför → Yolcu (buluşma)
   const [meetingRoute, setMeetingRoute] = useState<{latitude: number, longitude: number}[]>([]);
@@ -131,6 +225,11 @@ export default function LiveMapView({
   
   // API çağrı sayacı (rate limiting için)
   const lastRouteCall = useRef<number>(0);
+  
+  // Renk teması - Yolcu: Mor, Sürücü: Mavi
+  const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
+  const themeLightColor = isDriver ? '#DBEAFE' : '#EDE9FE';
+  const themeGradient = isDriver ? ['#3B82F6', '#2563EB'] : ['#8B5CF6', '#7C3AED'];
   
   // Arama fonksiyonu - 5 saniye cooldown ile
   const handleCall = async (type: 'audio' | 'video') => {
@@ -150,13 +249,16 @@ export default function LiveMapView({
     }
     
     setIsCallLoading(true);
-    Alert.alert('📞 Arama Başlatılıyor', type === 'video' ? 'Görüntülü arama isteği gönderiliyor...' : 'Sesli arama isteği gönderiliyor...');
+    setCallingText(isDriver ? 'Yolcu Aranıyor...' : 'Sürücü Aranıyor...');
     
     try {
       await onCall?.(type);
       setLastCallTime(Date.now());
     } finally {
-      setTimeout(() => setIsCallLoading(false), 2000);
+      setTimeout(() => {
+        setIsCallLoading(false);
+        setCallingText('');
+      }, 2000);
     }
   };
 
@@ -166,31 +268,22 @@ export default function LiveMapView({
     end: { latitude: number; longitude: number }
   ): Promise<{ coordinates: {latitude: number, longitude: number}[], distance: number, duration: number } | null> => {
     try {
-      // Rate limiting - en az 2 saniye bekle
       const now = Date.now();
       if (now - lastRouteCall.current < 2000) {
         return null;
       }
       lastRouteCall.current = now;
       
-      // OSRM Public API (Tamamen ücretsiz, limitsiz)
       const url = `https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=polyline`;
-      
-      console.log('🗺️ OSRM rota isteği...');
       
       const response = await fetch(url);
       const data = await response.json();
       
       if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
         const route = data.routes[0];
-        
-        // Polyline decode et
         const points = decodePolyline(route.geometry);
-        
         const distKm = route.distance / 1000;
         const durMin = Math.round(route.duration / 60);
-        
-        console.log('✅ OSRM rota:', distKm.toFixed(1), 'km,', durMin, 'dk');
         
         return { coordinates: points, distance: distKm, duration: durMin };
       }
@@ -214,10 +307,6 @@ export default function LiveMapView({
         end = userLocation;
       }
       
-      // 🚫 Kuş uçuşu mesafe KALDIRILDI - kullanıcı isteği
-      // Sadece gerçek OSRM rotasını göster
-      
-      // Gerçek rotayı al
       const result = await fetchRoute(start, end);
       if (result && result.coordinates.length > 2) {
         setMeetingRoute(result.coordinates);
@@ -227,7 +316,7 @@ export default function LiveMapView({
     };
     
     updateMeetingRoute();
-    const interval = setInterval(updateMeetingRoute, 5000); // 5 saniyede bir güncelle
+    const interval = setInterval(updateMeetingRoute, 5000);
     return () => clearInterval(interval);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, isDriver]);
 
@@ -239,27 +328,23 @@ export default function LiveMapView({
     if (!passengerLocation) return;
     
     const updateDestinationRoute = async () => {
-      // 🚫 Kuş uçuşu mesafe KALDIRILDI - kullanıcı isteği
-      // Sadece gerçek OSRM rotasını göster
-      
-      // Gerçek rota
       const result = await fetchRoute(passengerLocation, destinationLocation);
       if (result && result.coordinates.length > 2) {
         setDestinationRoute(result.coordinates);
         setDestinationDistance(result.distance);
         setDestinationDuration(result.duration);
         
-        // 1 km kontrolü
+        // 1 km kontrolü - Otomatik tamamlama
         if (result.distance <= 1 && !autoCompleteTriggered.current) {
           setNearDestination(true);
           autoCompleteTriggered.current = true;
           
+          // OTOMATİK BİTİR + 1 PUAN
           Alert.alert(
-            '🎯 Hedefe Yaklaştınız!',
-            'Hedefe 1 km\'den az kaldı. Yolculuğu tamamlamak ister misiniz?',
+            '🎯 Hedefe Ulaşıldı!',
+            'Hedefe 1 km\'den az kaldı. Yolculuk otomatik olarak tamamlanacak ve +1 puan kazanacaksınız!',
             [
-              { text: 'Hayır', style: 'cancel' },
-              { text: 'Evet, Tamamla', onPress: () => onAutoComplete?.() }
+              { text: 'Tamam', onPress: () => onAutoComplete?.() }
             ]
           );
         }
@@ -267,7 +352,7 @@ export default function LiveMapView({
     };
     
     updateDestinationRoute();
-    const interval = setInterval(updateDestinationRoute, 10000); // 10 saniyede bir
+    const interval = setInterval(updateDestinationRoute, 10000);
     return () => clearInterval(interval);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
 
@@ -312,7 +397,7 @@ export default function LiveMapView({
     return (
       <View style={styles.container}>
         <View style={styles.webFallback}>
-          <Ionicons name="map" size={64} color="#3FA9F5" />
+          <Ionicons name="map" size={64} color={themeColor} />
           <Text style={styles.webFallbackText}>Harita sadece mobil uygulamada görüntülenebilir</Text>
           {meetingDistance && (
             <Text style={styles.distanceText}>
@@ -367,26 +452,26 @@ export default function LiveMapView({
           />
         )}
 
-        {/* BEN - Mavi Marker */}
+        {/* BEN - Marker */}
         {userLocation && (
           <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={styles.markerContainer}>
-              <View style={[styles.markerCircle, styles.myCircle]}>
+              <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
                 <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
               </View>
-              <View style={[styles.markerArrow, styles.myArrow]} />
+              <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
             </View>
           </Marker>
         )}
 
-        {/* KARŞI TARAF - Yeşil/Mor Marker */}
+        {/* KARŞI TARAF - Marker */}
         {otherLocation && (
           <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={styles.markerContainer}>
-              <View style={[styles.markerCircle, !isDriver ? styles.driverCircle : styles.passengerCircle]}>
-                <Text style={styles.markerIcon}>{!isDriver ? '🚗' : '👤'}</Text>
+              <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
+                <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
               </View>
-              <View style={[styles.markerArrow, !isDriver ? styles.driverArrow : styles.passengerArrow]} />
+              <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
             </View>
           </Marker>
         )}
@@ -403,6 +488,14 @@ export default function LiveMapView({
           </Marker>
         )}
       </MapView>
+
+      {/* 🆕 ŞOFÖR İÇİN - Haritada Gezdirilebilir Navigasyon İkonu */}
+      {isDriver && (
+        <View style={styles.floatingNavIcon}>
+          <NavigationIcon onPress={openNavigation} />
+          <Text style={styles.floatingNavText}>Yolcuya Git</Text>
+        </View>
+      )}
 
       {/* ÜST BİLGİ PANELİ */}
       <View style={styles.topInfoPanel}>
@@ -450,108 +543,85 @@ export default function LiveMapView({
       <View style={styles.bottomPanel}>
         <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,1)']} style={styles.bottomGradient}>
           
-          {/* YOLCU İÇİN - Canlı İzleme Bilgisi */}
-          {!isDriver && (
-            <View style={styles.liveTrackingInfo}>
-              <View style={styles.liveTrackingHeader}>
-                <View style={styles.liveIndicatorBig}>
-                  <View style={styles.liveDotBig} />
-                  <Text style={styles.liveTextBig}>CANLI</Text>
+          {/* 🆕 SESLİ GÖRÜNTÜLÜ ARAMA - Hareketli Çerçeve */}
+          <View style={styles.callSection}>
+            <AnimatedBorder color={themeColor}>
+              <TouchableOpacity 
+                style={[styles.mainCallButton, { backgroundColor: themeColor }]} 
+                onPress={() => handleCall('video')}
+                disabled={isCallLoading}
+                activeOpacity={0.8}
+              >
+                <View style={styles.callButtonContent}>
+                  <View style={styles.callIconWrapper}>
+                    <Ionicons name="videocam" size={26} color="#FFF" />
+                  </View>
+                  <Text style={styles.mainCallButtonText}>
+                    {isCallLoading ? callingText : 'Sesli Görüntülü Ara'}
+                  </Text>
                 </View>
-                <Text style={styles.liveTrackingTitle}>🚗 Şoförü Canlı İzliyorsunuz</Text>
-              </View>
-              <Text style={styles.liveTrackingSubtitle}>
-                Şoförü sesli ve görüntülü arayabilirsiniz
-              </Text>
-            </View>
-          )}
-          
-          {/* ŞOFÖR İÇİN - Yolcuya Git Butonu */}
-          {isDriver && (
-            <TouchableOpacity style={styles.navButton} onPress={openNavigation}>
-              <LinearGradient colors={['#22C55E', '#16A34A']} style={styles.navButtonGradient}>
-                <Ionicons name="navigate" size={24} color="#FFF" />
-                <Text style={styles.navButtonText}>Yolcuya Git</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
-
-          {/* Arama ve Mesaj Butonları - MODERN */}
-          <View style={styles.callButtons}>
-            {/* Sesli Görüntülü Ara Butonu */}
-            <TouchableOpacity 
-              style={[styles.callButton, styles.mainCallButton, isCallLoading && styles.callButtonDisabled]} 
-              onPress={() => handleCall('video')}
-              disabled={isCallLoading}
-            >
-              <View style={styles.callButtonIcon}>
-                <Ionicons name="videocam" size={24} color="#FFF" />
-              </View>
-              <Text style={styles.mainCallButtonText}>
-                {isCallLoading ? 'Aranıyor...' : 'Sesli Görüntülü Ara'}
-              </Text>
-            </TouchableOpacity>
-            
-            {/* Yaz Butonu */}
-            <TouchableOpacity 
-              style={[styles.callButton, styles.chatButton]} 
-              onPress={() => onChat?.()}
-            >
-              <View style={styles.chatButtonIcon}>
-                <Ionicons name="chatbubble-ellipses" size={22} color="#FFF" />
-              </View>
-              <Text style={styles.chatButtonText}>
-                {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
-              </Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </AnimatedBorder>
           </View>
 
-          {/* Diğer Butonlar */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton} onPress={() => {
-              Alert.alert(
-                'Şikayet',
-                'Ne tür bir şikayet bildirmek istiyorsunuz?',
-                [
-                  { text: 'İptal', style: 'cancel' },
-                  { text: 'Uygunsuz Davranış', onPress: () => onReport?.() },
-                  { text: 'Güvenlik Sorunu', onPress: () => onReport?.() }
-                ]
-              );
-            }}>
-              <Ionicons name="flag" size={18} color="#EF4444" />
-              <Text style={styles.actionButtonText}>Şikayet</Text>
-            </TouchableOpacity>
+          {/* 🆕 YAZ BUTONU - Modern Tasarım */}
+          <TouchableOpacity 
+            style={[styles.chatButton, { backgroundColor: themeLightColor, borderColor: themeColor }]} 
+            onPress={() => onChat?.()}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.chatIconWrapper, { backgroundColor: themeColor }]}>
+              <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
+            </View>
+            <Text style={[styles.chatButtonText, { color: themeColor }]}>
+              {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
+            </Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.actionButton, styles.endButton]} onPress={() => {
-              // Modern modal göster (eğer varsa)
-              if (onShowEndTripModal) {
-                onShowEndTripModal();
-              } else {
-                // Fallback: Eski Alert
+          {/* 🆕 ALT BUTONLAR - Şikayet/Destek ve Bitir */}
+          <View style={styles.actionButtons}>
+            {/* Şikayet/Destek Butonu */}
+            <TouchableOpacity 
+              style={styles.supportButton} 
+              onPress={() => {
                 Alert.alert(
-                  'Yolculuğu Bitir',
-                  'Nasıl bitirmek istiyorsunuz?',
+                  'Şikayet / Destek',
+                  'Ne tür bir yardım istiyorsunuz?',
                   [
                     { text: 'İptal', style: 'cancel' },
-                    { text: 'Karşı Taraftan Onay İste', onPress: () => onRequestTripEnd?.() },
-                    { text: 'Tamamla', onPress: () => onComplete?.() },
-                    { text: '⚠️ Zorla Bitir (-5 Puan)', onPress: () => {
-                      Alert.alert(
-                        '⚠️ Dikkat!',
-                        'Zorla bitirme işlemi puanınızı 5 düşürecektir. Devam etmek istiyor musunuz?',
-                        [
-                          { text: 'Vazgeç', style: 'cancel' },
-                          { text: 'Evet, Zorla Bitir', style: 'destructive', onPress: () => onForceEnd?.() }
-                        ]
-                      );
-                    }, style: 'destructive' }
+                    { text: '🚨 Güvenlik Sorunu', onPress: () => onReport?.() },
+                    { text: '⚠️ Uygunsuz Davranış', onPress: () => onReport?.() },
+                    { text: '❓ Destek Al', onPress: () => Alert.alert('Destek', 'Destek ekibimiz en kısa sürede size yardımcı olacak.') }
                   ]
                 );
-              }
-            }}>
-              <Ionicons name="checkmark-circle" size={18} color="#FFF" />
-              <Text style={[styles.actionButtonText, { color: '#FFF' }]}>Bitir</Text>
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="help-circle" size={18} color="#6B7280" />
+              <Text style={styles.supportButtonText}>Şikayet / Destek</Text>
+            </TouchableOpacity>
+
+            {/* 🆕 BİTİR BUTONU - Donuk Kırmızı, Sadece Zorla Bitir */}
+            <TouchableOpacity 
+              style={styles.endButton} 
+              onPress={() => {
+                Alert.alert(
+                  '⚠️ Zorla Bitir',
+                  'Bu işlem puanınızı 5 düşürecektir!\n\nHedefe ulaştığınızda yolculuk otomatik olarak tamamlanır ve +1 puan kazanırsınız.',
+                  [
+                    { text: 'Vazgeç', style: 'cancel' },
+                    { 
+                      text: 'Zorla Bitir (-5 Puan)', 
+                      style: 'destructive', 
+                      onPress: () => onForceEnd?.() 
+                    }
+                  ]
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close-circle" size={18} color="#FFF" />
+              <Text style={styles.endButtonText}>Bitir</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>
@@ -578,20 +648,56 @@ const styles = StyleSheet.create({
   // Marker Styles
   markerContainer: { alignItems: 'center' },
   markerCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
-  myCircle: { backgroundColor: '#3B82F6' },
-  driverCircle: { backgroundColor: '#22C55E' },
-  passengerCircle: { backgroundColor: '#8B5CF6' },
   markerIcon: { fontSize: 22 },
   markerArrow: { width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', marginTop: -2 },
-  myArrow: { borderTopColor: '#3B82F6' },
-  driverArrow: { borderTopColor: '#22C55E' },
-  passengerArrow: { borderTopColor: '#8B5CF6' },
   
   // Destination Marker
   destinationMarker: { alignItems: 'center' },
   destinationCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#F97316', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 8 },
   destinationIcon: { fontSize: 26 },
   destinationLabel: { marginTop: 4, fontSize: 11, fontWeight: 'bold', color: '#F97316', backgroundColor: '#FFF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
+  
+  // 🆕 Floating Navigation Icon (Sürücü için)
+  floatingNavIcon: {
+    position: 'absolute',
+    top: 200,
+    right: 16,
+    alignItems: 'center',
+  },
+  floatingNavText: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#F97316',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  navIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navIconOuter: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(249, 115, 22, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#F97316',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  navIconInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   
   // Top Info Panel
   topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0 },
@@ -609,79 +715,122 @@ const styles = StyleSheet.create({
   
   // Bottom Panel
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  bottomGradient: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-  navButton: { marginBottom: 14 },
-  navButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 14 },
-  navButtonText: { color: '#FFF', fontSize: 17, fontWeight: '600', marginLeft: 10 },
-  callButtons: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 14 },
-  callButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, backgroundColor: '#F0FDF4', borderRadius: 16, borderWidth: 1.5, borderColor: '#22C55E' },
+  bottomGradient: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
   
-  // 🆕 Modern Butonlar
-  mainCallButton: { 
-    backgroundColor: '#3B82F6', 
-    borderColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+  // 🆕 Animated Border
+  animatedBorderOuter: {
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#8B5CF6',
+    padding: 3,
   },
-  callButtonIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  animatedGlow: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    right: -6,
+    bottom: -6,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderTopColor: 'rgba(139, 92, 246, 0.5)',
+    borderRightColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  
+  // 🆕 Call Section
+  callSection: {
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  mainCallButton: {
+    width: SCREEN_WIDTH - 48,
+    paddingVertical: 18,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  callButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 12,
   },
-  mainCallButtonText: { 
-    fontSize: 15, 
-    fontWeight: '700', 
-    color: '#FFF' 
+  mainCallButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
   },
-  chatButton: { 
-    backgroundColor: '#10B981', 
-    borderColor: '#10B981',
-    paddingVertical: 16,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+  
+  // 🆕 Chat Button
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 2,
+    marginBottom: 14,
   },
-  chatButtonIcon: {
+  chatIconWrapper: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 10,
   },
-  chatButtonText: { 
-    fontSize: 15, 
-    fontWeight: '700', 
-    color: '#FFF' 
+  chatButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
   },
   
-  videoCallButton: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
-  callButtonText: { fontSize: 15, fontWeight: '600', marginLeft: 8, color: '#374151' },
-  callButtonDisabled: { opacity: 0.6 },
-  actionButtons: { flexDirection: 'row', gap: 12 },
-  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: '#FEF2F2', borderRadius: 12, borderWidth: 1, borderColor: '#FECACA' },
-  actionButtonText: { fontSize: 14, fontWeight: '500', marginLeft: 6, color: '#DC2626' },
-  endButton: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
-  
-  // Canlı İzleme Bilgisi (Yolcu için)
-  liveTrackingInfo: { backgroundColor: '#ECFDF5', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#A7F3D0' },
-  liveTrackingHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  liveIndicatorBig: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EF4444', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 10 },
-  liveDotBig: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFF', marginRight: 6 },
-  liveTextBig: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  liveTrackingTitle: { fontSize: 16, fontWeight: '700', color: '#065F46' },
-  liveTrackingSubtitle: { fontSize: 14, color: '#059669', marginLeft: 4 },
+  // 🆕 Action Buttons
+  actionButtons: { 
+    flexDirection: 'row', 
+    gap: 12,
+  },
+  supportButton: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 12, 
+    backgroundColor: '#F3F4F6', 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: '#E5E7EB',
+  },
+  supportButtonText: { 
+    fontSize: 14, 
+    fontWeight: '500', 
+    marginLeft: 6, 
+    color: '#6B7280',
+  },
+  endButton: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 12, 
+    backgroundColor: '#9CA3AF', // Donuk kırmızı yerine gri - Donuk görünüm
+    borderRadius: 12,
+    opacity: 0.8,
+  },
+  endButtonText: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    marginLeft: 6, 
+    color: '#FFF',
+  },
 });
