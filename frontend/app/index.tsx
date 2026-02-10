@@ -6315,8 +6315,34 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
       // 🔥 EŞLEŞTİĞİNDE TÜM LİSTEYİ TEMİZLE - Artık yeni teklif kabul edemez
       setRequests([]);
-      // Active tag'ı yükle
-      loadData();
+      
+      // 🔥 ANINDA activeTag'ı güncelle - API bekleme!
+      if (data && data.tag_id) {
+        const matchedTag = {
+          id: data.tag_id,
+          tag_id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name,
+          driver_id: data.driver_id,
+          driver_name: data.driver_name,
+          pickup_location: data.pickup_location,
+          dropoff_location: data.dropoff_location,
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          offered_price: data.offered_price,
+          distance_km: data.distance_km,
+          estimated_minutes: data.estimated_minutes,
+          status: 'matched',
+          matched_at: new Date().toISOString(),
+        };
+        console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
+        setActiveTag(matchedTag);
+      }
+      
+      // Backend'den de çek (ekstra bilgiler için)
+      setTimeout(() => loadData(), 1000);
     },
     // Teklif kabul/red
     onOfferAccepted: (data) => {
