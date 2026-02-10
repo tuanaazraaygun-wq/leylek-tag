@@ -182,6 +182,24 @@ export default function ChatBubble({
     if (!text.trim() || !channelRef.current) return;
     
     const trimmedText = text.trim();
+    const now = Date.now();
+    
+    // 🆕 SPAM KORUMASI - 2 saniye bekleme
+    if (now - lastMessageTime < 2000) {
+      setSpamWarning('⏳ Çok hızlı! 2 saniye bekleyin.');
+      setTimeout(() => setSpamWarning(''), 2000);
+      return;
+    }
+    
+    // 🆕 KÜFÜR FİLTRESİ
+    if (containsBannedWord(trimmedText)) {
+      setSpamWarning('⚠️ Uygunsuz içerik tespit edildi!');
+      setTimeout(() => setSpamWarning(''), 3000);
+      return;
+    }
+    
+    setLastMessageTime(now);
+    setSpamWarning('');
     
     console.log('📤 [ChatBubble] Mesaj gönderiliyor (broadcast):', {
       text: trimmedText,
@@ -224,7 +242,7 @@ export default function ChatBubble({
     }
     
     Keyboard.dismiss();
-  }, [tagId, userId, otherUserId, isDriver]);
+  }, [tagId, userId, otherUserId, isDriver, lastMessageTime]);
 
   // ═══════════════════════════════════════════════════════════════
   // ANİMASYONLAR
