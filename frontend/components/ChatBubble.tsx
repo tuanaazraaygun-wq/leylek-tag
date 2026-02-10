@@ -97,6 +97,8 @@ export default function ChatBubble({
   const [isMinimized, setIsMinimized] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
+  const [lastMessageTime, setLastMessageTime] = useState(0); // 🆕 Spam koruması
+  const [spamWarning, setSpamWarning] = useState(''); // 🆕 Uyarı mesajı
   
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
