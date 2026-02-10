@@ -69,6 +69,20 @@ const DRIVER_SUGGESTIONS = [
   "Geldim, bekliyorum",
 ];
 
+// 🆕 Küfür filtresi - Türkçe yasaklı kelimeler
+const BANNED_WORDS = [
+  'amk', 'aq', 'oç', 'orospu', 'piç', 'sik', 'yarrak', 'göt', 'meme',
+  'sikerim', 'sikeyim', 'sikim', 'amına', 'ananı', 'anasını', 'pezevenk',
+  'kaltak', 'fahişe', 'ibne', 'puşt', 'mk', 'aw', 'sktr', 'sg',
+  'fuck', 'shit', 'bitch', 'asshole', 'dick'
+];
+
+// Küfür kontrolü
+const containsBannedWord = (text: string): boolean => {
+  const lowerText = text.toLowerCase().replace(/[^a-zA-ZğüşöçıİĞÜŞÖÇ0-9\s]/g, '');
+  return BANNED_WORDS.some(word => lowerText.includes(word));
+};
+
 export default function ChatBubble({
   visible,
   onClose,
