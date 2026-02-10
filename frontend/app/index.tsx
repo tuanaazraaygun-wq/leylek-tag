@@ -4491,18 +4491,33 @@ function PassengerDashboard({
       // 🔥 TÜM TEKLİFLERİ TEMİZLE - Artık yeni teklif alamaz
       clearOffers();
       
-      // 🚀 ANLIK GÜNCELLEMEActiveTag'i direkt güncelle - API bekleme!
-      if (activeTag) {
-        setActiveTag(prev => prev ? {
-          ...prev,
-          status: 'matched',
+      // 🚀 ANLIK GÜNCELLEME - Socket'ten gelen veriyi kullan
+      if (data && data.tag_id) {
+        const matchedTag = {
+          id: data.tag_id,
+          tag_id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name,
           driver_id: data.driver_id,
-          matched_at: new Date().toISOString()
-        } : null);
+          driver_name: data.driver_name,
+          pickup_location: data.pickup_location,
+          dropoff_location: data.dropoff_location,
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          offered_price: data.offered_price,
+          distance_km: data.distance_km,
+          estimated_minutes: data.estimated_minutes,
+          status: 'matched',
+          matched_at: new Date().toISOString(),
+        };
+        console.log('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', matchedTag);
+        setActiveTag(matchedTag);
       }
       
-      // Ayrıca API'den de çek (sürücü adı vb. için)
-      loadActiveTag();
+      // Backend'den de çek (ekstra bilgiler için)
+      setTimeout(() => loadActiveTag(), 1000);
     },
     // 🆕 TEKLİF KABUL EDİLDİ - Ack (backend confirmation)
     onOfferAccepted: (data) => {
