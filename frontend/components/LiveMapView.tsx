@@ -701,7 +701,19 @@ const styles = StyleSheet.create({
   
   // Top Info Panel
   topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0 },
-  infoGradient: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  topInfoBorder: { 
+    borderWidth: 2, 
+    borderColor: '#3B82F6', 
+    borderRadius: 26, 
+    margin: 8,
+    marginTop: 40,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  infoGradient: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 24 },
   routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   routeIndicator: { width: 14, height: 14, borderRadius: 7, marginRight: 12 },
   routeDetails: { flex: 1 },
