@@ -545,25 +545,23 @@ export default function LiveMapView({
       <View style={styles.bottomPanel}>
         <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,1)']} style={styles.bottomGradient}>
           
-          {/* 🆕 SESLİ GÖRÜNTÜLÜ ARAMA - Hareketli Çerçeve */}
+          {/* SESLİ GÖRÜNTÜLÜ ARAMA - Dönen çerçeve kaldırıldı */}
           <View style={styles.callSection}>
-            <AnimatedBorder color={themeColor}>
-              <TouchableOpacity 
-                style={[styles.mainCallButton, { backgroundColor: themeColor }]} 
-                onPress={() => handleCall('video')}
-                disabled={isCallLoading}
-                activeOpacity={0.8}
-              >
-                <View style={styles.callButtonContent}>
-                  <View style={styles.callIconWrapper}>
-                    <Ionicons name="videocam" size={26} color="#FFF" />
-                  </View>
-                  <Text style={styles.mainCallButtonText}>
-                    {isCallLoading ? callingText : 'Sesli Görüntülü Ara'}
-                  </Text>
+            <TouchableOpacity 
+              style={[styles.mainCallButton, { backgroundColor: themeColor }]} 
+              onPress={() => handleCall('video')}
+              disabled={isCallLoading}
+              activeOpacity={0.8}
+            >
+              <View style={styles.callButtonContent}>
+                <View style={styles.callIconWrapper}>
+                  <Ionicons name="videocam" size={26} color="#FFF" />
                 </View>
-              </TouchableOpacity>
-            </AnimatedBorder>
+                <Text style={styles.mainCallButtonText}>
+                  {isCallLoading ? callingText : 'Sesli Görüntülü Ara'}
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
           {/* 🆕 YAZ BUTONU - Modern Tasarım */}
