@@ -538,6 +538,7 @@ export default function LiveMapView({
             </View>
           )}
         </LinearGradient>
+        </View>
       </View>
 
       {/* ALT BUTONLAR */}
