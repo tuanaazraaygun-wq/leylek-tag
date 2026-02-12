@@ -231,34 +231,20 @@ export default function LiveMapView({
   const themeLightColor = isDriver ? '#DBEAFE' : '#EDE9FE';
   const themeGradient = isDriver ? ['#3B82F6', '#2563EB'] : ['#8B5CF6', '#7C3AED'];
   
-  // Arama fonksiyonu - 5 saniye cooldown ile
+  // Arama fonksiyonu - hızlı ve direkt
   const handleCall = async (type: 'audio' | 'video') => {
-    const now = Date.now();
-    const timeSinceLastCall = now - lastCallTime;
-    
-    // 5 saniye cooldown kontrolü
-    if (timeSinceLastCall < 5000) {
-      const remaining = Math.ceil((5000 - timeSinceLastCall) / 1000);
-      Alert.alert('⏳ Bekleyin', `Yeni arama için ${remaining} saniye bekleyin`);
-      return;
-    }
-    
     if (isCallLoading) {
-      Alert.alert('⏳ Bekleyin', 'Arama isteği gönderiliyor...');
       return;
     }
     
     setIsCallLoading(true);
-    setCallingText(isDriver ? 'Yolcu Aranıyor...' : 'Sürücü Aranıyor...');
     
     try {
       await onCall?.(type);
-      setLastCallTime(Date.now());
     } finally {
       setTimeout(() => {
         setIsCallLoading(false);
-        setCallingText('');
-      }, 2000);
+      }, 1000);
     }
   };
 
