@@ -177,7 +177,6 @@ const NavigationIcon = ({ onPress }: { onPress: () => void }) => {
             <Ionicons name="navigate" size={28} color="#FFF" />
           </LinearGradient>
         </View>
-        </View>
       </Animated.View>
     </TouchableOpacity>
   );
