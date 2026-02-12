@@ -497,9 +497,10 @@ export default function LiveMapView({
         </View>
       )}
 
-      {/* ÜST BİLGİ PANELİ */}
+      {/* ÜST BİLGİ PANELİ - MAVİ ÇERÇEVE */}
       <View style={styles.topInfoPanel}>
-        <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,0.95)']} style={styles.infoGradient}>
+        <View style={styles.topInfoBorder}>
+          <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,0.95)']} style={styles.infoGradient}>
           {/* Buluşma Bilgisi - Yeşil */}
           <View style={styles.routeInfoRow}>
             <View style={[styles.routeIndicator, { backgroundColor: '#22C55E' }]} />
