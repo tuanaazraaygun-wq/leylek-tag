@@ -542,8 +542,8 @@ export default function LiveMapView({
                   <Ionicons name="videocam" size={26} color="#FFF" />
                 </View>
                 <Text style={styles.mainCallButtonText}>
-                  {isCallLoading ? callingText : 'Sesli Görüntülü Ara'}
-                </Text>
+                Sesli Görüntülü Ara
+              </Text>
               </View>
             </TouchableOpacity>
           </View>
