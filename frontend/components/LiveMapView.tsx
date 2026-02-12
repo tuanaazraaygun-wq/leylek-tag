@@ -206,8 +206,6 @@ export default function LiveMapView({
   
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
-  const [lastCallTime, setLastCallTime] = useState<number>(0);
-  const [callingText, setCallingText] = useState('');
   
   // YEŞİL ROTA: Şoför → Yolcu (buluşma)
   const [meetingRoute, setMeetingRoute] = useState<{latitude: number, longitude: number}[]>([]);
