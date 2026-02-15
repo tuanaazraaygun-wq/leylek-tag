@@ -770,20 +770,35 @@ export default function useSocket({
 
   const acceptDailyCall = useCallback((data: {
     caller_id: string;
+    receiver_id?: string;
     room_url: string;
+    room_name?: string;
+    call_type?: string;
   }) => {
+    console.log('✅ [useSocket] Daily.co arama kabul ediliyor:', data);
+    // Socket bağlı değilse bile gönder - bağlan ve emit et
     if (socket?.connected) {
-      console.log('✅ [useSocket] Daily.co arama kabul ediliyor:', data);
       socket.emit('accept_daily_call', data);
+    } else {
+      console.warn('⚠️ Socket bağlı değil, bağlanıp gönderiliyor...');
+      socket?.connect();
+      socket?.once('connect', () => {
+        socket.emit('accept_daily_call', data);
+      });
     }
   }, [socket]);
 
   const rejectDailyCall = useCallback((data: {
     caller_id: string;
   }) => {
+    console.log('❌ [useSocket] Daily.co arama reddediliyor:', data);
     if (socket?.connected) {
-      console.log('❌ [useSocket] Daily.co arama reddediliyor:', data);
       socket.emit('reject_daily_call', data);
+    } else {
+      socket?.connect();
+      socket?.once('connect', () => {
+        socket?.emit('reject_daily_call', data);
+      });
     }
   }, [socket]);
 
@@ -791,9 +806,14 @@ export default function useSocket({
     other_user_id: string;
     room_name: string;
   }) => {
+    console.log('📴 [useSocket] Daily.co arama sonlandırılıyor:', data);
     if (socket?.connected) {
-      console.log('📴 [useSocket] Daily.co arama sonlandırılıyor:', data);
       socket.emit('end_daily_call', data);
+    } else {
+      socket?.connect();
+      socket?.once('connect', () => {
+        socket?.emit('end_daily_call', data);
+      });
     }
   }, [socket]);
 
