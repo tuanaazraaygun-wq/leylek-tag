@@ -3758,6 +3758,7 @@ async def create_daily_room(request: dict):
         receiver_id = request.get("receiver_id")
         call_type = request.get("call_type", "video")  # "video" veya "audio"
         tag_id = request.get("tag_id", "")
+        caller_name = request.get("caller_name", "Arayan")
         
         # Benzersiz oda adı oluştur
         room_name = f"leylektag_{tag_id}_{int(time.time())}"
@@ -3799,24 +3800,35 @@ async def create_daily_room(request: dict):
             
             logger.info(f"📹 Daily.co oda oluşturuldu: {room_url}")
             
-            # Socket ile karşı tarafa bildirim gönder
-            receiver_sid = connected_users.get(receiver_id)
-            if receiver_sid:
-                await sio.emit('incoming_daily_call', {
+            # 🔥 HARİCİ SOCKET SUNUCUSUNA BİLDİRİM GÖNDER
+            try:
+                # Socket.IO client ile harici sunucuya bağlan
+                import socketio
+                external_sio = socketio.AsyncClient()
+                await external_sio.connect('https://socket.leylektag.com', transports=['websocket'])
+                
+                # Arama bildirimi gönder
+                await external_sio.emit('call_invite', {
                     'room_url': room_url,
                     'room_name': room_name,
                     'caller_id': caller_id,
+                    'caller_name': caller_name,
+                    'receiver_id': receiver_id,
                     'call_type': call_type,
                     'tag_id': tag_id
-                }, room=receiver_sid)
-                logger.info(f"📲 Daily.co arama bildirimi gönderildi: {receiver_id}")
+                })
+                
+                await external_sio.disconnect()
+                logger.info(f"📲 Daily.co arama bildirimi gönderildi (harici socket): {receiver_id}")
+            except Exception as socket_err:
+                logger.warning(f"⚠️ Socket bildirim hatası: {socket_err}")
             
             return {
                 "success": True,
                 "room_url": room_url,
                 "room_name": room_name,
                 "call_type": call_type,
-                "receiver_online": receiver_sid is not None
+                "receiver_online": True
             }
             
     except Exception as e:
