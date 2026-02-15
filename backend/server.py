@@ -3839,14 +3839,14 @@ async def create_daily_room(request: dict):
 @api_router.post("/calls/start")
 async def start_call(request: dict):
     """
-    Simple Daily.co call - No socket signaling, no complex logic
-    Just create room and return URL
+    Simple Daily.co call with socket notification
     """
     try:
         caller_id = request.get("caller_id")
         receiver_id = request.get("receiver_id")
         call_type = request.get("call_type", "audio")  # "audio" or "video"
         tag_id = request.get("tag_id", "")
+        caller_name = request.get("caller_name", "Arayan")
         
         if not caller_id or not receiver_id:
             raise HTTPException(status_code=400, detail="caller_id and receiver_id required")
@@ -3897,20 +3897,26 @@ async def start_call(request: dict):
             
             logger.info(f"📞 Call started: {room_url} (type: {call_type})")
             
-            # Save call record to Supabase (async, don't wait)
+            # 🔥 HARİCİ SOCKET SUNUCUSUNA BİLDİRİM GÖNDER
             try:
-                supabase.table("call_logs").insert({
-                    "caller_id": caller_id,
-                    "receiver_id": receiver_id,
-                    "tag_id": tag_id,
-                    "call_type": call_type,
-                    "room_name": room_name,
-                    "room_url": room_url,
-                    "status": "started",
-                    "created_at": datetime.utcnow().isoformat()
-                }).execute()
-            except Exception as log_err:
-                logger.warning(f"Call log save failed (non-critical): {log_err}")
+                import socketio
+                external_sio = socketio.AsyncClient()
+                await external_sio.connect('https://socket.leylektag.com', transports=['websocket'])
+                
+                await external_sio.emit('call_invite', {
+                    'room_url': room_url,
+                    'room_name': room_name,
+                    'caller_id': caller_id,
+                    'caller_name': caller_name,
+                    'receiver_id': receiver_id,
+                    'call_type': call_type,
+                    'tag_id': tag_id
+                })
+                
+                await external_sio.disconnect()
+                logger.info(f"📲 Arama bildirimi gönderildi: {receiver_id}")
+            except Exception as socket_err:
+                logger.warning(f"⚠️ Socket bildirim hatası: {socket_err}")
             
             return {
                 "success": True,
