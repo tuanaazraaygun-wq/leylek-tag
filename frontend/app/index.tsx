@@ -4861,19 +4861,9 @@ function PassengerDashboard({
     
     setCalling(true);
     
-    // 🔥 1. ÖNCE socket ile ANINDA "aranıyor" bildirimi gönder
-    emitCallInvite({
-      caller_id: user.id,
-      caller_name: user.name || 'Yolcu',
-      receiver_id: activeTag.driver_id,
-      room_url: '', // Henüz yok, sonra güncellenecek
-      room_name: '',
-      call_type: callType,
-      tag_id: activeTag.id
-    });
-    
     try {
-      // 2. Sonra API'den room al
+      // 1. API'den Daily.co room al
+      console.log('📞 YOLCU - Daily.co room oluşturuluyor...');
       const response = await fetch(`${API_URL}/calls/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4888,7 +4878,9 @@ function PassengerDashboard({
       const data = await response.json();
       
       if (data.success && data.room_url) {
-        // 3. Room URL ile tekrar socket gönder
+        console.log('📞 YOLCU - Room hazır:', data.room_url);
+        
+        // 2. Room URL ile socket bildirimi gönder - ŞOFÖRE ÇALAR
         emitCallInvite({
           caller_id: user.id,
           caller_name: user.name || 'Yolcu',
@@ -4899,13 +4891,24 @@ function PassengerDashboard({
           tag_id: activeTag.id
         });
         
-        // 4. Daily.co arama ekranını aç
+        // 3. Room bilgilerini kaydet
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name);
         setDailyCallType(callType);
         setDailyCallerName(activeTag.driver_name || 'Sürücü');
-        setDailyCallActive(true);
+        
+        // 4. "Arıyor" ekranını göster - KABUL EDİLENE KADAR BEKLE
+        setOutgoingCall(true);
+        setOutgoingCallData({
+          receiverName: activeTag.driver_name || 'Sürücü',
+          callType: callType,
+          receiverId: activeTag.driver_id,
+          roomUrl: data.room_url,
+          roomName: data.room_name
+        });
         setCalling(false);
+        
+        // NOT: Daily.co'ya giriş onCallAcceptedNew callback'inde yapılacak
       } else {
         setCalling(false);
         Alert.alert('Hata', 'Arama başlatılamadı');
