@@ -7006,7 +7006,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
-              // FIXED CALL FLOW - Room ÖNCE oluştur, SONRA davet gönder - SOFOR
+              // ANINDA ÇALAN ARAMA - Önce bildirim, sonra room oluştur
               // ════════════════════════════════════════════════════════════
               
               if (dailyCallActive || incomingDailyCall || outgoingCall) {
@@ -7022,7 +7022,20 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               const passengerId = activeTag.passenger_id;
               const passengerName = activeTag.passenger_name || 'Yolcu';
               
-              // "Aranıyor..." ekranını göster
+              // 1. 🔥 ANINDA "Çalıyor" bildirimi gönder - Room beklemeden!
+              console.log('📞 ŞOFÖR - ANINDA çaldırma bildirimi gönderiliyor...');
+              emitCallInvite({
+                caller_id: user.id,
+                caller_name: user.name || 'Sofor',
+                receiver_id: passengerId,
+                room_url: '', // Henüz yok
+                room_name: '',
+                call_type: type,
+                tag_id: activeTag.id || '',
+                is_ringing: true, // Sadece çaldırma
+              });
+              
+              // 2. "Aranıyor..." ekranını göster
               setOutgoingCallData({
                 receiverName: passengerName,
                 callType: type,
@@ -7033,7 +7046,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               setOutgoingCall(true);
               
               try {
-                // 1. Daily.co room oluştur
+                // 3. Daily.co room oluştur (arka planda)
                 console.log('📞 ŞOFÖR - Daily.co room oluşturuluyor...');
                 const response = await fetch(`${API_URL}/calls/start`, {
                   method: 'POST',
@@ -7051,13 +7064,18 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 if (!data.success || !data.room_url) {
                   setOutgoingCall(false);
                   setOutgoingCallData(null);
+                  // İptal bildirimi gönder
+                  emitCallCancel({
+                    caller_id: user.id,
+                    receiver_id: passengerId,
+                  });
                   Alert.alert('Hata', 'Arama başlatılamadı');
                   return;
                 }
                 
-                console.log('📞 ŞOFÖR - Room hazır:', data.room_url);
+                console.log('📞 ŞOFÖR - Room hazır, gerçek invite gönderiliyor:', data.room_url);
                 
-                // 2. Socket ile karşı tarafa call_invite gönder (room_url ile birlikte!)
+                // 4. Room URL ile GERÇEK invite gönder
                 emitCallInvite({
                   caller_id: user.id,
                   caller_name: user.name || 'Sofor',
@@ -7066,9 +7084,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   room_name: data.room_name,
                   call_type: type,
                   tag_id: activeTag.id || '',
+                  is_ringing: false, // Gerçek davet
                 });
                 
-                // 3. Outgoing call verilerini güncelle
+                // 5. Outgoing call verilerini güncelle
                 setOutgoingCallData({
                   receiverName: passengerName,
                   callType: type,
@@ -7077,7 +7096,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                   receiverId: passengerId,
                 });
                 
-                // 4. Arayan'ın room bilgilerini kaydet
+                // 6. Arayan'ın room bilgilerini kaydet
                 setDailyRoomUrl(data.room_url);
                 setDailyRoomName(data.room_name);
                 setDailyCallType(type);
