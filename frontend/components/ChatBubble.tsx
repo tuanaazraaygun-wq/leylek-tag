@@ -151,6 +151,9 @@ export default function ChatBubble({
         
         setMessages(prev => [...prev, newMessage]);
         
+        // 🆕 Mesaj geldiğinde titreşim
+        Vibration.vibrate(200);
+        
         // Minimized ise unread count artır
         if (isMinimized) {
           setUnreadCount(prev => prev + 1);
