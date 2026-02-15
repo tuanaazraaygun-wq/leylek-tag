@@ -6399,6 +6399,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         Alert.alert('💬 Yeni Mesaj', `${data.sender_name}: ${data.message}`);
       }
     },
+    // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
+    onTripForceEnded: (data) => {
+      console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ:', data);
+      Alert.alert('⚠️ Yolculuk Bitirildi', 'Yolcu yolculuğu sonlandırdı.');
+      setActiveTag(null);
+      setRequests([]);
+      setScreen('role-select');
+    },
   });
   
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
