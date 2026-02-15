@@ -3902,13 +3902,6 @@ async def start_call(request: dict):
     except Exception as e:
         logger.error(f"Call start error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-            }
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Call start error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/calls/end")
 async def end_call(request: dict):
