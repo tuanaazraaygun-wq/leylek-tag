@@ -4541,6 +4541,14 @@ function PassengerDashboard({
         setTimeout(() => setShowToast(false), 3000);
       }
     },
+    // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
+    onTripForceEnded: (data) => {
+      console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ:', data);
+      Alert.alert('⚠️ Yolculuk Bitirildi', 'Sürücü yolculuğu sonlandırdı.');
+      setActiveTag(null);
+      setDestination(null);
+      setScreen('role-select');
+    },
   });
   
   // Karşılıklı iptal sistemi state'leri
