@@ -5224,17 +5224,32 @@ function PassengerDashboard({
         callerName={incomingCallData.callerName}
         callType={incomingCallData.callType}
         onAccept={() => {
-          // 🆕 YENİ: Socket ile call_accept gönder - Backend Daily room oluşturacak
-          // Sonra HER İKİ TARAFA call_accepted gelecek
-          console.log('📞 YOLCU - ARAMAYI KABUL EDİYOR, call_accept gönderiliyor...');
-          emitCallAccept({
+          // Room URL kontrolü
+          if (!dailyRoomUrl) {
+            console.log('❌ YOLCU - Room URL yok, kabul edilemiyor');
+            Alert.alert('Hata', 'Arama bilgisi alınamadı');
+            return;
+          }
+          
+          console.log('📞 YOLCU - ARAMAYI KABUL EDİYOR');
+          console.log('   dailyRoomUrl:', dailyRoomUrl);
+          console.log('   dailyRoomName:', dailyRoomName);
+          
+          // Socket ile kabul bildir
+          acceptDailyCall({
             caller_id: incomingCallData.callerId,
-            receiver_id: user.id,
-            call_type: incomingCallData.callType,
-            tag_id: incomingCallData.tagId || activeTag?.id || '',
+            receiver_id: user?.id || '',
+            room_url: dailyRoomUrl,
+            room_name: dailyRoomName || '',
+            call_type: incomingCallData.callType
           });
-          // NOT: Daily.co'ya giriş onCallAcceptedNew event'i ile yapılacak
-          // Navigation YOK - sadece bekle
+          
+          // HEMEN Daily.co'ya gir - event bekleme
+          setIncomingCall(false);
+          setIncomingCallData(null);
+          setDailyCallType(incomingCallData.callType);
+          setDailyCallerName(incomingCallData.callerName);
+          setDailyCallActive(true);
         }}
         onReject={() => {
           // 🆕 YENİ: call_reject kullan
