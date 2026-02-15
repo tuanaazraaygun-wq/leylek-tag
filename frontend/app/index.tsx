@@ -4867,6 +4867,7 @@ function PassengerDashboard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           caller_id: user.id,
+          caller_name: user.name || 'Yolcu',
           receiver_id: activeTag.driver_id,
           call_type: callType,
           tag_id: activeTag.id
@@ -4876,17 +4877,13 @@ function PassengerDashboard({
       const data = await response.json();
       
       if (data.success && data.room_url) {
-        // Daily.co arama ekranını aç
+        // Daily.co arama ekranını aç - ANINDA
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name);
         setDailyCallType(callType);
         setDailyCallerName(activeTag.driver_name || 'Sürücü');
         setDailyCallActive(true);
         setCalling(false);
-        
-        if (!data.receiver_online) {
-          Alert.alert('Bilgi', 'Sürücü şu an çevrimdışı görünüyor. Arama başlatıldı.');
-        }
       } else {
         setCalling(false);
         Alert.alert('Hata', 'Arama başlatılamadı');
