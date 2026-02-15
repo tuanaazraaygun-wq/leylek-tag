@@ -4861,8 +4861,31 @@ function PassengerDashboard({
     
     setCalling(true);
     
+    // 1. 🔥 ANINDA "Çalıyor" bildirimi gönder - Room beklemeden!
+    console.log('📞 YOLCU - ANINDA çaldırma bildirimi gönderiliyor...');
+    emitCallInvite({
+      caller_id: user.id,
+      caller_name: user.name || 'Yolcu',
+      receiver_id: activeTag.driver_id,
+      room_url: '', // Henüz yok
+      room_name: '',
+      call_type: callType,
+      tag_id: activeTag.id,
+      is_ringing: true, // Sadece çaldırma
+    });
+    
+    // 2. "Arıyor" ekranını göster
+    setOutgoingCall(true);
+    setOutgoingCallData({
+      receiverName: activeTag.driver_name || 'Sürücü',
+      callType: callType,
+      receiverId: activeTag.driver_id,
+      roomUrl: '',
+      roomName: ''
+    });
+    
     try {
-      // 1. API'den Daily.co room al
+      // 3. Daily.co room oluştur (arka planda)
       console.log('📞 YOLCU - Daily.co room oluşturuluyor...');
       const response = await fetch(`${API_URL}/calls/start`, {
         method: 'POST',
@@ -4878,9 +4901,9 @@ function PassengerDashboard({
       const data = await response.json();
       
       if (data.success && data.room_url) {
-        console.log('📞 YOLCU - Room hazır:', data.room_url);
+        console.log('📞 YOLCU - Room hazır, gerçek invite gönderiliyor:', data.room_url);
         
-        // 2. Room URL ile socket bildirimi gönder - ŞOFÖRE ÇALAR
+        // 4. Room URL ile GERÇEK invite gönder
         emitCallInvite({
           caller_id: user.id,
           caller_name: user.name || 'Yolcu',
@@ -4888,17 +4911,17 @@ function PassengerDashboard({
           room_url: data.room_url,
           room_name: data.room_name,
           call_type: callType,
-          tag_id: activeTag.id
+          tag_id: activeTag.id,
+          is_ringing: false, // Gerçek davet
         });
         
-        // 3. Room bilgilerini kaydet
+        // 5. Room bilgilerini kaydet
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name);
         setDailyCallType(callType);
         setDailyCallerName(activeTag.driver_name || 'Sürücü');
         
-        // 4. "Arıyor" ekranını göster - KABUL EDİLENE KADAR BEKLE
-        setOutgoingCall(true);
+        // 6. Outgoing call verilerini güncelle
         setOutgoingCallData({
           receiverName: activeTag.driver_name || 'Sürücü',
           callType: callType,
@@ -4911,11 +4934,25 @@ function PassengerDashboard({
         // NOT: Daily.co'ya giriş onCallAcceptedNew callback'inde yapılacak
       } else {
         setCalling(false);
+        setOutgoingCall(false);
+        setOutgoingCallData(null);
+        // İptal bildirimi gönder
+        emitCallCancel({
+          caller_id: user.id,
+          receiver_id: activeTag.driver_id,
+        });
         Alert.alert('Hata', 'Arama başlatılamadı');
       }
     } catch (error) {
       console.error('Daily.co arama hatası:', error);
       setCalling(false);
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
+      // İptal bildirimi gönder
+      emitCallCancel({
+        caller_id: user.id,
+        receiver_id: activeTag.driver_id,
+      });
       Alert.alert('Hata', 'Arama başlatılırken bir sorun oluştu');
     }
   };
