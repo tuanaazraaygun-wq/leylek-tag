@@ -5,6 +5,7 @@
  * ✅ Database'e HİÇ kaydetmez
  * ✅ Mesajlar sadece bellekte tutulur
  * ✅ Trip bitince otomatik temizlenir
+ * ✅ Mesaj bildirim sesi
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -20,9 +21,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { Audio } from 'expo-av';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
