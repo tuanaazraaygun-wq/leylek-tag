@@ -3839,29 +3839,23 @@ async def create_daily_room(request: dict):
 @api_router.post("/calls/start")
 async def start_call(request: dict):
     """
-    Simple Daily.co call with socket notification
+    Simple Daily.co call - Sadece room oluştur, socket bildirimi FRONTEND'de
     """
     try:
         caller_id = request.get("caller_id")
         receiver_id = request.get("receiver_id")
-        call_type = request.get("call_type", "audio")  # "audio" or "video"
+        call_type = request.get("call_type", "audio")
         tag_id = request.get("tag_id", "")
-        caller_name = request.get("caller_name", "Arayan")
         
         if not caller_id or not receiver_id:
             raise HTTPException(status_code=400, detail="caller_id and receiver_id required")
         
-        # Create unique room name
         room_name = f"leylek_{tag_id}_{int(time.time())}"
         
-        # Daily.co API request
         headers = {
             "Authorization": f"Bearer {DAILY_API_KEY}",
             "Content-Type": "application/json"
         }
-        
-        # Room expires in 10 minutes
-        expiration_time = int(time.time()) + 600  # 10 minutes
         
         payload = {
             "name": room_name,
@@ -3870,13 +3864,11 @@ async def start_call(request: dict):
                 "max_participants": 2,
                 "enable_chat": False,
                 "enable_screenshare": False,
-                "exp": expiration_time,
+                "exp": int(time.time()) + 600,
                 "enable_knocking": False,
                 "start_video_off": call_type == "audio",
                 "start_audio_off": False,
-                "enable_prejoin_ui": False,  # No waiting screen
-                "enable_network_ui": False,
-                "enable_pip_ui": False,
+                "enable_prejoin_ui": False,
             }
         }
         
@@ -3895,35 +3887,21 @@ async def start_call(request: dict):
             room_data = response.json()
             room_url = room_data.get("url")
             
-            logger.info(f"📞 Call started: {room_url} (type: {call_type})")
+            logger.info(f"📞 Room oluşturuldu: {room_url}")
             
-            # 🔥 HARİCİ SOCKET SUNUCUSUNA BİLDİRİM GÖNDER
-            try:
-                import socketio
-                external_sio = socketio.AsyncClient()
-                await external_sio.connect('https://socket.leylektag.com', transports=['websocket'])
-                
-                await external_sio.emit('call_invite', {
-                    'room_url': room_url,
-                    'room_name': room_name,
-                    'caller_id': caller_id,
-                    'caller_name': caller_name,
-                    'receiver_id': receiver_id,
-                    'call_type': call_type,
-                    'tag_id': tag_id
-                })
-                
-                await external_sio.disconnect()
-                logger.info(f"📲 Arama bildirimi gönderildi: {receiver_id}")
-            except Exception as socket_err:
-                logger.warning(f"⚠️ Socket bildirim hatası: {socket_err}")
+            # ❌ SOCKET BİLDİRİMİ YOK - Frontend socket ile gönderiyor
             
             return {
                 "success": True,
                 "room_url": room_url,
                 "room_name": room_name,
                 "call_type": call_type,
-                "expires_in": 600  # 10 minutes
+                "expires_in": 600
+            }
+            
+    except Exception as e:
+        logger.error(f"Call start error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
             }
             
     except HTTPException:
