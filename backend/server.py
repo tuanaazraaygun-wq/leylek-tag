@@ -2397,6 +2397,26 @@ async def force_end_trip(tag_id: str, user_id: str):
         except Exception as chat_err:
             logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
         
+        # 🆕 Socket ile karşı tarafa bildir
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "https://socket.leylektag.com/emit",
+                    json={
+                        "event": "force_end_trip",
+                        "data": {
+                            "tag_id": tag_id,
+                            "driver_id": tag.get("driver_id"),
+                            "passenger_id": tag.get("passenger_id"),
+                            "ended_by": user_type
+                        }
+                    },
+                    timeout=5
+                )
+        except Exception as socket_err:
+            logger.warning(f"⚠️ Socket bildirim gönderilemedi: {socket_err}")
+        
         logger.info(f"⚠️ Force end: TAG {tag_id} by {user_type} ({resolved_id}) - 5 PUAN CEZA")
         
         return {"success": True, "message": "Yolculuk zorla bitirildi. Puanınız -5 düştü."}
