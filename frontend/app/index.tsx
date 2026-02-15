@@ -4861,8 +4861,19 @@ function PassengerDashboard({
     
     setCalling(true);
     
+    // 🔥 1. ÖNCE socket ile ANINDA "aranıyor" bildirimi gönder
+    emitCallInvite({
+      caller_id: user.id,
+      caller_name: user.name || 'Yolcu',
+      receiver_id: activeTag.driver_id,
+      room_url: '', // Henüz yok, sonra güncellenecek
+      room_name: '',
+      call_type: callType,
+      tag_id: activeTag.id
+    });
+    
     try {
-      // 1. Daily.co room oluştur (sadece room, socket bildirimi backend'de YOK)
+      // 2. Sonra API'den room al
       const response = await fetch(`${API_URL}/calls/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4877,7 +4888,7 @@ function PassengerDashboard({
       const data = await response.json();
       
       if (data.success && data.room_url) {
-        // 2. 🔥 SOCKET ile ANINDA karşı tarafa bildir
+        // 3. Room URL ile tekrar socket gönder
         emitCallInvite({
           caller_id: user.id,
           caller_name: user.name || 'Yolcu',
@@ -4888,7 +4899,7 @@ function PassengerDashboard({
           tag_id: activeTag.id
         });
         
-        // 3. Daily.co arama ekranını aç
+        // 4. Daily.co arama ekranını aç
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name);
         setDailyCallType(callType);
