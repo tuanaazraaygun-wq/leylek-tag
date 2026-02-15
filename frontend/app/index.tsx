@@ -6214,9 +6214,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     onIncomingDailyCall: (data) => {
       console.log('📹 ŞOFÖR - DAILY.CO GELEN ARAMA:', data);
       console.log('   room_url:', data.room_url);
-      console.log('   room_name:', data.room_name);
+      console.log('   is_ringing:', data.is_ringing);
       
-      // Room URL ve name'i kaydet (arayan zaten oluşturdu)
+      // Zaten arama varsa güncelle (room_url geldi)
+      if (incomingDailyCall && data.room_url) {
+        console.log('📞 ŞOFÖR - Room URL güncelleniyor:', data.room_url);
+        setDailyRoomUrl(data.room_url);
+        setDailyRoomName(data.room_name || '');
+        return;
+      }
+      
+      if (dailyCallActive || incomingDailyCall) return;
+      
+      // Room URL varsa kaydet
       if (data.room_url) {
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name || '');
@@ -6225,6 +6235,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setDailyCallerId(data.caller_id);
       setDailyCallerName(data.caller_name || 'Yolcu');
       setDailyCallType(data.call_type || 'audio');
+      
+      // 🔥 ANINDA çaldır - room_url olmasa bile!
       setIncomingDailyCall(true);
       // tagId'yi de sakla
       setIncomingCallTagId(data.tag_id || '');
