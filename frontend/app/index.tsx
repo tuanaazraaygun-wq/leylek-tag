@@ -6218,31 +6218,18 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     userRole: 'driver',
     // 🆕 Daily.co Gelen Arama - ŞOFÖR (VİBRASYON + Accept/Reject)
     onIncomingDailyCall: (data) => {
-      console.log('📹 ŞOFÖR - DAILY.CO GELEN ARAMA:', data);
-      console.log('   room_url:', data.room_url);
-      console.log('   dailyCallActive:', dailyCallActive);
-      console.log('   incomingDailyCall:', incomingDailyCall);
+      console.log('📞 ŞOFÖR - GELEN ARAMA:', data);
       
-      // 🔥 BLOKLAMA YOK - Her zaman yeni aramayı göster!
-      // Önceki state'leri temizle
-      if (dailyCallActive) {
-        console.log('⚠️ Önceki arama aktif, temizleniyor...');
-        setDailyCallActive(false);
-      }
-      
-      // Room URL varsa kaydet
+      // 🔥 HİÇBİR KONTROL YOK - ANINDA ÇALDIR!
       if (data.room_url) {
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name || '');
       }
-      
       setDailyCallerId(data.caller_id);
       setDailyCallerName(data.caller_name || 'Yolcu');
       setDailyCallType(data.call_type || 'audio');
-      
-      // 🔥 ANINDA çaldır!
-      setIncomingDailyCall(true);
       setIncomingCallTagId(data.tag_id || '');
+      setIncomingDailyCall(true);
     },
     // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
     onCallAcceptedNew: (data) => {
