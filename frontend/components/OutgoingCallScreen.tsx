@@ -174,7 +174,15 @@ export default function OutgoingCallScreen({
       <View style={styles.buttonContainer}>
         <TouchableOpacity 
           style={styles.cancelButton}
-          onPress={onCancel}
+          onPress={() => {
+            // 🔇 Sesi durdur
+            if (soundRef.current) {
+              soundRef.current.stopAsync();
+              soundRef.current.unloadAsync();
+              soundRef.current = null;
+            }
+            onCancel();
+          }}
           activeOpacity={0.8}
         >
           <Ionicons 
