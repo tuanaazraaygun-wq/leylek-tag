@@ -5244,31 +5244,31 @@ function PassengerDashboard({
     );
   }
 
-  // 🆕 GELEN ARAMA EKRANI - YOLCU (SÜRÜCÜ İLE AYNI YAPI!)
-  if (incomingDailyCall) {
+  // 🔥 GELEN ARAMA EKRANI - YOLCU (MERKEZİ STATE!)
+  if (incomingCallData) {
     return (
       <IncomingCallScreen
-        callerName={dailyCallerName || 'Şoför'}
-        callType={dailyCallType || 'audio'}
+        callerName={incomingCallData.callerName || 'Şoför'}
+        callType={incomingCallData.callType || 'audio'}
         onAccept={() => {
-          const roomUrl = dailyRoomUrl;
+          const roomUrl = incomingCallData.roomUrl;
           
           if (!roomUrl) {
             console.log('❌ YOLCU - Room URL yok, 2 saniye bekle');
             setTimeout(() => {
-              if (dailyRoomUrl) {
+              if (incomingCallData?.roomUrl) {
                 acceptDailyCall({
-                  caller_id: dailyCallerId,
+                  caller_id: incomingCallData.callerId,
                   receiver_id: user?.id || '',
-                  room_url: dailyRoomUrl,
-                  room_name: dailyRoomName || '',
-                  call_type: dailyCallType
+                  room_url: incomingCallData.roomUrl,
+                  room_name: incomingCallData.roomName || '',
+                  call_type: incomingCallData.callType
                 });
-                setIncomingDailyCall(false);
+                clearIncomingCall();
                 setDailyCallActive(true);
               } else {
                 Alert.alert('Hata', 'Arama bağlantısı kurulamadı');
-                setIncomingDailyCall(false);
+                clearIncomingCall();
               }
             }, 2000);
             return;
@@ -5276,22 +5276,27 @@ function PassengerDashboard({
           
           console.log('📞 YOLCU - KABUL:', roomUrl);
           acceptDailyCall({
-            caller_id: dailyCallerId,
+            caller_id: incomingCallData.callerId,
             receiver_id: user?.id || '',
             room_url: roomUrl,
-            room_name: dailyRoomName || '',
-            call_type: dailyCallType
+            room_name: incomingCallData.roomName || '',
+            call_type: incomingCallData.callType
           });
-          setIncomingDailyCall(false);
+          // Local state'lere kaydet (Daily odası için)
+          setDailyRoomUrl(roomUrl);
+          setDailyRoomName(incomingCallData.roomName || '');
+          setDailyCallType(incomingCallData.callType);
+          setDailyCallerName(incomingCallData.callerName);
+          clearIncomingCall();
           setDailyCallActive(true);
         }}
         onReject={() => {
           console.log('📞 YOLCU - REDDETTİ');
           emitCallReject({
-            caller_id: dailyCallerId,
+            caller_id: incomingCallData.callerId,
             receiver_id: user?.id || '',
           });
-          setIncomingDailyCall(false);
+          clearIncomingCall();
           setDailyRoomUrl(null);
           setDailyRoomName('');
         }}
