@@ -5250,75 +5250,56 @@ function PassengerDashboard({
     );
   }
 
-  // 🆕 GELEN ARAMA EKRANI - YOLCU (Vibration + Accept/Reject)
-  if (incomingCall && incomingCallData) {
+  // 🆕 GELEN ARAMA EKRANI - YOLCU (SÜRÜCÜ İLE AYNI YAPI!)
+  if (incomingDailyCall) {
     return (
       <IncomingCallScreen
-        callerName={incomingCallData.callerName}
-        callType={incomingCallData.callType}
+        callerName={dailyCallerName || 'Şoför'}
+        callType={dailyCallType || 'audio'}
         onAccept={() => {
-          // Room URL kontrolü - önce state'den, yoksa incomingCallData'dan al
-          const roomUrl = dailyRoomUrl || incomingCallData.roomUrl;
-          const roomName = dailyRoomName || incomingCallData.roomName || '';
+          const roomUrl = dailyRoomUrl;
           
           if (!roomUrl) {
-            console.log('❌ YOLCU - Room URL yok, 2 saniye bekleyip tekrar dene');
-            // 2 saniye bekle ve tekrar kontrol et
+            console.log('❌ YOLCU - Room URL yok, 2 saniye bekle');
             setTimeout(() => {
-              const retryRoomUrl = dailyRoomUrl || incomingCallData.roomUrl;
-              if (retryRoomUrl) {
-                console.log('✅ YOLCU - Room URL bulundu (retry):', retryRoomUrl);
+              if (dailyRoomUrl) {
                 acceptDailyCall({
-                  caller_id: incomingCallData.callerId,
+                  caller_id: dailyCallerId,
                   receiver_id: user?.id || '',
-                  room_url: retryRoomUrl,
-                  room_name: dailyRoomName || incomingCallData.roomName || '',
-                  call_type: incomingCallData.callType
+                  room_url: dailyRoomUrl,
+                  room_name: dailyRoomName || '',
+                  call_type: dailyCallType
                 });
-                setIncomingCall(false);
-                setIncomingCallData(null);
-                setDailyCallType(incomingCallData.callType);
-                setDailyCallerName(incomingCallData.callerName);
-                setDailyRoomUrl(retryRoomUrl);
+                setIncomingDailyCall(false);
                 setDailyCallActive(true);
               } else {
-                Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
+                Alert.alert('Hata', 'Arama bağlantısı kurulamadı');
+                setIncomingDailyCall(false);
               }
             }, 2000);
             return;
           }
           
-          console.log('📞 YOLCU - ARAMAYI KABUL EDİYOR');
-          console.log('   roomUrl:', roomUrl);
-          console.log('   roomName:', roomName);
-          
-          // Socket ile kabul bildir
+          console.log('📞 YOLCU - KABUL:', roomUrl);
           acceptDailyCall({
-            caller_id: incomingCallData.callerId,
+            caller_id: dailyCallerId,
             receiver_id: user?.id || '',
             room_url: roomUrl,
-            room_name: roomName,
-            call_type: incomingCallData.callType
+            room_name: dailyRoomName || '',
+            call_type: dailyCallType
           });
-          
-          // HEMEN Daily.co'ya gir - event bekleme
-          setIncomingCall(false);
-          setIncomingCallData(null);
-          setDailyCallType(incomingCallData.callType);
-          setDailyCallerName(incomingCallData.callerName);
-          setDailyRoomUrl(roomUrl);
+          setIncomingDailyCall(false);
           setDailyCallActive(true);
         }}
         onReject={() => {
-          // 🆕 YENİ: call_reject kullan
-          console.log('📞 YOLCU - ARAMAYI REDDEDİYOR');
+          console.log('📞 YOLCU - REDDETTİ');
           emitCallReject({
-            caller_id: incomingCallData.callerId,
-            receiver_id: user.id,
+            caller_id: dailyCallerId,
+            receiver_id: user?.id || '',
           });
-          // Reset
-          setIncomingCall(false);
-          setIncomingCallData(null);
+          setIncomingDailyCall(false);
+          setDailyRoomUrl(null);
+          setDailyRoomName('');
         }}
       />
     );
