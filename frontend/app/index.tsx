@@ -4358,20 +4358,7 @@ function PassengerDashboard({
   } = useSocket({
     userId: user?.id || null,
     userRole: 'passenger',
-    // 🆕 Gelen Daily.co Arama - VİBRASYON + IncomingCallScreen
-    onIncomingDailyCall: (data) => {
-      console.log('📞 YOLCU - GELEN ARAMA:', data);
-      
-      // 🔥 SÜRÜCÜ İLE AYNI - TEK STATE!
-      if (data.room_url) {
-        setDailyRoomUrl(data.room_url);
-        setDailyRoomName(data.room_name || '');
-      }
-      setDailyCallerId(data.caller_id);
-      setDailyCallerName(data.caller_name || 'Şoför');
-      setDailyCallType(data.call_type || 'audio');
-      setIncomingDailyCall(true);
-    },
+    // 🔥 onIncomingDailyCall KALDIRILDI - SocketContext'te dinleniyor!
     // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
     onCallAcceptedNew: (data) => {
       console.log('✅ YOLCU - CALL_ACCEPTED (SYNC) - Daily odası hazır:', data);
@@ -4390,7 +4377,9 @@ function PassengerDashboard({
       setOutgoingCall(false);
       setOutgoingCallData(null);
       setIncomingCall(false);
-      setIncomingCallData(null);
+      setLocalIncomingCallData(null);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      clearIncomingCall();
     },
     onDailyCallAccepted: (data) => {
       console.log('YOLCU - ARAMA KABUL EDILDI (ESKİ):', data);
