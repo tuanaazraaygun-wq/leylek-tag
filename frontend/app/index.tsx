@@ -6521,10 +6521,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
     onTripForceEnded: (data) => {
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ:', data);
-      Alert.alert('⚠️ Yolculuk Bitirildi', 'Yolcu yolculuğu sonlandırdı.');
+      // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE
       setActiveTag(null);
       setRequests([]);
+      setDailyCallActive(false);
+      setDailyRoomUrl(null);
+      driverClearIncomingCall();
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
+      setDriverChatVisible(false);
+      setDriverEndTripModalVisible(false);
+      // ROL SEÇİM EKRANINA GİT
       setScreen('role-select');
+      Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
     },
   });
   
