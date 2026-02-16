@@ -137,6 +137,15 @@ interface SocketContextType {
     tagId: string;
   } | null;
   clearIncomingCall: () => void;
+  // 🔥 REF GETTER - Callback'lerde güncel veri için!
+  getIncomingCallData: () => {
+    callerId: string;
+    callerName: string;
+    callType: 'audio' | 'video';
+    roomUrl: string;
+    roomName: string;
+    tagId: string;
+  } | null;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
