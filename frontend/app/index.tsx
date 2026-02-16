@@ -6895,63 +6895,68 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   };
 
-  // 🔥 GELEN ARAMA EKRANI - ŞOFÖR (MERKEZİ STATE!)
+  // 🔥 GELEN ARAMA EKRANI - ŞOFÖR (MERKEZİ STATE + REF!)
   if (driverIncomingCallData) {
     return (
       <IncomingCallScreen
         callerName={driverIncomingCallData.callerName || 'Yolcu'}
         callType={driverIncomingCallData.callType || 'audio'}
         onAccept={() => {
+          // 🔥 GÜNCEL VERİYİ REF'TEN AL - Stale closure sorunu çözüldü!
+          const currentData = driverGetIncomingCallData();
           console.log('📞 ŞOFÖR - ARAMAYI KABUL EDİYOR');
-          console.log('   roomUrl:', driverIncomingCallData.roomUrl);
-          console.log('   callerId:', driverIncomingCallData.callerId);
+          console.log('   roomUrl:', currentData?.roomUrl);
+          console.log('   callerId:', currentData?.callerId);
           
-          const roomUrl = driverIncomingCallData.roomUrl;
+          const roomUrl = currentData?.roomUrl;
           
           if (!roomUrl) {
-            console.log('❌ ŞOFÖR - Room URL yok, 2 saniye bekleyip tekrar dene');
-            // 2 saniye bekle ve tekrar kontrol et
+            console.log('❌ ŞOFÖR - Room URL yok, 1 saniye bekle ve REF kontrol et');
             setTimeout(() => {
-              if (driverIncomingCallData?.roomUrl) {
-                console.log('✅ ŞOFÖR - Room URL bulundu (retry):', driverIncomingCallData.roomUrl);
+              // 🔥 1 saniye sonra GÜNCEL veriyi REF'ten al!
+              const retryData = driverGetIncomingCallData();
+              console.log('🔄 ŞOFÖR - Retry data:', retryData?.roomUrl);
+              
+              if (retryData?.roomUrl) {
+                console.log('✅ ŞOFÖR - Room URL bulundu (retry):', retryData.roomUrl);
                 acceptDailyCall({
-                  caller_id: driverIncomingCallData.callerId,
+                  caller_id: retryData.callerId,
                   receiver_id: user.id,
-                  room_url: driverIncomingCallData.roomUrl,
-                  room_name: driverIncomingCallData.roomName || '',
-                  call_type: driverIncomingCallData.callType
+                  room_url: retryData.roomUrl,
+                  room_name: retryData.roomName || '',
+                  call_type: retryData.callType
                 });
                 // Local state'lere kaydet
-                setDailyRoomUrl(driverIncomingCallData.roomUrl);
-                setDailyRoomName(driverIncomingCallData.roomName || '');
-                setDailyCallType(driverIncomingCallData.callType);
-                setDailyCallerName(driverIncomingCallData.callerName);
-                setDailyCallerId(driverIncomingCallData.callerId);
+                setDailyRoomUrl(retryData.roomUrl);
+                setDailyRoomName(retryData.roomName || '');
+                setDailyCallType(retryData.callType);
+                setDailyCallerName(retryData.callerName);
+                setDailyCallerId(retryData.callerId);
                 driverClearIncomingCall();
                 setDailyCallActive(true);
               } else {
                 Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
                 driverClearIncomingCall();
               }
-            }, 2000);
+            }, 1000);
             return;
           }
           
           // Arayan'a kabul edildiğini bildir (room_url ile!)
           acceptDailyCall({
-            caller_id: driverIncomingCallData.callerId,
+            caller_id: currentData.callerId,
             receiver_id: user.id,
             room_url: roomUrl,
-            room_name: driverIncomingCallData.roomName || '',
-            call_type: driverIncomingCallData.callType
+            room_name: currentData.roomName || '',
+            call_type: currentData.callType
           });
           
           // Local state'lere kaydet (Daily odası için)
           setDailyRoomUrl(roomUrl);
-          setDailyRoomName(driverIncomingCallData.roomName || '');
-          setDailyCallType(driverIncomingCallData.callType);
-          setDailyCallerName(driverIncomingCallData.callerName);
-          setDailyCallerId(driverIncomingCallData.callerId);
+          setDailyRoomName(currentData.roomName || '');
+          setDailyCallType(currentData.callType);
+          setDailyCallerName(currentData.callerName);
+          setDailyCallerId(currentData.callerId);
           
           // Gelen arama ekranını kapat, Daily.co'ya gir
           driverClearIncomingCall();
@@ -6960,8 +6965,9 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         onReject={() => {
           // 🆕 YENİ: call_reject kullan
           console.log('📞 ŞOFÖR - ARAMAYI REDDEDİYOR');
+          const currentData = driverGetIncomingCallData();
           emitCallReject({
-            caller_id: driverIncomingCallData.callerId,
+            caller_id: currentData?.callerId || '',
             receiver_id: user.id,
           });
           // Reset
