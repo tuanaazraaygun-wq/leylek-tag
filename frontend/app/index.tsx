@@ -5291,6 +5291,9 @@ function PassengerDashboard({
                 setDailyRoomName(retryData.roomName || '');
                 setDailyCallType(retryData.callType);
                 setDailyCallerName(retryData.callerName);
+                // 🔥 KRITIK: Caller/Receiver ID'leri set et!
+                setPassengerDailyCallerId(retryData.callerId);
+                setPassengerDailyReceiverId(user?.id || '');
                 clearIncomingCall();
                 setDailyCallActive(true);
               } else {
