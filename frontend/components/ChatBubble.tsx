@@ -115,9 +115,10 @@ export default function ChatBubble({
   // ═══════════════════════════════════════════════════════════════
   
   useEffect(() => {
-    if (!tagId || !visible || !userId) return;
+    // 🔥 Chat kapalı olsa bile channel açık olsun - mesajları almak için!
+    if (!tagId || !userId) return;
     
-    console.log('🔔 [ChatBubble] Realtime Broadcast başlatılıyor:', { tagId, userId });
+    console.log('🔔 [ChatBubble] Realtime Broadcast başlatılıyor:', { tagId, userId, visible });
     
     // Broadcast channel oluştur - HER İKİ KULLANICI AYNI CHANNEL'A BAĞLANIR
     const channel = supabase.channel(`chat-broadcast-${tagId}`, {
@@ -154,8 +155,8 @@ export default function ChatBubble({
         // 🆕 Mesaj geldiğinde titreşim
         Vibration.vibrate(200);
         
-        // Minimized ise unread count artır
-        if (isMinimized) {
+        // 🔥 Pencere kapalı veya minimized ise unread count artır
+        if (!visible || isMinimized) {
           setUnreadCount(prev => prev + 1);
         }
         
@@ -178,7 +179,7 @@ export default function ChatBubble({
         channelRef.current = null;
       }
     };
-  }, [tagId, userId, visible, isMinimized]);
+  }, [tagId, userId, isMinimized, visible]);
 
   // ═══════════════════════════════════════════════════════════════
   // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
