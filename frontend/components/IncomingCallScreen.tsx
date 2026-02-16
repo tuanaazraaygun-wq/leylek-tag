@@ -1,7 +1,7 @@
 /**
  * IncomingCallScreen - Gelen Arama Ekranı
  * Socket üzerinden call_invite geldiğinde gösterilir
- * Vibration + Accept/Reject butonları
+ * Vibration + Ringtone + Accept/Reject butonları
  */
 import React, { useEffect, useRef } from 'react';
 import {
@@ -16,8 +16,12 @@ import {
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 
 const { width } = Dimensions.get('window');
+
+// Çalma sesi URL'si (ücretsiz ringtone)
+const RINGTONE_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
 
 interface IncomingCallScreenProps {
   callerName: string;
@@ -34,17 +38,48 @@ export default function IncomingCallScreen({
 }: IncomingCallScreenProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ringAnim = useRef(new Animated.Value(0)).current;
+  const soundRef = useRef<Audio.Sound | null>(null);
 
-  // Vibration pattern: vibrate 500ms, pause 500ms, repeat
+  // 🔔 Çalma sesi + Vibration
   useEffect(() => {
     const vibratePattern = [0, 500, 500, 500, 500, 500];
     
     // Start vibration
     Vibration.vibrate(vibratePattern, true);
 
+    // 🎵 Çalma sesini başlat
+    const playRingtone = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        });
+        
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: RINGTONE_URL },
+          { isLooping: true, volume: 1.0 }
+        );
+        soundRef.current = sound;
+        await sound.playAsync();
+        console.log('🔔 Çalma sesi başladı');
+      } catch (error) {
+        console.log('Ses çalma hatası:', error);
+      }
+    };
+    
+    playRingtone();
+
     // Cleanup
     return () => {
       Vibration.cancel();
+      // Sesi durdur
+      if (soundRef.current) {
+        soundRef.current.stopAsync();
+        soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
     };
   }, []);
 
