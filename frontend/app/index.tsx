@@ -5250,56 +5250,69 @@ function PassengerDashboard({
     );
   }
 
-  // 🔥 GELEN ARAMA EKRANI - YOLCU (MERKEZİ STATE!)
+  // 🔥 GELEN ARAMA EKRANI - YOLCU (MERKEZİ STATE + REF!)
   if (incomingCallData) {
     return (
       <IncomingCallScreen
         callerName={incomingCallData.callerName || 'Şoför'}
         callType={incomingCallData.callType || 'audio'}
         onAccept={() => {
-          const roomUrl = incomingCallData.roomUrl;
+          // 🔥 GÜNCEL VERİYİ REF'TEN AL - Stale closure sorunu çözüldü!
+          const currentData = getIncomingCallData();
+          const roomUrl = currentData?.roomUrl;
           
           if (!roomUrl) {
-            console.log('❌ YOLCU - Room URL yok, 2 saniye bekle');
+            console.log('❌ YOLCU - Room URL yok, 1 saniye bekle ve REF kontrol et');
             setTimeout(() => {
-              if (incomingCallData?.roomUrl) {
+              // 🔥 1 saniye sonra GÜNCEL veriyi REF'ten al!
+              const retryData = getIncomingCallData();
+              console.log('🔄 YOLCU - Retry data:', retryData?.roomUrl);
+              
+              if (retryData?.roomUrl) {
+                console.log('✅ YOLCU - Room URL bulundu (retry):', retryData.roomUrl);
                 acceptDailyCall({
-                  caller_id: incomingCallData.callerId,
+                  caller_id: retryData.callerId,
                   receiver_id: user?.id || '',
-                  room_url: incomingCallData.roomUrl,
-                  room_name: incomingCallData.roomName || '',
-                  call_type: incomingCallData.callType
+                  room_url: retryData.roomUrl,
+                  room_name: retryData.roomName || '',
+                  call_type: retryData.callType
                 });
+                // Local state'lere kaydet
+                setDailyRoomUrl(retryData.roomUrl);
+                setDailyRoomName(retryData.roomName || '');
+                setDailyCallType(retryData.callType);
+                setDailyCallerName(retryData.callerName);
                 clearIncomingCall();
                 setDailyCallActive(true);
               } else {
                 Alert.alert('Hata', 'Arama bağlantısı kurulamadı');
                 clearIncomingCall();
               }
-            }, 2000);
+            }, 1000);
             return;
           }
           
           console.log('📞 YOLCU - KABUL:', roomUrl);
           acceptDailyCall({
-            caller_id: incomingCallData.callerId,
+            caller_id: currentData.callerId,
             receiver_id: user?.id || '',
             room_url: roomUrl,
-            room_name: incomingCallData.roomName || '',
-            call_type: incomingCallData.callType
+            room_name: currentData.roomName || '',
+            call_type: currentData.callType
           });
           // Local state'lere kaydet (Daily odası için)
           setDailyRoomUrl(roomUrl);
-          setDailyRoomName(incomingCallData.roomName || '');
-          setDailyCallType(incomingCallData.callType);
-          setDailyCallerName(incomingCallData.callerName);
+          setDailyRoomName(currentData.roomName || '');
+          setDailyCallType(currentData.callType);
+          setDailyCallerName(currentData.callerName);
           clearIncomingCall();
           setDailyCallActive(true);
         }}
         onReject={() => {
           console.log('📞 YOLCU - REDDETTİ');
+          const currentData = getIncomingCallData();
           emitCallReject({
-            caller_id: incomingCallData.callerId,
+            caller_id: currentData?.callerId || '',
             receiver_id: user?.id || '',
           });
           clearIncomingCall();
