@@ -6948,7 +6948,24 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           console.log('   dailyCallerId:', dailyCallerId);
           
           if (!dailyRoomUrl) {
-            Alert.alert('Hata', 'Room bilgisi bulunamadı');
+            console.log('❌ ŞOFÖR - Room URL yok, 2 saniye bekleyip tekrar dene');
+            // 2 saniye bekle ve tekrar kontrol et
+            setTimeout(() => {
+              if (dailyRoomUrl) {
+                console.log('✅ ŞOFÖR - Room URL bulundu (retry):', dailyRoomUrl);
+                acceptDailyCall({
+                  caller_id: dailyCallerId,
+                  receiver_id: user.id,
+                  room_url: dailyRoomUrl,
+                  room_name: dailyRoomName || '',
+                  call_type: dailyCallType
+                });
+                setIncomingDailyCall(false);
+                setDailyCallActive(true);
+              } else {
+                Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
+              }
+            }, 2000);
             return;
           }
           
