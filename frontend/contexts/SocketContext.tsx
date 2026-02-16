@@ -452,6 +452,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
     setIncomingCallData(null);
   }, []);
 
+  // 🔥 REF GETTER - Callback'lerde güncel veri için!
+  const getIncomingCallData = useCallback(() => {
+    return incomingCallDataRef.current;
+  }, []);
+
   // ══════════════════════════════════════════════════════════════════
   // CONTEXT VALUE
   // ══════════════════════════════════════════════════════════════════
@@ -484,6 +489,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // 🔥 GELEN ARAMA - MERKEZİ STATE
     incomingCallData,
     clearIncomingCall,
+    getIncomingCallData,  // 🔥 REF GETTER
   };
 
   return (
