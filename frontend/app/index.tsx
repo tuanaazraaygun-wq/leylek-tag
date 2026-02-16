@@ -4303,7 +4303,7 @@ function PassengerDashboard({
   
   // 🆕 Gelen Arama State'leri
   const [incomingCall, setIncomingCall] = useState(false);
-  const [incomingCallData, setIncomingCallData] = useState<{
+  const [localIncomingCallData, setLocalIncomingCallData] = useState<{
     callerName: string;
     callType: 'audio' | 'video';
     roomUrl: string;
