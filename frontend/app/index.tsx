@@ -7077,7 +7077,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               // ANINDA ÇALAN ARAMA - Önce bildirim, sonra room oluştur
               // ════════════════════════════════════════════════════════════
               
-              if (dailyCallActive || incomingDailyCall || outgoingCall) {
+              // 🔥 MERKEZİ STATE KONTROLÜ
+              if (dailyCallActive || driverIncomingCallData || outgoingCall) {
                 Alert.alert('Uyari', 'Zaten bir arama devam ediyor');
                 return;
               }
