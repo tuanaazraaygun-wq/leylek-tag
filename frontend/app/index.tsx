@@ -6876,34 +6876,43 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   };
 
-  // 🆕 GELEN ARAMA EKRANI - ŞOFÖR (Vibration + Accept/Reject)
-  if (incomingDailyCall) {
+  // 🔥 GELEN ARAMA EKRANI - ŞOFÖR (MERKEZİ STATE!)
+  if (driverIncomingCallData) {
     return (
       <IncomingCallScreen
-        callerName={dailyCallerName}
-        callType={dailyCallType}
+        callerName={driverIncomingCallData.callerName || 'Yolcu'}
+        callType={driverIncomingCallData.callType || 'audio'}
         onAccept={() => {
           console.log('📞 ŞOFÖR - ARAMAYI KABUL EDİYOR');
-          console.log('   dailyRoomUrl:', dailyRoomUrl);
-          console.log('   dailyCallerId:', dailyCallerId);
+          console.log('   roomUrl:', driverIncomingCallData.roomUrl);
+          console.log('   callerId:', driverIncomingCallData.callerId);
           
-          if (!dailyRoomUrl) {
+          const roomUrl = driverIncomingCallData.roomUrl;
+          
+          if (!roomUrl) {
             console.log('❌ ŞOFÖR - Room URL yok, 2 saniye bekleyip tekrar dene');
             // 2 saniye bekle ve tekrar kontrol et
             setTimeout(() => {
-              if (dailyRoomUrl) {
-                console.log('✅ ŞOFÖR - Room URL bulundu (retry):', dailyRoomUrl);
+              if (driverIncomingCallData?.roomUrl) {
+                console.log('✅ ŞOFÖR - Room URL bulundu (retry):', driverIncomingCallData.roomUrl);
                 acceptDailyCall({
-                  caller_id: dailyCallerId,
+                  caller_id: driverIncomingCallData.callerId,
                   receiver_id: user.id,
-                  room_url: dailyRoomUrl,
-                  room_name: dailyRoomName || '',
-                  call_type: dailyCallType
+                  room_url: driverIncomingCallData.roomUrl,
+                  room_name: driverIncomingCallData.roomName || '',
+                  call_type: driverIncomingCallData.callType
                 });
-                setIncomingDailyCall(false);
+                // Local state'lere kaydet
+                setDailyRoomUrl(driverIncomingCallData.roomUrl);
+                setDailyRoomName(driverIncomingCallData.roomName || '');
+                setDailyCallType(driverIncomingCallData.callType);
+                setDailyCallerName(driverIncomingCallData.callerName);
+                setDailyCallerId(driverIncomingCallData.callerId);
+                driverClearIncomingCall();
                 setDailyCallActive(true);
               } else {
                 Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
+                driverClearIncomingCall();
               }
             }, 2000);
             return;
@@ -6911,26 +6920,33 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           
           // Arayan'a kabul edildiğini bildir (room_url ile!)
           acceptDailyCall({
-            caller_id: dailyCallerId,
+            caller_id: driverIncomingCallData.callerId,
             receiver_id: user.id,
-            room_url: dailyRoomUrl,
-            room_name: dailyRoomName || '',
-            call_type: dailyCallType
+            room_url: roomUrl,
+            room_name: driverIncomingCallData.roomName || '',
+            call_type: driverIncomingCallData.callType
           });
           
+          // Local state'lere kaydet (Daily odası için)
+          setDailyRoomUrl(roomUrl);
+          setDailyRoomName(driverIncomingCallData.roomName || '');
+          setDailyCallType(driverIncomingCallData.callType);
+          setDailyCallerName(driverIncomingCallData.callerName);
+          setDailyCallerId(driverIncomingCallData.callerId);
+          
           // Gelen arama ekranını kapat, Daily.co'ya gir
-          setIncomingDailyCall(false);
+          driverClearIncomingCall();
           setDailyCallActive(true);
         }}
         onReject={() => {
           // 🆕 YENİ: call_reject kullan
           console.log('📞 ŞOFÖR - ARAMAYI REDDEDİYOR');
           emitCallReject({
-            caller_id: dailyCallerId,
+            caller_id: driverIncomingCallData.callerId,
             receiver_id: user.id,
           });
           // Reset
-          setIncomingDailyCall(false);
+          driverClearIncomingCall();
           setDailyRoomUrl(null);
           setDailyRoomName('');
         }}
