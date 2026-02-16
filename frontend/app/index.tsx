@@ -4534,10 +4534,19 @@ function PassengerDashboard({
     // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
     onTripForceEnded: (data) => {
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ:', data);
-      Alert.alert('⚠️ Yolculuk Bitirildi', 'Sürücü yolculuğu sonlandırdı.');
+      // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE
       setActiveTag(null);
       setDestination(null);
+      setDailyCallActive(false);
+      setDailyRoomUrl(null);
+      clearIncomingCall();
+      setOutgoingCall(false);
+      setOutgoingCallData(null);
+      setPassengerChatVisible(false);
+      setPassengerEndTripModalVisible(false);
+      // ROL SEÇİM EKRANINA GİT
       setScreen('role-select');
+      Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
     },
   });
   
