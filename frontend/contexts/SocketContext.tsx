@@ -459,6 +459,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const clearIncomingCall = useCallback(() => {
     console.log('🧹 [SocketProvider] Gelen arama temizlendi');
     setIncomingCallData(null);
+    incomingCallDataRef.current = null;  // 🔥 Ref'i de temizle!
   }, []);
 
   // 🔥 REF GETTER - Callback'lerde güncel veri için!
