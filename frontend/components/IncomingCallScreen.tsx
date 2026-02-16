@@ -131,12 +131,24 @@ export default function IncomingCallScreen({
   }, []);
 
   const handleAccept = () => {
+    // 🔇 Sesi ve titreşimi durdur
     Vibration.cancel();
+    if (soundRef.current) {
+      soundRef.current.stopAsync();
+      soundRef.current.unloadAsync();
+      soundRef.current = null;
+    }
     onAccept();
   };
 
   const handleReject = () => {
+    // 🔇 Sesi ve titreşimi durdur
     Vibration.cancel();
+    if (soundRef.current) {
+      soundRef.current.stopAsync();
+      soundRef.current.unloadAsync();
+      soundRef.current = null;
+    }
     onReject();
   };
 
