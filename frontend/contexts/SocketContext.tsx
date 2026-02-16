@@ -207,6 +207,20 @@ export function SocketProvider({ children }: SocketProviderProps) {
     socket.on('disconnect', handleDisconnect);
     socket.on('reconnect', handleReconnect);
     socket.on('registered', handleRegistered);
+    
+    // 🔥 GELEN ARAMA - DİREKT DİNLE!
+    const handleIncomingCall = (data: any) => {
+      console.log('🔔🔔🔔 [SocketProvider] GELEN ARAMA!', data);
+      setIncomingCallData({
+        callerId: data.caller_id,
+        callerName: data.caller_name || 'Bilinmeyen',
+        callType: data.call_type || 'audio',
+        roomUrl: data.room_url || '',
+        roomName: data.room_name || '',
+        tagId: data.tag_id || '',
+      });
+    };
+    socket.on('incoming_daily_call', handleIncomingCall);
 
     // Cleanup - AMA SOCKET'İ KAPATMA!
     return () => {
@@ -214,6 +228,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       socket.off('disconnect', handleDisconnect);
       socket.off('reconnect', handleReconnect);
       socket.off('registered', handleRegistered);
+      socket.off('incoming_daily_call', handleIncomingCall);
       // Socket'i KAPATMIYORUZ - singleton kalıcı
     };
   }, []);
