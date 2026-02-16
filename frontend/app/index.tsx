@@ -4130,8 +4130,11 @@ function PassengerDashboard({
   const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
   const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('video');
   const [dailyCallerName, setDailyCallerName] = useState<string>('');
-  const [incomingDailyCall, setIncomingDailyCall] = useState(false);
+  // 🔥 incomingDailyCall KALDIRILDI - SocketContext'ten alınıyor!
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
+  
+  // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext'ten
+  const { incomingCallData, clearIncomingCall } = useSocketContext();
   
   // 🆕 Chat State'leri (Yolcu)
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
