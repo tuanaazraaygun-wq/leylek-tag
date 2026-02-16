@@ -4432,7 +4432,8 @@ function PassengerDashboard({
       console.log('YOLCU - DAILY.CO ARAMA BITTI:', data);
       // Clear ALL call state
       setDailyCallActive(false);
-      setIncomingDailyCall(false);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      clearIncomingCall();
       setDailyRoomUrl(null);
       setDailyRoomName('');
       setPassengerDailyCallerId('');
