@@ -4964,7 +4964,8 @@ function PassengerDashboard({
       });
     }
     setDailyCallActive(false);
-    setIncomingDailyCall(false);
+    // 🔥 MERKEZİ STATE TEMİZLE
+    clearIncomingCall();
     setDailyRoomUrl(null);
     setDailyRoomName('');
   };
@@ -4972,37 +4973,42 @@ function PassengerDashboard({
   // Daily.co gelen arama kabul
   const handleAcceptDailyCall = () => {
     console.log('✅ YOLCU - Arama kabul ediliyor');
-    console.log('   dailyRoomUrl:', dailyRoomUrl);
-    console.log('   passengerDailyCallerId:', passengerDailyCallerId);
+    console.log('   roomUrl:', incomingCallData?.roomUrl);
+    console.log('   callerId:', incomingCallData?.callerId);
     
-    if (!dailyRoomUrl) {
+    if (!incomingCallData?.roomUrl) {
       Alert.alert('Hata', 'Room bilgisi bulunamadı');
       return;
     }
     
     // Arayan'a kabul edildiğini bildir
     acceptDailyCall({
-      caller_id: passengerDailyCallerId,
+      caller_id: incomingCallData.callerId,
       receiver_id: user?.id || '',
-      room_url: dailyRoomUrl,
-      room_name: dailyRoomName || '',
-      call_type: incomingCallData?.callType || 'audio'
+      room_url: incomingCallData.roomUrl,
+      room_name: incomingCallData.roomName || '',
+      call_type: incomingCallData.callType || 'audio'
     });
+    
+    // Local state'leri güncelle
+    setDailyRoomUrl(incomingCallData.roomUrl);
+    setDailyRoomName(incomingCallData.roomName || '');
+    setDailyCallerName(incomingCallData.callerName || 'Şoför');
     
     // Gelen arama ekranını kapat, Daily.co'ya gir
     setIncomingCall(false);
+    clearIncomingCall();
     setDailyCallActive(true);
-    setDailyCallerName(incomingCallData?.callerName || 'Şoför');
   };
 
   // Daily.co gelen arama reddet
   const handleRejectDailyCall = () => {
-    if (passengerDailyCallerId) {
+    if (incomingCallData?.callerId) {
       rejectDailyCall({
-        caller_id: passengerDailyCallerId
+        caller_id: incomingCallData.callerId
       });
     }
-    setIncomingDailyCall(false);
+    clearIncomingCall();
     setDailyRoomUrl(null);
   };
 
