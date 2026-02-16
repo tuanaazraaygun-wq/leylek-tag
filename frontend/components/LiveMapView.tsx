@@ -224,6 +224,30 @@ export default function LiveMapView({
   // API çağrı sayacı (rate limiting için)
   const lastRouteCall = useRef<number>(0);
   
+  // 🔥 YANIP SÖNEN BUTON ANİMASYONU
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  
+  useEffect(() => {
+    // Sürekli yanıp sönen animasyon
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.6,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseAnimation.start();
+    
+    return () => pulseAnimation.stop();
+  }, []);
+  
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
   const themeLightColor = isDriver ? '#DBEAFE' : '#EDE9FE';
