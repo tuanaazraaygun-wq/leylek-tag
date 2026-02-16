@@ -4356,33 +4356,14 @@ function PassengerDashboard({
     userRole: 'passenger',
     // 🆕 Gelen Daily.co Arama - VİBRASYON + IncomingCallScreen
     onIncomingDailyCall: (data) => {
-      console.log('📞 YOLCU - GELEN DAILY.CO ARAMA:', data);
-      console.log('   room_url:', data.room_url);
-      console.log('   is_ringing:', data.is_ringing);
+      console.log('📞 YOLCU - GELEN ARAMA:', data);
       
-      // Zaten arama varsa güncelle (room_url geldi)
-      if (incomingCall && data.room_url) {
-        console.log('📞 YOLCU - Room URL güncelleniyor:', data.room_url);
-        setDailyRoomUrl(data.room_url);
-        setDailyRoomName(data.room_name || '');
-        setIncomingCallData(prev => prev ? {
-          ...prev,
-          roomUrl: data.room_url,
-          roomName: data.room_name || '',
-        } : prev);
-        return;
-      }
-      
-      if (dailyCallActive || incomingCall) return;
-      
-      // Room URL varsa kaydet
+      // 🔥 HİÇBİR KONTROL YOK - ANINDA ÇALDIR!
       if (data.room_url) {
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name || '');
       }
       setPassengerDailyCallerId(data.caller_id);
-      
-      // 🔥 ANINDA çaldır - room_url olmasa bile!
       setIncomingCallData({
         callerName: data.caller_name || 'Şoför',
         callType: data.call_type || 'audio',
