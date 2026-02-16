@@ -5276,23 +5276,47 @@ function PassengerDashboard({
         callerName={incomingCallData.callerName}
         callType={incomingCallData.callType}
         onAccept={() => {
-          // Room URL kontrolü
-          if (!dailyRoomUrl) {
-            console.log('❌ YOLCU - Room URL yok, kabul edilemiyor');
-            Alert.alert('Hata', 'Arama bilgisi alınamadı');
+          // Room URL kontrolü - önce state'den, yoksa incomingCallData'dan al
+          const roomUrl = dailyRoomUrl || incomingCallData.roomUrl;
+          const roomName = dailyRoomName || incomingCallData.roomName || '';
+          
+          if (!roomUrl) {
+            console.log('❌ YOLCU - Room URL yok, 2 saniye bekleyip tekrar dene');
+            // 2 saniye bekle ve tekrar kontrol et
+            setTimeout(() => {
+              const retryRoomUrl = dailyRoomUrl || incomingCallData.roomUrl;
+              if (retryRoomUrl) {
+                console.log('✅ YOLCU - Room URL bulundu (retry):', retryRoomUrl);
+                acceptDailyCall({
+                  caller_id: incomingCallData.callerId,
+                  receiver_id: user?.id || '',
+                  room_url: retryRoomUrl,
+                  room_name: dailyRoomName || incomingCallData.roomName || '',
+                  call_type: incomingCallData.callType
+                });
+                setIncomingCall(false);
+                setIncomingCallData(null);
+                setDailyCallType(incomingCallData.callType);
+                setDailyCallerName(incomingCallData.callerName);
+                setDailyRoomUrl(retryRoomUrl);
+                setDailyCallActive(true);
+              } else {
+                Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
+              }
+            }, 2000);
             return;
           }
           
           console.log('📞 YOLCU - ARAMAYI KABUL EDİYOR');
-          console.log('   dailyRoomUrl:', dailyRoomUrl);
-          console.log('   dailyRoomName:', dailyRoomName);
+          console.log('   roomUrl:', roomUrl);
+          console.log('   roomName:', roomName);
           
           // Socket ile kabul bildir
           acceptDailyCall({
             caller_id: incomingCallData.callerId,
             receiver_id: user?.id || '',
-            room_url: dailyRoomUrl,
-            room_name: dailyRoomName || '',
+            room_url: roomUrl,
+            room_name: roomName,
             call_type: incomingCallData.callType
           });
           
@@ -5301,6 +5325,7 @@ function PassengerDashboard({
           setIncomingCallData(null);
           setDailyCallType(incomingCallData.callType);
           setDailyCallerName(incomingCallData.callerName);
+          setDailyRoomUrl(roomUrl);
           setDailyCallActive(true);
         }}
         onReject={() => {
