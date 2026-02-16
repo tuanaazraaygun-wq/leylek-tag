@@ -165,11 +165,18 @@ export function SocketProvider({ children }: SocketProviderProps) {
     tagId: string;
   } | null>(null);
   
+  // 🔥 REF - Callback'lerde güncel veri için!
+  const incomingCallDataRef = useRef<typeof incomingCallData>(null);
+  
   const socketRef = useRef<Socket | null>(null);
   const userIdRef = useRef<string | null>(null);
   const userRoleRef = useRef<string | null>(null);
 
-  // Refs'i güncelle (closure sorununu önlemek için)
+  // 🔥 Refs'i güncelle (closure sorununu önlemek için)
+  useEffect(() => {
+    incomingCallDataRef.current = incomingCallData;
+  }, [incomingCallData]);
+  
   useEffect(() => {
     userIdRef.current = userId;
     userRoleRef.current = userRole;
