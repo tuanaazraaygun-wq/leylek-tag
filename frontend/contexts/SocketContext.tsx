@@ -430,6 +430,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
     console.log('✅ [SocketProvider] send_message emit edildi!');
   }, []);
 
+  // 🔥 GELEN ARAMA TEMİZLE - Kabul/Red/İptal sonrası çağır
+  const clearIncomingCall = useCallback(() => {
+    console.log('🧹 [SocketProvider] Gelen arama temizlendi');
+    setIncomingCallData(null);
+  }, []);
+
   // ══════════════════════════════════════════════════════════════════
   // CONTEXT VALUE
   // ══════════════════════════════════════════════════════════════════
@@ -459,6 +465,9 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emitCallCancel,
     emitCallEnd,
     emitSendMessage,  // 🆕 Mesajlaşma
+    // 🔥 GELEN ARAMA - MERKEZİ STATE
+    incomingCallData,
+    clearIncomingCall,
   };
 
   return (
