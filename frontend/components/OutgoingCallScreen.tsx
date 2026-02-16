@@ -1,6 +1,7 @@
 /**
  * OutgoingCallScreen - Araniyor Ekrani
  * Arayan "Araniyor..." ekrani gorur, aranan kabul edene kadar bekler
+ * Arama sesi: "dıııt... dıııt..." 
  */
 import React, { useEffect, useRef } from 'react';
 import {
@@ -14,8 +15,12 @@ import {
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 
 const { width } = Dimensions.get('window');
+
+// Arama sesi URL'si (ringback tone - dıııt dıııt)
+const DIALING_TONE_URL = 'https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3';
 
 interface OutgoingCallScreenProps {
   receiverName: string;
@@ -30,6 +35,42 @@ export default function OutgoingCallScreen({
 }: OutgoingCallScreenProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dotAnim = useRef(new Animated.Value(0)).current;
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  // 🔊 Arama sesi (dıııt dıııt)
+  useEffect(() => {
+    const playDialingTone = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        });
+        
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: DIALING_TONE_URL },
+          { isLooping: true, volume: 0.8 }
+        );
+        soundRef.current = sound;
+        await sound.playAsync();
+        console.log('📞 Arama sesi başladı (dıııt dıııt)');
+      } catch (error) {
+        console.log('Arama sesi hatası:', error);
+      }
+    };
+    
+    playDialingTone();
+
+    // Cleanup
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.stopAsync();
+        soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    };
+  }, []);
 
   // Pulse animation
   useEffect(() => {
