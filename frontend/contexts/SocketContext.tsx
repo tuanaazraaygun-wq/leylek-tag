@@ -126,6 +126,17 @@ interface SocketContextType {
   
   // 🆕 Mesajlaşma
   emitSendMessage: (data: any) => void;
+  
+  // 🔥 GELEN ARAMA - MERKEZİ STATE
+  incomingCallData: {
+    callerId: string;
+    callerName: string;
+    callType: 'audio' | 'video';
+    roomUrl: string;
+    roomName: string;
+    tagId: string;
+  } | null;
+  clearIncomingCall: () => void;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
