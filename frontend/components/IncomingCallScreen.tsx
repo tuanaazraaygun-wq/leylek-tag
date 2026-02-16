@@ -40,46 +40,16 @@ export default function IncomingCallScreen({
   const ringAnim = useRef(new Animated.Value(0)).current;
   const soundRef = useRef<Audio.Sound | null>(null);
 
-  // 🔔 Çalma sesi + Vibration
+  // 🔔 Çalma sesi KALDIRILDI - Sadece titreşim var
   useEffect(() => {
     const vibratePattern = [0, 500, 500, 500, 500, 500];
     
     // Start vibration
     Vibration.vibrate(vibratePattern, true);
 
-    // 🎵 Çalma sesini başlat
-    const playRingtone = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-        });
-        
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: RINGTONE_URL },
-          { isLooping: true, volume: 1.0 }
-        );
-        soundRef.current = sound;
-        await sound.playAsync();
-        console.log('🔔 Çalma sesi başladı');
-      } catch (error) {
-        console.log('Ses çalma hatası:', error);
-      }
-    };
-    
-    playRingtone();
-
     // Cleanup
     return () => {
       Vibration.cancel();
-      // Sesi durdur
-      if (soundRef.current) {
-        soundRef.current.stopAsync();
-        soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
     };
   }, []);
 
