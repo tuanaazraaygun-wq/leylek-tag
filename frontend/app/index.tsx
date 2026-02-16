@@ -4390,7 +4390,9 @@ function PassengerDashboard({
       setOutgoingCall(false);
       setOutgoingCallData(null);
       setIncomingCall(false);
-      setIncomingCallData(null);
+      setLocalIncomingCallData(null);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      clearIncomingCall();
       setDailyCallActive(false);
       setDailyRoomUrl(null);
       setPassengerDailyCallerId('');
@@ -4401,7 +4403,9 @@ function PassengerDashboard({
     onCallCancelled: (data) => {
       console.log('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
       setIncomingCall(false);
-      setIncomingCallData(null);
+      setLocalIncomingCallData(null);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      clearIncomingCall();
     },
     // 🆕 CRITICAL: call_ended - Görüşme bitti (Backend'den)
     // Bu event karşı taraf aramayı sonlandırdığında gelir
@@ -4416,7 +4420,9 @@ function PassengerDashboard({
       setOutgoingCall(false);
       setOutgoingCallData(null);
       setIncomingCall(false);
-      setIncomingCallData(null);
+      setLocalIncomingCallData(null);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      clearIncomingCall();
     },
     onIncomingCall: (data) => {
       console.log('📞 YOLCU - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
