@@ -6147,7 +6147,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
   
   // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext'ten
-  const { incomingCallData: driverIncomingCallData, clearIncomingCall: driverClearIncomingCall } = useSocketContext();
+  const { incomingCallData: driverIncomingCallData, clearIncomingCall: driverClearIncomingCall, getIncomingCallData: driverGetIncomingCallData } = useSocketContext();
   
   // Giden Arama State (Araniyor...) - SOFOR
   const [outgoingCall, setOutgoingCall] = useState(false);
