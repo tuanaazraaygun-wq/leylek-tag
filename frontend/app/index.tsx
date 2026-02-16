@@ -6123,9 +6123,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [dailyCallerName, setDailyCallerName] = useState<string>('');
   const [dailyCallerId, setDailyCallerId] = useState<string>('');
   const [dailyReceiverId, setDailyReceiverId] = useState<string>('');  // 🆕 Added for proper termination
-  const [incomingDailyCall, setIncomingDailyCall] = useState(false);
+  // 🔥 incomingDailyCall KALDIRILDI - SocketContext'ten alınıyor!
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
+  
+  // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext'ten
+  const { incomingCallData: driverIncomingCallData, clearIncomingCall: driverClearIncomingCall } = useSocketContext();
   
   // Giden Arama State (Araniyor...) - SOFOR
   const [outgoingCall, setOutgoingCall] = useState(false);
