@@ -37,40 +37,10 @@ export default function OutgoingCallScreen({
   const dotAnim = useRef(new Animated.Value(0)).current;
   const soundRef = useRef<Audio.Sound | null>(null);
 
-  // 🔊 Arama sesi (dıııt dıııt)
-  useEffect(() => {
-    const playDialingTone = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-        });
-        
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: DIALING_TONE_URL },
-          { isLooping: true, volume: 0.8 }
-        );
-        soundRef.current = sound;
-        await sound.playAsync();
-        console.log('📞 Arama sesi başladı (dıııt dıııt)');
-      } catch (error) {
-        console.log('Arama sesi hatası:', error);
-      }
-    };
-    
-    playDialingTone();
-
-    // Cleanup
-    return () => {
-      if (soundRef.current) {
-        soundRef.current.stopAsync();
-        soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-    };
-  }, []);
+  // 🔊 Arama sesi KALDIRILDI - Sadece titreşim var
+  // useEffect(() => {
+  //   // Ses kodu kaldırıldı
+  // }, []);
 
   // Pulse animation
   useEffect(() => {
