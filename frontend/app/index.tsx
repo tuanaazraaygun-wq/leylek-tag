@@ -6199,21 +6199,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   } = useSocket({
     userId: user?.id || null,
     userRole: 'driver',
-    // 🆕 Daily.co Gelen Arama - ŞOFÖR (VİBRASYON + Accept/Reject)
-    onIncomingDailyCall: (data) => {
-      console.log('📞 ŞOFÖR - GELEN ARAMA:', data);
-      
-      // 🔥 HİÇBİR KONTROL YOK - ANINDA ÇALDIR!
-      if (data.room_url) {
-        setDailyRoomUrl(data.room_url);
-        setDailyRoomName(data.room_name || '');
-      }
-      setDailyCallerId(data.caller_id);
-      setDailyCallerName(data.caller_name || 'Yolcu');
-      setDailyCallType(data.call_type || 'audio');
-      setIncomingCallTagId(data.tag_id || '');
-      setIncomingDailyCall(true);
-    },
+    // 🔥 onIncomingDailyCall KALDIRILDI - SocketContext'te dinleniyor!
     // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
     onCallAcceptedNew: (data) => {
       console.log('✅ ŞOFÖR - CALL_ACCEPTED (SYNC) - Daily odası hazır:', data);
@@ -6226,12 +6212,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setDailyReceiverId(data.receiver_id);
       // Arayan mı aranan mı?
       const isCaller = user?.id === data.caller_id;
-      setDailyCallerName(isCaller ? 'Yolcu' : (dailyCallerName || 'Yolcu'));
+      setDailyCallerName(isCaller ? 'Yolcu' : (driverIncomingCallData?.callerName || 'Yolcu'));
       setDailyCallActive(true);
       // Reset states - navigation YOK
       setOutgoingCall(false);
       setOutgoingCallData(null);
-      setIncomingDailyCall(false);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      driverClearIncomingCall();
     },
     onDailyCallAccepted: (data) => {
       console.log('SOFOR - DAILY.CO ARAMA KABUL EDILDI (ESKİ):', data);
@@ -6242,7 +6229,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setOutgoingCall(false);
       setOutgoingCallData(null);
       setDailyCallActive(false);
-      setIncomingDailyCall(false);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      driverClearIncomingCall();
       setDailyRoomUrl(null);
       setDailyCallerId('');
       setDailyReceiverId('');
@@ -6251,7 +6239,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     // 🆕 YENİ: call_cancelled - Arayan iptal etti
     onCallCancelled: (data) => {
       console.log('🚫 ŞOFÖR - ARAMA İPTAL EDİLDİ:', data);
-      setIncomingDailyCall(false);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      driverClearIncomingCall();
     },
     // 🆕 YENİ: call_ended - Görüşme bitti
     onCallEndedNew: (data) => {
@@ -6261,11 +6250,14 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setDailyRoomName('');
       setDailyCallerId('');
       setDailyReceiverId('');
+      // 🔥 MERKEZİ STATE TEMİZLE
+      driverClearIncomingCall();
     },
     onDailyCallEnded: (data) => {
       console.log('📴 ŞOFÖR - DAILY.CO ARAMA BİTTİ:', data);
       setDailyCallActive(false);
-      setIncomingDailyCall(false);
+      // 🔥 MERKEZİ STATE TEMİZLE
+      driverClearIncomingCall();
       setDailyRoomUrl(null);
     },
     // Eski Agora eventleri - artık kullanılmıyor
