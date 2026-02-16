@@ -4358,21 +4358,15 @@ function PassengerDashboard({
     onIncomingDailyCall: (data) => {
       console.log('📞 YOLCU - GELEN ARAMA:', data);
       
-      // 🔥 HİÇBİR KONTROL YOK - ANINDA ÇALDIR!
+      // 🔥 SÜRÜCÜ İLE AYNI - TEK STATE!
       if (data.room_url) {
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name || '');
       }
-      setPassengerDailyCallerId(data.caller_id);
-      setIncomingCallData({
-        callerName: data.caller_name || 'Şoför',
-        callType: data.call_type || 'audio',
-        roomUrl: data.room_url || '',
-        roomName: data.room_name || '',
-        callerId: data.caller_id,
-        tagId: data.tag_id || '',
-      });
-      setIncomingCall(true);
+      setDailyCallerId(data.caller_id);
+      setDailyCallerName(data.caller_name || 'Şoför');
+      setDailyCallType(data.call_type || 'audio');
+      setIncomingDailyCall(true);
     },
     // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
     onCallAcceptedNew: (data) => {
