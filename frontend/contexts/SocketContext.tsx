@@ -238,14 +238,23 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // 🔥 GELEN ARAMA - DİREKT DİNLE!
     const handleIncomingCall = (data: any) => {
       console.log('🔔🔔🔔 [SocketProvider] GELEN ARAMA!', data);
-      setIncomingCallData({
+      console.log('   room_url:', data.room_url);
+      console.log('   is_ringing:', data.is_ringing);
+      
+      const newCallData = {
         callerId: data.caller_id,
         callerName: data.caller_name || 'Bilinmeyen',
         callType: data.call_type || 'audio',
         roomUrl: data.room_url || '',
         roomName: data.room_name || '',
         tagId: data.tag_id || '',
-      });
+      };
+      
+      // 🔥 KRITIK: Hem state hem ref'i AYNI ANDA güncelle!
+      setIncomingCallData(newCallData);
+      incomingCallDataRef.current = newCallData;
+      
+      console.log('✅ [SocketProvider] incomingCallData güncellendi, roomUrl:', newCallData.roomUrl);
     };
     socket.on('incoming_daily_call', handleIncomingCall);
 
