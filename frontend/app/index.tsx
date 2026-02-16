@@ -4134,7 +4134,7 @@ function PassengerDashboard({
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   
   // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext'ten
-  const { incomingCallData, clearIncomingCall } = useSocketContext();
+  const { incomingCallData, clearIncomingCall, getIncomingCallData } = useSocketContext();
   
   // 🆕 Chat State'leri (Yolcu)
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
