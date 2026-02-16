@@ -144,6 +144,16 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   
+  // 🔥 GELEN ARAMA STATE - Direkt burada!
+  const [incomingCallData, setIncomingCallData] = useState<{
+    callerId: string;
+    callerName: string;
+    callType: 'audio' | 'video';
+    roomUrl: string;
+    roomName: string;
+    tagId: string;
+  } | null>(null);
+  
   const socketRef = useRef<Socket | null>(null);
   const userIdRef = useRef<string | null>(null);
   const userRoleRef = useRef<string | null>(null);
