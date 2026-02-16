@@ -346,7 +346,10 @@ export default function useSocket({
 
     const handleIncomingDailyCall = (data: any) => {
       console.log('📹 [useSocket] DAILY.CO GELEN ARAMA:', data);
-      callbackRefs.current.onIncomingDailyCall?.(data);
+      // 🔥 DİREKT CALLBACK - REF KULLANMA!
+      if (callbackRefs.current.onIncomingDailyCall) {
+        callbackRefs.current.onIncomingDailyCall(data);
+      }
     };
 
     const handleDailyCallAccepted = (data: any) => {
