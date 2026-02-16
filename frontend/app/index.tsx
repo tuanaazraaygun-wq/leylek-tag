@@ -6981,6 +6981,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 setDailyCallType(retryData.callType);
                 setDailyCallerName(retryData.callerName);
                 setDailyCallerId(retryData.callerId);
+                // 🔥 KRITIK: Receiver ID'yi de set et!
+                setDailyReceiverId(user.id);
                 driverClearIncomingCall();
                 setDailyCallActive(true);
               } else {
