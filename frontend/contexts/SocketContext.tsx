@@ -25,6 +25,7 @@ const SOCKET_URL = 'https://socket.leylektag.com';
 // SINGLETON SOCKET - Modül seviyesinde TEK instance
 // ═══════════════════════════════════════════════════════════════════
 let singletonSocket: Socket | null = null;
+let pingInterval: NodeJS.Timeout | null = null;
 
 function getOrCreateSocket(): Socket {
   if (!singletonSocket) {
@@ -44,10 +45,25 @@ function getOrCreateSocket(): Socket {
     // Temel bağlantı logları
     singletonSocket.on('connect', () => {
       console.log('✅ [SocketContext] Socket bağlandı:', singletonSocket?.id);
+      
+      // 🔥 PING mekanizması - bağlantıyı canlı tut
+      if (pingInterval) clearInterval(pingInterval);
+      pingInterval = setInterval(() => {
+        if (singletonSocket?.connected) {
+          singletonSocket.emit('ping_keepalive');
+        }
+      }, 25000); // Her 25 saniyede ping
     });
     
     singletonSocket.on('disconnect', (reason) => {
       console.log('⚠️ [SocketContext] Socket koptu:', reason);
+      // 🔥 Hemen yeniden bağlan
+      if (reason === 'io server disconnect' || reason === 'transport close') {
+        console.log('🔄 [SocketContext] Otomatik yeniden bağlanıyor...');
+        setTimeout(() => {
+          singletonSocket?.connect();
+        }, 1000);
+      }
     });
     
     singletonSocket.on('reconnect', (attemptNumber) => {
