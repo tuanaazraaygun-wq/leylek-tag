@@ -5552,10 +5552,11 @@ function PassengerDashboard({
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
-                    // FIXED CALL FLOW - Room ÖNCE oluştur, SONRA davet gönder
+                    // 🔥 PRE-RINGING: Önce zil çaldır, sonra room oluştur
+                    // WhatsApp gibi anında çalma deneyimi!
                     // ════════════════════════════════════════════════════════════
                     
-                    if (dailyCallActive || incomingCall || outgoingCall) {
+                    if (dailyCallActive || incomingCall || outgoingCall || incomingCallData) {
                       Alert.alert('Uyari', 'Zaten bir arama devam ediyor');
                       return;
                     }
@@ -5568,7 +5569,20 @@ function PassengerDashboard({
                       return;
                     }
                     
-                    // "Aranıyor..." ekranını göster
+                    // 1️⃣ ANINDA ZİL ÇALDIR - room_url boş olarak gönder (is_ringing: true)
+                    console.log('📞 YOLCU - PRE-RINGING: Anında zil çalıyor...');
+                    emitCallInvite({
+                      caller_id: user.id,
+                      caller_name: user.name || 'Yolcu',
+                      receiver_id: driverId,
+                      room_url: '',  // Henüz yok!
+                      room_name: '',
+                      call_type: type,
+                      tag_id: activeTag?.id || '',
+                      is_ringing: true,  // 🔥 Pre-ringing flag
+                    });
+                    
+                    // 2️⃣ "Aranıyor..." ekranını göster
                     setOutgoingCallData({
                       receiverName: driverName,
                       callType: type,
@@ -5579,7 +5593,7 @@ function PassengerDashboard({
                     setOutgoingCall(true);
                     
                     try {
-                      // 1. Daily.co room oluştur
+                      // 3️⃣ Daily.co room oluştur (arka planda)
                       console.log('📞 YOLCU - Daily.co room oluşturuluyor...');
                       const response = await fetch(`${API_URL}/calls/start`, {
                         method: 'POST',
@@ -5595,15 +5609,20 @@ function PassengerDashboard({
                       const data = await response.json();
                       
                       if (!data.success || !data.room_url) {
+                        // İptal et
+                        emitCallCancel({
+                          caller_id: user.id,
+                          receiver_id: driverId,
+                        });
                         setOutgoingCall(false);
                         setOutgoingCallData(null);
                         Alert.alert('Hata', 'Arama başlatılamadı');
                         return;
                       }
                       
-                      console.log('📞 YOLCU - Room hazır:', data.room_url);
+                      console.log('📞 YOLCU - Room hazır, ikinci invite gönderiliyor:', data.room_url);
                       
-                      // 2. Socket ile karşı tarafa call_invite gönder (room_url ile birlikte!)
+                      // 4️⃣ İKİNCİ INVITE - Room URL ile birlikte
                       emitCallInvite({
                         caller_id: user.id,
                         caller_name: user.name || 'Yolcu',
@@ -5612,9 +5631,10 @@ function PassengerDashboard({
                         room_name: data.room_name,
                         call_type: type,
                         tag_id: activeTag?.id || '',
+                        is_ringing: false,  // 🔥 Room hazır flag
                       });
                       
-                      // 3. Outgoing call verilerini güncelle
+                      // 5️⃣ Outgoing call verilerini güncelle
                       setOutgoingCallData({
                         receiverName: driverName,
                         callType: type,
@@ -5623,7 +5643,7 @@ function PassengerDashboard({
                         receiverId: driverId,
                       });
                       
-                      // 4. Arayan'ın room bilgilerini kaydet (kabul edilince girecek)
+                      // 6️⃣ Arayan'ın room bilgilerini kaydet (kabul edilince girecek)
                       setDailyRoomUrl(data.room_url);
                       setDailyRoomName(data.room_name);
                       setDailyCallType(type);
@@ -5633,6 +5653,11 @@ function PassengerDashboard({
                       
                     } catch (error) {
                       console.error('Arama başlatma hatası:', error);
+                      // İptal et
+                      emitCallCancel({
+                        caller_id: user.id,
+                        receiver_id: driverId,
+                      });
                       setOutgoingCall(false);
                       setOutgoingCallData(null);
                       Alert.alert('Hata', 'Arama başlatılamadı');
