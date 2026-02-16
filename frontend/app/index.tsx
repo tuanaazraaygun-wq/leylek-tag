@@ -7008,6 +7008,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
           setDailyCallType(currentData.callType);
           setDailyCallerName(currentData.callerName);
           setDailyCallerId(currentData.callerId);
+          // 🔥 KRITIK: Receiver ID'yi de set et!
+          setDailyReceiverId(user.id);
           
           // Gelen arama ekranını kapat, Daily.co'ya gir
           driverClearIncomingCall();
