@@ -6959,65 +6959,71 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         callerName={driverIncomingCallData.callerName || 'Yolcu'}
         callType={driverIncomingCallData.callType || 'audio'}
         onAccept={() => {
-          // 🔥 GÜNCEL VERİYİ REF'TEN AL - Stale closure sorunu çözüldü!
+          // 🔥 GÜNCEL VERİYİ REF'TEN AL
           const currentData = driverGetIncomingCallData();
-          console.log('📞 ŞOFÖR - ARAMAYI KABUL EDİYOR');
-          console.log('   roomUrl:', currentData?.roomUrl);
-          console.log('   callerId:', currentData?.callerId);
-          
           const roomUrl = currentData?.roomUrl;
+          const roomName = currentData?.roomName;
           
-          if (!roomUrl) {
-            console.log('❌ ŞOFÖR - Room URL yok, 1 saniye bekle ve REF kontrol et');
+          console.log('📞 ŞOFÖR - KABUL BASILDI');
+          console.log('   roomUrl:', roomUrl);
+          console.log('   roomName:', roomName);
+          
+          // 🔥 Hem roomUrl HEM roomName olmalı
+          if (!roomUrl || !roomName) {
+            console.log('❌ ŞOFÖR - Room bilgisi eksik, 1.5 saniye bekle...');
+            
+            // İlk deneme: 1.5 saniye sonra
             setTimeout(() => {
-              // 🔥 1 saniye sonra GÜNCEL veriyi REF'ten al!
               const retryData = driverGetIncomingCallData();
-              console.log('🔄 ŞOFÖR - Retry data:', retryData?.roomUrl);
+              console.log('🔄 ŞOFÖR - Retry 1:', retryData?.roomUrl, retryData?.roomName);
               
-              if (retryData?.roomUrl) {
-                console.log('✅ ŞOFÖR - Room URL bulundu (retry):', retryData.roomUrl);
-                acceptDailyCall({
-                  caller_id: retryData.callerId,
-                  receiver_id: user.id,
-                  room_url: retryData.roomUrl,
-                  room_name: retryData.roomName || '',
-                  call_type: retryData.callType
-                });
-                // Local state'lere kaydet
-                setDailyRoomUrl(retryData.roomUrl);
-                setDailyRoomName(retryData.roomName || '');
-                setDailyCallType(retryData.callType);
-                setDailyCallerName(retryData.callerName);
-                setDailyCallerId(retryData.callerId);
-                // 🔥 KRITIK: Receiver ID'yi de set et!
-                setDailyReceiverId(user.id);
-                driverClearIncomingCall();
-                setDailyCallActive(true);
+              if (retryData?.roomUrl && retryData?.roomName) {
+                console.log('✅ ŞOFÖR - Room bulundu (retry 1)');
+                proceedWithDriverCall(retryData);
               } else {
-                Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
-                driverClearIncomingCall();
+                // İkinci deneme: 1 saniye daha bekle
+                console.log('⏳ ŞOFÖR - Room hala yok, 1 saniye daha bekle...');
+                setTimeout(() => {
+                  const retry2Data = driverGetIncomingCallData();
+                  console.log('🔄 ŞOFÖR - Retry 2:', retry2Data?.roomUrl, retry2Data?.roomName);
+                  
+                  if (retry2Data?.roomUrl && retry2Data?.roomName) {
+                    console.log('✅ ŞOFÖR - Room bulundu (retry 2)');
+                    proceedWithDriverCall(retry2Data);
+                  } else {
+                    console.log('❌ ŞOFÖR - Room bulunamadı, hata göster');
+                    Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
+                    driverClearIncomingCall();
+                  }
+                }, 1000);
               }
-            }, 1000);
+            }, 1500);
             return;
           }
           
-          // Arayan'a kabul edildiğini bildir (room_url ile!)
-          acceptDailyCall({
-            caller_id: currentData.callerId,
-            receiver_id: user.id,
-            room_url: roomUrl,
-            room_name: currentData.roomName || '',
-            call_type: currentData.callType
-          });
+          // Room bilgisi var, direkt devam et
+          console.log('📞 ŞOFÖR - KABUL (direkt):', roomUrl);
+          proceedWithDriverCall(currentData);
           
-          // Local state'lere kaydet (Daily odası için)
-          setDailyRoomUrl(roomUrl);
-          setDailyRoomName(currentData.roomName || '');
-          setDailyCallType(currentData.callType);
-          setDailyCallerName(currentData.callerName);
-          setDailyCallerId(currentData.callerId);
-          // 🔥 KRITIK: Receiver ID'yi de set et!
-          setDailyReceiverId(user.id);
+          // Helper fonksiyon
+          function proceedWithDriverCall(data: any) {
+            acceptDailyCall({
+              caller_id: data.callerId,
+              receiver_id: user.id,
+              room_url: data.roomUrl,
+              room_name: data.roomName,
+              call_type: data.callType
+            });
+            setDailyRoomUrl(data.roomUrl);
+            setDailyRoomName(data.roomName);
+            setDailyCallType(data.callType);
+            setDailyCallerName(data.callerName);
+            setDailyCallerId(data.callerId);
+            setDailyReceiverId(user.id);
+            driverClearIncomingCall();
+            setDailyCallActive(true);
+          }
+        }}
           
           // Gelen arama ekranını kapat, Daily.co'ya gir
           driverClearIncomingCall();
