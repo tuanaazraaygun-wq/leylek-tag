@@ -239,22 +239,33 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const handleIncomingCall = (data: any) => {
       console.log('🔔🔔🔔 [SocketProvider] GELEN ARAMA!', data);
       console.log('   room_url:', data.room_url);
+      console.log('   room_name:', data.room_name);
       console.log('   is_ringing:', data.is_ringing);
       
+      // 🔥 AKILLI GÜNCELLEME: Mevcut veriyle merge et
+      const currentData = incomingCallDataRef.current;
+      
+      // Eğer yeni event daha fazla bilgi içeriyorsa (room_url var) kullan
+      // Aksi halde mevcut veriyi koru ama eksik alanları güncelle
+      const newRoomUrl = data.room_url || currentData?.roomUrl || '';
+      const newRoomName = data.room_name || currentData?.roomName || '';
+      
       const newCallData = {
-        callerId: data.caller_id,
-        callerName: data.caller_name || 'Bilinmeyen',
-        callType: data.call_type || 'audio',
-        roomUrl: data.room_url || '',
-        roomName: data.room_name || '',
-        tagId: data.tag_id || '',
+        callerId: data.caller_id || currentData?.callerId || '',
+        callerName: data.caller_name || currentData?.callerName || 'Bilinmeyen',
+        callType: data.call_type || currentData?.callType || 'audio',
+        roomUrl: newRoomUrl,
+        roomName: newRoomName,
+        tagId: data.tag_id || currentData?.tagId || '',
       };
       
       // 🔥 KRITIK: Hem state hem ref'i AYNI ANDA güncelle!
       setIncomingCallData(newCallData);
       incomingCallDataRef.current = newCallData;
       
-      console.log('✅ [SocketProvider] incomingCallData güncellendi, roomUrl:', newCallData.roomUrl);
+      console.log('✅ [SocketProvider] incomingCallData güncellendi:');
+      console.log('   roomUrl:', newCallData.roomUrl);
+      console.log('   roomName:', newCallData.roomName);
     };
     socket.on('incoming_daily_call', handleIncomingCall);
 
