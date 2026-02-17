@@ -5331,21 +5331,6 @@ function PassengerDashboard({
             setDailyCallActive(true);
           }
         }}
-            room_url: roomUrl,
-            room_name: currentData.roomName || '',
-            call_type: currentData.callType
-          });
-          // Local state'lere kaydet (Daily odası için)
-          setDailyRoomUrl(roomUrl);
-          setDailyRoomName(currentData.roomName || '');
-          setDailyCallType(currentData.callType);
-          setDailyCallerName(currentData.callerName);
-          // 🔥 KRITIK: Caller/Receiver ID'leri set et!
-          setPassengerDailyCallerId(currentData.callerId);
-          setPassengerDailyReceiverId(user?.id || '');
-          clearIncomingCall();
-          setDailyCallActive(true);
-        }}
         onReject={() => {
           console.log('📞 YOLCU - REDDETTİ');
           const currentData = getIncomingCallData();
