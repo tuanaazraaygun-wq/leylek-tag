@@ -7024,20 +7024,13 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             setDailyCallActive(true);
           }
         }}
-          
-          // Gelen arama ekranını kapat, Daily.co'ya gir
-          driverClearIncomingCall();
-          setDailyCallActive(true);
-        }}
         onReject={() => {
-          // 🆕 YENİ: call_reject kullan
           console.log('📞 ŞOFÖR - ARAMAYI REDDEDİYOR');
           const currentData = driverGetIncomingCallData();
           emitCallReject({
             caller_id: currentData?.callerId || '',
             receiver_id: user.id,
           });
-          // Reset
           driverClearIncomingCall();
           setDailyRoomUrl(null);
           setDailyRoomName('');
