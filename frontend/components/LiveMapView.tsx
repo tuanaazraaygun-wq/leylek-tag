@@ -563,37 +563,20 @@ export default function LiveMapView({
       <View style={styles.bottomPanel}>
         <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,1)']} style={styles.bottomGradient}>
           
-          {/* SESLİ GÖRÜNTÜLÜ ARAMA - Dönen çerçeve kaldırıldı */}
-          <View style={styles.callSection}>
-            <TouchableOpacity 
-              style={[styles.mainCallButton, { backgroundColor: themeColor }]} 
-              onPress={() => handleCall('video')}
-              disabled={isCallLoading}
-              activeOpacity={0.8}
-            >
-              <View style={styles.callButtonContent}>
-                <View style={styles.callIconWrapper}>
-                  <Ionicons name="videocam" size={26} color="#FFF" />
-                </View>
-                <Text style={styles.mainCallButtonText}>
-                Sesli Görüntülü Ara
-              </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* 🆕 YAZ BUTONU - Modern Tasarım */}
+          {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
           <TouchableOpacity 
-            style={[styles.chatButton, { backgroundColor: themeLightColor, borderColor: themeColor }]} 
+            style={[styles.mainChatButton, { backgroundColor: themeColor }]} 
             onPress={() => onChat?.()}
             activeOpacity={0.8}
           >
-            <View style={[styles.chatIconWrapper, { backgroundColor: themeColor }]}>
-              <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
+            <View style={styles.chatButtonContent}>
+              <View style={styles.chatIconWrapperLarge}>
+                <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
+              </View>
+              <Text style={styles.mainChatButtonText}>
+                {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
+              </Text>
             </View>
-            <Text style={[styles.chatButtonText, { color: themeColor }]}>
-              {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
-            </Text>
           </TouchableOpacity>
 
           {/* 🆕 ALT BUTONLAR - Şikayet/Destek ve Bitir */}
