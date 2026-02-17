@@ -5269,45 +5269,68 @@ function PassengerDashboard({
           // 🔥 GÜNCEL VERİYİ REF'TEN AL - Stale closure sorunu çözüldü!
           const currentData = getIncomingCallData();
           const roomUrl = currentData?.roomUrl;
+          const roomName = currentData?.roomName;
           
-          if (!roomUrl) {
-            console.log('❌ YOLCU - Room URL yok, 1 saniye bekle ve REF kontrol et');
+          console.log('📞 YOLCU - KABUL BASILDI');
+          console.log('   roomUrl:', roomUrl);
+          console.log('   roomName:', roomName);
+          
+          // 🔥 Hem roomUrl HEM roomName olmalı
+          if (!roomUrl || !roomName) {
+            console.log('❌ YOLCU - Room bilgisi eksik, 1.5 saniye bekle...');
+            
+            // İlk deneme: 1.5 saniye sonra
             setTimeout(() => {
-              // 🔥 1 saniye sonra GÜNCEL veriyi REF'ten al!
               const retryData = getIncomingCallData();
-              console.log('🔄 YOLCU - Retry data:', retryData?.roomUrl);
+              console.log('🔄 YOLCU - Retry 1:', retryData?.roomUrl, retryData?.roomName);
               
-              if (retryData?.roomUrl) {
-                console.log('✅ YOLCU - Room URL bulundu (retry):', retryData.roomUrl);
-                acceptDailyCall({
-                  caller_id: retryData.callerId,
-                  receiver_id: user?.id || '',
-                  room_url: retryData.roomUrl,
-                  room_name: retryData.roomName || '',
-                  call_type: retryData.callType
-                });
-                // Local state'lere kaydet
-                setDailyRoomUrl(retryData.roomUrl);
-                setDailyRoomName(retryData.roomName || '');
-                setDailyCallType(retryData.callType);
-                setDailyCallerName(retryData.callerName);
-                // 🔥 KRITIK: Caller/Receiver ID'leri set et!
-                setPassengerDailyCallerId(retryData.callerId);
-                setPassengerDailyReceiverId(user?.id || '');
-                clearIncomingCall();
-                setDailyCallActive(true);
+              if (retryData?.roomUrl && retryData?.roomName) {
+                console.log('✅ YOLCU - Room bulundu (retry 1)');
+                proceedWithCall(retryData);
               } else {
-                Alert.alert('Hata', 'Arama bağlantısı kurulamadı');
-                clearIncomingCall();
+                // İkinci deneme: 1 saniye daha bekle (toplam 2.5 saniye)
+                console.log('⏳ YOLCU - Room hala yok, 1 saniye daha bekle...');
+                setTimeout(() => {
+                  const retry2Data = getIncomingCallData();
+                  console.log('🔄 YOLCU - Retry 2:', retry2Data?.roomUrl, retry2Data?.roomName);
+                  
+                  if (retry2Data?.roomUrl && retry2Data?.roomName) {
+                    console.log('✅ YOLCU - Room bulundu (retry 2)');
+                    proceedWithCall(retry2Data);
+                  } else {
+                    console.log('❌ YOLCU - Room bulunamadı, hata göster');
+                    Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
+                    clearIncomingCall();
+                  }
+                }, 1000);
               }
-            }, 1000);
+            }, 1500);
             return;
           }
           
-          console.log('📞 YOLCU - KABUL:', roomUrl);
-          acceptDailyCall({
-            caller_id: currentData.callerId,
-            receiver_id: user?.id || '',
+          // Room bilgisi var, direkt devam et
+          console.log('📞 YOLCU - KABUL (direkt):', roomUrl);
+          proceedWithCall(currentData);
+          
+          // Helper fonksiyon
+          function proceedWithCall(data: any) {
+            acceptDailyCall({
+              caller_id: data.callerId,
+              receiver_id: user?.id || '',
+              room_url: data.roomUrl,
+              room_name: data.roomName,
+              call_type: data.callType
+            });
+            setDailyRoomUrl(data.roomUrl);
+            setDailyRoomName(data.roomName);
+            setDailyCallType(data.callType);
+            setDailyCallerName(data.callerName);
+            setPassengerDailyCallerId(data.callerId);
+            setPassengerDailyReceiverId(user?.id || '');
+            clearIncomingCall();
+            setDailyCallActive(true);
+          }
+        }}
             room_url: roomUrl,
             room_name: currentData.roomName || '',
             call_type: currentData.callType
