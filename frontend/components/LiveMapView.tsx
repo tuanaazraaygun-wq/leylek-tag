@@ -805,7 +805,38 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   
-  // 🆕 Chat Button
+  // 🆕 Chat Button (Ana Buton)
+  mainChatButton: {
+    width: SCREEN_WIDTH - 48,
+    paddingVertical: 18,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+    marginBottom: 14,
+    alignSelf: 'center',
+  },
+  chatButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatIconWrapperLarge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  mainChatButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
   chatButton: {
     flexDirection: 'row',
     alignItems: 'center',
