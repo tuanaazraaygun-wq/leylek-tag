@@ -6581,7 +6581,27 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setDriverEndTripModalVisible(false);
       // ROL SEÇİM EKRANINA GİT
       setScreen('role-select');
-      Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
+      
+      // 🔥 KARŞI TARAFA BİLDİRİM
+      const enderType = data.ender_type;
+      if (enderType === 'passenger') {
+        // Yolcu bitirdi - Sürücüye bildirim
+        Alert.alert(
+          '⚠️ Yolculuk Bitirildi',
+          'Yolcu eşleşmeyi zorla bitirdi.\nYolcuya -5 puan uygulandı.',
+          [
+            { text: 'Şikayet Et', onPress: () => {
+              // WhatsApp destek aç
+              const phoneNumber = '905326497412';
+              const message = `Şikayet: Yolcu eşleşmeyi zorla bitirdi. Tag ID: ${data.tag_id}`;
+              Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
+            }},
+            { text: 'Tamam', style: 'default' }
+          ]
+        );
+      } else {
+        Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
+      }
     },
   });
   
