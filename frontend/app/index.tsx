@@ -4547,7 +4547,28 @@ function PassengerDashboard({
       setPassengerEndTripModalVisible(false);
       // ROL SEÇİM EKRANINA GİT
       setScreen('role-select');
-      Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
+      
+      // 🔥 KARŞI TARAFA ONAY MODAL GÖSTERİLMEYECEK - Bitiren taraf -5 puan alır
+      // Sadece bilgilendirme
+      const enderType = data.ender_type;
+      if (enderType === 'driver') {
+        // Sürücü bitirdi - Yolcuya bildirim
+        Alert.alert(
+          '⚠️ Yolculuk Bitirildi',
+          'Sürücü eşleşmeyi zorla bitirdi.\nSürücüye -5 puan uygulandı.',
+          [
+            { text: 'Şikayet Et', onPress: () => {
+              // WhatsApp destek aç
+              const phoneNumber = '905326497412';
+              const message = `Şikayet: Sürücü eşleşmeyi zorla bitirdi. Tag ID: ${data.tag_id}`;
+              Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
+            }},
+            { text: 'Tamam', style: 'default' }
+          ]
+        );
+      } else {
+        Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
+      }
     },
   });
   
