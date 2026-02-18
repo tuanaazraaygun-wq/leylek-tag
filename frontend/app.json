@@ -104,6 +104,14 @@
         {
           "microphonePermission": "Sesli görüşme için mikrofon izni gereklidir."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#3FA9F5",
+          "sounds": []
+        }
       ]
     ],
     "experiments": {
