@@ -207,8 +207,13 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#F0F8FF', // Gradient orta rengi ile aynı
+    borderRadius: SCREEN_WIDTH * 0.35,
+    padding: 20,
   },
   logoShadow: {
+    backgroundColor: '#F0F8FF', // Arka plan ile aynı renk
+    borderRadius: SCREEN_WIDTH * 0.3,
     shadowColor: '#1E5F8A',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
@@ -216,8 +221,9 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   logo: {
-    width: SCREEN_WIDTH * 0.55,
-    height: SCREEN_WIDTH * 0.55,
+    width: SCREEN_WIDTH * 0.5,
+    height: SCREEN_WIDTH * 0.5,
+    backgroundColor: 'transparent',
   },
   textContainer: {
     flexDirection: 'row',
