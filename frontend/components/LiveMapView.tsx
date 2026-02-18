@@ -581,25 +581,31 @@ export default function LiveMapView({
 
           {/* 🆕 ALT BUTONLAR - Şikayet/Destek ve Bitir */}
           <View style={styles.actionButtons}>
-            {/* Şikayet/Destek Butonu */}
+            {/* WhatsApp Destek Butonu */}
             <TouchableOpacity 
-              style={styles.supportButton} 
+              style={styles.whatsappButton} 
               onPress={() => {
-                Alert.alert(
-                  'Şikayet / Destek',
-                  'Ne tür bir yardım istiyorsunuz?',
-                  [
-                    { text: 'İptal', style: 'cancel' },
-                    { text: '🚨 Güvenlik Sorunu', onPress: () => onReport?.() },
-                    { text: '⚠️ Uygunsuz Davranış', onPress: () => onReport?.() },
-                    { text: '❓ Destek Al', onPress: () => Alert.alert('Destek', 'Destek ekibimiz en kısa sürede size yardımcı olacak.') }
-                  ]
-                );
+                const phoneNumber = '905326497412';
+                const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
+                const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
+                
+                Linking.canOpenURL(whatsappUrl)
+                  .then((supported) => {
+                    if (supported) {
+                      Linking.openURL(whatsappUrl);
+                    } else {
+                      // WhatsApp yüklü değilse web versiyonunu aç
+                      Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
+                    }
+                  })
+                  .catch(() => {
+                    Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
+                  });
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="help-circle" size={18} color="#6B7280" />
-              <Text style={styles.supportButtonText}>Şikayet / Destek</Text>
+              <Ionicons name="logo-whatsapp" size={20} color="#FFF" />
+              <Text style={styles.whatsappButtonText}>WhatsApp Destek</Text>
             </TouchableOpacity>
 
             {/* 🆕 BİTİR BUTONU - Donuk Kırmızı, Sadece Zorla Bitir */}
