@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Image, Platform } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Koyu mavi renk (leylek kanat rengi)
+// Tek renk - çok açık mavi/beyaz tonu (leylek arka planı ile aynı)
+const BACKGROUND_COLOR = '#FFFFFF';
+// Koyu mavi (yazılar için)
 const DARK_BLUE = '#1E5F8A';
 const PRIMARY_BLUE = '#3FA9F5';
 
@@ -88,23 +89,9 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
   return (
     <View style={styles.container}>
-      {/* Gradient arka plan - soft mavi tonları */}
-      <LinearGradient
-        colors={['#F5FAFF', '#F0F8FF', '#EBF5FF']}
-        style={styles.gradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      />
-
-      {/* Dekoratif üst dalga */}
-      <View style={styles.topWave}>
-        <View style={styles.waveCircle1} />
-        <View style={styles.waveCircle2} />
-      </View>
-
       {/* Ana içerik */}
       <View style={styles.content}>
-        {/* Leylek Logosu */}
+        {/* Leylek Logosu - çerçevesiz */}
         <Animated.View 
           style={[
             styles.logoContainer,
@@ -114,20 +101,18 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
             } : {}
           ]}
         >
-          <View style={styles.logoShadow}>
-            <Image
-              source={require('../assets/images/leylek-splash.png')}
-              style={styles.logo}
-              resizeMode="contain"
-              onError={(e) => {
-                console.log('⚠️ Splash image yüklenemedi:', e.nativeEvent.error);
-                callFinish();
-              }}
-            />
-          </View>
+          <Image
+            source={require('../assets/images/leylek-splash.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            onError={(e) => {
+              console.log('⚠️ Splash image yüklenemedi:', e.nativeEvent.error);
+              callFinish();
+            }}
+          />
         </Animated.View>
 
-        {/* Leylek Yazısı - Koyu Mavi */}
+        {/* Leylek TAG Yazısı */}
         <Animated.View style={[
           styles.textContainer, 
           Platform.OS !== 'web' ? { opacity: textFadeAnim } : {}
@@ -138,7 +123,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
           </View>
         </Animated.View>
 
-        {/* Tagline - Paylaşımlı Yolculuk */}
+        {/* Tagline */}
         <Animated.View style={[
           styles.taglineContainer,
           Platform.OS !== 'web' ? { opacity: taglineAnim } : {}
@@ -148,17 +133,17 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
         </Animated.View>
       </View>
 
-      {/* Alt yükleniyor göstergesi */}
+      {/* Yükleniyor göstergesi */}
       <View style={styles.loadingContainer}>
         <View style={styles.loadingDots}>
-          <Animated.View style={[styles.dot, styles.dot1]} />
-          <Animated.View style={[styles.dot, styles.dot2]} />
-          <Animated.View style={[styles.dot, styles.dot3]} />
+          <View style={[styles.dot, styles.dot1]} />
+          <View style={[styles.dot, styles.dot2]} />
+          <View style={[styles.dot, styles.dot3]} />
         </View>
         <Text style={styles.loadingText}>Yükleniyor...</Text>
       </View>
 
-      {/* Alt hukuki bilgi */}
+      {/* Hukuki bilgi */}
       <View style={styles.legalContainer}>
         <Text style={styles.legalText}>© 2025 Leylek Tag</Text>
         <Text style={styles.legalSubtext}>Tüm hakları saklıdır</Text>
@@ -170,60 +155,21 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  gradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  topWave: {
-    position: 'absolute',
-    top: -100,
-    left: -50,
-    right: -50,
-  },
-  waveCircle1: {
-    width: SCREEN_WIDTH + 100,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(63, 169, 245, 0.08)',
-    position: 'absolute',
-    top: 0,
-  },
-  waveCircle2: {
-    width: SCREEN_WIDTH + 50,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(30, 95, 138, 0.05)',
-    position: 'absolute',
-    top: 50,
-    left: 25,
+    backgroundColor: BACKGROUND_COLOR,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 40,
   },
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0F8FF', // Gradient orta rengi ile aynı
-    borderRadius: SCREEN_WIDTH * 0.35,
-    padding: 20,
-  },
-  logoShadow: {
-    backgroundColor: '#F0F8FF', // Arka plan ile aynı renk
-    borderRadius: SCREEN_WIDTH * 0.3,
-    shadowColor: '#1E5F8A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
+    // Arka plan yok, çerçeve yok
   },
   logo: {
-    width: SCREEN_WIDTH * 0.5,
-    height: SCREEN_WIDTH * 0.5,
-    backgroundColor: 'transparent',
+    width: SCREEN_WIDTH * 0.55,
+    height: SCREEN_WIDTH * 0.55,
   },
   textContainer: {
     flexDirection: 'row',
