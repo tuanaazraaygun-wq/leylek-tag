@@ -145,7 +145,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
       {/* Hukuki bilgi */}
       <View style={styles.legalContainer}>
-        <Text style={styles.legalText}>© 2025 Leylek Tag</Text>
+        <Text style={styles.legalText}>© 2026 Leylek Tag</Text>
         <Text style={styles.legalSubtext}>Tüm hakları saklıdır</Text>
       </View>
     </View>
