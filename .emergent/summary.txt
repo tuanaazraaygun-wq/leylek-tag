@@ -1,180 +1,204 @@
 <analysis>
 <original_problem_statement>
-The user's initial goal was to fix a broken offer and matching system. This request evolved into a major pivot: completely replacing the existing system with a Martı TAG style bidding model.
+The user's final and most critical issue is that the **offer system is not working**. Drivers are not seeing new passenger offers, or the system is otherwise unreliable. This issue was reported after the agent deployed the backend to a production VPS.
 
-**PRODUCT REQUIREMENTS (MARTI TAG MODEL):**
-1.  **Passenger-Led Bidding:**
-    *   A passenger enters a pickup and drop-off location.
-    *   The system calculates an estimated distance, time, and a suggested price range (e.g., 22-36 TL/km).
-    *   The passenger enters their own price offer.
-    *   This offer is broadcast in real-time to nearby (20km) drivers.
-2.  **Driver Acceptance:**
-    *   Drivers see a list of passenger offers, including pickup/drop-off, distance, and the passenger's offered price.
-    *   Drivers can only **Accept** or **Ignore** an offer. They cannot make a counter-offer.
-3.  **First-Come, First-Served Matching:**
-    *   The **first** driver to accept the offer is instantly matched with the passenger.
-    *   Once a match occurs, the offer must be immediately removed from all other drivers' screens.
-4.  **Pricing Logic:**
-    *   Normal hours: 22-36 TL/km.
-    *   Peak hours (08:00-10:00, 17:00-20:00): 40-45 TL/km.
-5.  **Core Feature Stability:** The existing voice/video call and messaging systems must remain functional after the new bidding system is implemented.
-6.  **New Driver Visibility:** When a new driver enters an area or comes online, they must immediately see all currently active passenger offers.
-
+This session also dealt with several other major issues:
+- The in-app voice/video call system (Daily.co) was unreliable and asymmetric. A major refactor was completed to fix this, but the feature was ultimately **disabled at the user's request** to prioritize other fixes for a Google Play release.
+- The user requested a series of UI/UX improvements and bug fixes for the Google Play release, including:
+    - Adding a WhatsApp support button.
+    - Making the Force End trip button instant and changing its penalty logic.
+    - Preparing the app for Google Play (icon, splash, privacy policy etc.).
+- The user requested that the backend be moved from the development environment to their production VPS.
 </original_problem_statement>
+
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The application is a full-stack Expo/FastAPI app with a three-part architecture:
-1.  **Expo Frontend:** A large, monolithic  file contains most of the UI and logic for both passenger and driver roles. It has been heavily modified to implement the Martı TAG UI flow, including a new price offer modal for passengers and a revamped offer list for drivers in .
-2.  **FastAPI Backend ():** Handles user authentication and database operations via Supabase. A new endpoint  was added to provide dynamic price ranges to the passenger.
-3.  **Python Socket.IO Server ():** Located on an external VPS, this server is the brain of the real-time system. It has been rewritten to version  to manage the entire Martı TAG flow: receiving passenger offers, broadcasting them to drivers, and handling the first-to-accept matching logic.
+The project is a full-stack application with a deployed backend and a React Native frontend.
+- **Backend**: The FastAPI backend () has been successfully deployed to the user's production VPS at . It is managed by  and runs automatically.
+- **Socket Server**: The Python Socket.IO server () is also running on the same VPS at , managed by .
+- **Frontend**: The Expo (React Native) frontend is a large monolith, with most of the application logic and UI residing in . The latest APK builds are configured to communicate with the production backend and socket server on the VPS.
+- **Database**: The application uses a PostgreSQL database hosted on Supabase, which also handles authentication (SMS OTP) and real-time chat messages.
+- **Disabled Feature**: The Daily.co voice/video call functionality is fully implemented in the code (including a major refactor to fix stale state issues), but the UI buttons to trigger it have been removed from  at the user's request.
 
 **Last working item**:
--   **Last item agent was working**: Debugging why, after a driver accepts a passenger's offer, the match is not reflected on the frontend for either user. The agent successfully diagnosed that the socket server () logs a MATCH but fails to emit the subsequent events (, , ) that are necessary to inform the clients of the successful match.
--   **Status**: **IN PROGRESS**
--   **Agent Testing Done**: N
--   **Which testing method agent to use?**: Manual testing. The next agent must SSH into the socket server, monitor the logs, and then use two devices/simulators (one passenger, one driver) with the latest APK to test the full flow.
--   **User Testing Done**: Y (User confirmed that after accepting, the match does not happen on the UI).
+- Last item agent was working: The user reported that the offer system is not working (teklif sistemi neden çalışmıyor ?). The agent started to investigate this critical bug by attempting to check the logs on the production VPS. The session ended before any meaningful diagnostic data was retrieved.
+- Status: **IN PROGRESS**
+- Agent Testing Done: N
+- Which testing method agent to use? backend testing agent. The agent should first investigate the socket server logs on the VPS () and the backend logs () to understand why offer events are failing. Manual testing with two devices will be required to confirm the fix.
+- User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P0) Frontend does not update after a successful match.**
-    -   **Description**: The driver can see and accept a passenger's offer. The socket server log correctly shows a  entry, confirming the backend logic works. However, the server then fails to send the necessary confirmation events (, , ) to the clients. As a result, both the driver's and passenger's UIs remain unchanged, and they are not moved to the in-progress ride screen.
-    -   **Attempted fixes**: The agent identified the symptom by reviewing socket logs but did not attempt a code fix.
-    -   **Next debug checklist**:
-        1.  SSH into the socket server:  (pass: ).
-        2.  View the file .
-        3.  Inspect the  event handler.
-        4.  Locate the section where the match is confirmed (likely after the  log is printed).
-        5.  Verify that the  calls for , , and  are present, correctly formatted, and being executed. The issue is likely a silent failure or a missing  call in this block.
-    -   **Why fix this issue and what will be achieved with the fix?**: This is the final bug blocking the entire Martı TAG core loop. Fixing it will make the main feature of the application functional.
-    -   **Status**: **IN PROGRESS**
-    -   **Is recurring issue?**: N (Specific to the new Martı TAG flow).
-    -   **Should Test frontend/backend/both after fix?**: Both (Full manual end-to-end test).
-    -   **Blocked on other issue**: None.
+- **Issue 1: (P0) Offer System is Not Working**
+    - **Description**: This is the current highest priority issue. The user reports that the offer system is broken after the backend deployment. This likely means drivers are not receiving  events when passengers create tags, or passengers are not receiving  events when drivers send them. This is the core functionality of the app.
+    - **Attempted fixes**: The previous agent only just started investigating by attempting to  and check logs. No fixes have been attempted yet.
+    - **Next debug checklist**:
+        1. SSH into the VPS:  (Password: ).
+        2. Tail the socket server logs: .
+        3. Tail the backend logs: .
+        4. In the app, have a passenger create a tag (ride request).
+        5. Observe the logs to see if  events are received by the socket server.
+        6. Have a driver go online.
+        7. Observe the logs to see if the driver client is correctly registered and receiving events.
+        8. The root cause is very likely **Issue 2** below (driver socket disconnects), which was never fixed.
+    - **Why fix this issue and what will be achieved with the fix?**: This is the primary function of the app. Without a working offer system, the app is unusable.
+    - **Status**: **IN PROGRESS**
+    - **Is recurring issue?**: Y
+    - **Should Test frontend/backend/both after fix?**: Both
+    - **Blocked on other issue**: None
 
--   **Issue 2: (P2) Inefficient  socket event.**
-    -   **Description**: The frontend client emits a  event every 10 seconds. This creates unnecessary server load and was the source of several bugs that have since been patched with workarounds (e.g., sending all offers on every register). The root cause has not been fixed.
-    -   **Attempted fixes**: None. Identified but deprioritized.
-    -   **Next debug checklist**:
-        1.  Find the  in  that calls  or a similar function every 10 seconds.
-        2.  Trace this call to determine why it's triggering a full  event.
-        3.  Modify the logic to register only once upon connection and role selection, and have the interval send a lighter-weight  event instead.
-    -   **Why fix this issue and what will be achieved with the fix?**: Improves app performance, reduces server load, and makes the system more stable and scalable.
-    -   **Status**: **NOT STARTED**
-    -   **Is recurring issue?**: Y
-    -   **Should Test frontend/backend/both after fix?**: Backend (to ensure location updates still work).
-    -   **Blocked on other issue**: Issue 1.
+- **Issue 2: (P1) Driver Client Frequently Disconnects from Socket Server**
+    - **Description**: This is a long-standing issue from the initial handover summary that was never addressed. Socket server logs have previously shown driver clients connecting and disconnecting frequently. This is the most likely reason the offer system is unreliable, as disconnected drivers will not receive real-time offer events.
+    - **Attempted fixes**: In a much earlier session,  and  were added, but this did not solve the problem. The issue was then ignored.
+    - **Next debug checklist**:
+        1. This is likely due to aggressive power-saving on Android/iOS killing the background socket connection.
+        2. Research and implement a persistent background task or foreground service using a library like  or a dedicated keep-alive library to maintain the socket connection.
+        3. This is a complex but necessary fix to ensure app reliability.
+    - **Why fix this issue and what will be achieved with the fix?**: This will make the entire real-time functionality of the app (offers, locations, notifications) reliable, especially for drivers whose app may be in the background.
+    - **Status**: **NOT STARTED**
+    - **Is recurring issue?**: Y
+    - **Should Test frontend/backend/both after fix?**: Frontend
+    - **Blocked on other issue**: None
+
+- **Issue 3: (P2) Incomplete -5 Point Penalty Logic**
+    - **Description**: The user requested that when one user force-ends a trip, the other user gets to decide if a -5 point penalty should be applied. The agent implemented a UI for this (an  is shown to the other user), but there is **no backend logic** to handle the decision. Currently, the penalty is always applied by default, and the other user's Accept or Cancel on the alert does nothing.
+    - **Attempted fixes**: None. The UI was implemented as a facade.
+    - **Next debug checklist**:
+        1. Create a new socket event, e.g., .
+        2. When the user receives the penalty confirmation alert, emit  with .
+        3. Create a handler in  to listen for this event.
+        4. In the handler, update the penalised user's score in the Supabase  table.
+    - **Why fix this issue and what will be achieved with the fix?**: Implements the user's requested logic for a fairer penalty system.
+    - **Status**: **NOT STARTED**
+    - **Is recurring issue?**: N
+    - **Should Test frontend/backend/both after fix?**: Both
+    - **Blocked on other issue**: None
+
+- **Issue 4: (P3) Open Chat Window on New Message Notification**
+    - **Description**: User requested that when a new message arrives, the chat window should automatically open for the recipient. This was requested but not implemented.
+    - **Attempted fixes**: None.
+    - **Next debug checklist**:
+        1. In , locate the  handler within the  hook.
+        2. Inside the handler, call the appropriate state setter to make the chat view visible (e.g.,  or ).
+        3. Ensure this only happens when the user is on the  screen.
+    - **Why fix this issue and what will be achieved with the fix?**: Improves the immediacy and usability of the chat feature during a trip.
+    - **Status**: **NOT STARTED**
+    - **Is recurring issue?**: N
+    - **Should Test frontend/backend/both after fix?**: Frontend
+    - **Blocked on other issue**: None
 
 **In progress Task List**:
--   **Task 1: (P0) Finalize and Stabilize the Martı TAG Core Loop**
-    -   **Where to resume**: Debugging the  handler in  to fix the missing post-match socket events.
-    -   **What will be achieved with this?**: A fully functional ride-hailing core loop where a passenger can offer a price, a driver can accept it, and both are correctly moved to a matched state.
-    -   **Status**: **IN PROGRESS**
-    -   **Should Test frontend/backend/both after fix?**: Both.
-    -   **Blocked on something**: None.
+- None. All current work is classified as debugging the P0 issue.
 
 **Upcoming and Future Tasks**
--   **Upcoming Tasks:**
-    -   **(P1) Regression Test Voice/Video Call**: The call system was heavily modified and has a history of being fragile. After the core matching loop is stable, it needs a full end-to-end test.
--   **Future Tasks:**
-    -   **(P2) End Trip Flow Synchronization**: Implement socket-based logic to ensure when one user ends a trip, the UI updates for both users simultaneously.
-    -   **(P2) Points System**: Implement backend logic for the points system (+1 for mutual end, -5 for forced end).
-    -   **(P2) Username Display Format**: Update UI to show Name Role (e.g., Ahmet Sürücü).
-    -   **(P2) Commission System**: The user requested no commission for now, but the architecture should be prepared to add it later.
+- **Upcoming Tasks:**
+    - **(P0) Re-enable and Finalize Daily.co Calls:** The code is present but disabled. The last fix attempt (merging state in  and adding a retry mechanism in ) needs to be tested. Once working, the UI buttons in  must be re-added.
+    - **(P1) Implement User Busy Call State:** When one user is in a call or being called, prevent others from calling them.
+    - **(P2) Re-implement Call Sounds:** Add  to play a ringing sound for incoming calls and a dialing sound for outgoing calls, ensuring they stop correctly.
+    - **(P3) Add Live Support to Support Button:** The button currently only links to WhatsApp. A modal with a link to a live support chat (if available) should be added.
+- **Future Tasks:**
+    - **(P0) Integrate ÖDE AL Payment System:** Plan the payment flow based on the questions asked by the previous agent (payment timing, commission model, etc.) and implement the integration.
+    - **(P1) Admin Panel:** For user management and system monitoring.
+    - **(P1) Driver Verification Flow.**
+    - **(P1) Full Push Notification Integration:** The basic setup is done, but notifications need to be triggered from the backend/socket server for key events (new offer, new message, match accepted, etc.).
 
 **Completed work in this session**
--   **Pivoted the entire offer system to the Martı TAG model.**
--   Created a backend API endpoint () to dynamically calculate price ranges based on distance and time of day.
--   Rewrote the Python Socket.IO server to  to handle the new passenger-led bidding and first-come-first-served matching logic.
--   Overhauled the passenger UI in , adding a price offer modal with a slider.
--   Completely refactored the driver's offer screen () to display passenger offers with Accept / Pass buttons, removing the old driver-bidding UI.
--   Fixed a critical bug where periodic API calls on the driver's client were overwriting and hiding incoming socket-based offers.
--   Fixed a critical ID mismatch between the frontend, backend, and socket server, ensuring a consistent  is used throughout the offer lifecycle.
--   Fixed an issue where newly connected drivers wouldn't see existing offers by making the socket server send all offers on every  event.
--   Fixed a TypeScript type error where the function to emit the passenger's offer was missing the new price parameters.
--   Provided the user with a comprehensive, full-system technical documentation.
+- **Backend Deployed to Production VPS:** The FastAPI backend was successfully deployed to  and is managed by . All required Python dependencies were installed on the VPS.
+- **Production APK Build:** The frontend was configured to point to the production VPS backend and socket server, and a new APK () was built for the user.
+- **Call Feature UI Removed:** Per user request, the voice/video call buttons were removed from , and the layout was redesigned with a primary Message button.
+- **WhatsApp Support Button Added:** A WhatsApp Destek button was added to the  component, linking to the user-provided phone number.
+- **Force End Logic Improved:** The Force End functionality was refactored to use a direct socket event () for faster, more reliable termination and state clearing.
+- **Push Notification Infrastructure:** The  plugin was added, and a  was created and integrated into the root layout, laying the groundwork for push notifications.
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1: Inefficient  event spam.**
-    -   **Debug checklist**: Locate the  in the frontend () and change it to emit a lightweight  event instead of a full .
-    -   **Why to solve this issue and what will be achieved with this?**: Reduces server load, improves performance, and removes the need for server-side workarounds.
-    -   **Should Test frontend/backend/both after fix**: Both.
-    -   **Is recurring issue?**: Y
+- **Issue 1: Old/Completed Offers/Matches Not Cleared**
+    - **Debug checklist**: Check the logic in  that is supposed to clear old tags from the driver's list when a tag is  or . Verify that the correct socket events are being received and that the state filtering logic is correct.
+    - **Why to solve this issue and what will be achieved with this?**: Prevents driver confusion and ensures they only see active, available ride requests.
+    - **Should Test frontend/backend/both after fix**: Frontend
+    - **Is recurring issue?** Y
 
 **Known issue recurrence from previous fork**
--   **Issue recurrence in previous fork**: The core offer/matching flow and the voice call system have been consistently unreliable and have broken multiple times.
--   **Recurrence count**: High (3+ times during the session).
--   **Status**: **IN PROGRESS** (The latest iteration, Martı TAG, is currently broken at the final step).
+- **Issue recurrence in previous fork**: The unreliability of the offer system due to socket disconnections.
+- **Recurrence count**: High (5+ forks)
+- **Status**: **NOT STARTED** (The root cause was never fixed, and the user has just reported the symptom again).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Bidding Model Pivot**: The application logic was completely changed from a driver offers, passenger accepts model to a passenger offers, first driver accepts (Martı TAG) model.
--   **Hybrid Realtime System**: Uses a custom Python Socket.IO server for the core ride-hailing logic and Supabase Realtime for chat.
--   **Monolithic Frontend**:  is over 7,000 lines, making it extremely difficult to debug. Changes for passenger and driver roles are intertwined.
--   **Client-Side ID Generation**: The  for a ride is now generated on the passenger's client and passed to both the backend and socket server to ensure consistency.
+- **Production Deployment**: The agent successfully deployed the FastAPI backend to a live VPS using , , , and .
+- **Monolithic Frontend**: Almost all application logic, state, and UI for every screen is contained within , making it very complex.
+- **Centralized State (for Calls)**: A major refactor was performed to move call state into  to solve stale closure issues. This code is still present but inactive.
+- **Real-time Communication**: A combination of a custom Python **Socket.IO server** (for ride-hailing logic) and **Supabase Realtime** (for chat).
 
 **key DB schema**
--   **tags**:
-    -   uid=0(root) gid=0(root) groups=0(root) (UUID, PK)
-    -    (INT): The price offered by the passenger.
-    -    (VARCHAR): 'waiting' | 'matched' | 'in_progress' | 'completed' | 'cancelled'
-    -    (FK to users)
-    -    (FK to users)
+- **users**: uid=0(root) gid=0(root) groups=0(root), , , , , etc.
+- **tags**: uid=0(root) gid=0(root) groups=0(root), , , , , , , etc.
+- **offers**: uid=0(root) gid=0(root) groups=0(root), , , , .
+- **messages**: uid=0(root) gid=0(root) groups=0(root), , , .
+
+**changes in tech stack**
+- The application's backend is no longer running in the development environment; it is now fully deployed and running on the user's production VPS.
 
 **All files of reference**
--   **/opt/leylek-socket/socket_server.py**: **CRITICAL**. The source of the current bug. The  handler needs to be debugged.
--   **/app/frontend/app/index.tsx**: **CRITICAL**. Contains the client-side logic for both roles, including the  handlers that are not being called.
--   **/app/frontend/hooks/useSocket.ts**: Defines all socket event listeners and emitters.
--   **/app/frontend/components/DriverOfferScreen.tsx**: The UI for the driver's part of the Martı TAG flow.
--   **/app/backend/server.py**: The FastAPI backend, contains the price calculation logic and DB update logic.
+- : The main application file where most debugging will occur.
+- : The post-match screen, recently modified.
+- : Manages the critical socket connection.
+-  (on VPS): The socket server code.
+-  (on VPS): The production backend code.
+-  (on VPS): Supervisor config for the backend.
+-  (on VPS): Supervisor config for the socket server.
 
 **Critical Info for New Agent**
--   **THE CORE LOOP IS ALMOST COMPLETE.** The last agent did extensive debugging and fixed several major architectural flaws. You are at the final step.
--   **FOCUS ON THE SOCKET SERVER.** The current bug is almost certainly in . The server correctly identifies a  but fails to  the confirmation events. Do not get distracted by the frontend code until you can prove the server is sending the events.
--   **USER IS FRUSTRATED BUT RESPONSIVE.** The user tests new APKs promptly. Prioritize getting a working APK to the user.
--   **IGNORE THE  SPAM FOR NOW.** While it's an issue, it's a P2. The P0 is the broken matching flow. Fixing the  event now could introduce new regressions.
+- **The P0 issue is the broken offer system.** The user cannot use the app's core feature. Your first task is to diagnose and fix this.
+- **The root cause is almost certainly the long-standing driver socket disconnection issue.** Do not get distracted by other potential causes until you have ruled this out. Your plan should involve investigating and fixing the background socket stability.
+- **The backend is now live on the user's VPS.** Do not try to run or debug the backend locally. All testing and debugging for the backend and socket server must be done by SSH-ing into .
+- **The Daily.co call feature is disabled but the code is still there.** The user may ask to re-enable it later. The last fix involved merging state in  and a retry mechanism.
+- **The codebase, especially , is extremely large and complex.** Be careful when making changes and use search to find all references before modifying a variable or function.
 
 **documents created in this job**
-- A full system documentation was provided to the user in chat message 530.
+- The agent produced a comprehensive technical documentation in the final message (604), which is an excellent reference.
 
 **Last 10 User Messages and any pending HUMAN messages**
--   10. The driver accepts the offer, but the match is still not happening. (P0 Bug Report)
--   9. Is the offer system fixed?
--   8. Provides a detailed, full system documentation as requested.
--   7. Give me the full detailed structure of the system, I will show it to GPT to understand it.
--   6. The passenger sends the offer, it appears for the driver but then immediately disappears. I cant press accept." (Bug that was fixed by removing API polling)
--   5. "The button should be TEKLİF GÖNDER. New drivers entering the area should see the offer. Make it so the first driver to accept gets the ride."
--   4. Requests a new build.
--   3. Asks if a new APK is needed.
--   2. Reports progress: "Offers are now seen instantly, but when the passenger accepts, the match is slow or doesnt happen.
--   1. User reports call system and offer system are broken again. (This was the trigger for the major debugging session).
+- 10.  - **(PENDING)** User reports the offer system is broken.
+- 9.  - User asks for a full technical documentation for the next agent. (Completed)
+- 8.  - User asks if the app will work independently of the dev environment. (Completed)
+- 7.  - User confirms the plan to update the current APK to point to the production backend. (Completed)
+- 6.  - User approves the plan to deploy the backend to the VPS. (Completed)
+- 5.  - User asks if it's possible to have both a dev and prod backend. (Completed)
+- 4.  - User asks about the process and timing for moving the backend. (Completed)
+- 3.  - User provides a list of new feature requests and bug fixes, including the -5 point logic. (Partially Completed)
+- 2.  - **(PENDING)** User asks for a plan to integrate the Ödeal payment system.
+- 1.  - User wants to finalize the app for a Google Play release. (In Progress)
 
 **Project Health Check:**
--   **Broken**: The final step of the Martı TAG matching flow.
--   **Mocked**: None.
--   **Working**: User Authentication, Chat, Price Calculation API.
+- **Broken**: Offer/Matching System.
+- **Mocked**: The -5 point penalty confirmation logic is only a UI facade; it doesn't have a functional backend.
+- **Working**: Backend/Socket Server deployment on VPS, User Authentication, Basic Chat, Live Location (when connected), UI for post-match screen.
 
 **3rd Party Integrations**
--   **Supabase**: PostgreSQL DB, Auth (SMS), Realtime Broadcast (for chat).
--   **Daily.co**: In-app voice/video calls.
--   **Custom Python Socket.IO Server**: On VPS . Handles all core ride-hailing logic.
+- **Supabase**: PostgreSQL DB, Auth (SMS), Realtime (for chat).
+- **Daily.co**: In-app voice/video calls (code exists but feature is disabled).
+- **Custom Python Socket.IO Server**: On VPS , handles core ride-hailing logic.
+- **Google Maps Platform**: For all map-related views and services.
 
 **Testing status**
--   Testing agent used after significant changes: NO
--   Troubleshoot agent used after agent stuck in loop: NO
--   Test files created: []
--   Known regressions: The voice call system's stability is unknown after the major Martı TAG refactor.
+- Testing agent used after significant changes: NO
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: []
+- Known regressions: The offer system, which was previously working (though unreliably), is now reported as completely broken.
 
 **Credentials to test flow:**
--   **Socket Server SSH:**
-    -   IP: 
-    -   User: 
-    -   Pass: 
+- **Socket/Backend Server SSH:**
+    - IP: 
+    - User: 
+    - Pass: 
+    - Socket Log: 
+    - Backend Log: 
 
 **What agent forgot to execute**
--   The agent correctly identified the inefficient  event being spammed from the client but deprioritized fixing it to focus on the core flow. It remains an outstanding issue.
--   A full regression test of the voice call system was not performed after the massive Martı TAG refactoring. Its current status is unknown.
+- The agent completely forgot to address the **Driver Client Frequently Disconnects** issue from the initial handover. This is the most likely root cause of the final P0 bug (offer system not working).
+- The agent did not implement the user's request to **Open chat window on new message**.
+- The agent did not implement the user's request to **Clear old/completed matches**.
 
 </analysis>
