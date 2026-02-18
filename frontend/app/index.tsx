@@ -845,6 +845,15 @@ export default function App() {
               <Ionicons name="arrow-forward" size={20} color="#FFF" />
             </TouchableOpacity>
             
+            {/* Kayıt Ol Butonu */}
+            <TouchableOpacity 
+              style={styles.registerButton}
+              onPress={() => setScreen('register')}
+            >
+              <Ionicons name="person-add-outline" size={20} color="#3FA9F5" />
+              <Text style={styles.registerButtonText}>Kayıt Ol</Text>
+            </TouchableOpacity>
+            
             {/* Şifremi Unuttum */}
             <TouchableOpacity 
               style={styles.forgotPasswordButton}
