@@ -7277,22 +7277,35 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
               setDriverChatVisible(true);
             }}
             onForceEnd={async () => {
-              try {
-                const response = await fetch(
-                  `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}`,
-                  { method: 'POST' }
-                );
-                const data = await response.json();
-                if (data.success) {
-                  Alert.alert('⚠️ Yolculuk Bitirildi', data.message);
-                  setActiveTag(null);
-                  setScreen('role-select');
-                } else {
-                  Alert.alert('Hata', data.detail);
-                }
-              } catch (error) {
-                Alert.alert('Hata', 'İşlem başarısız');
+              // 🔥 SOCKET İLE ANINDA BİTİR - Her iki tarafa bildirim gider
+              console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
+              
+              if (!activeTag?.id || !activeTag?.passenger_id) {
+                Alert.alert('Hata', 'Eşleşme bilgisi bulunamadı');
+                return;
               }
+              
+              // Socket ile force_end_trip gönder
+              forceEndTrip({
+                tag_id: activeTag.id,
+                ender_id: user.id,
+                ender_type: 'driver',
+                passenger_id: activeTag.passenger_id,
+                driver_id: user.id,
+              });
+              
+              // Anında local state temizle
+              setActiveTag(null);
+              setRequests([]);
+              setDriverChatVisible(false);
+              driverClearIncomingCall();
+              setScreen('role-select');
+              
+              // Bilgilendirme
+              Alert.alert(
+                '⚠️ Yolculuk Bitirildi', 
+                'Eşleşme zorla sonlandırıldı.\n-5 puan uygulandı.'
+              );
             }}
             onRequestTripEnd={async () => {
               // Karşılıklı iptal isteği gönder - ŞOFÖR
