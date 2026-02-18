@@ -22,6 +22,7 @@ import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Te
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import useSocket from '../hooks/useSocket';
 import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
+import { useNotifications } from '../contexts/NotificationContext'; // 🔔 BİLDİRİM SİSTEMİ
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
 import AdminPanel from '../components/AdminPanel';
