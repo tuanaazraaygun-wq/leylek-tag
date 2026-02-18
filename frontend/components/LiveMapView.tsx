@@ -870,6 +870,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     gap: 12,
   },
+  whatsappButton: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 12, 
+    backgroundColor: '#25D366', // WhatsApp Yeşil
+    borderRadius: 12,
+  },
+  whatsappButtonText: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    marginLeft: 6, 
+    color: '#FFF',
+  },
   supportButton: { 
     flex: 1, 
     flexDirection: 'row', 
@@ -893,9 +908,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     justifyContent: 'center', 
     paddingVertical: 12, 
-    backgroundColor: '#9CA3AF', // Donuk kırmızı yerine gri - Donuk görünüm
+    backgroundColor: '#DC2626', // Kırmızı - Bitir butonu
     borderRadius: 12,
-    opacity: 0.8,
   },
   endButtonText: { 
     fontSize: 14, 
