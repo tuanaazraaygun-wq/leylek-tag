@@ -88,9 +88,9 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
   return (
     <View style={styles.container}>
-      {/* Gradient arka plan */}
+      {/* Gradient arka plan - soft mavi tonları */}
       <LinearGradient
-        colors={['#FFFFFF', '#F0F8FF', '#E6F3FF']}
+        colors={['#F5FAFF', '#F0F8FF', '#EBF5FF']}
         style={styles.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
