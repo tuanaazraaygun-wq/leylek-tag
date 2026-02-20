@@ -1442,7 +1442,7 @@ export default function App() {
                   <Ionicons name="person" size={32} color={selectedRole === 'passenger' ? '#FFF' : '#3FA9F5'} />
                 </View>
                 <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>Yolcu</Text>
-                <Text style={styles.roleCardDesc}>Teklif al</Text>
+                <Text style={styles.roleCardDesc}>Teklif gönder</Text>
                 {selectedRole === 'passenger' && (
                   <View style={styles.roleCheckBadge}>
                     <Ionicons name="checkmark" size={16} color="#FFF" />
