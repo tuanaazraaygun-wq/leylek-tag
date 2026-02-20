@@ -282,7 +282,12 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
       const data = await response.json();
       if (data.success && data.message) {
-        socketRef.current?.emit('community_message', data.message);
+        // 🔥 Socket'e mesaj gönder - diğer kullanıcılar anında görsün
+        console.log('[Community] 📤 Socket ile mesaj yayınlanıyor:', data.message.id);
+        socketRef.current?.emit('community_message', {
+          ...data.message,
+          city: selectedCity,  // Şehir bilgisini ekle
+        });
         setMessages(prev => prev.map(msg => msg.id === tempId ? { ...data.message, _temp: false } : msg));
       } else {
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
