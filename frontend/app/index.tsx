@@ -10455,10 +10455,11 @@ const styles = StyleSheet.create({
   },
   roleTopTitle: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: '#1F2937',
     textAlign: 'center',
+    marginHorizontal: 8,
   },
   roleAdminBtn: {
     width: 40,
