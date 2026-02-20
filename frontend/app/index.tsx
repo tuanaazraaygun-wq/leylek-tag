@@ -30,6 +30,7 @@ import { LegalConsentModal, LegalPage, LocationWarningModal } from '../component
 import RatingModal from '../components/RatingModal';
 import SplashScreen from '../components/SplashScreen';
 import { KVKKConsentModal, SupportModal } from '../components/KVKKComponents';
+import CommunityScreen from '../components/CommunityScreen';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
