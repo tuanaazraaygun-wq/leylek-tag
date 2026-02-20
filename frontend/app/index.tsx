@@ -10659,28 +10659,60 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  // Community Button Styles - Compact
-  communityButtonCompact: {
+  // Community Button Styles - Simetrik
+  communityButtonSymmetric: {
+    marginTop: 8,
+    marginHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E8F4FD',
+    shadowColor: '#3FA9F5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  communityButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-    alignSelf: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  communityButtonEmoji: {
-    fontSize: 20,
+  communityEmoji: {
+    fontSize: 28,
+    marginRight: 12,
   },
-  communityButtonTitleCompact: {
-    fontSize: 14,
-    fontWeight: '600',
+  communityTextContainer: {
+    flex: 1,
+  },
+  communityTitle: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#1E5F8A',
+  },
+  communitySubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  // Ayırıcı
+  roleDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    marginHorizontal: 40,
+  },
+  roleDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  roleDividerText: {
+    paddingHorizontal: 12,
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
   },
   roleContinueButton: {
     marginTop: 40,
