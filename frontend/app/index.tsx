@@ -1589,22 +1589,23 @@ export default function App() {
             </View>
           </TouchableOpacity>
           
-          {/* Admin Butonu - Sadece adminler için */}
-          {isAdmin && (
-            <TouchableOpacity
-              style={styles.adminButton}
-              onPress={() => setShowAdminPanel(true)}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#F59E0B', '#D97706']}
-                style={styles.adminButtonGradient}
+            {/* Admin Butonu ScrollView içinde */}
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.adminButton}
+                onPress={() => setShowAdminPanel(true)}
+                activeOpacity={0.8}
               >
-                <Ionicons name="shield-checkmark" size={22} color="#FFF" />
-                <Text style={styles.adminButtonText}>Admin Paneli</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
+                <LinearGradient
+                  colors={['#F59E0B', '#D97706']}
+                  style={styles.adminButtonGradient}
+                >
+                  <Ionicons name="shield-checkmark" size={22} color="#FFF" />
+                  <Text style={styles.adminButtonText}>Admin Paneli</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
         </SafeAreaView>
         
         {/* Admin Panel Modal - TAM EKRAN */}
