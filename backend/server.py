@@ -4186,11 +4186,11 @@ def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
 
 def is_peak_hour() -> bool:
     """Yoğun saat kontrolü (08:00-10:00, 17:00-20:00)"""
-    from datetime import datetime
-    import pytz
+    from datetime import datetime, timezone, timedelta
     try:
-        tz = pytz.timezone('Europe/Istanbul')
-        now = datetime.now(tz)
+        # Türkiye saati UTC+3
+        turkey_tz = timezone(timedelta(hours=3))
+        now = datetime.now(turkey_tz)
         hour = now.hour
         # Yoğun saatler: 08:00-10:00 ve 17:00-20:00
         return (8 <= hour < 10) or (17 <= hour < 20)
