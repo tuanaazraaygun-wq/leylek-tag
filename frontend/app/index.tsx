@@ -10582,10 +10582,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   roleHeaderTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#2C3E50',
     marginBottom: 8,
+    textAlign: 'center',
+    paddingHorizontal: 10,
   },
   roleHeaderSubtitle: {
     fontSize: 16,
@@ -10595,8 +10597,8 @@ const styles = StyleSheet.create({
   roleCardsContainer: {
     flex: 1,
     justifyContent: 'center',
-    gap: 20,
-    paddingVertical: 20,
+    gap: 16,
+    paddingVertical: 16,
   },
   roleCardPremium: {
     backgroundColor: '#FFFFFF',
