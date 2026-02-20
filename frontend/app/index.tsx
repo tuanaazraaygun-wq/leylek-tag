@@ -6263,6 +6263,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   const [driverEndTripModalVisible, setDriverEndTripModalVisible] = useState(false);
   const [driverForceEndConfirmVisible, setDriverForceEndConfirmVisible] = useState(false);
   
+  // 🔥 Cancelled Alert'in bir kez gösterilmesi için flag
+  const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
+  const lastCancelledTagId = useRef<string | null>(null);
+  
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
