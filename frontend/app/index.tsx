@@ -4078,6 +4078,10 @@ function PassengerDashboard({
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
   
+  // 🔥 Cancelled Alert'in bir kez gösterilmesi için flag
+  const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
+  const lastCancelledTagId = useRef<string | null>(null);
+  
   // 🆕 Daily.co Video/Audio Call State'leri
   const [dailyCallActive, setDailyCallActive] = useState(false);
   const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
