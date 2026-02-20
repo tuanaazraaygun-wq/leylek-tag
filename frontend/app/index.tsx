@@ -10667,42 +10667,56 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  // Community Button Styles - Simetrik
-  communityButtonSymmetric: {
+  // Community Button Styles - Büyük ve Efektli
+  communityButtonLarge: {
     marginTop: 8,
     marginHorizontal: 20,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 2,
-    borderColor: '#E8F4FD',
+    borderColor: '#3FA9F5',
     shadowColor: '#3FA9F5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+    overflow: 'hidden',
   },
-  communityButtonInner: {
+  communityButtonInnerLarge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
+    backgroundColor: 'linear-gradient(135deg, #F0F9FF 0%, #FFFFFF 100%)',
   },
-  communityEmoji: {
-    fontSize: 28,
-    marginRight: 12,
+  communityLeylekLogo: {
+    width: 55,
+    height: 55,
+    marginRight: 14,
   },
-  communityTextContainer: {
+  communityTextContainerLarge: {
     flex: 1,
   },
-  communityTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+  communityTitleLarge: {
+    fontSize: 20,
+    fontWeight: '800',
     color: '#1E5F8A',
+    letterSpacing: 0.5,
   },
-  communitySubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
+  communitySubtitleLarge: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3FA9F5',
+    marginTop: 4,
+    letterSpacing: 0.3,
+  },
+  communityArrowCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3FA9F5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Ayırıcı
   roleDivider: {
