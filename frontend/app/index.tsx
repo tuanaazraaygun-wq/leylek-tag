@@ -4649,16 +4649,48 @@ function PassengerDashboard({
     try {
       const response = await fetch(`${API_URL}/passenger/active-tag?user_id=${user.id}`);
       const data = await response.json();
+      
       if (data.success && data.tag) {
+        // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
+        if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
+          console.log('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          setActiveTag(null);
+          setDestination(null);
+          setPassengerChatVisible(false);
+          clearIncomingCall();
+          setScreen('role-select');
+          
+          if (data.tag.status === 'cancelled') {
+            Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
+          }
+          return;
+        }
+        
         setActiveTag(data.tag);
-        // useOffers hook'u otomatik olarak teklifleri yükleyecek (Supabase Realtime)
       } else {
-        // 🔥 KRITIK: Eğer socket'ten eşleşme geldiyse ve activeTag matched durumundaysa
-        // API'den gelen null değerini görmezden gel - race condition önleme
+        // API'den tag gelmedi
         setActiveTag(prev => {
-          if (prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
-            console.log('🛡️ loadActiveTag: matched/in_progress tag korunuyor, API null dönse bile');
-            return prev;
+          // 🔥 Eğer mevcut tag varsa, veritabanından durumunu kontrol et
+          if (prev && prev.id && (prev.status === 'matched' || prev.status === 'in_progress')) {
+            // Veritabanından tag durumunu kontrol et
+            fetch(`${API_URL}/tag/${prev.id}`)
+              .then(res => res.json())
+              .then(tagData => {
+                if (tagData.success && tagData.tag) {
+                  if (tagData.tag.status === 'cancelled' || tagData.tag.status === 'completed') {
+                    console.log('🛑 Tag bitirilmiş (kontrol), çıkış yapılıyor...');
+                    setActiveTag(null);
+                    setDestination(null);
+                    setPassengerChatVisible(false);
+                    clearIncomingCall();
+                    setScreen('role-select');
+                    Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
+                  }
+                }
+              })
+              .catch(() => {});
+            
+            return prev; // Kontrol yapılana kadar koru
           }
           return null;
         });
