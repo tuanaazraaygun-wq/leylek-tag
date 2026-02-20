@@ -1701,7 +1701,7 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
 
 @api_router.get("/passenger/active-tag")
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
-    """Aktif TAG getir"""
+    """Aktif TAG getir - cancelled durumunda da döndür (frontend algılasın)"""
     try:
         # Arka planda inaktif TAG'leri temizle
         await auto_cleanup_inactive_tags()
@@ -1714,7 +1714,19 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
         
-        # Sadece aktif tag'leri ara - cancelled kontrolü YOK
+        # 🔥 ÖNCELİK 1: Son 5 dakikada cancelled olmuş TAG var mı kontrol et
+        # Bu sayede frontend eşleşmenin bitirildiğini algılayabilir
+        from datetime import timedelta
+        five_minutes_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+        
+        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", five_minutes_ago).order("cancelled_at", desc=True).limit(1).execute()
+        
+        if cancelled_result.data:
+            cancelled_tag = cancelled_result.data[0]
+            logger.info(f"🛑 Cancelled TAG bulundu ve döndürülüyor: {cancelled_tag['id']}")
+            return {"success": True, "tag": cancelled_tag, "was_cancelled": True}
+        
+        # ÖNCELİK 2: Aktif tag'leri ara
         result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
         
         if result.data:
