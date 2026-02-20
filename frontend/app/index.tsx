@@ -7293,6 +7293,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
                 driver_id: user.id,
               });
               
+              // 🔥 API'ye de zorla bitir bildirimi gönder (veritabanı güncelleme)
+              fetch(`${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`, { method: 'POST' })
+                .catch(err => console.log('Force end API hatası:', err));
+              
               // Anında local state temizle
               setActiveTag(null);
               setRequests([]);
