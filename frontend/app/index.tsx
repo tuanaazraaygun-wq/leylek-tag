@@ -4477,9 +4477,10 @@ function PassengerDashboard({
         senderId: data.sender_id,
         timestamp: data.timestamp || Date.now(),
       });
-      // Bildirim göster
+      // 🔥 Chat kapalıysa otomatik aç + bildirim göster
       if (!passengerChatVisible) {
-        setToastMessage(`💬 ${data.sender_name}: ${data.message.substring(0, 30)}...`);
+        setPassengerChatVisible(true); // Chat'i otomatik aç
+        setToastMessage(`💬 ${data.sender_name || 'Sürücü'}: ${data.message.substring(0, 30)}...`);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 3000);
       }
