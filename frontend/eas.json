@@ -27,7 +27,7 @@
       },
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1",
-        "EXPO_PUBLIC_BACKEND_URL": "https://trip-socket.preview.emergentagent.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://rideshare-social-2.preview.emergentagent.com"
       }
     },
     "production": {

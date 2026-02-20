@@ -18,7 +18,7 @@ import Constants from 'expo-constants';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://trip-socket.preview.emergentagent.com';
+                    'https://rideshare-social-2.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 // ==================== TYPES ====================

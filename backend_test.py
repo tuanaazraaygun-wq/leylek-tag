@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 # Test configuration from review request
-BACKEND_URL = "https://trip-socket.preview.emergentagent.com"
+BACKEND_URL = "https://rideshare-social-2.preview.emergentagent.com"
 API_BASE = f"{BACKEND_URL}/api"
 TEST_PHONE = "5321234567"
 TEST_OTP = "123456"

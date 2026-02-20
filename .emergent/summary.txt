@@ -1,204 +1,195 @@
 <analysis>
 <original_problem_statement>
-The user's final and most critical issue is that the **offer system is not working**. Drivers are not seeing new passenger offers, or the system is otherwise unreliable. This issue was reported after the agent deployed the backend to a production VPS.
+The initial critical issue was that the **offer system was not working** after the backend was deployed to a production VPS.
 
-This session also dealt with several other major issues:
-- The in-app voice/video call system (Daily.co) was unreliable and asymmetric. A major refactor was completed to fix this, but the feature was ultimately **disabled at the user's request** to prioritize other fixes for a Google Play release.
-- The user requested a series of UI/UX improvements and bug fixes for the Google Play release, including:
-    - Adding a WhatsApp support button.
-    - Making the Force End trip button instant and changing its penalty logic.
-    - Preparing the app for Google Play (icon, splash, privacy policy etc.).
-- The user requested that the backend be moved from the development environment to their production VPS.
+During the session, the user requested a major new feature: **Leylek Muhabbeti (Community)**, a social feed integrated into the app. This became the primary focus.
+
+The user's requirements for Leylek Muhabbeti evolved significantly:
+1.  A simple, Instagram-like feed.
+2.  City-based channels (e.g., Ankara Topluluk Sayfası).
+3.  Moderation features: 90-day message retention, user anonymization on deletion, report system, admin panel, profanity filter.
+4.  Advanced UI/UX: WhatsApp-like appearance, emoji reactions, user ratings, and custom, city-specific themes (e.g., Çanakkale clock tower).
+
+The user also requested several UI changes to the splash screen and role selection screen.
 </original_problem_statement>
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The project is a full-stack application with a deployed backend and a React Native frontend.
-- **Backend**: The FastAPI backend () has been successfully deployed to the user's production VPS at . It is managed by  and runs automatically.
-- **Socket Server**: The Python Socket.IO server () is also running on the same VPS at , managed by .
-- **Frontend**: The Expo (React Native) frontend is a large monolith, with most of the application logic and UI residing in . The latest APK builds are configured to communicate with the production backend and socket server on the VPS.
-- **Database**: The application uses a PostgreSQL database hosted on Supabase, which also handles authentication (SMS OTP) and real-time chat messages.
-- **Disabled Feature**: The Daily.co voice/video call functionality is fully implemented in the code (including a major refactor to fix stale state issues), but the UI buttons to trigger it have been removed from  at the user's request.
+The application is a full-stack ride-sharing app with a deployed production environment.
+-   **Backend**: FastAPI backend () and a Python Socket.IO server () are deployed on a production VPS () and managed by . They are accessible via  and  respectively, with Nginx as a reverse proxy and Let's Encrypt for SSL.
+-   **Frontend**: The React Native (Expo) app has been configured to connect to the production domains. The monolith component  contains most of the core app logic, login, and role selection screens.
+-   **New Feature (Leylek Muhabbeti)**:
+    -   A new DB table  (and ) has been created in Supabase.
+    -   A new, isolated socket namespace  has been added to .
+    -   New backend API endpoints under  have been added to  to handle messages, filtering by city, and initial moderation logic (profanity filter).
+    -   A new frontend component  has been created to display the feed.
+    -   The role selection screen in  has been updated to include a button to navigate to the community screen.
 
 **Last working item**:
-- Last item agent was working: The user reported that the offer system is not working (teklif sistemi neden çalışmıyor ?). The agent started to investigate this critical bug by attempting to check the logs on the production VPS. The session ended before any meaningful diagnostic data was retrieved.
-- Status: **IN PROGRESS**
-- Agent Testing Done: N
-- Which testing method agent to use? backend testing agent. The agent should first investigate the socket server logs on the VPS () and the backend logs () to understand why offer events are failing. Manual testing with two devices will be required to confirm the fix.
-- User Testing Done: N
+-   Last item agent was working: The agent was implementing the backend moderation system for the Leylek Muhabbeti feature. This involved adding a profanity filter and creating new endpoints for moderation (, ) in .
+-   Status: **IN PROGRESS**
+-   Agent Testing Done: N
+-   Which testing method agent to use? backend testing agent
+-   User Testing Done: N
 
 **All Pending/In progress Issue list**:
-- **Issue 1: (P0) Offer System is Not Working**
-    - **Description**: This is the current highest priority issue. The user reports that the offer system is broken after the backend deployment. This likely means drivers are not receiving  events when passengers create tags, or passengers are not receiving  events when drivers send them. This is the core functionality of the app.
-    - **Attempted fixes**: The previous agent only just started investigating by attempting to  and check logs. No fixes have been attempted yet.
-    - **Next debug checklist**:
-        1. SSH into the VPS:  (Password: ).
-        2. Tail the socket server logs: .
-        3. Tail the backend logs: .
-        4. In the app, have a passenger create a tag (ride request).
-        5. Observe the logs to see if  events are received by the socket server.
-        6. Have a driver go online.
-        7. Observe the logs to see if the driver client is correctly registered and receiving events.
-        8. The root cause is very likely **Issue 2** below (driver socket disconnects), which was never fixed.
-    - **Why fix this issue and what will be achieved with the fix?**: This is the primary function of the app. Without a working offer system, the app is unusable.
-    - **Status**: **IN PROGRESS**
-    - **Is recurring issue?**: Y
-    - **Should Test frontend/backend/both after fix?**: Both
-    - **Blocked on other issue**: None
+-   **Issue 1: (P0) City-based filtering for Leylek Muhabbeti is not working.**
+    -   **Description**: The user reported that a message posted in Ankara was visible in Adana. This indicates the city-based filtering is failing.
+    -   **Attempted fixes**: The agent updated the backend API () to filter by a  query parameter and updated the frontend () to pass the selected city. The agent also restarted the backend service. However, the user reported the issue persists.
+    -   **Next debug checklist**:
+        1.  In , verify that the  function is correctly passing the selected  in the API call URL. Use  to check the exact URL being fetched.
+        2.  In , check that the user's current  is being correctly determined and stored in the state before fetching messages.
+        3.  In , re-verify the logic in the  endpoint. Ensure the  clause is being applied correctly to the Supabase query.
+    -   **Why fix this issue and what will be achieved with the fix?**: This is a core requirement for the new feature. It ensures users only see relevant content from their own city community.
+    -   **Status**: **IN PROGRESS**
+    -   **Is recurring issue?**: N
+    -   **Should Test frontend/backend/both after fix?**: Both
+    -   **Blocked on other issue**: None
 
-- **Issue 2: (P1) Driver Client Frequently Disconnects from Socket Server**
-    - **Description**: This is a long-standing issue from the initial handover summary that was never addressed. Socket server logs have previously shown driver clients connecting and disconnecting frequently. This is the most likely reason the offer system is unreliable, as disconnected drivers will not receive real-time offer events.
-    - **Attempted fixes**: In a much earlier session,  and  were added, but this did not solve the problem. The issue was then ignored.
-    - **Next debug checklist**:
-        1. This is likely due to aggressive power-saving on Android/iOS killing the background socket connection.
-        2. Research and implement a persistent background task or foreground service using a library like  or a dedicated keep-alive library to maintain the socket connection.
-        3. This is a complex but necessary fix to ensure app reliability.
-    - **Why fix this issue and what will be achieved with the fix?**: This will make the entire real-time functionality of the app (offers, locations, notifications) reliable, especially for drivers whose app may be in the background.
-    - **Status**: **NOT STARTED**
-    - **Is recurring issue?**: Y
-    - **Should Test frontend/backend/both after fix?**: Frontend
-    - **Blocked on other issue**: None
+-   **Issue 2: (P1) Automatic Deletion of Old Community Messages is Not Implemented.**
+    -   **Description**: Per the user's request for a 90-day data retention policy, a PostgreSQL function  was created. However, there is no mechanism to run this function periodically.
+    -   **Next debug checklist**:
+        1.  Research methods for scheduling tasks with Supabase/PostgreSQL.  is a common solution.
+        2.  Write the necessary SQL to schedule the  function to run daily.
+        3.  Provide the SQL to the user to run in their Supabase SQL Editor.
+    -   **Why fix this issue and what will be achieved with the fix?**: This fulfills a key legal and data management requirement from the user, preventing indefinite storage of user messages.
+    -   **Status**: **NOT STARTED**
+    -   **Is recurring issue?**: N
+    -   **Should Test frontend/backend/both after fix?**: Backend (DB verification)
+    -   **Blocked on other issue**: None
 
-- **Issue 3: (P2) Incomplete -5 Point Penalty Logic**
-    - **Description**: The user requested that when one user force-ends a trip, the other user gets to decide if a -5 point penalty should be applied. The agent implemented a UI for this (an  is shown to the other user), but there is **no backend logic** to handle the decision. Currently, the penalty is always applied by default, and the other user's Accept or Cancel on the alert does nothing.
-    - **Attempted fixes**: None. The UI was implemented as a facade.
-    - **Next debug checklist**:
-        1. Create a new socket event, e.g., .
-        2. When the user receives the penalty confirmation alert, emit  with .
-        3. Create a handler in  to listen for this event.
-        4. In the handler, update the penalised user's score in the Supabase  table.
-    - **Why fix this issue and what will be achieved with the fix?**: Implements the user's requested logic for a fairer penalty system.
-    - **Status**: **NOT STARTED**
-    - **Is recurring issue?**: N
-    - **Should Test frontend/backend/both after fix?**: Both
-    - **Blocked on other issue**: None
-
-- **Issue 4: (P3) Open Chat Window on New Message Notification**
-    - **Description**: User requested that when a new message arrives, the chat window should automatically open for the recipient. This was requested but not implemented.
-    - **Attempted fixes**: None.
-    - **Next debug checklist**:
-        1. In , locate the  handler within the  hook.
-        2. Inside the handler, call the appropriate state setter to make the chat view visible (e.g.,  or ).
-        3. Ensure this only happens when the user is on the  screen.
-    - **Why fix this issue and what will be achieved with the fix?**: Improves the immediacy and usability of the chat feature during a trip.
-    - **Status**: **NOT STARTED**
-    - **Is recurring issue?**: N
-    - **Should Test frontend/backend/both after fix?**: Frontend
-    - **Blocked on other issue**: None
+-   **Issue 3: (P2) Splash Screen Logo has a White Background.**
+    -   **Description**: The user wants the leylek (stork) logo on the splash screen to have a transparent background so it blends with the app's background color. The current  has a solid white background.
+    -   **Attempted fixes**: The agent changed the background color of the screen, which only highlighted the white square around the logo.
+    -   **Next debug checklist**:
+        1.  This cannot be fixed with code. A new image asset is required.
+        2.  Inform the user that the image file itself needs to be edited in an image editor to have a transparent background and re-uploaded. The agent cannot perform this action.
+    -   **Why fix this issue and what will be achieved with the fix?**: Fulfills a UI/UX request from the user for a more professional-looking splash screen.
+    -   **Status**: **BLOCKED** (Requires user action/new asset)
+    -   **Is recurring issue?**: Y
+    -   **Should Test frontend/backend/both after fix?**: Frontend (visual check)
+    -   **Blocked on other issue**: None
 
 **In progress Task List**:
-- None. All current work is classified as debugging the P0 issue.
+-   **Task 1: (P0) Complete Leylek Muhabbeti Moderation & UI Feature.**
+    -   **Description**: Finish the implementation of the community feature based on the user's latest requests.
+    -   **Where to resume**:
+        1.  **Backend**: Finish adding the moderation endpoints (, ) and logic in .
+        2.  **Frontend**: Implement the UI for the report message functionality in .
+        3.  **Frontend**: Implement the advanced UI requested by the user: emoji reactions, displaying user ratings, and city-specific background themes. This will require significant changes to .
+        4.  **Frontend**: Implement the logic to call the  function when a user deletes their account. This requires creating the account deletion flow first.
+    -   **What will be achieved with this?**: The full initial version of the Leylek Muhabbeti feature will be complete.
+    -   **Status**: **IN PROGRESS**
+    -   **Should Test frontend/backend/both after fix?**: Both
+    -   **Blocked on something**: None
 
 **Upcoming and Future Tasks**
-- **Upcoming Tasks:**
-    - **(P0) Re-enable and Finalize Daily.co Calls:** The code is present but disabled. The last fix attempt (merging state in  and adding a retry mechanism in ) needs to be tested. Once working, the UI buttons in  must be re-added.
-    - **(P1) Implement User Busy Call State:** When one user is in a call or being called, prevent others from calling them.
-    - **(P2) Re-implement Call Sounds:** Add  to play a ringing sound for incoming calls and a dialing sound for outgoing calls, ensuring they stop correctly.
-    - **(P3) Add Live Support to Support Button:** The button currently only links to WhatsApp. A modal with a link to a live support chat (if available) should be added.
-- **Future Tasks:**
-    - **(P0) Integrate ÖDE AL Payment System:** Plan the payment flow based on the questions asked by the previous agent (payment timing, commission model, etc.) and implement the integration.
-    - **(P1) Admin Panel:** For user management and system monitoring.
-    - **(P1) Driver Verification Flow.**
-    - **(P1) Full Push Notification Integration:** The basic setup is done, but notifications need to be triggered from the backend/socket server for key events (new offer, new message, match accepted, etc.).
+-   **Upcoming Tasks:**
+    -   **(P1) Create a Web-Based Admin/Moderation Panel:** A UI for admins to view reported messages ( table) and take action (delete message, ban user).
+    -   **(P2) Implement the account deletion flow**, which should trigger the  DB function.
+-   **Future Tasks:**
+    -   All the tasks from the *previous* fork are still outstanding as they were superseded by the Leylek Muhabbeti feature request. These are still relevant for app stability and completeness.
+    -   **(P0) Fix Driver Socket Disconnects:** Investigate and implement a foreground service or keep-alive mechanism to prevent the OS from killing the socket connection for drivers. This is a critical, long-standing stability issue.
+    -   **(P1) Implement -5 Point Penalty Backend Logic:** The UI exists, but the backend logic to handle the penalty confirmation from the other user is missing.
+    -   **(P2) Auto-Open Chat on New Message:** Make the chat window open automatically when a new message notification is received during a trip.
+    -   **(P3) Clear Old/Completed Offers from Driver's List:** Prevent drivers from seeing inactive ride requests.
 
 **Completed work in this session**
-- **Backend Deployed to Production VPS:** The FastAPI backend was successfully deployed to  and is managed by . All required Python dependencies were installed on the VPS.
-- **Production APK Build:** The frontend was configured to point to the production VPS backend and socket server, and a new APK () was built for the user.
-- **Call Feature UI Removed:** Per user request, the voice/video call buttons were removed from , and the layout was redesigned with a primary Message button.
-- **WhatsApp Support Button Added:** A WhatsApp Destek button was added to the  component, linking to the user-provided phone number.
-- **Force End Logic Improved:** The Force End functionality was refactored to use a direct socket event () for faster, more reliable termination and state clearing.
-- **Push Notification Infrastructure:** The  plugin was added, and a  was created and integrated into the root layout, laying the groundwork for push notifications.
+-   **Offer System Restored**: Fixed the critical bug where the offer system was broken. Diagnosed that the socket server was not running on the VPS, created the necessary supervisor configuration, resolved port conflicts and missing dependencies (), and got the service running.
+-   **Full Production Decoupling**: Set up  and  on the production VPS with Nginx and SSL. Updated the frontend configuration and built a new APK that connects exclusively to the production environment, removing the dependency on the development container.
+-   **Leylek Muhabbeti Feature (Initial Implementation)**:
+    -   Created backend endpoints, a new socket namespace, and frontend components for the new social feed feature.
+    -   Implemented optimistic UI for instant message posting.
+    -   Created DB tables (, ) and data lifecycle functions (, ) in Supabase.
+-   **UI/UX Overhauls**:
+    -   Added a Register button to the login screen.
+    -   Significantly refactored the role selection screen in  to be a compact, non-scrolling, flex-based layout.
+    -   Iterated on the splash screen design based on user feedback.
 
 **Earlier issues found/mentioned but not fixed**
-- **Issue 1: Old/Completed Offers/Matches Not Cleared**
-    - **Debug checklist**: Check the logic in  that is supposed to clear old tags from the driver's list when a tag is  or . Verify that the correct socket events are being received and that the state filtering logic is correct.
-    - **Why to solve this issue and what will be achieved with this?**: Prevents driver confusion and ensures they only see active, available ride requests.
-    - **Should Test frontend/backend/both after fix**: Frontend
-    - **Is recurring issue?** Y
+-   The critical issues from the previous fork summary were not addressed, including the root cause of the offer system's unreliability (socket disconnects), incomplete penalty logic, and others listed under **Future Tasks**.
 
 **Known issue recurrence from previous fork**
-- **Issue recurrence in previous fork**: The unreliability of the offer system due to socket disconnections.
-- **Recurrence count**: High (5+ forks)
-- **Status**: **NOT STARTED** (The root cause was never fixed, and the user has just reported the symptom again).
+-   **Issue recurrence in previous fork**: The unreliability of the offer system due to socket disconnections.
+-   **Recurrence count**: High (5+ forks)
+-   **Status**: **NOT STARTED**. The symptom (broken offers) was fixed by restarting the socket server, but the underlying root cause (frequent client disconnects) was never investigated or fixed. It will likely happen again.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Production Deployment**: The agent successfully deployed the FastAPI backend to a live VPS using , , , and .
-- **Monolithic Frontend**: Almost all application logic, state, and UI for every screen is contained within , making it very complex.
-- **Centralized State (for Calls)**: A major refactor was performed to move call state into  to solve stale closure issues. This code is still present but inactive.
-- **Real-time Communication**: A combination of a custom Python **Socket.IO server** (for ride-hailing logic) and **Supabase Realtime** (for chat).
+-   **Production Infrastructure**: Nginx reverse proxy, SSL certificate management with Certbot, and process management with .
+-   **Isolated Socket.IO Namespaces**: A new  namespace was created to keep social features separate from the core ride-hailing logic.
+-   **Optimistic UI**: Implemented in the frontend to make the user experience feel instantaneous when sending messages.
+-   **Database Lifecycle Management**: Created PostgreSQL functions () to handle data retention (auto-delete) and anonymization policies.
+-   **Monolithic Frontend Refactoring**: Extensive and complex changes were made to  to accommodate new features and redesign layouts.
 
 **key DB schema**
-- **users**: uid=0(root) gid=0(root) groups=0(root), , , , , etc.
-- **tags**: uid=0(root) gid=0(root) groups=0(root), , , , , , , etc.
-- **offers**: uid=0(root) gid=0(root) groups=0(root), , , , .
-- **messages**: uid=0(root) gid=0(root) groups=0(root), , , .
+-   **community_messages**: 
+-   **community_reports**: 
 
 **changes in tech stack**
-- The application's backend is no longer running in the development environment; it is now fully deployed and running on the user's production VPS.
+-   No changes in the core stack, but significant new infrastructure configuration on the production VPS (Nginx, Certbot).
 
 **All files of reference**
-- : The main application file where most debugging will occur.
-- : The post-match screen, recently modified.
-- : Manages the critical socket connection.
--  (on VPS): The socket server code.
--  (on VPS): The production backend code.
--  (on VPS): Supervisor config for the backend.
--  (on VPS): Supervisor config for the socket server.
+-   : Heavily modified for UI changes and integration of the new feature.
+-   : The new, complex component for the social feed.
+-   : Modified to add API endpoints for the community feature and moderation.
+-    (on VPS): Modified to add the  socket namespace.
+-    (on VPS): Contains the reverse proxy configuration for the production domains.
 
 **Critical Info for New Agent**
-- **The P0 issue is the broken offer system.** The user cannot use the app's core feature. Your first task is to diagnose and fix this.
-- **The root cause is almost certainly the long-standing driver socket disconnection issue.** Do not get distracted by other potential causes until you have ruled this out. Your plan should involve investigating and fixing the background socket stability.
-- **The backend is now live on the user's VPS.** Do not try to run or debug the backend locally. All testing and debugging for the backend and socket server must be done by SSH-ing into .
-- **The Daily.co call feature is disabled but the code is still there.** The user may ask to re-enable it later. The last fix involved merging state in  and a retry mechanism.
-- **The codebase, especially , is extremely large and complex.** Be careful when making changes and use search to find all references before modifying a variable or function.
+-   The primary focus is now the **Leylek Muhabbeti** feature. You must first address the bug where city filtering is not working.
+-   After fixing the bug, complete the remaining parts of the feature: the rest of the moderation backend, the report UI, emoji reactions, and city-specific themes.
+-   The user has a strong vision for UI/UX. Be prepared for detailed feedback and iterative changes.
+-   The old, critical issue of **driver socket instability** has not been fixed. While the app is working now, this is a ticking time bomb that will cause unreliability. If the user reports issues with offers or location updates again, this should be your first suspect.
+-   All backend/socket server work must be done on the production VPS (). Remember to restart services via  after deploying changes.
 
 **documents created in this job**
-- The agent produced a comprehensive technical documentation in the final message (604), which is an excellent reference.
+-   A comprehensive technical documentation of the system was generated and provided to the user.
 
 **Last 10 User Messages and any pending HUMAN messages**
-- 10.  - **(PENDING)** User reports the offer system is broken.
-- 9.  - User asks for a full technical documentation for the next agent. (Completed)
-- 8.  - User asks if the app will work independently of the dev environment. (Completed)
-- 7.  - User confirms the plan to update the current APK to point to the production backend. (Completed)
-- 6.  - User approves the plan to deploy the backend to the VPS. (Completed)
-- 5.  - User asks if it's possible to have both a dev and prod backend. (Completed)
-- 4.  - User asks about the process and timing for moving the backend. (Completed)
-- 3.  - User provides a list of new feature requests and bug fixes, including the -5 point logic. (Partially Completed)
-- 2.  - **(PENDING)** User asks for a plan to integrate the Ödeal payment system.
-- 1.  - User wants to finalize the app for a Google Play release. (In Progress)
+-   10. : (Resolved) User reports the app is crashing after a faulty UI refactor.
+-   9. : (Resolved) User requests a text swap on the role selection buttons.
+-   8. : (In Progress) User provides a long list of new requirements for the community screen (back button logic, city themes, 3D design, etc.).
+-   7. : (In Progress) User asks about data retention and legal compliance (KVKK).
+-   6. : (In Progress) User provides decisions on data policy (90 days, anonymize, report system, etc.).
+-   5. : (Completed) User confirms running the moderation-related SQL script.
+-   4. : (Resolved) User requests instant message posting (optimistic UI).
+-   3. : (In Progress) User gives detailed UI feedback for the role screen (new text, bigger button, animations).
+-   2. : (In Progress) User confirms running SQL for the city column and provides more detailed UI feedback.
+-   1. : **(PENDING)** User reports two active issues: text on the role page is not fully visible, and the city filtering is not working.
 
 **Project Health Check:**
-- **Broken**: Offer/Matching System.
-- **Mocked**: The -5 point penalty confirmation logic is only a UI facade; it doesn't have a functional backend.
-- **Working**: Backend/Socket Server deployment on VPS, User Authentication, Basic Chat, Live Location (when connected), UI for post-match screen.
+-   **Broken**: The city-filtering logic for the Leylek Muhabbeti feature.
+-   **Mocked**: Nothing is explicitly mocked, but the data retention policy is not yet automated.
+-   **Working**: Core ride-hailing functionality (offers, matching, location), production deployment, user authentication, basic community feed posting.
 
 **3rd Party Integrations**
-- **Supabase**: PostgreSQL DB, Auth (SMS), Realtime (for chat).
-- **Daily.co**: In-app voice/video calls (code exists but feature is disabled).
-- **Custom Python Socket.IO Server**: On VPS , handles core ride-hailing logic.
-- **Google Maps Platform**: For all map-related views and services.
+-   **Supabase**: PostgreSQL DB, Auth (SMS), Realtime (for chat).
+-   **Daily.co**: In-app voice/video calls (code exists but feature is disabled).
+-   **Custom Python Socket.IO Server**: On VPS , handles core ride-hailing and community logic.
+-   **Google Maps Platform**: For all map-related views and services.
+-   **Nginx/Let's Encrypt**: For reverse proxy and SSL on the production VPS.
 
 **Testing status**
-- Testing agent used after significant changes: NO
-- Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: []
-- Known regressions: The offer system, which was previously working (though unreliably), is now reported as completely broken.
+-   Testing agent used after significant changes: NO
+-   Troubleshoot agent used after agent stuck in loop: NO
+-   Test files created: []
+-   Known regressions: None, but the new community feature has bugs found by the user.
 
 **Credentials to test flow:**
-- **Socket/Backend Server SSH:**
-    - IP: 
-    - User: 
-    - Pass: 
-    - Socket Log: 
-    - Backend Log: 
+-   **Socket/Backend Server SSH:**
+    -   IP: 
+    -   User: 
+    -   Pass: 
 
 **What agent forgot to execute**
-- The agent completely forgot to address the **Driver Client Frequently Disconnects** issue from the initial handover. This is the most likely root cause of the final P0 bug (offer system not working).
-- The agent did not implement the user's request to **Open chat window on new message**.
-- The agent did not implement the user's request to **Clear old/completed matches**.
-
+-   The agent completely deferred all pre-existing critical issues from the initial handover summary to focus on the user's new feature request. This includes:
+    -   **The root cause of socket instability (frequent disconnects).**
+    -   The incomplete -5 point penalty backend logic.
+    -   The auto-open chat on new message request.
+-   The agent did not find a resolution for the splash screen image having a white background, incorrectly marking it as resolved when it requires a new asset.
+-   The agent did not set up a cron job or any scheduler to run the  function, so the 90-day retention policy is not active.
 </analysis>
