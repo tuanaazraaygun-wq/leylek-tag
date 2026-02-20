@@ -1,6 +1,7 @@
 /**
  * Leylek Muhabbeti (Community) Screen
  * Tamamen izole - mevcut sistemlere dokunmaz
+ * v2 - ANINDA MESAJ (Optimistic UI)
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -51,6 +52,7 @@ interface CommunityMessage {
   content: string;
   likes_count: number;
   created_at: string;
+  _temp?: boolean; // Geçici mesaj flag'i
 }
 
 interface CommunityScreenProps {
@@ -78,14 +80,19 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
   // Socket bağlantısı
   useEffect(() => {
+    console.log('🐦 [Community] Socket bağlanıyor...');
+    
     const socket = io(SOCKET_URL, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
     });
 
     socket.on('connect', () => {
-      console.log('🐦 [Community] Socket bağlandı');
-      // Community namespace'e katıl
+      console.log('🐦 [Community] Socket bağlandı:', socket.id);
+      // Community'ye katıl
       socket.emit('community_join', {
         user_id: user.id,
         name: user.name,
@@ -93,9 +100,27 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       });
     });
 
+    // YENİ MESAJ GELDİĞİNDE - ANINDA GÖSTER
     socket.on('community_new_message', (data: CommunityMessage) => {
-      console.log('🐦 [Community] Yeni mesaj:', data.name);
-      setMessages(prev => [data, ...prev]);
+      console.log('🐦 [Community] Yeni mesaj alındı:', data.name);
+      
+      // Kendi mesajımız değilse ekle (kendi mesajımız zaten optimistic olarak eklendi)
+      setMessages(prev => {
+        // Bu mesaj zaten var mı kontrol et (id veya temp_id ile)
+        const exists = prev.some(m => m.id === data.id);
+        if (exists) return prev;
+        
+        // Geçici mesajı gerçek mesajla değiştir
+        const tempIndex = prev.findIndex(m => m._temp && m.user_id === data.user_id && m.content === data.content);
+        if (tempIndex !== -1) {
+          const newMessages = [...prev];
+          newMessages[tempIndex] = { ...data, _temp: false };
+          return newMessages;
+        }
+        
+        // Yeni mesaj ekle (en üste)
+        return [data, ...prev];
+      });
     });
 
     socket.on('community_like_update', (data: { message_id: string; likes_count: number }) => {
@@ -114,9 +139,14 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       console.log('🐦 [Community] Socket bağlantısı kesildi');
     });
 
+    socket.on('connect_error', (error) => {
+      console.log('🐦 [Community] Socket bağlantı hatası:', error.message);
+    });
+
     socketRef.current = socket;
 
     return () => {
+      console.log('🐦 [Community] Socket kapatılıyor...');
       socket.emit('community_leave', { user_id: user.id });
       socket.disconnect();
     };
@@ -143,22 +173,42 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     fetchMessages();
   }, [fetchMessages]);
 
-  // Mesaj gönder
+  // MESAJ GÖNDER - ANINDA GÖSTER (Optimistic UI)
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
-    if (newMessage.length > 300) {
+    const messageContent = newMessage.trim();
+    if (!messageContent) return;
+    
+    if (messageContent.length > 300) {
       Alert.alert('Uyarı', 'Mesaj 300 karakterden uzun olamaz');
       return;
     }
 
-    // Anti-spam: 3 saniye bekleme
+    // Anti-spam: 2 saniye bekleme (3'ten 2'ye düşürdüm)
     const now = Date.now();
-    if (now - lastSentTime < 3000) {
-      Alert.alert('Bekleyin', 'Mesaj göndermek için biraz bekleyin');
+    if (now - lastSentTime < 2000) {
+      Alert.alert('Bekleyin', 'Çok hızlı gönderiyorsunuz');
       return;
     }
 
-    setSending(true);
+    // 1. ANINDA EKRANDA GÖSTER (Optimistic)
+    const tempId = `temp_${Date.now()}`;
+    const tempMessage: CommunityMessage = {
+      id: tempId,
+      user_id: user.id,
+      name: user.name,
+      role: user.role as 'passenger' | 'driver',
+      content: messageContent,
+      likes_count: 0,
+      created_at: new Date().toISOString(),
+      _temp: true, // Geçici işareti
+    };
+
+    // Mesajı HEMEN ekle
+    setMessages(prev => [tempMessage, ...prev]);
+    setNewMessage(''); // Input'u temizle
+    setLastSentTime(now);
+
+    // 2. ARKA PLANDA API'YE KAYDET
     try {
       const response = await fetch(`${apiUrl}/community/message`, {
         method: 'POST',
@@ -167,32 +217,48 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           user_id: user.id,
           name: user.name,
           role: user.role,
-          content: newMessage.trim(),
+          content: messageContent,
         }),
       });
 
       const data = await response.json();
 
       if (data.success && data.message) {
-        // Socket üzerinden broadcast et
+        // 3. SOCKET İLE BROADCAST ET (diğer kullanıcılar görsün)
         socketRef.current?.emit('community_message', data.message);
-        setNewMessage('');
-        setLastSentTime(now);
+        
+        // Geçici mesajı gerçek ID ile güncelle
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === tempId ? { ...data.message, _temp: false } : msg
+          )
+        );
       } else {
+        // Hata durumunda geçici mesajı kaldır
+        setMessages(prev => prev.filter(msg => msg.id !== tempId));
         Alert.alert('Hata', data.error || 'Mesaj gönderilemedi');
       }
     } catch (error) {
       console.error('❌ [Community] Gönderme hatası:', error);
-      Alert.alert('Hata', 'Mesaj gönderilemedi');
-    } finally {
-      setSending(false);
+      // Hata durumunda geçici mesajı kaldır
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      Alert.alert('Hata', 'Bağlantı hatası');
     }
   };
 
-  // Beğen
+  // Beğen - ANINDA
   const handleLike = async (messageId: string) => {
     if (likedMessages.has(messageId)) return;
 
+    // ANINDA UI güncelle
+    setLikedMessages(prev => new Set([...prev, messageId]));
+    setMessages(prev =>
+      prev.map(msg =>
+        msg.id === messageId ? { ...msg, likes_count: msg.likes_count + 1 } : msg
+      )
+    );
+
+    // Arka planda API'ye kaydet
     try {
       const response = await fetch(`${apiUrl}/community/like`, {
         method: 'POST',
@@ -206,8 +272,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       const data = await response.json();
 
       if (data.success) {
-        setLikedMessages(prev => new Set([...prev, messageId]));
-        // Socket üzerinden broadcast et
+        // Socket ile broadcast et
         socketRef.current?.emit('community_like', {
           message_id: messageId,
           likes_count: data.likes_count,
@@ -278,9 +343,10 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   const renderMessage = ({ item }: { item: CommunityMessage }) => {
     const isLiked = likedMessages.has(item.id);
     const isOwn = item.user_id === user.id;
+    const isTemp = item._temp;
 
     return (
-      <View style={styles.messageCard}>
+      <View style={[styles.messageCard, isTemp && styles.messageCardTemp]}>
         {/* Profil ve İsim */}
         <View style={styles.messageHeader}>
           <View style={[styles.avatar, { backgroundColor: item.role === 'driver' ? COLORS.driverBadge : COLORS.passengerBadge }]}>
@@ -292,6 +358,9 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
               <View style={[styles.roleBadge, { backgroundColor: item.role === 'driver' ? COLORS.driverBadge : COLORS.passengerBadge }]}>
                 <Text style={styles.roleText}>{item.role === 'driver' ? 'Sürücü' : 'Yolcu'}</Text>
               </View>
+              {isTemp && (
+                <ActivityIndicator size="small" color={COLORS.primary} style={{ marginLeft: 8 }} />
+              )}
             </View>
             <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
           </View>
@@ -305,7 +374,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleLike(item.id)}
-            disabled={isLiked}
+            disabled={isLiked || isTemp}
           >
             <Ionicons
               name={isLiked ? 'heart' : 'heart-outline'}
@@ -317,7 +386,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             </Text>
           </TouchableOpacity>
 
-          {!isOwn && (
+          {!isOwn && !isTemp && (
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => handleReport(item.id)}
@@ -402,15 +471,11 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             <Text style={styles.charCount}>{newMessage.length}/300</Text>
           </View>
           <TouchableOpacity
-            style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
+            style={[styles.sendButton, !newMessage.trim() && styles.sendButtonDisabled]}
             onPress={handleSendMessage}
-            disabled={!newMessage.trim() || sending}
+            disabled={!newMessage.trim()}
           >
-            {sending ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <Ionicons name="send" size={20} color="#FFF" />
-            )}
+            <Ionicons name="send" size={20} color="#FFF" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -474,6 +539,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
+  },
+  messageCardTemp: {
+    opacity: 0.7,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
   },
   messageHeader: {
     flexDirection: 'row',
