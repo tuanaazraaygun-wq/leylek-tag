@@ -298,7 +298,12 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       });
       const data = await response.json();
       if (data.success) {
-        socketRef.current?.emit('community_like', { message_id: messageId, likes_count: data.likes_count });
+        // Şehir bilgisi ile socket'e gönder
+        socketRef.current?.emit('community_like', { 
+          message_id: messageId, 
+          likes_count: data.likes_count,
+          city: selectedCity 
+        });
       }
     } catch {}
   };
