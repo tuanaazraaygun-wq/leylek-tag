@@ -238,7 +238,7 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin'>('login');
+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin' | 'community'>('login');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
