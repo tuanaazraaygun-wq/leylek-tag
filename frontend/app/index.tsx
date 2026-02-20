@@ -10447,12 +10447,165 @@ const styles = StyleSheet.create({
   // ==================== PREMIUM ROLE SELECTION STYLES ====================
   roleSelectionContainer: {
     flex: 1,
-    backgroundColor: '#F7F9FB', // Çok açık gri arka plan
+    backgroundColor: '#F7F9FB',
   },
   roleSelectionSafe: {
     flex: 1,
-    paddingHorizontal: 20,
   },
+  // Yeni kompakt stiller
+  roleTopBarCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  roleExitBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roleTopTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  roleAdminBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roleMainContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
+  roleCardsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 20,
+  },
+  roleCardCompact: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 24,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    position: 'relative',
+  },
+  roleCardSelected: {
+    borderColor: '#3FA9F5',
+    backgroundColor: '#F0F9FF',
+  },
+  roleIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F0F9FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  roleIconCircleActive: {
+    backgroundColor: '#3FA9F5',
+  },
+  roleCardLabel: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  roleCardLabelActive: {
+    color: '#3FA9F5',
+  },
+  roleCardDesc: {
+    fontSize: 13,
+    color: '#9CA3AF',
+  },
+  roleCheckBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#3FA9F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roleContinueBtnCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3FA9F5',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  roleContinueBtnDisabled: {
+    backgroundColor: '#D1D5DB',
+  },
+  roleSeparator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  roleSeparatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  roleSeparatorText: {
+    paddingHorizontal: 16,
+    fontSize: 13,
+    color: '#9CA3AF',
+  },
+  communityBtnCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: '#3FA9F5',
+  },
+  communityLogo: {
+    width: 50,
+    height: 50,
+  },
+  communityTextBox: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  communityBtnTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E5F8A',
+  },
+  communityBtnSub: {
+    fontSize: 13,
+    color: '#3FA9F5',
+    marginTop: 2,
+  },
+  communityArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3FA9F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Eski stiller (uyumluluk için)
   roleTopBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
