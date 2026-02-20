@@ -7157,6 +7157,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
             otherUserId={activeTag?.passenger_id}
             price={activeTag?.final_price}
+            offeredPrice={activeTag?.offered_price}
             routeInfo={activeTag?.route_info}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
