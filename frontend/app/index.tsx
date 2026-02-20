@@ -10652,6 +10652,37 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
+  // Community Button Styles
+  communityButton: {
+    marginTop: 20,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#3FA9F5',
+    overflow: 'hidden',
+  },
+  communityButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  communityButtonEmoji: {
+    fontSize: 32,
+  },
+  communityButtonTextContainer: {
+    flex: 1,
+  },
+  communityButtonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E5F8A',
+  },
+  communityButtonSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
   roleContinueButton: {
     marginTop: 40,
     marginBottom: 30,
