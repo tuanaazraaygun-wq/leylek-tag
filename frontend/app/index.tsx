@@ -6582,9 +6582,10 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         senderId: data.sender_id,
         timestamp: data.timestamp || Date.now(),
       });
-      // Bildirim göster (chat kapalıysa)
+      // 🔥 Chat kapalıysa otomatik aç + bildirim göster
       if (!driverChatVisible) {
-        Alert.alert('💬 Yeni Mesaj', `${data.sender_name}: ${data.message}`);
+        setDriverChatVisible(true); // Chat'i otomatik aç
+        Alert.alert('💬 Yeni Mesaj', `${data.sender_name || 'Yolcu'}: ${data.message}`);
       }
     },
     // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
