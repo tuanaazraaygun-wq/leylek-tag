@@ -4247,11 +4247,9 @@ class CalculatePriceRequest(BaseModel):
 @api_router.post("/price/calculate")
 async def calculate_price(request: CalculatePriceRequest):
     """
-    Leylek TAG Fiyat Hesaplama - YENİ SİSTEM
+    Leylek TAG Fiyat Hesaplama - DİNAMİK SİSTEM
     
-    1. Yolcu → Hedef mesafesi: 20-30 TL/km
-    2. Sürücü → Yolcu mesafesi: 10 TL/km (otomatik eklenir)
-    3. Minimum: 100 TL
+    Admin panelinden ayarlanabilir fiyatlar
     """
     try:
         # 1. Yolcu → Hedef mesafesi hesapla
@@ -4270,20 +4268,21 @@ async def calculate_price(request: CalculatePriceRequest):
         # Yoğun saat kontrolü
         peak = is_peak_hour()
         
-        # 2. Yolculuk fiyatı: 20-30 TL/km
+        # 2. DİNAMİK FİYATLANDIRMA - Admin ayarlarını kullan
         if peak:
-            min_price_per_km = 25  # Yoğun saatte biraz daha yüksek
-            max_price_per_km = 35
+            min_price_per_km = PRICING_SETTINGS["min_price_per_km_peak"]
+            max_price_per_km = PRICING_SETTINGS["max_price_per_km_peak"]
         else:
-            min_price_per_km = 20
-            max_price_per_km = 30
+            min_price_per_km = PRICING_SETTINGS["min_price_per_km_normal"]
+            max_price_per_km = PRICING_SETTINGS["max_price_per_km_normal"]
         
         # Yolculuk ücreti hesapla
         trip_min_price = round(trip_distance_km * min_price_per_km)
         trip_max_price = round(trip_distance_km * max_price_per_km)
         
-        # 3. Minimum 100 TL kuralı
-        min_price = max(100, trip_min_price)
+        # 3. Minimum fiyat kuralı (Admin ayarlarından)
+        minimum = PRICING_SETTINGS["minimum_price"]
+        min_price = max(minimum, trip_min_price)
         max_price = max(min_price + 20, trip_max_price)
         
         # Önerilen fiyat (ortası)
@@ -4302,7 +4301,7 @@ async def calculate_price(request: CalculatePriceRequest):
             "is_peak_hour": peak,
             "currency": "TL",
             "price_per_km_range": f"{min_price_per_km}-{max_price_per_km} TL/km",
-            "driver_pickup_price_per_km": 10  # Bilgi amaçlı
+            "driver_pickup_price_per_km": PRICING_SETTINGS["driver_pickup_per_km"]
         }
     except Exception as e:
         logger.error(f"❌ Price calculation error: {e}")
