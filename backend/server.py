@@ -4466,7 +4466,8 @@ async def create_community_message(msg: CommunityMessageCreate):
             "name": msg.name,
             "role": msg.role,
             "content": msg.content.strip(),
-            "likes_count": 0
+            "likes_count": 0,
+            "city": msg.city or "Genel"
         }
         
         response = supabase.table("community_messages").insert(data).execute()
