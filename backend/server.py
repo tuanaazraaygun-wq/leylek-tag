@@ -4175,12 +4175,6 @@ async def mark_messages_read(tag_id: str, user_id: str):
 
 # ==================== MARTI TAG - FİYAT HESAPLAMA ====================
 
-class CalculatePriceRequest(BaseModel):
-    pickup_lat: float
-    pickup_lng: float
-    dropoff_lat: float
-    dropoff_lng: float
-
 def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """İki nokta arası mesafe (km)"""
     import math
@@ -4212,6 +4206,7 @@ class CalculatePriceRequest(BaseModel):
     dropoff_lng: float
     driver_lat: Optional[float] = None  # Sürücü konumu (opsiyonel)
     driver_lng: Optional[float] = None
+
 
 @api_router.post("/price/calculate")
 async def calculate_price(request: CalculatePriceRequest):
