@@ -2214,7 +2214,7 @@ async def send_offer(
 
 @api_router.get("/driver/active-trip")
 async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
-    """Şoförün aktif yolculuğu"""
+    """Şoförün aktif yolculuğu - cancelled durumunu da kontrol et"""
     try:
         # driver_id veya user_id kabul et
         did = driver_id or user_id
@@ -2223,6 +2223,14 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
+        
+        # 🔥 ÖNCELİKLE cancelled durumundaki tag'i kontrol et
+        cancelled_result = supabase.table("tags").select("*").eq("driver_id", resolved_id).eq("status", "cancelled").order("created_at", desc=True).limit(1).execute()
+        
+        if cancelled_result.data:
+            tag = cancelled_result.data[0]
+            logger.info(f"🛑 Sürücü {resolved_id[:8]} için cancelled tag bulundu: {tag['id'][:8]}")
+            return {"success": True, "tag": tag, "trip": tag, "status": "cancelled"}
         
         result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
         
