@@ -10647,36 +10647,28 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  // Community Button Styles
-  communityButton: {
-    marginTop: 20,
-    backgroundColor: '#F0F9FF',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#3FA9F5',
-    overflow: 'hidden',
-  },
-  communityButtonContent: {
+  // Community Button Styles - Compact
+  communityButtonCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+    alignSelf: 'center',
   },
   communityButtonEmoji: {
-    fontSize: 32,
+    fontSize: 20,
   },
-  communityButtonTextContainer: {
-    flex: 1,
-  },
-  communityButtonTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  communityButtonTitleCompact: {
+    fontSize: 14,
+    fontWeight: '600',
     color: '#1E5F8A',
-  },
-  communityButtonSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
   },
   roleContinueButton: {
     marginTop: 40,
