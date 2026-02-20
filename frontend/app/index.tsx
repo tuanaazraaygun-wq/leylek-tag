@@ -6657,7 +6657,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     loadData();
     const interval = setInterval(() => {
       loadData();
-    }, 3000);
+    }, 1000); // Her 1 saniyede bir kontrol et - ANINDA
     return () => {
       console.log('🔄 Sürücü polling durduruldu');
       clearInterval(interval);
