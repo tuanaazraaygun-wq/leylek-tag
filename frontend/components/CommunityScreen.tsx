@@ -1,7 +1,6 @@
 /**
  * Leylek Muhabbeti (Community) Screen
- * Tamamen izole - mevcut sistemlere dokunmaz
- * v2 - ANINDA MESAJ (Optimistic UI)
+ * v3 - ŞEHİR BAZLI TOPLULUK + ANINDA MESAJ
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -19,11 +18,13 @@ import {
   Alert,
   Dimensions,
   RefreshControl,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Renkler
 const COLORS = {
@@ -40,6 +41,20 @@ const COLORS = {
   likeActive: '#DC2626',
 };
 
+// Türkiye şehirleri
+const CITIES = [
+  'Adana', 'Adıyaman', 'Afyonkarahisar', 'Ağrı', 'Aksaray', 'Amasya', 'Ankara', 'Antalya',
+  'Ardahan', 'Artvin', 'Aydın', 'Balıkesir', 'Bartın', 'Batman', 'Bayburt', 'Bilecik',
+  'Bingöl', 'Bitlis', 'Bolu', 'Burdur', 'Bursa', 'Çanakkale', 'Çankırı', 'Çorum',
+  'Denizli', 'Diyarbakır', 'Düzce', 'Edirne', 'Elazığ', 'Erzincan', 'Erzurum', 'Eskişehir',
+  'Gaziantep', 'Giresun', 'Gümüşhane', 'Hakkari', 'Hatay', 'Iğdır', 'Isparta', 'İstanbul',
+  'İzmir', 'Kahramanmaraş', 'Karabük', 'Karaman', 'Kars', 'Kastamonu', 'Kayseri', 'Kırıkkale',
+  'Kırklareli', 'Kırşehir', 'Kilis', 'Kocaeli', 'Konya', 'Kütahya', 'Malatya', 'Manisa',
+  'Mardin', 'Mersin', 'Muğla', 'Muş', 'Nevşehir', 'Niğde', 'Ordu', 'Osmaniye',
+  'Rize', 'Sakarya', 'Samsun', 'Siirt', 'Sinop', 'Sivas', 'Şanlıurfa', 'Şırnak',
+  'Tekirdağ', 'Tokat', 'Trabzon', 'Tunceli', 'Uşak', 'Van', 'Yalova', 'Yozgat', 'Zonguldak'
+];
+
 // Socket URL
 const SOCKET_URL = 'https://socket.leylektag.com';
 
@@ -52,7 +67,8 @@ interface CommunityMessage {
   content: string;
   likes_count: number;
   created_at: string;
-  _temp?: boolean; // Geçici mesaj flag'i
+  city?: string;
+  _temp?: boolean;
 }
 
 interface CommunityScreenProps {
@@ -60,15 +76,20 @@ interface CommunityScreenProps {
     id: string;
     name: string;
     role: string;
+    city?: string;
   };
   onBack: () => void;
   apiUrl: string;
 }
 
 export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScreenProps) {
+  const [selectedCity, setSelectedCity] = useState<string>(user.city || '');
+  const [showCityPicker, setShowCityPicker] = useState(!user.city);
+  const [citySearch, setCitySearch] = useState('');
+  
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -78,9 +99,16 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   const socketRef = useRef<Socket | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
+  // Filtrelenmiş şehirler
+  const filteredCities = CITIES.filter(city =>
+    city.toLowerCase().includes(citySearch.toLowerCase())
+  );
+
   // Socket bağlantısı
   useEffect(() => {
-    console.log('🐦 [Community] Socket bağlanıyor...');
+    if (!selectedCity) return;
+    
+    console.log('🐦 [Community] Socket bağlanıyor... Şehir:', selectedCity);
     
     const socket = io(SOCKET_URL, {
       path: '/socket.io',
@@ -92,25 +120,24 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
     socket.on('connect', () => {
       console.log('🐦 [Community] Socket bağlandı:', socket.id);
-      // Community'ye katıl
       socket.emit('community_join', {
         user_id: user.id,
         name: user.name,
         role: user.role,
+        city: selectedCity,
       });
     });
 
-    // YENİ MESAJ GELDİĞİNDE - ANINDA GÖSTER
+    // YENİ MESAJ - sadece aynı şehirden olanları göster
     socket.on('community_new_message', (data: CommunityMessage) => {
-      console.log('🐦 [Community] Yeni mesaj alındı:', data.name);
+      if (data.city !== selectedCity) return; // Farklı şehirse ignore
       
-      // Kendi mesajımız değilse ekle (kendi mesajımız zaten optimistic olarak eklendi)
+      console.log('🐦 [Community] Yeni mesaj:', data.name);
+      
       setMessages(prev => {
-        // Bu mesaj zaten var mı kontrol et (id veya temp_id ile)
         const exists = prev.some(m => m.id === data.id);
         if (exists) return prev;
         
-        // Geçici mesajı gerçek mesajla değiştir
         const tempIndex = prev.findIndex(m => m._temp && m.user_id === data.user_id && m.content === data.content);
         if (tempIndex !== -1) {
           const newMessages = [...prev];
@@ -118,7 +145,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           return newMessages;
         }
         
-        // Yeni mesaj ekle (en üste)
         return [data, ...prev];
       });
     });
@@ -139,23 +165,21 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       console.log('🐦 [Community] Socket bağlantısı kesildi');
     });
 
-    socket.on('connect_error', (error) => {
-      console.log('🐦 [Community] Socket bağlantı hatası:', error.message);
-    });
-
     socketRef.current = socket;
 
     return () => {
-      console.log('🐦 [Community] Socket kapatılıyor...');
       socket.emit('community_leave', { user_id: user.id });
       socket.disconnect();
     };
-  }, [user]);
+  }, [user, selectedCity]);
 
-  // Mesajları yükle
+  // Mesajları yükle - şehre göre
   const fetchMessages = useCallback(async () => {
+    if (!selectedCity) return;
+    
+    setLoading(true);
     try {
-      const response = await fetch(`${apiUrl}/community/messages?limit=50&offset=0`);
+      const response = await fetch(`${apiUrl}/community/messages?limit=50&offset=0&city=${encodeURIComponent(selectedCity)}`);
       const data = await response.json();
       
       if (data.success) {
@@ -167,13 +191,22 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiUrl]);
+  }, [apiUrl, selectedCity]);
 
   useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
+    if (selectedCity) {
+      fetchMessages();
+    }
+  }, [selectedCity, fetchMessages]);
 
-  // MESAJ GÖNDER - ANINDA GÖSTER (Optimistic UI)
+  // Şehir seç
+  const handleCitySelect = (city: string) => {
+    setSelectedCity(city);
+    setShowCityPicker(false);
+    setCitySearch('');
+  };
+
+  // MESAJ GÖNDER - ANINDA
   const handleSendMessage = async () => {
     const messageContent = newMessage.trim();
     if (!messageContent) return;
@@ -183,14 +216,13 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       return;
     }
 
-    // Anti-spam: 2 saniye bekleme (3'ten 2'ye düşürdüm)
     const now = Date.now();
     if (now - lastSentTime < 2000) {
       Alert.alert('Bekleyin', 'Çok hızlı gönderiyorsunuz');
       return;
     }
 
-    // 1. ANINDA EKRANDA GÖSTER (Optimistic)
+    // ANINDA GÖSTER
     const tempId = `temp_${Date.now()}`;
     const tempMessage: CommunityMessage = {
       id: tempId,
@@ -200,15 +232,15 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       content: messageContent,
       likes_count: 0,
       created_at: new Date().toISOString(),
-      _temp: true, // Geçici işareti
+      city: selectedCity,
+      _temp: true,
     };
 
-    // Mesajı HEMEN ekle
     setMessages(prev => [tempMessage, ...prev]);
-    setNewMessage(''); // Input'u temizle
+    setNewMessage('');
     setLastSentTime(now);
 
-    // 2. ARKA PLANDA API'YE KAYDET
+    // Arka planda kaydet
     try {
       const response = await fetch(`${apiUrl}/community/message`, {
         method: 'POST',
@@ -218,39 +250,33 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           name: user.name,
           role: user.role,
           content: messageContent,
+          city: selectedCity,
         }),
       });
 
       const data = await response.json();
 
       if (data.success && data.message) {
-        // 3. SOCKET İLE BROADCAST ET (diğer kullanıcılar görsün)
         socketRef.current?.emit('community_message', data.message);
-        
-        // Geçici mesajı gerçek ID ile güncelle
         setMessages(prev =>
           prev.map(msg =>
             msg.id === tempId ? { ...data.message, _temp: false } : msg
           )
         );
       } else {
-        // Hata durumunda geçici mesajı kaldır
         setMessages(prev => prev.filter(msg => msg.id !== tempId));
         Alert.alert('Hata', data.error || 'Mesaj gönderilemedi');
       }
     } catch (error) {
-      console.error('❌ [Community] Gönderme hatası:', error);
-      // Hata durumunda geçici mesajı kaldır
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       Alert.alert('Hata', 'Bağlantı hatası');
     }
   };
 
-  // Beğen - ANINDA
+  // Beğen
   const handleLike = async (messageId: string) => {
     if (likedMessages.has(messageId)) return;
 
-    // ANINDA UI güncelle
     setLikedMessages(prev => new Set([...prev, messageId]));
     setMessages(prev =>
       prev.map(msg =>
@@ -258,59 +284,38 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       )
     );
 
-    // Arka planda API'ye kaydet
     try {
       const response = await fetch(`${apiUrl}/community/like`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message_id: messageId,
-          user_id: user.id,
-        }),
+        body: JSON.stringify({ message_id: messageId, user_id: user.id }),
       });
-
       const data = await response.json();
-
       if (data.success) {
-        // Socket ile broadcast et
-        socketRef.current?.emit('community_like', {
-          message_id: messageId,
-          likes_count: data.likes_count,
-        });
+        socketRef.current?.emit('community_like', { message_id: messageId, likes_count: data.likes_count });
       }
     } catch (error) {
-      console.error('❌ [Community] Beğeni hatası:', error);
+      console.error('❌ Beğeni hatası:', error);
     }
   };
 
-  // Şikayet et
+  // Şikayet
   const handleReport = (messageId: string) => {
-    Alert.alert(
-      'Şikayet Et',
-      'Bu mesajı şikayet etmek istediğinize emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Şikayet Et',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await fetch(`${apiUrl}/community/report`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  message_id: messageId,
-                  reporter_id: user.id,
-                }),
-              });
-              Alert.alert('Teşekkürler', 'Şikayetiniz alındı');
-            } catch (error) {
-              console.error('❌ [Community] Şikayet hatası:', error);
-            }
-          },
+    Alert.alert('Şikayet Et', 'Bu mesajı şikayet etmek istiyor musunuz?', [
+      { text: 'İptal', style: 'cancel' },
+      {
+        text: 'Şikayet Et',
+        style: 'destructive',
+        onPress: async () => {
+          await fetch(`${apiUrl}/community/report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message_id: messageId, reporter_id: user.id }),
+          });
+          Alert.alert('Teşekkürler', 'Şikayetiniz alındı');
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // Zaman formatla
@@ -319,24 +324,15 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
     if (diffMins < 1) return 'Az önce';
-    if (diffMins < 60) return `${diffMins} dk önce`;
-    if (diffHours < 24) return `${diffHours} saat önce`;
-    if (diffDays < 7) return `${diffDays} gün önce`;
+    if (diffMins < 60) return `${diffMins} dk`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} saat`;
     return date.toLocaleDateString('tr-TR');
   };
 
-  // Kullanıcı baş harfleri
   const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
   // Mesaj kartı
@@ -347,7 +343,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
     return (
       <View style={[styles.messageCard, isTemp && styles.messageCardTemp]}>
-        {/* Profil ve İsim */}
         <View style={styles.messageHeader}>
           <View style={[styles.avatar, { backgroundColor: item.role === 'driver' ? COLORS.driverBadge : COLORS.passengerBadge }]}>
             <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
@@ -358,39 +353,21 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
               <View style={[styles.roleBadge, { backgroundColor: item.role === 'driver' ? COLORS.driverBadge : COLORS.passengerBadge }]}>
                 <Text style={styles.roleText}>{item.role === 'driver' ? 'Sürücü' : 'Yolcu'}</Text>
               </View>
-              {isTemp && (
-                <ActivityIndicator size="small" color={COLORS.primary} style={{ marginLeft: 8 }} />
-              )}
+              {isTemp && <ActivityIndicator size="small" color={COLORS.primary} style={{ marginLeft: 8 }} />}
             </View>
             <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
           </View>
         </View>
 
-        {/* İçerik */}
         <Text style={styles.messageContent}>{item.content}</Text>
 
-        {/* Aksiyonlar */}
         <View style={styles.messageActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleLike(item.id)}
-            disabled={isLiked || isTemp}
-          >
-            <Ionicons
-              name={isLiked ? 'heart' : 'heart-outline'}
-              size={20}
-              color={isLiked ? COLORS.likeActive : COLORS.textLight}
-            />
-            <Text style={[styles.actionText, isLiked && { color: COLORS.likeActive }]}>
-              {item.likes_count}
-            </Text>
+          <TouchableOpacity style={styles.actionButton} onPress={() => handleLike(item.id)} disabled={isLiked || isTemp}>
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={20} color={isLiked ? COLORS.likeActive : COLORS.textLight} />
+            <Text style={[styles.actionText, isLiked && { color: COLORS.likeActive }]}>{item.likes_count}</Text>
           </TouchableOpacity>
-
           {!isOwn && !isTemp && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => handleReport(item.id)}
-            >
+            <TouchableOpacity style={styles.actionButton} onPress={() => handleReport(item.id)}>
               <Ionicons name="flag-outline" size={18} color={COLORS.textLight} />
             </TouchableOpacity>
           )}
@@ -399,17 +376,59 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     );
   };
 
-  if (loading) {
+  // ŞEHİR SEÇİM MODAL
+  if (showCityPicker || !selectedCity) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Yükleniyor...</Text>
+        <View style={styles.cityPickerContainer}>
+          {/* Header */}
+          <View style={styles.cityPickerHeader}>
+            <TouchableOpacity onPress={onBack} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color={COLORS.secondary} />
+            </TouchableOpacity>
+            <Text style={styles.cityPickerTitle}>🐦 Leylek Muhabbeti</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Açıklama */}
+          <View style={styles.cityPickerInfo}>
+            <Ionicons name="location" size={40} color={COLORS.primary} />
+            <Text style={styles.cityPickerInfoTitle}>Şehir Seçin</Text>
+            <Text style={styles.cityPickerInfoText}>Hangi şehrin topluluğuna katılmak istiyorsunuz?</Text>
+          </View>
+
+          {/* Arama */}
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color={COLORS.textLight} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Şehir ara..."
+              placeholderTextColor={COLORS.textLight}
+              value={citySearch}
+              onChangeText={setCitySearch}
+            />
+          </View>
+
+          {/* Şehir listesi */}
+          <ScrollView style={styles.cityList} showsVerticalScrollIndicator={false}>
+            {filteredCities.map(city => (
+              <TouchableOpacity
+                key={city}
+                style={styles.cityItem}
+                onPress={() => handleCitySelect(city)}
+              >
+                <Ionicons name="location-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.cityItemText}>{city}</Text>
+                <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
       </SafeAreaView>
     );
   }
 
+  // ANA TOPLULUK SAYFASI
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -422,46 +441,52 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Ionicons name="arrow-back" size={24} color={COLORS.secondary} />
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>🐦 Leylek Muhabbeti</Text>
-            <Text style={styles.onlineCount}>{onlineCount} çevrimiçi</Text>
+          <TouchableOpacity style={styles.headerCenter} onPress={() => setShowCityPicker(true)}>
+            <Text style={styles.headerTitle}>🐦 {selectedCity}</Text>
+            <View style={styles.headerSubRow}>
+              <Text style={styles.headerSubtitle}>Topluluk</Text>
+              <Ionicons name="chevron-down" size={14} color={COLORS.primary} />
+            </View>
+          </TouchableOpacity>
+          <View style={styles.onlineContainer}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>{onlineCount}</Text>
           </View>
-          <View style={styles.headerRight} />
         </View>
 
-        {/* Mesaj Listesi */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                fetchMessages();
-              }}
-              colors={[COLORS.primary]}
-            />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubbles-outline" size={60} color={COLORS.textLight} />
-              <Text style={styles.emptyText}>Henüz mesaj yok</Text>
-              <Text style={styles.emptySubtext}>İlk mesajı sen yaz!</Text>
-            </View>
-          }
-        />
+        {/* Mesajlar */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Yükleniyor...</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMessages(); }} colors={[COLORS.primary]} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="chatbubbles-outline" size={60} color={COLORS.textLight} />
+                <Text style={styles.emptyText}>{selectedCity} topluluğunda</Text>
+                <Text style={styles.emptySubtext}>henüz mesaj yok. İlk mesajı sen yaz!</Text>
+              </View>
+            }
+          />
+        )}
 
         {/* Mesaj Giriş */}
         <View style={styles.inputContainer}>
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.input}
-              placeholder="Bir şeyler yaz..."
+              placeholder={`${selectedCity} topluluğuna yaz...`}
               placeholderTextColor={COLORS.textLight}
               value={newMessage}
               onChangeText={setNewMessage}
@@ -484,197 +509,86 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
+  container: { flex: 1, backgroundColor: COLORS.background },
+  
+  // City Picker
+  cityPickerContainer: { flex: 1, backgroundColor: COLORS.background },
+  cityPickerHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  cityPickerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.secondary },
+  cityPickerInfo: { alignItems: 'center', paddingVertical: 30, paddingHorizontal: 20 },
+  cityPickerInfoTitle: { fontSize: 22, fontWeight: '700', color: COLORS.secondary, marginTop: 12 },
+  cityPickerInfoText: { fontSize: 14, color: COLORS.textLight, marginTop: 6, textAlign: 'center' },
+  searchContainer: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg,
+    marginHorizontal: 16, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 10,
   },
-  loadingText: {
-    marginTop: 12,
-    color: COLORS.textLight,
-    fontSize: 14,
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.text },
+  cityList: { flex: 1, paddingHorizontal: 16, marginTop: 10 },
+  cityItem: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg,
+    paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, gap: 12,
   },
+  cityItemText: { flex: 1, fontSize: 16, fontWeight: '600', color: COLORS.text },
+
+  // Header
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.background,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerCenter: {
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.secondary,
-  },
-  onlineCount: {
-    fontSize: 12,
-    color: COLORS.passengerBadge,
-    marginTop: 2,
-  },
-  headerRight: {
-    width: 40,
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  messageCard: {
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  messageCardTemp: {
-    opacity: 0.7,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-  },
-  messageHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  headerInfo: {
-    marginLeft: 10,
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  userName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  roleText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  timeText: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginTop: 2,
-  },
-  messageContent: {
-    fontSize: 15,
-    color: COLORS.text,
-    lineHeight: 22,
-  },
+  backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  headerCenter: { alignItems: 'center', flex: 1 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.secondary },
+  headerSubRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  headerSubtitle: { fontSize: 12, color: COLORS.primary, fontWeight: '500' },
+  onlineContainer: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 8 },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.passengerBadge },
+  onlineText: { fontSize: 12, color: COLORS.passengerBadge, fontWeight: '600' },
+
+  // Loading
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, color: COLORS.textLight, fontSize: 14 },
+
+  // Messages
+  listContent: { padding: 12, paddingBottom: 90 },
+  messageCard: { backgroundColor: COLORS.cardBg, borderRadius: 12, padding: 12, marginBottom: 10 },
+  messageCardTemp: { opacity: 0.7, borderWidth: 1, borderColor: COLORS.primary, borderStyle: 'dashed' },
+  messageHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  avatar: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  headerInfo: { marginLeft: 10, flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  userName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  roleBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  roleText: { color: '#FFF', fontSize: 9, fontWeight: '600' },
+  timeText: { fontSize: 11, color: COLORS.textLight, marginTop: 2 },
+  messageContent: { fontSize: 14, color: COLORS.text, lineHeight: 20 },
   messageActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    gap: 20,
+    flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 8,
+    borderTopWidth: 1, borderTopColor: COLORS.border, gap: 16,
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  actionText: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    fontWeight: '500',
-  },
+  actionButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actionText: { fontSize: 12, color: COLORS.textLight, fontWeight: '500' },
+
+  // Input
   inputContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: 12,
-    backgroundColor: COLORS.background,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row',
+    alignItems: 'flex-end', padding: 10, backgroundColor: COLORS.background,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
   },
   inputWrapper: {
-    flex: 1,
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginRight: 10,
-    minHeight: 44,
-    maxHeight: 100,
+    flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8, marginRight: 8, minHeight: 42, maxHeight: 90,
   },
-  input: {
-    fontSize: 15,
-    color: COLORS.text,
-    maxHeight: 60,
-  },
-  charCount: {
-    fontSize: 10,
-    color: COLORS.textLight,
-    textAlign: 'right',
-    marginTop: 4,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonDisabled: {
-    backgroundColor: COLORS.border,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 100,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: COLORS.textLight,
-    marginTop: 4,
-  },
+  input: { fontSize: 14, color: COLORS.text, maxHeight: 55 },
+  charCount: { fontSize: 9, color: COLORS.textLight, textAlign: 'right', marginTop: 2 },
+  sendButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
+  sendButtonDisabled: { backgroundColor: COLORS.border },
+
+  // Empty
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
+  emptyText: { fontSize: 16, fontWeight: '600', color: COLORS.text, marginTop: 16 },
+  emptySubtext: { fontSize: 13, color: COLORS.textLight, marginTop: 4 },
 });
