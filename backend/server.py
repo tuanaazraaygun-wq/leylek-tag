@@ -1701,7 +1701,7 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
 
 @api_router.get("/passenger/active-tag")
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
-    """Aktif TAG getir"""
+    """Aktif TAG getir - cancelled durumunu da kontrol et"""
     try:
         # Arka planda inaktif TAG'leri temizle
         await auto_cleanup_inactive_tags()
@@ -1714,6 +1714,17 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
         
+        # 🔥 ÖNCELİKLE cancelled durumundaki tag'i kontrol et
+        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").order("created_at", desc=True).limit(1).execute()
+        
+        if cancelled_result.data:
+            tag = cancelled_result.data[0]
+            # Son 5 dakika içinde cancelled olduysa bildir
+            cancelled_at = tag.get("cancelled_at") or tag.get("created_at")
+            logger.info(f"🛑 Yolcu {resolved_id[:8]} için cancelled tag bulundu: {tag['id'][:8]}")
+            return {"success": True, "tag": tag, "status": "cancelled"}
+        
+        # Aktif tag'leri ara
         result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
         
         if result.data:
