@@ -10601,10 +10601,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   roleCardsContainer: {
+    gap: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  roleScrollView: {
     flex: 1,
-    justifyContent: 'center',
-    gap: 16,
-    paddingVertical: 16,
+  },
+  roleScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   roleCardPremium: {
     backgroundColor: '#FFFFFF',
