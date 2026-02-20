@@ -1516,68 +1516,6 @@ export default function App() {
       </View>
     );
   }
-            onPress={handleContinue}
-            disabled={!selectedRole}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={selectedRole ? ['#3FA9F5', '#3FA9F5'] : ['#BDC3C7', '#95A5A6']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.roleContinueGradient}
-            >
-              <Text style={styles.roleContinueText}>Devam Et</Text>
-              <Ionicons name="arrow-forward" size={24} color="#FFF" />
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Ayırıcı Çizgi */}
-          <View style={styles.roleDivider}>
-            <View style={styles.roleDividerLine} />
-            <Text style={styles.roleDividerText}>veya</Text>
-            <View style={styles.roleDividerLine} />
-          </View>
-
-          {/* Leylek Muhabbeti Butonu - Büyük ve Efektli */}
-          <TouchableOpacity
-            style={styles.communityButtonLarge}
-            onPress={() => setScreen('community')}
-            activeOpacity={0.8}
-          >
-            <View style={styles.communityButtonInnerLarge}>
-              <Image
-                source={require('../assets/images/leylek-splash.png')}
-                style={styles.communityLeylekLogo}
-                resizeMode="contain"
-              />
-              <View style={styles.communityTextContainerLarge}>
-                <Text style={styles.communityTitleLarge}>Leylek Muhabbeti</Text>
-                <Text style={styles.communitySubtitleLarge}>Şehir Topluluğuna Katıl</Text>
-              </View>
-              <View style={styles.communityArrowCircle}>
-                <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
-              </View>
-            </View>
-          </TouchableOpacity>
-          
-            {/* Admin Butonu ScrollView içinde */}
-            {isAdmin && (
-              <TouchableOpacity
-                style={styles.adminButton}
-                onPress={() => setShowAdminPanel(true)}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={['#F59E0B', '#D97706']}
-                  style={styles.adminButtonGradient}
-                >
-                  <Ionicons name="shield-checkmark" size={22} color="#FFF" />
-                  <Text style={styles.adminButtonText}>Admin Paneli</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-        </SafeAreaView>
         
         {/* Admin Panel Modal - TAM EKRAN */}
         <Modal
