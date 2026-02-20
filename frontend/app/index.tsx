@@ -1556,15 +1556,27 @@ export default function App() {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Leylek Muhabbeti - Alt kısımda */}
+          {/* Ayırıcı Çizgi */}
+          <View style={styles.roleDivider}>
+            <View style={styles.roleDividerLine} />
+            <Text style={styles.roleDividerText}>veya</Text>
+            <View style={styles.roleDividerLine} />
+          </View>
+
+          {/* Leylek Muhabbeti Butonu - Simetrik */}
           <TouchableOpacity
-            style={styles.communityButtonCompact}
+            style={styles.communityButtonSymmetric}
             onPress={() => setScreen('community')}
             activeOpacity={0.7}
           >
-            <Text style={styles.communityButtonEmoji}>🐦</Text>
-            <Text style={styles.communityButtonTitleCompact}>Leylek Muhabbeti</Text>
-            <Ionicons name="chevron-forward" size={18} color="#3FA9F5" />
+            <View style={styles.communityButtonInner}>
+              <Text style={styles.communityEmoji}>🐦</Text>
+              <View style={styles.communityTextContainer}>
+                <Text style={styles.communityTitle}>Leylek Muhabbeti</Text>
+                <Text style={styles.communitySubtitle}>Şehir topluluğuna katıl</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color="#3FA9F5" />
+            </View>
           </TouchableOpacity>
           
           {/* Admin Butonu - Sadece adminler için */}
