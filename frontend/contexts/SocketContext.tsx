@@ -329,32 +329,62 @@ export function SocketProvider({ children }: SocketProviderProps) {
   }, []);
 
   // ══════════════════════════════════════════════════════════════════
-  // APP STATE - Arka plan / Ön plan
+  // APP STATE - Arka plan / Ön plan - 🔥 GELİŞTİRİLMİŞ
   // ══════════════════════════════════════════════════════════════════
   
   useEffect(() => {
+    let backgroundTimer: NodeJS.Timeout | null = null;
+    let lastActiveTime = Date.now();
+    
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      const socket = socketRef.current;
+      
       if (nextAppState === 'active') {
-        console.log('📱 [SocketProvider] App aktif');
-        const socket = socketRef.current;
+        console.log('📱 [SocketProvider] App aktif oldu');
+        
+        // Arka plan timer'ını temizle
+        if (backgroundTimer) {
+          clearTimeout(backgroundTimer);
+          backgroundTimer = null;
+        }
+        
+        const backgroundDuration = Date.now() - lastActiveTime;
+        console.log(`📱 [SocketProvider] Arka planda ${Math.round(backgroundDuration / 1000)} saniye kaldı`);
+        
         if (socket) {
-          if (socket.connected) {
-            // Re-register
-            if (userIdRef.current && userRoleRef.current) {
-              console.log('📱 [SocketProvider] Re-register:', userIdRef.current);
+          if (!socket.connected) {
+            // 🔥 Bağlı değilse HEMEN bağlan
+            console.log('🔄 [SocketProvider] Socket bağlı değil, bağlanıyor...');
+            socket.connect();
+          } else {
+            // 🔥 Bağlıysa bile 30 saniyeden fazla arka plandaysa yeniden register ol
+            if (backgroundDuration > 30000 && userIdRef.current && userRoleRef.current) {
+              console.log('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');
               socket.emit('register', { user_id: userIdRef.current, role: userRoleRef.current });
             }
-          } else {
-            // Reconnect
-            console.log('📱 [SocketProvider] Reconnecting...');
-            socket.connect();
           }
         }
+        
+        lastActiveTime = Date.now();
+        
+      } else if (nextAppState === 'background') {
+        console.log('📱 [SocketProvider] App arka plana alındı');
+        lastActiveTime = Date.now();
+        
+        // 🔥 Arka planda 2 dakikadan fazla kalırsa socket'i koru ama periodic ping at
+        // (Socket'i kapatmıyoruz - sadece izliyoruz)
+        
+      } else if (nextAppState === 'inactive') {
+        console.log('📱 [SocketProvider] App inactive');
+        // iOS'ta geçici durum - bir şey yapma
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      if (backgroundTimer) clearTimeout(backgroundTimer);
+    };
   }, []);
 
   // ══════════════════════════════════════════════════════════════════
