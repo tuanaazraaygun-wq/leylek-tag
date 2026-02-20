@@ -1714,13 +1714,12 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
         
-        # 🔥 ÖNCELİKLE cancelled durumundaki tag'i kontrol et
-        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").order("created_at", desc=True).limit(1).execute()
+        # 🔥 ÖNCELİKLE SON 2 DAKİKA İÇİNDE cancelled durumundaki tag'i kontrol et
+        two_minutes_ago = (datetime.utcnow() - timedelta(minutes=2)).isoformat()
+        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gt("cancelled_at", two_minutes_ago).order("created_at", desc=True).limit(1).execute()
         
         if cancelled_result.data:
             tag = cancelled_result.data[0]
-            # Son 5 dakika içinde cancelled olduysa bildir
-            cancelled_at = tag.get("cancelled_at") or tag.get("created_at")
             logger.info(f"🛑 Yolcu {resolved_id[:8]} için cancelled tag bulundu: {tag['id'][:8]}")
             return {"success": True, "tag": tag, "status": "cancelled"}
         
