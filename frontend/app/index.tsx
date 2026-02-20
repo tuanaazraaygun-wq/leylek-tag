@@ -1569,9 +1569,7 @@ export default function App() {
             onPress={() => setScreen('community')}
             activeOpacity={0.8}
           >
-            <Animated.View style={[styles.communityButtonInnerLarge, {
-              transform: [{ scale: pulseAnim }]
-            }]}>
+            <View style={styles.communityButtonInnerLarge}>
               <Image
                 source={require('../assets/images/leylek-splash.png')}
                 style={styles.communityLeylekLogo}
@@ -1584,7 +1582,7 @@ export default function App() {
               <View style={styles.communityArrowCircle}>
                 <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
               </View>
-            </Animated.View>
+            </View>
           </TouchableOpacity>
           
           {/* Admin Butonu - Sadece adminler için */}
