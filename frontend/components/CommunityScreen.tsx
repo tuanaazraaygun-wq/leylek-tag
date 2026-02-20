@@ -128,12 +128,14 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   useEffect(() => {
     if (!selectedCity) return;
     
-    const socket = io(SOCKET_URL, {
+    // /community namespace'ine bağlan - ŞEHİR BAZLI FİLTRELEME
+    const socket = io(`${SOCKET_URL}/community`, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
     });
 
     socket.on('connect', () => {
+      console.log('[Community] Socket bağlandı, şehir:', selectedCity);
       socket.emit('community_join', {
         user_id: user.id,
         name: getFirstName(user.name),
@@ -143,7 +145,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     });
 
     socket.on('community_new_message', (data: CommunityMessage) => {
-      if (data.city !== selectedCity) return;
+      // Sunucu zaten şehir bazlı filtreleme yapıyor, ekstra kontrol güvenlik için
+      if (data.city && data.city !== selectedCity) return;
       
       setMessages(prev => {
         const exists = prev.some(m => m.id === data.id);
@@ -173,7 +176,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     socketRef.current = socket;
 
     return () => {
-      socket.emit('community_leave', { user_id: user.id });
+      // Şehir bilgisi ile çık
+      socket.emit('community_leave', { user_id: user.id, city: selectedCity });
       socket.disconnect();
     };
   }, [user, selectedCity]);
