@@ -1516,22 +1516,6 @@ export default function App() {
       </View>
     );
   }
-        
-        {/* Admin Panel Modal - TAM EKRAN */}
-        <Modal
-          visible={showAdminPanel}
-          animationType="slide"
-          presentationStyle="fullScreen"
-          onRequestClose={() => setShowAdminPanel(false)}
-        >
-          <AdminPanel 
-            adminPhone={user?.phone?.replace(/\D/g, '') || ''} 
-            onClose={() => setShowAdminPanel(false)} 
-          />
-        </Modal>
-      </View>
-    );
-  }
 
   // Dashboard
   if (user && screen === 'dashboard') {
