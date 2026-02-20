@@ -32,50 +32,98 @@ function getOrCreateSocket(): Socket {
     console.log('🔌 [SocketContext] Singleton socket oluşturuluyor...');
     singletonSocket = io(SOCKET_URL, {
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
+      transports: ['websocket', 'polling'],  // WebSocket öncelikli, polling fallback
       forceNew: false,
       reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 20000,
-      autoConnect: false, // Manuel bağlanacağız
+      reconnectionAttempts: Infinity,       // Sonsuz deneme
+      reconnectionDelay: 500,               // 🔥 Daha hızlı başla (0.5 saniye)
+      reconnectionDelayMax: 3000,           // 🔥 Max 3 saniye bekle
+      randomizationFactor: 0.3,             // Rastgelelik ekle
+      timeout: 30000,                       // 🔥 30 saniye timeout
+      autoConnect: true,                    // 🔥 HEMEN BAĞLAN - bekletme!
     });
+    
+    let reconnectAttempts = 0;
     
     // Temel bağlantı logları
     singletonSocket.on('connect', () => {
       console.log('✅ [SocketContext] Socket bağlandı:', singletonSocket?.id);
+      reconnectAttempts = 0; // Reset
       
-      // 🔥 PING mekanizması - bağlantıyı canlı tut
+      // 🔥 HEARTBEAT mekanizması - bağlantıyı canlı tut
       if (pingInterval) clearInterval(pingInterval);
       pingInterval = setInterval(() => {
         if (singletonSocket?.connected) {
-          singletonSocket.emit('ping_keepalive');
+          singletonSocket.emit('heartbeat', { timestamp: Date.now() });
         }
-      }, 25000); // Her 25 saniyede ping
+      }, 20000); // Her 20 saniyede heartbeat
     });
     
     singletonSocket.on('disconnect', (reason) => {
       console.log('⚠️ [SocketContext] Socket koptu:', reason);
-      // 🔥 Hemen yeniden bağlan
-      if (reason === 'io server disconnect' || reason === 'transport close') {
-        console.log('🔄 [SocketContext] Otomatik yeniden bağlanıyor...');
-        setTimeout(() => {
-          singletonSocket?.connect();
-        }, 1000);
+      
+      // Heartbeat'i durdur
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
       }
+      
+      // 🔥 Agresif yeniden bağlanma stratejisi
+      if (reason === 'io server disconnect') {
+        // Server bizi attı - hemen bağlan
+        console.log('🔄 [SocketContext] Server disconnect - hemen bağlanılıyor...');
+        singletonSocket?.connect();
+      } else if (reason === 'transport close' || reason === 'transport error') {
+        // Transport sorunu - kademeli bekleme
+        reconnectAttempts++;
+        const delay = Math.min(500 * reconnectAttempts, 3000);
+        console.log(`🔄 [SocketContext] Transport error - ${delay}ms sonra bağlanılıyor (attempt: ${reconnectAttempts})`);
+        setTimeout(() => {
+          if (singletonSocket && !singletonSocket.connected) {
+            singletonSocket.connect();
+          }
+        }, delay);
+      } else if (reason === 'ping timeout') {
+        // Ping timeout - hemen bağlan
+        console.log('🔄 [SocketContext] Ping timeout - hemen bağlanılıyor...');
+        singletonSocket?.connect();
+      }
+      // 'io client disconnect' durumunda otomatik bağlanmıyoruz (kullanıcı kasten kapattı)
     });
     
     singletonSocket.on('reconnect', (attemptNumber) => {
       console.log('🔄 [SocketContext] Reconnect başarılı, attempt:', attemptNumber);
+      reconnectAttempts = 0;
+    });
+    
+    singletonSocket.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`🔄 [SocketContext] Reconnect deneme #${attemptNumber}`);
+    });
+    
+    singletonSocket.on('reconnect_error', (error) => {
+      console.error('❌ [SocketContext] Reconnect hatası:', error.message);
     });
     
     singletonSocket.on('connect_error', (error) => {
       console.error('❌ [SocketContext] Bağlantı hatası:', error.message);
+      // 🔥 Bağlantı hatası durumunda transport'u değiştir
+      if (singletonSocket) {
+        const currentTransport = singletonSocket.io.opts.transports;
+        if (currentTransport && currentTransport[0] === 'websocket') {
+          console.log('🔄 [SocketContext] Polling\'e geçiliyor...');
+          // Polling'i öne al
+          singletonSocket.io.opts.transports = ['polling', 'websocket'];
+        }
+      }
     });
     
     singletonSocket.on('registered', (data) => {
       console.log('✅ [SocketContext] Kayıt başarılı:', data);
+    });
+    
+    // 🔥 Server'dan pong gelirse logla
+    singletonSocket.on('pong_keepalive', () => {
+      // Sessiz - sadece bağlantı canlı
     });
   }
   return singletonSocket;
