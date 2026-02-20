@@ -547,11 +547,17 @@ export default function LiveMapView({
                   <Text style={styles.nearBadgeText}>YAKIN!</Text>
                 </View>
               )}
+              {/* 💰 TEKLİF FİYATI - SAĞ ÜSTTE BELİRGİN */}
+              {offeredPrice && (
+                <View style={styles.offeredPriceBadge}>
+                  <Text style={styles.offeredPriceText}>₺{offeredPrice}</Text>
+                </View>
+              )}
             </View>
           )}
           
-          {/* Fiyat */}
-          {price && (
+          {/* Fiyat - Eğer offeredPrice yoksa eski fiyatı göster */}
+          {price && !offeredPrice && (
             <View style={styles.priceRow}>
               <Text style={styles.priceLabel}>Ücret:</Text>
               <Text style={styles.priceValue}>₺{price}</Text>
