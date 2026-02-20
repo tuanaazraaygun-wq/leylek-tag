@@ -4405,6 +4405,134 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
         logger.error(f"❌ Get available offers error: {e}")
         return {"success": False, "error": str(e), "offers": []}
 
+# ==================== LEYLEK MUHABBETİ (COMMUNITY) ====================
+# Tamamen izole modül - mevcut sistemlere dokunmaz
+
+# Community Pydantic modelleri
+class CommunityMessageCreate(BaseModel):
+    user_id: str
+    name: str
+    role: str  # 'passenger' veya 'driver'
+    content: str  # max 300 karakter
+
+class CommunityLikeRequest(BaseModel):
+    message_id: str
+    user_id: str
+
+class CommunityReportRequest(BaseModel):
+    message_id: str
+    reporter_id: str
+    reason: Optional[str] = None
+
+@api_router.get("/community/messages")
+async def get_community_messages(limit: int = 50, offset: int = 0):
+    """Son mesajları getir (sayfalama destekli)"""
+    try:
+        response = supabase.table("community_messages")\
+            .select("*")\
+            .order("created_at", desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+        
+        return {"success": True, "messages": response.data, "count": len(response.data)}
+    except Exception as e:
+        logger.error(f"❌ Community messages error: {e}")
+        return {"success": False, "messages": [], "error": str(e)}
+
+@api_router.post("/community/message")
+async def create_community_message(msg: CommunityMessageCreate):
+    """Yeni mesaj oluştur"""
+    try:
+        # İçerik kontrolü
+        if len(msg.content) > 300:
+            return {"success": False, "error": "Mesaj 300 karakterden uzun olamaz"}
+        
+        if len(msg.content.strip()) == 0:
+            return {"success": False, "error": "Mesaj boş olamaz"}
+        
+        # Basit küfür filtresi
+        bad_words = ["küfür1", "küfür2"]  # Admin paneli ile genişletilebilir
+        content_lower = msg.content.lower()
+        for word in bad_words:
+            if word in content_lower:
+                return {"success": False, "error": "Uygunsuz içerik tespit edildi"}
+        
+        # Veritabanına ekle
+        data = {
+            "user_id": msg.user_id,
+            "name": msg.name,
+            "role": msg.role,
+            "content": msg.content.strip(),
+            "likes_count": 0
+        }
+        
+        response = supabase.table("community_messages").insert(data).execute()
+        
+        if response.data:
+            return {"success": True, "message": response.data[0]}
+        else:
+            return {"success": False, "error": "Mesaj kaydedilemedi"}
+    except Exception as e:
+        logger.error(f"❌ Community message create error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.post("/community/like")
+async def like_community_message(req: CommunityLikeRequest):
+    """Mesajı beğen"""
+    try:
+        # Önce mevcut likes_count'u al
+        response = supabase.table("community_messages")\
+            .select("likes_count")\
+            .eq("id", req.message_id)\
+            .single()\
+            .execute()
+        
+        if not response.data:
+            return {"success": False, "error": "Mesaj bulunamadı"}
+        
+        current_likes = response.data.get("likes_count", 0)
+        new_likes = current_likes + 1
+        
+        # Güncelle
+        update_response = supabase.table("community_messages")\
+            .update({"likes_count": new_likes})\
+            .eq("id", req.message_id)\
+            .execute()
+        
+        return {"success": True, "likes_count": new_likes}
+    except Exception as e:
+        logger.error(f"❌ Community like error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.post("/community/report")
+async def report_community_message(req: CommunityReportRequest):
+    """Mesajı şikayet et"""
+    try:
+        # Şikayeti logla (admin paneli eklenince işlenecek)
+        logger.warning(f"⚠️ COMMUNITY REPORT: Message {req.message_id} reported by {req.reporter_id}. Reason: {req.reason}")
+        
+        # Gelecekte: community_reports tablosuna kaydet
+        return {"success": True, "message": "Şikayet alındı"}
+    except Exception as e:
+        logger.error(f"❌ Community report error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.delete("/community/message/{message_id}")
+async def delete_community_message(message_id: str, user_id: str):
+    """Kendi mesajını sil"""
+    try:
+        # Sadece kendi mesajını silebilir
+        response = supabase.table("community_messages")\
+            .delete()\
+            .eq("id", message_id)\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"❌ Community delete error: {e}")
+        return {"success": False, "error": str(e)}
+
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
 app.include_router(api_router)
