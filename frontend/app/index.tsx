@@ -5546,6 +5546,7 @@ function PassengerDashboard({
                   otherUserName={activeTag?.driver_name || 'Şoför'}
                   otherUserId={activeTag?.driver_id}
                   price={activeTag?.final_price}
+                  offeredPrice={activeTag?.offered_price}
                   routeInfo={activeTag?.route_info}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
