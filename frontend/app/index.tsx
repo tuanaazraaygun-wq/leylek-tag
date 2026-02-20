@@ -1497,57 +1497,25 @@ export default function App() {
               </View>
             </TouchableOpacity>
           </View>
-
-          {/* Admin Modal */}
-          {isAdmin && (
-
-            {/* Sürücü Kartı */}
-            <TouchableOpacity
-              style={[
-                styles.roleCardPremium,
-                selectedRole === 'driver' && styles.roleCardPremiumSelected
-              ]}
-              onPress={() => handleRoleSelect('driver')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.roleCardContent}>
-                <View style={styles.roleCardIconContainer}>
-                  <Ionicons 
-                    name="car-sport-outline" 
-                    size={40} 
-                    color={selectedRole === 'driver' ? '#3FA9F5' : '#7F8C8D'} 
-                  />
-                  <Ionicons 
-                    name="options" 
-                    size={24} 
-                    color={selectedRole === 'driver' ? '#3FA9F5' : '#7F8C8D'}
-                    style={styles.roleCardIconOverlay}
-                  />
-                </View>
-                <Text style={[
-                  styles.roleCardTitle,
-                  selectedRole === 'driver' && styles.roleCardTitleSelected
-                ]}>
-                  Sürücü
-                </Text>
-                <Text style={styles.roleCardDescription}>
-                  Yolculuk teklifleri ver
-                </Text>
-                {selectedRole === 'driver' && (
-                  <View style={styles.roleCardCheckmark}>
-                    <Ionicons name="checkmark-circle" size={28} color="#3FA9F5" />
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Devam Et Butonu */}
-          <TouchableOpacity
-            style={[
-              styles.roleContinueButton,
-              !selectedRole && styles.roleContinueButtonDisabled
-            ]}
+        </SafeAreaView>
+        
+        {/* Admin Panel Modal */}
+        {isAdmin && (
+          <Modal
+            visible={showAdminPanel}
+            animationType="slide"
+            presentationStyle="fullScreen"
+            onRequestClose={() => setShowAdminPanel(false)}
+          >
+            <AdminPanel 
+              adminPhone={user?.phone?.replace(/\D/g, '') || ''} 
+              onClose={() => setShowAdminPanel(false)} 
+            />
+          </Modal>
+        )}
+      </View>
+    );
+  }
             onPress={handleContinue}
             disabled={!selectedRole}
             activeOpacity={0.8}
