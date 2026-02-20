@@ -1533,22 +1533,6 @@ export default function App() {
                 )}
               </View>
             </TouchableOpacity>
-
-            {/* Leylek Muhabbeti Butonu */}
-            <TouchableOpacity
-              style={styles.communityButton}
-              onPress={() => setScreen('community')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.communityButtonContent}>
-                <Text style={styles.communityButtonEmoji}>🐦</Text>
-                <View style={styles.communityButtonTextContainer}>
-                  <Text style={styles.communityButtonTitle}>Leylek Muhabbeti</Text>
-                  <Text style={styles.communityButtonSubtitle}>Topluluk sohbetine katıl</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={24} color="#3FA9F5" />
-              </View>
-            </TouchableOpacity>
           </View>
 
           {/* Devam Et Butonu */}
@@ -1570,6 +1554,17 @@ export default function App() {
               <Text style={styles.roleContinueText}>Devam Et</Text>
               <Ionicons name="arrow-forward" size={24} color="#FFF" />
             </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Leylek Muhabbeti - Alt kısımda */}
+          <TouchableOpacity
+            style={styles.communityButtonCompact}
+            onPress={() => setScreen('community')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.communityButtonEmoji}>🐦</Text>
+            <Text style={styles.communityButtonTitleCompact}>Leylek Muhabbeti</Text>
+            <Ionicons name="chevron-forward" size={18} color="#3FA9F5" />
           </TouchableOpacity>
           
           {/* Admin Butonu - Sadece adminler için */}
