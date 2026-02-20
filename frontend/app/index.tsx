@@ -1563,20 +1563,28 @@ export default function App() {
             <View style={styles.roleDividerLine} />
           </View>
 
-          {/* Leylek Muhabbeti Butonu - Simetrik */}
+          {/* Leylek Muhabbeti Butonu - Büyük ve Efektli */}
           <TouchableOpacity
-            style={styles.communityButtonSymmetric}
+            style={styles.communityButtonLarge}
             onPress={() => setScreen('community')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <View style={styles.communityButtonInner}>
-              <Text style={styles.communityEmoji}>🐦</Text>
-              <View style={styles.communityTextContainer}>
-                <Text style={styles.communityTitle}>Leylek Muhabbeti</Text>
-                <Text style={styles.communitySubtitle}>Şehir topluluğuna katıl</Text>
+            <Animated.View style={[styles.communityButtonInnerLarge, {
+              transform: [{ scale: pulseAnim }]
+            }]}>
+              <Image
+                source={require('../assets/images/leylek-splash.png')}
+                style={styles.communityLeylekLogo}
+                resizeMode="contain"
+              />
+              <View style={styles.communityTextContainerLarge}>
+                <Text style={styles.communityTitleLarge}>Leylek Muhabbeti</Text>
+                <Text style={styles.communitySubtitleLarge}>Şehir Topluluğuna Katıl</Text>
               </View>
-              <Ionicons name="chevron-forward" size={22} color="#3FA9F5" />
-            </View>
+              <View style={styles.communityArrowCircle}>
+                <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
+              </View>
+            </Animated.View>
           </TouchableOpacity>
           
           {/* Admin Butonu - Sadece adminler için */}
