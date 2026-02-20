@@ -1533,6 +1533,22 @@ export default function App() {
                 )}
               </View>
             </TouchableOpacity>
+
+            {/* Leylek Muhabbeti Butonu */}
+            <TouchableOpacity
+              style={styles.communityButton}
+              onPress={() => setScreen('community')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.communityButtonContent}>
+                <Text style={styles.communityButtonEmoji}>🐦</Text>
+                <View style={styles.communityButtonTextContainer}>
+                  <Text style={styles.communityButtonTitle}>Leylek Muhabbeti</Text>
+                  <Text style={styles.communityButtonSubtitle}>Topluluk sohbetine katıl</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#3FA9F5" />
+              </View>
+            </TouchableOpacity>
           </View>
 
           {/* Devam Et Butonu */}
