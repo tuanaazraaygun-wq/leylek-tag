@@ -132,10 +132,13 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     const socket = io(`${SOCKET_URL}/community`, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
     socket.on('connect', () => {
-      console.log('[Community] Socket bağlandı, şehir:', selectedCity);
+      console.log('[Community] ✅ Socket bağlandı, şehir:', selectedCity);
       socket.emit('community_join', {
         user_id: user.id,
         name: getFirstName(user.name),
@@ -144,7 +147,16 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       });
     });
 
+    socket.on('connect_error', (error) => {
+      console.log('[Community] ❌ Bağlantı hatası:', error.message);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('[Community] ⚠️ Bağlantı kesildi:', reason);
+    });
+
     socket.on('community_new_message', (data: CommunityMessage) => {
+      console.log('[Community] 📩 Yeni mesaj geldi:', data.content?.substring(0, 30));
       // Sunucu zaten şehir bazlı filtreleme yapıyor, ekstra kontrol güvenlik için
       if (data.city && data.city !== selectedCity) return;
       
