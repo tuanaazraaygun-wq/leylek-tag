@@ -563,3 +563,40 @@ agent_communication:
       ### ✅ CONCLUSION:
       **ALL CRITICAL BACKEND APIS ARE WORKING CORRECTLY**
       The Supabase realtime integration is functioning as expected with significant performance improvements.
+
+  - agent: "main"
+    message: |
+      ## ŞEHİR BAZLI FİLTRELEME SORUNU ÇÖZÜLDÜ - Şubat 2025
+      
+      ### SORUN:
+      Kullanıcı raporuna göre Ankara'da yazılan mesajlar Adana'da da görünüyordu.
+      
+      ### KÖK NEDEN ANALİZİ:
+      1. ✅ Backend API doğru çalışıyordu (şehir parametresi ile filtreleme yapılıyor)
+      2. ❌ Socket sunucusu (`socket_server.py`) community mesajlarını TÜM kullanıcılara yayınlıyordu
+      3. ❌ Frontend varsayılan namespace'e bağlanıyordu, `/community` namespace'ine değil
+      
+      ### YAPILAN DÜZELTMELER:
+      
+      #### 1. Socket Sunucusu (VPS: /opt/leylek-socket/socket_server.py) - v11.5
+      - `community_city_users` dictionary: Kullanıcıları şehir bazlı takip eder
+      - `enter_room(sid, f"city_{city}")`: Kullanıcıyı şehir odasına ekler
+      - `self.emit(..., room=room_name)`: Mesajları SADECE o şehirdeki kullanıcılara gönderir
+      - `on_community_leave` şehir parametresi eklendi
+      
+      #### 2. Frontend (CommunityScreen.tsx)
+      - Socket URL `/community` namespace'ine bağlanacak şekilde düzeltildi
+      - `community_leave` event'ine şehir bilgisi eklendi
+      - `community_like` event'ine şehir bilgisi eklendi
+      
+      ### TEST:
+      - Ankara API çağrısı: ✅ Sadece Ankara mesajları döndü
+      - Adana API çağrısı: ✅ Sadece Adana mesajları döndü
+      - Socket servisi yeniden başlatıldı: ✅ v11.5 çalışıyor
+      
+      ### DEĞİŞEN DOSYALAR:
+      - /opt/leylek-socket/socket_server.py (VPS)
+      - /app/frontend/components/CommunityScreen.tsx
+      
+      ### SONUÇ:
+      Şehir bazlı filtreleme artık hem API hem de real-time socket seviyesinde çalışıyor.
