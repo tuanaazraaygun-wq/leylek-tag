@@ -6589,7 +6589,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
     onTripForceEnded: (data) => {
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ:', data);
-      // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE
+      
+      // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE - Her halükarda bitirilecek
       setActiveTag(null);
       setRequests([]);
       setDailyCallActive(false);
@@ -6599,28 +6600,47 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       setOutgoingCallData(null);
       setDriverChatVisible(false);
       setDriverEndTripModalVisible(false);
+      
       // ROL SEÇİM EKRANINA GİT
       setScreen('role-select');
       
-      // 🔥 KARŞI TARAFA BİLDİRİM
+      // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
       const enderType = data.ender_type;
+      const enderId = data.ender_id;
+      const tagId = data.tag_id;
+      
       if (enderType === 'passenger') {
-        // Yolcu bitirdi - Sürücüye bildirim
+        // Yolcu bitirdi - Sürücüye onay sor
         Alert.alert(
-          '⚠️ Yolculuk Bitirildi',
-          'Yolcu eşleşmeyi zorla bitirdi.\nYolcuya -5 puan uygulandı.',
+          '⚠️ Yolcu Eşleşmeyi Bitirdi',
+          'Yolcu yolculuğu sonlandırdı.\nBu işlemi onaylıyor musunuz?',
           [
-            { text: 'Şikayet Et', onPress: () => {
-              // WhatsApp destek aç
-              const phoneNumber = '905326497412';
-              const message = `Şikayet: Yolcu eşleşmeyi zorla bitirdi. Tag ID: ${data.tag_id}`;
-              Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
-            }},
-            { text: 'Tamam', style: 'default' }
-          ]
+            { 
+              text: 'Onaylıyorum (0 puan)', 
+              style: 'default',
+              onPress: async () => {
+                // Onay - Yolcuya 0 puan
+                try {
+                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
+                } catch (e) { console.log('Onay gönderilemedi:', e); }
+              }
+            },
+            { 
+              text: 'Onaylamıyorum (-5 puan)', 
+              style: 'destructive',
+              onPress: async () => {
+                // Red - Yolcuya -5 puan
+                try {
+                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
+                } catch (e) { console.log('Red gönderilemedi:', e); }
+              }
+            }
+          ],
+          { cancelable: false }
         );
       } else {
-        Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme zorla sonlandırıldı.');
+        // Sürücü bitirdi - Bu sürücü tarafı, sadece bilgi
+        Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme sonlandırıldı.');
       }
     },
   });
