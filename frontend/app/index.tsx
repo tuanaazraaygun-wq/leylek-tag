@@ -1624,6 +1624,21 @@ export default function App() {
     );
   }
 
+  // Community Screen - Leylek Muhabbeti
+  if (user && screen === 'community') {
+    return (
+      <CommunityScreen
+        user={{
+          id: user.id,
+          name: user.name || 'Kullanıcı',
+          role: user.role || 'passenger',
+        }}
+        onBack={() => setScreen('role-select')}
+        apiUrl={API_URL}
+      />
+    );
+  }
+
   return null;
 }
 
