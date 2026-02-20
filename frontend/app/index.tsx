@@ -1448,8 +1448,7 @@ export default function App() {
             <View style={styles.roleHeaderIcon}>
               <Ionicons name="people-circle" size={48} color="#3FA9F5" />
             </View>
-            <Text style={styles.roleHeaderTitle}>Rol Seçimi</Text>
-            <Text style={styles.roleHeaderSubtitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
+            <Text style={styles.roleHeaderTitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
           </View>
 
           {/* Rol Kartları */}
