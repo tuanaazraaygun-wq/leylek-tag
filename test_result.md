@@ -600,3 +600,65 @@ agent_communication:
       
       ### SONUÇ:
       Şehir bazlı filtreleme artık hem API hem de real-time socket seviyesinde çalışıyor.
+
+
+  - agent: "main"
+    message: |
+      ## 🔥 ZORLA BİTİR SORUNU ÇÖZÜLDÜ - Haziran 2025
+      
+      ### SORUN:
+      Bir kullanıcı (şoför veya yolcu) eşleşmeyi bitirdiğinde, karşı taraf eşleşme ekranında
+      takılı kalıyordu. Alert sürekli tekrarlanarak sonsuz döngüye giriyordu.
+      
+      ### KÖK NEDEN:
+      1. Backend API'leri (`/passenger/active-tag`, `/driver/active-tag`) sadece aktif tag'leri
+         döndürüyordu. `cancelled` durumundaki tag'ler HİÇ döndürülmüyordu.
+      2. Frontend zaten `cancelled` durumunu kontrol ediyordu ama backend hiç döndürmediği için
+         bu kod çalışmıyordu.
+      3. Alert gösterildikten sonra tekrar gösterilmesini engelleyecek mekanizma yoktu.
+      
+      ### YAPILAN DÜZELTMELER:
+      
+      #### 1. Backend (server.py) - İKİ ENDPOINT DÜZELTİLDİ
+      
+      **`/passenger/active-tag` endpoint'i (satır ~1702):**
+      - Son 5 dakikada `cancelled` durumuna geçmiş tag'ler de döndürülüyor
+      - `was_cancelled: true` flag'i eklendi
+      - Öncelik sırası: cancelled tag → aktif tag
+      
+      **`/driver/active-tag` endpoint'i (satır ~2206):**
+      - Aynı mantık şoför tarafı için de uygulandı
+      - Son 5 dakikada cancelled olan tag'ler döndürülüyor
+      
+      #### 2. Frontend (index.tsx) - İKİ DASHBOARD DÜZELTİLDİ
+      
+      **PassengerDashboard:**
+      - `cancelledAlertShown` state eklendi
+      - `lastCancelledTagId` ref eklendi
+      - Alert sadece BİR KEZ gösterilecek
+      - Aynı tag için tekrar Alert gösterilmiyor
+      
+      **DriverDashboard:**
+      - Aynı düzeltmeler şoför tarafı için de uygulandı
+      
+      ### AKIŞ:
+      1. Kullanıcı A "Zorla Bitir" butonuna basar → tag status = "cancelled"
+      2. Kullanıcı B polling ile `/active-tag` çağırır
+      3. Backend cancelled tag'i döndürür (son 5 dk içindeyse)
+      4. Frontend cancelled durumu algılar
+      5. `lastCancelledTagId` kontrolü yapılır
+      6. Alert sadece bir kez gösterilir
+      7. Kullanıcı B rol seçim ekranına yönlendirilir
+      8. Polling devam etse bile Alert bir daha gösterilmez
+      
+      ### DEPLOY:
+      - ✅ Backend: 157.173.113.156 sunucusuna deploy edildi
+      - ✅ supervisorctl restart leylek-backend yapıldı
+      - ✅ Frontend: Expo yeniden başlatıldı
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. İki cihaz ile eşleşme oluştur
+      2. Bir taraftan "Zorla Bitir" butonuna bas
+      3. Karşı tarafın eşleşme ekranından çıkması gerekiyor
+      4. Alert sadece BİR KEZ gösterilmeli
+      5. Yeni eşleşme oluşturulabilmeli
