@@ -90,15 +90,23 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadDashboard = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/dashboard?admin_phone=${adminPhone}`);
+      // Yeni admin/dashboard endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/dashboard?phone=${adminPhone}`);
       const data = await res.json();
-      if (data.success) setStats(data.stats);
+      if (data.success) {
+        setStats(data.stats);
+        // Aktif TAG'leri de yükle
+        if (data.active_tags) {
+          setTrips(data.active_tags);
+        }
+      }
     } catch (e) { console.error(e); }
   };
   
   const loadUsers = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/users?admin_phone=${adminPhone}&limit=100`);
+      // Yeni admin/users endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/users?phone=${adminPhone}&limit=100`);
       const data = await res.json();
       if (data.success) setUsers(data.users || []);
     } catch (e) { console.error(e); }
@@ -106,49 +114,54 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadTrips = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/metadata/trips?admin_phone=${adminPhone}&limit=50`);
+      // Yeni admin/tags endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/tags?phone=${adminPhone}&limit=50`);
       const data = await res.json();
-      if (data.success) setTrips(data.trips || []);
+      if (data.success) setTrips(data.tags || []);
     } catch (e) { console.error(e); }
   };
   
   const loadCalls = async () => {
-    try {
-      const res = await fetch(`${API_URL}/admin/metadata/calls?admin_phone=${adminPhone}&limit=50`);
-      const data = await res.json();
-      if (data.success) setCalls(data.calls || []);
-    } catch (e) { console.error(e); }
+    // Calls için şimdilik boş bırak
+    setCalls([]);
   };
   
   const loadAuthLogs = async () => {
-    try {
-      const res = await fetch(`${API_URL}/admin/metadata/auth?admin_phone=${adminPhone}&limit=50`);
-      const data = await res.json();
-      if (data.success) setAuthLogs(data.logs || []);
-    } catch (e) { console.error(e); }
+    // Auth logs için şimdilik boş bırak
+    setAuthLogs([]);
   };
   
   const loadSettings = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/settings?admin_phone=${adminPhone}`);
+      // Yeni admin/pricing endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/pricing?phone=${adminPhone}`);
       const data = await res.json();
       if (data.success) {
         setSettings(data.settings || {});
-        setDriverRadius(String(data.settings?.driver_radius_km || 50));
-        setMaxCallDuration(String(data.settings?.max_call_duration_min || 30));
+        // Fiyatlandırma ayarlarını settings'e kaydet
+        if (data.settings) {
+          setDriverRadius(String(data.settings.minimum_price || 100));
+          setMaxCallDuration(String(data.settings.min_price_per_km_normal || 20));
+        }
       }
     } catch (e) { console.error(e); }
   };
   
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
-      const res = await fetch(`${API_URL}/admin/user/toggle-status`, {
+      // Yeni admin/user/action endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/user/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_phone: adminPhone, user_id: userId })
+        body: JSON.stringify({ 
+          phone: adminPhone, 
+          user_id: userId,
+          action: currentStatus ? 'unban' : 'ban'
+        })
       });
       const data = await res.json();
       if (data.success) {
+        Alert.alert('Başarılı', data.message);
         loadUsers();
       }
     } catch (e) { console.error(e); }
@@ -165,13 +178,19 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const res = await fetch(`${API_URL}/admin/user/delete`, {
+              // Yeni admin/user/action endpoint'ini kullan
+              const res = await fetch(`${API_URL}/admin/user/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ admin_phone: adminPhone, user_id: userId })
+                body: JSON.stringify({ 
+                  phone: adminPhone, 
+                  user_id: userId,
+                  action: 'delete'
+                })
               });
               const data = await res.json();
               if (data.success) {
+                Alert.alert('Başarılı', data.message);
                 loadUsers();
               }
             } catch (e) { console.error(e); }
@@ -183,7 +202,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const cleanupStuckTags = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/cleanup-stuck-tags?admin_phone=${adminPhone}`, {
+      const res = await fetch(`${API_URL}/admin/cleanup-inactive-tags`, {
         method: 'POST'
       });
       const data = await res.json();
