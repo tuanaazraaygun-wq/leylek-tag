@@ -6775,46 +6775,35 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
           console.log('🛑 ŞOFÖR loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          
+          // 🔥 Alert'i sadece bir kez göster - aynı tag için tekrar gösterme
+          const shouldShowAlert = data.tag.status === 'cancelled' && 
+                                   lastCancelledTagId.current !== data.tag.id;
+          
+          // State'leri temizle
           setActiveTag(null);
           setRequests([]);
           setDriverChatVisible(false);
           driverClearIncomingCall();
+          setCancelledAlertShown(true);
+          lastCancelledTagId.current = data.tag.id;
+          
+          // Rol seçim ekranına yönlendir
           setScreen('role-select');
           
-          if (data.tag.status === 'cancelled') {
+          // Alert'i sadece bir kez göster
+          if (shouldShowAlert) {
             Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
           }
           return;
         }
         
+        // Aktif tag varsa, cancelled flag'i sıfırla
+        setCancelledAlertShown(false);
         setActiveTag(data.tag);
       } else {
-        // API'den tag gelmedi
-        setActiveTag(prev => {
-          // 🔥 Eğer mevcut tag varsa, veritabanından durumunu kontrol et
-          if (prev && prev.id && (prev.status === 'matched' || prev.status === 'in_progress')) {
-            // Veritabanından tag durumunu kontrol et
-            fetch(`${API_URL}/tag/${prev.id}`)
-              .then(res => res.json())
-              .then(tagData => {
-                if (tagData.success && tagData.tag) {
-                  if (tagData.tag.status === 'cancelled' || tagData.tag.status === 'completed') {
-                    console.log('🛑 ŞOFÖR Tag bitirilmiş (kontrol), çıkış yapılıyor...');
-                    setActiveTag(null);
-                    setRequests([]);
-                    setDriverChatVisible(false);
-                    driverClearIncomingCall();
-                    setScreen('role-select');
-                    Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
-                  }
-                }
-              })
-              .catch(() => {});
-            
-            return prev; // Kontrol yapılana kadar koru
-          }
-          return null;
-        });
+        // API'den tag gelmedi - artık cancelled tag dönüyor, bu kısım çok çalışmaz
+        setActiveTag(null);
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
