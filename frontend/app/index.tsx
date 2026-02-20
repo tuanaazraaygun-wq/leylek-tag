@@ -5793,23 +5793,35 @@ function PassengerDashboard({
                     // 🔥 SOCKET İLE ANINDA BİTİR - Her iki tarafa bildirim gider
                     console.log('⚡ YOLCU - ZORLA BİTİR başlatılıyor...');
                     
-                    if (!activeTag?.id || !activeTag?.driver_id) {
+                    if (!activeTag?.id) {
                       Alert.alert('Hata', 'Eşleşme bilgisi bulunamadı');
                       return;
                     }
                     
-                    // Socket ile force_end_trip gönder
-                    forceEndTrip({
-                      tag_id: activeTag.id,
-                      ender_id: user.id,
-                      ender_type: 'passenger',
-                      passenger_id: user.id,
-                      driver_id: activeTag.driver_id,
-                    });
+                    // 🔥 ÖNCELİKLE API'YE ZORLA BİTİR GÖNDERİYORUZ
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`, 
+                        { method: 'POST' }
+                      );
+                      const result = await response.json();
+                      console.log('🔥 Force end API yanıtı:', result);
+                    } catch (err) {
+                      console.log('Force end API hatası:', err);
+                    }
                     
-                    // 🔥 API'ye de zorla bitir bildirimi gönder (veritabanı güncelleme)
-                    fetch(`${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`, { method: 'POST' })
-                      .catch(err => console.log('Force end API hatası:', err));
+                    // Socket ile de bildir (opsiyonel - bağlıysa)
+                    try {
+                      forceEndTrip({
+                        tag_id: activeTag.id,
+                        ender_id: user.id,
+                        ender_type: 'passenger',
+                        passenger_id: user.id,
+                        driver_id: activeTag.driver_id || '',
+                      });
+                    } catch (socketErr) {
+                      console.log('Socket force end hatası:', socketErr);
+                    }
                     
                     // Anında local state temizle
                     setActiveTag(null);
