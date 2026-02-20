@@ -1443,21 +1443,26 @@ export default function App() {
             )}
           </View>
 
-          {/* Başlık Alanı */}
-          <View style={styles.roleHeader}>
-            <View style={styles.roleHeaderIcon}>
-              <Ionicons name="people-circle" size={48} color="#3FA9F5" />
+          <ScrollView 
+            style={styles.roleScrollView}
+            contentContainerStyle={styles.roleScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Başlık Alanı */}
+            <View style={styles.roleHeader}>
+              <View style={styles.roleHeaderIcon}>
+                <Ionicons name="people-circle" size={44} color="#3FA9F5" />
+              </View>
+              <Text style={styles.roleHeaderTitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
             </View>
-            <Text style={styles.roleHeaderTitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
-          </View>
 
-          {/* Rol Kartları */}
-          <View style={styles.roleCardsContainer}>
-            {/* Yolcu Kartı */}
-            <TouchableOpacity
-              style={[
-                styles.roleCardPremium,
-                selectedRole === 'passenger' && styles.roleCardPremiumSelected
+            {/* Rol Kartları */}
+            <View style={styles.roleCardsContainer}>
+              {/* Yolcu Kartı */}
+              <TouchableOpacity
+                style={[
+                  styles.roleCardPremium,
+                  selectedRole === 'passenger' && styles.roleCardPremiumSelected
               ]}
               onPress={() => handleRoleSelect('passenger')}
               activeOpacity={0.7}
