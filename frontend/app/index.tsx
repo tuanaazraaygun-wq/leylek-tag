@@ -1402,101 +1402,104 @@ export default function App() {
     return (
       <View style={styles.roleSelectionContainer}>
         <SafeAreaView style={styles.roleSelectionSafe}>
-          {/* Üst Bar - Geri ve Çıkış */}
-          <View style={styles.roleTopBar}>
+          {/* Üst Bar */}
+          <View style={styles.roleTopBarCompact}>
             <TouchableOpacity 
-              style={styles.roleBackButton}
+              style={styles.roleExitBtn}
               onPress={() => {
-                Alert.alert(
-                  'Çıkış',
-                  'Oturumu kapatmak istiyor musunuz?',
-                  [
-                    { text: 'İptal', style: 'cancel' },
-                    { 
-                      text: 'Çıkış Yap', 
-                      style: 'destructive',
-                      onPress: async () => {
-                        await AsyncStorage.removeItem('user');
-                        setUser(null);
-                        setScreen('login');
-                        setPhone('');
-                        setPin('');
-                      }
-                    }
-                  ]
-                );
+                Alert.alert('Çıkış', 'Oturumu kapatmak istiyor musunuz?', [
+                  { text: 'İptal', style: 'cancel' },
+                  { text: 'Çıkış', style: 'destructive', onPress: async () => {
+                    await AsyncStorage.removeItem('user');
+                    setUser(null);
+                    setScreen('login');
+                  }}
+                ]);
               }}
             >
-              <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-              <Text style={styles.roleBackText}>Çıkış</Text>
+              <Ionicons name="log-out-outline" size={22} color="#EF4444" />
             </TouchableOpacity>
             
-            {/* Admin Panel Butonu */}
-            {isAdmin && (
-              <TouchableOpacity 
-                style={styles.roleAdminButton}
-                onPress={() => setShowAdminPanel(true)}
-              >
-                <Ionicons name="settings" size={24} color="#3FA9F5" />
-                <Text style={styles.roleAdminText}>Admin</Text>
+            <Text style={styles.roleTopTitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
+            
+            {isAdmin ? (
+              <TouchableOpacity style={styles.roleAdminBtn} onPress={() => setShowAdminPanel(true)}>
+                <Ionicons name="settings-outline" size={22} color="#3FA9F5" />
               </TouchableOpacity>
-            )}
+            ) : <View style={{ width: 40 }} />}
           </View>
 
-          <ScrollView 
-            style={styles.roleScrollView}
-            contentContainerStyle={styles.roleScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Başlık Alanı */}
-            <View style={styles.roleHeader}>
-              <View style={styles.roleHeaderIcon}>
-                <Ionicons name="people-circle" size={44} color="#3FA9F5" />
-              </View>
-              <Text style={styles.roleHeaderTitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
-            </View>
-
-            {/* Rol Kartları */}
-            <View style={styles.roleCardsContainer}>
-              {/* Yolcu Kartı */}
+          {/* Ana İçerik - Flex ile tam ekran */}
+          <View style={styles.roleMainContent}>
+            {/* Rol Kartları - Yan yana */}
+            <View style={styles.roleCardsRow}>
+              {/* Yolcu */}
               <TouchableOpacity
-                style={[
-                  styles.roleCardPremium,
-                  selectedRole === 'passenger' && styles.roleCardPremiumSelected
-              ]}
-              onPress={() => handleRoleSelect('passenger')}
-              activeOpacity={0.7}
-            >
-              <View style={styles.roleCardContent}>
-                <View style={styles.roleCardIconContainer}>
-                  <Ionicons 
-                    name="person-outline" 
-                    size={40} 
-                    color={selectedRole === 'passenger' ? '#3FA9F5' : '#7F8C8D'} 
-                  />
-                  <Ionicons 
-                    name="location" 
-                    size={24} 
-                    color={selectedRole === 'passenger' ? '#3FA9F5' : '#7F8C8D'}
-                    style={styles.roleCardIconOverlay}
-                  />
+                style={[styles.roleCardCompact, selectedRole === 'passenger' && styles.roleCardSelected]}
+                onPress={() => handleRoleSelect('passenger')}
+              >
+                <View style={[styles.roleIconCircle, selectedRole === 'passenger' && styles.roleIconCircleActive]}>
+                  <Ionicons name="person" size={32} color={selectedRole === 'passenger' ? '#FFF' : '#3FA9F5'} />
                 </View>
-                <Text style={[
-                  styles.roleCardTitle,
-                  selectedRole === 'passenger' && styles.roleCardTitleSelected
-                ]}>
-                  Yolcu
-                </Text>
-                <Text style={styles.roleCardDescription}>
-                  Yakın sürücülerden teklif al
-                </Text>
+                <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>Yolcu</Text>
+                <Text style={styles.roleCardDesc}>Teklif al</Text>
                 {selectedRole === 'passenger' && (
-                  <View style={styles.roleCardCheckmark}>
-                    <Ionicons name="checkmark-circle" size={28} color="#3FA9F5" />
+                  <View style={styles.roleCheckBadge}>
+                    <Ionicons name="checkmark" size={16} color="#FFF" />
                   </View>
                 )}
+              </TouchableOpacity>
+
+              {/* Sürücü */}
+              <TouchableOpacity
+                style={[styles.roleCardCompact, selectedRole === 'driver' && styles.roleCardSelected]}
+                onPress={() => handleRoleSelect('driver')}
+              >
+                <View style={[styles.roleIconCircle, selectedRole === 'driver' && styles.roleIconCircleActive]}>
+                  <Ionicons name="car" size={32} color={selectedRole === 'driver' ? '#FFF' : '#3FA9F5'} />
+                </View>
+                <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>Sürücü</Text>
+                <Text style={styles.roleCardDesc}>Teklif ver</Text>
+                {selectedRole === 'driver' && (
+                  <View style={styles.roleCheckBadge}>
+                    <Ionicons name="checkmark" size={16} color="#FFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Devam Et Butonu */}
+            <TouchableOpacity
+              style={[styles.roleContinueBtnCompact, !selectedRole && styles.roleContinueBtnDisabled]}
+              onPress={handleContinue}
+              disabled={!selectedRole}
+            >
+              <Text style={styles.roleContinueText}>Devam Et</Text>
+              <Ionicons name="arrow-forward" size={22} color="#FFF" />
+            </TouchableOpacity>
+
+            {/* Ayırıcı */}
+            <View style={styles.roleSeparator}>
+              <View style={styles.roleSeparatorLine} />
+              <Text style={styles.roleSeparatorText}>veya</Text>
+              <View style={styles.roleSeparatorLine} />
+            </View>
+
+            {/* Leylek Muhabbeti */}
+            <TouchableOpacity style={styles.communityBtnCompact} onPress={() => setScreen('community')}>
+              <Image source={require('../assets/images/leylek-splash.png')} style={styles.communityLogo} resizeMode="contain" />
+              <View style={styles.communityTextBox}>
+                <Text style={styles.communityBtnTitle}>Leylek Muhabbeti</Text>
+                <Text style={styles.communityBtnSub}>Şehir Topluluğuna Katıl</Text>
+              </View>
+              <View style={styles.communityArrow}>
+                <Ionicons name="chevron-forward" size={20} color="#FFF" />
               </View>
             </TouchableOpacity>
+          </View>
+
+          {/* Admin Modal */}
+          {isAdmin && (
 
             {/* Sürücü Kartı */}
             <TouchableOpacity
