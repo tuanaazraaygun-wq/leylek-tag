@@ -4295,18 +4295,23 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = request.tag_id or str(uuid.uuid4())
         
-        # Tag oluştur - Sadece mevcut kolonları kullan
+        # Yolcu bilgisini al
+        passenger_result = supabase.table("users").select("name").eq("id", request.passenger_id).execute()
+        passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
+        
+        # Tag oluştur - Mevcut tablo kolonlarını kullan
         tag_data = {
-            "id": tag_id,  # 🔥 Frontend'den gelen ID kullan
-            "passenger_id": request.passenger_id,  # 🔥 Sadece passenger_id kullan
+            "id": tag_id,
+            "passenger_id": request.passenger_id,
+            "passenger_name": passenger_name,
             "pickup_lat": request.pickup_lat,
             "pickup_lng": request.pickup_lng,
             "pickup_location": request.pickup_location,
             "dropoff_lat": request.dropoff_lat,
             "dropoff_lng": request.dropoff_lng,
             "dropoff_location": request.dropoff_location,
-            "offered_price": request.offered_price,
-            "status": "waiting",  # 🔥 MARTI TAG: Sürücü bekliyor
+            "final_price": request.offered_price,  # offered_price yerine final_price kullan
+            "status": "waiting",
             "created_at": datetime.utcnow().isoformat()
         }
         
@@ -4314,7 +4319,8 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         
         if result.data:
             tag = result.data[0]
-            # Response'a distance ve duration ekle (DB'de olmasa bile)
+            # Response'a ek bilgiler ekle
+            tag["offered_price"] = request.offered_price  # Frontend için
             tag["distance_km"] = request.distance_km
             tag["estimated_minutes"] = request.estimated_minutes
             logger.info(f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL")
