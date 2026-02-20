@@ -192,6 +192,7 @@ export default function LiveMapView({
   otherUserName = 'Karşı Taraf',
   otherUserId,
   price,
+  offeredPrice,
   routeInfo,
   onBlock,
   onReport,
