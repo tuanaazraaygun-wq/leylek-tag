@@ -4444,7 +4444,7 @@ async def get_community_messages(limit: int = 50, offset: int = 0, city: Optiona
 
 @api_router.post("/community/message")
 async def create_community_message(msg: CommunityMessageCreate):
-    """Yeni mesaj oluştur"""
+    """Yeni mesaj oluştur - Küfür filtresi ile"""
     try:
         # İçerik kontrolü
         if len(msg.content) > 300:
@@ -4453,12 +4453,27 @@ async def create_community_message(msg: CommunityMessageCreate):
         if len(msg.content.strip()) == 0:
             return {"success": False, "error": "Mesaj boş olamaz"}
         
-        # Basit küfür filtresi
-        bad_words = ["küfür1", "küfür2"]  # Admin paneli ile genişletilebilir
-        content_lower = msg.content.lower()
+        # GENİŞLETİLMİŞ KÜFÜR FİLTRESİ
+        bad_words = [
+            # Türkçe küfürler
+            "amk", "aq", "amq", "amına", "amina", "orospu", "oruspu", "piç", "pic", "pezevenk",
+            "göt", "got", "sik", "sikik", "sikim", "yarrak", "yarak", "taşak", "tasak",
+            "kahpe", "kaltak", "ibne", "top", "döl", "dol", "meme", "am ", " am",
+            "ananı", "anani", "bacını", "bacini", "s2m", "s2k", "mk", "oc", "oç",
+            "gerizekalı", "gerizekali", "salak", "aptal", "mal", "dangalak", "hıyar",
+            # Hakaret
+            "şerefsiz", "serefsiz", "namussuz", "ahlaksız", "ahlaksiz", "alçak", "alcak",
+            # Argo
+            "lan", "ulan", "yavşak", "yavsak", "puşt", "pust",
+        ]
+        
+        content_lower = msg.content.lower().replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
+        
         for word in bad_words:
-            if word in content_lower:
-                return {"success": False, "error": "Uygunsuz içerik tespit edildi"}
+            word_normalized = word.lower().replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
+            if word_normalized in content_lower:
+                logger.warning(f"⚠️ Küfür tespit edildi: {msg.user_id} - '{word}'")
+                return {"success": False, "error": "Uygunsuz içerik tespit edildi. Lütfen saygılı bir dil kullanın."}
         
         # Veritabanına ekle
         data = {
