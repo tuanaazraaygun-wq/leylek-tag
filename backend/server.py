@@ -4295,7 +4295,7 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = request.tag_id or str(uuid.uuid4())
         
-        # Tag oluştur
+        # Tag oluştur - Sadece mevcut kolonları kullan
         tag_data = {
             "id": tag_id,  # 🔥 Frontend'den gelen ID kullan
             "passenger_id": request.passenger_id,  # 🔥 Sadece passenger_id kullan
@@ -4306,8 +4306,6 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             "dropoff_lng": request.dropoff_lng,
             "dropoff_location": request.dropoff_location,
             "offered_price": request.offered_price,
-            "distance_km": request.distance_km,
-            "estimated_minutes": request.estimated_minutes,
             "status": "waiting",  # 🔥 MARTI TAG: Sürücü bekliyor
             "created_at": datetime.utcnow().isoformat()
         }
@@ -4316,6 +4314,9 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         
         if result.data:
             tag = result.data[0]
+            # Response'a distance ve duration ekle (DB'de olmasa bile)
+            tag["distance_km"] = request.distance_km
+            tag["estimated_minutes"] = request.estimated_minutes
             logger.info(f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL")
             return {
                 "success": True,
