@@ -1714,12 +1714,12 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
         
-        # 🔥 ÖNCELİK 1: Son 5 dakikada cancelled olmuş TAG var mı kontrol et
+        # 🔥 ÖNCELİK 1: Son 30 saniyede cancelled olmuş TAG var mı kontrol et
         # Bu sayede frontend eşleşmenin bitirildiğini algılayabilir
         from datetime import timedelta
-        five_minutes_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+        thirty_seconds_ago = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
         
-        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", five_minutes_ago).order("cancelled_at", desc=True).limit(1).execute()
+        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", thirty_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
         
         if cancelled_result.data:
             cancelled_tag = cancelled_result.data[0]
