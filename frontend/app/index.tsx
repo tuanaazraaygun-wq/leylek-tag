@@ -4656,16 +4656,32 @@ function PassengerDashboard({
     return () => clearInterval(interval);
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
+  // 🔥 Polling interval ref - temizleme için
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPollingActiveRef = useRef<boolean>(true);
+
   useEffect(() => {
     console.log('🔄 Yolcu polling başlatıldı');
+    isPollingActiveRef.current = true;
     loadActiveTag();
-    const interval = setInterval(() => {
+    
+    pollingIntervalRef.current = setInterval(() => {
+      // 🔥 Polling aktif değilse çalıştırma
+      if (!isPollingActiveRef.current) {
+        console.log('🔄 Polling durdurulmuş, skip...');
+        return;
+      }
       console.log('🔄 Yolcu TAG ve teklifler yükleniyor...');
       loadActiveTag();
-    }, 1000); // Her 1 saniyede bir kontrol et - ANINDA
+    }, 2000); // Her 2 saniyede bir kontrol et
+    
     return () => {
       console.log('🔄 Yolcu polling durduruldu');
-      clearInterval(interval);
+      isPollingActiveRef.current = false;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     };
   }, [user?.id]);
 
@@ -4678,6 +4694,13 @@ function PassengerDashboard({
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
           console.log('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          
+          // 🔥 POLLING'İ DURDUR - sonsuz döngüyü engelle
+          isPollingActiveRef.current = false;
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
           
           // 🔥 Alert'i sadece bir kez göster - aynı tag için tekrar gösterme
           const shouldShowAlert = data.tag.status === 'cancelled' && 
@@ -4705,8 +4728,11 @@ function PassengerDashboard({
         setCancelledAlertShown(false);
         setActiveTag(data.tag);
       } else {
-        // API'den tag gelmedi - artık cancelled tag dönüyor, bu kısım çok çalışmaz
-        setActiveTag(null);
+        // API'den tag gelmedi - cancelled değil, gerçekten tag yok
+        // 🔥 Sadece mevcut tag varsa ve artık yoksa temizle
+        if (activeTag) {
+          setActiveTag(null);
+        }
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
