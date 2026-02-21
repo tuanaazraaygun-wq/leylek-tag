@@ -2226,11 +2226,11 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
-        # 🔥 ÖNCELİK 1: Son 5 dakikada cancelled olmuş TAG var mı kontrol et
+        # 🔥 ÖNCELİK 1: Son 30 saniyede cancelled olmuş TAG var mı kontrol et
         from datetime import timedelta
-        five_minutes_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+        thirty_seconds_ago = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
         
-        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", five_minutes_ago).order("cancelled_at", desc=True).limit(1).execute()
+        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", thirty_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
         
         if cancelled_result.data:
             cancelled_tag = cancelled_result.data[0]
