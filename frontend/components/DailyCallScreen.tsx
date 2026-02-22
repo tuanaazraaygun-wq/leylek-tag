@@ -60,7 +60,7 @@ export default function DailyCallScreen({
   const maxDuration = 600;
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
     ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
-    : 'https://trip-sync-fix.preview.emergentagent.com/api';
+    : 'https://ride-share-app-97.preview.emergentagent.com/api';
 
   // Timer - only when connected
   useEffect(() => {
