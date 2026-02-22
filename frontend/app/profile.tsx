@@ -430,5 +430,25 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.gray500,
     marginTop: Spacing.xs
-  }
+  },
+  linkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    width: '100%',
+  },
+  linkText: {
+    flex: 1,
+    fontSize: FontSize.md,
+    color: Colors.text,
+    marginLeft: Spacing.md,
+  },
+  dangerItem: {
+    borderBottomWidth: 0,
+  },
+  dangerText: {
+    color: '#E74C3C',
+  },
 });
