@@ -173,6 +173,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         
         return [data, ...prev];
       });
+      // Yeni mesaj geldiğinde en alta kaydır
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
 
     socket.on('community_like_update', (data: { message_id: string; likes_count: number }) => {
