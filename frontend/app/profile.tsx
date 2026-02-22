@@ -216,6 +216,54 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={24} color={Colors.gray400} />
           </TouchableOpacity>
         )}
+
+        {/* Yasal Bilgiler */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Yasal Bilgiler</Text>
+          
+          <TouchableOpacity
+            style={styles.linkItem}
+            onPress={() => router.push('/privacy' as any)}
+          >
+            <Ionicons name="lock-closed-outline" size={24} color={Colors.primary} />
+            <Text style={styles.linkText}>Gizlilik Politikası</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkItem}
+            onPress={() => router.push('/terms' as any)}
+          >
+            <Ionicons name="document-text-outline" size={24} color={Colors.primary} />
+            <Text style={styles.linkText}>Hizmet Şartları</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkItem}
+            onPress={() => router.push('/kvkk' as any)}
+          >
+            <Ionicons name="information-circle-outline" size={24} color={Colors.primary} />
+            <Text style={styles.linkText}>KVKK Aydınlatma Metni</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.gray400} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Hesap İşlemleri */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Hesap İşlemleri</Text>
+          
+          <TouchableOpacity
+            style={[styles.linkItem, styles.dangerItem]}
+            onPress={() => router.push('/delete-account' as any)}
+          >
+            <Ionicons name="trash-outline" size={24} color="#E74C3C" />
+            <Text style={[styles.linkText, styles.dangerText]}>Hesabımı Sil</Text>
+            <Ionicons name="chevron-forward" size={20} color="#E74C3C" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ height: 30 }} />
       </ScrollView>
     </SafeAreaView>
   );
