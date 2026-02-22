@@ -4603,6 +4603,76 @@ async def delete_community_message(message_id: str, user_id: str):
         logger.error(f"❌ Community delete error: {e}")
         return {"success": False, "error": str(e)}
 
+# ==================== HESAP SİLME (Google Play Zorunlu) ====================
+
+class DeleteAccountRequest(BaseModel):
+    user_id: str
+
+@api_router.post("/user/delete-account")
+async def delete_user_account(request: DeleteAccountRequest):
+    """
+    Kullanıcı hesabını sil - Google Play zorunlu özellik
+    - Hesap hemen devre dışı bırakılır
+    - Veriler 30 gün içinde silinir
+    - Yasal zorunluluklar anonimleştirilir
+    """
+    try:
+        user_id = request.user_id
+        
+        if not user_id:
+            return {"success": False, "error": "user_id gerekli"}
+        
+        logger.warning(f"🗑️ HESAP SİLME İSTEĞİ: {user_id}")
+        
+        # 1. Kullanıcıyı bul
+        user_result = supabase.table("users").select("*").eq("id", user_id).limit(1).execute()
+        
+        if not user_result.data:
+            return {"success": False, "error": "Kullanıcı bulunamadı"}
+        
+        user = user_result.data[0]
+        
+        # 2. Kullanıcıyı devre dışı bırak (soft delete)
+        supabase.table("users").update({
+            "is_active": False,
+            "is_banned": True,
+            "deleted_at": datetime.utcnow().isoformat(),
+            "deletion_reason": "user_request",
+            # Kişisel verileri anonimleştir
+            "name": f"Silinmiş Kullanıcı {user_id[:8]}",
+            "profile_photo": None,
+        }).eq("id", user_id).execute()
+        
+        # 3. Aktif TAG'leri iptal et
+        supabase.table("tags").update({
+            "status": "cancelled",
+            "cancelled_at": datetime.utcnow().isoformat(),
+            "cancel_reason": "account_deleted"
+        }).eq("passenger_id", user_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).execute()
+        
+        supabase.table("tags").update({
+            "status": "cancelled",
+            "cancelled_at": datetime.utcnow().isoformat(),
+            "cancel_reason": "account_deleted"
+        }).eq("driver_id", user_id).in_("status", ["matched", "in_progress"]).execute()
+        
+        # 4. Community mesajlarını anonimleştir
+        supabase.table("community_messages").update({
+            "user_name": "Silinmiş Kullanıcı",
+            "user_id": None
+        }).eq("user_id", user_id).execute()
+        
+        logger.warning(f"✅ HESAP SİLİNDİ: {user_id}")
+        
+        return {
+            "success": True,
+            "message": "Hesabınız başarıyla silindi. Verileriniz 30 gün içinde kalıcı olarak kaldırılacaktır."
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Delete account error: {e}")
+        return {"success": False, "error": str(e)}
+
 # ==================== ADMIN PANELİ ====================
 # Admin telefon numarası
 ADMIN_PHONES = ["5326497412"]
