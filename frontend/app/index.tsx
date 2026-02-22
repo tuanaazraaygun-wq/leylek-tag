@@ -6937,7 +6937,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     
     console.log('✅ SÜRÜCÜ TEKLİFİ KABUL EDİYOR:', tagId, tag.offered_price, 'TL');
     
-    // Socket ile kabul gönder
+    // 🔥 SADECE Socket ile kabul gönder - Backend API KALDIRILDI
+    // Socket server zaten DB'yi güncelliyor ve her iki tarafa bildirim gönderiyor
     if (emitDriverAcceptOffer) {
       emitDriverAcceptOffer({
         tag_id: tagId,
@@ -6946,25 +6947,8 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
       });
     }
     
-    // Backend'e de kaydet
-    try {
-      const response = await fetch(`${API_URL}/ride/accept?tag_id=${tagId}&driver_id=${user.id}`, {
-        method: 'POST',
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        // Eşleşme başarılı
-        setRequests([]);
-        loadData();
-      } else if (data.already_taken) {
-        // Başka sürücü aldı
-        Alert.alert('Üzgünüz', 'Bu teklif başka bir sürücü tarafından kabul edildi');
-        setRequests(prev => prev.filter(r => r.id !== tagId));
-      }
-    } catch (error) {
-      console.error('Accept error:', error);
-    }
+    // Kartı listeden kaldır (socket'ten yanıt beklemeden)
+    setRequests(prev => prev.filter(r => r.id !== tagId));
   };
 
   const submitOffer = async () => {
