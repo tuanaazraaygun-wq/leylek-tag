@@ -396,7 +396,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             <TouchableOpacity onPress={onBack} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={24} color="#FFF" />
             </TouchableOpacity>
-            <Text style={styles.cityHeaderTitle}>🐦 Leylek Muhabbeti</Text>
+            <Text style={styles.cityHeaderTitle}>🪿 Leylek Muhabbeti</Text>
             <View style={{ width: 40 }} />
           </View>
 
@@ -483,11 +483,12 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           ) : (
             <FlatList
               ref={flatListRef}
-              data={messages}
+              data={[...messages].reverse()}
               renderItem={renderMessage}
               keyExtractor={item => item.id}
               contentContainerStyle={styles.messageList}
               showsVerticalScrollIndicator={false}
+              inverted={false}
               refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMessages(); }} colors={cityTheme.gradient} />
               }
@@ -498,6 +499,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
                   <Text style={styles.emptyText}>Henüz mesaj yok. İlk sen başlat!</Text>
                 </View>
               }
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+              onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
             />
           )}
         </View>
