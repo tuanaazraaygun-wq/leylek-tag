@@ -235,25 +235,29 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     }
     
     try {
+      setLoading(true);
       const res = await fetch(`${API_URL}/admin/send-notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          admin_phone: adminPhone,
+          phone: adminPhone,
           title: notifTitle,
-          message: notifMessage,
+          body: notifMessage,
           target: notifTarget,
-          user_id: notifTarget === 'user' ? notifUserId : null
         })
       });
       const data = await res.json();
       if (data.success) {
-        Alert.alert('Gönderildi', `${data.sent_count || 0} kişiye bildirim gönderildi`);
+        Alert.alert('✅ Gönderildi', `${data.sent || 0}/${data.valid_tokens || 0} kişiye bildirim gönderildi`);
         setNotifTitle('');
         setNotifMessage('');
+      } else {
+        Alert.alert('Hata', data.error || 'Bildirim gönderilemedi');
       }
     } catch (e) { 
       Alert.alert('Hata', 'Bildirim gönderilemedi');
+    } finally {
+      setLoading(false);
     }
   };
   
