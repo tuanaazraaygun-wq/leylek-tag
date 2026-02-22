@@ -268,6 +268,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     setMessages(prev => [tempMsg, ...prev]);
     setNewMessage('');
     setLastSentTime(now);
+    // Kendi mesajımızı gönderdikten sonra en alta kaydır
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
       const response = await fetch(`${apiUrl}/community/message`, {
