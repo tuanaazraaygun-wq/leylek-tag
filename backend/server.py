@@ -2554,6 +2554,98 @@ async def remove_push_token(user_id: str):
     except Exception as e:
         return {"success": False}
 
+# ==================== ADMIN BİLDİRİM SİSTEMİ ====================
+
+class AdminNotificationRequest(BaseModel):
+    phone: str  # Admin phone
+    title: str
+    body: str
+    target: str = "all"  # "all", "drivers", "passengers"
+    data: dict = None
+
+@api_router.post("/admin/send-notification")
+async def admin_send_notification(request: AdminNotificationRequest):
+    """Admin panelinden toplu bildirim gönder"""
+    if not is_admin(request.phone):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    try:
+        # Hedef kullanıcıları belirle
+        query = supabase.table("users").select("id, name, push_token")
+        
+        if request.target == "drivers":
+            # Sürücü bilgisi olanlar
+            query = query.not_.is_("driver_details", "null")
+        elif request.target == "passengers":
+            # Sürücü olmayanlar veya hiç sürücü bilgisi girmemişler
+            query = query.is_("driver_details", "null")
+        
+        result = query.execute()
+        users = result.data if result.data else []
+        
+        # Push token'ları topla
+        tokens = []
+        for user in users:
+            token = user.get("push_token")
+            if token and ExpoPushService.is_valid_token(token):
+                tokens.append(token)
+        
+        if not tokens:
+            return {"success": False, "error": "Bildirim gönderilebilecek kullanıcı bulunamadı", "total_users": len(users), "valid_tokens": 0}
+        
+        # Bildirimi gönder
+        push_result = await ExpoPushService.send(
+            tokens=tokens,
+            title=request.title,
+            body=request.body,
+            data=request.data or {"type": "admin_notification"}
+        )
+        
+        logger.info(f"📢 Admin bildirim: '{request.title}' - {push_result['sent']}/{len(tokens)} gönderildi")
+        
+        return {
+            "success": True,
+            "total_users": len(users),
+            "valid_tokens": len(tokens),
+            "sent": push_result["sent"],
+            "failed": push_result["failed"]
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Admin notification error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/admin/push-stats")
+async def admin_push_stats(phone: str):
+    """Push token istatistikleri"""
+    if not is_admin(phone):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    try:
+        # Toplam kullanıcı
+        total_result = supabase.table("users").select("id", count="exact").execute()
+        total_users = total_result.count if total_result.count else 0
+        
+        # Push token olan kullanıcılar
+        with_token_result = supabase.table("users").select("id", count="exact").not_.is_("push_token", "null").execute()
+        with_token = with_token_result.count if with_token_result.count else 0
+        
+        # Sürücüler
+        drivers_result = supabase.table("users").select("id, push_token").not_.is_("driver_details", "null").execute()
+        drivers = drivers_result.data if drivers_result.data else []
+        drivers_with_token = sum(1 for d in drivers if d.get("push_token"))
+        
+        return {
+            "success": True,
+            "total_users": total_users,
+            "users_with_push_token": with_token,
+            "total_drivers": len(drivers),
+            "drivers_with_push_token": drivers_with_token,
+            "passengers_with_push_token": with_token - drivers_with_token
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # ==================== ADMIN ENDPOINTS ====================
 
 @api_router.get("/admin/dashboard")
