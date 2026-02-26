@@ -2523,17 +2523,18 @@ const driverViewStyles = StyleSheet.create({
     borderColor: 'rgba(63, 169, 245, 0.3)',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginTop: 6,
+    textShadowColor: 'rgba(63, 169, 245, 0.5)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   statLabel: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   // Fiyat Section - Koyu Lacivert Tema
   priceSection: {
