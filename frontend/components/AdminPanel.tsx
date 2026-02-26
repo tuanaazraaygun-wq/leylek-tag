@@ -785,20 +785,66 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
 
   // KYC Tab Render
   function renderKYCTab() {
+    const getCurrentList = () => {
+      switch (kycFilter) {
+        case 'pending': return pendingKYCs;
+        case 'approved': return approvedKYCs;
+        case 'rejected': return rejectedKYCs;
+        default: return pendingKYCs;
+      }
+    };
+    
+    const currentList = getCurrentList();
+    
     return (
       <ScrollView style={styles.tabContent}>
         <Text style={styles.sectionTitle}>🚗 Sürücü Başvuruları</Text>
-        <Text style={styles.sectionSubtitle}>
-          Bekleyen: {pendingKYCs.length} başvuru
-        </Text>
         
-        {pendingKYCs.length === 0 ? (
+        {/* Filter Buttons */}
+        <View style={styles.kycFilterContainer}>
+          <TouchableOpacity 
+            style={[styles.kycFilterBtn, kycFilter === 'pending' && styles.kycFilterBtnActive]}
+            onPress={() => setKycFilter('pending')}
+          >
+            <Text style={[styles.kycFilterText, kycFilter === 'pending' && styles.kycFilterTextActive]}>
+              Bekleyen ({pendingKYCs.length})
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.kycFilterBtn, kycFilter === 'approved' && styles.kycFilterBtnActiveGreen]}
+            onPress={() => setKycFilter('approved')}
+          >
+            <Text style={[styles.kycFilterText, kycFilter === 'approved' && styles.kycFilterTextActive]}>
+              Onaylı ({approvedKYCs.length})
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.kycFilterBtn, kycFilter === 'rejected' && styles.kycFilterBtnActiveRed]}
+            onPress={() => setKycFilter('rejected')}
+          >
+            <Text style={[styles.kycFilterText, kycFilter === 'rejected' && styles.kycFilterTextActive]}>
+              Reddedilen ({rejectedKYCs.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+        
+        {currentList.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
-            <Text style={styles.emptyText}>Bekleyen başvuru yok</Text>
+            <Ionicons 
+              name={kycFilter === 'pending' ? 'checkmark-circle' : kycFilter === 'approved' ? 'people' : 'close-circle'} 
+              size={48} 
+              color={kycFilter === 'pending' ? COLORS.success : kycFilter === 'approved' ? COLORS.primary : COLORS.error} 
+            />
+            <Text style={styles.emptyText}>
+              {kycFilter === 'pending' ? 'Bekleyen başvuru yok' : 
+               kycFilter === 'approved' ? 'Henüz onaylı sürücü yok' : 
+               'Reddedilen başvuru yok'}
+            </Text>
           </View>
         ) : (
-          pendingKYCs.map((kyc, index) => (
+          currentList.map((kyc, index) => (
             <View key={kyc.user_id || index} style={styles.kycCard}>
               <View style={styles.kycHeader}>
                 <View>
@@ -814,9 +860,19 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                   {kyc.vehicle_color && (
                     <Text style={styles.kycColor}>🎨 Renk: {kyc.vehicle_color}</Text>
                   )}
+                  {kyc.rejection_reason && (
+                    <Text style={styles.kycRejectionReason}>❌ Red sebebi: {kyc.rejection_reason}</Text>
+                  )}
                 </View>
-                <View style={styles.kycBadge}>
-                  <Text style={styles.kycBadgeText}>Bekliyor</Text>
+                <View style={[
+                  styles.kycBadge, 
+                  kycFilter === 'approved' && styles.kycBadgeGreen,
+                  kycFilter === 'rejected' && styles.kycBadgeRed
+                ]}>
+                  <Text style={styles.kycBadgeText}>
+                    {kycFilter === 'pending' ? 'Bekliyor' : 
+                     kycFilter === 'approved' ? 'Onaylı' : 'Reddedildi'}
+                  </Text>
                 </View>
               </View>
               
@@ -840,23 +896,25 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                 </TouchableOpacity>
               </View>
               
-              <View style={styles.kycActions}>
-                <TouchableOpacity 
-                  style={[styles.kycButton, styles.kycApprove]}
-                  onPress={() => approveKYC(kyc.user_id)}
-                >
-                  <Ionicons name="checkmark" size={18} color="#FFF" />
-                  <Text style={styles.kycButtonText}>Onayla</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[styles.kycButton, styles.kycReject]}
-                  onPress={() => rejectKYC(kyc.user_id)}
-                >
-                  <Ionicons name="close" size={18} color="#FFF" />
-                  <Text style={styles.kycButtonText}>Reddet</Text>
-                </TouchableOpacity>
-              </View>
+              {kycFilter === 'pending' && (
+                <View style={styles.kycActions}>
+                  <TouchableOpacity 
+                    style={[styles.kycButton, styles.kycApprove]}
+                    onPress={() => approveKYC(kyc.user_id)}
+                  >
+                    <Ionicons name="checkmark" size={18} color="#FFF" />
+                    <Text style={styles.kycButtonText}>Onayla</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.kycButton, styles.kycReject]}
+                    onPress={() => rejectKYC(kyc.user_id)}
+                  >
+                    <Ionicons name="close" size={18} color="#FFF" />
+                    <Text style={styles.kycButtonText}>Reddet</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           ))
         )}
