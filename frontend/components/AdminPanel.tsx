@@ -1163,6 +1163,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.primary,
   },
+  kycVehicle: {
+    fontSize: 14,
+    color: '#FFF',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  kycColor: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
   kycBadge: {
     backgroundColor: 'rgba(251, 191, 36, 0.2)',
     paddingHorizontal: 12,
