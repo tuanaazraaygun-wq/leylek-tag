@@ -1421,6 +1421,236 @@ async def register_driver(
         logger.error(f"Register driver error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================== SÜRÜCÜ KYC SİSTEMİ ====================
+
+class DriverKYCSubmit(BaseModel):
+    user_id: str
+    vehicle_photo_base64: str  # Araç ön fotoğrafı (plaka görünür)
+    license_photo_base64: str  # Ehliyet fotoğrafı
+    plate_number: str          # Plaka numarası
+
+@api_router.post("/driver/kyc/submit")
+async def submit_driver_kyc(data: DriverKYCSubmit):
+    """Sürücü KYC belgelerini gönder"""
+    try:
+        import base64
+        import uuid
+        
+        user_id = data.user_id
+        
+        # Kullanıcıyı kontrol et
+        user_result = supabase.table("users").select("*").eq("id", user_id).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = user_result.data[0]
+        
+        # Zaten onaylı sürücü mü?
+        if user.get("driver_details", {}).get("kyc_status") == "approved":
+            return {"success": False, "message": "Zaten onaylı sürücüsünüz", "kyc_status": "approved"}
+        
+        # Bekleyen başvuru var mı?
+        if user.get("driver_details", {}).get("kyc_status") == "pending":
+            return {"success": False, "message": "Başvurunuz inceleniyor", "kyc_status": "pending"}
+        
+        # Fotoğrafları Supabase Storage'a yükle
+        vehicle_photo_data = base64.b64decode(data.vehicle_photo_base64.split(",")[-1] if "," in data.vehicle_photo_base64 else data.vehicle_photo_base64)
+        license_photo_data = base64.b64decode(data.license_photo_base64.split(",")[-1] if "," in data.license_photo_base64 else data.license_photo_base64)
+        
+        vehicle_filename = f"kyc/{user_id}/vehicle_{uuid.uuid4().hex[:8]}.jpg"
+        license_filename = f"kyc/{user_id}/license_{uuid.uuid4().hex[:8]}.jpg"
+        
+        # Storage'a yükle
+        try:
+            supabase.storage.from_("uploads").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
+            supabase.storage.from_("uploads").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
+        except Exception as storage_error:
+            # Bucket yoksa oluştur ve tekrar dene
+            logger.warning(f"Storage upload error, trying to create bucket: {storage_error}")
+            try:
+                supabase.storage.create_bucket("uploads", {"public": True})
+            except:
+                pass
+            supabase.storage.from_("uploads").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
+            supabase.storage.from_("uploads").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
+        
+        # Public URL'leri al
+        vehicle_url = supabase.storage.from_("uploads").get_public_url(vehicle_filename)
+        license_url = supabase.storage.from_("uploads").get_public_url(license_filename)
+        
+        # Driver details güncelle
+        driver_details = user.get("driver_details") or {}
+        driver_details.update({
+            "plate_number": data.plate_number,
+            "vehicle_photo_url": vehicle_url,
+            "license_photo_url": license_url,
+            "kyc_status": "pending",
+            "kyc_submitted_at": datetime.utcnow().isoformat(),
+            "is_verified": False
+        })
+        
+        supabase.table("users").update({
+            "driver_details": driver_details,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        logger.info(f"🚗 KYC başvurusu: {user_id} - Plaka: {data.plate_number}")
+        return {
+            "success": True, 
+            "message": "Başvurunuz alındı. İnceleme sonrası bilgilendirileceksiniz.",
+            "kyc_status": "pending"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"KYC submit error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/driver/kyc/status")
+async def get_driver_kyc_status(user_id: str):
+    """Sürücü KYC durumunu kontrol et"""
+    try:
+        result = supabase.table("users").select("driver_details").eq("id", user_id).execute()
+        if not result.data:
+            return {"kyc_status": "none", "is_driver": False}
+        
+        driver_details = result.data[0].get("driver_details") or {}
+        kyc_status = driver_details.get("kyc_status", "none")
+        is_verified = driver_details.get("is_verified", False)
+        
+        return {
+            "kyc_status": kyc_status,
+            "is_driver": kyc_status == "approved" and is_verified,
+            "is_verified": is_verified,
+            "rejection_reason": driver_details.get("kyc_rejection_reason"),
+            "submitted_at": driver_details.get("kyc_submitted_at")
+        }
+    except Exception as e:
+        logger.error(f"KYC status error: {e}")
+        return {"kyc_status": "none", "is_driver": False}
+
+@api_router.get("/admin/kyc/pending")
+async def get_pending_kyc_requests(admin_phone: str):
+    """Admin: Bekleyen KYC başvurularını getir"""
+    # Admin kontrolü
+    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412"]:
+        raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+    
+    try:
+        # Bekleyen KYC'leri getir
+        result = supabase.table("users").select("id, name, phone, driver_details, created_at").not_.is_("driver_details", "null").execute()
+        
+        pending_kycs = []
+        for user in result.data:
+            driver_details = user.get("driver_details") or {}
+            if driver_details.get("kyc_status") == "pending":
+                pending_kycs.append({
+                    "user_id": user["id"],
+                    "name": user["name"],
+                    "phone": user["phone"],
+                    "plate_number": driver_details.get("plate_number"),
+                    "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
+                    "license_photo_url": driver_details.get("license_photo_url"),
+                    "submitted_at": driver_details.get("kyc_submitted_at")
+                })
+        
+        return {"success": True, "pending_count": len(pending_kycs), "requests": pending_kycs}
+    except Exception as e:
+        logger.error(f"Get pending KYC error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/kyc/approve")
+async def approve_driver_kyc(admin_phone: str, user_id: str):
+    """Admin: Sürücü KYC'yi onayla"""
+    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412"]:
+        raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+    
+    try:
+        result = supabase.table("users").select("driver_details, name, push_token").eq("id", user_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = result.data[0]
+        driver_details = user.get("driver_details") or {}
+        driver_details.update({
+            "kyc_status": "approved",
+            "is_verified": True,
+            "kyc_approved_at": datetime.utcnow().isoformat()
+        })
+        
+        supabase.table("users").update({
+            "driver_details": driver_details,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        # Push bildirim gönder
+        push_token = user.get("push_token")
+        if push_token:
+            try:
+                await send_push_notification(
+                    [push_token],
+                    "✅ Sürücü Kaydınız Onaylandı!",
+                    "Artık sürücü olarak çalışabilirsiniz. Yolcuları bekliyoruz!",
+                    {"type": "kyc_approved"}
+                )
+            except:
+                pass
+        
+        logger.info(f"✅ KYC onaylandı: {user_id} - {user.get('name')}")
+        return {"success": True, "message": "Sürücü kaydı onaylandı"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Approve KYC error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/kyc/reject")
+async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belgeler uygun değil"):
+    """Admin: Sürücü KYC'yi reddet"""
+    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412"]:
+        raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+    
+    try:
+        result = supabase.table("users").select("driver_details, name, push_token").eq("id", user_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = result.data[0]
+        driver_details = user.get("driver_details") or {}
+        driver_details.update({
+            "kyc_status": "rejected",
+            "is_verified": False,
+            "kyc_rejection_reason": reason,
+            "kyc_rejected_at": datetime.utcnow().isoformat()
+        })
+        
+        supabase.table("users").update({
+            "driver_details": driver_details,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        # Push bildirim gönder
+        push_token = user.get("push_token")
+        if push_token:
+            try:
+                await send_push_notification(
+                    [push_token],
+                    "❌ Sürücü Başvurunuz Reddedildi",
+                    f"Sebep: {reason}. Lütfen tekrar başvurun.",
+                    {"type": "kyc_rejected"}
+                )
+            except:
+                pass
+        
+        logger.info(f"❌ KYC reddedildi: {user_id} - Sebep: {reason}")
+        return {"success": True, "message": "Sürücü kaydı reddedildi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reject KYC error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==================== BLOCKING SYSTEM ====================
 
 @api_router.post("/user/block")
