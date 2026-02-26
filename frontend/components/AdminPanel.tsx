@@ -31,7 +31,7 @@ interface AdminPanelProps {
   onClose: () => void;
 }
 
-type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'auth' | 'notifications' | 'settings';
+type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'auth' | 'notifications' | 'kyc' | 'settings';
 
 export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
