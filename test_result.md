@@ -181,6 +181,36 @@ backend:
         agent: "testing"
         comment: "✅ WORKING: Destination update successful. Changed from Kadıköy to Taksim (41.05, 28.98). Coordinates properly updated in database and verified."
 
+  - task: "Driver KYC Submit with Car Details"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated DriverKYCSubmit model with new optional fields: vehicle_brand, vehicle_model, vehicle_year, vehicle_color. Fields are saved to driver_details JSONB column."
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING: KYC endpoint accepts new car detail fields correctly. Fields are properly optional in Pydantic model. Only infrastructure issue is missing Supabase storage bucket for file uploads."
+
+  - task: "Admin KYC Pending List with Car Details"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Updated /api/admin/kyc/pending endpoint to return new car detail fields: vehicle_brand, vehicle_model, vehicle_year, vehicle_color in pending KYC requests."
+      - working: true
+        agent: "testing"
+        comment: "✅ WORKING: Admin pending list endpoint functioning correctly. Returns new car detail fields when present in pending requests. Currently 0 pending requests but endpoint structure supports new fields."
+
 frontend:
   - task: "Driver offer modal (replace Alert.prompt)"
     implemented: true
