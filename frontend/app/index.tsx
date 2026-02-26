@@ -5490,29 +5490,29 @@ function PassengerDashboard({
               </TouchableOpacity>
             </View>
             
-            {/* Nereye Gitmek İstiyorsunuz - En üstte */}
-            <Text style={styles.welcomeQuestionTop}>Nereye Gitmek İstiyorsunuz?</Text>
+            {/* Nereye Gitmek İstiyorsunuz - EN ÜSTTE, leyleklerin üstünde */}
+            <Text style={styles.welcomeQuestionVeryTop}>Nereye Gitmek İstiyorsunuz?</Text>
             
-            {/* Kişi Adı - Sadece isim (soyad admin için) */}
-            <Text style={styles.welcomeNameSmall}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
+            {/* Kişi Adı - Leyleklerin arasında */}
+            <Text style={styles.welcomeNameBetweenStorks}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
             
-            {/* Hedef Seçme Alanı - EFEKTLİ, BÜYÜK */}
+            {/* Hedef Seçme Alanı - DAHA BÜYÜK VE EFEKTLİ */}
             <TouchableOpacity
-              style={styles.destinationBoxEffective}
+              style={styles.destinationBoxBig}
               onPress={() => {
                 setShowDestinationPicker(true);
                 setShowArrowHint(false);
               }}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
-              <View style={styles.destinationIconCircle}>
-                <Ionicons name="location-sharp" size={28} color="#FFF" />
+              <View style={styles.destinationIconBig}>
+                <Ionicons name="navigate" size={32} color="#FFF" />
               </View>
-              <Text style={styles.destinationTextEffective}>
+              <Text style={styles.destinationTextBig}>
                 {destination ? destination.address : 'Hedef Seçin'}
               </Text>
-              <View style={styles.destinationArrowCircle}>
-                <Ionicons name="chevron-forward" size={20} color="#FFF" />
+              <View style={styles.destinationArrowBig}>
+                <Ionicons name="arrow-forward" size={24} color="#FFF" />
               </View>
             </TouchableOpacity>
 
