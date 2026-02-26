@@ -10619,7 +10619,7 @@ const styles = StyleSheet.create({
   },
   roleCardCompact: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
     borderRadius: 16,
     paddingVertical: 24,
     alignItems: 'center',
@@ -10629,7 +10629,7 @@ const styles = StyleSheet.create({
   },
   roleCardSelected: {
     borderColor: '#3FA9F5',
-    backgroundColor: '#F0F9FF',
+    backgroundColor: 'rgba(240, 249, 255, 0.95)',
   },
   roleIconCircle: {
     width: 60,
