@@ -1,9 +1,9 @@
 /**
  * DriverKYCScreen.tsx - Sürücü KYC Kayıt Ekranı
- * Web, Android ve iOS uyumlu
+ * Web, Android ve iOS için tam uyumlu
  */
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,43 +23,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
-// Cross-platform alert fonksiyonu
-const showAlert = (title: string, message: string, onOk?: () => void) => {
-  if (Platform.OS === 'web') {
-    window.alert(`${title}\n\n${message}`);
-    if (onOk) onOk();
-  } else {
-    Alert.alert(title, message, onOk ? [{ text: 'Tamam', onPress: onOk }] : undefined);
-  }
-};
-
 // Türkiye'de popüler araç markaları ve modelleri
 const CAR_BRANDS: { [key: string]: string[] } = {
-  'Audi': ['A1', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'Q2', 'Q3', 'Q5', 'Q7', 'Q8', 'e-tron', 'TT', 'RS3', 'RS6'],
-  'BMW': ['1 Serisi', '2 Serisi', '3 Serisi', '4 Serisi', '5 Serisi', '6 Serisi', '7 Serisi', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'Z4', 'i3', 'i4', 'iX'],
-  'Citroen': ['C1', 'C3', 'C3 Aircross', 'C4', 'C4 Cactus', 'C5', 'C5 Aircross', 'Berlingo', 'Jumpy'],
+  'Audi': ['A1', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'Q2', 'Q3', 'Q5', 'Q7', 'Q8', 'e-tron', 'TT'],
+  'BMW': ['1 Serisi', '2 Serisi', '3 Serisi', '4 Serisi', '5 Serisi', '7 Serisi', 'X1', 'X3', 'X5', 'X7'],
+  'Citroen': ['C1', 'C3', 'C4', 'C5', 'Berlingo'],
   'Dacia': ['Sandero', 'Logan', 'Duster', 'Jogger', 'Spring'],
-  'Fiat': ['Egea', 'Egea Cross', '500', '500X', 'Panda', 'Tipo', 'Doblo', 'Fiorino', 'Linea'],
-  'Ford': ['Fiesta', 'Focus', 'Mondeo', 'Puma', 'Kuga', 'EcoSport', 'Mustang', 'Ranger', 'Transit', 'Transit Connect', 'Transit Courier'],
+  'Fiat': ['Egea', 'Egea Cross', '500', '500X', 'Panda', 'Tipo', 'Doblo', 'Linea'],
+  'Ford': ['Fiesta', 'Focus', 'Mondeo', 'Puma', 'Kuga', 'EcoSport', 'Mustang', 'Ranger', 'Transit'],
   'Honda': ['Civic', 'Accord', 'Jazz', 'HR-V', 'CR-V', 'City'],
-  'Hyundai': ['i10', 'i20', 'i30', 'Elantra', 'Tucson', 'Kona', 'Santa Fe', 'Bayon', 'IONIQ 5', 'IONIQ 6'],
-  'Kia': ['Picanto', 'Rio', 'Ceed', 'Sportage', 'Sorento', 'Stonic', 'Niro', 'EV6', 'Stinger'],
-  'Mercedes-Benz': ['A Serisi', 'B Serisi', 'C Serisi', 'E Serisi', 'S Serisi', 'CLA', 'CLS', 'GLA', 'GLB', 'GLC', 'GLE', 'GLS', 'AMG GT', 'EQA', 'EQB', 'EQC', 'EQS'],
-  'Nissan': ['Micra', 'Juke', 'Qashqai', 'X-Trail', 'Leaf', 'Navara'],
-  'Opel': ['Corsa', 'Astra', 'Insignia', 'Crossland', 'Grandland', 'Mokka', 'Combo'],
-  'Peugeot': ['208', '308', '408', '508', '2008', '3008', '5008', 'Rifter', 'Partner', 'Expert'],
-  'Renault': ['Clio', 'Megane', 'Talisman', 'Captur', 'Kadjar', 'Koleos', 'Kangoo', 'Zoe', 'Arkana', 'Austral'],
+  'Hyundai': ['i10', 'i20', 'i30', 'Elantra', 'Tucson', 'Kona', 'Santa Fe', 'Bayon'],
+  'Kia': ['Picanto', 'Rio', 'Ceed', 'Sportage', 'Sorento', 'Stonic', 'Niro'],
+  'Mercedes-Benz': ['A Serisi', 'B Serisi', 'C Serisi', 'E Serisi', 'S Serisi', 'CLA', 'GLA', 'GLC', 'GLE'],
+  'Nissan': ['Micra', 'Juke', 'Qashqai', 'X-Trail', 'Leaf'],
+  'Opel': ['Corsa', 'Astra', 'Insignia', 'Crossland', 'Grandland', 'Mokka'],
+  'Peugeot': ['208', '308', '408', '508', '2008', '3008', '5008'],
+  'Renault': ['Clio', 'Megane', 'Talisman', 'Captur', 'Kadjar', 'Koleos', 'Kangoo', 'Arkana'],
   'Seat': ['Ibiza', 'Leon', 'Arona', 'Ateca', 'Tarraco'],
-  'Skoda': ['Fabia', 'Scala', 'Octavia', 'Superb', 'Kamiq', 'Karoq', 'Kodiaq', 'Enyaq'],
-  'Toyota': ['Yaris', 'Yaris Cross', 'Corolla', 'Camry', 'C-HR', 'RAV4', 'Land Cruiser', 'Hilux', 'Proace', 'Aygo X', 'bZ4X'],
-  'Volkswagen': ['Polo', 'Golf', 'Passat', 'Arteon', 'T-Cross', 'T-Roc', 'Tiguan', 'Touareg', 'ID.3', 'ID.4', 'ID.5', 'Caddy', 'Transporter'],
-  'Volvo': ['XC40', 'XC60', 'XC90', 'S60', 'S90', 'V60', 'V90', 'C40'],
+  'Skoda': ['Fabia', 'Scala', 'Octavia', 'Superb', 'Kamiq', 'Karoq', 'Kodiaq'],
+  'Toyota': ['Yaris', 'Yaris Cross', 'Corolla', 'Camry', 'C-HR', 'RAV4', 'Land Cruiser', 'Hilux'],
+  'Volkswagen': ['Polo', 'Golf', 'Passat', 'Arteon', 'T-Cross', 'T-Roc', 'Tiguan', 'Touareg'],
+  'Volvo': ['XC40', 'XC60', 'XC90', 'S60', 'S90', 'V60', 'V90'],
   'Diğer': ['Belirtilmemiş'],
 };
 
-// Araç Renkleri - Görsel renk kodları ile
+// Araç Renkleri
 const CAR_COLORS = [
-  { name: 'Beyaz', code: '#FFFFFF', border: '#E0E0E0' },
+  { name: 'Beyaz', code: '#FFFFFF', border: '#CCCCCC' },
   { name: 'Siyah', code: '#1A1A1A', border: '#1A1A1A' },
   { name: 'Gri', code: '#808080', border: '#808080' },
   { name: 'Gümüş', code: '#C0C0C0', border: '#A0A0A0' },
@@ -93,16 +83,12 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
   const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
   const [licensePhoto, setLicensePhoto] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<'info' | 'brand' | 'vehicle' | 'license' | 'review'>('info');
+  const [submitStatus, setSubmitStatus] = useState('');
   
   // Marka arama
   const [brandSearch, setBrandSearch] = useState('');
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
-
-  // Web için file input ref
-  const vehicleInputRef = useRef<HTMLInputElement | null>(null);
-  const licenseInputRef = useRef<HTMLInputElement | null>(null);
 
   // Filtrelenmiş markalar
   const filteredBrands = useMemo(() => {
@@ -118,157 +104,189 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
 
   // Web'de dosya seçimi
   const handleWebFileSelect = (type: 'vehicle' | 'license') => {
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = async (e: any) => {
-        const file = e.target.files[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const base64 = event.target?.result as string;
-            if (type === 'vehicle') {
-              setVehiclePhoto(base64);
-              setStep('license');
-            } else {
-              setLicensePhoto(base64);
-              setStep('review');
-            }
-          };
-          reader.readAsDataURL(file);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (file) {
+        // Dosya boyutunu kontrol et
+        if (file.size > 5 * 1024 * 1024) {
+          alert('Dosya boyutu 5MB\'dan küçük olmalıdır');
+          return;
         }
-      };
-      input.click();
-    }
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64 = event.target?.result as string;
+          console.log(`${type} photo loaded, size: ${Math.round(base64.length / 1024)} KB`);
+          if (type === 'vehicle') {
+            setVehiclePhoto(base64);
+          } else {
+            setLicensePhoto(base64);
+          }
+        };
+        reader.onerror = () => {
+          alert('Dosya okunamadı');
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
   };
 
   // Mobile'da fotoğraf çek veya seç
-  const pickImage = async (type: 'vehicle' | 'license', source: 'camera' | 'gallery') => {
-    if (Platform.OS === 'web') {
-      handleWebFileSelect(type);
-      return;
-    }
-
+  const pickImageMobile = async (type: 'vehicle' | 'license', source: 'camera' | 'gallery') => {
     try {
       let result;
       
       if (source === 'camera') {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== 'granted') {
-          showAlert('İzin Gerekli', 'Kamera izni gereklidir');
+          Alert.alert('İzin Gerekli', 'Kamera izni gereklidir');
           return;
         }
         result = await ImagePicker.launchCameraAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
           allowsEditing: true,
           aspect: [4, 3],
-          quality: 0.7,
+          quality: 0.6,
           base64: true,
         });
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-          showAlert('İzin Gerekli', 'Galeri izni gereklidir');
+          Alert.alert('İzin Gerekli', 'Galeri izni gereklidir');
           return;
         }
         result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
           allowsEditing: true,
           aspect: [4, 3],
-          quality: 0.7,
+          quality: 0.6,
           base64: true,
         });
       }
 
       if (!result.canceled && result.assets[0].base64) {
+        const base64Data = `data:image/jpeg;base64,${result.assets[0].base64}`;
         if (type === 'vehicle') {
-          setVehiclePhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
-          setStep('license');
+          setVehiclePhoto(base64Data);
         } else {
-          setLicensePhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
-          setStep('review');
+          setLicensePhoto(base64Data);
         }
       }
     } catch (error) {
       console.error('Image pick error:', error);
-      showAlert('Hata', 'Fotoğraf seçilemedi');
+      Alert.alert('Hata', 'Fotoğraf seçilemedi');
     }
+  };
+
+  // Validasyon kontrolü
+  const isFormValid = () => {
+    return plateNumber.trim() && vehicleBrand && vehicleModel && vehiclePhoto && licensePhoto;
   };
 
   // KYC gönder
   const submitKYC = async () => {
-    console.log('=== KYC SUBMIT STARTED ===');
-    console.log('Plate:', plateNumber);
-    console.log('Brand:', vehicleBrand);
-    console.log('Model:', vehicleModel);
-    console.log('Color:', vehicleColor);
-    console.log('Vehicle Photo:', vehiclePhoto ? 'EXISTS' : 'MISSING');
-    console.log('License Photo:', licensePhoto ? 'EXISTS' : 'MISSING');
-
+    console.log('========== KYC SUBMIT BAŞLADI ==========');
+    
+    // Validasyon
     if (!plateNumber.trim()) {
-      showAlert('Hata', 'Plaka numarası giriniz');
+      if (Platform.OS === 'web') {
+        alert('Lütfen plaka numarası girin');
+      } else {
+        Alert.alert('Hata', 'Lütfen plaka numarası girin');
+      }
       return;
     }
     if (!vehicleBrand) {
-      showAlert('Hata', 'Araç markası seçiniz');
+      if (Platform.OS === 'web') {
+        alert('Lütfen araç markası seçin');
+      } else {
+        Alert.alert('Hata', 'Lütfen araç markası seçin');
+      }
       return;
     }
     if (!vehicleModel) {
-      showAlert('Hata', 'Araç modeli seçiniz');
+      if (Platform.OS === 'web') {
+        alert('Lütfen araç modeli seçin');
+      } else {
+        Alert.alert('Hata', 'Lütfen araç modeli seçin');
+      }
       return;
     }
     if (!vehiclePhoto) {
-      showAlert('Hata', 'Araç fotoğrafı gerekli');
+      if (Platform.OS === 'web') {
+        alert('Lütfen araç fotoğrafı yükleyin');
+      } else {
+        Alert.alert('Hata', 'Lütfen araç fotoğrafı yükleyin');
+      }
       return;
     }
     if (!licensePhoto) {
-      showAlert('Hata', 'Ehliyet fotoğrafı gerekli');
+      if (Platform.OS === 'web') {
+        alert('Lütfen ehliyet fotoğrafı yükleyin');
+      } else {
+        Alert.alert('Hata', 'Lütfen ehliyet fotoğrafı yükleyin');
+      }
       return;
     }
 
     setLoading(true);
+    setSubmitStatus('Başvuru gönderiliyor...');
+
     try {
-      console.log('=== KYC SUBMIT BAŞLADI ===');
-      console.log('API URL:', `${apiUrl}/driver/kyc/submit`);
-      
-      // Resim boyutunu küçült (web için)
-      let vehiclePhotoData = vehiclePhoto;
-      let licensePhotoData = licensePhoto;
-      
-      // Web'de base64 boyutunu kontrol et ve logla
-      if (Platform.OS === 'web') {
-        console.log('Vehicle photo size:', Math.round((vehiclePhoto?.length || 0) / 1024), 'KB');
-        console.log('License photo size:', Math.round((licensePhoto?.length || 0) / 1024), 'KB');
-      }
-      
+      const submitUrl = `${apiUrl}/driver/kyc/submit`;
+      console.log('Submit URL:', submitUrl);
+      console.log('User ID:', userId);
+      console.log('Vehicle Photo Size:', Math.round((vehiclePhoto?.length || 0) / 1024), 'KB');
+      console.log('License Photo Size:', Math.round((licensePhoto?.length || 0) / 1024), 'KB');
+
       const bodyData = {
         user_id: userId,
-        plate_number: plateNumber.toUpperCase(),
+        plate_number: plateNumber.toUpperCase().trim(),
         vehicle_brand: vehicleBrand,
         vehicle_model: vehicleModel,
         vehicle_year: vehicleYear || null,
         vehicle_color: vehicleColor || null,
-        vehicle_photo_base64: vehiclePhotoData,
-        license_photo_base64: licensePhotoData,
+        vehicle_photo_base64: vehiclePhoto,
+        license_photo_base64: licensePhoto,
       };
-      
-      console.log('Gönderiliyor...');
 
-      const response = await fetch(`${apiUrl}/driver/kyc/submit`, {
+      setSubmitStatus('Sunucuya bağlanılıyor...');
+
+      const response = await fetch(submitUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(bodyData),
       });
 
-      console.log('Response status:', response.status);
-      const data = await response.json();
-      console.log('Response data:', data);
+      console.log('Response Status:', response.status);
+      setSubmitStatus('Yanıt işleniyor...');
 
-      if (data.success) {
-        // Başarılı - hemen alert göster
+      const responseText = await response.text();
+      console.log('Response Text:', responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error('JSON parse error:', e);
+        throw new Error('Sunucu yanıtı işlenemedi');
+      }
+
+      console.log('Response Data:', data);
+
+      if (response.ok && data.success) {
+        setSubmitStatus('Başvuru başarılı!');
+        console.log('========== KYC SUBMIT BAŞARILI ==========');
+        
+        // Başarı mesajı göster
         if (Platform.OS === 'web') {
-          window.alert('✅ Başvuru Alındı!\n\nSürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.');
+          alert('✅ Başvurunuz alındı!\n\nSürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.');
           onSuccess();
         } else {
           Alert.alert(
@@ -278,152 +296,207 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
           );
         }
       } else {
-        showAlert('Bilgi', data.message || 'Başvuru gönderilemedi');
+        throw new Error(data.message || data.detail || 'Başvuru gönderilemedi');
       }
-    } catch (error) {
-      console.error('KYC submit error:', error);
-      showAlert('Hata', 'Başvuru gönderilemedi. Lütfen tekrar deneyin.');
+    } catch (error: any) {
+      console.error('========== KYC SUBMIT HATA ==========');
+      console.error('Error:', error);
+      setSubmitStatus('');
+      
+      const errorMsg = error.message || 'Bir hata oluştu. Lütfen tekrar deneyin.';
+      if (Platform.OS === 'web') {
+        alert('Hata: ' + errorMsg);
+      } else {
+        Alert.alert('Hata', errorMsg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Info Step
-  const renderInfoStep = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.iconCircle}>
-        <Ionicons name="car-sport" size={60} color="#3FA9F5" />
-      </View>
-      <Text style={styles.title}>Sürücü Kaydı</Text>
-      <Text style={styles.subtitle}>
-        Sürücü olarak kayıt olmak için aşağıdaki bilgileri ve belgeleri göndermeniz gerekmektedir.
-      </Text>
-
-      <View style={styles.requirementsList}>
-        <View style={styles.requirementItem}>
-          <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-          <Text style={styles.requirementText}>Plaka numarası</Text>
-        </View>
-        <View style={styles.requirementItem}>
-          <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-          <Text style={styles.requirementText}>Araç marka, model ve rengi</Text>
-        </View>
-        <View style={styles.requirementItem}>
-          <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-          <Text style={styles.requirementText}>Araç ön fotoğrafı (plaka görünür)</Text>
-        </View>
-        <View style={styles.requirementItem}>
-          <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-          <Text style={styles.requirementText}>Ehliyet fotoğrafı</Text>
-        </View>
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#3FA9F5" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Sürücü Kaydı</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <TextInput
-        style={styles.plateInput}
-        placeholder="Plaka Numarası (Örn: 34 ABC 123)"
-        placeholderTextColor="#999"
-        value={plateNumber}
-        onChangeText={setPlateNumber}
-        autoCapitalize="characters"
-      />
-
-      <TouchableOpacity
-        style={[styles.continueButton, !plateNumber.trim() && styles.buttonDisabled]}
-        onPress={() => setStep('brand')}
-        disabled={!plateNumber.trim()}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        <Text style={styles.continueButtonText}>Devam Et</Text>
-        <Ionicons name="arrow-forward" size={20} color="#FFF" />
-      </TouchableOpacity>
-    </View>
-  );
-
-  // Brand/Model Step
-  const renderBrandStep = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.iconCircle}>
-        <Ionicons name="speedometer" size={60} color="#3FA9F5" />
-      </View>
-      <Text style={styles.title}>Araç Bilgileri</Text>
-      <Text style={styles.subtitle}>Aracınızın marka, model ve rengini seçin.</Text>
-
-      {/* Marka Seçimi */}
-      <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
-        <Ionicons name="car" size={24} color={vehicleBrand ? '#3FA9F5' : '#999'} />
-        <Text style={[styles.selectButtonText, vehicleBrand && styles.selectButtonTextActive]}>
-          {vehicleBrand || 'Marka Seçin'}
-        </Text>
-        <Ionicons name="chevron-down" size={20} color="#999" />
-      </TouchableOpacity>
-
-      {/* Model Seçimi */}
-      <TouchableOpacity 
-        style={[styles.selectButton, !vehicleBrand && styles.selectButtonDisabled]} 
-        onPress={() => vehicleBrand && setShowModelModal(true)}
-        disabled={!vehicleBrand}
-      >
-        <Ionicons name="construct" size={24} color={vehicleModel ? '#3FA9F5' : '#999'} />
-        <Text style={[styles.selectButtonText, vehicleModel && styles.selectButtonTextActive]}>
-          {vehicleModel || 'Model Seçin'}
-        </Text>
-        <Ionicons name="chevron-down" size={20} color="#999" />
-      </TouchableOpacity>
-
-      {/* Yıl */}
-      <TextInput
-        style={styles.textInput}
-        placeholder="Araç Yılı (Örn: 2020)"
-        placeholderTextColor="#999"
-        value={vehicleYear}
-        onChangeText={setVehicleYear}
-        keyboardType="numeric"
-        maxLength={4}
-      />
-
-      {/* Renk Seçimi - Grid Layout (Tüm renkler görünür) */}
-      <Text style={styles.colorLabel}>Araç Rengi</Text>
-      <View style={styles.colorGrid}>
-        {CAR_COLORS.map(color => (
-          <TouchableOpacity
-            key={color.name}
-            style={[
-              styles.colorItem,
-              vehicleColor === color.name && styles.colorItemActive
-            ]}
-            onPress={() => setVehicleColor(color.name)}
-          >
-            <View 
-              style={[
-                styles.colorCircle, 
-                { backgroundColor: color.code, borderColor: color.border }
-              ]} 
-            />
-            <Text style={[
-              styles.colorName,
-              vehicleColor === color.name && styles.colorNameActive
-            ]}>
-              {color.name}
+        <ScrollView 
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
+          {/* Bilgi Kartı */}
+          <View style={styles.infoCard}>
+            <Ionicons name="information-circle" size={24} color="#3FA9F5" />
+            <Text style={styles.infoText}>
+              Sürücü olarak kayıt olmak için araç ve ehliyet bilgilerinizi girin.
+              Başvurunuz admin tarafından incelenecektir.
             </Text>
-            {vehicleColor === color.name && (
-              <View style={styles.colorCheck}>
-                <Ionicons name="checkmark" size={12} color="#FFF" />
-              </View>
+          </View>
+
+          {/* Plaka */}
+          <Text style={styles.label}>Plaka Numarası *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Örn: 34 ABC 123"
+            placeholderTextColor="#999"
+            value={plateNumber}
+            onChangeText={setPlateNumber}
+            autoCapitalize="characters"
+          />
+
+          {/* Marka Seçimi */}
+          <Text style={styles.label}>Araç Markası *</Text>
+          <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
+            <Ionicons name="car" size={20} color={vehicleBrand ? '#3FA9F5' : '#999'} />
+            <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
+              {vehicleBrand || 'Marka seçin...'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color="#999" />
+          </TouchableOpacity>
+
+          {/* Model Seçimi */}
+          <Text style={styles.label}>Araç Modeli *</Text>
+          <TouchableOpacity 
+            style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
+            onPress={() => vehicleBrand && setShowModelModal(true)}
+            disabled={!vehicleBrand}
+          >
+            <Ionicons name="construct" size={20} color={vehicleModel ? '#3FA9F5' : '#999'} />
+            <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
+              {vehicleModel || 'Model seçin...'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color="#999" />
+          </TouchableOpacity>
+
+          {/* Yıl */}
+          <Text style={styles.label}>Araç Yılı</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Örn: 2020"
+            placeholderTextColor="#999"
+            value={vehicleYear}
+            onChangeText={setVehicleYear}
+            keyboardType="numeric"
+            maxLength={4}
+          />
+
+          {/* Renk Seçimi */}
+          <Text style={styles.label}>Araç Rengi</Text>
+          <View style={styles.colorGrid}>
+            {CAR_COLORS.map(color => (
+              <TouchableOpacity
+                key={color.name}
+                style={[styles.colorItem, vehicleColor === color.name && styles.colorItemActive]}
+                onPress={() => setVehicleColor(color.name)}
+              >
+                <View style={[styles.colorCircle, { backgroundColor: color.code, borderColor: color.border }]} />
+                <Text style={[styles.colorName, vehicleColor === color.name && styles.colorNameActive]}>
+                  {color.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Araç Fotoğrafı */}
+          <Text style={styles.label}>Araç Fotoğrafı * (Plaka görünmeli)</Text>
+          {vehiclePhoto ? (
+            <View style={styles.photoPreview}>
+              <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
+              <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setVehiclePhoto(null)}>
+                <Ionicons name="close-circle" size={28} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.photoButtons}>
+              {Platform.OS === 'web' ? (
+                <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('vehicle')}>
+                  <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                  <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'camera')}>
+                    <Ionicons name="camera" size={28} color="#3FA9F5" />
+                    <Text style={styles.photoBtnText}>Çek</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'gallery')}>
+                    <Ionicons name="images" size={28} color="#3FA9F5" />
+                    <Text style={styles.photoBtnText}>Galeri</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* Ehliyet Fotoğrafı */}
+          <Text style={styles.label}>Ehliyet Fotoğrafı *</Text>
+          {licensePhoto ? (
+            <View style={styles.photoPreview}>
+              <Image source={{ uri: licensePhoto }} style={styles.previewImage} />
+              <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setLicensePhoto(null)}>
+                <Ionicons name="close-circle" size={28} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.photoButtons}>
+              {Platform.OS === 'web' ? (
+                <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('license')}>
+                  <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                  <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'camera')}>
+                    <Ionicons name="camera" size={28} color="#3FA9F5" />
+                    <Text style={styles.photoBtnText}>Çek</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'gallery')}>
+                    <Ionicons name="images" size={28} color="#3FA9F5" />
+                    <Text style={styles.photoBtnText}>Galeri</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* Submit Status */}
+          {submitStatus ? (
+            <View style={styles.statusContainer}>
+              <ActivityIndicator size="small" color="#3FA9F5" />
+              <Text style={styles.statusText}>{submitStatus}</Text>
+            </View>
+          ) : null}
+
+          {/* Gönder Butonu */}
+          <TouchableOpacity
+            style={[styles.submitBtn, (!isFormValid() || loading) && styles.submitBtnDisabled]}
+            onPress={submitKYC}
+            disabled={!isFormValid() || loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <>
+                <Ionicons name="send" size={20} color="#FFF" />
+                <Text style={styles.submitBtnText}>Başvuruyu Gönder</Text>
+              </>
             )}
           </TouchableOpacity>
-        ))}
-      </View>
-
-      <TouchableOpacity
-        style={[styles.continueButton, (!vehicleBrand || !vehicleModel) && styles.buttonDisabled]}
-        onPress={() => setStep('vehicle')}
-        disabled={!vehicleBrand || !vehicleModel}
-      >
-        <Text style={styles.continueButtonText}>Devam Et</Text>
-        <Ionicons name="arrow-forward" size={20} color="#FFF" />
-      </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Marka Modal */}
-      <Modal visible={showBrandModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showBrandModal} animationType="slide">
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Marka Seçin</Text>
@@ -431,8 +504,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
               <Ionicons name="close" size={28} color="#333" />
             </TouchableOpacity>
           </View>
-          
-          <View style={styles.searchContainer}>
+          <View style={styles.searchBox}>
             <Ionicons name="search" size={20} color="#999" />
             <TextInput
               style={styles.searchInput}
@@ -440,21 +512,14 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
               placeholderTextColor="#999"
               value={brandSearch}
               onChangeText={setBrandSearch}
-              autoFocus
             />
-            {brandSearch ? (
-              <TouchableOpacity onPress={() => setBrandSearch('')}>
-                <Ionicons name="close-circle" size={20} color="#999" />
-              </TouchableOpacity>
-            ) : null}
           </View>
-
           <FlatList
             data={filteredBrands}
             keyExtractor={item => item}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={[styles.brandItem, vehicleBrand === item && styles.brandItemActive]}
+                style={[styles.listItem, vehicleBrand === item && styles.listItemActive]}
                 onPress={() => {
                   setVehicleBrand(item);
                   setVehicleModel('');
@@ -462,245 +527,45 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
                   setBrandSearch('');
                 }}
               >
-                <Text style={[styles.brandItemText, vehicleBrand === item && styles.brandItemTextActive]}>
+                <Text style={[styles.listItemText, vehicleBrand === item && styles.listItemTextActive]}>
                   {item}
                 </Text>
                 {vehicleBrand === item && <Ionicons name="checkmark" size={22} color="#3FA9F5" />}
               </TouchableOpacity>
             )}
-            contentContainerStyle={styles.brandList}
           />
         </SafeAreaView>
       </Modal>
 
       {/* Model Modal */}
-      <Modal visible={showModelModal} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={showModelModal} animationType="slide">
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{vehicleBrand} - Model Seçin</Text>
+            <Text style={styles.modalTitle}>{vehicleBrand} Modelleri</Text>
             <TouchableOpacity onPress={() => setShowModelModal(false)}>
               <Ionicons name="close" size={28} color="#333" />
             </TouchableOpacity>
           </View>
-
           <FlatList
             data={availableModels}
             keyExtractor={item => item}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={[styles.brandItem, vehicleModel === item && styles.brandItemActive]}
+                style={[styles.listItem, vehicleModel === item && styles.listItemActive]}
                 onPress={() => {
                   setVehicleModel(item);
                   setShowModelModal(false);
                 }}
               >
-                <Text style={[styles.brandItemText, vehicleModel === item && styles.brandItemTextActive]}>
+                <Text style={[styles.listItemText, vehicleModel === item && styles.listItemTextActive]}>
                   {item}
                 </Text>
                 {vehicleModel === item && <Ionicons name="checkmark" size={22} color="#3FA9F5" />}
               </TouchableOpacity>
             )}
-            contentContainerStyle={styles.brandList}
           />
         </SafeAreaView>
       </Modal>
-    </View>
-  );
-
-  // Vehicle Photo Step
-  const renderVehicleStep = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.iconCircle}>
-        <Ionicons name="camera" size={60} color="#3FA9F5" />
-      </View>
-      <Text style={styles.title}>Araç Fotoğrafı</Text>
-      <Text style={styles.subtitle}>
-        Aracınızın önden çekilmiş fotoğrafını yükleyin. Plaka numarası net görünmelidir.
-      </Text>
-
-      {vehiclePhoto ? (
-        <View style={styles.photoPreview}>
-          <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
-          <TouchableOpacity style={styles.retakeButton} onPress={() => setVehiclePhoto(null)}>
-            <Ionicons name="refresh" size={20} color="#FFF" />
-            <Text style={styles.retakeText}>Tekrar Seç</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.photoButtons}>
-          {Platform.OS === 'web' ? (
-            <TouchableOpacity style={styles.photoButtonFull} onPress={() => handleWebFileSelect('vehicle')}>
-              <Ionicons name="cloud-upload" size={40} color="#3FA9F5" />
-              <Text style={styles.photoButtonText}>Fotoğraf Yükle</Text>
-              <Text style={styles.photoButtonHint}>Bilgisayarınızdan seçin</Text>
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('vehicle', 'camera')}>
-                <Ionicons name="camera" size={32} color="#3FA9F5" />
-                <Text style={styles.photoButtonText}>Fotoğraf Çek</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('vehicle', 'gallery')}>
-                <Ionicons name="images" size={32} color="#3FA9F5" />
-                <Text style={styles.photoButtonText}>Galeriden Seç</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      )}
-
-      {vehiclePhoto && (
-        <TouchableOpacity style={styles.continueButton} onPress={() => setStep('license')}>
-          <Text style={styles.continueButtonText}>Devam Et</Text>
-          <Ionicons name="arrow-forward" size={20} color="#FFF" />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
-  // License Photo Step
-  const renderLicenseStep = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.iconCircle}>
-        <Ionicons name="card" size={60} color="#3FA9F5" />
-      </View>
-      <Text style={styles.title}>Ehliyet Fotoğrafı</Text>
-      <Text style={styles.subtitle}>
-        Ehliyetinizin ön yüzünün net fotoğrafını yükleyin.
-      </Text>
-
-      {licensePhoto ? (
-        <View style={styles.photoPreview}>
-          <Image source={{ uri: licensePhoto }} style={styles.previewImage} />
-          <TouchableOpacity style={styles.retakeButton} onPress={() => setLicensePhoto(null)}>
-            <Ionicons name="refresh" size={20} color="#FFF" />
-            <Text style={styles.retakeText}>Tekrar Seç</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.photoButtons}>
-          {Platform.OS === 'web' ? (
-            <TouchableOpacity style={styles.photoButtonFull} onPress={() => handleWebFileSelect('license')}>
-              <Ionicons name="cloud-upload" size={40} color="#3FA9F5" />
-              <Text style={styles.photoButtonText}>Fotoğraf Yükle</Text>
-              <Text style={styles.photoButtonHint}>Bilgisayarınızdan seçin</Text>
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('license', 'camera')}>
-                <Ionicons name="camera" size={32} color="#3FA9F5" />
-                <Text style={styles.photoButtonText}>Fotoğraf Çek</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('license', 'gallery')}>
-                <Ionicons name="images" size={32} color="#3FA9F5" />
-                <Text style={styles.photoButtonText}>Galeriden Seç</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      )}
-
-      {licensePhoto && (
-        <TouchableOpacity style={styles.continueButton} onPress={() => setStep('review')}>
-          <Text style={styles.continueButtonText}>Devam Et</Text>
-          <Ionicons name="arrow-forward" size={20} color="#FFF" />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
-  // Review Step
-  const renderReviewStep = () => (
-    <ScrollView style={styles.reviewScroll} showsVerticalScrollIndicator={false}>
-      <View style={styles.stepContainer}>
-        <Text style={styles.title}>Başvuru Özeti</Text>
-        <Text style={styles.subtitle}>Bilgilerinizi kontrol edin ve başvurunuzu gönderin.</Text>
-
-        <View style={styles.reviewCard}>
-          <Text style={styles.reviewLabel}>Plaka Numarası</Text>
-          <Text style={styles.reviewValue}>{plateNumber.toUpperCase()}</Text>
-        </View>
-
-        <View style={styles.reviewCard}>
-          <Text style={styles.reviewLabel}>Araç</Text>
-          <Text style={styles.reviewValue}>{vehicleBrand} {vehicleModel}</Text>
-          {vehicleYear && <Text style={styles.reviewSubValue}>{vehicleYear} Model</Text>}
-          {vehicleColor && (
-            <View style={styles.reviewColorRow}>
-              <View style={[
-                styles.reviewColorDot,
-                { backgroundColor: CAR_COLORS.find(c => c.name === vehicleColor)?.code || '#999' }
-              ]} />
-              <Text style={styles.reviewSubValue}>{vehicleColor}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.reviewCard}>
-          <Text style={styles.reviewLabel}>Araç Fotoğrafı</Text>
-          {vehiclePhoto && <Image source={{ uri: vehiclePhoto }} style={styles.reviewImage} />}
-        </View>
-
-        <View style={styles.reviewCard}>
-          <Text style={styles.reviewLabel}>Ehliyet Fotoğrafı</Text>
-          {licensePhoto && <Image source={{ uri: licensePhoto }} style={styles.reviewImage} />}
-        </View>
-
-        <TouchableOpacity
-          style={[styles.submitButton, loading && styles.buttonDisabled]}
-          onPress={submitKYC}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <>
-              <Ionicons name="send" size={20} color="#FFF" />
-              <Text style={styles.submitButtonText}>Başvuruyu Gönder</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
-
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Sürücü Kaydı</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      {/* Progress */}
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressDot, step === 'info' && styles.progressDotActive]} />
-        <View style={styles.progressLine} />
-        <View style={[styles.progressDot, step === 'brand' && styles.progressDotActive]} />
-        <View style={styles.progressLine} />
-        <View style={[styles.progressDot, step === 'vehicle' && styles.progressDotActive]} />
-        <View style={styles.progressLine} />
-        <View style={[styles.progressDot, step === 'license' && styles.progressDotActive]} />
-        <View style={styles.progressLine} />
-        <View style={[styles.progressDot, step === 'review' && styles.progressDotActive]} />
-      </View>
-
-      {/* Content */}
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.content}
-      >
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-          {step === 'info' && renderInfoStep()}
-          {step === 'brand' && renderBrandStep()}
-          {step === 'vehicle' && renderVehicleStep()}
-          {step === 'license' && renderLicenseStep()}
-          {step === 'review' && renderReviewStep()}
-        </ScrollView>
-      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -708,7 +573,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F9FB',
+    backgroundColor: '#F5F7FA',
   },
   header: {
     flexDirection: 'row',
@@ -728,214 +593,190 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1B1B1E',
   },
-  placeholder: {
-    width: 40,
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    backgroundColor: '#FFF',
-  },
-  progressDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E5E7EB',
-  },
-  progressDotActive: {
-    backgroundColor: '#3FA9F5',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-  },
-  progressLine: {
-    width: 30,
-    height: 2,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 4,
-  },
   content: {
     flex: 1,
+    padding: 16,
   },
-  stepContainer: {
-    flex: 1,
-    padding: 24,
-    alignItems: 'center',
-  },
-  iconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#F0F9FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1B1B1E',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-    paddingHorizontal: 20,
-  },
-  requirementsList: {
-    width: '100%',
-    marginBottom: 24,
-  },
-  requirementItem: {
+  infoCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 10,
-    gap: 12,
+    backgroundColor: '#EBF5FF',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 20,
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  requirementText: {
-    fontSize: 15,
-    color: '#1B1B1E',
+  infoText: {
     flex: 1,
+    fontSize: 13,
+    color: '#1E40AF',
+    lineHeight: 18,
   },
-  plateInput: {
-    width: '100%',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 18,
+  label: {
+    fontSize: 14,
     fontWeight: '600',
-    textAlign: 'center',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    marginBottom: 24,
+    color: '#374151',
+    marginBottom: 8,
+    marginTop: 12,
   },
-  textInput: {
-    width: '100%',
+  input: {
     backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 10,
+    padding: 14,
     fontSize: 16,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 16,
   },
-  continueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3FA9F5',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    gap: 8,
-    width: '100%',
-    marginTop: 8,
-  },
-  continueButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  // Select buttons
   selectButton: {
-    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 2,
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 12,
-    gap: 12,
+    gap: 10,
   },
-  selectButtonDisabled: {
+  selectDisabled: {
     opacity: 0.5,
   },
-  selectButtonText: {
+  selectText: {
     flex: 1,
     fontSize: 16,
     color: '#999',
   },
-  selectButtonTextActive: {
+  selectTextActive: {
     color: '#1B1B1E',
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  // Color picker - Grid Layout
-  colorLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-  },
+  // Renk Grid
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    gap: 10,
-    marginBottom: 24,
-    width: '100%',
+    gap: 8,
+    marginBottom: 8,
   },
   colorItem: {
     alignItems: 'center',
     padding: 8,
-    borderRadius: 10,
+    borderRadius: 8,
     backgroundColor: '#FFF',
     borderWidth: 2,
     borderColor: '#E5E7EB',
     width: '18%',
-    minWidth: 60,
-    position: 'relative',
+    minWidth: 58,
   },
   colorItemActive: {
     borderColor: '#3FA9F5',
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#EBF5FF',
   },
   colorCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     borderWidth: 2,
     marginBottom: 4,
   },
   colorName: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#666',
-    fontWeight: '500',
     textAlign: 'center',
   },
   colorNameActive: {
     color: '#3FA9F5',
-    fontWeight: '700',
+    fontWeight: '600',
   },
-  colorCheck: {
+  // Fotoğraf
+  photoButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  photoBtn: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  photoBtnText: {
+    fontSize: 13,
+    color: '#3FA9F5',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  uploadBtn: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    padding: 24,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3FA9F5',
+    borderStyle: 'dashed',
+  },
+  uploadText: {
+    fontSize: 14,
+    color: '#3FA9F5',
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  photoPreview: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  previewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+    resizeMode: 'cover',
+  },
+  removePhotoBtn: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#3FA9F5',
+    top: 8,
+    right: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+  },
+  // Status
+  statusContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 12,
+    gap: 10,
+    marginTop: 16,
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#3FA9F5',
+    fontWeight: '500',
+  },
+  // Submit
+  submitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#22C55E',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 24,
+    gap: 10,
+  },
+  submitBtnDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  submitBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
   },
   // Modal
   modalContainer: {
     flex: 1,
-    backgroundColor: '#F7F9FB',
+    backgroundColor: '#F5F7FA',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -951,171 +792,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1B1B1E',
   },
-  searchContainer: {
+  searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',
     margin: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 2,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   searchInput: {
     flex: 1,
-    padding: 14,
+    padding: 12,
     fontSize: 16,
   },
-  brandList: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
-  brandItem: {
+  listItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFF',
     padding: 16,
-    borderRadius: 12,
+    marginHorizontal: 16,
     marginBottom: 8,
+    borderRadius: 10,
   },
-  brandItemActive: {
-    backgroundColor: '#F0F9FF',
-    borderWidth: 2,
+  listItemActive: {
+    backgroundColor: '#EBF5FF',
+    borderWidth: 1,
     borderColor: '#3FA9F5',
   },
-  brandItemText: {
+  listItemText: {
     fontSize: 16,
     color: '#1B1B1E',
   },
-  brandItemTextActive: {
+  listItemTextActive: {
     fontWeight: '600',
     color: '#3FA9F5',
-  },
-  // Photo
-  photoButtons: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 24,
-    width: '100%',
-  },
-  photoButton: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    padding: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
-  },
-  photoButtonFull: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    padding: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#3FA9F5',
-    borderStyle: 'dashed',
-  },
-  photoButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3FA9F5',
-    marginTop: 8,
-  },
-  photoButtonHint: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
-  },
-  photoPreview: {
-    width: '100%',
-    marginBottom: 24,
-  },
-  previewImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    resizeMode: 'cover',
-  },
-  retakeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EF4444',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  retakeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  // Review
-  reviewScroll: {
-    flex: 1,
-  },
-  reviewCard: {
-    width: '100%',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  reviewLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 8,
-  },
-  reviewValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1B1B1E',
-  },
-  reviewSubValue: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  reviewColorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 8,
-  },
-  reviewColorDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  reviewImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: 8,
-    resizeMode: 'cover',
-  },
-  submitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#22C55E',
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    gap: 10,
-    width: '100%',
-    marginTop: 8,
-  },
-  submitButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFF',
   },
 });
