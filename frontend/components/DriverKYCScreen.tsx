@@ -856,7 +856,7 @@ const styles = StyleSheet.create({
     color: '#1B1B1E',
     fontWeight: '600',
   },
-  // Color picker - Yatay Kaydırmalı
+  // Color picker - Grid Layout
   colorLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -864,22 +864,23 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 12,
   },
-  colorScroll: {
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 10,
     marginBottom: 24,
-    maxHeight: 100,
-  },
-  colorScrollContent: {
-    paddingRight: 20,
-    gap: 12,
+    width: '100%',
   },
   colorItem: {
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 12,
+    padding: 8,
+    borderRadius: 10,
     backgroundColor: '#FFF',
     borderWidth: 2,
     borderColor: '#E5E7EB',
-    minWidth: 70,
+    width: '18%',
+    minWidth: 60,
     position: 'relative',
   },
   colorItemActive: {
@@ -887,16 +888,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F9FF',
   },
   colorCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 2,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   colorName: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#666',
     fontWeight: '500',
+    textAlign: 'center',
   },
   colorNameActive: {
     color: '#3FA9F5',
