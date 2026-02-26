@@ -900,7 +900,38 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                 <View style={styles.kycActions}>
                   <TouchableOpacity 
                     style={[styles.kycButton, styles.kycApprove]}
-                    onPress={() => approveKYC(kyc.user_id)}
+                    onPress={() => {
+                      console.log('ONAYLA BUTONUNA BASILDI - userId:', kyc.user_id);
+                      const userId = kyc.user_id;
+                      if (Platform.OS === 'web') {
+                        if (window.confirm('Bu sürücü başvurusunu onaylıyor musunuz?')) {
+                          setLoading(true);
+                          fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
+                            method: 'POST'
+                          })
+                          .then(res => res.json())
+                          .then(data => {
+                            console.log('Approve response:', data);
+                            if (data.success) {
+                              window.alert('✅ Sürücü kaydı onaylandı');
+                              loadAllKYCs();
+                            } else {
+                              window.alert('Hata: ' + (data.message || 'İşlem başarısız'));
+                            }
+                          })
+                          .catch(err => {
+                            console.error('Approve error:', err);
+                            window.alert('Hata: ' + err.message);
+                          })
+                          .finally(() => setLoading(false));
+                        }
+                      } else {
+                        Alert.alert('Onayla', 'Bu sürücü başvurusunu onaylıyor musunuz?', [
+                          { text: 'İptal', style: 'cancel' },
+                          { text: 'Onayla', onPress: () => approveKYC(userId) }
+                        ]);
+                      }
+                    }}
                   >
                     <Ionicons name="checkmark" size={18} color="#FFF" />
                     <Text style={styles.kycButtonText}>Onayla</Text>
@@ -908,7 +939,38 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                   
                   <TouchableOpacity 
                     style={[styles.kycButton, styles.kycReject]}
-                    onPress={() => rejectKYC(kyc.user_id)}
+                    onPress={() => {
+                      console.log('REDDET BUTONUNA BASILDI - userId:', kyc.user_id);
+                      const userId = kyc.user_id;
+                      if (Platform.OS === 'web') {
+                        if (window.confirm('Bu sürücü başvurusunu reddediyor musunuz?')) {
+                          setLoading(true);
+                          fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, {
+                            method: 'POST'
+                          })
+                          .then(res => res.json())
+                          .then(data => {
+                            console.log('Reject response:', data);
+                            if (data.success) {
+                              window.alert('❌ Sürücü kaydı reddedildi');
+                              loadAllKYCs();
+                            } else {
+                              window.alert('Hata: ' + (data.message || 'İşlem başarısız'));
+                            }
+                          })
+                          .catch(err => {
+                            console.error('Reject error:', err);
+                            window.alert('Hata: ' + err.message);
+                          })
+                          .finally(() => setLoading(false));
+                        }
+                      } else {
+                        Alert.alert('Reddet', 'Bu sürücü başvurusunu reddediyor musunuz?', [
+                          { text: 'İptal', style: 'cancel' },
+                          { text: 'Reddet', style: 'destructive', onPress: () => rejectKYC(userId) }
+                        ]);
+                      }
+                    }}
                   >
                     <Ionicons name="close" size={18} color="#FFF" />
                     <Text style={styles.kycButtonText}>Reddet</Text>
