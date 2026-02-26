@@ -226,8 +226,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Offer System Fix - Double Listener Bug"
-    - "Passenger Receiving Offers"
+    - "Driver KYC Submit with Car Details"
+    - "Admin KYC Pending List with Car Details"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
