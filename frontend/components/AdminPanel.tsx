@@ -228,13 +228,22 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   };
 
   const rejectKYC = async (userId: string) => {
+    console.log('rejectKYC called with userId:', userId);
+    
     const doReject = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, {
+        const url = `${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`;
+        console.log('Fetching:', url);
+        
+        const res = await fetch(url, {
           method: 'POST'
         });
+        console.log('Response status:', res.status);
+        
         const data = await res.json();
+        console.log('Response data:', data);
+        
         if (data.success) {
           if (Platform.OS === 'web') {
             window.alert('❌ Sürücü kaydı reddedildi');
@@ -242,19 +251,20 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
             Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
           }
           loadPendingKYCs();
+          loadAllKYCs(); // Tüm KYC'leri yenile
         } else {
           if (Platform.OS === 'web') {
-            window.alert('Hata: ' + (data.detail || 'İşlem başarısız'));
+            window.alert('Hata: ' + (data.detail || data.message || 'İşlem başarısız'));
           } else {
-            Alert.alert('Hata', data.detail || 'İşlem başarısız');
+            Alert.alert('Hata', data.detail || data.message || 'İşlem başarısız');
           }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error('Reject error:', e);
         if (Platform.OS === 'web') {
-          window.alert('Hata: İşlem başarısız');
+          window.alert('Hata: ' + (e.message || 'İşlem başarısız'));
         } else {
-          Alert.alert('Hata', 'İşlem başarısız');
+          Alert.alert('Hata', e.message || 'İşlem başarısız');
         }
       } finally {
         setLoading(false);
@@ -263,7 +273,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     
     if (Platform.OS === 'web') {
       if (window.confirm('Bu sürücü başvurusunu reddediyor musunuz?')) {
-        doReject();
+        await doReject();
       }
     } else {
       Alert.alert(
