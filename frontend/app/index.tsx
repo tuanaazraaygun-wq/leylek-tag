@@ -8880,15 +8880,17 @@ const styles = StyleSheet.create({
   // Removed duplicate callButtonText - keeping the animated version
   // Removed duplicate callNote - keeping the later version
   requestCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#0D1B2A',
     padding: 20,
-    borderRadius: 16,
+    borderRadius: 20,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4
+    shadowColor: '#3FA9F5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.3)',
   },
   requestHeader: {
     flexDirection: 'row',
