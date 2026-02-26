@@ -8796,6 +8796,21 @@ const styles = StyleSheet.create({
     color: '#A0A0A0',
     paddingVertical: 14,
   },
+  // Telefon Prefix ve Hint
+  phonePrefix: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1B1B1E',
+    marginRight: 8,
+    paddingVertical: 14,
+  },
+  phoneHint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: -8,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
   // PIN ekranı
   pinIconContainer: {
     width: 90,
