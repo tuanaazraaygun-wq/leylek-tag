@@ -10612,11 +10612,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   roleMainContent: {
-    flex: 1,
+    flex: 0,
     justifyContent: 'flex-start',
     paddingHorizontal: 24,
     paddingTop: 40,
     paddingBottom: 20,
+  },
+  communityBottomContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 24,
+    right: 24,
   },
   roleCardsRow: {
     flexDirection: 'row',
