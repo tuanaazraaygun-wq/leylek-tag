@@ -1720,7 +1720,9 @@ function TikTokOfferCard({
   const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || offer.distance_km?.toFixed(1) || '?';
   const tripDistanceKm = offer.trip_distance_km?.toFixed(1) || '?';
   const tripDuration = tripDurationMin || offer.trip_duration_min || Math.round((offer.trip_distance_km || 10) / 50 * 60);
-  const personName = isPassenger ? offer.driver_name : offer.passenger_name;
+  // Sadece isim göster (soyad yok)
+  const fullName = isPassenger ? offer.driver_name : offer.passenger_name;
+  const personName = fullName?.split(' ')[0] || 'Kullanıcı';
   const personRating = isPassenger ? (offer.driver_rating || 5.0) : 5.0;
   const tripCount = Math.floor(personRating * 100) + 50;
   const isBest = isBestOffer(offer, index, total);
