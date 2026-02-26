@@ -5440,7 +5440,12 @@ function PassengerDashboard({
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ImageBackground 
+      source={require('../assets/images/passenger-background.png')} 
+      style={styles.passengerBackgroundContainer}
+      imageStyle={styles.passengerBackgroundImage}
+    >
+    <SafeAreaView style={styles.containerTransparent}>
       {/* 🆕 Eşleşme Sağlanıyor Modal */}
       {matchingInProgress && (
         <View style={styles.matchingOverlay}>
