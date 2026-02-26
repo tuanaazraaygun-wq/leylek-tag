@@ -281,9 +281,8 @@ class LeylekTagTester:
     # ==================== 3. TAG/OFFER SYSTEM TESTS ====================
     
     async def test_create_tag(self):
-        """Test 3.1: Create Tag - POST /api/tags"""
+        """Test 3.1: Create Tag - POST /api/passenger/create-tag"""
         tag_data = {
-            "user_id": TEST_USER_ID,
             "pickup_location": "Ankara",
             "dropoff_location": "İstanbul",
             "offered_price": 500,
@@ -294,15 +293,16 @@ class LeylekTagTester:
         }
         
         success, response_time, data = await self.make_request(
-            "POST", "/tags",
-            data=tag_data
+            "POST", "/passenger/create-tag",
+            data=tag_data,
+            params={"user_id": TEST_USER_ID}
         )
         
-        if success and data.get('tag_id'):
-            self.created_tag_id = data['tag_id']
+        if success and data.get('tag'):
+            self.created_tag_id = data['tag'].get('id')
             message = f"Tag created with ID: {self.created_tag_id}"
         else:
-            message = f"Error: {data.get('error', 'Unknown error')}"
+            message = f"Error: {data.get('detail', 'Unknown error')}"
             
         self.test_results.add_result(
             "3.1 Create Tag",
@@ -314,14 +314,17 @@ class LeylekTagTester:
         return success
         
     async def test_get_active_tags(self):
-        """Test 3.2: Get Active Tags - GET /api/tags/active"""
-        success, response_time, data = await self.make_request("GET", "/tags/active")
+        """Test 3.2: Get Active Tags - GET /api/passenger/active-tag"""
+        success, response_time, data = await self.make_request(
+            "GET", "/passenger/active-tag",
+            params={"user_id": TEST_USER_ID}
+        )
         
         if success:
-            tags_count = len(data.get('tags', []))
-            message = f"Active tags count: {tags_count}"
+            has_active_tag = data.get('tag') is not None
+            message = f"Has active tag: {has_active_tag}"
         else:
-            message = f"Error: {data.get('error', 'Unknown error')}"
+            message = f"Error: {data.get('detail', 'Unknown error')}"
             
         self.test_results.add_result(
             "3.2 Get Active Tags",
