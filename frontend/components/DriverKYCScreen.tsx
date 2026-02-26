@@ -363,14 +363,9 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         maxLength={4}
       />
 
-      {/* Renk Seçimi - Yatay Kaydırmalı */}
+      {/* Renk Seçimi - Grid Layout (Tüm renkler görünür) */}
       <Text style={styles.colorLabel}>Araç Rengi</Text>
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={styles.colorScroll}
-        contentContainerStyle={styles.colorScrollContent}
-      >
+      <View style={styles.colorGrid}>
         {CAR_COLORS.map(color => (
           <TouchableOpacity
             key={color.name}
@@ -399,7 +394,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
             )}
           </TouchableOpacity>
         ))}
-      </ScrollView>
+      </View>
 
       <TouchableOpacity
         style={[styles.continueButton, (!vehicleBrand || !vehicleModel) && styles.buttonDisabled]}
