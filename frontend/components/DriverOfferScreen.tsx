@@ -493,21 +493,24 @@ const styles = StyleSheet.create({
   // List
   listContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
+  },
+  listBackgroundImage: {
+    resizeMode: 'cover',
   },
   listHeader: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 8,
+    backgroundColor: 'rgba(13, 27, 42, 0.85)',
   },
   listTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: '#FFFFFF',
   },
   listSubtitle: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: 'rgba(255, 255, 255, 0.7)',
     marginTop: 2,
   },
   listContent: {
