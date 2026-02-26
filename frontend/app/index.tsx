@@ -10590,9 +10590,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderBottomWidth: 0,
   },
   roleExitBtn: {
     width: 40,
