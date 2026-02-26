@@ -662,3 +662,36 @@ agent_communication:
       3. Karşı tarafın eşleşme ekranından çıkması gerekiyor
       4. Alert sadece BİR KEZ gösterilmeli
       5. Yeni eşleşme oluşturulabilmeli
+
+  - agent: "main"
+    message: |
+      ## SÜRÜCÜ KYC SİSTEMİ GÜNCELLEMESİ - Haziran 2025
+      
+      ### YAPILAN DEĞİŞİKLİKLER:
+      
+      #### 1. Backend - /api/driver/kyc/submit endpoint güncellendi (server.py)
+      - DriverKYCSubmit Pydantic modeline YENİ ALANLAR eklendi:
+        - vehicle_brand: Optional[str] - Araç markası (örn: Toyota)
+        - vehicle_model: Optional[str] - Araç modeli (örn: Corolla)
+        - vehicle_year: Optional[str] - Araç yılı (örn: 2020)
+        - vehicle_color: Optional[str] - Araç rengi (örn: Beyaz)
+      - Bu alanlar driver_details JSONB'ye kaydediliyor
+      
+      #### 2. Backend - /api/admin/kyc/pending endpoint güncellendi
+      - Bekleyen KYC listesinde artık araç bilgileri de döndürülüyor:
+        - vehicle_brand, vehicle_model, vehicle_year, vehicle_color
+      
+      #### 3. Frontend - DriverKYCScreen.tsx zaten güncel
+      - Marka/model dropdown'ları çalışıyor
+      - Yıl ve renk alanları mevcut
+      - submit fonksiyonu tüm alanları gönderiyor
+      
+      #### 4. Frontend - AdminPanel.tsx KYC sekmesi güncellendi
+      - Araç bilgileri KYC kartlarında görüntüleniyor
+      - 🚗 Marka Model (Yıl) formatında
+      - 🎨 Renk bilgisi ayrı satırda
+      
+      ### TEST EDİLMESİ GEREKENLER:
+      1. KYC submit endpoint'i yeni alanları kabul ediyor mu?
+      2. KYC pending endpoint'i yeni alanları döndürüyor mu?
+      3. Admin panelinde araç bilgileri görünüyor mu?
