@@ -9390,7 +9390,7 @@ const styles = StyleSheet.create({
   // TAM EKRAN STİLLER
   contentFullScreen: {
     flex: 1,
-    backgroundColor: '#F7F9FB',
+    backgroundColor: 'transparent',
   },
   emptyStateContainerFull: {
     flex: 1,
