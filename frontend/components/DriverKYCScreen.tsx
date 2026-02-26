@@ -203,17 +203,17 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert(
+        showAlert(
           '✅ Başvuru Alındı',
           'Sürücü başvurunuz incelemeye alındı. Onaylandığında bildirim alacaksınız.',
-          [{ text: 'Tamam', onPress: onSuccess }]
+          onSuccess
         );
       } else {
-        Alert.alert('Bilgi', data.message || 'Başvuru gönderilemedi');
+        showAlert('Bilgi', data.message || 'Başvuru gönderilemedi');
       }
     } catch (error) {
       console.error('KYC submit error:', error);
-      Alert.alert('Hata', 'Başvuru gönderilemedi. Lütfen tekrar deneyin.');
+      showAlert('Hata', 'Başvuru gönderilemedi. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
