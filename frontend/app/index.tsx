@@ -6243,6 +6243,7 @@ function PassengerDashboard({
         </View>
       </Modal>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
