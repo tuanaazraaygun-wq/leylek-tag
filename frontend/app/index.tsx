@@ -8098,6 +8098,106 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
+  // 📋 KYC PENDING SCREEN STYLES
+  kycPendingContainer: {
+    flex: 1,
+    backgroundColor: '#F5F7FA',
+  },
+  kycPendingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  kycPendingHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1B1B1E',
+  },
+  kycPendingContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  kycPendingIconCircle: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  kycPendingTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#1B1B1E',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  kycPendingDescription: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  kycPendingTimerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBF5FF',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    gap: 16,
+    marginBottom: 20,
+  },
+  kycPendingTimerLabel: {
+    fontSize: 13,
+    color: '#666',
+  },
+  kycPendingTimerValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#3FA9F5',
+  },
+  kycPendingInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  kycPendingInfoText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+  },
+  kycPendingRefreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3FA9F5',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    gap: 10,
+  },
+  kycPendingRefreshText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
   // 🆕 Yolcu Arka Plan Stilleri
   passengerBackgroundContainer: {
     flex: 1,
