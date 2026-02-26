@@ -1400,7 +1400,11 @@ export default function App() {
     };
 
     return (
-      <View style={styles.roleSelectionContainer}>
+      <ImageBackground 
+        source={require('../assets/images/role-background.png')} 
+        style={styles.roleSelectionContainer}
+        resizeMode="cover"
+      >
         <SafeAreaView style={styles.roleSelectionSafe}>
           {/* Üst Bar */}
           <View style={styles.roleTopBarCompact}>
