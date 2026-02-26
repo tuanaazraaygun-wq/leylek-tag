@@ -4029,7 +4029,7 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
             <ActivityIndicator size="large" color="#FFF" />
           ) : (
             <>
-              <Ionicons name="call" size={60} color="#FFF" />
+              <Ionicons name="location" size={60} color="#FFF" />
               <Text style={styles.callButtonText}>TEKLİF GÖNDER</Text>
             </>
           )}
