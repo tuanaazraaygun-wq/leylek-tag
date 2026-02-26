@@ -1565,7 +1565,13 @@ export default function App() {
         setScreen={setScreen}
       />
     ) : (
-      <DriverDashboard user={user} logout={logout} setScreen={setScreen} />
+      <DriverDashboard 
+        user={user} 
+        logout={logout} 
+        setScreen={setScreen} 
+        kycStatusProp={kycStatus}
+        setKycStatusProp={setKycStatus}
+      />
     );
   }
 
