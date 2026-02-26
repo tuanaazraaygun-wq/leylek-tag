@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend API Test Suite - Supabase Realtime Integration
-Tests specific endpoints mentioned in review request
+Leylek TAG Backend API Testing Suite
+Tests all key features for APK/mobile compatibility as per review request
 """
 
 import asyncio
@@ -15,8 +15,14 @@ from typing import Dict, Any, Optional
 # Test configuration from review request
 BACKEND_URL = "https://driver-kyc-verify.preview.emergentagent.com"
 API_BASE = f"{BACKEND_URL}/api"
-TEST_PHONE = "5321234567"
+
+# Test data from review request
+TEST_PHONE = "5341112233"
+TEST_USER_ID = "fe45bd9c-10b0-4b7b-a745-3d5c7749607a"
+ADMIN_PHONE = "5326497412"
 TEST_OTP = "123456"
+TEST_PIN = "123456"
+TEST_DEVICE_ID = "test_device"
 
 class TestResults:
     def __init__(self):
