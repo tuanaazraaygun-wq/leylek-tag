@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable,
   TextInput, Alert, Modal, FlatList, Dimensions, ActivityIndicator,
   RefreshControl, Platform, Image
 } from 'react-native';
