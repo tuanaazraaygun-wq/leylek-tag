@@ -68,8 +68,11 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   // KYC
   const [pendingKYCs, setPendingKYCs] = useState<any[]>([]);
+  const [approvedKYCs, setApprovedKYCs] = useState<any[]>([]);
+  const [rejectedKYCs, setRejectedKYCs] = useState<any[]>([]);
   const [selectedKYC, setSelectedKYC] = useState<any>(null);
   const [kycImageModal, setKycImageModal] = useState<string | null>(null);
+  const [kycFilter, setKycFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   
   useEffect(() => {
     loadData();
