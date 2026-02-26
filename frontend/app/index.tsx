@@ -10697,7 +10697,7 @@ const styles = StyleSheet.create({
   communityBtnCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
     borderRadius: 16,
     padding: 14,
     borderWidth: 2,
