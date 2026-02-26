@@ -1377,6 +1377,27 @@ export default function App() {
       if (!selectedRole) return;
       
       try {
+        // Sürücü seçildiyse KYC kontrolü yap
+        if (selectedRole === 'driver') {
+          const kycResponse = await fetch(`${API_URL}/driver/kyc/status?user_id=${user?.id}`);
+          const kycData = await kycResponse.json();
+          
+          if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
+            // KYC kaydı yok veya reddedilmiş - KYC ekranına yönlendir
+            setScreen('driver-kyc');
+            return;
+          } else if (kycData.kyc_status === 'pending') {
+            // KYC beklemede
+            Alert.alert(
+              '⏳ Başvurunuz İnceleniyor',
+              'Sürücü başvurunuz henüz inceleniyor. Onaylandığında bildirim alacaksınız.',
+              [{ text: 'Tamam' }]
+            );
+            return;
+          }
+          // approved ise devam et
+        }
+        
         await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
         if (selectedRole && user) {
           // Kullanıcının rolünü güncelle
