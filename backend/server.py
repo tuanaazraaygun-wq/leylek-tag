@@ -1563,6 +1563,10 @@ async def get_pending_kyc_requests(admin_phone: str):
                     "name": user["name"],
                     "phone": user["phone"],
                     "plate_number": driver_details.get("plate_number"),
+                    "vehicle_brand": driver_details.get("vehicle_brand"),
+                    "vehicle_model": driver_details.get("vehicle_model"),
+                    "vehicle_year": driver_details.get("vehicle_year"),
+                    "vehicle_color": driver_details.get("vehicle_color"),
                     "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
                     "license_photo_url": driver_details.get("license_photo_url"),
                     "submitted_at": driver_details.get("kyc_submitted_at")
