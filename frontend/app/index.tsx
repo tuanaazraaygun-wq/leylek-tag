@@ -6379,8 +6379,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   
-  // KYC Status (local)
-  const [kycStatus, setKycStatus] = useState<{ status: string; submitted_at: string | null } | null>(kycStatusProp || null);
+  // KYC Status - prop'tan al veya null
+  const kycStatus = kycStatusProp;
+  const setKycStatus = setKycStatusProp || (() => {});
   
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
