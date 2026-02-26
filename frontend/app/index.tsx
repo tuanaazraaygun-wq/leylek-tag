@@ -10571,7 +10571,6 @@ const styles = StyleSheet.create({
   // ==================== PREMIUM ROLE SELECTION STYLES ====================
   roleSelectionContainer: {
     flex: 1,
-    backgroundColor: '#F7F9FB',
   },
   roleSelectionSafe: {
     flex: 1,
