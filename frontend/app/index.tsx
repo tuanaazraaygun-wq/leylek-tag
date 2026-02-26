@@ -10616,9 +10616,10 @@ const styles = StyleSheet.create({
   },
   roleMainContent: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingTop: 40,
+    paddingBottom: 20,
   },
   roleCardsRow: {
     flexDirection: 'row',
