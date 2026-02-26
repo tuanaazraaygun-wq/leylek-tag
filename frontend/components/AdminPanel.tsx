@@ -152,6 +152,76 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       }
     } catch (e) { console.error(e); }
   };
+
+  // KYC Fonksiyonları
+  const loadPendingKYCs = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/kyc/pending?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) {
+        setPendingKYCs(data.requests || []);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const approveKYC = async (userId: string) => {
+    Alert.alert(
+      'Onayla',
+      'Bu sürücü başvurusunu onaylıyor musunuz?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Onayla',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
+                method: 'POST'
+              });
+              const data = await res.json();
+              if (data.success) {
+                Alert.alert('Başarılı', 'Sürücü kaydı onaylandı');
+                loadPendingKYCs();
+              } else {
+                Alert.alert('Hata', data.detail || 'İşlem başarısız');
+              }
+            } catch (e) {
+              Alert.alert('Hata', 'İşlem başarısız');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const rejectKYC = async (userId: string) => {
+    Alert.alert(
+      'Reddet',
+      'Bu sürücü başvurusunu reddediyor musunuz?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Reddet',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, {
+                method: 'POST'
+              });
+              const data = await res.json();
+              if (data.success) {
+                Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
+                loadPendingKYCs();
+              } else {
+                Alert.alert('Hata', data.detail || 'İşlem başarısız');
+              }
+            } catch (e) {
+              Alert.alert('Hata', 'İşlem başarısız');
+            }
+          }
+        }
+      ]
+    );
+  };
   
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
