@@ -10434,7 +10434,7 @@ const styles = StyleSheet.create({
   destinationBoxSky: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F8FF',
+    backgroundColor: 'rgba(240, 248, 255, 0.92)',
     borderRadius: 20,
     padding: 20,
     marginVertical: 20,
