@@ -156,30 +156,30 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
       }
     } catch (error) {
       console.error('Gallery pick error:', error);
-      Alert.alert('Hata', 'Fotoğraf seçilemedi');
+      showAlert('Hata', 'Fotoğraf seçilemedi');
     }
   };
 
   // KYC gönder
   const submitKYC = async () => {
     if (!plateNumber.trim()) {
-      Alert.alert('Hata', 'Plaka numarası giriniz');
+      showAlert('Hata', 'Plaka numarası giriniz');
       return;
     }
     if (!vehicleBrand) {
-      Alert.alert('Hata', 'Araç markası seçiniz');
+      showAlert('Hata', 'Araç markası seçiniz');
       return;
     }
     if (!vehicleModel) {
-      Alert.alert('Hata', 'Araç modeli seçiniz');
+      showAlert('Hata', 'Araç modeli seçiniz');
       return;
     }
     if (!vehiclePhoto) {
-      Alert.alert('Hata', 'Araç fotoğrafı gerekli');
+      showAlert('Hata', 'Araç fotoğrafı gerekli');
       return;
     }
     if (!licensePhoto) {
-      Alert.alert('Hata', 'Ehliyet fotoğrafı gerekli');
+      showAlert('Hata', 'Ehliyet fotoğrafı gerekli');
       return;
     }
 
