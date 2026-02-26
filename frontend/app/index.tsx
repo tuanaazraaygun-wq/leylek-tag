@@ -1387,19 +1387,19 @@ export default function App() {
             setScreen('driver-kyc');
             return;
           } else if (kycData.kyc_status === 'pending') {
-            // KYC beklemede - Cross-platform alert
-            if (Platform.OS === 'web') {
-              window.alert('⏳ Başvurunuz İnceleniyor\n\nSürücü başvurunuz henüz inceleniyor. Onaylandığında bildirim alacaksınız.');
-            } else {
-              Alert.alert(
-                '⏳ Başvurunuz İnceleniyor',
-                'Sürücü başvurunuz henüz inceleniyor. Onaylandığında bildirim alacaksınız.',
-                [{ text: 'Tamam' }]
-              );
-            }
+            // KYC beklemede - Dashboard'a git ama pending ekranı göster
+            setKycStatus({
+              status: 'pending',
+              submitted_at: kycData.submitted_at
+            });
+            await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
+            const updatedUser = { ...user, role: selectedRole };
+            setUser(updatedUser);
+            setScreen('dashboard');
             return;
           }
-          // approved ise devam et
+          // approved ise KYC durumunu temizle
+          setKycStatus(null);
         }
         
         await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
