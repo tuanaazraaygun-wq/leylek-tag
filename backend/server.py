@@ -1428,6 +1428,10 @@ class DriverKYCSubmit(BaseModel):
     vehicle_photo_base64: str  # Araç ön fotoğrafı (plaka görünür)
     license_photo_base64: str  # Ehliyet fotoğrafı
     plate_number: str          # Plaka numarası
+    vehicle_brand: Optional[str] = None  # Araç markası (örn: Toyota)
+    vehicle_model: Optional[str] = None  # Araç modeli (örn: Corolla)
+    vehicle_year: Optional[str] = None   # Araç yılı (örn: 2020)
+    vehicle_color: Optional[str] = None  # Araç rengi (örn: Beyaz)
 
 @api_router.post("/driver/kyc/submit")
 async def submit_driver_kyc(data: DriverKYCSubmit):
