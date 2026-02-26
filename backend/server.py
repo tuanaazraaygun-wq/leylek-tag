@@ -1469,21 +1469,21 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
         
         # Storage'a yükle
         try:
-            supabase.storage.from_("uploads").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
-            supabase.storage.from_("uploads").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
+            supabase.storage.from_("vehicle-photos").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
+            supabase.storage.from_("vehicle-photos").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
         except Exception as storage_error:
             # Bucket yoksa oluştur ve tekrar dene
             logger.warning(f"Storage upload error, trying to create bucket: {storage_error}")
             try:
-                supabase.storage.create_bucket("uploads", {"public": True})
+                supabase.storage.create_bucket("vehicle-photos", {"public": True})
             except:
                 pass
-            supabase.storage.from_("uploads").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
-            supabase.storage.from_("uploads").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
+            supabase.storage.from_("vehicle-photos").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
+            supabase.storage.from_("vehicle-photos").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
         
         # Public URL'leri al
-        vehicle_url = supabase.storage.from_("uploads").get_public_url(vehicle_filename)
-        license_url = supabase.storage.from_("uploads").get_public_url(license_filename)
+        vehicle_url = supabase.storage.from_("vehicle-photos").get_public_url(vehicle_filename)
+        license_url = supabase.storage.from_("vehicle-photos").get_public_url(license_filename)
         
         # Driver details güncelle
         driver_details = user.get("driver_details") or {}
