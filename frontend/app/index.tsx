@@ -8083,16 +8083,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF'
   },
-  passengerBackgroundContainer: {
-    flex: 1,
-  },
-  passengerBackgroundImage: {
-    opacity: 0.3,
-  },
-  containerTransparent: {
-    flex: 1,
-    backgroundColor: 'transparent'
-  },
   scrollContent: {
     flexGrow: 1,
     padding: 20,
