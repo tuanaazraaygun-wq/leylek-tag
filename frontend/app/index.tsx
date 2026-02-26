@@ -7907,6 +7907,15 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  // 🆕 Sürücü Arka Plan Stilleri
+  driverBackgroundContainer: {
+    flex: 1,
+  },
+  driverBackgroundImage: {
+    resizeMode: 'stretch',
+    width: '100%',
+    height: '100%',
+  },
   containerTransparent: {
     flex: 1,
     backgroundColor: 'transparent',
