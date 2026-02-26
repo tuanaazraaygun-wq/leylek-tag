@@ -136,7 +136,7 @@ function RequestCard({
             <Ionicons name="person" size={20} color={COLORS.primary} />
           </View>
           <View style={styles.passengerDetails}>
-            <Text style={styles.passengerName}>{request.passenger_name || 'Yolcu'}</Text>
+            <Text style={styles.passengerName}>{request.passenger_name?.split(' ')[0] || 'Yolcu'}</Text>
             <Text style={styles.timeAgo}>Yeni teklif</Text>
           </View>
         </View>
