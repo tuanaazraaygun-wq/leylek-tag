@@ -324,7 +324,7 @@ export default function DriverOfferScreen({
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{driverName}</Text>
+          <Text style={styles.headerTitle}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
           <Text style={styles.headerSubtitle}>⭐ {driverRating?.toFixed(1) || '5.0'}</Text>
         </View>
         <TouchableOpacity onPress={onLogout} style={styles.logoutBtn}>
