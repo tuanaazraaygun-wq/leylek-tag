@@ -1001,26 +1001,77 @@ export default function App() {
               <Ionicons name="chevron-down" size={20} color="#A0A0A0" />
             </TouchableOpacity>
 
-            {/* Telefon Numarası (Readonly) */}
+            {/* Telefon Numarası - Elle Yazılabilir */}
             <Text style={styles.modernLabel}>Telefon Numarası</Text>
-            <View style={[styles.modernInputContainer, { backgroundColor: '#F5F5F5' }]}>
+            <View style={styles.modernInputContainer}>
               <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <Text style={styles.modernInputText}>{phone}</Text>
-              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+              <Text style={styles.phonePrefix}>+90</Text>
+              <TextInput
+                style={[styles.modernInput, { flex: 1 }]}
+                placeholder="5XX XXX XX XX"
+                placeholderTextColor="#A0A0A0"
+                value={phone}
+                onChangeText={(text) => {
+                  // Sadece rakam kabul et ve başındaki 0'ı kaldır
+                  let cleaned = text.replace(/[^0-9]/g, '');
+                  if (cleaned.startsWith('0')) {
+                    cleaned = cleaned.substring(1);
+                  }
+                  // Maksimum 10 karakter
+                  if (cleaned.length <= 10) {
+                    setPhone(cleaned);
+                  }
+                }}
+                keyboardType="phone-pad"
+                maxLength={10}
+              />
             </View>
+            <Text style={styles.phoneHint}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
 
             <TouchableOpacity 
-              style={[styles.modernPrimaryButton, (!firstName || !lastName || !selectedCity) && styles.buttonDisabled]} 
-              onPress={() => {
-                if (firstName && lastName && selectedCity) {
+              style={[styles.modernPrimaryButton, (!firstName || !lastName || !selectedCity || phone.length < 10) && styles.buttonDisabled]} 
+              onPress={async () => {
+                if (firstName && lastName && selectedCity && phone.length >= 10) {
                   setName(`${firstName} ${lastName}`);
-                  setScreen('set-pin');
+                  // Telefon doğrulama için OTP gönder
+                  setLoading(true);
+                  try {
+                    const response = await fetch(`${API_URL}/auth/send-otp`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ phone: phone })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                      setScreen('otp');
+                    } else {
+                      if (Platform.OS === 'web') {
+                        window.alert('Hata: ' + (data.message || 'OTP gönderilemedi'));
+                      } else {
+                        Alert.alert('Hata', data.message || 'OTP gönderilemedi');
+                      }
+                    }
+                  } catch (error: any) {
+                    if (Platform.OS === 'web') {
+                      window.alert('Hata: ' + (error.message || 'Bir hata oluştu'));
+                    } else {
+                      Alert.alert('Hata', error.message || 'Bir hata oluştu');
+                    }
+                  } finally {
+                    setLoading(false);
+                  }
                 }
               }}
-              disabled={!firstName || !lastName || !selectedCity}
+              disabled={!firstName || !lastName || !selectedCity || phone.length < 10 || loading}
             >
-              <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFF" />
+              {loading ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
+                  <Ionicons name="arrow-forward" size={20} color="#FFF" />
+                </>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('login')}>
