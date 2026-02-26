@@ -1,9 +1,9 @@
 /**
  * DriverKYCScreen.tsx - Sürücü KYC Kayıt Ekranı
- * Araç fotoğrafı, ehliyet fotoğrafı, marka ve model ile sürücü kaydı
+ * Web, Android ve iOS uyumlu
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -57,6 +57,25 @@ const CAR_BRANDS: { [key: string]: string[] } = {
   'Diğer': ['Belirtilmemiş'],
 };
 
+// Araç Renkleri - Görsel renk kodları ile
+const CAR_COLORS = [
+  { name: 'Beyaz', code: '#FFFFFF', border: '#E0E0E0' },
+  { name: 'Siyah', code: '#1A1A1A', border: '#1A1A1A' },
+  { name: 'Gri', code: '#808080', border: '#808080' },
+  { name: 'Gümüş', code: '#C0C0C0', border: '#A0A0A0' },
+  { name: 'Kırmızı', code: '#DC2626', border: '#DC2626' },
+  { name: 'Bordo', code: '#7F1D1D', border: '#7F1D1D' },
+  { name: 'Mavi', code: '#2563EB', border: '#2563EB' },
+  { name: 'Lacivert', code: '#1E3A5F', border: '#1E3A5F' },
+  { name: 'Yeşil', code: '#16A34A', border: '#16A34A' },
+  { name: 'Sarı', code: '#EAB308', border: '#CA8A04' },
+  { name: 'Turuncu', code: '#EA580C', border: '#EA580C' },
+  { name: 'Kahverengi', code: '#78350F', border: '#78350F' },
+  { name: 'Bej', code: '#D4C4A8', border: '#B8A888' },
+  { name: 'Mor', code: '#7C3AED', border: '#7C3AED' },
+  { name: 'Pembe', code: '#EC4899', border: '#EC4899' },
+];
+
 interface DriverKYCScreenProps {
   userId: string;
   userName: string;
@@ -81,6 +100,10 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
 
+  // Web için file input ref
+  const vehicleInputRef = useRef<HTMLInputElement | null>(null);
+  const licenseInputRef = useRef<HTMLInputElement | null>(null);
+
   // Filtrelenmiş markalar
   const filteredBrands = useMemo(() => {
     const brands = Object.keys(CAR_BRANDS).sort();
@@ -93,25 +116,70 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
     return CAR_BRANDS[vehicleBrand] || [];
   }, [vehicleBrand]);
 
-  // Renkler
-  const colors = ['Beyaz', 'Siyah', 'Gri', 'Gümüş', 'Kırmızı', 'Mavi', 'Lacivert', 'Yeşil', 'Sarı', 'Turuncu', 'Kahverengi', 'Bej'];
+  // Web'de dosya seçimi
+  const handleWebFileSelect = (type: 'vehicle' | 'license') => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async (e: any) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const base64 = event.target?.result as string;
+            if (type === 'vehicle') {
+              setVehiclePhoto(base64);
+              setStep('license');
+            } else {
+              setLicensePhoto(base64);
+              setStep('review');
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+      input.click();
+    }
+  };
 
-  // Fotoğraf seç
-  const pickImage = async (type: 'vehicle' | 'license') => {
+  // Mobile'da fotoğraf çek veya seç
+  const pickImage = async (type: 'vehicle' | 'license', source: 'camera' | 'gallery') => {
+    if (Platform.OS === 'web') {
+      handleWebFileSelect(type);
+      return;
+    }
+
     try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        showAlert('İzin Gerekli', 'Kamera izni gereklidir');
-        return;
+      let result;
+      
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('İzin Gerekli', 'Kamera izni gereklidir');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.7,
+          base64: true,
+        });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('İzin Gerekli', 'Galeri izni gereklidir');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.7,
+          base64: true,
+        });
       }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.7,
-        base64: true,
-      });
 
       if (!result.canceled && result.assets[0].base64) {
         if (type === 'vehicle') {
@@ -124,44 +192,20 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
       }
     } catch (error) {
       console.error('Image pick error:', error);
-      showAlert('Hata', 'Fotoğraf çekilemedi');
-    }
-  };
-
-  // Galeriden seç
-  const pickFromGallery = async (type: 'vehicle' | 'license') => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        showAlert('İzin Gerekli', 'Galeri izni gereklidir');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.7,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets[0].base64) {
-        if (type === 'vehicle') {
-          setVehiclePhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
-          setStep('license');
-        } else {
-          setLicensePhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
-          setStep('review');
-        }
-      }
-    } catch (error) {
-      console.error('Gallery pick error:', error);
       showAlert('Hata', 'Fotoğraf seçilemedi');
     }
   };
 
   // KYC gönder
   const submitKYC = async () => {
+    console.log('=== KYC SUBMIT STARTED ===');
+    console.log('Plate:', plateNumber);
+    console.log('Brand:', vehicleBrand);
+    console.log('Model:', vehicleModel);
+    console.log('Color:', vehicleColor);
+    console.log('Vehicle Photo:', vehiclePhoto ? 'EXISTS' : 'MISSING');
+    console.log('License Photo:', licensePhoto ? 'EXISTS' : 'MISSING');
+
     if (!plateNumber.trim()) {
       showAlert('Hata', 'Plaka numarası giriniz');
       return;
@@ -185,22 +229,30 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
 
     setLoading(true);
     try {
+      console.log('Sending to:', `${apiUrl}/driver/kyc/submit`);
+      
+      const bodyData = {
+        user_id: userId,
+        plate_number: plateNumber.toUpperCase(),
+        vehicle_brand: vehicleBrand,
+        vehicle_model: vehicleModel,
+        vehicle_year: vehicleYear || null,
+        vehicle_color: vehicleColor || null,
+        vehicle_photo_base64: vehiclePhoto,
+        license_photo_base64: licensePhoto,
+      };
+      
+      console.log('Body keys:', Object.keys(bodyData));
+
       const response = await fetch(`${apiUrl}/driver/kyc/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          plate_number: plateNumber.toUpperCase(),
-          vehicle_brand: vehicleBrand,
-          vehicle_model: vehicleModel,
-          vehicle_year: vehicleYear || null,
-          vehicle_color: vehicleColor || null,
-          vehicle_photo_base64: vehiclePhoto,
-          license_photo_base64: licensePhoto,
-        }),
+        body: JSON.stringify(bodyData),
       });
 
+      console.log('Response status:', response.status);
       const data = await response.json();
+      console.log('Response data:', data);
 
       if (data.success) {
         showAlert(
@@ -237,7 +289,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         </View>
         <View style={styles.requirementItem}>
           <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-          <Text style={styles.requirementText}>Araç marka ve modeli</Text>
+          <Text style={styles.requirementText}>Araç marka, model ve rengi</Text>
         </View>
         <View style={styles.requirementItem}>
           <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
@@ -311,18 +363,40 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         maxLength={4}
       />
 
-      {/* Renk Seçimi */}
+      {/* Renk Seçimi - Yatay Kaydırmalı */}
       <Text style={styles.colorLabel}>Araç Rengi</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorScroll}>
-        {colors.map(color => (
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        style={styles.colorScroll}
+        contentContainerStyle={styles.colorScrollContent}
+      >
+        {CAR_COLORS.map(color => (
           <TouchableOpacity
-            key={color}
-            style={[styles.colorChip, vehicleColor === color && styles.colorChipActive]}
-            onPress={() => setVehicleColor(color)}
+            key={color.name}
+            style={[
+              styles.colorItem,
+              vehicleColor === color.name && styles.colorItemActive
+            ]}
+            onPress={() => setVehicleColor(color.name)}
           >
-            <Text style={[styles.colorChipText, vehicleColor === color && styles.colorChipTextActive]}>
-              {color}
+            <View 
+              style={[
+                styles.colorCircle, 
+                { backgroundColor: color.code, borderColor: color.border }
+              ]} 
+            />
+            <Text style={[
+              styles.colorName,
+              vehicleColor === color.name && styles.colorNameActive
+            ]}>
+              {color.name}
             </Text>
+            {vehicleColor === color.name && (
+              <View style={styles.colorCheck}>
+                <Ionicons name="checkmark" size={12} color="#FFF" />
+              </View>
+            )}
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -437,19 +511,29 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
           <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
           <TouchableOpacity style={styles.retakeButton} onPress={() => setVehiclePhoto(null)}>
             <Ionicons name="refresh" size={20} color="#FFF" />
-            <Text style={styles.retakeText}>Tekrar Çek</Text>
+            <Text style={styles.retakeText}>Tekrar Seç</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.photoButtons}>
-          <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('vehicle')}>
-            <Ionicons name="camera" size={32} color="#3FA9F5" />
-            <Text style={styles.photoButtonText}>Fotoğraf Çek</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.photoButton} onPress={() => pickFromGallery('vehicle')}>
-            <Ionicons name="images" size={32} color="#3FA9F5" />
-            <Text style={styles.photoButtonText}>Galeriden Seç</Text>
-          </TouchableOpacity>
+          {Platform.OS === 'web' ? (
+            <TouchableOpacity style={styles.photoButtonFull} onPress={() => handleWebFileSelect('vehicle')}>
+              <Ionicons name="cloud-upload" size={40} color="#3FA9F5" />
+              <Text style={styles.photoButtonText}>Fotoğraf Yükle</Text>
+              <Text style={styles.photoButtonHint}>Bilgisayarınızdan seçin</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('vehicle', 'camera')}>
+                <Ionicons name="camera" size={32} color="#3FA9F5" />
+                <Text style={styles.photoButtonText}>Fotoğraf Çek</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('vehicle', 'gallery')}>
+                <Ionicons name="images" size={32} color="#3FA9F5" />
+                <Text style={styles.photoButtonText}>Galeriden Seç</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
@@ -478,19 +562,29 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
           <Image source={{ uri: licensePhoto }} style={styles.previewImage} />
           <TouchableOpacity style={styles.retakeButton} onPress={() => setLicensePhoto(null)}>
             <Ionicons name="refresh" size={20} color="#FFF" />
-            <Text style={styles.retakeText}>Tekrar Çek</Text>
+            <Text style={styles.retakeText}>Tekrar Seç</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.photoButtons}>
-          <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('license')}>
-            <Ionicons name="camera" size={32} color="#3FA9F5" />
-            <Text style={styles.photoButtonText}>Fotoğraf Çek</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.photoButton} onPress={() => pickFromGallery('license')}>
-            <Ionicons name="images" size={32} color="#3FA9F5" />
-            <Text style={styles.photoButtonText}>Galeriden Seç</Text>
-          </TouchableOpacity>
+          {Platform.OS === 'web' ? (
+            <TouchableOpacity style={styles.photoButtonFull} onPress={() => handleWebFileSelect('license')}>
+              <Ionicons name="cloud-upload" size={40} color="#3FA9F5" />
+              <Text style={styles.photoButtonText}>Fotoğraf Yükle</Text>
+              <Text style={styles.photoButtonHint}>Bilgisayarınızdan seçin</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('license', 'camera')}>
+                <Ionicons name="camera" size={32} color="#3FA9F5" />
+                <Text style={styles.photoButtonText}>Fotoğraf Çek</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoButton} onPress={() => pickImage('license', 'gallery')}>
+                <Ionicons name="images" size={32} color="#3FA9F5" />
+                <Text style={styles.photoButtonText}>Galeriden Seç</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
@@ -519,7 +613,15 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
           <Text style={styles.reviewLabel}>Araç</Text>
           <Text style={styles.reviewValue}>{vehicleBrand} {vehicleModel}</Text>
           {vehicleYear && <Text style={styles.reviewSubValue}>{vehicleYear} Model</Text>}
-          {vehicleColor && <Text style={styles.reviewSubValue}>Renk: {vehicleColor}</Text>}
+          {vehicleColor && (
+            <View style={styles.reviewColorRow}>
+              <View style={[
+                styles.reviewColorDot,
+                { backgroundColor: CAR_COLORS.find(c => c.name === vehicleColor)?.code || '#999' }
+              ]} />
+              <Text style={styles.reviewSubValue}>{vehicleColor}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.reviewCard}>
@@ -759,7 +861,7 @@ const styles = StyleSheet.create({
     color: '#1B1B1E',
     fontWeight: '600',
   },
-  // Color picker
+  // Color picker - Yatay Kaydırmalı
   colorLabel: {
     fontSize: 14,
     fontWeight: '600',
@@ -769,27 +871,52 @@ const styles = StyleSheet.create({
   },
   colorScroll: {
     marginBottom: 24,
+    maxHeight: 100,
   },
-  colorChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+  colorScrollContent: {
+    paddingRight: 20,
+    gap: 12,
+  },
+  colorItem: {
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
     backgroundColor: '#FFF',
     borderWidth: 2,
     borderColor: '#E5E7EB',
-    marginRight: 10,
+    minWidth: 70,
+    position: 'relative',
   },
-  colorChipActive: {
-    backgroundColor: '#3FA9F5',
+  colorItemActive: {
     borderColor: '#3FA9F5',
+    backgroundColor: '#F0F9FF',
   },
-  colorChipText: {
-    fontSize: 14,
+  colorCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    marginBottom: 6,
+  },
+  colorName: {
+    fontSize: 11,
     color: '#666',
     fontWeight: '500',
   },
-  colorChipTextActive: {
-    color: '#FFF',
+  colorNameActive: {
+    color: '#3FA9F5',
+    fontWeight: '700',
+  },
+  colorCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#3FA9F5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Modal
   modalContainer: {
@@ -856,6 +983,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     marginBottom: 24,
+    width: '100%',
   },
   photoButton: {
     flex: 1,
@@ -867,11 +995,26 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     borderStyle: 'dashed',
   },
+  photoButtonFull: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3FA9F5',
+    borderStyle: 'dashed',
+  },
   photoButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#3FA9F5',
     marginTop: 8,
+  },
+  photoButtonHint: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
   },
   photoPreview: {
     width: '100%',
@@ -924,6 +1067,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 4,
+  },
+  reviewColorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  reviewColorDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   reviewImage: {
     width: '100%',
