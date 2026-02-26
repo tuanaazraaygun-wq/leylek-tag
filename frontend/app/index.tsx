@@ -1577,6 +1577,25 @@ export default function App() {
     );
   }
 
+  // Sürücü KYC Ekranı
+  if (user && screen === 'driver-kyc') {
+    return (
+      <DriverKYCScreen
+        userId={user.id}
+        userName={user.name || 'Kullanıcı'}
+        onBack={() => setScreen('role-select')}
+        onSuccess={() => {
+          Alert.alert(
+            '✅ Başvuru Alındı',
+            'Başvurunuz inceleniyor. Onaylandığında sürücü olarak giriş yapabilirsiniz.',
+            [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
+          );
+        }}
+        apiUrl={API_URL}
+      />
+    );
+  }
+
   return null;
 }
 
