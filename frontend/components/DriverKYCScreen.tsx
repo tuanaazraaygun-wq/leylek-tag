@@ -229,7 +229,18 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
 
     setLoading(true);
     try {
-      console.log('Sending to:', `${apiUrl}/driver/kyc/submit`);
+      console.log('=== KYC SUBMIT BAŞLADI ===');
+      console.log('API URL:', `${apiUrl}/driver/kyc/submit`);
+      
+      // Resim boyutunu küçült (web için)
+      let vehiclePhotoData = vehiclePhoto;
+      let licensePhotoData = licensePhoto;
+      
+      // Web'de base64 boyutunu kontrol et ve logla
+      if (Platform.OS === 'web') {
+        console.log('Vehicle photo size:', Math.round((vehiclePhoto?.length || 0) / 1024), 'KB');
+        console.log('License photo size:', Math.round((licensePhoto?.length || 0) / 1024), 'KB');
+      }
       
       const bodyData = {
         user_id: userId,
@@ -238,11 +249,11 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         vehicle_model: vehicleModel,
         vehicle_year: vehicleYear || null,
         vehicle_color: vehicleColor || null,
-        vehicle_photo_base64: vehiclePhoto,
-        license_photo_base64: licensePhoto,
+        vehicle_photo_base64: vehiclePhotoData,
+        license_photo_base64: licensePhotoData,
       };
       
-      console.log('Body keys:', Object.keys(bodyData));
+      console.log('Gönderiliyor...');
 
       const response = await fetch(`${apiUrl}/driver/kyc/submit`, {
         method: 'POST',
@@ -255,11 +266,17 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
       console.log('Response data:', data);
 
       if (data.success) {
-        showAlert(
-          '✅ Başvuru Alındı',
-          'Sürücü başvurunuz incelemeye alındı. Onaylandığında bildirim alacaksınız.',
-          onSuccess
-        );
+        // Başarılı - hemen alert göster
+        if (Platform.OS === 'web') {
+          window.alert('✅ Başvuru Alındı!\n\nSürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.');
+          onSuccess();
+        } else {
+          Alert.alert(
+            '✅ Başvuru Alındı',
+            'Sürücü başvurunuz incelemeye alındı. Onaylandığında bildirim alacaksınız.',
+            [{ text: 'Tamam', onPress: onSuccess }]
+          );
+        }
       } else {
         showAlert('Bilgi', data.message || 'Başvuru gönderilemedi');
       }
