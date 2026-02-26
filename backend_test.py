@@ -7,7 +7,6 @@ Tests all key features for APK/mobile compatibility as per review request
 import asyncio
 import aiohttp
 import json
-import os
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -30,12 +29,13 @@ class TestResults:
         self.passed = 0
         self.failed = 0
     
-    def add_result(self, test_name: str, passed: bool, message: str, details: Dict = None):
+    def add_result(self, test_name: str, passed: bool, message: str, details: Dict = None, response_time: float = 0):
         result = {
             "test": test_name,
             "passed": passed,
             "message": message,
             "details": details or {},
+            "response_time": f"{response_time:.2f}s" if response_time > 0 else "N/A",
             "timestamp": datetime.now().isoformat()
         }
         self.results.append(result)
@@ -45,634 +45,414 @@ class TestResults:
             self.failed += 1
         
         status = "✅ PASS" if passed else "❌ FAIL"
-        print(f"{status}: {test_name} - {message}")
-        if details:
+        time_str = f" ({response_time:.2f}s)" if response_time > 0 else ""
+        print(f"{status}: {test_name}{time_str} - {message}")
+        if details and not passed:
             print(f"   Details: {details}")
 
 class LeylekTagTester:
     def __init__(self):
         self.session = None
         self.test_results = TestResults()
-        self.test_users = {}
-        self.test_tag_id = None
+        self.created_tag_id = None
+        self.pending_user_id = None
         
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
     
-    async def make_request(self, method: str, endpoint: str, data: Dict = None, params: Dict = None) -> Dict:
-        """Make HTTP request to API"""
+    async def make_request(self, method: str, endpoint: str, data: Dict = None, params: Dict = None) -> tuple[bool, float, Dict]:
+        """Make HTTP request to API and return (success, response_time, data)"""
         url = f"{API_BASE}{endpoint}"
+        start_time = time.time()
         
         try:
             if method.upper() == "GET":
                 async with self.session.get(url, params=params) as response:
-                    return {
-                        "status": response.status,
-                        "data": await response.json(),
-                        "success": response.status < 400
-                    }
+                    response_time = time.time() - start_time
+                    response_data = await response.json()
+                    return response.status < 400, response_time, response_data
             elif method.upper() == "POST":
                 async with self.session.post(url, json=data, params=params) as response:
-                    return {
-                        "status": response.status,
-                        "data": await response.json(),
-                        "success": response.status < 400
-                    }
-            elif method.upper() == "PUT":
-                async with self.session.put(url, json=data, params=params) as response:
-                    return {
-                        "status": response.status,
-                        "data": await response.json(),
-                        "success": response.status < 400
-                    }
+                    response_time = time.time() - start_time
+                    response_data = await response.json()
+                    return response.status < 400, response_time, response_data
         except Exception as e:
-            return {
-                "status": 0,
-                "data": {"error": str(e)},
-                "success": False
-            }
+            response_time = time.time() - start_time
+            return False, response_time, {"error": str(e)}
+
+    # ==================== 1. AUTHENTICATION FLOW TESTS ====================
     
-    async def setup_test_users(self):
-        """Create test passenger and driver users"""
-        print("\n🔧 Setting up test users...")
+    async def test_check_user(self):
+        """Test 1.1: Check User - POST /api/auth/check-user"""
+        success, response_time, data = await self.make_request(
+            "POST", "/auth/check-user",
+            data={"phone": TEST_PHONE}
+        )
         
-        # Test passenger in Adana
-        passenger_data = {
-            "phone": "+905551234567",
-            "name": "Test Yolcu Ahmet",
-            "city": "Adana"
-        }
+        user_exists = data.get('user_exists', False) if success else False
+        has_pin = data.get('has_pin', False) if success else False
         
-        # Test driver in Adana  
-        driver_data = {
-            "phone": "+905557654321", 
-            "name": "Test Sürücü Mehmet",
-            "city": "Adana"
-        }
+        self.test_results.add_result(
+            "1.1 Check User",
+            success,
+            f"User exists: {user_exists}, Has PIN: {has_pin}",
+            data,
+            response_time
+        )
+        return success
         
-        # Register passenger
-        response = await self.make_request("POST", "/auth/register", passenger_data)
-        if response["success"]:
-            self.test_users["passenger"] = response["data"]["user"]
-            self.test_results.add_result(
-                "Setup Passenger User", 
-                True, 
-                f"Created passenger: {passenger_data['name']}"
-            )
+    async def test_send_otp(self):
+        """Test 1.2: Send OTP - POST /api/auth/send-otp"""
+        success, response_time, data = await self.make_request(
+            "POST", "/auth/send-otp",
+            data={"phone": TEST_PHONE}
+        )
+        
+        message = data.get('message', 'No message') if success else f"Error: {data.get('error', 'Unknown')}"
+        
+        self.test_results.add_result(
+            "1.2 Send OTP",
+            success,
+            message,
+            data,
+            response_time
+        )
+        return success
+        
+    async def test_verify_otp(self):
+        """Test 1.3: Verify OTP - POST /api/auth/verify-otp"""
+        success, response_time, data = await self.make_request(
+            "POST", "/auth/verify-otp",
+            data={"phone": TEST_PHONE, "otp": TEST_OTP}
+        )
+        
+        user_exists = data.get('user_exists', False) if success else False
+        message = data.get('message', 'No message') if success else f"Error: {data.get('error', 'Unknown')}"
+        
+        self.test_results.add_result(
+            "1.3 Verify OTP",
+            success,
+            f"{message}, User exists: {user_exists}",
+            data,
+            response_time
+        )
+        return success
+        
+    async def test_verify_pin(self):
+        """Test 1.4: Verify PIN - POST /api/auth/verify-pin"""
+        success, response_time, data = await self.make_request(
+            "POST", "/auth/verify-pin",
+            params={"phone": TEST_PHONE, "pin": TEST_PIN, "device_id": TEST_DEVICE_ID}
+        )
+        
+        user_id = data.get('user', {}).get('id', 'N/A') if success else 'N/A'
+        
+        self.test_results.add_result(
+            "1.4 Verify PIN",
+            success,
+            f"Login successful, User ID: {user_id}",
+            data,
+            response_time
+        )
+        return success
+        
+    async def test_get_cities(self):
+        """Test 1.5: Get Cities - GET /api/auth/cities"""
+        success, response_time, data = await self.make_request("GET", "/auth/cities")
+        
+        cities_count = len(data.get('cities', [])) if success else 0
+        
+        self.test_results.add_result(
+            "1.5 Get Cities",
+            success,
+            f"Cities returned: {cities_count}",
+            {"cities_count": cities_count},
+            response_time
+        )
+        return success
+
+    # ==================== 2. DRIVER KYC SYSTEM TESTS ====================
+    
+    async def test_kyc_status_check(self):
+        """Test 2.1: KYC Status Check - GET /api/driver/kyc/status"""
+        success, response_time, data = await self.make_request(
+            "GET", "/driver/kyc/status",
+            params={"user_id": TEST_USER_ID}
+        )
+        
+        kyc_status = data.get('kyc_status', 'unknown') if success else 'error'
+        is_driver = data.get('is_driver', False) if success else False
+        
+        self.test_results.add_result(
+            "2.1 KYC Status Check",
+            success,
+            f"KYC Status: {kyc_status}, Is Driver: {is_driver}",
+            data,
+            response_time
+        )
+        return success
+        
+    async def test_admin_get_all_kycs(self):
+        """Test 2.2: Admin Get All KYCs - GET /api/admin/kyc/all"""
+        success, response_time, data = await self.make_request(
+            "GET", "/admin/kyc/all",
+            params={"admin_phone": ADMIN_PHONE}
+        )
+        
+        if success:
+            pending = data.get('pending', [])
+            approved = data.get('approved', [])
+            rejected = data.get('rejected', [])
+            
+            pending_count = len(pending)
+            approved_count = len(approved)
+            rejected_count = len(rejected)
+            
+            # Store a pending user ID for approval/rejection tests
+            if pending and len(pending) > 0:
+                self.pending_user_id = pending[0].get('user_id')
+            
+            message = f"Pending: {pending_count}, Approved: {approved_count}, Rejected: {rejected_count}"
         else:
-            # Try to verify existing user
-            verify_response = await self.make_request("POST", "/auth/verify-otp", {
-                "phone": passenger_data["phone"],
-                "otp": "123456"
-            })
-            if verify_response["success"] and verify_response["data"]["user_exists"]:
-                self.test_users["passenger"] = verify_response["data"]["user"]
-                self.test_results.add_result(
-                    "Setup Passenger User", 
-                    True, 
-                    f"Using existing passenger: {passenger_data['name']}"
-                )
-            else:
-                self.test_results.add_result(
-                    "Setup Passenger User", 
-                    False, 
-                    f"Failed to create/find passenger: {response['data']}"
-                )
-                return False
+            message = f"Error: {data.get('error', 'Unknown error')}"
+            
+        self.test_results.add_result(
+            "2.2 Admin Get All KYCs",
+            success,
+            message,
+            data,
+            response_time
+        )
+        return success
         
-        # Register driver
-        response = await self.make_request("POST", "/auth/register", driver_data)
-        if response["success"]:
-            self.test_users["driver"] = response["data"]["user"]
-            self.test_results.add_result(
-                "Setup Driver User", 
-                True, 
-                f"Created driver: {driver_data['name']}"
-            )
+    async def test_admin_approve_kyc(self):
+        """Test 2.3: Admin Approve KYC - POST /api/admin/kyc/approve"""
+        if not self.pending_user_id:
+            # Use test user ID if no pending user found
+            test_user_id = TEST_USER_ID
         else:
-            # Try to verify existing user
-            verify_response = await self.make_request("POST", "/auth/verify-otp", {
-                "phone": driver_data["phone"],
-                "otp": "123456"
-            })
-            if verify_response["success"] and verify_response["data"]["user_exists"]:
-                self.test_users["driver"] = verify_response["data"]["user"]
-                self.test_results.add_result(
-                    "Setup Driver User", 
-                    True, 
-                    f"Using existing driver: {driver_data['name']}"
-                )
-            else:
-                self.test_results.add_result(
-                    "Setup Driver User", 
-                    False, 
-                    f"Failed to create/find driver: {response['data']}"
-                )
-                return False
+            test_user_id = self.pending_user_id
+            
+        success, response_time, data = await self.make_request(
+            "POST", "/admin/kyc/approve",
+            params={"admin_phone": ADMIN_PHONE, "user_id": test_user_id}
+        )
         
-        # Update driver location to Adana coordinates
-        driver_id = self.test_users["driver"]["id"]
-        location_response = await self.make_request("POST", "/user/update-location", 
+        message = data.get('message', 'No message') if success else f"Error: {data.get('error', 'Unknown')}"
+        
+        self.test_results.add_result(
+            "2.3 Admin Approve KYC",
+            success,
+            message,
+            data,
+            response_time
+        )
+        return success
+        
+    async def test_admin_reject_kyc(self):
+        """Test 2.4: Admin Reject KYC - POST /api/admin/kyc/reject"""
+        test_user_id = TEST_USER_ID  # Use test user for rejection
+        
+        success, response_time, data = await self.make_request(
+            "POST", "/admin/kyc/reject",
             params={
-                "user_id": driver_id,
-                "latitude": 37.1,  # Adana coordinates (slightly different from pickup)
-                "longitude": 35.1
+                "admin_phone": ADMIN_PHONE, 
+                "user_id": test_user_id,
+                "reason": "Test rejection"
             }
         )
         
-        if location_response["success"]:
-            self.test_results.add_result(
-                "Update Driver Location", 
-                True, 
-                "Driver location set to Adana (37.1, 35.1)"
-            )
-        else:
-            self.test_results.add_result(
-                "Update Driver Location", 
-                False, 
-                f"Failed to update driver location: {location_response['data']}"
-            )
+        message = data.get('message', 'No message') if success else f"Error: {data.get('error', 'Unknown')}"
         
-        return True
+        self.test_results.add_result(
+            "2.4 Admin Reject KYC",
+            success,
+            message,
+            data,
+            response_time
+        )
+        return success
+
+    # ==================== 3. TAG/OFFER SYSTEM TESTS ====================
     
-    async def test_create_tag_with_coordinates(self):
-        """Test creating TAG with coordinates - Critical for distance calculation"""
-        print("\n🎯 Testing TAG creation with coordinates...")
-        
-        passenger_id = self.test_users["passenger"]["id"]
-        
+    async def test_create_tag(self):
+        """Test 3.1: Create Tag - POST /api/tags"""
         tag_data = {
-            "pickup_location": "Adana Merkez",
-            "dropoff_location": "Kadıköy, İstanbul", 
-            "pickup_lat": 37.0,  # Adana coordinates
-            "pickup_lng": 35.0,
-            "dropoff_lat": 41.0,  # Kadıköy coordinates
-            "dropoff_lng": 29.0,
-            "notes": "Test yolculuğu - mesafe hesaplama testi"
+            "user_id": TEST_USER_ID,
+            "pickup_location": "Ankara",
+            "dropoff_location": "İstanbul",
+            "offered_price": 500,
+            "pickup_lat": 39.9334,
+            "pickup_lng": 32.8597,
+            "dropoff_lat": 41.0082,
+            "dropoff_lng": 28.9784
         }
         
-        response = await self.make_request("POST", "/passenger/create-request", 
-            tag_data, 
-            params={"user_id": passenger_id}
+        success, response_time, data = await self.make_request(
+            "POST", "/tags",
+            data=tag_data
         )
         
-        if response["success"]:
-            tag = response["data"]["tag"]
-            self.test_tag_id = tag["id"]
-            
-            # Verify coordinates are saved correctly
-            coordinates_saved = (
-                tag.get("pickup_lat") == 37.0 and 
-                tag.get("pickup_lng") == 35.0 and
-                tag.get("dropoff_lat") == 41.0 and
-                tag.get("dropoff_lng") == 29.0
-            )
-            
-            self.test_results.add_result(
-                "Create TAG with Coordinates",
-                coordinates_saved,
-                f"TAG created with coordinates saved: {coordinates_saved}",
-                {
-                    "tag_id": self.test_tag_id,
-                    "pickup_coords": f"({tag.get('pickup_lat')}, {tag.get('pickup_lng')})",
-                    "dropoff_coords": f"({tag.get('dropoff_lat')}, {tag.get('dropoff_lng')})",
-                    "coordinates_match": coordinates_saved
-                }
-            )
-            return coordinates_saved
+        if success and data.get('tag_id'):
+            self.created_tag_id = data['tag_id']
+            message = f"Tag created with ID: {self.created_tag_id}"
         else:
-            self.test_results.add_result(
-                "Create TAG with Coordinates",
-                False,
-                f"Failed to create TAG: {response['data']}"
-            )
-            return False
-    
-    async def test_distance_calculation(self):
-        """Test distance calculation in driver requests - MOST CRITICAL"""
-        print("\n📏 Testing distance calculation (CRITICAL)...")
-        
-        if not self.test_tag_id:
-            self.test_results.add_result(
-                "Distance Calculation Test",
-                False,
-                "No test TAG available for distance testing"
-            )
-            return False
-        
-        driver_id = self.test_users["driver"]["id"]
-        
-        response = await self.make_request("GET", "/driver/requests", 
-            params={"user_id": driver_id}
-        )
-        
-        if response["success"]:
-            requests = response["data"]["requests"]
+            message = f"Error: {data.get('error', 'Unknown error')}"
             
-            # Find our test TAG
-            test_request = None
-            for req in requests:
-                if req["id"] == self.test_tag_id:
-                    test_request = req
-                    break
-            
-            if test_request:
-                distance_to_passenger = test_request.get("distance_to_passenger_km")
-                trip_distance = test_request.get("trip_distance_km")
-                
-                # Check if distances are calculated (not "Hesaplanıyor..." or 0)
-                distance_calculated = (
-                    isinstance(distance_to_passenger, (int, float)) and 
-                    distance_to_passenger > 0 and
-                    isinstance(trip_distance, (int, float)) and 
-                    trip_distance > 0
-                )
-                
-                self.test_results.add_result(
-                    "Distance Calculation - Driver to Passenger",
-                    distance_calculated,
-                    f"Distance calculated correctly: {distance_calculated}",
-                    {
-                        "distance_to_passenger_km": distance_to_passenger,
-                        "trip_distance_km": trip_distance,
-                        "expected_distance_range": "10-20km (Adana to Adana)",
-                        "expected_trip_range": "500-600km (Adana to Istanbul)",
-                        "calculation_working": distance_calculated
-                    }
-                )
-                
-                # Verify reasonable distance values
-                reasonable_distances = (
-                    0 < distance_to_passenger < 50 and  # Driver to passenger should be reasonable
-                    400 < trip_distance < 700  # Adana to Istanbul is ~550km
-                )
-                
-                self.test_results.add_result(
-                    "Distance Values Reasonableness",
-                    reasonable_distances,
-                    f"Distance values are reasonable: {reasonable_distances}",
-                    {
-                        "distance_to_passenger_reasonable": 0 < distance_to_passenger < 50,
-                        "trip_distance_reasonable": 400 < trip_distance < 700
-                    }
-                )
-                
-                return distance_calculated and reasonable_distances
-            else:
-                self.test_results.add_result(
-                    "Distance Calculation Test",
-                    False,
-                    "Test TAG not found in driver requests"
-                )
-                return False
-        else:
-            self.test_results.add_result(
-                "Distance Calculation Test",
-                False,
-                f"Failed to get driver requests: {response['data']}"
-            )
-            return False
-    
-    async def test_driver_send_offer_performance(self):
-        """Test optimized driver send offer endpoint - PERFORMANCE CRITICAL"""
-        print("\n🚀 Testing OPTIMIZED driver send offer (Performance Test)...")
-        
-        if not self.test_tag_id:
-            self.test_results.add_result(
-                "Driver Send Offer Performance Test",
-                False,
-                "No test TAG available for offer testing"
-            )
-            return False
-        
-        driver_id = self.test_users["driver"]["id"]
-        
-        offer_data = {
-            "tag_id": self.test_tag_id,
-            "price": 850.0,  # Reasonable price for Adana-Istanbul
-            "estimated_time": 480,  # 8 hours
-            "notes": "Konforlu yolculuk, klimalı araç",
-            "latitude": 37.1,  # Driver location in Adana
-            "longitude": 35.1
-        }
-        
-        # Measure response time - CRITICAL: Should be < 2 seconds
-        import time
-        start_time = time.time()
-        
-        response = await self.make_request("POST", "/driver/send-offer", 
-            offer_data,
-            params={"user_id": driver_id}
-        )
-        
-        end_time = time.time()
-        response_time = end_time - start_time
-        
-        # Performance check: < 2 seconds (previously 6-10 seconds)
-        performance_passed = response_time < 2.0
-        
-        success = response["success"] and performance_passed
-        
         self.test_results.add_result(
-            "Driver Send Offer - Performance",
-            performance_passed,
-            f"Response time: {response_time:.2f}s (Target: <2s, Previous: 6-10s)",
-            {
-                "response_time_seconds": round(response_time, 2),
-                "performance_target": "< 2 seconds",
-                "previous_performance": "6-10 seconds",
-                "performance_improvement": f"{((6.0 - response_time) / 6.0 * 100):.1f}% faster" if response_time < 6.0 else "No improvement",
-                "offer_price": offer_data["price"],
-                "response": response["data"]
-            }
-        )
-        
-        # Test functionality
-        functional_success = response["success"]
-        offer_id = None
-        if functional_success and response["data"].get("offer_id"):
-            offer_id = response["data"]["offer_id"]
-        
-        self.test_results.add_result(
-            "Driver Send Offer - Functionality",
-            functional_success,
-            f"Offer sent successfully: {functional_success}",
-            {
-                "offer_id": offer_id,
-                "success_returned": response["data"].get("success"),
-                "response_data": response["data"]
-            }
-        )
-        
-        # Store offer_id for background distance testing
-        if offer_id:
-            self.test_offer_id = offer_id
-        
-        return success and functional_success
-    
-    async def test_background_distance_updates(self):
-        """Test background distance calculation updates after offer sent"""
-        print("\n📏 Testing background distance updates...")
-        
-        if not hasattr(self, 'test_offer_id') or not self.test_offer_id:
-            self.test_results.add_result(
-                "Background Distance Updates",
-                False,
-                "No offer ID available for background distance testing"
-            )
-            return False
-        
-        passenger_id = self.test_users["passenger"]["id"]
-        
-        # Wait for background processing (as mentioned in review request)
-        print("⏳ Waiting 5 seconds for background distance calculations...")
-        await asyncio.sleep(5)
-        
-        # Get offers to check if distances were updated
-        response = await self.make_request("GET", "/passenger/offers", 
-            params={
-                "user_id": passenger_id,
-                "tag_id": self.test_tag_id
-            }
-        )
-        
-        if response["success"]:
-            offers = response["data"]["offers"]
-            
-            # Find our test offer
-            test_offer = None
-            for offer in offers:
-                if offer.get("id") == self.test_offer_id:
-                    test_offer = offer
-                    break
-            
-            if test_offer:
-                # Check if distance fields were updated from null
-                distance_to_passenger = test_offer.get("distance_to_passenger_km")
-                trip_distance = test_offer.get("trip_distance_km")
-                
-                # Initially these should be null, then updated in background
-                distances_updated = (
-                    distance_to_passenger is not None and 
-                    trip_distance is not None and
-                    isinstance(distance_to_passenger, (int, float)) and
-                    isinstance(trip_distance, (int, float))
-                )
-                
-                self.test_results.add_result(
-                    "Background Distance Updates",
-                    distances_updated,
-                    f"Distance calculations updated in background: {distances_updated}",
-                    {
-                        "distance_to_passenger_km": distance_to_passenger,
-                        "trip_distance_km": trip_distance,
-                        "expected_behavior": "Initially null in fast response, then updated in background",
-                        "distances_calculated": distances_updated
-                    }
-                )
-                
-                return distances_updated
-            else:
-                self.test_results.add_result(
-                    "Background Distance Updates",
-                    False,
-                    "Test offer not found in offers list"
-                )
-                return False
-        else:
-            self.test_results.add_result(
-                "Background Distance Updates",
-                False,
-                f"Failed to get offers: {response['data']}"
-            )
-            return False
-    
-    async def test_passenger_update_destination(self):
-        """Test passenger update destination endpoint"""
-        print("\n🎯 Testing passenger update destination...")
-        
-        if not self.test_tag_id:
-            self.test_results.add_result(
-                "Passenger Update Destination Test",
-                False,
-                "No test TAG available for destination update testing"
-            )
-            return False
-        
-        passenger_id = self.test_users["passenger"]["id"]
-        
-        update_data = {
-            "tag_id": self.test_tag_id,
-            "dropoff_location": "Taksim, İstanbul",
-            "dropoff_lat": 41.05,  # Taksim coordinates
-            "dropoff_lng": 28.98
-        }
-        
-        response = await self.make_request("POST", "/passenger/update-destination",
-            update_data,
-            params={"user_id": passenger_id}
-        )
-        
-        success = response["success"]
-        self.test_results.add_result(
-            "Passenger Update Destination",
+            "3.1 Create Tag",
             success,
-            f"Destination updated successfully: {success}",
-            {
-                "new_destination": update_data["dropoff_location"],
-                "new_coordinates": f"({update_data['dropoff_lat']}, {update_data['dropoff_lng']})",
-                "response": response["data"]
-            }
+            message,
+            data,
+            response_time
         )
-        
-        # Verify the update by checking the TAG
-        if success:
-            tag_response = await self.make_request("GET", "/passenger/active-tag",
-                params={"user_id": passenger_id}
-            )
-            
-            if tag_response["success"] and tag_response["data"]["tag"]:
-                tag = tag_response["data"]["tag"]
-                coordinates_updated = (
-                    tag.get("dropoff_lat") == 41.05 and
-                    tag.get("dropoff_lng") == 28.98 and
-                    tag.get("dropoff_location") == "Taksim, İstanbul"
-                )
-                
-                self.test_results.add_result(
-                    "Destination Update Verification",
-                    coordinates_updated,
-                    f"Destination coordinates updated in database: {coordinates_updated}",
-                    {
-                        "updated_location": tag.get("dropoff_location"),
-                        "updated_coords": f"({tag.get('dropoff_lat')}, {tag.get('dropoff_lng')})"
-                    }
-                )
-        
         return success
-    
-    async def test_passenger_cancel_tag(self):
-        """Test passenger cancel TAG endpoint"""
-        print("\n❌ Testing passenger cancel TAG...")
         
-        if not self.test_tag_id:
-            self.test_results.add_result(
-                "Passenger Cancel TAG Test",
-                False,
-                "No test TAG available for cancellation testing"
-            )
-            return False
+    async def test_get_active_tags(self):
+        """Test 3.2: Get Active Tags - GET /api/tags/active"""
+        success, response_time, data = await self.make_request("GET", "/tags/active")
         
-        passenger_id = self.test_users["passenger"]["id"]
-        
-        cancel_data = {
-            "tag_id": self.test_tag_id
-        }
-        
-        response = await self.make_request("POST", "/passenger/cancel-tag",
-            cancel_data,
-            params={"user_id": passenger_id}
-        )
-        
-        success = response["success"]
+        if success:
+            tags_count = len(data.get('tags', []))
+            message = f"Active tags count: {tags_count}"
+        else:
+            message = f"Error: {data.get('error', 'Unknown error')}"
+            
         self.test_results.add_result(
-            "Passenger Cancel TAG",
+            "3.2 Get Active Tags",
             success,
-            f"TAG cancelled successfully: {success}",
-            {
-                "cancelled_tag_id": self.test_tag_id,
-                "response": response["data"]
-            }
+            message,
+            data,
+            response_time
+        )
+        return success
+
+    # ==================== 4. ADMIN PANEL TESTS ====================
+    
+    async def test_admin_check(self):
+        """Test 4.1: Admin Check - GET /api/admin/check"""
+        success, response_time, data = await self.make_request(
+            "GET", "/admin/check",
+            params={"phone": ADMIN_PHONE}
         )
         
-        # Verify TAG status is CANCELLED
-        if success:
-            tag_response = await self.make_request("GET", "/passenger/active-tag",
-                params={"user_id": passenger_id}
-            )
-            
-            # Should return no active TAG since it's cancelled
-            no_active_tag = (
-                tag_response["success"] and 
-                tag_response["data"]["tag"] is None
-            )
-            
-            self.test_results.add_result(
-                "TAG Cancellation Verification",
-                no_active_tag,
-                f"No active TAG after cancellation: {no_active_tag}",
-                {
-                    "active_tag_response": tag_response["data"]
-                }
-            )
+        is_admin = data.get('is_admin', False) if success else False
         
+        self.test_results.add_result(
+            "4.1 Admin Check",
+            success,
+            f"Is Admin: {is_admin}",
+            data,
+            response_time
+        )
         return success
+
+    # ==================== MAIN TEST RUNNER ====================
     
     async def run_all_tests(self):
-        """Run all priority tests"""
-        print("🚀 Starting Leylek TAG Backend Tests")
-        print(f"🌐 Testing API at: {API_BASE}")
-        print("=" * 60)
+        """Run all backend tests as specified in review request"""
+        print(f"🧪 Starting Leylek TAG Backend API Tests")
+        print(f"🌐 Backend URL: {BACKEND_URL}")
+        print(f"📱 Test Phone: {TEST_PHONE}")
+        print(f"👤 Test User ID: {TEST_USER_ID}")
+        print(f"👑 Admin Phone: {ADMIN_PHONE}")
+        print("=" * 80)
         
-        # Setup
-        setup_success = await self.setup_test_users()
-        if not setup_success:
-            print("❌ Setup failed, aborting tests")
-            return
+        # 1. AUTHENTICATION FLOW
+        print("\n🔐 1. AUTHENTICATION FLOW")
+        await self.test_check_user()
+        await self.test_send_otp()
+        await self.test_verify_otp()
+        await self.test_verify_pin()
+        await self.test_get_cities()
         
-        # Priority tests based on test_result.md and review request
-        await self.test_create_tag_with_coordinates()
-        await self.test_distance_calculation()  # MOST CRITICAL
-        await self.test_driver_send_offer_performance()  # NEW: Performance test for optimization
-        await self.test_background_distance_updates()   # NEW: Background processing test
-        await self.test_passenger_update_destination()
-        await self.test_passenger_cancel_tag()
+        # 2. DRIVER KYC SYSTEM
+        print("\n🚗 2. DRIVER KYC SYSTEM")
+        await self.test_kyc_status_check()
+        await self.test_admin_get_all_kycs()
+        await self.test_admin_approve_kyc()
+        await self.test_admin_reject_kyc()
         
-        # Print summary
-        print("\n" + "=" * 60)
+        # 3. TAG/OFFER SYSTEM
+        print("\n🏷️ 3. TAG/OFFER SYSTEM")
+        await self.test_create_tag()
+        await self.test_get_active_tags()
+        
+        # 4. ADMIN PANEL
+        print("\n👑 4. ADMIN PANEL")
+        await self.test_admin_check()
+        
+        # Summary
+        await self.print_summary()
+        
+    async def print_summary(self):
+        """Print test summary"""
+        print("\n" + "=" * 80)
         print("📊 TEST SUMMARY")
-        print("=" * 60)
+        print("=" * 80)
+        
+        total_tests = self.test_results.passed + self.test_results.failed
+        success_rate = (self.test_results.passed / total_tests * 100) if total_tests > 0 else 0
+        
+        print(f"Total Tests: {total_tests}")
         print(f"✅ Passed: {self.test_results.passed}")
         print(f"❌ Failed: {self.test_results.failed}")
-        print(f"📈 Success Rate: {(self.test_results.passed / (self.test_results.passed + self.test_results.failed) * 100):.1f}%")
+        print(f"📈 Success Rate: {success_rate:.1f}%")
         
-        # Critical issues
-        critical_failures = []
+        # Failed tests details
+        failed_tests = [r for r in self.test_results.results if not r['passed']]
+        if failed_tests:
+            print(f"\n❌ FAILED TESTS:")
+            for result in failed_tests:
+                print(f"  - {result['test']}: {result['message']}")
+        
+        # Performance analysis
+        response_times = []
         for result in self.test_results.results:
-            if not result["passed"] and "Distance Calculation" in result["test"]:
-                critical_failures.append(result["test"])
+            if result['passed'] and result['response_time'] != "N/A":
+                try:
+                    time_val = float(result['response_time'].replace('s', ''))
+                    response_times.append(time_val)
+                except:
+                    pass
         
-        if critical_failures:
-            print(f"\n🚨 CRITICAL FAILURES:")
-            for failure in critical_failures:
-                print(f"   - {failure}")
-        
-        return self.test_results
+        if response_times:
+            avg_time = sum(response_times) / len(response_times)
+            max_time = max(response_times)
+            min_time = min(response_times)
+            
+            print(f"\n⚡ PERFORMANCE ANALYSIS:")
+            print(f"  Average Response Time: {avg_time:.2f}s")
+            print(f"  Fastest Response: {min_time:.2f}s")
+            print(f"  Slowest Response: {max_time:.2f}s")
 
 async def main():
-    """Main test runner"""
+    """Main test function"""
     async with LeylekTagTester() as tester:
-        results = await tester.run_all_tests()
+        await tester.run_all_tests()
         
         # Save results to file
+        results_data = {
+            "summary": {
+                "passed": tester.test_results.passed,
+                "failed": tester.test_results.failed,
+                "total": tester.test_results.passed + tester.test_results.failed,
+                "success_rate": (tester.test_results.passed / (tester.test_results.passed + tester.test_results.failed) * 100) if (tester.test_results.passed + tester.test_results.failed) > 0 else 0
+            },
+            "results": tester.test_results.results,
+            "timestamp": datetime.now().isoformat()
+        }
+        
         with open("/app/test_results_backend.json", "w", encoding="utf-8") as f:
-            json.dump({
-                "summary": {
-                    "passed": results.passed,
-                    "failed": results.failed,
-                    "total": results.passed + results.failed,
-                    "success_rate": results.passed / (results.passed + results.failed) * 100 if (results.passed + results.failed) > 0 else 0
-                },
-                "results": results.results,
-                "timestamp": datetime.now().isoformat()
-            }, f, indent=2, ensure_ascii=False)
+            json.dump(results_data, f, indent=2, ensure_ascii=False)
         
         print(f"\n💾 Detailed results saved to: /app/test_results_backend.json")
+        return tester.test_results
 
 if __name__ == "__main__":
     asyncio.run(main())
