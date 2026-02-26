@@ -1517,7 +1517,7 @@ export default function App() {
             />
           </Modal>
         )}
-      </View>
+      </ImageBackground>
     );
   }
 
