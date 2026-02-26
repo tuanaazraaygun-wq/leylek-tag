@@ -678,6 +678,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         {renderTab('calls', 'call', 'Aramalar')}
         {renderTab('auth', 'key', 'Girişler')}
         {renderTab('notifications', 'notifications', 'Bildirim')}
+        {renderTab('kyc', 'car-sport', 'KYC')}
         {renderTab('settings', 'settings', 'Ayarlar')}
       </ScrollView>
       
