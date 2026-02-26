@@ -7893,6 +7893,19 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
+  // 🆕 Yolcu Arka Plan Stilleri
+  passengerBackgroundContainer: {
+    flex: 1,
+  },
+  passengerBackgroundImage: {
+    resizeMode: 'stretch',
+    width: '100%',
+    height: '100%',
+  },
+  containerTransparent: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   // 🆕 MARTI TAG - Fiyat Modal Stilleri
   priceModalOverlay: {
     flex: 1,
