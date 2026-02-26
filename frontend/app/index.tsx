@@ -3073,6 +3073,23 @@ const searchingStyles = StyleSheet.create({
     color: '#374151',
     fontWeight: '500',
   },
+  // 📤 PAYLAŞ BUTONU
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3FA9F5',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 12,
+    alignSelf: 'center',
+    gap: 6,
+  },
+  shareButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   offersContainer: {
     flex: 1,
     marginTop: 12,
