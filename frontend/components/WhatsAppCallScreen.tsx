@@ -282,7 +282,7 @@ export default function WhatsAppCallScreen({
   // API URL
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
     ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
-    : 'https://ride-share-app-97.preview.emergentagent.com/api';
+    : 'https://driver-kyc-verify.preview.emergentagent.com/api';
   
   const maxDuration = 600;
 
