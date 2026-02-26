@@ -279,6 +279,9 @@ export default function App() {
   // Role Selection (Dinamik - Her girişte seçilir)
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
   
+  // KYC Status (Sürücü başvuru durumu)
+  const [kycStatus, setKycStatus] = useState<{status: string; submitted_at: string | null} | null>(null);
+  
   // Animation for role selection
   const scaleAnim = useRef(new Animated.Value(1)).current;
   
