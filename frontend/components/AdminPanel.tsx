@@ -87,7 +87,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         case 'trips': await loadTrips(); break;
         case 'calls': await loadCalls(); break;
         case 'auth': await loadAuthLogs(); break;
-        case 'kyc': await loadPendingKYCs(); break;
+        case 'kyc': await loadAllKYCs(); break;
         case 'settings': await loadSettings(); break;
       }
     } catch (e) {
