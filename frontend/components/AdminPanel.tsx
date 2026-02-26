@@ -694,11 +694,109 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           {activeTab === 'calls' && renderCalls()}
           {activeTab === 'auth' && renderAuthLogs()}
           {activeTab === 'notifications' && renderNotifications()}
+          {activeTab === 'kyc' && renderKYCTab()}
           {activeTab === 'settings' && renderSettings()}
         </>
       )}
     </View>
   );
+
+  // KYC Tab Render
+  function renderKYCTab() {
+    return (
+      <ScrollView style={styles.tabContent}>
+        <Text style={styles.sectionTitle}>🚗 Sürücü Başvuruları</Text>
+        <Text style={styles.sectionSubtitle}>
+          Bekleyen: {pendingKYCs.length} başvuru
+        </Text>
+        
+        {pendingKYCs.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
+            <Text style={styles.emptyText}>Bekleyen başvuru yok</Text>
+          </View>
+        ) : (
+          pendingKYCs.map((kyc, index) => (
+            <View key={kyc.user_id || index} style={styles.kycCard}>
+              <View style={styles.kycHeader}>
+                <View>
+                  <Text style={styles.kycName}>{kyc.name}</Text>
+                  <Text style={styles.kycPhone}>{kyc.phone}</Text>
+                  <Text style={styles.kycPlate}>Plaka: {kyc.plate_number}</Text>
+                </View>
+                <View style={styles.kycBadge}>
+                  <Text style={styles.kycBadgeText}>Bekliyor</Text>
+                </View>
+              </View>
+              
+              <View style={styles.kycPhotos}>
+                <TouchableOpacity 
+                  style={styles.kycPhotoBox}
+                  onPress={() => kyc.vehicle_photo_url && setKycImageModal(kyc.vehicle_photo_url)}
+                >
+                  <Text style={styles.kycPhotoLabel}>Araç Fotoğrafı</Text>
+                  <Ionicons name="car" size={24} color={COLORS.primary} />
+                  <Text style={styles.kycPhotoAction}>Görüntüle</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.kycPhotoBox}
+                  onPress={() => kyc.license_photo_url && setKycImageModal(kyc.license_photo_url)}
+                >
+                  <Text style={styles.kycPhotoLabel}>Ehliyet</Text>
+                  <Ionicons name="card" size={24} color={COLORS.primary} />
+                  <Text style={styles.kycPhotoAction}>Görüntüle</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.kycActions}>
+                <TouchableOpacity 
+                  style={[styles.kycButton, styles.kycApprove]}
+                  onPress={() => approveKYC(kyc.user_id)}
+                >
+                  <Ionicons name="checkmark" size={18} color="#FFF" />
+                  <Text style={styles.kycButtonText}>Onayla</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.kycButton, styles.kycReject]}
+                  onPress={() => rejectKYC(kyc.user_id)}
+                >
+                  <Ionicons name="close" size={18} color="#FFF" />
+                  <Text style={styles.kycButtonText}>Reddet</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+        
+        {/* Image Modal */}
+        <Modal visible={!!kycImageModal} transparent animationType="fade">
+          <TouchableOpacity 
+            style={styles.imageModalOverlay}
+            activeOpacity={1}
+            onPress={() => setKycImageModal(null)}
+          >
+            <View style={styles.imageModalContent}>
+              {kycImageModal && (
+                <Image 
+                  source={{ uri: kycImageModal }} 
+                  style={styles.imageModalImage}
+                  resizeMode="contain"
+                />
+              )}
+              <TouchableOpacity 
+                style={styles.imageModalClose}
+                onPress={() => setKycImageModal(null)}
+              >
+                <Ionicons name="close" size={24} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      </ScrollView>
+    );
+  }
 }
 
 const styles = StyleSheet.create({
