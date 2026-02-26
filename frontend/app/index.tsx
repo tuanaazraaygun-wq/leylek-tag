@@ -7269,7 +7269,7 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
             <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.modernHeaderTitle}>{user.name}</Text>
+            <Text style={styles.modernHeaderTitle}>{user.name?.split(' ')[0] || 'Sürücü'}</Text>
             <Text style={styles.modernHeaderSubtitle}>⭐ {user.rating || '5.0'}</Text>
           </View>
           <TouchableOpacity onPress={logout} style={styles.logoutButtonHeader}>
