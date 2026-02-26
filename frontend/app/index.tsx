@@ -5515,7 +5515,6 @@ function PassengerDashboard({
                 <Ionicons name="chevron-forward" size={20} color="#FFF" />
               </View>
             </TouchableOpacity>
-            </TouchableOpacity>
 
             {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
             {showArrowHint && (
