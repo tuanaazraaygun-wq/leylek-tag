@@ -439,7 +439,11 @@ const styles = StyleSheet.create({
   // Map
   mapContainer: {
     height: SCREEN_HEIGHT * 0.32,
-    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapBackgroundImage: {
+    resizeMode: 'cover',
   },
   map: {
     flex: 1,
@@ -460,6 +464,46 @@ const styles = StyleSheet.create({
     top: 12,
     left: 12,
     right: 12,
+  },
+  mapOverlayCenter: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  requestCountBadgeBig: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 30,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+    gap: 12,
+  },
+  requestCountTextBig: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1B1B1E',
+  },
+  radiusInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(13, 27, 42, 0.85)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 10,
+  },
+  radiusInfoText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   requestCountBadge: {
     flexDirection: 'row',
