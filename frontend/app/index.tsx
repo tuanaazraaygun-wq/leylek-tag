@@ -5490,24 +5490,31 @@ function PassengerDashboard({
               </TouchableOpacity>
             </View>
             
-            {/* Kişi Adı */}
-            <Text style={styles.welcomeNameBig}>{user.name}</Text>
-            <Text style={styles.welcomeQuestion}>Nereye Gitmek İstiyorsunuz?</Text>
+            {/* Nereye Gitmek İstiyorsunuz - En üstte */}
+            <Text style={styles.welcomeQuestionTop}>Nereye Gitmek İstiyorsunuz?</Text>
             
-            {/* Hedef Seçme Alanı - GÖK MAVİSİ, BÜYÜK */}
+            {/* Kişi Adı - Sadece isim (soyad admin için) */}
+            <Text style={styles.welcomeNameSmall}>{user.name?.split(' ')[0] || 'Kullanıcı'}</Text>
+            
+            {/* Hedef Seçme Alanı - EFEKTLİ, BÜYÜK */}
             <TouchableOpacity
-              style={styles.destinationBoxSky}
+              style={styles.destinationBoxEffective}
               onPress={() => {
                 setShowDestinationPicker(true);
                 setShowArrowHint(false);
               }}
               activeOpacity={0.8}
             >
-              <Ionicons name="location-sharp" size={36} color="#87CEEB" />
-              <Text style={styles.destinationTextSky}>
+              <View style={styles.destinationIconCircle}>
+                <Ionicons name="location-sharp" size={28} color="#FFF" />
+              </View>
+              <Text style={styles.destinationTextEffective}>
                 {destination ? destination.address : 'Hedef Seçin'}
               </Text>
-              <Ionicons name="chevron-forward" size={24} color="#87CEEB" />
+              <View style={styles.destinationArrowCircle}>
+                <Ionicons name="chevron-forward" size={20} color="#FFF" />
+              </View>
+            </TouchableOpacity>
             </TouchableOpacity>
 
             {/* OK HİNT - Hedef seçilmeden çağrı yapılırsa */}
