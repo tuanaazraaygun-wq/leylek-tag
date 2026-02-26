@@ -8475,9 +8475,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(13, 27, 42, 0.9)',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: 'rgba(63, 169, 245, 0.3)',
   },
   backButtonHeader: {
     padding: 8,
@@ -8489,12 +8489,12 @@ const styles = StyleSheet.create({
   modernHeaderTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#3FA9F5',
+    color: '#FFFFFF',
     letterSpacing: 0.5,
   },
   modernHeaderSubtitle: {
     fontSize: 13,
-    color: '#888',
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
   logoutButtonHeader: {
