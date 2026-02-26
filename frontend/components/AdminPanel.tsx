@@ -724,6 +724,15 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                   <Text style={styles.kycName}>{kyc.name}</Text>
                   <Text style={styles.kycPhone}>{kyc.phone}</Text>
                   <Text style={styles.kycPlate}>Plaka: {kyc.plate_number}</Text>
+                  {(kyc.vehicle_brand || kyc.vehicle_model) && (
+                    <Text style={styles.kycVehicle}>
+                      🚗 {kyc.vehicle_brand || ''} {kyc.vehicle_model || ''}
+                      {kyc.vehicle_year ? ` (${kyc.vehicle_year})` : ''}
+                    </Text>
+                  )}
+                  {kyc.vehicle_color && (
+                    <Text style={styles.kycColor}>🎨 Renk: {kyc.vehicle_color}</Text>
+                  )}
                 </View>
                 <View style={styles.kycBadge}>
                   <Text style={styles.kycBadgeText}>Bekliyor</Text>
