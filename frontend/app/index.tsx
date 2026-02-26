@@ -1387,12 +1387,16 @@ export default function App() {
             setScreen('driver-kyc');
             return;
           } else if (kycData.kyc_status === 'pending') {
-            // KYC beklemede
-            Alert.alert(
-              '⏳ Başvurunuz İnceleniyor',
-              'Sürücü başvurunuz henüz inceleniyor. Onaylandığında bildirim alacaksınız.',
-              [{ text: 'Tamam' }]
-            );
+            // KYC beklemede - Cross-platform alert
+            if (Platform.OS === 'web') {
+              window.alert('⏳ Başvurunuz İnceleniyor\n\nSürücü başvurunuz henüz inceleniyor. Onaylandığında bildirim alacaksınız.');
+            } else {
+              Alert.alert(
+                '⏳ Başvurunuz İnceleniyor',
+                'Sürücü başvurunuz henüz inceleniyor. Onaylandığında bildirim alacaksınız.',
+                [{ text: 'Tamam' }]
+              );
+            }
             return;
           }
           // approved ise devam et
