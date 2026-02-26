@@ -101,7 +101,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('İzin Gerekli', 'Kamera izni gereklidir');
+        showAlert('İzin Gerekli', 'Kamera izni gereklidir');
         return;
       }
 
