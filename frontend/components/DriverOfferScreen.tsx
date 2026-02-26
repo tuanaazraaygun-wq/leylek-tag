@@ -353,7 +353,11 @@ export default function DriverOfferScreen({
       </View>
 
       {/* Yolcu İstekleri Listesi - Alt %65 */}
-      <View style={styles.listContainer}>
+      <ImageBackground 
+        source={require('../assets/images/offer-background.png')} 
+        style={styles.listContainer}
+        imageStyle={styles.listBackgroundImage}
+      >
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>Yakındaki İstekler</Text>
           <Text style={styles.listSubtitle}>20 km çevrenizdeki yolcular</Text>
@@ -384,7 +388,7 @@ export default function DriverOfferScreen({
             showsVerticalScrollIndicator={false}
           />
         )}
-      </View>
+      </ImageBackground>
     </SafeAreaView>
   );
 }
