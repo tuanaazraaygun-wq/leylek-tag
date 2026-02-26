@@ -124,7 +124,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
       }
     } catch (error) {
       console.error('Image pick error:', error);
-      Alert.alert('Hata', 'Fotoğraf çekilemedi');
+      showAlert('Hata', 'Fotoğraf çekilemedi');
     }
   };
 
@@ -133,7 +133,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('İzin Gerekli', 'Galeri izni gereklidir');
+        showAlert('İzin Gerekli', 'Galeri izni gereklidir');
         return;
       }
 
