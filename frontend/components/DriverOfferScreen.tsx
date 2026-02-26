@@ -339,18 +339,24 @@ export default function DriverOfferScreen({
         </TouchableOpacity>
       </View>
 
-      {/* Harita - Üst %35 */}
-      <View style={styles.mapContainer}>
-        {renderMap()}
-        
+      {/* Harita - Üst %35 - Arka Planlı */}
+      <ImageBackground 
+        source={require('../assets/images/offer-background.png')} 
+        style={styles.mapContainer}
+        imageStyle={styles.mapBackgroundImage}
+      >
         {/* Harita üzerinde bilgi */}
-        <View style={styles.mapOverlay}>
-          <View style={styles.requestCountBadge}>
-            <Ionicons name="people" size={16} color={COLORS.primary} />
-            <Text style={styles.requestCountText}>{requests.length} yolcu bekliyor</Text>
+        <View style={styles.mapOverlayCenter}>
+          <View style={styles.requestCountBadgeBig}>
+            <Ionicons name="people" size={28} color="#3FA9F5" />
+            <Text style={styles.requestCountTextBig}>{requests.length} yolcu bekliyor</Text>
+          </View>
+          <View style={styles.radiusInfoBox}>
+            <Ionicons name="location" size={24} color="#FFFFFF" />
+            <Text style={styles.radiusInfoText}>{requests.length} yolcu 20km içinde</Text>
           </View>
         </View>
-      </View>
+      </ImageBackground>
 
       {/* Yolcu İstekleri Listesi - Alt %65 */}
       <ImageBackground 
