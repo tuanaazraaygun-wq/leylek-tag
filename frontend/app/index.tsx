@@ -10572,6 +10572,11 @@ const styles = StyleSheet.create({
   roleSelectionContainer: {
     flex: 1,
   },
+  roleBackgroundImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
   roleSelectionSafe: {
     flex: 1,
   },
