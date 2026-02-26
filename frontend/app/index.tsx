@@ -1481,15 +1481,16 @@ export default function App() {
               <Text style={styles.roleContinueText}>Devam Et</Text>
               <Ionicons name="arrow-forward" size={22} color="#FFF" />
             </TouchableOpacity>
+          </View>
 
-            {/* Ayırıcı */}
+          {/* Leylek Muhabbeti - En Alta Sabitlenmiş */}
+          <View style={styles.communityBottomContainer}>
             <View style={styles.roleSeparator}>
               <View style={styles.roleSeparatorLine} />
               <Text style={styles.roleSeparatorText}>veya</Text>
               <View style={styles.roleSeparatorLine} />
             </View>
 
-            {/* Leylek Muhabbeti */}
             <TouchableOpacity style={styles.communityBtnCompact} onPress={() => setScreen('community')}>
               <Image source={require('../assets/images/leylek-splash.png')} style={styles.communityLogo} resizeMode="contain" />
               <View style={styles.communityTextBox}>
