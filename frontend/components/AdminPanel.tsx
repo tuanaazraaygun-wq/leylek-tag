@@ -898,83 +898,110 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
               
               {kycFilter === 'pending' && (
                 <View style={styles.kycActions}>
-                  <TouchableOpacity 
+                  <Pressable 
                     style={[styles.kycButton, styles.kycApprove]}
                     onPress={() => {
-                      console.log('ONAYLA BUTONUNA BASILDI - userId:', kyc.user_id);
                       const userId = kyc.user_id;
+                      const confirmMsg = 'Bu sürücü başvurusunu onaylıyor musunuz?';
+                      
                       if (Platform.OS === 'web') {
-                        if (window.confirm('Bu sürücü başvurusunu onaylıyor musunuz?')) {
-                          setLoading(true);
-                          fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
-                            method: 'POST'
-                          })
-                          .then(res => res.json())
-                          .then(data => {
-                            console.log('Approve response:', data);
-                            if (data.success) {
-                              window.alert('✅ Sürücü kaydı onaylandı');
-                              loadAllKYCs();
-                            } else {
-                              window.alert('Hata: ' + (data.message || 'İşlem başarısız'));
-                            }
-                          })
-                          .catch(err => {
-                            console.error('Approve error:', err);
-                            window.alert('Hata: ' + err.message);
-                          })
-                          .finally(() => setLoading(false));
+                        const confirmed = window.confirm(confirmMsg);
+                        if (confirmed) {
+                          const apiUrl = `${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`;
+                          
+                          fetch(apiUrl, { method: 'POST' })
+                            .then(response => response.json())
+                            .then(result => {
+                              if (result.success) {
+                                window.alert('✅ Sürücü kaydı onaylandı');
+                                loadAllKYCs();
+                              } else {
+                                window.alert('Hata: ' + (result.message || 'İşlem başarısız'));
+                              }
+                            })
+                            .catch(error => {
+                              window.alert('Hata: ' + error.message);
+                            });
                         }
                       } else {
-                        Alert.alert('Onayla', 'Bu sürücü başvurusunu onaylıyor musunuz?', [
+                        Alert.alert('Onayla', confirmMsg, [
                           { text: 'İptal', style: 'cancel' },
-                          { text: 'Onayla', onPress: () => approveKYC(userId) }
+                          { 
+                            text: 'Onayla', 
+                            onPress: () => {
+                              fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, { method: 'POST' })
+                                .then(res => res.json())
+                                .then(data => {
+                                  if (data.success) {
+                                    Alert.alert('Başarılı', 'Sürücü kaydı onaylandı');
+                                    loadAllKYCs();
+                                  } else {
+                                    Alert.alert('Hata', data.message || 'İşlem başarısız');
+                                  }
+                                })
+                                .catch(err => Alert.alert('Hata', err.message));
+                            }
+                          }
                         ]);
                       }
                     }}
                   >
                     <Ionicons name="checkmark" size={18} color="#FFF" />
                     <Text style={styles.kycButtonText}>Onayla</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                   
-                  <TouchableOpacity 
+                  <Pressable 
                     style={[styles.kycButton, styles.kycReject]}
                     onPress={() => {
-                      console.log('REDDET BUTONUNA BASILDI - userId:', kyc.user_id);
                       const userId = kyc.user_id;
+                      const confirmMsg = 'Bu sürücü başvurusunu reddediyor musunuz?';
+                      
                       if (Platform.OS === 'web') {
-                        if (window.confirm('Bu sürücü başvurusunu reddediyor musunuz?')) {
-                          setLoading(true);
-                          fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, {
-                            method: 'POST'
-                          })
-                          .then(res => res.json())
-                          .then(data => {
-                            console.log('Reject response:', data);
-                            if (data.success) {
-                              window.alert('❌ Sürücü kaydı reddedildi');
-                              loadAllKYCs();
-                            } else {
-                              window.alert('Hata: ' + (data.message || 'İşlem başarısız'));
-                            }
-                          })
-                          .catch(err => {
-                            console.error('Reject error:', err);
-                            window.alert('Hata: ' + err.message);
-                          })
-                          .finally(() => setLoading(false));
+                        const confirmed = window.confirm(confirmMsg);
+                        if (confirmed) {
+                          const apiUrl = `${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`;
+                          
+                          fetch(apiUrl, { method: 'POST' })
+                            .then(response => response.json())
+                            .then(result => {
+                              if (result.success) {
+                                window.alert('❌ Sürücü kaydı reddedildi');
+                                loadAllKYCs();
+                              } else {
+                                window.alert('Hata: ' + (result.message || 'İşlem başarısız'));
+                              }
+                            })
+                            .catch(error => {
+                              window.alert('Hata: ' + error.message);
+                            });
                         }
                       } else {
-                        Alert.alert('Reddet', 'Bu sürücü başvurusunu reddediyor musunuz?', [
+                        Alert.alert('Reddet', confirmMsg, [
                           { text: 'İptal', style: 'cancel' },
-                          { text: 'Reddet', style: 'destructive', onPress: () => rejectKYC(userId) }
+                          { 
+                            text: 'Reddet', 
+                            style: 'destructive',
+                            onPress: () => {
+                              fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, { method: 'POST' })
+                                .then(res => res.json())
+                                .then(data => {
+                                  if (data.success) {
+                                    Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
+                                    loadAllKYCs();
+                                  } else {
+                                    Alert.alert('Hata', data.message || 'İşlem başarısız');
+                                  }
+                                })
+                                .catch(err => Alert.alert('Hata', err.message));
+                            }
+                          }
                         ]);
                       }
                     }}
                   >
                     <Ionicons name="close" size={18} color="#FFF" />
                     <Text style={styles.kycButtonText}>Reddet</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               )}
             </View>
