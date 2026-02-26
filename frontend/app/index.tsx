@@ -6363,13 +6363,18 @@ interface DriverDashboardProps {
   user: User;
   logout: () => void;
   setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
+  kycStatusProp?: { status: string; submitted_at: string | null } | null;
+  setKycStatusProp?: (status: { status: string; submitted_at: string | null } | null) => void;
 }
 
-function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
+function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp }: DriverDashboardProps) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
+  
+  // KYC Status (local)
+  const [kycStatus, setKycStatus] = useState<{ status: string; submitted_at: string | null } | null>(kycStatusProp || null);
   
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
