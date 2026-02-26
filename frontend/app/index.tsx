@@ -4937,6 +4937,41 @@ function PassengerDashboard({
     }
   };
 
+  // 📤 TEKLİF PAYLAŞMA - Cross-platform (Web, Android, iOS)
+  const handleShareRideRequest = async () => {
+    if (!activeTag) return;
+    
+    const message = `🚗 Leylek TAG - Yolculuk Teklifi\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
+    
+    const webAppUrl = 'https://driver-kyc-verify.preview.emergentagent.com';
+    const deepLink = `leylektag://ride/${activeTag.id}`;
+    
+    try {
+      if (Platform.OS === 'web') {
+        // Web için kopyalama veya navigator.share
+        if (navigator.share) {
+          await navigator.share({
+            title: 'Leylek TAG - Yolculuk Teklifi',
+            text: message,
+            url: webAppUrl,
+          });
+        } else {
+          // Fallback: Clipboard'a kopyala
+          await navigator.clipboard.writeText(`${message}\n\n${webAppUrl}`);
+          window.alert('Teklif bilgisi kopyalandı!\n\nWhatsApp veya başka bir uygulamada paylaşabilirsiniz.');
+        }
+      } else {
+        // Android/iOS için native Share
+        await Share.share({
+          message: `${message}\n\nUygulama linki: ${webAppUrl}`,
+          title: 'Leylek TAG - Yolculuk Teklifi',
+        });
+      }
+    } catch (error) {
+      console.log('Paylaşım hatası:', error);
+    }
+  };
+
   // SESLİ ARAMA - Mock fonksiyon
   // 🆕 Daily.co ile Sesli/Görüntülü Arama Başlat
   const startDailyCall = async (callType: 'audio' | 'video') => {
