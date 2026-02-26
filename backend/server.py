@@ -1445,12 +1445,15 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
         
         user = user_result.data[0]
         
+        # driver_details'i güvenli al
+        driver_details = user.get("driver_details") or {}
+        
         # Zaten onaylı sürücü mü?
-        if user.get("driver_details", {}).get("kyc_status") == "approved":
+        if driver_details.get("kyc_status") == "approved":
             return {"success": False, "message": "Zaten onaylı sürücüsünüz", "kyc_status": "approved"}
         
         # Bekleyen başvuru var mı?
-        if user.get("driver_details", {}).get("kyc_status") == "pending":
+        if driver_details.get("kyc_status") == "pending":
             return {"success": False, "message": "Başvurunuz inceleniyor", "kyc_status": "pending"}
         
         # Fotoğrafları Supabase Storage'a yükle
