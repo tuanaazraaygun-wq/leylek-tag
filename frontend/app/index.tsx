@@ -7255,7 +7255,12 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ImageBackground 
+      source={require('../assets/images/driver-background.png')} 
+      style={styles.driverBackgroundContainer}
+      imageStyle={styles.driverBackgroundImage}
+    >
+    <SafeAreaView style={styles.containerTransparent}>
       
       {/* Üst Header - Modern Mavi (Sadece Teklif Listesi Boşsa VE Eşleşme Yoksa Göster) */}
       {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && requests.length === 0 && (
