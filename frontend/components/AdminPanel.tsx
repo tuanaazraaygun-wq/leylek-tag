@@ -66,6 +66,11 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [driverRadius, setDriverRadius] = useState('50');
   const [maxCallDuration, setMaxCallDuration] = useState('30');
   
+  // KYC
+  const [pendingKYCs, setPendingKYCs] = useState<any[]>([]);
+  const [selectedKYC, setSelectedKYC] = useState<any>(null);
+  const [kycImageModal, setKycImageModal] = useState<string | null>(null);
+  
   useEffect(() => {
     loadData();
   }, [activeTab]);
@@ -79,6 +84,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         case 'trips': await loadTrips(); break;
         case 'calls': await loadCalls(); break;
         case 'auth': await loadAuthLogs(); break;
+        case 'kyc': await loadPendingKYCs(); break;
         case 'settings': await loadSettings(); break;
       }
     } catch (e) {
