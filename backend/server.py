@@ -1668,6 +1668,64 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
         logger.error(f"Reject KYC error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/admin/kyc/all")
+async def get_all_kyc_requests(admin_phone: str):
+    """Admin: Tüm KYC başvurularını getir (pending, approved, rejected)"""
+    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412"]:
+        raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+    
+    try:
+        result = supabase.table("users").select("id, name, phone, driver_details, created_at").not_.is_("driver_details", "null").execute()
+        
+        pending_kycs = []
+        approved_kycs = []
+        rejected_kycs = []
+        
+        for user in result.data:
+            driver_details = user.get("driver_details") or {}
+            kyc_status = driver_details.get("kyc_status")
+            
+            if kyc_status in ["pending", "approved", "rejected"]:
+                kyc_data = {
+                    "user_id": user["id"],
+                    "name": user["name"],
+                    "phone": user["phone"],
+                    "plate_number": driver_details.get("plate_number"),
+                    "vehicle_brand": driver_details.get("vehicle_brand"),
+                    "vehicle_model": driver_details.get("vehicle_model"),
+                    "vehicle_year": driver_details.get("vehicle_year"),
+                    "vehicle_color": driver_details.get("vehicle_color"),
+                    "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
+                    "license_photo_url": driver_details.get("license_photo_url"),
+                    "submitted_at": driver_details.get("kyc_submitted_at"),
+                    "kyc_status": kyc_status
+                }
+                
+                if kyc_status == "pending":
+                    pending_kycs.append(kyc_data)
+                elif kyc_status == "approved":
+                    kyc_data["approved_at"] = driver_details.get("kyc_approved_at")
+                    approved_kycs.append(kyc_data)
+                elif kyc_status == "rejected":
+                    kyc_data["rejected_at"] = driver_details.get("kyc_rejected_at")
+                    kyc_data["rejection_reason"] = driver_details.get("kyc_rejection_reason")
+                    rejected_kycs.append(kyc_data)
+        
+        return {
+            "success": True,
+            "pending": pending_kycs,
+            "approved": approved_kycs,
+            "rejected": rejected_kycs,
+            "counts": {
+                "pending": len(pending_kycs),
+                "approved": len(approved_kycs),
+                "rejected": len(rejected_kycs)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Get all KYC error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==================== BLOCKING SYSTEM ====================
 
 @api_router.post("/user/block")
