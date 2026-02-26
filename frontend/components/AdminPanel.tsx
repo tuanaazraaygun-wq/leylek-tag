@@ -1122,4 +1122,124 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  // KYC Styles
+  kycCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.3)',
+  },
+  kycHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  kycName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  kycPhone: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  kycPlate: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  kycBadge: {
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  kycBadgeText: {
+    color: '#FBbf24',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  kycPhotos: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  kycPhotoBox: {
+    flex: 1,
+    backgroundColor: 'rgba(63, 169, 245, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.3)',
+  },
+  kycPhotoLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+  },
+  kycPhotoAction: {
+    fontSize: 12,
+    color: COLORS.primary,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  kycActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  kycButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  kycApprove: {
+    backgroundColor: COLORS.success,
+  },
+  kycReject: {
+    backgroundColor: COLORS.danger,
+  },
+  kycButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imageModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageModalContent: {
+    width: '90%',
+    height: '70%',
+  },
+  imageModalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageModalClose: {
+    position: 'absolute',
+    top: -40,
+    right: 0,
+    padding: 10,
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
+    marginTop: 12,
+  },
 });
