@@ -7329,6 +7329,94 @@ function DriverDashboard({ user, logout, setScreen }: DriverDashboardProps) {
     );
   }
 
+  // 📋 KYC PENDING EKRANI - Başvuru inceleniyor
+  if (kycStatus?.status === 'pending') {
+    // Kalan süreyi hesapla (30 dakika)
+    const submittedAt = kycStatus.submitted_at ? new Date(kycStatus.submitted_at) : new Date();
+    const now = new Date();
+    const elapsedMs = now.getTime() - submittedAt.getTime();
+    const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
+    const remainingMinutes = Math.max(0, 30 - elapsedMinutes);
+    
+    return (
+      <SafeAreaView style={styles.kycPendingContainer}>
+        <View style={styles.kycPendingHeader}>
+          <TouchableOpacity onPress={() => { setKycStatus(null); setScreen('role-select'); }} style={styles.backButtonHeader}>
+            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
+          </TouchableOpacity>
+          <Text style={styles.kycPendingHeaderTitle}>Sürücü Başvurusu</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        <View style={styles.kycPendingContent}>
+          <View style={styles.kycPendingIconCircle}>
+            <Ionicons name="hourglass-outline" size={80} color="#F59E0B" />
+          </View>
+          
+          <Text style={styles.kycPendingTitle}>Başvurunuz İnceleniyor</Text>
+          
+          <Text style={styles.kycPendingDescription}>
+            Teklifleri alabilmeniz için başvurunuzun onaylanması gerekiyor.{'\n'}Lütfen bekleyin.
+          </Text>
+          
+          <View style={styles.kycPendingTimerBox}>
+            <Ionicons name="time-outline" size={28} color="#3FA9F5" />
+            <View>
+              <Text style={styles.kycPendingTimerLabel}>Tahmini Kalan Süre</Text>
+              <Text style={styles.kycPendingTimerValue}>
+                {remainingMinutes > 0 ? `${remainingMinutes} dakika` : 'Çok yakında...'}
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.kycPendingInfoBox}>
+            <Ionicons name="information-circle" size={24} color="#3FA9F5" />
+            <Text style={styles.kycPendingInfoText}>
+              Admin başvurunuzu en kısa sürede inceleyecek.{'\n'}Onaylandığında bildirim alacaksınız.
+            </Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.kycPendingRefreshBtn}
+            onPress={async () => {
+              try {
+                const response = await fetch(`${API_URL}/driver/kyc/status?user_id=${user?.id}`);
+                const data = await response.json();
+                if (data.kyc_status === 'approved') {
+                  setKycStatus(null);
+                  if (Platform.OS === 'web') {
+                    window.alert('✅ Tebrikler! Başvurunuz onaylandı. Artık teklifleri alabilirsiniz.');
+                  } else {
+                    Alert.alert('✅ Onaylandı', 'Tebrikler! Başvurunuz onaylandı. Artık teklifleri alabilirsiniz.');
+                  }
+                } else if (data.kyc_status === 'rejected') {
+                  setKycStatus(null);
+                  setScreen('driver-kyc');
+                  if (Platform.OS === 'web') {
+                    window.alert('❌ Başvurunuz reddedildi: ' + (data.rejection_reason || 'Belgeler uygun değil'));
+                  } else {
+                    Alert.alert('❌ Reddedildi', 'Başvurunuz reddedildi: ' + (data.rejection_reason || 'Belgeler uygun değil'));
+                  }
+                } else {
+                  // Hala pending
+                  setKycStatus({
+                    status: data.kyc_status,
+                    submitted_at: data.submitted_at
+                  });
+                }
+              } catch (error) {
+                console.error('KYC status check error:', error);
+              }
+            }}
+          >
+            <Ionicons name="refresh" size={20} color="#FFF" />
+            <Text style={styles.kycPendingRefreshText}>Durumu Kontrol Et</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // 🆕 YENİ SÜRÜCÜ TEKLİF EKRANI - Tam sayfa bileşen, kendi SafeAreaView'ı var
   if (requests.length > 0 && !(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress'))) {
     return (
