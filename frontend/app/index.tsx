@@ -5340,6 +5340,15 @@ function PassengerDashboard({
             <View style={[searchingStyles.routeDot, { backgroundColor: '#EF4444' }]} />
             <Text style={searchingStyles.routeText} numberOfLines={1}>{activeTag.dropoff_location}</Text>
           </View>
+          
+          {/* 📤 PAYLAŞ BUTONU - Arkadaşlarına gönder */}
+          <TouchableOpacity 
+            style={searchingStyles.shareButton}
+            onPress={handleShareRideRequest}
+          >
+            <Ionicons name="share-social" size={18} color="#FFF" />
+            <Text style={searchingStyles.shareButtonText}>Paylaş</Text>
+          </TouchableOpacity>
         </View>
 
         {/* TEKLİF LİSTESİ - Scrollable */}
