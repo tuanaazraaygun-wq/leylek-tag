@@ -7,142 +7,225 @@
   },
   "results": [
     {
-      "test": "Setup Passenger User",
+      "test": "1.1 Check User",
       "passed": true,
-      "message": "Using existing passenger: Test Yolcu Ahmet",
-      "details": {},
-      "timestamp": "2025-12-26T18:06:50.454921"
-    },
-    {
-      "test": "Setup Driver User",
-      "passed": true,
-      "message": "Using existing driver: Test Sürücü Mehmet",
-      "details": {},
-      "timestamp": "2025-12-26T18:06:50.954248"
-    },
-    {
-      "test": "Update Driver Location",
-      "passed": true,
-      "message": "Driver location set to Adana (37.1, 35.1)",
-      "details": {},
-      "timestamp": "2025-12-26T18:06:51.127145"
-    },
-    {
-      "test": "Create TAG with Coordinates",
-      "passed": true,
-      "message": "TAG created with coordinates saved: True",
+      "message": "User exists: True, Has PIN: True",
       "details": {
-        "tag_id": "1119b506-84c7-49ac-bedb-937156939121",
-        "pickup_coords": "(37.0, 35.0)",
-        "dropoff_coords": "(41.0, 29.0)",
-        "coordinates_match": true
+        "success": true,
+        "user_exists": true,
+        "exists": true,
+        "has_pin": true,
+        "device_verified": false,
+        "is_device_verified": false,
+        "user_id": "fe45bd9c-10b0-4b7b-a745-3d5c7749607a",
+        "is_admin": false
       },
-      "timestamp": "2025-12-26T18:06:51.490971"
+      "response_time": "0.92s",
+      "timestamp": "2026-02-26T23:53:12.273916"
     },
     {
-      "test": "Distance Calculation - Driver to Passenger",
+      "test": "1.2 Send OTP",
       "passed": true,
-      "message": "Distance calculated correctly: True",
+      "message": "OTP gönderildi",
       "details": {
-        "distance_to_passenger_km": 39.7,
-        "trip_distance_km": 908.2,
-        "expected_distance_range": "10-20km (Adana to Adana)",
-        "expected_trip_range": "500-600km (Adana to Istanbul)",
-        "calculation_working": true
+        "success": true,
+        "message": "OTP gönderildi",
+        "warning": "SMS delivery issue, using test code"
       },
-      "timestamp": "2025-12-26T18:06:53.909750"
+      "response_time": "0.63s",
+      "timestamp": "2026-02-26T23:53:12.901469"
     },
     {
-      "test": "Distance Values Reasonableness",
+      "test": "1.3 Verify OTP",
+      "passed": true,
+      "message": "OTP doğrulandı, User exists: False",
+      "details": {
+        "success": true,
+        "message": "OTP doğrulandı",
+        "user_exists": false,
+        "has_pin": false,
+        "user": null
+      },
+      "response_time": "0.27s",
+      "timestamp": "2026-02-26T23:53:13.171195"
+    },
+    {
+      "test": "1.4 Verify PIN",
+      "passed": true,
+      "message": "Login successful, User ID: fe45bd9c-10b0-4b7b-a745-3d5c7749607a",
+      "details": {
+        "success": true,
+        "user": {
+          "id": "fe45bd9c-10b0-4b7b-a745-3d5c7749607a",
+          "phone": "5341112233",
+          "name": "Murat Kaya",
+          "first_name": "Murat",
+          "last_name": "Kaya",
+          "city": "Ankara",
+          "rating": 1.0,
+          "total_trips": 157,
+          "profile_photo": null,
+          "driver_details": {
+            "kyc_status": "approved",
+            "is_verified": true,
+            "plate_number": "06CEO06",
+            "vehicle_year": "2026",
+            "vehicle_brand": "Mercedes-Benz",
+            "vehicle_color": "Beyaz",
+            "vehicle_model": "C Serisi",
+            "kyc_approved_at": "2026-02-26T23:40:05.187346",
+            "kyc_submitted_at": "2026-02-26T23:04:48.445783",
+            "license_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/fe45bd9c-10b0-4b7b-a745-3d5c7749607a/license_9ac49796.jpg",
+            "vehicle_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/fe45bd9c-10b0-4b7b-a745-3d5c7749607a/vehicle_deb71192.jpg"
+          },
+          "is_admin": false
+        }
+      },
+      "response_time": "0.48s",
+      "timestamp": "2026-02-26T23:53:13.653245"
+    },
+    {
+      "test": "1.5 Get Cities",
+      "passed": true,
+      "message": "Cities returned: 79",
+      "details": {
+        "cities_count": 79
+      },
+      "response_time": "0.08s",
+      "timestamp": "2026-02-26T23:53:13.729095"
+    },
+    {
+      "test": "2.1 KYC Status Check",
+      "passed": true,
+      "message": "KYC Status: approved, Is Driver: True",
+      "details": {
+        "kyc_status": "approved",
+        "is_driver": true,
+        "is_verified": true,
+        "rejection_reason": null,
+        "submitted_at": "2026-02-26T23:04:48.445783"
+      },
+      "response_time": "0.25s",
+      "timestamp": "2026-02-26T23:53:13.983577"
+    },
+    {
+      "test": "2.2 Admin Get All KYCs",
+      "passed": true,
+      "message": "Pending: 1, Approved: 2, Rejected: 0",
+      "details": {
+        "success": true,
+        "pending": [
+          {
+            "user_id": "8e7245d7-3e1f-4548-a1d5-d2bb903396b6",
+            "name": "Ahmet Ceo ",
+            "phone": "5326497412",
+            "plate_number": "06CEO06",
+            "vehicle_brand": "Mercedes-Benz",
+            "vehicle_model": "C Serisi",
+            "vehicle_year": "2026",
+            "vehicle_color": "Siyah",
+            "vehicle_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/8e7245d7-3e1f-4548-a1d5-d2bb903396b6/vehicle_b66c6d00.jpg",
+            "license_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/8e7245d7-3e1f-4548-a1d5-d2bb903396b6/license_7831dbd2.jpg",
+            "submitted_at": "2026-02-26T22:49:49.002072",
+            "kyc_status": "pending"
+          }
+        ],
+        "approved": [
+          {
+            "user_id": "7170eb50-8d94-450e-b947-e24e19cf6b28",
+            "name": "Ahmet  Sofor",
+            "phone": "5361112233",
+            "plate_number": "06EC444",
+            "vehicle_brand": "BMW",
+            "vehicle_model": "7 Serisi",
+            "vehicle_year": "2005",
+            "vehicle_color": "Lacivert",
+            "vehicle_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/7170eb50-8d94-450e-b947-e24e19cf6b28/vehicle_6fbc410b.jpg",
+            "license_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/7170eb50-8d94-450e-b947-e24e19cf6b28/license_0e71dd5b.jpg",
+            "submitted_at": "2026-02-26T22:03:11.808254",
+            "kyc_status": "approved",
+            "approved_at": "2026-02-26T22:31:10.715852"
+          },
+          {
+            "user_id": "fe45bd9c-10b0-4b7b-a745-3d5c7749607a",
+            "name": "Murat Kaya",
+            "phone": "5341112233",
+            "plate_number": "06CEO06",
+            "vehicle_brand": "Mercedes-Benz",
+            "vehicle_model": "C Serisi",
+            "vehicle_year": "2026",
+            "vehicle_color": "Beyaz",
+            "vehicle_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/fe45bd9c-10b0-4b7b-a745-3d5c7749607a/vehicle_deb71192.jpg",
+            "license_photo_url": "https://ujvploftywsxprlzejgc.supabase.co/storage/v1/object/public/vehicle-photos/kyc/fe45bd9c-10b0-4b7b-a745-3d5c7749607a/license_9ac49796.jpg",
+            "submitted_at": "2026-02-26T23:04:48.445783",
+            "kyc_status": "approved",
+            "approved_at": "2026-02-26T23:40:05.187346"
+          }
+        ],
+        "rejected": [],
+        "counts": {
+          "pending": 1,
+          "approved": 2,
+          "rejected": 0
+        }
+      },
+      "response_time": "0.26s",
+      "timestamp": "2026-02-26T23:53:14.248258"
+    },
+    {
+      "test": "2.3 Admin Approve KYC",
+      "passed": true,
+      "message": "Sürücü kaydı onaylandı",
+      "details": {
+        "success": true,
+        "message": "Sürücü kaydı onaylandı"
+      },
+      "response_time": "0.45s",
+      "timestamp": "2026-02-26T23:53:14.694454"
+    },
+    {
+      "test": "2.4 Admin Reject KYC",
+      "passed": true,
+      "message": "Sürücü kaydı reddedildi",
+      "details": {
+        "success": true,
+        "message": "Sürücü kaydı reddedildi"
+      },
+      "response_time": "0.43s",
+      "timestamp": "2026-02-26T23:53:15.123948"
+    },
+    {
+      "test": "3.1 Create Tag",
       "passed": false,
-      "message": "Distance values are reasonable: False",
+      "message": "Error: Unknown error",
       "details": {
-        "distance_to_passenger_reasonable": true,
-        "trip_distance_reasonable": false
+        "detail": "Not Found"
       },
-      "timestamp": "2025-12-26T18:06:53.909783"
+      "response_time": "0.08s",
+      "timestamp": "2026-02-26T23:53:15.205247"
     },
     {
-      "test": "Driver Send Offer - Performance",
-      "passed": true,
-      "message": "Response time: 0.78s (Target: <2s, Previous: 6-10s)",
-      "details": {
-        "response_time_seconds": 0.78,
-        "performance_target": "< 2 seconds",
-        "previous_performance": "6-10 seconds",
-        "performance_improvement": "87.0% faster",
-        "offer_price": 850.0,
-        "response": {
-          "success": true,
-          "offer_id": "b6e78275-181e-44a3-ba11-db6e1d1191f2"
-        }
-      },
-      "timestamp": "2025-12-26T18:06:54.691850"
-    },
-    {
-      "test": "Driver Send Offer - Functionality",
-      "passed": true,
-      "message": "Offer sent successfully: True",
-      "details": {
-        "offer_id": "b6e78275-181e-44a3-ba11-db6e1d1191f2",
-        "success_returned": true,
-        "response_data": {
-          "success": true,
-          "offer_id": "b6e78275-181e-44a3-ba11-db6e1d1191f2"
-        }
-      },
-      "timestamp": "2025-12-26T18:06:54.691885"
-    },
-    {
-      "test": "Background Distance Updates",
-      "passed": true,
-      "message": "Distance calculations updated in background: True",
-      "details": {
-        "distance_to_passenger_km": 39.7,
-        "trip_distance_km": 908.2,
-        "expected_behavior": "Initially null in fast response, then updated in background",
-        "distances_calculated": true
-      },
-      "timestamp": "2025-12-26T18:07:00.214498"
-    },
-    {
-      "test": "Passenger Update Destination",
+      "test": "3.2 Get Active Tags",
       "passed": false,
-      "message": "Destination updated successfully: False",
+      "message": "Error: Unknown error",
       "details": {
-        "new_destination": "Taksim, İstanbul",
-        "new_coordinates": "(41.05, 28.98)",
-        "response": {
-          "detail": "Not Found"
-        }
+        "detail": "Not Found"
       },
-      "timestamp": "2025-12-26T18:07:00.223254"
+      "response_time": "0.06s",
+      "timestamp": "2026-02-26T23:53:15.264736"
     },
     {
-      "test": "Passenger Cancel TAG",
+      "test": "4.1 Admin Check",
       "passed": true,
-      "message": "TAG cancelled successfully: True",
+      "message": "Is Admin: True",
       "details": {
-        "cancelled_tag_id": "1119b506-84c7-49ac-bedb-937156939121",
-        "response": {
-          "success": true,
-          "message": "TAG iptal edildi"
-        }
+        "success": true,
+        "is_admin": true,
+        "phone": "5326497412"
       },
-      "timestamp": "2025-12-26T18:07:00.531187"
-    },
-    {
-      "test": "TAG Cancellation Verification",
-      "passed": true,
-      "message": "No active TAG after cancellation: True",
-      "details": {
-        "active_tag_response": {
-          "success": true,
-          "tag": null
-        }
-      },
-      "timestamp": "2025-12-26T18:07:00.739101"
+      "response_time": "0.12s",
+      "timestamp": "2026-02-26T23:53:15.388104"
     }
   ],
-  "timestamp": "2025-12-26T18:07:00.739268"
+  "timestamp": "2026-02-26T23:53:15.388180"
 }
