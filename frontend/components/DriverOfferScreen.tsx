@@ -629,22 +629,37 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Stats
+  // Stats - BÜYÜK VE BELİRGİN
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
+    backgroundColor: '#0D1B2A',
+    borderRadius: 12,
+    padding: 14,
   },
   statItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   statText: {
     fontSize: 13,
     color: COLORS.textSecondary,
     marginLeft: 6,
+  },
+  statValueBig: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  statLabelBig: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 2,
   },
   statDivider: {
     width: 1,
