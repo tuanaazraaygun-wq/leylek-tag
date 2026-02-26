@@ -1491,6 +1491,10 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             "plate_number": data.plate_number,
             "vehicle_photo_url": vehicle_url,
             "license_photo_url": license_url,
+            "vehicle_brand": data.vehicle_brand,
+            "vehicle_model": data.vehicle_model,
+            "vehicle_year": data.vehicle_year,
+            "vehicle_color": data.vehicle_color,
             "kyc_status": "pending",
             "kyc_submitted_at": datetime.utcnow().isoformat(),
             "is_verified": False
