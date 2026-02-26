@@ -183,16 +183,22 @@ function RequestCard({
         </View>
       </View>
 
-      {/* Mesafe ve Süre Bilgileri */}
+      {/* Mesafe ve Süre Bilgileri - BÜYÜK VE BELİRGİN */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Ionicons name="time-outline" size={16} color={COLORS.textSecondary} />
-          <Text style={styles.statText}>{timeToPassenger} dk yolcuya</Text>
+          <Ionicons name="time-outline" size={20} color="#3FA9F5" />
+          <View>
+            <Text style={styles.statValueBig}>{timeToPassenger} dk</Text>
+            <Text style={styles.statLabelBig}>yolcuya</Text>
+          </View>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Ionicons name="speedometer-outline" size={16} color={COLORS.textSecondary} />
-          <Text style={styles.statText}>{tripDuration} dk yolculuk</Text>
+          <Ionicons name="speedometer-outline" size={20} color="#FF6B35" />
+          <View>
+            <Text style={styles.statValueBig}>{tripDuration} dk</Text>
+            <Text style={styles.statLabelBig}>yolculuk</Text>
+          </View>
         </View>
       </View>
 
