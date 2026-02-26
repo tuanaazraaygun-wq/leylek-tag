@@ -286,12 +286,12 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         
         // Başarı mesajı göster
         if (Platform.OS === 'web') {
-          alert('✅ Başvurunuz alındı!\n\nSürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.');
+          alert('✅ Başvurunuz Alındı!\n\nSürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.\n\nTahmini onay süresi: 30 dakika');
           onSuccess();
         } else {
           Alert.alert(
-            '✅ Başvuru Alındı',
-            'Sürücü başvurunuz incelemeye alındı. Onaylandığında bildirim alacaksınız.',
+            '✅ Başvurunuz Alındı',
+            'Sürücü başvurunuz incelemeye alındı.\nOnaylandığında bildirim alacaksınız.\n\nTahmini onay süresi: 30 dakika',
             [{ text: 'Tamam', onPress: onSuccess }]
           );
         }
