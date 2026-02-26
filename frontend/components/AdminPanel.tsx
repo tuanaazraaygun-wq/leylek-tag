@@ -167,6 +167,20 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     } catch (e) { console.error(e); }
   };
 
+  const loadAllKYCs = async () => {
+    try {
+      console.log('Loading all KYCs...');
+      const res = await fetch(`${API_URL}/admin/kyc/all?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      console.log('All KYCs response:', data);
+      if (data.success) {
+        setPendingKYCs(data.pending || []);
+        setApprovedKYCs(data.approved || []);
+        setRejectedKYCs(data.rejected || []);
+      }
+    } catch (e) { console.error('Load all KYCs error:', e); }
+  };
+
   const approveKYC = async (userId: string) => {
     console.log('approveKYC called with userId:', userId);
     console.log('API_URL:', API_URL);
