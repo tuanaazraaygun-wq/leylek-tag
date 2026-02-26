@@ -1402,4 +1402,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 12,
   },
+  // KYC Filter Styles
+  kycFilterContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 8,
+  },
+  kycFilterBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+  },
+  kycFilterBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  kycFilterBtnActiveGreen: {
+    backgroundColor: COLORS.success,
+  },
+  kycFilterBtnActiveRed: {
+    backgroundColor: COLORS.danger,
+  },
+  kycFilterText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  kycFilterTextActive: {
+    color: '#FFF',
+  },
+  kycBadgeGreen: {
+    backgroundColor: COLORS.success,
+  },
+  kycBadgeRed: {
+    backgroundColor: COLORS.danger,
+  },
+  kycRejectionReason: {
+    fontSize: 12,
+    color: COLORS.danger,
+    marginTop: 4,
+  },
 });
