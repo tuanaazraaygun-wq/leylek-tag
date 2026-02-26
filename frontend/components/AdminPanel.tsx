@@ -165,62 +165,103 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   };
 
   const approveKYC = async (userId: string) => {
-    Alert.alert(
-      'Onayla',
-      'Bu sürücü başvurusunu onaylıyor musunuz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Onayla',
-          onPress: async () => {
-            try {
-              const res = await fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
-                method: 'POST'
-              });
-              const data = await res.json();
-              if (data.success) {
-                Alert.alert('Başarılı', 'Sürücü kaydı onaylandı');
-                loadPendingKYCs();
-              } else {
-                Alert.alert('Hata', data.detail || 'İşlem başarısız');
-              }
-            } catch (e) {
-              Alert.alert('Hata', 'İşlem başarısız');
-            }
+    const doApprove = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (Platform.OS === 'web') {
+            window.alert('✅ Sürücü kaydı onaylandı');
+          } else {
+            Alert.alert('Başarılı', 'Sürücü kaydı onaylandı');
+          }
+          loadPendingKYCs();
+        } else {
+          if (Platform.OS === 'web') {
+            window.alert('Hata: ' + (data.detail || 'İşlem başarısız'));
+          } else {
+            Alert.alert('Hata', data.detail || 'İşlem başarısız');
           }
         }
-      ]
-    );
+      } catch (e) {
+        console.error('Approve error:', e);
+        if (Platform.OS === 'web') {
+          window.alert('Hata: İşlem başarısız');
+        } else {
+          Alert.alert('Hata', 'İşlem başarısız');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (Platform.OS === 'web') {
+      if (window.confirm('Bu sürücü başvurusunu onaylıyor musunuz?')) {
+        doApprove();
+      }
+    } else {
+      Alert.alert(
+        'Onayla',
+        'Bu sürücü başvurusunu onaylıyor musunuz?',
+        [
+          { text: 'İptal', style: 'cancel' },
+          { text: 'Onayla', onPress: doApprove }
+        ]
+      );
+    }
   };
 
   const rejectKYC = async (userId: string) => {
-    Alert.alert(
-      'Reddet',
-      'Bu sürücü başvurusunu reddediyor musunuz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Reddet',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const res = await fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, {
-                method: 'POST'
-              });
-              const data = await res.json();
-              if (data.success) {
-                Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
-                loadPendingKYCs();
-              } else {
-                Alert.alert('Hata', data.detail || 'İşlem başarısız');
-              }
-            } catch (e) {
-              Alert.alert('Hata', 'İşlem başarısız');
-            }
+    const doReject = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (Platform.OS === 'web') {
+            window.alert('❌ Sürücü kaydı reddedildi');
+          } else {
+            Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
+          }
+          loadPendingKYCs();
+        } else {
+          if (Platform.OS === 'web') {
+            window.alert('Hata: ' + (data.detail || 'İşlem başarısız'));
+          } else {
+            Alert.alert('Hata', data.detail || 'İşlem başarısız');
           }
         }
-      ]
-    );
+      } catch (e) {
+        console.error('Reject error:', e);
+        if (Platform.OS === 'web') {
+          window.alert('Hata: İşlem başarısız');
+        } else {
+          Alert.alert('Hata', 'İşlem başarısız');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (Platform.OS === 'web') {
+      if (window.confirm('Bu sürücü başvurusunu reddediyor musunuz?')) {
+        doReject();
+      }
+    } else {
+      Alert.alert(
+        'Reddet',
+        'Bu sürücü başvurusunu reddediyor musunuz?',
+        [
+          { text: 'İptal', style: 'cancel' },
+          { text: 'Reddet', style: 'destructive', onPress: doReject }
+        ]
+      );
+    }
   };
   
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
