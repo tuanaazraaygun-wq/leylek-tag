@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://driver-kyc-verify.preview.emergentagent.com/api"
+BASE_URL = "https://carpooling-kyc.preview.emergentagent.com/api"
 ADMIN_PHONE = "5326497412"
 
 # Test data
