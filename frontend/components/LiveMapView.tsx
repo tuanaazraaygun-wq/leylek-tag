@@ -601,27 +601,60 @@ export default function LiveMapView({
 
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
-        <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,1)']} style={styles.bottomGradient}>
+        <LinearGradient 
+          colors={isDriver 
+            ? ['rgba(254,243,199,0.95)', 'rgba(251,191,36,0.98)'] 
+            : ['rgba(219,234,254,0.95)', 'rgba(147,197,253,0.98)']
+          } 
+          style={styles.bottomGradient}
+        >
+          
+          {/* 🆕 SÜRÜCÜ İÇİN - YOLCUYA GİT BUTONU (Ortalı, Yaz butonunun üstünde) */}
+          {isDriver && (
+            <Animated.View style={[styles.centeredNavButton, { 
+              opacity: pulseAnim,
+              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.97, 1.03] }) }]
+            }]}>
+              <TouchableOpacity onPress={openNavigation} activeOpacity={0.7}>
+                <LinearGradient 
+                  colors={['#FF6B00', '#FF8C00', '#FF6B00']} 
+                  style={styles.centeredNavBtn}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Ionicons name="navigate" size={24} color="white" />
+                  <Text style={styles.centeredNavBtnText}>🚗 Yolcuya Git</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
           
           {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
           <TouchableOpacity 
-            style={[styles.mainChatButton, { backgroundColor: themeColor }]} 
+            style={[styles.mainChatButton]} 
             onPress={() => onChat?.()}
             activeOpacity={0.8}
           >
-            <View style={styles.chatButtonContent}>
-              <View style={styles.chatIconWrapperLarge}>
-                <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
+            <LinearGradient 
+              colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']} 
+              style={styles.mainChatButtonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <View style={styles.chatButtonContent}>
+                <View style={styles.chatIconWrapperLarge}>
+                  <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
+                </View>
+                <Text style={styles.mainChatButtonText}>
+                  {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
+                </Text>
               </View>
-              <Text style={styles.mainChatButtonText}>
-                {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
-              </Text>
-            </View>
+            </LinearGradient>
           </TouchableOpacity>
 
-          {/* 🆕 ALT BUTONLAR - Şikayet/Destek ve Bitir */}
+          {/* 🆕 ALT BUTONLAR - Destek ve Bitir */}
           <View style={styles.actionButtons}>
-            {/* WhatsApp Destek Butonu */}
+            {/* WhatsApp Destek Butonu - Sadece "Destek" yazısı */}
             <TouchableOpacity 
               style={styles.whatsappButton} 
               onPress={() => {
@@ -634,7 +667,6 @@ export default function LiveMapView({
                     if (supported) {
                       Linking.openURL(whatsappUrl);
                     } else {
-                      // WhatsApp yüklü değilse web versiyonunu aç
                       Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
                     }
                   })
@@ -645,7 +677,7 @@ export default function LiveMapView({
               activeOpacity={0.7}
             >
               <Ionicons name="logo-whatsapp" size={20} color="#FFF" />
-              <Text style={styles.whatsappButtonText}>WhatsApp Destek</Text>
+              <Text style={styles.whatsappButtonText}>Destek</Text>
             </TouchableOpacity>
 
             {/* 🆕 BİTİR BUTONU - Donuk Kırmızı, Sadece Zorla Bitir */}
