@@ -7645,6 +7645,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
             routeInfo={activeTag?.route_info}
+            otherUserDetails={otherUserDetails || undefined}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
               // ANINDA ÇALAN ARAMA - Önce bildirim, sonra room oluştur
