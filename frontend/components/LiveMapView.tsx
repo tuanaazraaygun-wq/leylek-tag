@@ -34,6 +34,19 @@ interface LiveMapViewProps {
   price?: number;
   offeredPrice?: number;  // Teklif edilen fiyat
   routeInfo?: { distance_km: number; duration_min: number } | null;
+  // Yeni: Sürücü/Yolcu detay bilgileri
+  otherUserDetails?: {
+    rating?: number;
+    totalTrips?: number;
+    profilePhoto?: string;
+    // Sürücü için ek bilgiler
+    vehiclePhoto?: string;
+    vehicleBrand?: string;
+    vehicleModel?: string;
+    vehicleYear?: string;
+    vehicleColor?: string;
+    plateNumber?: string;
+  };
   onBlock?: () => void;
   onReport?: () => void;
   onCall?: (type: 'audio' | 'video') => void;
