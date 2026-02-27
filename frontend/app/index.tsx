@@ -4321,6 +4321,41 @@ function PassengerDashboard({
     }
   };
   
+  // 🆕 Sürücü detaylarını çek (Harita Bilgi Kartı için)
+  useEffect(() => {
+    const fetchDriverDetails = async () => {
+      if (!activeTag?.driver_id || (activeTag.status !== 'matched' && activeTag.status !== 'in_progress')) {
+        setOtherUserDetails(null);
+        return;
+      }
+      
+      try {
+        const response = await fetch(`${API_URL}/user/${activeTag.driver_id}`);
+        const data = await response.json();
+        
+        if (data.success && data.user) {
+          const driverDetails = data.user.driver_details || {};
+          setOtherUserDetails({
+            rating: data.user.rating || 5.0,
+            totalTrips: data.user.total_trips || 0,
+            profilePhoto: data.user.profile_photo,
+            vehiclePhoto: driverDetails.vehicle_photo_url,
+            vehicleBrand: driverDetails.vehicle_brand,
+            vehicleModel: driverDetails.vehicle_model,
+            vehicleYear: driverDetails.vehicle_year,
+            vehicleColor: driverDetails.vehicle_color,
+            plateNumber: driverDetails.plate_number,
+          });
+          console.log('📋 Sürücü detayları yüklendi:', data.user.name);
+        }
+      } catch (error) {
+        console.error('Sürücü detayları alınamadı:', error);
+      }
+    };
+    
+    fetchDriverDetails();
+  }, [activeTag?.driver_id, activeTag?.status]);
+  
   // ========== TEKLİF YÖNETİMİ (STATE ONLY) ==========
   // useOffers hook'u - SIMPLIFIED v3
   // Socket listener'lar KALDIRILDI - Sadece state management
