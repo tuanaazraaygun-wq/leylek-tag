@@ -1408,6 +1408,220 @@ export default function App() {
     );
   }
 
+  // ==================== ŞİFREMİ UNUTTUM EKRANI ====================
+  if (screen === 'forgot-password') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.logoContainer}>
+            <View style={styles.verifyIconContainer}>
+              <Ionicons name="key-outline" size={50} color="#F59E0B" />
+            </View>
+            <Text style={styles.verifyTitle}>Şifremi Unuttum</Text>
+            <Text style={styles.heroSubtitle}>Telefon numaranızı girin, size doğrulama kodu göndereceğiz</Text>
+          </View>
+
+          <View style={styles.modernFormContainer}>
+            <Text style={styles.modernLabel}>Telefon Numarası</Text>
+            <View style={styles.modernInputContainer}>
+              <Text style={styles.phonePrefix}>+90</Text>
+              <TextInput
+                style={styles.modernPhoneInput}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="5XX XXX XX XX"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="phone-pad"
+                maxLength={10}
+              />
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.modernPrimaryButton, loading && styles.disabledButton]}
+              onPress={async () => {
+                if (!phone || phone.length < 10) {
+                  Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
+                  return;
+                }
+                
+                setLoading(true);
+                try {
+                  // Önce kullanıcı var mı kontrol et
+                  const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone })
+                  });
+                  const checkData = await checkResponse.json();
+                  
+                  if (!checkData.user_exists) {
+                    Alert.alert('Hata', 'Bu numara ile kayıtlı kullanıcı bulunamadı');
+                    setLoading(false);
+                    return;
+                  }
+                  
+                  // OTP gönder
+                  const response = await fetch(`${API_URL}/auth/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone })
+                  });
+                  const data = await response.json();
+                  
+                  if (data.success) {
+                    setScreen('reset-pin');
+                  } else {
+                    Alert.alert('Hata', data.detail || 'OTP gönderilemedi');
+                  }
+                } catch (error) {
+                  Alert.alert('Hata', 'Bir hata oluştu');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.modernPrimaryButtonText}>DOĞRULAMA KODU GÖNDER</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
+              setPhone('');
+              setScreen('login');
+            }}>
+              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ==================== YENİ ŞİFRE BELİRLEME EKRANI ====================
+  if (screen === 'reset-pin') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <AnimatedClouds />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.logoContainer}>
+            <View style={styles.verifyIconContainer}>
+              <Ionicons name="lock-open-outline" size={50} color="#10B981" />
+            </View>
+            <Text style={styles.verifyTitle}>Yeni Şifre Belirle</Text>
+            <Text style={styles.heroSubtitle}>{phone} numarasına gönderilen kodu girin ve yeni şifrenizi belirleyin</Text>
+          </View>
+
+          <View style={styles.modernFormContainer}>
+            <Text style={styles.modernLabel}>Doğrulama Kodu</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                value={otp}
+                onChangeText={setOtp}
+                placeholder="6 haneli kod"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+            </View>
+
+            <Text style={[styles.modernLabel, { marginTop: 16 }]}>Yeni Şifre (6 Haneli PIN)</Text>
+            <View style={styles.modernInputContainer}>
+              <Ionicons name="lock-closed-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+              <TextInput
+                style={styles.modernInput}
+                value={pin}
+                onChangeText={setPin}
+                placeholder="6 haneli yeni şifre"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
+                secureTextEntry
+                maxLength={6}
+              />
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.modernPrimaryButton, loading && styles.disabledButton]}
+              onPress={async () => {
+                if (!otp || otp.length !== 6) {
+                  Alert.alert('Hata', 'Geçerli bir doğrulama kodu girin');
+                  return;
+                }
+                if (!pin || pin.length !== 6) {
+                  Alert.alert('Hata', 'Şifre 6 haneli olmalıdır');
+                  return;
+                }
+                
+                setLoading(true);
+                try {
+                  // Önce OTP doğrula
+                  const verifyResponse = await fetch(`${API_URL}/auth/verify-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, otp })
+                  });
+                  const verifyData = await verifyResponse.json();
+                  
+                  if (!verifyData.success) {
+                    Alert.alert('Hata', verifyData.detail || 'Doğrulama kodu yanlış');
+                    setLoading(false);
+                    return;
+                  }
+                  
+                  // Şifreyi güncelle
+                  const resetResponse = await fetch(`${API_URL}/auth/reset-pin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, new_pin: pin })
+                  });
+                  const resetData = await resetResponse.json();
+                  
+                  if (resetData.success) {
+                    Alert.alert('Başarılı', 'Şifreniz güncellendi. Giriş yapabilirsiniz.', [
+                      { text: 'Tamam', onPress: () => {
+                        setOtp('');
+                        setPin('');
+                        setScreen('login');
+                      }}
+                    ]);
+                  } else {
+                    Alert.alert('Hata', resetData.detail || 'Şifre güncellenemedi');
+                  }
+                } catch (error) {
+                  Alert.alert('Hata', 'Bir hata oluştu');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.modernPrimaryButtonText}>ŞİFREYİ GÜNCELLE</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
+              setOtp('');
+              setPin('');
+              setScreen('forgot-password');
+            }}>
+              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   if (screen === 'role-select') {
     const handleRoleSelect = (role: 'passenger' | 'driver') => {
       setSelectedRole(role);
