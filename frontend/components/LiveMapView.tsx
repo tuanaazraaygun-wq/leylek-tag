@@ -207,6 +207,7 @@ export default function LiveMapView({
   price,
   offeredPrice,
   routeInfo,
+  otherUserDetails,
   onBlock,
   onReport,
   onCall,
@@ -218,6 +219,9 @@ export default function LiveMapView({
   onShowEndTripModal,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
+  
+  // BİLGİ KARTI STATE'İ
+  const [showInfoCard, setShowInfoCard] = useState(false);
   
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
