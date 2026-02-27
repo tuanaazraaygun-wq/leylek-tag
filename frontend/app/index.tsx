@@ -4237,6 +4237,19 @@ function PassengerDashboard({
   const [selectedPrice, setSelectedPrice] = useState<number>(0);
   const [priceLoading, setPriceLoading] = useState(false);
   
+  // 🆕 Karşı taraf (Sürücü) detay bilgileri - Harita Bilgi Kartı için
+  const [otherUserDetails, setOtherUserDetails] = useState<{
+    rating?: number;
+    totalTrips?: number;
+    profilePhoto?: string;
+    vehiclePhoto?: string;
+    vehicleBrand?: string;
+    vehicleModel?: string;
+    vehicleYear?: string;
+    vehicleColor?: string;
+    plateNumber?: string;
+  } | null>(null);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
