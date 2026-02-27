@@ -5845,6 +5845,7 @@ function PassengerDashboard({
                   price={activeTag?.final_price}
                   offeredPrice={activeTag?.offered_price}
                   routeInfo={activeTag?.route_info}
+                  otherUserDetails={otherUserDetails || undefined}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
                     // 🔥 PRE-RINGING: Önce zil çaldır, sonra room oluştur
