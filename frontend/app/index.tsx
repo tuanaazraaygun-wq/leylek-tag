@@ -6996,6 +6996,34 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     return () => clearInterval(interval);
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
+  // 🆕 Yolcu detaylarını çek (Harita Bilgi Kartı için)
+  useEffect(() => {
+    const fetchPassengerDetails = async () => {
+      if (!activeTag?.passenger_id || (activeTag.status !== 'matched' && activeTag.status !== 'in_progress')) {
+        setOtherUserDetails(null);
+        return;
+      }
+      
+      try {
+        const response = await fetch(`${API_URL}/user/${activeTag.passenger_id}`);
+        const data = await response.json();
+        
+        if (data.success && data.user) {
+          setOtherUserDetails({
+            rating: data.user.rating || 5.0,
+            totalTrips: data.user.total_trips || 0,
+            profilePhoto: data.user.profile_photo,
+          });
+          console.log('📋 Yolcu detayları yüklendi:', data.user.name);
+        }
+      } catch (error) {
+        console.error('Yolcu detayları alınamadı:', error);
+      }
+    };
+    
+    fetchPassengerDetails();
+  }, [activeTag?.passenger_id, activeTag?.status]);
+
   // GPS konum güncellemesi + Socket.IO location update
   useEffect(() => {
     const updateLocation = async () => {
