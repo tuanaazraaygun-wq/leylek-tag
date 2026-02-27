@@ -531,24 +531,6 @@ export default function LiveMapView({
         )}
       </MapView>
 
-      {/* 🆕 ŞOFÖR İÇİN - BÜYÜK YANIP SÖNEN Navigasyon Butonu */}
-      {isDriver && (
-        <Animated.View style={[styles.floatingNavIcon, { 
-          opacity: pulseAnim,
-          transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.95, 1.05] }) }]
-        }]}>
-          <TouchableOpacity onPress={openNavigation} activeOpacity={0.7}>
-            <LinearGradient 
-              colors={['#FF6B00', '#FF8C00', '#FF6B00']} 
-              style={styles.bigNavButton}
-            >
-              <Ionicons name="navigate" size={36} color="white" />
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={styles.floatingNavText}>🚗 YOLCUYA GİT</Text>
-        </Animated.View>
-      )}
-
       {/* ÜST BİLGİ PANELİ - MAVİ ÇERÇEVE */}
       <View style={styles.topInfoPanel}>
         <View style={styles.topInfoBorder}>
