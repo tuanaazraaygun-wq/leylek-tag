@@ -6527,6 +6527,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
   const lastCancelledTagId = useRef<string | null>(null);
   
+  // 🆕 Karşı taraf (Yolcu) detay bilgileri - Harita Bilgi Kartı için
+  const [otherUserDetails, setOtherUserDetails] = useState<{
+    rating?: number;
+    totalTrips?: number;
+    profilePhoto?: string;
+    vehiclePhoto?: string;
+    vehicleBrand?: string;
+    vehicleModel?: string;
+    vehicleYear?: string;
+    vehicleColor?: string;
+    plateNumber?: string;
+  } | null>(null);
+  
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
