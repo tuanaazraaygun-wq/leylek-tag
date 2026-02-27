@@ -1081,7 +1081,6 @@ const styles = StyleSheet.create({
   // 🆕 Chat Button (Ana Buton)
   mainChatButton: {
     width: SCREEN_WIDTH - 48,
-    paddingVertical: 18,
     borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
@@ -1090,6 +1089,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     marginBottom: 14,
     alignSelf: 'center',
+    overflow: 'hidden',
   },
   chatButtonContent: {
     flexDirection: 'row',
