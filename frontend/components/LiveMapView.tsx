@@ -443,6 +443,17 @@ export default function LiveMapView({
 
   return (
     <View style={styles.container}>
+      {/* 🆕 RENKLİ ARKAPLAN - Yolcu: Mavi Gökyüzü, Sürücü: Gün Batımı */}
+      <LinearGradient 
+        colors={isDriver 
+          ? ['#FDE68A', '#FBBF24', '#F97316', '#EA580C'] 
+          : ['#BFDBFE', '#93C5FD', '#60A5FA', '#3B82F6']
+        } 
+        style={styles.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      
       {/* HARİTA */}
       <MapView
         ref={mapRef}
