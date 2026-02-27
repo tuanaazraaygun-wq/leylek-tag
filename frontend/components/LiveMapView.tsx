@@ -991,6 +991,38 @@ const styles = StyleSheet.create({
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   bottomGradient: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
   
+  // 🆕 Ortalı Navigasyon Butonu (Alt Panelde)
+  centeredNavButton: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  centeredNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    shadowColor: '#FF6B00',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  centeredNavBtnText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFF',
+    marginLeft: 10,
+  },
+  mainChatButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    borderRadius: 16,
+  },
+  
   // 🆕 Animated Border
   animatedBorderOuter: {
     borderRadius: 20,
