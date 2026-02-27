@@ -491,9 +491,13 @@ export default function LiveMapView({
           </Marker>
         )}
 
-        {/* KARŞI TARAF - Marker */}
+        {/* KARŞI TARAF - Marker - Tıklanabilir */}
         {otherLocation && (
-          <Marker coordinate={otherLocation} anchor={{ x: 0.5, y: 0.5 }}>
+          <Marker 
+            coordinate={otherLocation} 
+            anchor={{ x: 0.5, y: 0.5 }}
+            onPress={() => setShowInfoCard(true)}
+          >
             <View style={styles.markerContainer}>
               <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
                 <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
