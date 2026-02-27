@@ -662,9 +662,164 @@ export default function LiveMapView({
           </View>
         </LinearGradient>
       </View>
+
+      {/* 🆕 KULLANICI BİLGİ KARTI MODAL */}
+      <Modal
+        visible={showInfoCard}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowInfoCard(false)}
+      >
+        <TouchableOpacity 
+          style={styles.infoCardOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowInfoCard(false)}
+        >
+          <View style={styles.infoCardContainer}>
+            <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+              {/* Kapatma Butonu */}
+              <TouchableOpacity 
+                style={styles.infoCardCloseButton} 
+                onPress={() => setShowInfoCard(false)}
+              >
+                <Ionicons name="close-circle" size={28} color="#9CA3AF" />
+              </TouchableOpacity>
+
+              {/* Başlık */}
+              <View style={styles.infoCardHeader}>
+                <View style={[styles.infoCardIconCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
+                  <Text style={styles.infoCardIcon}>{isDriver ? '👤' : '🚗'}</Text>
+                </View>
+                <Text style={styles.infoCardTitle}>
+                  {isDriver ? 'Yolcu Bilgileri' : 'Sürücü Bilgileri'}
+                </Text>
+              </View>
+
+              {/* İçerik */}
+              <View style={styles.infoCardContent}>
+                {/* İsim */}
+                <View style={styles.infoCardRow}>
+                  <Ionicons name="person" size={20} color="#6B7280" />
+                  <Text style={styles.infoCardLabel}>İsim:</Text>
+                  <Text style={styles.infoCardValue}>{otherUserName || 'Bilinmiyor'}</Text>
+                </View>
+
+                {/* Sürücü için Araç Bilgileri */}
+                {!isDriver && otherUserDetails && (
+                  <>
+                    {/* Araç Fotoğrafı */}
+                    {otherUserDetails.vehiclePhoto && (
+                      <View style={styles.infoCardImageContainer}>
+                        <Image 
+                          source={{ uri: otherUserDetails.vehiclePhoto }} 
+                          style={styles.infoCardVehicleImage}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    )}
+
+                    {/* Marka & Model */}
+                    {(otherUserDetails.vehicleBrand || otherUserDetails.vehicleModel) && (
+                      <View style={styles.infoCardRow}>
+                        <Ionicons name="car-sport" size={20} color="#6B7280" />
+                        <Text style={styles.infoCardLabel}>Araç:</Text>
+                        <Text style={styles.infoCardValue}>
+                          {otherUserDetails.vehicleBrand || ''} {otherUserDetails.vehicleModel || ''}
+                          {otherUserDetails.vehicleYear ? ` (${otherUserDetails.vehicleYear})` : ''}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Renk */}
+                    {otherUserDetails.vehicleColor && (
+                      <View style={styles.infoCardRow}>
+                        <Ionicons name="color-palette" size={20} color="#6B7280" />
+                        <Text style={styles.infoCardLabel}>Renk:</Text>
+                        <View style={styles.infoCardColorContainer}>
+                          <View style={[styles.infoCardColorDot, { backgroundColor: getColorCode(otherUserDetails.vehicleColor) }]} />
+                          <Text style={styles.infoCardValue}>{otherUserDetails.vehicleColor}</Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Plaka */}
+                    {otherUserDetails.plateNumber && (
+                      <View style={styles.infoCardRow}>
+                        <Ionicons name="document-text" size={20} color="#6B7280" />
+                        <Text style={styles.infoCardLabel}>Plaka:</Text>
+                        <View style={styles.infoCardPlateContainer}>
+                          <Text style={styles.infoCardPlateText}>{otherUserDetails.plateNumber}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {/* Başarılı Eşleşme Sayısı */}
+                <View style={styles.infoCardRow}>
+                  <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
+                  <Text style={styles.infoCardLabel}>Başarılı Eşleşme:</Text>
+                  <View style={styles.infoCardBadge}>
+                    <Text style={styles.infoCardBadgeText}>
+                      {otherUserDetails?.totalTrips ?? 0} Yolculuk
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Puan */}
+                <View style={styles.infoCardRow}>
+                  <Ionicons name="star" size={20} color="#F59E0B" />
+                  <Text style={styles.infoCardLabel}>Puan:</Text>
+                  <View style={styles.infoCardRatingContainer}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Ionicons 
+                        key={star}
+                        name={star <= Math.round(otherUserDetails?.rating ?? 5) ? "star" : "star-outline"} 
+                        size={18} 
+                        color="#F59E0B" 
+                      />
+                    ))}
+                    <Text style={styles.infoCardRatingText}>
+                      {(otherUserDetails?.rating ?? 5).toFixed(1)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Alt Bilgi */}
+              <View style={styles.infoCardFooter}>
+                <Text style={styles.infoCardFooterText}>
+                  {isDriver ? '🔒 Yolcu bilgileri doğrulanmıştır' : '🔒 Sürücü KYC onaylıdır'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
+
+// Renk kodlarını döndüren yardımcı fonksiyon
+const getColorCode = (colorName: string): string => {
+  const colorMap: { [key: string]: string } = {
+    'Beyaz': '#FFFFFF',
+    'Siyah': '#1F2937',
+    'Gri': '#6B7280',
+    'Gümüş': '#9CA3AF',
+    'Kırmızı': '#EF4444',
+    'Mavi': '#3B82F6',
+    'Lacivert': '#1E3A8A',
+    'Yeşil': '#22C55E',
+    'Sarı': '#EAB308',
+    'Turuncu': '#F97316',
+    'Kahverengi': '#78350F',
+    'Bej': '#D4C5A9',
+    'Bordo': '#881337',
+    'Mor': '#7C3AED',
+  };
+  return colorMap[colorName] || '#6B7280';
+};
 
 // Harita stili - Temiz görünüm
 const mapStyle = [
