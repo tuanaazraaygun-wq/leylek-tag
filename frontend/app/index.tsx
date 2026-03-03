@@ -7881,10 +7881,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             userName={user.name}
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
             otherUserId={activeTag?.passenger_id}
+            userId={user.id}
+            tagId={activeTag?.id}
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
             routeInfo={activeTag?.route_info}
             otherUserDetails={otherUserDetails || undefined}
+            onShowQRModal={() => setShowQRModal(true)}
             onCall={async (type) => {
               // ════════════════════════════════════════════════════════════
               // ANINDA ÇALAN ARAMA - Önce bildirim, sonra room oluştur
