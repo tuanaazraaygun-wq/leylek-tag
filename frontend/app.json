@@ -112,6 +112,12 @@
           "color": "#3FA9F5",
           "sounds": []
         }
+      ],
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "QR kod taramak için kamera izni gereklidir."
+        }
       ]
     ],
     "experiments": {
