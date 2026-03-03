@@ -4095,24 +4095,62 @@ async def approve_trip_end(tag_id: str, user_id: str):
 import hashlib
 import time
 
+# ==================== HIZLI QR SİSTEMİ ====================
+# In-memory cache for QR verifications (1000+ concurrent users support)
+import functools
+from typing import Dict, Tuple
+import asyncio
+
+# Simple in-memory cache with TTL
+_qr_cache: Dict[str, Tuple[dict, float]] = {}
+_cache_lock = asyncio.Lock()
+
 def generate_qr_hash(user_id: str, tag_id: str, timestamp: int) -> str:
-    """QR kod için güvenli hash oluştur"""
+    """QR kod için güvenli hash oluştur - HIZLI MD5 kullan"""
     secret = "leylektag_qr_secret_2024"
     data = f"{user_id}:{tag_id}:{timestamp}:{secret}"
-    return hashlib.sha256(data.encode()).hexdigest()[:16]
+    # MD5 daha hızlı, QR için yeterli güvenlik
+    return hashlib.md5(data.encode()).hexdigest()[:16]
+
+async def get_cached_tag(tag_id: str) -> dict | None:
+    """Cache'den tag al veya DB'den çek"""
+    cache_key = f"tag:{tag_id}"
+    current_time = time.time()
+    
+    # Cache'de var mı?
+    if cache_key in _qr_cache:
+        data, expiry = _qr_cache[cache_key]
+        if current_time < expiry:
+            return data
+        else:
+            del _qr_cache[cache_key]
+    
+    # DB'den çek
+    result = supabase.table("tags").select("id,passenger_id,driver_id,status").eq("id", tag_id).execute()
+    if result.data:
+        tag = result.data[0]
+        # 30 saniye cache'le
+        _qr_cache[cache_key] = (tag, current_time + 30)
+        return tag
+    return None
+
+def invalidate_tag_cache(tag_id: str):
+    """Tag cache'ini temizle"""
+    cache_key = f"tag:{tag_id}"
+    if cache_key in _qr_cache:
+        del _qr_cache[cache_key]
 
 @api_router.get("/qr/generate")
 async def generate_qr_code(user_id: str, tag_id: str):
-    """Kullanıcı için QR kod verisi oluştur"""
+    """⚡ HIZLI QR kod oluştur - Cache destekli"""
     try:
-        # Tag'in aktif olduğunu kontrol et
-        result = supabase.table("tags").select("*").eq("id", tag_id).in_("status", ["matched", "in_progress"]).execute()
-        if not result.data:
+        # Cache'den tag al
+        tag = await get_cached_tag(tag_id)
+        
+        if not tag or tag.get("status") not in ["matched", "in_progress"]:
             return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
         
-        tag = result.data[0]
-        
-        # Kullanıcının bu tag'e ait olduğunu kontrol et
+        # Kullanıcı kontrolü
         if tag.get("passenger_id") != user_id and tag.get("driver_id") != user_id:
             return {"success": False, "detail": "Bu yolculuğa erişim yetkiniz yok"}
         
@@ -4120,22 +4158,13 @@ async def generate_qr_code(user_id: str, tag_id: str):
         timestamp = int(time.time())
         hash_code = generate_qr_hash(user_id, tag_id, timestamp)
         
-        qr_data = {
-            "type": "leylektag_trip_end",
-            "user_id": user_id,
-            "tag_id": tag_id,
-            "timestamp": timestamp,
-            "hash": hash_code
-        }
-        
-        # QR string formatı
+        # Minimal response - daha az data transfer
         qr_string = f"leylektag://verify?user_id={user_id}&tag_id={tag_id}&timestamp={timestamp}&hash={hash_code}"
         
         return {
             "success": True,
-            "qr_data": qr_data,
             "qr_string": qr_string,
-            "expires_in": 300  # 5 dakika
+            "expires_in": 300
         }
     except Exception as e:
         logger.error(f"QR generate error: {e}")
@@ -4151,97 +4180,100 @@ async def verify_qr_code(
     latitude: float = None,
     longitude: float = None
 ):
-    """QR kodu doğrula ve yolculuğu bitir"""
+    """⚡ HIZLI QR doğrula ve yolculuğu bitir - Optimize edildi"""
     try:
-        # 1. Hash doğrulaması
+        # 1. Hash doğrulaması - ÇOK HIZLI (DB erişimi yok)
         expected_hash = generate_qr_hash(scanned_user_id, tag_id, timestamp)
         if hash != expected_hash:
-            logger.warning(f"QR hash mismatch: {hash} vs {expected_hash}")
             return {"success": False, "detail": "Geçersiz QR kod"}
         
-        # 2. Zaman kontrolü (5 dakika = 300 saniye)
+        # 2. Zaman kontrolü - ÇOK HIZLI (DB erişimi yok)
         current_time = int(time.time())
         if current_time - timestamp > 300:
-            return {"success": False, "detail": "QR kod süresi dolmuş. Yeni QR kod oluşturun."}
+            return {"success": False, "detail": "QR kod süresi dolmuş"}
         
-        # 3. Tag kontrolü
-        result = supabase.table("tags").select("*").eq("id", tag_id).in_("status", ["matched", "in_progress"]).execute()
-        if not result.data:
+        # 3. Kendini taramadığını kontrol et - ÇOK HIZLI
+        if scanner_user_id == scanned_user_id:
+            return {"success": False, "detail": "Kendi QR kodunuzu tarayamazsınız"}
+        
+        # 4. Cache'den tag al (30sn cache)
+        tag = await get_cached_tag(tag_id)
+        if not tag or tag.get("status") not in ["matched", "in_progress"]:
             return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
         
-        tag = result.data[0]
-        
-        # 4. Kullanıcıların bu tag'e ait olduğunu kontrol et
         passenger_id = tag.get("passenger_id")
         driver_id = tag.get("driver_id")
         
+        # 5. Kullanıcı kontrolü
         valid_users = {passenger_id, driver_id}
         if scanner_user_id not in valid_users or scanned_user_id not in valid_users:
             return {"success": False, "detail": "Bu yolculuğa ait kullanıcılar değil"}
         
-        # 5. Kendini taramadığını kontrol et
-        if scanner_user_id == scanned_user_id:
-            return {"success": False, "detail": "Kendi QR kodunuzu tarayamazsınız"}
-        
-        # 6. Yolculuğu tamamla ve konum kaydet
-        # Not: qr_completion JSON olarak saklanacak - önce sadece status ve completed_at güncelle
+        # 6. HIZLI: Tek bir update ile yolculuğu bitir
+        completed_at = datetime.utcnow().isoformat()
         try:
             supabase.table("tags").update({
                 "status": "completed",
-                "completed_at": datetime.utcnow().isoformat()
+                "completed_at": completed_at
             }).eq("id", tag_id).execute()
             
-            # Sonra qr_completion bilgisini ayrı güncelle (JSONB alan olabilir)
-            qr_completion_data = json.dumps({
-                "scanner_id": scanner_user_id,
-                "scanned_id": scanned_user_id,
-                "completed_at": datetime.utcnow().isoformat(),
-                "latitude": latitude,
-                "longitude": longitude,
-                "method": "qr_code"
-            })
+            # Cache'i temizle
+            invalidate_tag_cache(tag_id)
             
-            # qr_completion alanı varsa güncelle, yoksa atla
-            try:
-                supabase.table("tags").update({
-                    "qr_completion": qr_completion_data
-                }).eq("id", tag_id).execute()
-            except Exception as qr_err:
-                logger.warning(f"qr_completion güncellenemedi (alan olmayabilir): {qr_err}")
-                # Bu hata kritik değil, yolculuk yine de tamamlandı
-                
         except Exception as update_err:
             logger.error(f"Tag güncelleme hatası: {update_err}")
-            return {"success": False, "detail": f"Yolculuk güncellenemedi: {str(update_err)}"}
+            return {"success": False, "detail": "Yolculuk güncellenemedi"}
         
-        # 7. Her iki kullanıcıya +3 puan ver
-        for uid in [passenger_id, driver_id]:
-            user_result = supabase.table("users").select("total_trips, rating").eq("id", uid).execute()
-            if user_result.data:
-                current_trips = user_result.data[0].get("total_trips", 0) or 0
-                current_rating = user_result.data[0].get("rating", 5.0) or 5.0
-                
-                # Puan hesaplama: her başarılı yolculuk +0.1 (max 5.0)
-                new_rating = min(5.0, current_rating + 0.1)
-                
-                supabase.table("users").update({
-                    "total_trips": current_trips + 1,
-                    "rating": new_rating
-                }).eq("id", uid).execute()
+        # 7. ASYNC: Puan güncelleme arka planda - Kullanıcıyı bekletme
+        asyncio.create_task(update_user_points_async(passenger_id, driver_id, tag_id, scanner_user_id, scanned_user_id, latitude, longitude, completed_at))
         
-        logger.info(f"✅ QR ile yolculuk tamamlandı: tag={tag_id}, konum=({latitude}, {longitude})")
+        logger.info(f"✅ QR HIZLI tamamlandı: tag={tag_id}")
         
         return {
             "success": True,
-            "message": "Yolculuk başarıyla tamamlandı! +3 puan kazandınız.",
-            "tag_id": tag_id,
-            "completed_at": completion_data["completed_at"],
-            "points_earned": 3
+            "message": "Yolculuk tamamlandı! +3 puan",
+            "tag_id": tag_id
         }
         
     except Exception as e:
         logger.error(f"QR verify error: {e}")
         return {"success": False, "detail": str(e)}
+
+async def update_user_points_async(passenger_id: str, driver_id: str, tag_id: str, scanner_id: str, scanned_id: str, lat: float, lng: float, completed_at: str):
+    """Arka planda puan güncelle - Kullanıcıyı bekletmez"""
+    try:
+        # QR completion bilgisini kaydet
+        try:
+            qr_data = json.dumps({
+                "scanner_id": scanner_id,
+                "scanned_id": scanned_id,
+                "completed_at": completed_at,
+                "latitude": lat,
+                "longitude": lng,
+                "method": "qr_code"
+            })
+            supabase.table("tags").update({"qr_completion": qr_data}).eq("id", tag_id).execute()
+        except:
+            pass  # Kritik değil
+        
+        # Her iki kullanıcıya puan ver
+        for uid in [passenger_id, driver_id]:
+            try:
+                user_result = supabase.table("users").select("total_trips, rating").eq("id", uid).execute()
+                if user_result.data:
+                    current_trips = user_result.data[0].get("total_trips", 0) or 0
+                    current_rating = user_result.data[0].get("rating", 5.0) or 5.0
+                    new_rating = min(5.0, current_rating + 0.1)
+                    
+                    supabase.table("users").update({
+                        "total_trips": current_trips + 1,
+                        "rating": new_rating
+                    }).eq("id", uid).execute()
+            except Exception as e:
+                logger.warning(f"Puan güncelleme hatası {uid}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Async puan güncelleme hatası: {e}")
 
 @api_router.post("/qr/rate")
 async def rate_after_qr(
