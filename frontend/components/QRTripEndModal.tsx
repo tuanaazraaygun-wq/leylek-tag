@@ -301,10 +301,12 @@ export default function QRTripEndModal({
 
                 {Platform.OS !== 'web' ? (
                   <View style={styles.scannerWrapper}>
-                    <BarCodeScanner
-                      onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+                    <CameraView
+                      onBarcodeScanned={scanned ? undefined : (result) => handleBarCodeScanned({ type: 'qr', data: result.data })}
+                      barcodeScannerSettings={{
+                        barcodeTypes: ['qr'],
+                      }}
                       style={styles.scanner}
-                      barCodeTypes={[BarCodeScanner.Constants.BarCodeType.qr]}
                     />
                     <View style={styles.scanFrame}>
                       <View style={[styles.scanCorner, styles.topLeft]} />
