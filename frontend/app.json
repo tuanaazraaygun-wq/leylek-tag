@@ -114,7 +114,7 @@
         }
       ],
       [
-        "expo-barcode-scanner",
+        "expo-camera",
         {
           "cameraPermission": "QR kod taramak için kamera izni gereklidir."
         }
