@@ -675,13 +675,34 @@ export default function LiveMapView({
               <Text style={styles.whatsappButtonText}>Destek</Text>
             </TouchableOpacity>
 
+            {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile */}
+            <Animated.View style={{ 
+              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.98, 1.02] }) }]
+            }}>
+              <TouchableOpacity 
+                style={styles.qrEndButton} 
+                onPress={() => onShowQRModal?.()}
+                activeOpacity={0.7}
+              >
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED']}
+                  style={styles.qrEndButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Ionicons name="qr-code" size={18} color="#FFF" />
+                  <Text style={styles.qrEndButtonText}>Yol Paylaşımını Bitir</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+
             {/* 🆕 BİTİR BUTONU - Donuk Kırmızı, Sadece Zorla Bitir */}
             <TouchableOpacity 
               style={styles.endButton} 
               onPress={() => {
                 Alert.alert(
                   '⚠️ Zorla Bitir',
-                  'Bu işlem puanınızı 5 düşürecektir!\n\nHedefe ulaştığınızda yolculuk otomatik olarak tamamlanır ve +1 puan kazanırsınız.',
+                  'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
                   [
                     { text: 'Vazgeç', style: 'cancel' },
                     { 
@@ -695,7 +716,7 @@ export default function LiveMapView({
               activeOpacity={0.7}
             >
               <Ionicons name="close-circle" size={18} color="#FFF" />
-              <Text style={styles.endButtonText}>Bitir</Text>
+              <Text style={styles.endButtonText}>Zorla Bitir</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>
