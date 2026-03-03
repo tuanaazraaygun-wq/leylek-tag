@@ -71,6 +71,12 @@
       "expo-router",
       "expo-secure-store",
       [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": "pk.eyJ1IjoibGV5bGVrdGFnIiwiYSI6ImNtbWF2Z2E1YTBnaWUycXM3MTRsaTMxZG0ifQ.0Bvk0yLGHhOU8ONpIOa69g"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
