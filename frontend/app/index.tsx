@@ -6060,10 +6060,13 @@ function PassengerDashboard({
                   userName={user.name}
                   otherUserName={activeTag?.driver_name || 'Şoför'}
                   otherUserId={activeTag?.driver_id}
+                  userId={user.id}
+                  tagId={activeTag?.id}
                   price={activeTag?.final_price}
                   offeredPrice={activeTag?.offered_price}
                   routeInfo={activeTag?.route_info}
                   otherUserDetails={otherUserDetails || undefined}
+                  onShowQRModal={() => setShowQRModal(true)}
                   onCall={async (type) => {
                     // ════════════════════════════════════════════════════════════
                     // 🔥 PRE-RINGING: Önce zil çaldır, sonra room oluştur
