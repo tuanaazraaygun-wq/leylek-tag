@@ -5,21 +5,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ✅ Public Token - Sadece harita görüntüleme için (güvenli)
-const MAPBOX_PUBLIC_TOKEN = 'pk.eyJ1IjoibGV5bGVrdGFnIiwiYSI6ImNtbWF2Z2E1YTBnaWUycXM3MTRsaTMxZG0ifQ.0Bvk0yLGHhOU8ONpIOa69g';
-
-// Mapbox ve Google Maps için değişkenler
-let MapboxGL: any = null;
+// Google Maps için değişkenler
 let MapView: any = null;
 let Marker: any = null;
 let Polyline: any = null;
 let PROVIDER_GOOGLE: any = null;
 
-// Mapbox kullanılabilir mi?
-let useMapbox = false;
+// Mapbox şimdilik devre dışı - Google Maps kullanılacak
+const useMapbox = false;
 
 if (Platform.OS !== 'web') {
-  // Google Maps'i yükle (her zaman fallback olarak)
+  // Google Maps'i yükle
   try {
     const Maps = require('react-native-maps');
     MapView = Maps.default;
@@ -29,20 +25,6 @@ if (Platform.OS !== 'web') {
     console.log('✅ Google Maps yüklendi');
   } catch (e) {
     console.log('⚠️ react-native-maps yüklenemedi');
-  }
-  
-  // Mapbox'ı dene
-  try {
-    const Mapbox = require('@rnmapbox/maps');
-    if (Mapbox && Mapbox.default) {
-      Mapbox.default.setAccessToken(MAPBOX_PUBLIC_TOKEN);
-      MapboxGL = Mapbox;
-      useMapbox = true;
-      console.log('✅ Mapbox 3D yüklendi');
-    }
-  } catch (e) {
-    console.log('⚠️ Mapbox yüklenemedi, Google Maps kullanılacak:', e);
-    useMapbox = false;
   }
 }
 
