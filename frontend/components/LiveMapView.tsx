@@ -19,26 +19,30 @@ let PROVIDER_GOOGLE: any = null;
 let useMapbox = false;
 
 if (Platform.OS !== 'web') {
-  try {
-    // Önce Mapbox'ı dene
-    MapboxGL = require('@rnmapbox/maps');
-    MapboxGL.default.setAccessToken(MAPBOX_PUBLIC_TOKEN);
-    useMapbox = true;
-    console.log('✅ Mapbox 3D yüklendi');
-  } catch (e) {
-    console.log('⚠️ Mapbox yüklenemedi, Google Maps kullanılacak');
-    useMapbox = false;
-  }
-  
-  // Google Maps'i de yükle (fallback için)
+  // Google Maps'i yükle (her zaman fallback olarak)
   try {
     const Maps = require('react-native-maps');
     MapView = Maps.default;
     Marker = Maps.Marker;
     Polyline = Maps.Polyline;
     PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+    console.log('✅ Google Maps yüklendi');
   } catch (e) {
     console.log('⚠️ react-native-maps yüklenemedi');
+  }
+  
+  // Mapbox'ı dene
+  try {
+    const Mapbox = require('@rnmapbox/maps');
+    if (Mapbox && Mapbox.default) {
+      Mapbox.default.setAccessToken(MAPBOX_PUBLIC_TOKEN);
+      MapboxGL = Mapbox;
+      useMapbox = true;
+      console.log('✅ Mapbox 3D yüklendi');
+    }
+  } catch (e) {
+    console.log('⚠️ Mapbox yüklenemedi, Google Maps kullanılacak:', e);
+    useMapbox = false;
   }
 }
 
