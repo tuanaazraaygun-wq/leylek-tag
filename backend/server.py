@@ -4090,6 +4090,258 @@ async def approve_trip_end(tag_id: str, user_id: str):
     except Exception as e:
         return {"success": False, "detail": str(e)}
 
+# ==================== QR KOD SİSTEMİ ====================
+
+import hashlib
+import time
+
+def generate_qr_hash(user_id: str, tag_id: str, timestamp: int) -> str:
+    """QR kod için güvenli hash oluştur"""
+    secret = "leylektag_qr_secret_2024"
+    data = f"{user_id}:{tag_id}:{timestamp}:{secret}"
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+@api_router.get("/qr/generate")
+async def generate_qr_code(user_id: str, tag_id: str):
+    """Kullanıcı için QR kod verisi oluştur"""
+    try:
+        # Tag'in aktif olduğunu kontrol et
+        result = supabase.table("tags").select("*").eq("id", tag_id).in_("status", ["matched", "in_progress"]).execute()
+        if not result.data:
+            return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
+        
+        tag = result.data[0]
+        
+        # Kullanıcının bu tag'e ait olduğunu kontrol et
+        if tag.get("passenger_id") != user_id and tag.get("driver_id") != user_id:
+            return {"success": False, "detail": "Bu yolculuğa erişim yetkiniz yok"}
+        
+        # QR kod verisi oluştur (5 dakika geçerli)
+        timestamp = int(time.time())
+        hash_code = generate_qr_hash(user_id, tag_id, timestamp)
+        
+        qr_data = {
+            "type": "leylektag_trip_end",
+            "user_id": user_id,
+            "tag_id": tag_id,
+            "timestamp": timestamp,
+            "hash": hash_code
+        }
+        
+        # QR string formatı
+        qr_string = f"leylektag://verify?user_id={user_id}&tag_id={tag_id}&timestamp={timestamp}&hash={hash_code}"
+        
+        return {
+            "success": True,
+            "qr_data": qr_data,
+            "qr_string": qr_string,
+            "expires_in": 300  # 5 dakika
+        }
+    except Exception as e:
+        logger.error(f"QR generate error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/qr/verify")
+async def verify_qr_code(
+    scanner_user_id: str,
+    tag_id: str,
+    scanned_user_id: str,
+    timestamp: int,
+    hash: str,
+    latitude: float = None,
+    longitude: float = None
+):
+    """QR kodu doğrula ve yolculuğu bitir"""
+    try:
+        # 1. Hash doğrulaması
+        expected_hash = generate_qr_hash(scanned_user_id, tag_id, timestamp)
+        if hash != expected_hash:
+            logger.warning(f"QR hash mismatch: {hash} vs {expected_hash}")
+            return {"success": False, "detail": "Geçersiz QR kod"}
+        
+        # 2. Zaman kontrolü (5 dakika = 300 saniye)
+        current_time = int(time.time())
+        if current_time - timestamp > 300:
+            return {"success": False, "detail": "QR kod süresi dolmuş. Yeni QR kod oluşturun."}
+        
+        # 3. Tag kontrolü
+        result = supabase.table("tags").select("*").eq("id", tag_id).in_("status", ["matched", "in_progress"]).execute()
+        if not result.data:
+            return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
+        
+        tag = result.data[0]
+        
+        # 4. Kullanıcıların bu tag'e ait olduğunu kontrol et
+        passenger_id = tag.get("passenger_id")
+        driver_id = tag.get("driver_id")
+        
+        valid_users = {passenger_id, driver_id}
+        if scanner_user_id not in valid_users or scanned_user_id not in valid_users:
+            return {"success": False, "detail": "Bu yolculuğa ait kullanıcılar değil"}
+        
+        # 5. Kendini taramadığını kontrol et
+        if scanner_user_id == scanned_user_id:
+            return {"success": False, "detail": "Kendi QR kodunuzu tarayamazsınız"}
+        
+        # 6. Yolculuğu tamamla ve konum kaydet
+        completion_data = {
+            "status": "completed",
+            "completed_at": datetime.utcnow().isoformat(),
+            "qr_completion": {
+                "scanner_id": scanner_user_id,
+                "scanned_id": scanned_user_id,
+                "completed_at": datetime.utcnow().isoformat(),
+                "latitude": latitude,
+                "longitude": longitude,
+                "method": "qr_code"
+            }
+        }
+        
+        supabase.table("tags").update(completion_data).eq("id", tag_id).execute()
+        
+        # 7. Her iki kullanıcıya +3 puan ver
+        for uid in [passenger_id, driver_id]:
+            user_result = supabase.table("users").select("total_trips, rating").eq("id", uid).execute()
+            if user_result.data:
+                current_trips = user_result.data[0].get("total_trips", 0) or 0
+                current_rating = user_result.data[0].get("rating", 5.0) or 5.0
+                
+                # Puan hesaplama: her başarılı yolculuk +0.1 (max 5.0)
+                new_rating = min(5.0, current_rating + 0.1)
+                
+                supabase.table("users").update({
+                    "total_trips": current_trips + 1,
+                    "rating": new_rating
+                }).eq("id", uid).execute()
+        
+        logger.info(f"✅ QR ile yolculuk tamamlandı: tag={tag_id}, konum=({latitude}, {longitude})")
+        
+        return {
+            "success": True,
+            "message": "Yolculuk başarıyla tamamlandı! +3 puan kazandınız.",
+            "tag_id": tag_id,
+            "completed_at": completion_data["completed_at"],
+            "points_earned": 3
+        }
+        
+    except Exception as e:
+        logger.error(f"QR verify error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/qr/rate")
+async def rate_after_qr(
+    tag_id: str,
+    rater_user_id: str,
+    rating: int,
+    comment: str = None
+):
+    """QR ile bitirme sonrası puanlama"""
+    try:
+        if rating < 1 or rating > 5:
+            return {"success": False, "detail": "Puan 1-5 arasında olmalı"}
+        
+        # Tag'i al
+        result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        if not result.data:
+            return {"success": False, "detail": "Yolculuk bulunamadı"}
+        
+        tag = result.data[0]
+        passenger_id = tag.get("passenger_id")
+        driver_id = tag.get("driver_id")
+        
+        # Kim puanlıyor?
+        if rater_user_id == passenger_id:
+            # Yolcu sürücüyü puanlıyor
+            rated_user_id = driver_id
+            rating_field = "rating_by_passenger"
+        elif rater_user_id == driver_id:
+            # Sürücü yolcuyu puanlıyor
+            rated_user_id = passenger_id
+            rating_field = "rating_by_driver"
+        else:
+            return {"success": False, "detail": "Bu yolculuğa puanlama yetkiniz yok"}
+        
+        # Puanı kaydet
+        update_data = {
+            rating_field: {
+                "rating": rating,
+                "comment": comment,
+                "rated_at": datetime.utcnow().isoformat()
+            }
+        }
+        supabase.table("tags").update(update_data).eq("id", tag_id).execute()
+        
+        # Puanlanan kullanıcının ortalama puanını güncelle
+        all_ratings = []
+        
+        if rated_user_id == driver_id:
+            # Sürücünün tüm puanlarını al
+            ratings_result = supabase.table("tags").select("rating_by_passenger").eq("driver_id", driver_id).not_.is_("rating_by_passenger", "null").execute()
+        else:
+            # Yolcunun tüm puanlarını al
+            ratings_result = supabase.table("tags").select("rating_by_driver").eq("passenger_id", passenger_id).not_.is_("rating_by_driver", "null").execute()
+        
+        if ratings_result.data:
+            for r in ratings_result.data:
+                rating_data = r.get("rating_by_passenger") or r.get("rating_by_driver")
+                if rating_data and isinstance(rating_data, dict):
+                    all_ratings.append(rating_data.get("rating", 5))
+        
+        # Yeni puanı da ekle
+        all_ratings.append(rating)
+        
+        if all_ratings:
+            avg_rating = sum(all_ratings) / len(all_ratings)
+            supabase.table("users").update({"rating": round(avg_rating, 2)}).eq("id", rated_user_id).execute()
+        
+        logger.info(f"⭐ Puanlama kaydedildi: tag={tag_id}, rater={rater_user_id}, rating={rating}")
+        
+        return {
+            "success": True,
+            "message": f"{rating} yıldız puanınız kaydedildi!",
+            "rating": rating
+        }
+        
+    except Exception as e:
+        logger.error(f"Rate error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.get("/admin/qr-completions")
+async def get_qr_completions(admin_phone: str, limit: int = 50):
+    """Admin için QR ile tamamlanan yolculukları listele"""
+    try:
+        # Admin kontrolü
+        admin_check = supabase.table("users").select("is_admin").eq("phone", admin_phone).execute()
+        if not admin_check.data or not admin_check.data[0].get("is_admin"):
+            return {"success": False, "detail": "Yetkisiz erişim"}
+        
+        # QR ile tamamlanan yolculukları al
+        result = supabase.table("tags").select(
+            "*, users!tags_passenger_id_fkey(name, phone), users!tags_driver_id_fkey(name, phone)"
+        ).eq("status", "completed").not_.is_("qr_completion", "null").order("completed_at", desc=True).limit(limit).execute()
+        
+        completions = []
+        for tag in result.data or []:
+            qr_data = tag.get("qr_completion", {})
+            completions.append({
+                "tag_id": tag.get("id"),
+                "passenger_name": tag.get("users", {}).get("name") if isinstance(tag.get("users"), dict) else None,
+                "driver_name": tag.get("users!tags_driver_id_fkey", {}).get("name") if isinstance(tag.get("users!tags_driver_id_fkey"), dict) else None,
+                "completed_at": qr_data.get("completed_at"),
+                "latitude": qr_data.get("latitude"),
+                "longitude": qr_data.get("longitude"),
+                "scanner_id": qr_data.get("scanner_id"),
+                "method": qr_data.get("method", "qr_code"),
+                "rating_by_passenger": tag.get("rating_by_passenger"),
+                "rating_by_driver": tag.get("rating_by_driver")
+            })
+        
+        return {"success": True, "completions": completions, "count": len(completions)}
+        
+    except Exception as e:
+        logger.error(f"Admin QR completions error: {e}")
+        return {"success": False, "detail": str(e)}
+
 # ==================== CORS & ROUTER ====================
 
 app.add_middleware(
