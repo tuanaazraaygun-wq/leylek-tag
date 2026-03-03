@@ -31,6 +31,8 @@ interface LiveMapViewProps {
   userName?: string;
   otherUserName?: string;
   otherUserId?: string;
+  userId?: string;  // 🆕 Kullanıcı ID
+  tagId?: string;   // 🆕 Tag ID
   price?: number;
   offeredPrice?: number;  // Teklif edilen fiyat
   routeInfo?: { distance_km: number; duration_min: number } | null;
@@ -56,6 +58,7 @@ interface LiveMapViewProps {
   onForceEnd?: () => void;
   onAutoComplete?: () => void;
   onShowEndTripModal?: () => void;
+  onShowQRModal?: () => void;  // 🆕 QR Modal aç
 }
 
 // Haversine mesafe hesaplama (km)
