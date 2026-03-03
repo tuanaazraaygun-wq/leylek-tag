@@ -207,6 +207,8 @@ export default function LiveMapView({
   userName = 'Sen',
   otherUserName = 'Karşı Taraf',
   otherUserId,
+  userId,      // 🆕
+  tagId,       // 🆕
   price,
   offeredPrice,
   routeInfo,
@@ -220,6 +222,7 @@ export default function LiveMapView({
   onForceEnd,
   onAutoComplete,
   onShowEndTripModal,
+  onShowQRModal,  // 🆕
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   
