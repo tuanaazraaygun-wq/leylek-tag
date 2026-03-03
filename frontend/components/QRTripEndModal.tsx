@@ -75,7 +75,7 @@ export default function QRTripEndModal({
   const requestCameraPermission = async () => {
     setLoading(true);
     try {
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
+      const { status } = await Camera.requestCameraPermissionsAsync();
       setHasPermission(status === 'granted');
       
       if (status === 'granted') {
