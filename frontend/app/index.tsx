@@ -8487,6 +8487,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           </View>
         </View>
       </Modal>
+      
+      {/* 🆕 QR İLE YOLCULUK BİTİRME MODALI (SÜRÜCÜ) */}
+      <QRTripEndModal
+        visible={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        userId={user.id}
+        tagId={activeTag?.id || ''}
+        isDriver={true}
+        otherUserName={activeTag?.passenger_name || 'Yolcu'}
+        onComplete={() => {
+          // Yolculuk tamamlandı, sayfayı yenile
+          setActiveTag(null);
+          setShowQRModal(false);
+        }}
+      />
     </SafeAreaView>
     </ImageBackground>
   );
