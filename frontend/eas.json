@@ -27,7 +27,8 @@
       },
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1",
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com",
+        "MAPBOX_DOWNLOADS_TOKEN": "sk.eyJ1IjoibGV5bGVrdGFnIiwiYSI6ImNtbWF3ejBmbDBnbzcycHM3bjZ6a2prczkifQ.VgJAJg6l7stprdFhsA_9ag"
       }
     },
     "production": {
