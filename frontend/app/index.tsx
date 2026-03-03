@@ -6680,6 +6680,21 @@ function PassengerDashboard({
           </View>
         </View>
       </Modal>
+      
+      {/* 🆕 QR İLE YOLCULUK BİTİRME MODALI */}
+      <QRTripEndModal
+        visible={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        userId={user.id}
+        tagId={activeTag?.id || ''}
+        isDriver={false}
+        otherUserName={activeTag?.driver_name || 'Sürücü'}
+        onComplete={() => {
+          // Yolculuk tamamlandı, sayfayı yenile
+          setActiveTag(null);
+          setShowQRModal(false);
+        }}
+      />
     </SafeAreaView>
     </ImageBackground>
   );
