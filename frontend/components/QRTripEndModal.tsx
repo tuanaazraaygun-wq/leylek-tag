@@ -51,6 +51,14 @@ export default function QRTripEndModal({
   const [rating, setRating] = useState(5);
   const [completedTagId, setCompletedTagId] = useState<string | null>(null);
 
+  // Sadece ilk ismi al (soyisim olmadan)
+  const getFirstName = (fullName: string) => {
+    if (!fullName) return 'Kullanıcı';
+    return fullName.split(' ')[0];
+  };
+  
+  const firstName = getFirstName(otherUserName);
+
   // QR kod oluştur
   const generateQR = async () => {
     setLoading(true);
@@ -236,7 +244,7 @@ export default function QRTripEndModal({
             {step === 'select' && (
               <View style={styles.selectContainer}>
                 <Text style={styles.selectTitle}>
-                  {otherUserName} ile yolculuğu bitirmek için:
+                  {firstName} ile yolculuğu bitirmek için:
                 </Text>
                 
                 <View style={styles.optionsRow}>
@@ -284,7 +292,7 @@ export default function QRTripEndModal({
               <View style={styles.qrShowContainer}>
                 <Text style={styles.qrShowTitle}>📱 QR Kodunuz</Text>
                 <Text style={styles.qrShowDesc}>
-                  {otherUserName} bu kodu tarasın
+                  {firstName} bu kodu tarasın
                 </Text>
                 
                 <View style={styles.qrCodeWrapper}>
@@ -317,7 +325,7 @@ export default function QRTripEndModal({
               <View style={styles.scanContainer}>
                 <Text style={styles.scanTitle}>📷 QR Kod Tara</Text>
                 <Text style={styles.scanDesc}>
-                  {otherUserName}'ın QR kodunu çerçeveye alın
+                  {firstName}'ın QR kodunu çerçeveye alın
                 </Text>
 
                 {Platform.OS !== 'web' ? (
@@ -368,7 +376,7 @@ export default function QRTripEndModal({
             {/* ADIM 4: Puanlama */}
             {step === 'rating' && (
               <View style={styles.ratingContainer}>
-                <Text style={styles.ratingTitle}>⭐ {otherUserName}'ı Puanla</Text>
+                <Text style={styles.ratingTitle}>⭐ {firstName}'ı Puanla</Text>
                 
                 <View style={styles.starsRow}>
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -414,7 +422,7 @@ export default function QRTripEndModal({
                 <Text style={styles.successTitle}>🎉 Yolculuk Tamamlandı!</Text>
                 <Text style={styles.successDesc}>+3 Puan Kazandınız</Text>
                 <Text style={styles.successRating}>
-                  {otherUserName}'a {rating} ⭐ verdiniz
+                  {firstName}'a {rating} ⭐ verdiniz
                 </Text>
               </View>
             )}

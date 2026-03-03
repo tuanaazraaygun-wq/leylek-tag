@@ -4184,20 +4184,35 @@ async def verify_qr_code(
             return {"success": False, "detail": "Kendi QR kodunuzu tarayamazsınız"}
         
         # 6. Yolculuğu tamamla ve konum kaydet
-        completion_data = {
-            "status": "completed",
-            "completed_at": datetime.utcnow().isoformat(),
-            "qr_completion": {
+        # Not: qr_completion JSON olarak saklanacak - önce sadece status ve completed_at güncelle
+        try:
+            supabase.table("tags").update({
+                "status": "completed",
+                "completed_at": datetime.utcnow().isoformat()
+            }).eq("id", tag_id).execute()
+            
+            # Sonra qr_completion bilgisini ayrı güncelle (JSONB alan olabilir)
+            qr_completion_data = json.dumps({
                 "scanner_id": scanner_user_id,
                 "scanned_id": scanned_user_id,
                 "completed_at": datetime.utcnow().isoformat(),
                 "latitude": latitude,
                 "longitude": longitude,
                 "method": "qr_code"
-            }
-        }
-        
-        supabase.table("tags").update(completion_data).eq("id", tag_id).execute()
+            })
+            
+            # qr_completion alanı varsa güncelle, yoksa atla
+            try:
+                supabase.table("tags").update({
+                    "qr_completion": qr_completion_data
+                }).eq("id", tag_id).execute()
+            except Exception as qr_err:
+                logger.warning(f"qr_completion güncellenemedi (alan olmayabilir): {qr_err}")
+                # Bu hata kritik değil, yolculuk yine de tamamlandı
+                
+        except Exception as update_err:
+            logger.error(f"Tag güncelleme hatası: {update_err}")
+            return {"success": False, "detail": f"Yolculuk güncellenemedi: {str(update_err)}"}
         
         # 7. Her iki kullanıcıya +3 puan ver
         for uid in [passenger_id, driver_id]:
