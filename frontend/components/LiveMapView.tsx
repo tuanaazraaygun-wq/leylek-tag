@@ -452,15 +452,25 @@ export default function LiveMapView({
 
   return (
     <View style={styles.container}>
-      {/* 🆕 RENKLİ ARKAPLAN - Yolcu: Mavi Gökyüzü, Sürücü: Gün Batımı */}
+      {/* 🆕 BULUTLU GÖKYÜZÜ ARKAPLAN */}
+      <Image 
+        source={{ uri: isDriver 
+          ? 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&q=80'
+          : 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80'
+        }}
+        style={styles.cloudBackground}
+        resizeMode="cover"
+      />
+      
+      {/* Gradient overlay for better visibility */}
       <LinearGradient 
         colors={isDriver 
-          ? ['#FDE68A', '#FBBF24', '#F97316', '#EA580C'] 
-          : ['#BFDBFE', '#93C5FD', '#60A5FA', '#3B82F6']
+          ? ['rgba(253, 186, 116, 0.3)', 'rgba(249, 115, 22, 0.2)', 'transparent'] 
+          : ['rgba(147, 197, 253, 0.3)', 'rgba(59, 130, 246, 0.2)', 'transparent']
         } 
-        style={styles.backgroundGradient}
+        style={styles.gradientOverlay}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 0, y: 0.5 }}
       />
       
       {/* HARİTA - Google Maps */}
@@ -500,42 +510,55 @@ export default function LiveMapView({
             />
           )}
 
-          {/* BEN - Marker */}
+          {/* BEN - Marker - Büyük ve Görünür */}
           {userLocation && (
-            <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={styles.markerContainer}>
-                <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
-                  <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
+            <Marker 
+              coordinate={userLocation} 
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={styles.bigMarkerContainer}>
+                <View style={[styles.bigMarkerCircle, { backgroundColor: themeColor, borderColor: '#FFF' }]}>
+                  <Text style={styles.bigMarkerIcon}>{isDriver ? '🚗' : '👤'}</Text>
                 </View>
-                <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
+                <View style={styles.markerPulse} />
               </View>
             </Marker>
           )}
 
-          {/* KARŞI TARAF - Marker - Tıklanabilir */}
+          {/* KARŞI TARAF - Marker - Tıklanabilir ve Büyük */}
           {otherLocation && (
             <Marker 
               coordinate={otherLocation} 
               anchor={{ x: 0.5, y: 0.5 }}
               onPress={() => setShowInfoCard(true)}
+              tracksViewChanges={false}
             >
-              <View style={styles.markerContainer}>
-                <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
-                  <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
+              <View style={styles.bigMarkerContainer}>
+                <View style={[styles.bigMarkerCircle, { 
+                  backgroundColor: isDriver ? '#8B5CF6' : '#22C55E',
+                  borderColor: '#FFF'
+                }]}>
+                  <Text style={styles.bigMarkerIcon}>{isDriver ? '👤' : '🚗'}</Text>
                 </View>
-                <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
+                <View style={[styles.markerPulse, { backgroundColor: isDriver ? 'rgba(139,92,246,0.3)' : 'rgba(34,197,94,0.3)' }]} />
               </View>
             </Marker>
           )}
 
           {/* HEDEF - Turuncu Bayrak */}
           {destinationLocation && (
-            <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 1 }}>
-              <View style={styles.destinationMarker}>
-                <View style={styles.destinationCircle}>
-                  <Text style={styles.destinationIcon}>🏁</Text>
+            <Marker 
+              coordinate={destinationLocation} 
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+            >
+              <View style={styles.destinationMarkerBig}>
+                <View style={styles.destinationCircleBig}>
+                  <Text style={styles.destinationIconBig}>🏁</Text>
                 </View>
-                <Text style={styles.destinationLabel}>HEDEF</Text>
+                <View style={styles.destinationPole} />
+                <Text style={styles.destinationLabelBig}>HEDEF</Text>
               </View>
             </Marker>
           )}
