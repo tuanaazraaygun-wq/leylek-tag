@@ -863,107 +863,23 @@ const mapStyle = [
 const styles = StyleSheet.create({
   container: { flex: 1 },
   
-  // 🆕 Bulutlu Gökyüzü Arkaplan
+  // 🆕 Bulutlu Arkaplan - Sadece üst kısım
   cloudBackground: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: SCREEN_HEIGHT * 0.35,
+    height: 200,
     zIndex: 0,
   },
-  gradientOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: SCREEN_HEIGHT * 0.35,
-    zIndex: 1,
-  },
-  backgroundGradient: { 
-    position: 'absolute', 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
-    zIndex: -1 
-  },
-  map: { flex: 1, zIndex: 2 },
+  
+  map: { flex: 1 },
   webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8' },
   webFallbackText: { fontSize: 16, color: '#666', marginTop: 16, textAlign: 'center' },
   distanceText: { fontSize: 18, fontWeight: 'bold', color: '#22C55E', marginTop: 12 },
   destinationDistanceText: { fontSize: 16, color: '#F97316', marginTop: 8 },
   
-  // 🆕 Büyük Marker Stilleri (Daha Görünür)
-  bigMarkerContainer: { 
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bigMarkerCircle: { 
-    width: 56, 
-    height: 56, 
-    borderRadius: 28, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 4, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.4, 
-    shadowRadius: 6, 
-    elevation: 10,
-  },
-  bigMarkerIcon: { fontSize: 28 },
-  markerPulse: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    zIndex: -1,
-  },
-  
-  // 🆕 Büyük Hedef Marker
-  destinationMarkerBig: { alignItems: 'center' },
-  destinationCircleBig: { 
-    width: 60, 
-    height: 60, 
-    borderRadius: 30, 
-    backgroundColor: '#F97316', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 4, 
-    borderColor: '#FFF', 
-    shadowColor: '#F97316', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.5, 
-    shadowRadius: 8, 
-    elevation: 12,
-  },
-  destinationIconBig: { fontSize: 30 },
-  destinationPole: {
-    width: 4,
-    height: 20,
-    backgroundColor: '#F97316',
-    marginTop: -2,
-  },
-  destinationLabelBig: { 
-    marginTop: 4, 
-    fontSize: 13, 
-    fontWeight: 'bold', 
-    color: '#FFF', 
-    backgroundColor: '#F97316', 
-    paddingHorizontal: 12, 
-    paddingVertical: 4, 
-    borderRadius: 12, 
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  
-  // Eski Marker Styles (fallback)
+  // Marker Styles
   markerContainer: { alignItems: 'center' },
   markerCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
   markerIcon: { fontSize: 22 },
