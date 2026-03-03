@@ -475,82 +475,215 @@ export default function LiveMapView({
         end={{ x: 1, y: 1 }}
       />
       
-      {/* HARİTA */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={PROVIDER_GOOGLE}
-        initialRegion={{
-          latitude: userLocation?.latitude || 39.9334,
-          longitude: userLocation?.longitude || 32.8597,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }}
-        showsUserLocation={false}
-        showsMyLocationButton={false}
-        showsCompass={false}
-        customMapStyle={mapStyle}
-      >
-        {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) */}
-        {meetingRoute.length > 1 && (
-          <Polyline
-            coordinates={meetingRoute}
-            strokeColor="#22C55E"
-            strokeWidth={6}
-            lineDashPattern={[0]}
+      {/* HARİTA - Mapbox 3D veya Google Maps */}
+      {useMapbox && MapboxGL ? (
+        // 🗺️ MAPBOX 3D HARİTA
+        <MapboxGL.MapView
+          ref={mapRef}
+          style={styles.map}
+          styleURL={MapboxGL.StyleURL.Street}
+          logoEnabled={false}
+          attributionEnabled={false}
+          compassEnabled={false}
+          scaleBarEnabled={false}
+          zoomEnabled={true}
+          scrollEnabled={true}
+          pitchEnabled={true}
+          rotateEnabled={true}
+        >
+          {/* 3D Binalar ve Arazi */}
+          <MapboxGL.Camera
+            zoomLevel={15}
+            pitch={45}
+            centerCoordinate={[
+              userLocation?.longitude || 32.8597,
+              userLocation?.latitude || 39.9334
+            ]}
+            animationMode="flyTo"
+            animationDuration={1000}
           />
-        )}
-        
-        {/* TURUNCU ROTA: Yolcu → Hedef */}
-        {destinationRoute.length > 1 && destinationLocation && (
-          <Polyline
-            coordinates={destinationRoute}
-            strokeColor="#F97316"
-            strokeWidth={5}
-            lineDashPattern={[10, 5]}
-          />
-        )}
 
-        {/* BEN - Marker */}
-        {userLocation && (
-          <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.markerContainer}>
-              <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
-                <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
-              </View>
-              <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
-            </View>
-          </Marker>
-        )}
+          {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) */}
+          {meetingRoute.length > 1 && (
+            <MapboxGL.ShapeSource
+              id="meetingRoute"
+              shape={{
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: meetingRoute.map(p => [p.longitude, p.latitude])
+                },
+                properties: {}
+              }}
+            >
+              <MapboxGL.LineLayer
+                id="meetingRouteLayer"
+                style={{
+                  lineColor: '#22C55E',
+                  lineWidth: 6,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }}
+              />
+            </MapboxGL.ShapeSource>
+          )}
 
-        {/* KARŞI TARAF - Marker - Tıklanabilir */}
-        {otherLocation && (
-          <Marker 
-            coordinate={otherLocation} 
-            anchor={{ x: 0.5, y: 0.5 }}
-            onPress={() => setShowInfoCard(true)}
-          >
-            <View style={styles.markerContainer}>
-              <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
-                <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
-              </View>
-              <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
-            </View>
-          </Marker>
-        )}
+          {/* TURUNCU ROTA: Yolcu → Hedef */}
+          {destinationRoute.length > 1 && destinationLocation && (
+            <MapboxGL.ShapeSource
+              id="destinationRoute"
+              shape={{
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: destinationRoute.map(p => [p.longitude, p.latitude])
+                },
+                properties: {}
+              }}
+            >
+              <MapboxGL.LineLayer
+                id="destinationRouteLayer"
+                style={{
+                  lineColor: '#F97316',
+                  lineWidth: 5,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                  lineDasharray: [2, 1]
+                }}
+              />
+            </MapboxGL.ShapeSource>
+          )}
 
-        {/* HEDEF - Turuncu Bayrak */}
-        {destinationLocation && (
-          <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 1 }}>
-            <View style={styles.destinationMarker}>
-              <View style={styles.destinationCircle}>
-                <Text style={styles.destinationIcon}>🏁</Text>
+          {/* BEN - Marker */}
+          {userLocation && (
+            <MapboxGL.PointAnnotation
+              id="userMarker"
+              coordinate={[userLocation.longitude, userLocation.latitude]}
+            >
+              <View style={styles.markerContainer}>
+                <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
+                  <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
+                </View>
+                <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
               </View>
-              <Text style={styles.destinationLabel}>HEDEF</Text>
-            </View>
-          </Marker>
-        )}
-      </MapView>
+            </MapboxGL.PointAnnotation>
+          )}
+
+          {/* KARŞI TARAF - Marker - Tıklanabilir */}
+          {otherLocation && (
+            <MapboxGL.PointAnnotation
+              id="otherMarker"
+              coordinate={[otherLocation.longitude, otherLocation.latitude]}
+              onSelected={() => setShowInfoCard(true)}
+            >
+              <View style={styles.markerContainer}>
+                <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
+                  <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
+                </View>
+                <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
+              </View>
+            </MapboxGL.PointAnnotation>
+          )}
+
+          {/* HEDEF - Turuncu Bayrak */}
+          {destinationLocation && (
+            <MapboxGL.PointAnnotation
+              id="destinationMarker"
+              coordinate={[destinationLocation.longitude, destinationLocation.latitude]}
+            >
+              <View style={styles.destinationMarker}>
+                <View style={styles.destinationCircle}>
+                  <Text style={styles.destinationIcon}>🏁</Text>
+                </View>
+                <Text style={styles.destinationLabel}>HEDEF</Text>
+              </View>
+            </MapboxGL.PointAnnotation>
+          )}
+        </MapboxGL.MapView>
+      ) : MapView ? (
+        // 📍 GOOGLE MAPS (Fallback)
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={{
+            latitude: userLocation?.latitude || 39.9334,
+            longitude: userLocation?.longitude || 32.8597,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }}
+          showsUserLocation={false}
+          showsMyLocationButton={false}
+          showsCompass={false}
+          customMapStyle={mapStyle}
+        >
+          {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) */}
+          {meetingRoute.length > 1 && (
+            <Polyline
+              coordinates={meetingRoute}
+              strokeColor="#22C55E"
+              strokeWidth={6}
+              lineDashPattern={[0]}
+            />
+          )}
+          
+          {/* TURUNCU ROTA: Yolcu → Hedef */}
+          {destinationRoute.length > 1 && destinationLocation && (
+            <Polyline
+              coordinates={destinationRoute}
+              strokeColor="#F97316"
+              strokeWidth={5}
+              lineDashPattern={[10, 5]}
+            />
+          )}
+
+          {/* BEN - Marker */}
+          {userLocation && (
+            <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={styles.markerContainer}>
+                <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
+                  <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
+                </View>
+                <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
+              </View>
+            </Marker>
+          )}
+
+          {/* KARŞI TARAF - Marker - Tıklanabilir */}
+          {otherLocation && (
+            <Marker 
+              coordinate={otherLocation} 
+              anchor={{ x: 0.5, y: 0.5 }}
+              onPress={() => setShowInfoCard(true)}
+            >
+              <View style={styles.markerContainer}>
+                <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
+                  <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
+                </View>
+                <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
+              </View>
+            </Marker>
+          )}
+
+          {/* HEDEF - Turuncu Bayrak */}
+          {destinationLocation && (
+            <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 1 }}>
+              <View style={styles.destinationMarker}>
+                <View style={styles.destinationCircle}>
+                  <Text style={styles.destinationIcon}>🏁</Text>
+                </View>
+                <Text style={styles.destinationLabel}>HEDEF</Text>
+              </View>
+            </Marker>
+          )}
+        </MapView>
+      ) : (
+        // Web fallback - harita yok
+        <View style={styles.webFallback}>
+          <Ionicons name="map-outline" size={64} color="#3FA9F5" />
+          <Text style={styles.webFallbackText}>Harita mobil cihazda görüntülenir</Text>
+        </View>
+      )}
 
       {/* ÜST BİLGİ PANELİ - MAVİ ÇERÇEVE */}
       <View style={styles.topInfoPanel}>
