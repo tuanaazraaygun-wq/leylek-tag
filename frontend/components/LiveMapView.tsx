@@ -473,8 +473,136 @@ export default function LiveMapView({
         end={{ x: 1, y: 1 }}
       />
       
-      {/* HARİTA - Google Maps */}
-      {MapView ? (
+      {/* HARİTA - Mapbox 3D veya Google Maps */}
+      {useMapbox && MapboxGL ? (
+        // 🗺️ MAPBOX 3D HARİTA
+        <MapboxGL.MapView
+          ref={mapRef}
+          style={styles.map}
+          styleURL="mapbox://styles/mapbox/streets-v12"
+          logoEnabled={false}
+          attributionEnabled={false}
+          compassEnabled={true}
+          scaleBarEnabled={false}
+          zoomEnabled={true}
+          scrollEnabled={true}
+          pitchEnabled={true}
+          rotateEnabled={true}
+        >
+          {/* 3D Kamera - Eğik Açı */}
+          <MapboxGL.Camera
+            ref={mapRef}
+            zoomLevel={16}
+            pitch={50}
+            heading={0}
+            centerCoordinate={[
+              userLocation?.longitude || 32.8597,
+              userLocation?.latitude || 39.9334
+            ]}
+            animationMode="flyTo"
+            animationDuration={1500}
+          />
+
+          {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) */}
+          {meetingRoute.length > 1 && (
+            <MapboxGL.ShapeSource
+              id="meetingRoute"
+              shape={{
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: meetingRoute.map(p => [p.longitude, p.latitude])
+                }
+              }}
+            >
+              <MapboxGL.LineLayer
+                id="meetingRouteLayer"
+                style={{
+                  lineColor: '#22C55E',
+                  lineWidth: 6,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }}
+              />
+            </MapboxGL.ShapeSource>
+          )}
+
+          {/* TURUNCU ROTA: Yolcu → Hedef */}
+          {destinationRoute.length > 1 && destinationLocation && (
+            <MapboxGL.ShapeSource
+              id="destinationRoute"
+              shape={{
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: destinationRoute.map(p => [p.longitude, p.latitude])
+                }
+              }}
+            >
+              <MapboxGL.LineLayer
+                id="destinationRouteLayer"
+                style={{
+                  lineColor: '#F97316',
+                  lineWidth: 5,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                  lineDasharray: [2, 1]
+                }}
+              />
+            </MapboxGL.ShapeSource>
+          )}
+
+          {/* BEN - Marker */}
+          {userLocation && (
+            <MapboxGL.MarkerView
+              id="userMarker"
+              coordinate={[userLocation.longitude, userLocation.latitude]}
+            >
+              <View style={styles.markerContainer}>
+                <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
+                  <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
+                </View>
+                <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
+              </View>
+            </MapboxGL.MarkerView>
+          )}
+
+          {/* KARŞI TARAF - Marker - Tıklanabilir */}
+          {otherLocation && (
+            <MapboxGL.MarkerView
+              id="otherMarker"
+              coordinate={[otherLocation.longitude, otherLocation.latitude]}
+            >
+              <TouchableOpacity onPress={() => setShowInfoCard(true)} activeOpacity={0.8}>
+                <View style={styles.markerContainer}>
+                  <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
+                    <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
+                  </View>
+                  <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
+                </View>
+              </TouchableOpacity>
+            </MapboxGL.MarkerView>
+          )}
+
+          {/* HEDEF - Turuncu Bayrak */}
+          {destinationLocation && (
+            <MapboxGL.MarkerView
+              id="destinationMarker"
+              coordinate={[destinationLocation.longitude, destinationLocation.latitude]}
+            >
+              <View style={styles.destinationMarker}>
+                <View style={styles.destinationCircle}>
+                  <Text style={styles.destinationIcon}>🏁</Text>
+                </View>
+                <Text style={styles.destinationLabel}>HEDEF</Text>
+              </View>
+            </MapboxGL.MarkerView>
+          )}
+        </MapboxGL.MapView>
+      ) : MapView ? (
+        // 📍 GOOGLE MAPS (Fallback)
         <MapView
           ref={mapRef}
           style={styles.map}
