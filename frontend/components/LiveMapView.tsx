@@ -1207,18 +1207,38 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   endButton: { 
-    flex: 1, 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'center', 
     paddingVertical: 12, 
+    paddingHorizontal: 12,
     backgroundColor: '#DC2626', // Kırmızı - Bitir butonu
     borderRadius: 12,
   },
   endButtonText: { 
-    fontSize: 14, 
+    fontSize: 12, 
     fontWeight: '600', 
-    marginLeft: 6, 
+    marginLeft: 4, 
+    color: '#FFF',
+  },
+  
+  // 🆕 QR ile Bitir Butonu
+  qrEndButton: {
+    flex: 2,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  qrEndButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  qrEndButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 6,
     color: '#FFF',
   },
 
