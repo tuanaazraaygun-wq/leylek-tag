@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing, Modal, Image } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing, Modal, Image, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Bulutlu gökyüzü arkaplan görselleri
+const CLOUD_BG_ORANGE = 'https://customer-assets.emergentagent.com/job_bb2e22a7-dca0-4fb1-a5f6-9dec64c552bc/artifacts/rpov0b6n_WhatsApp%20Image%202026-03-03%20at%2022.59.26.jpeg';
+const CLOUD_BG_BLUE = 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80';
 
 // Google Maps için değişkenler
 let MapView: any = null;
