@@ -5,21 +5,42 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// react-native-maps'i sadece native platformlarda yükle
+// Mapbox Token
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoibGV5bGVrdGFnIiwiYSI6ImNtbWF2Z2E1YTBnaWUycXM3MTRsaTMxZG0ifQ.0Bvk0yLGHhOU8ONpIOa69g';
+
+// Mapbox'ı sadece native platformlarda yükle
+let Mapbox: any = null;
+let MapboxGL: any = null;
+
+// Fallback olarak react-native-maps
 let MapView: any = null;
 let Marker: any = null;
 let Polyline: any = null;
 let PROVIDER_GOOGLE: any = null;
 
+// Mapbox kullanılabilir mi?
+let useMapbox = false;
+
 if (Platform.OS !== 'web') {
   try {
-    const Maps = require('react-native-maps');
-    MapView = Maps.default;
-    Marker = Maps.Marker;
-    Polyline = Maps.Polyline;
-    PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+    // Önce Mapbox'ı dene
+    Mapbox = require('@rnmapbox/maps').default;
+    MapboxGL = require('@rnmapbox/maps');
+    Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+    useMapbox = true;
+    console.log('✅ Mapbox yüklendi');
   } catch (e) {
-    console.log('⚠️ react-native-maps yüklenemedi:', e);
+    console.log('⚠️ Mapbox yüklenemedi, Google Maps kullanılacak:', e);
+    // Fallback: Google Maps
+    try {
+      const Maps = require('react-native-maps');
+      MapView = Maps.default;
+      Marker = Maps.Marker;
+      Polyline = Maps.Polyline;
+      PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+    } catch (e2) {
+      console.log('⚠️ react-native-maps de yüklenemedi:', e2);
+    }
   }
 }
 
