@@ -6776,6 +6776,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     plateNumber?: string;
   } | null>(null);
   
+  // 🆕 QR Modal State (Sürücü)
+  const [showQRModal, setShowQRModal] = useState(false);
+  
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
