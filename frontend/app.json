@@ -96,7 +96,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Profil fotoğrafı çekmek için kamera izni gereklidir."
+          "cameraPermission": "QR kod taramak ve profil fotoğrafı çekmek için kamera izni gereklidir."
         }
       ],
       [
@@ -111,12 +111,6 @@
           "icon": "./assets/images/icon.png",
           "color": "#3FA9F5",
           "sounds": []
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "QR kod taramak için kamera izni gereklidir."
         }
       ]
     ],

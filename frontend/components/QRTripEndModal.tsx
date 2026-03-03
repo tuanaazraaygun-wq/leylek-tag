@@ -20,7 +20,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
   ? `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`
-  : 'https://carpooling-kyc.preview.emergentagent.com/api';
+  : 'https://trip-qr-scan.preview.emergentagent.com/api';
 
 interface QRTripEndModalProps {
   visible: boolean;
@@ -97,12 +97,33 @@ export default function QRTripEndModal({
     setLoading(true);
 
     try {
-      // QR verilerini parse et
-      const url = new URL(data);
-      const scannedUserId = url.searchParams.get('user_id');
-      const scannedTagId = url.searchParams.get('tag_id');
-      const timestamp = url.searchParams.get('timestamp');
-      const hash = url.searchParams.get('hash');
+      // QR verilerini parse et (leylektag://verify?user_id=...&tag_id=...&timestamp=...&hash=...)
+      // Custom scheme URL parsing - new URL() doesn't work with custom schemes
+      let scannedUserId: string | null = null;
+      let scannedTagId: string | null = null;
+      let timestamp: string | null = null;
+      let hash: string | null = null;
+
+      // leylektag:// scheme kontrolü
+      if (data.startsWith('leylektag://verify?')) {
+        const queryString = data.split('?')[1];
+        const params = new URLSearchParams(queryString);
+        scannedUserId = params.get('user_id');
+        scannedTagId = params.get('tag_id');
+        timestamp = params.get('timestamp');
+        hash = params.get('hash');
+      } else {
+        // Fallback: try standard URL parsing for http/https
+        try {
+          const url = new URL(data);
+          scannedUserId = url.searchParams.get('user_id');
+          scannedTagId = url.searchParams.get('tag_id');
+          timestamp = url.searchParams.get('timestamp');
+          hash = url.searchParams.get('hash');
+        } catch (e) {
+          console.log('URL parse failed:', e);
+        }
+      }
 
       if (!scannedUserId || !scannedTagId || !timestamp || !hash) {
         Alert.alert('Hata', 'Geçersiz QR kod formatı');

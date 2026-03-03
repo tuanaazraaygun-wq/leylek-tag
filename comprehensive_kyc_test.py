@@ -7,7 +7,7 @@ import requests
 import json
 from datetime import datetime
 
-BASE_URL = "https://carpooling-kyc.preview.emergentagent.com/api"
+BASE_URL = "https://trip-qr-scan.preview.emergentagent.com/api"
 ADMIN_PHONE = "5326497412"
 TEST_PHONE = "5551234567"
 
