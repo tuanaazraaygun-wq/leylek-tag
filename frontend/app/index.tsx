@@ -4465,6 +4465,9 @@ function PassengerDashboard({
     plateNumber?: string;
   } | null>(null);
   
+  // 🆕 QR Modal State
+  const [showQRModal, setShowQRModal] = useState(false);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
