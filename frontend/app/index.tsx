@@ -782,7 +782,12 @@ export default function App() {
 
   if (screen === 'login') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ImageBackground 
+        source={require('../assets/images/login-background.png')} 
+        style={styles.loginBackgroundContainer}
+        imageStyle={styles.loginBackgroundImage}
+      >
+      <SafeAreaView style={styles.containerTransparent}>
         {/* Hareketli Bulutlar Arka Plan */}
         <AnimatedClouds />
         
@@ -900,6 +905,7 @@ export default function App() {
           onClose={() => setShowSupportModal(false)}
         />
       </SafeAreaView>
+      </ImageBackground>
     );
   }
 
@@ -8766,6 +8772,16 @@ const styles = StyleSheet.create({
   containerTransparent: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  // Login Arka Plan Stilleri
+  loginBackgroundContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  loginBackgroundImage: {
+    resizeMode: 'cover',
+    opacity: 0.9,
   },
   // Yeni Yolcu Sayfa Stilleri
   welcomeQuestionVeryTop: {
