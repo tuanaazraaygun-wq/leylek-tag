@@ -14,9 +14,10 @@ import SearchingMapView, { DriverLocation } from '../components/SearchingMapView
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
-import DailyCallScreen from '../components/DailyCallScreen'; // Backend-driven termination
-import IncomingCallScreen from '../components/IncomingCallScreen'; // 🆕 Gelen Arama Ekrani
-import OutgoingCallScreen from '../components/OutgoingCallScreen'; // 🆕 Araniyor Ekrani
+// 🚫 SESLİ ARAMA KALDIRILDI
+// import DailyCallScreen from '../components/DailyCallScreen';
+// import IncomingCallScreen from '../components/IncomingCallScreen';
+// import OutgoingCallScreen from '../components/OutgoingCallScreen';
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
@@ -25,6 +26,10 @@ import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü K
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
+// 🚫 SESLİ ARAMA KALDIRILDI - Sadece mesajlaşma aktif
+// import DailyCallScreen from '../components/DailyCallScreen';
+// import IncomingCallScreen from '../components/IncomingCallScreen';
+// import OutgoingCallScreen from '../components/OutgoingCallScreen';
 import useSocket from '../hooks/useSocket';
 import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
 import { useNotifications } from '../contexts/NotificationContext'; // 🔔 BİLDİRİM SİSTEMİ
@@ -5793,127 +5798,10 @@ function PassengerDashboard({
     );
   }
 
-  // 🔥 GELEN ARAMA EKRANI - YOLCU (MERKEZİ STATE + REF!)
-  if (incomingCallData) {
-    return (
-      <IncomingCallScreen
-        callerName={incomingCallData.callerName || 'Şoför'}
-        callType={incomingCallData.callType || 'audio'}
-        onAccept={() => {
-          // 🔥 GÜNCEL VERİYİ REF'TEN AL - Stale closure sorunu çözüldü!
-          const currentData = getIncomingCallData();
-          const roomUrl = currentData?.roomUrl;
-          const roomName = currentData?.roomName;
-          
-          console.log('📞 YOLCU - KABUL BASILDI');
-          console.log('   roomUrl:', roomUrl);
-          console.log('   roomName:', roomName);
-          
-          // 🔥 Hem roomUrl HEM roomName olmalı
-          if (!roomUrl || !roomName) {
-            console.log('❌ YOLCU - Room bilgisi eksik, 1.5 saniye bekle...');
-            
-            // İlk deneme: 1.5 saniye sonra
-            setTimeout(() => {
-              const retryData = getIncomingCallData();
-              console.log('🔄 YOLCU - Retry 1:', retryData?.roomUrl, retryData?.roomName);
-              
-              if (retryData?.roomUrl && retryData?.roomName) {
-                console.log('✅ YOLCU - Room bulundu (retry 1)');
-                proceedWithCall(retryData);
-              } else {
-                // İkinci deneme: 1 saniye daha bekle (toplam 2.5 saniye)
-                console.log('⏳ YOLCU - Room hala yok, 1 saniye daha bekle...');
-                setTimeout(() => {
-                  const retry2Data = getIncomingCallData();
-                  console.log('🔄 YOLCU - Retry 2:', retry2Data?.roomUrl, retry2Data?.roomName);
-                  
-                  if (retry2Data?.roomUrl && retry2Data?.roomName) {
-                    console.log('✅ YOLCU - Room bulundu (retry 2)');
-                    proceedWithCall(retry2Data);
-                  } else {
-                    console.log('❌ YOLCU - Room bulunamadı, hata göster');
-                    Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
-                    clearIncomingCall();
-                  }
-                }, 1000);
-              }
-            }, 1500);
-            return;
-          }
-          
-          // Room bilgisi var, direkt devam et
-          console.log('📞 YOLCU - KABUL (direkt):', roomUrl);
-          proceedWithCall(currentData);
-          
-          // Helper fonksiyon
-          function proceedWithCall(data: any) {
-            acceptDailyCall({
-              caller_id: data.callerId,
-              receiver_id: user?.id || '',
-              room_url: data.roomUrl,
-              room_name: data.roomName,
-              call_type: data.callType
-            });
-            setDailyRoomUrl(data.roomUrl);
-            setDailyRoomName(data.roomName);
-            setDailyCallType(data.callType);
-            setDailyCallerName(data.callerName);
-            setPassengerDailyCallerId(data.callerId);
-            setPassengerDailyReceiverId(user?.id || '');
-            clearIncomingCall();
-            setDailyCallActive(true);
-          }
-        }}
-        onReject={() => {
-          console.log('📞 YOLCU - REDDETTİ');
-          const currentData = getIncomingCallData();
-          emitCallReject({
-            caller_id: currentData?.callerId || '',
-            receiver_id: user?.id || '',
-          });
-          clearIncomingCall();
-          setDailyRoomUrl(null);
-          setDailyRoomName('');
-        }}
-      />
-    );
-  }
+  // 🚫 SESLİ ARAMA KALDIRILDI - Sadece mesajlaşma aktif
+  // IncomingCallScreen, OutgoingCallScreen, DailyCallScreen kaldırıldı
 
-  // ARANIYOR EKRANI - YOLCU (Aranan kabul edene kadar bekle)
-  if (outgoingCall && outgoingCallData) {
-    return (
-      <OutgoingCallScreen
-        receiverName={outgoingCallData.receiverName}
-        callType={outgoingCallData.callType}
-        onCancel={() => {
-          // 🆕 YENİ: call_cancel kullan
-          console.log('📞 YOLCU - ARAMAYI İPTAL EDİYOR');
-          emitCallCancel({
-            caller_id: user.id,
-            receiver_id: outgoingCallData.receiverId,
-          });
-          setOutgoingCall(false);
-          setOutgoingCallData(null);
-        }}
-      />
-    );
-  }
-
-  // DAILY CALL SCREEN - YOLCU (Backend-driven termination)
-  if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
-    return (
-      <DailyCallScreen
-        roomUrl={dailyRoomUrl}
-        roomName={dailyRoomName}
-        callType={dailyCallType}
-        otherUserName={dailyCallerName}
-        callerId={passengerDailyCallerId}
-        receiverId={passengerDailyReceiverId}
-        currentUserId={user?.id || ''}
-        onCallEnd={(roomName) => {
-          // Clear all local call state
-          setDailyCallActive(false);
+  // YOLCU EKRANI - AKTİF TAG VAR (matched veya in_progress)
           setDailyRoomUrl(null);
           setDailyRoomName('');
           setPassengerDailyCallerId('');
@@ -7704,135 +7592,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     );
   };
 
-  // 🔥 GELEN ARAMA EKRANI - ŞOFÖR (MERKEZİ STATE + REF!)
-  if (driverIncomingCallData) {
-    return (
-      <IncomingCallScreen
-        callerName={driverIncomingCallData.callerName || 'Yolcu'}
-        callType={driverIncomingCallData.callType || 'audio'}
-        onAccept={() => {
-          // 🔥 GÜNCEL VERİYİ REF'TEN AL
-          const currentData = driverGetIncomingCallData();
-          const roomUrl = currentData?.roomUrl;
-          const roomName = currentData?.roomName;
-          
-          console.log('📞 ŞOFÖR - KABUL BASILDI');
-          console.log('   roomUrl:', roomUrl);
-          console.log('   roomName:', roomName);
-          
-          // 🔥 Hem roomUrl HEM roomName olmalı
-          if (!roomUrl || !roomName) {
-            console.log('❌ ŞOFÖR - Room bilgisi eksik, 1.5 saniye bekle...');
-            
-            // İlk deneme: 1.5 saniye sonra
-            setTimeout(() => {
-              const retryData = driverGetIncomingCallData();
-              console.log('🔄 ŞOFÖR - Retry 1:', retryData?.roomUrl, retryData?.roomName);
-              
-              if (retryData?.roomUrl && retryData?.roomName) {
-                console.log('✅ ŞOFÖR - Room bulundu (retry 1)');
-                proceedWithDriverCall(retryData);
-              } else {
-                // İkinci deneme: 1 saniye daha bekle
-                console.log('⏳ ŞOFÖR - Room hala yok, 1 saniye daha bekle...');
-                setTimeout(() => {
-                  const retry2Data = driverGetIncomingCallData();
-                  console.log('🔄 ŞOFÖR - Retry 2:', retry2Data?.roomUrl, retry2Data?.roomName);
-                  
-                  if (retry2Data?.roomUrl && retry2Data?.roomName) {
-                    console.log('✅ ŞOFÖR - Room bulundu (retry 2)');
-                    proceedWithDriverCall(retry2Data);
-                  } else {
-                    console.log('❌ ŞOFÖR - Room bulunamadı, hata göster');
-                    Alert.alert('Hata', 'Arama bağlantısı kurulamadı, tekrar deneyin');
-                    driverClearIncomingCall();
-                  }
-                }, 1000);
-              }
-            }, 1500);
-            return;
-          }
-          
-          // Room bilgisi var, direkt devam et
-          console.log('📞 ŞOFÖR - KABUL (direkt):', roomUrl);
-          proceedWithDriverCall(currentData);
-          
-          // Helper fonksiyon
-          function proceedWithDriverCall(data: any) {
-            acceptDailyCall({
-              caller_id: data.callerId,
-              receiver_id: user.id,
-              room_url: data.roomUrl,
-              room_name: data.roomName,
-              call_type: data.callType
-            });
-            setDailyRoomUrl(data.roomUrl);
-            setDailyRoomName(data.roomName);
-            setDailyCallType(data.callType);
-            setDailyCallerName(data.callerName);
-            setDailyCallerId(data.callerId);
-            setDailyReceiverId(user.id);
-            driverClearIncomingCall();
-            setDailyCallActive(true);
-          }
-        }}
-        onReject={() => {
-          console.log('📞 ŞOFÖR - ARAMAYI REDDEDİYOR');
-          const currentData = driverGetIncomingCallData();
-          emitCallReject({
-            caller_id: currentData?.callerId || '',
-            receiver_id: user.id,
-          });
-          driverClearIncomingCall();
-          setDailyRoomUrl(null);
-          setDailyRoomName('');
-        }}
-      />
-    );
-  }
-
-  // ARANIYOR EKRANI - SOFOR (Aranan kabul edene kadar bekle)
-  if (outgoingCall && outgoingCallData) {
-    return (
-      <OutgoingCallScreen
-        receiverName={outgoingCallData.receiverName}
-        callType={outgoingCallData.callType}
-        onCancel={() => {
-          // 🆕 YENİ: call_cancel kullan
-          console.log('📞 ŞOFÖR - ARAMAYI İPTAL EDİYOR');
-          emitCallCancel({
-            caller_id: user.id,
-            receiver_id: outgoingCallData.receiverId,
-          });
-          setOutgoingCall(false);
-          setOutgoingCallData(null);
-        }}
-      />
-    );
-  }
-
-  // DAILY CALL SCREEN - SOFOR (Backend-driven termination)
-  if (dailyCallActive && dailyRoomUrl && dailyRoomName) {
-    return (
-      <DailyCallScreen
-        roomUrl={dailyRoomUrl}
-        roomName={dailyRoomName}
-        callType={dailyCallType}
-        otherUserName={dailyCallerName}
-        callerId={dailyCallerId}
-        receiverId={dailyReceiverId}
-        currentUserId={user?.id || ''}
-        onCallEnd={(roomName) => {
-          // Clear all local call state
-          setDailyCallActive(false);
-          setDailyRoomUrl(null);
-          setDailyRoomName('');
-          setDailyCallerId('');
-          setDailyReceiverId('');
-        }}
-      />
-    );
-  }
+  // 🚫 SESLİ ARAMA KALDIRILDI - ŞOFÖR
+  // IncomingCallScreen, OutgoingCallScreen, DailyCallScreen kaldırıldı
 
   // 📋 KYC PENDING EKRANI - Başvuru inceleniyor
   if (kycStatus?.status === 'pending') {
