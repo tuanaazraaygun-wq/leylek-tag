@@ -5802,15 +5802,6 @@ function PassengerDashboard({
   // IncomingCallScreen, OutgoingCallScreen, DailyCallScreen kaldırıldı
 
   // YOLCU EKRANI - AKTİF TAG VAR (matched veya in_progress)
-          setDailyRoomUrl(null);
-          setDailyRoomName('');
-          setPassengerDailyCallerId('');
-          setPassengerDailyReceiverId('');
-        }}
-      />
-    );
-  }
-
   return (
     <ImageBackground 
       source={require('../assets/images/passenger-background.png')} 
