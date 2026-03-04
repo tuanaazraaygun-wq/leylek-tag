@@ -1,109 +1,125 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://trip-qr-scan.preview.emergentagent.com';
 
 interface RatingModalProps {
   visible: boolean;
-  userName: string;
-  isDriver: boolean;
-  onSubmit: (rating: number, comment: string) => void;
   onClose: () => void;
+  userId: string;
+  tagId: string;
+  rateUserId: string;
+  rateUserName: string;
 }
 
 export default function RatingModal({
   visible,
-  userName,
-  isDriver,
-  onSubmit,
   onClose,
+  userId,
+  tagId,
+  rateUserId,
+  rateUserName,
 }: RatingModalProps) {
   const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = () => {
-    onSubmit(rating, comment);
-    setRating(5);
-    setComment('');
+  const firstName = rateUserName?.split(' ')[0] || 'Kullanıcı';
+
+  const handleSubmitRating = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${API_URL}/api/qr/rate-user?rater_user_id=${userId}&rated_user_id=${rateUserId}&tag_id=${tagId}&rating=${rating}`,
+        { method: 'POST' }
+      );
+      const result = await response.json();
+
+      if (result.success) {
+        setSubmitted(true);
+        setTimeout(() => {
+          onClose();
+          setSubmitted(false);
+          setRating(5);
+        }, 2000);
+      } else {
+        Alert.alert('Hata', result.detail || 'Puanlama gönderilemedi');
+      }
+    } catch (error) {
+      console.error('Rating error:', error);
+      Alert.alert('Hata', 'Puanlama gönderilemedi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderStars = () => {
+    return (
+      <View style={styles.starsContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <TouchableOpacity
+            key={star}
+            onPress={() => setRating(star)}
+            style={styles.starBtn}
+          >
+            <Text style={[styles.star, star <= rating && styles.starActive]}>
+              ★
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={styles.container}>
-          {/* Header */}
-          <View style={styles.header}>
-            <LinearGradient
-              colors={['#22C55E', '#16A34A']}
-              style={styles.iconCircle}
-            >
-              <Ionicons name="checkmark-circle" size={40} color="#FFF" />
-            </LinearGradient>
-            <Text style={styles.title}>Yolculuk Tamamlandı!</Text>
-            <Text style={styles.subtitle}>
-              {isDriver ? 'Yolcunuzu' : 'Şoförünüzü'} değerlendirin
-            </Text>
-          </View>
+          {submitted ? (
+            <View style={styles.successContainer}>
+              <Text style={styles.successIcon}>✓</Text>
+              <Text style={styles.successTitle}>Teşekkürler!</Text>
+              <Text style={styles.successText}>
+                {firstName}'a {rating} ⭐ verdiniz
+              </Text>
+              <Text style={styles.pointsText}>+3 puan kazandınız!</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.title}>Yolculuk Tamamlandı!</Text>
+              <Text style={styles.subtitle}>
+                {firstName}'ı puanlayın
+              </Text>
 
-          {/* User Name */}
-          <Text style={styles.userName}>{userName}</Text>
+              {renderStars()}
 
-          {/* Star Rating */}
-          <View style={styles.starsContainer}>
-            {[1, 2, 3, 4, 5].map((star) => (
+              <Text style={styles.ratingText}>{rating} / 5</Text>
+
               <TouchableOpacity
-                key={star}
-                onPress={() => setRating(star)}
-                style={styles.starButton}
+                style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+                onPress={handleSubmitRating}
+                disabled={loading}
               >
-                <Ionicons
-                  name={star <= rating ? 'star' : 'star-outline'}
-                  size={42}
-                  color={star <= rating ? '#F59E0B' : '#D1D5DB'}
-                />
+                {loading ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.submitBtnText}>Puanla</Text>
+                )}
               </TouchableOpacity>
-            ))}
-          </View>
 
-          {/* Rating Text */}
-          <Text style={styles.ratingText}>
-            {rating === 5 && '⭐ Mükemmel!'}
-            {rating === 4 && '👍 Çok İyi'}
-            {rating === 3 && '😊 İyi'}
-            {rating === 2 && '😐 Orta'}
-            {rating === 1 && '👎 Kötü'}
-          </Text>
-
-          {/* Comment Input */}
-          <TextInput
-            style={styles.commentInput}
-            placeholder="Yorum ekleyin (opsiyonel)"
-            placeholderTextColor="#9CA3AF"
-            value={comment}
-            onChangeText={setComment}
-            multiline
-            numberOfLines={3}
-          />
-
-          {/* Buttons */}
-          <View style={styles.buttonsRow}>
-            <TouchableOpacity style={styles.skipButton} onPress={onClose}>
-              <Text style={styles.skipButtonText}>Atla</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={handleSubmit}
-            >
-              <LinearGradient
-                colors={['#3B82F6', '#1D4ED8']}
-                style={styles.submitGradient}
-              >
-                <Ionicons name="send" size={20} color="#FFF" />
-                <Text style={styles.submitButtonText}>Gönder</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.skipBtn} onPress={onClose}>
+                <Text style={styles.skipBtnText}>Atla</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
     </Modal>
@@ -113,109 +129,94 @@ export default function RatingModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   container: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#1a1a2e',
     borderRadius: 24,
-    padding: 24,
-    width: '100%',
-    maxWidth: 340,
+    padding: 32,
+    width: '85%',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  iconCircle: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 4,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#3B82F6',
-    marginBottom: 16,
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginBottom: 24,
   },
   starsContainer: {
     flexDirection: 'row',
-    marginBottom: 8,
-  },
-  starButton: {
-    padding: 4,
-  },
-  ratingText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#F59E0B',
     marginBottom: 16,
   },
-  commentInput: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+  starBtn: {
+    padding: 8,
+  },
+  star: {
+    fontSize: 40,
+    color: '#4B5563',
+  },
+  starActive: {
+    color: '#FCD34D',
+  },
+  ratingText: {
+    fontSize: 18,
+    color: 'white',
+    marginBottom: 24,
+  },
+  submitBtn: {
+    backgroundColor: '#3FA9F5',
+    paddingVertical: 16,
+    paddingHorizontal: 48,
     borderRadius: 12,
-    padding: 12,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
+  },
+  submitBtnText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  skipBtn: {
+    paddingVertical: 12,
+  },
+  skipBtnText: {
+    color: '#9CA3AF',
     fontSize: 14,
-    color: '#1F2937',
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 20,
   },
-  buttonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  skipButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+  successContainer: {
     alignItems: 'center',
+    paddingVertical: 20,
   },
-  skipButtonText: {
+  successIcon: {
+    fontSize: 60,
+    color: '#10B981',
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
+  },
+  successText: {
     fontSize: 16,
+    color: '#9CA3AF',
+    marginBottom: 8,
+  },
+  pointsText: {
+    fontSize: 18,
+    color: '#10B981',
     fontWeight: '600',
-    color: '#6B7280',
-  },
-  submitButton: {
-    flex: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  submitGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8,
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
   },
 });

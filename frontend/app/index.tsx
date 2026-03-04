@@ -9,6 +9,7 @@ import { Audio } from 'expo-av';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import QRTripEndModal from '../components/QRTripEndModal';
+import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
@@ -29,7 +30,6 @@ import { useNotifications } from '../contexts/NotificationContext'; // 🔔 BİL
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
-import RatingModal from '../components/RatingModal';
 import SplashScreen from '../components/SplashScreen';
 import { KVKKConsentModal, SupportModal } from '../components/KVKKComponents';
 import CommunityScreen from '../components/CommunityScreen';
@@ -4468,6 +4468,14 @@ function PassengerDashboard({
   // 🆕 QR Modal State
   const [showQRModal, setShowQRModal] = useState(false);
   
+  // 🆕 Rating Modal State - QR tarama sonrası puanlama
+  const [ratingModalData, setRatingModalData] = useState<{
+    visible: boolean;
+    tagId: string;
+    rateUserId: string;
+    rateUserName: string;
+  } | null>(null);
+  
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   
@@ -6689,12 +6697,34 @@ function PassengerDashboard({
         tagId={activeTag?.id || ''}
         isDriver={false}
         otherUserName={activeTag?.driver_name || 'Sürücü'}
-        onComplete={() => {
-          // Yolculuk tamamlandı, sayfayı yenile
-          setActiveTag(null);
+        onComplete={(showRating, rateUserId, rateUserName) => {
+          // Yolculuk tamamlandı
           setShowQRModal(false);
+          if (showRating) {
+            // Puanlama modalını aç
+            setRatingModalData({
+              visible: true,
+              tagId: activeTag?.id || '',
+              rateUserId: activeTag?.driver_id || '',
+              rateUserName: rateUserName || activeTag?.driver_name || 'Sürücü'
+            });
+          }
+          // Sayfayı yenile
+          setActiveTag(null);
         }}
       />
+      
+      {/* Rating Modal - QR tarama sonrası */}
+      {ratingModalData && (
+        <RatingModal
+          visible={ratingModalData.visible}
+          onClose={() => setRatingModalData(null)}
+          userId={user.id}
+          tagId={ratingModalData.tagId}
+          rateUserId={ratingModalData.rateUserId}
+          rateUserName={ratingModalData.rateUserName}
+        />
+      )}
     </SafeAreaView>
     </ImageBackground>
   );
@@ -6778,6 +6808,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   
   // 🆕 QR Modal State (Sürücü)
   const [showQRModal, setShowQRModal] = useState(false);
+  
+  // 🆕 Rating Modal State - QR tarama sonrası puanlama (Sürücü)
+  const [ratingModalData, setRatingModalData] = useState<{
+    visible: boolean;
+    tagId: string;
+    rateUserId: string;
+    rateUserName: string;
+  } | null>(null);
   
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
@@ -8496,12 +8534,34 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         tagId={activeTag?.id || ''}
         isDriver={true}
         otherUserName={activeTag?.passenger_name || 'Yolcu'}
-        onComplete={() => {
-          // Yolculuk tamamlandı, sayfayı yenile
-          setActiveTag(null);
+        onComplete={(showRating, rateUserId, rateUserName) => {
+          // Yolculuk tamamlandı
           setShowQRModal(false);
+          if (showRating) {
+            // Puanlama modalını aç
+            setRatingModalData({
+              visible: true,
+              tagId: activeTag?.id || '',
+              rateUserId: activeTag?.passenger_id || '',
+              rateUserName: rateUserName || activeTag?.passenger_name || 'Yolcu'
+            });
+          }
+          // Sayfayı yenile
+          setActiveTag(null);
         }}
       />
+      
+      {/* Rating Modal - QR tarama sonrası (SÜRÜCÜ) */}
+      {ratingModalData && (
+        <RatingModal
+          visible={ratingModalData.visible}
+          onClose={() => setRatingModalData(null)}
+          userId={user.id}
+          tagId={ratingModalData.tagId}
+          rateUserId={ratingModalData.rateUserId}
+          rateUserName={ratingModalData.rateUserName}
+        />
+      )}
     </SafeAreaView>
     </ImageBackground>
   );
