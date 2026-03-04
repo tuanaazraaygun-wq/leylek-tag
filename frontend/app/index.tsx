@@ -23,6 +23,8 @@ import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Z
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
+import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
+import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import useSocket from '../hooks/useSocket';
 import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
 import { useNotifications } from '../contexts/NotificationContext'; // 🔔 BİLDİRİM SİSTEMİ
@@ -6840,6 +6842,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     rateUserName: string;
   } | null>(null);
   
+  // 🆕 Sürücü Dashboard Panel State'leri
+  const [showDriverPackagesModal, setShowDriverPackagesModal] = useState(false);
+  const [driverDashboardExpanded, setDriverDashboardExpanded] = useState(false);
+  
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
@@ -7944,6 +7950,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           </TouchableOpacity>
         </View>
       )}
+      
+      {/* 🆕 Sürücü Dashboard Paneli - Kazanç ve Aktif Süre (Aktif yolculuk YOKKEN) */}
+      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
+        <DriverDashboardPanel
+          userId={user.id}
+          onPackagePress={() => setShowDriverPackagesModal(true)}
+          onToggleOnline={(isOnline) => {
+            console.log('Sürücü online durumu değişti:', isOnline);
+          }}
+          expanded={driverDashboardExpanded}
+          onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
+        />
+      )}
 
       {/* CANLI HARİTA - Tam Ekran (Şoför) */}
       {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
@@ -8608,6 +8627,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           rateUserName={ratingModalData.rateUserName}
         />
       )}
+      
+      {/* 🆕 Sürücü Paketleri Modal */}
+      <DriverPackagesModal
+        visible={showDriverPackagesModal}
+        onClose={() => setShowDriverPackagesModal(false)}
+        userId={user.id}
+        onPackagePurchased={() => {
+          // Paket satın alındı - dashboard'u güncelle
+          setShowDriverPackagesModal(false);
+        }}
+      />
     </SafeAreaView>
     </ImageBackground>
   );

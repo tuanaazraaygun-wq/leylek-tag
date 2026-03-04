@@ -6507,6 +6507,112 @@ async def driver_go_online(user_id: str):
         logger.error(f"Driver online error: {e}")
         return {"success": False, "detail": str(e)}
 
+@api_router.get("/driver/dashboard")
+async def get_driver_dashboard(user_id: str):
+    """Sürücü dashboard bilgilerini getir - Kazanç paneli için"""
+    try:
+        # 1. Kullanıcı bilgilerini al
+        user_result = supabase.table("users").select("*").eq("id", user_id).execute()
+        if not user_result.data:
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        user = user_result.data[0]
+        driver_details = user.get("driver_details") or {}
+        
+        # 2. Bugünün başlangıcı ve haftanın başlangıcı
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Haftanın başı (Pazartesi)
+        days_since_monday = now.weekday()
+        week_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # 3. Bugünkü tamamlanan yolculukları al
+        today_trips_result = supabase.table("tags").select("id, final_price, completed_at").eq("driver_id", user_id).eq("status", "completed").gte("completed_at", today_start.isoformat()).execute()
+        
+        today_trips = today_trips_result.data or []
+        today_trips_count = len(today_trips)
+        today_earnings = sum([t.get("final_price", 0) or 0 for t in today_trips])
+        
+        # 4. Haftalık tamamlanan yolculukları al
+        weekly_trips_result = supabase.table("tags").select("id, final_price, completed_at").eq("driver_id", user_id).eq("status", "completed").gte("completed_at", week_start.isoformat()).execute()
+        
+        weekly_trips = weekly_trips_result.data or []
+        weekly_trips_count = len(weekly_trips)
+        weekly_earnings = sum([t.get("final_price", 0) or 0 for t in weekly_trips])
+        
+        # 5. Kalan aktif süre
+        driver_active_until = user.get("driver_active_until")
+        remaining_seconds = 0
+        remaining_text = "Paket yok"
+        is_active = False
+        
+        if driver_active_until:
+            try:
+                active_until = datetime.fromisoformat(driver_active_until.replace("Z", "+00:00"))
+                if active_until.tzinfo:
+                    active_until = active_until.replace(tzinfo=None)
+                
+                remaining = (active_until - now).total_seconds()
+                if remaining > 0:
+                    is_active = True
+                    remaining_seconds = int(remaining)
+                    hours = int(remaining // 3600)
+                    minutes = int((remaining % 3600) // 60)
+                    seconds = int(remaining % 60)
+                    remaining_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                else:
+                    remaining_text = "Süre doldu"
+            except:
+                pass
+        
+        # 6. Günlük hedef (varsayılan 10 yolculuk veya 500 TL)
+        daily_goal_trips = 10
+        daily_goal_earnings = 500
+        
+        trips_progress = min(100, int((today_trips_count / daily_goal_trips) * 100))
+        earnings_progress = min(100, int((today_earnings / daily_goal_earnings) * 100))
+        
+        # Ortalama ilerleme
+        daily_progress = (trips_progress + earnings_progress) // 2
+        
+        # 7. Rating bilgisi
+        rating = float(user.get("rating", 5.0))
+        total_trips = user.get("total_trips", 0)
+        
+        return {
+            "success": True,
+            "today": {
+                "trips_count": today_trips_count,
+                "earnings": today_earnings,
+            },
+            "weekly": {
+                "trips_count": weekly_trips_count,
+                "earnings": weekly_earnings,
+            },
+            "active_time": {
+                "is_active": is_active,
+                "remaining_seconds": remaining_seconds,
+                "remaining_text": remaining_text,
+                "is_online": user.get("driver_online", False),
+            },
+            "daily_goal": {
+                "target_trips": daily_goal_trips,
+                "target_earnings": daily_goal_earnings,
+                "trips_progress": trips_progress,
+                "earnings_progress": earnings_progress,
+                "overall_progress": daily_progress,
+            },
+            "stats": {
+                "rating": rating,
+                "total_trips": total_trips,
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Driver dashboard error: {e}")
+        return {"success": False, "detail": str(e)}
+
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
 app.include_router(api_router)
