@@ -96,6 +96,13 @@ interface UseSocketProps {
     new_points?: number;
     new_rating?: number;
   }) => void;
+  // 🆕 QR ile yolculuk bitirme - Puanlama modalı
+  onShowRatingModal?: (data: {
+    tag_id: string;
+    rate_user_id: string;
+    rate_user_name: string;
+    message: string;
+  }) => void;
   // Daily.co Video/Audio Call eventleri
   onIncomingDailyCall?: (data: {
     room_url: string;
@@ -152,6 +159,7 @@ export default function useSocket({
   onTripEndRequested,
   onTripEndResponse,
   onTripForceEnded,
+  onShowRatingModal,  // 🆕 QR puanlama modalı
   onIncomingDailyCall,
   onCallAcceptedNew,
   onDailyCallAccepted,
@@ -411,6 +419,12 @@ export default function useSocket({
     socket.on('trip_end_response', handleTripEndResponse);
     socket.on('trip_force_ended', handleTripForceEnded);
     
+    // 🆕 QR ile yolculuk bitirme - Puanlama modalı
+    socket.on('show_rating_modal', (data: any) => {
+      console.log('⭐ [Socket] Puanlama modalı göster:', data);
+      callbackRefs.current.onShowRatingModal?.(data);
+    });
+    
     socket.on('incoming_daily_call', handleIncomingDailyCall);
     socket.on('daily_call_accepted', handleDailyCallAccepted);
     socket.on('daily_call_rejected', handleCallRejected);
@@ -454,6 +468,9 @@ export default function useSocket({
       socket.off('trip_end_requested', handleTripEndRequested);
       socket.off('trip_end_response', handleTripEndResponse);
       socket.off('trip_force_ended', handleTripForceEnded);
+      
+      // 🆕 QR ile puanlama modalı
+      socket.off('show_rating_modal');
       
       socket.off('incoming_daily_call', handleIncomingDailyCall);
       socket.off('daily_call_accepted', handleDailyCallAccepted);

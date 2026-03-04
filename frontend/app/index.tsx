@@ -4943,6 +4943,19 @@ function PassengerDashboard({
         Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme sonlandırıldı.');
       }
     },
+    // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
+    onShowRatingModal: (data) => {
+      console.log('⭐ YOLCU - PUANLAMA MODALI AÇ (Socket):', data);
+      // QR modal'ı kapat
+      setShowQRModal(false);
+      // Puanlama modalını aç
+      setRatingModalData({
+        visible: true,
+        tagId: data.tag_id,
+        rateUserId: data.rate_user_id,
+        rateUserName: data.rate_user_name
+      });
+    },
   });
   
   // Karşılıklı iptal sistemi state'leri
@@ -7191,6 +7204,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         // Sürücü bitirdi - Bu sürücü tarafı, sadece bilgi
         Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme sonlandırıldı.');
       }
+    },
+    // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
+    onShowRatingModal: (data) => {
+      console.log('⭐ ŞOFÖR - PUANLAMA MODALI AÇ (Socket):', data);
+      // QR modal'ı kapat
+      setShowQRModal(false);
+      // Puanlama modalını aç
+      setRatingModalData({
+        visible: true,
+        tagId: data.tag_id,
+        rateUserId: data.rate_user_id,
+        rateUserName: data.rate_user_name
+      });
     },
   });
   

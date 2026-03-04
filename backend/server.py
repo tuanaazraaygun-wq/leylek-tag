@@ -4199,23 +4199,23 @@ async def check_proximity_for_trip_end(
         if user_id not in [passenger_id, driver_id]:
             return {"success": False, "detail": "Bu yolculuğa erişim yetkiniz yok", "can_end": False}
         
-        # 3. Diğer kullanıcının konumunu al (aktif konumlar tablosundan)
+        # 3. Diğer kullanıcının konumunu al (users tablosundan - HIZLI)
         other_user_id = driver_id if user_id == passenger_id else passenger_id
         
-        # Aktif konum kontrolü - son 5 dakika içindeki konum
+        # Aktif konum kontrolü - users tablosundan
         try:
-            other_location = supabase.table("user_locations").select("latitude,longitude,updated_at").eq("user_id", other_user_id).order("updated_at", desc=True).limit(1).execute()
+            other_user = supabase.table("users").select("latitude,longitude").eq("id", other_user_id).execute()
             
-            if other_location.data:
-                other_lat = other_location.data[0].get("latitude")
-                other_lng = other_location.data[0].get("longitude")
+            if other_user.data:
+                other_lat = other_user.data[0].get("latitude")
+                other_lng = other_user.data[0].get("longitude")
                 
                 if other_lat and other_lng:
                     # Mesafe hesapla
                     distance = calculate_distance_meters(latitude, longitude, other_lat, other_lng)
                     
-                    # 500 metre içinde mi?
-                    if distance <= 1000:  # 1 KM
+                    # 1 KM içinde mi?
+                    if distance <= 1000:
                         return {
                             "success": True,
                             "can_end": True,
