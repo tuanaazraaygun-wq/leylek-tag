@@ -4215,7 +4215,7 @@ async def check_proximity_for_trip_end(
                     distance = calculate_distance_meters(latitude, longitude, other_lat, other_lng)
                     
                     # 500 metre içinde mi?
-                    if distance <= 500:
+                    if distance <= 1000:  # 1 KM
                         return {
                             "success": True,
                             "can_end": True,
@@ -4227,7 +4227,7 @@ async def check_proximity_for_trip_end(
                             "success": True,
                             "can_end": False,
                             "distance_meters": round(distance),
-                            "message": f"Yol paylaşımını bitirmek için bir araya gelmelisiniz! Aradaki mesafe: {round(distance)}m"
+                            "message": f"Yol paylaşımını bitirmek için bir araya gelmelisiniz! Mesafe: {round(distance/1000, 1)}km"
                         }
         except Exception as loc_err:
             logger.warning(f"Konum kontrolü hatası: {loc_err}")

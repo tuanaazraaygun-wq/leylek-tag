@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -40,77 +40,69 @@ export default function QRTripEndModal({
   const [qrString, setQrString] = useState<string>('');
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [proximityChecked, setProximityChecked] = useState(false);
-  const [canProceed, setCanProceed] = useState(false);
+  const [canProceed, setCanProceed] = useState<boolean | null>(null); // null = kontrol ediliyor
   const [proximityMessage, setProximityMessage] = useState('');
+  const qrLoadedRef = useRef(false);
 
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
 
   useEffect(() => {
     if (visible) {
-      // Her açılışta sıfırla
-      setProximityChecked(false);
-      setCanProceed(false);
+      // Sıfırla
+      setCanProceed(null);
       setProximityMessage('');
       setScanned(false);
-      setQrCode('');
-      setQrString('');
+      qrLoadedRef.current = false;
       
-      // Konum kontrolü yap
-      checkProximity();
+      // ⚡ PARALEL: Hem QR'ı yükle hem konum kontrolü yap
+      if (isDriver) {
+        // ŞOFÖR: QR'ı hemen yükle + konum kontrolü paralel
+        fetchMyQRCode();
+        checkProximity();
+      } else {
+        // YOLCU: Kamera izni + konum kontrolü paralel
+        if (!hasPermission?.granted) {
+          requestPermission();
+        }
+        checkProximity();
+      }
     }
   }, [visible]);
 
   const checkProximity = async () => {
-    setLoading(true);
     try {
-      // Konum al
+      // Hızlı konum al
       const location = await Location.getCurrentPositionAsync({ 
-        accuracy: Location.Accuracy.High 
+        accuracy: Location.Accuracy.Balanced // Daha hızlı
       });
       
       const { latitude, longitude } = location.coords;
       
-      // Backend'e yakınlık kontrolü yap
+      // Backend'e yakınlık kontrolü
       const response = await fetch(
         `${API_URL}/api/qr/check-proximity?user_id=${userId}&tag_id=${tagId}&latitude=${latitude}&longitude=${longitude}`,
         { method: 'POST' }
       );
       const data = await response.json();
       
-      setProximityChecked(true);
-      
       if (data.can_end) {
         setCanProceed(true);
         setProximityMessage('');
-        
-        // Yakınlarsa devam et
-        if (isDriver) {
-          fetchMyQRCode();
-        } else {
-          if (!hasPermission?.granted) {
-            requestPermission();
-          }
-        }
       } else {
         setCanProceed(false);
-        setProximityMessage(data.message || 'Yol paylaşımını bitirmek için bir araya gelmelisiniz!');
+        setProximityMessage(data.message || 'Bir araya gelmelisiniz!');
       }
     } catch (error) {
-      console.error('Proximity check error:', error);
-      // Konum alınamazsa yine de devam et
-      setProximityChecked(true);
+      console.error('Proximity error:', error);
+      // Hata durumunda devam et
       setCanProceed(true);
-      if (isDriver) {
-        fetchMyQRCode();
-      }
-    } finally {
-      setLoading(false);
     }
   };
 
   const fetchMyQRCode = async () => {
-    setLoading(true);
+    if (qrLoadedRef.current) return;
+    qrLoadedRef.current = true;
+    
     try {
       const response = await fetch(`${API_URL}/api/qr/my-code?user_id=${userId}`);
       const data = await response.json();
@@ -118,19 +110,15 @@ export default function QRTripEndModal({
       if (data.success) {
         setQrCode(data.qr_code);
         setQrString(data.qr_string);
-      } else {
-        Alert.alert('Hata', data.detail || 'QR kod alınamadı');
       }
     } catch (error) {
       console.error('QR fetch error:', error);
-      Alert.alert('Hata', 'QR kod alınamadı');
-    } finally {
-      setLoading(false);
+      qrLoadedRef.current = false;
     }
   };
 
   const handleBarCodeScanned = async ({ type, data }: { type: string; data: string }) => {
-    if (scanned) return;
+    if (scanned || canProceed === false) return;
     setScanned(true);
     setLoading(true);
 
@@ -147,24 +135,23 @@ export default function QRTripEndModal({
       }
 
       if (!scannedQRCode) {
-        Alert.alert('Hata', 'Geçersiz QR kod formatı');
+        Alert.alert('Hata', 'Geçersiz QR kod');
         setScanned(false);
         setLoading(false);
         return;
       }
 
-      // Konum al
-      let latitude = 0;
-      let longitude = 0;
+      // Hızlı konum
+      let latitude = 0, longitude = 0;
       try {
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        latitude = location.coords.latitude;
-        longitude = location.coords.longitude;
-      } catch (e) {
-        console.log('Konum alınamadı:', e);
-      }
+        const loc = await Location.getLastKnownPositionAsync();
+        if (loc) {
+          latitude = loc.coords.latitude;
+          longitude = loc.coords.longitude;
+        }
+      } catch {}
 
-      // API'ye gönder - HIZLI
+      // API'ye gönder
       const response = await fetch(
         `${API_URL}/api/qr/scan-trip-end?scanner_user_id=${userId}&scanned_qr_code=${scannedQRCode}&tag_id=${tagId}&latitude=${latitude}&longitude=${longitude}`,
         { method: 'POST' }
@@ -172,7 +159,6 @@ export default function QRTripEndModal({
       const result = await response.json();
 
       if (result.success) {
-        // Başarılı! Puanlama modalını aç
         onComplete(true, '', result.scanned_user_name || firstName);
         onClose();
       } else {
@@ -180,8 +166,7 @@ export default function QRTripEndModal({
         setScanned(false);
       }
     } catch (error) {
-      console.error('QR scan error:', error);
-      Alert.alert('Hata', 'QR doğrulanırken hata oluştu');
+      Alert.alert('Hata', 'Bağlantı hatası');
       setScanned(false);
     } finally {
       setLoading(false);
@@ -192,10 +177,15 @@ export default function QRTripEndModal({
     setScanned(false);
     setQrCode('');
     setQrString('');
-    setProximityChecked(false);
-    setCanProceed(false);
+    setCanProceed(null);
+    qrLoadedRef.current = false;
     onClose();
   };
+
+  // Konum kontrolü devam ediyor ve şoför QR'ı hazır
+  const showDriverQR = isDriver && qrCode;
+  const showPassengerCamera = !isDriver && hasPermission?.granted;
+  const isCheckingProximity = canProceed === null;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -213,13 +203,16 @@ export default function QRTripEndModal({
 
           {/* Content */}
           <View style={styles.content}>
-            {loading && !proximityChecked ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#3FA9F5" />
-                <Text style={styles.loadingText}>Konum kontrol ediliyor...</Text>
+            {/* Konum kontrolü - üstte küçük göster */}
+            {isCheckingProximity && (
+              <View style={styles.checkingBar}>
+                <ActivityIndicator size="small" color="#3FA9F5" />
+                <Text style={styles.checkingText}>Konum kontrol ediliyor...</Text>
               </View>
-            ) : !canProceed && proximityChecked ? (
-              /* YAKIN DEĞİLLER - UYARI */
+            )}
+
+            {/* YAKIN DEĞİLLER - UYARI */}
+            {canProceed === false ? (
               <View style={styles.warningContainer}>
                 <Text style={styles.warningIcon}>⚠️</Text>
                 <Text style={styles.warningTitle}>Bir Araya Gelmelisiniz!</Text>
@@ -228,15 +221,8 @@ export default function QRTripEndModal({
                   <Text style={styles.retryBtnText}>Tekrar Kontrol Et</Text>
                 </TouchableOpacity>
               </View>
-            ) : loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#3FA9F5" />
-                <Text style={styles.loadingText}>
-                  {isDriver ? 'QR kodunuz yükleniyor...' : 'Doğrulanıyor...'}
-                </Text>
-              </View>
             ) : isDriver ? (
-              /* ŞOFÖR: QR Kodunu Göster */
+              /* ŞOFÖR: QR Kodunu Göster - HEMEN */
               <View style={styles.qrContainer}>
                 <Text style={styles.instruction}>
                   {firstName} bu kodu tarasın
@@ -246,21 +232,17 @@ export default function QRTripEndModal({
                   <View style={styles.qrWrapper}>
                     <QRCode
                       value={qrString || qrCode}
-                      size={width * 0.6}
+                      size={width * 0.55}
                       backgroundColor="white"
                       color="#1a1a2e"
                     />
                     <Text style={styles.qrCodeText}>{qrCode}</Text>
                   </View>
                 ) : (
-                  <TouchableOpacity style={styles.retryBtn} onPress={fetchMyQRCode}>
-                    <Text style={styles.retryBtnText}>QR Kodu Yükle</Text>
-                  </TouchableOpacity>
+                  <View style={styles.loadingQR}>
+                    <ActivityIndicator size="large" color="#3FA9F5" />
+                  </View>
                 )}
-                
-                <Text style={styles.note}>
-                  Bu sizin kişisel QR kodunuz.
-                </Text>
               </View>
             ) : (
               /* YOLCU: Kamera ile QR Tara */
@@ -271,13 +253,17 @@ export default function QRTripEndModal({
                 
                 {hasPermission?.granted ? (
                   <View style={styles.cameraWrapper}>
+                    {loading && (
+                      <View style={styles.scanningOverlay}>
+                        <ActivityIndicator size="large" color="white" />
+                        <Text style={styles.scanningText}>Doğrulanıyor...</Text>
+                      </View>
+                    )}
                     <CameraView
                       style={styles.camera}
                       facing="back"
-                      barcodeScannerSettings={{
-                        barcodeTypes: ['qr'],
-                      }}
-                      onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+                      barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                      onBarcodeScanned={scanned || canProceed === false ? undefined : handleBarCodeScanned}
                     />
                     <View style={styles.scanFrame}>
                       <View style={[styles.corner, styles.topLeft]} />
@@ -289,15 +275,6 @@ export default function QRTripEndModal({
                 ) : (
                   <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
                     <Text style={styles.permissionBtnText}>Kamera İzni Ver</Text>
-                  </TouchableOpacity>
-                )}
-                
-                {scanned && (
-                  <TouchableOpacity 
-                    style={styles.rescanBtn} 
-                    onPress={() => setScanned(false)}
-                  >
-                    <Text style={styles.rescanBtnText}>Tekrar Tara</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -325,122 +302,138 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: 40,
-    maxHeight: '90%',
+    maxHeight: '85%',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeBtnText: {
-    fontSize: 18,
+    fontSize: 16,
     color: 'white',
   },
   content: {
-    padding: 20,
-    minHeight: 400,
+    padding: 16,
+    minHeight: 350,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  checkingBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 60,
+    justifyContent: 'center',
+    paddingVertical: 8,
+    marginBottom: 12,
+    backgroundColor: 'rgba(63, 169, 245, 0.1)',
+    borderRadius: 8,
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#9CA3AF',
+  checkingText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: '#3FA9F5',
   },
   warningContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 30,
   },
   warningIcon: {
-    fontSize: 60,
-    marginBottom: 16,
-  },
-  warningTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#F59E0B',
+    fontSize: 50,
     marginBottom: 12,
   },
+  warningTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 10,
+  },
   warningText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#9CA3AF',
     textAlign: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 24,
-    lineHeight: 24,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    lineHeight: 22,
   },
   qrContainer: {
     alignItems: 'center',
   },
   instruction: {
-    fontSize: 18,
+    fontSize: 16,
     color: 'white',
-    marginBottom: 24,
+    marginBottom: 20,
     textAlign: 'center',
   },
   qrWrapper: {
     backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 16,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
   },
   qrCodeText: {
-    marginTop: 12,
-    fontSize: 14,
+    marginTop: 10,
+    fontSize: 13,
     color: '#1a1a2e',
     fontWeight: '600',
     letterSpacing: 1,
   },
-  note: {
-    marginTop: 20,
-    fontSize: 13,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    paddingHorizontal: 20,
+  loadingQR: {
+    width: width * 0.55,
+    height: width * 0.55,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
   },
   retryBtn: {
     backgroundColor: '#3FA9F5',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 10,
   },
   retryBtnText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
   cameraContainer: {
     alignItems: 'center',
   },
   cameraWrapper: {
-    width: width * 0.8,
-    height: width * 0.8,
-    borderRadius: 16,
+    width: width * 0.75,
+    height: width * 0.75,
+    borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
   },
   camera: {
     flex: 1,
+  },
+  scanningOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  scanningText: {
+    marginTop: 12,
+    color: 'white',
+    fontSize: 16,
   },
   scanFrame: {
     position: 'absolute',
@@ -451,8 +444,8 @@ const styles = StyleSheet.create({
   },
   corner: {
     position: 'absolute',
-    width: 30,
-    height: 30,
+    width: 25,
+    height: 25,
     borderColor: '#3FA9F5',
   },
   topLeft: {
@@ -460,63 +453,51 @@ const styles = StyleSheet.create({
     left: 0,
     borderTopWidth: 3,
     borderLeftWidth: 3,
-    borderTopLeftRadius: 8,
+    borderTopLeftRadius: 6,
   },
   topRight: {
     top: 0,
     right: 0,
     borderTopWidth: 3,
     borderRightWidth: 3,
-    borderTopRightRadius: 8,
+    borderTopRightRadius: 6,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 6,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
     borderBottomWidth: 3,
     borderRightWidth: 3,
-    borderBottomRightRadius: 8,
+    borderBottomRightRadius: 6,
   },
   permissionBtn: {
     backgroundColor: '#3FA9F5',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    marginTop: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 10,
+    marginTop: 16,
   },
   permissionBtnText: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  rescanBtn: {
-    backgroundColor: 'rgba(63, 169, 245, 0.2)',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  rescanBtnText: {
-    color: '#3FA9F5',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   cancelBtn: {
-    marginHorizontal: 20,
-    paddingVertical: 16,
-    borderRadius: 12,
+    marginHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
   },
   cancelBtnText: {
     color: '#9CA3AF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
 });
