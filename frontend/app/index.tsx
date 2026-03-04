@@ -46,7 +46,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 // Backend URL - önce extra'dan, sonra env'den, en son hardcoded
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://trip-qr-scan.preview.emergentagent.com';
+                    'https://ride-completion.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 console.log('🌐 BACKEND_URL:', BACKEND_URL);
@@ -4955,6 +4955,7 @@ function PassengerDashboard({
         rateUserId: data.rate_user_id,
         rateUserName: data.rate_user_name
       });
+      // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
   });
   
@@ -5311,7 +5312,7 @@ function PassengerDashboard({
     
     const message = `🚗 Leylek TAG - Yolculuk Teklifi\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
     
-    const webAppUrl = 'https://trip-qr-scan.preview.emergentagent.com';
+    const webAppUrl = 'https://ride-completion.preview.emergentagent.com';
     const deepLink = `leylektag://ride/${activeTag.id}`;
     
     try {
@@ -6710,6 +6711,10 @@ function PassengerDashboard({
         tagId={activeTag?.id || ''}
         isDriver={false}
         otherUserName={activeTag?.driver_name || 'Sürücü'}
+        myLatitude={currentLocation?.latitude}
+        myLongitude={currentLocation?.longitude}
+        otherLatitude={activeTag?.driver_latitude}
+        otherLongitude={activeTag?.driver_longitude}
         onComplete={(showRating, rateUserId, rateUserName) => {
           // Yolculuk tamamlandı
           setShowQRModal(false);
@@ -6732,6 +6737,11 @@ function PassengerDashboard({
         <RatingModal
           visible={ratingModalData.visible}
           onClose={() => setRatingModalData(null)}
+          onRatingComplete={() => {
+            // 🆕 Puanlama tamamlandı - tüm state'leri temizle
+            setRatingModalData(null);
+            setActiveTag(null);
+          }}
           userId={user.id}
           tagId={ratingModalData.tagId}
           rateUserId={ratingModalData.rateUserId}
@@ -7217,6 +7227,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         rateUserId: data.rate_user_id,
         rateUserName: data.rate_user_name
       });
+      // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
   });
   
@@ -8560,6 +8571,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         tagId={activeTag?.id || ''}
         isDriver={true}
         otherUserName={activeTag?.passenger_name || 'Yolcu'}
+        myLatitude={currentLocation?.latitude}
+        myLongitude={currentLocation?.longitude}
+        otherLatitude={activeTag?.passenger_latitude}
+        otherLongitude={activeTag?.passenger_longitude}
         onComplete={(showRating, rateUserId, rateUserName) => {
           // Yolculuk tamamlandı
           setShowQRModal(false);
@@ -8582,6 +8597,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         <RatingModal
           visible={ratingModalData.visible}
           onClose={() => setRatingModalData(null)}
+          onRatingComplete={() => {
+            // 🆕 Puanlama tamamlandı - tüm state'leri temizle
+            setRatingModalData(null);
+            setActiveTag(null);
+          }}
           userId={user.id}
           tagId={ratingModalData.tagId}
           rateUserId={ratingModalData.rateUserId}

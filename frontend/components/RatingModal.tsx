@@ -9,11 +9,12 @@ import {
   Alert,
 } from 'react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://trip-qr-scan.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://ride-completion.preview.emergentagent.com';
 
 interface RatingModalProps {
   visible: boolean;
   onClose: () => void;
+  onRatingComplete?: () => void; // 🆕 Puanlama tamamlandığında çağrılır
   userId: string;
   tagId: string;
   rateUserId: string;
@@ -23,6 +24,7 @@ interface RatingModalProps {
 export default function RatingModal({
   visible,
   onClose,
+  onRatingComplete,
   userId,
   tagId,
   rateUserId,
@@ -47,6 +49,10 @@ export default function RatingModal({
         setSubmitted(true);
         setTimeout(() => {
           onClose();
+          // 🆕 Puanlama tamamlandığında state'leri temizle
+          if (onRatingComplete) {
+            onRatingComplete();
+          }
           setSubmitted(false);
           setRating(5);
         }, 2000);

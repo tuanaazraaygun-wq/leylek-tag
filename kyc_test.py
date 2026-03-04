@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Configuration
-BASE_URL = "https://trip-qr-scan.preview.emergentagent.com/api"
+BASE_URL = "https://ride-completion.preview.emergentagent.com/api"
 ADMIN_PHONE = "5326497412"
 
 # Test data

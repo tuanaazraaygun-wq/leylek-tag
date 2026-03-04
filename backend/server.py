@@ -69,12 +69,18 @@ async def disconnect(sid):
 
 @sio.event
 async def register(sid, data):
-    """Kullanıcı kaydı - user_id ile socket_id eşleştir"""
+    """Kullanıcı kaydı - user_id ile socket_id eşleştir VE ROOM'A JOIN ET"""
     user_id = data.get('user_id')
     if user_id:
         connected_users[user_id] = sid
-        logger.info(f"📱 Kullanıcı kayıtlı: {user_id} -> {sid}")
-        await sio.emit('registered', {'success': True, 'user_id': user_id}, room=sid)
+        
+        # 🔥 KRİTİK: Kullanıcıyı kendi room'una join et
+        # Bu sayede show_rating_modal gibi eventler alınabilir
+        room_name = f"user_{user_id}"
+        await sio.enter_room(sid, room_name)
+        
+        logger.info(f"📱 Kullanıcı kayıtlı: {user_id} -> {sid} (room: {room_name})")
+        await sio.emit('registered', {'success': True, 'user_id': user_id, 'room': room_name}, room=sid)
 
 @sio.event
 async def call_user(sid, data):
@@ -4500,113 +4506,185 @@ async def get_qr_completions(limit: int = 50):
     except Exception as e:
         logger.error(f"QR completions error: {e}")
         return {"success": True, "completions": []}
-        logger.error(f"QR generate error: {e}")
-        return {"success": False, "detail": str(e)}
 
-@api_router.post("/qr/verify")
-async def verify_qr_code(
-    scanner_user_id: str,
+# ==================== ÖDEME SİSTEMİ ====================
+
+@api_router.post("/payment/create-request")
+async def create_payment_request(
+    driver_id: str,
+    passenger_id: str,
     tag_id: str,
-    scanned_user_id: str,
-    timestamp: int,
-    hash: str,
-    latitude: float = None,
-    longitude: float = None
+    amount: float,
+    description: str = ""
 ):
-    """⚡ HIZLI QR doğrula ve yolculuğu bitir - Optimize edildi"""
+    """⚡ Şoför için ödeme talebi oluştur - Dinamik QR"""
     try:
-        # 1. Hash doğrulaması - ÇOK HIZLI (DB erişimi yok)
-        expected_hash = generate_qr_hash(scanned_user_id, tag_id, timestamp)
-        if hash != expected_hash:
-            return {"success": False, "detail": "Geçersiz QR kod"}
+        # Token oluştur (5 dakika geçerli)
+        timestamp = int(time.time())
+        token_data = f"{driver_id}:{passenger_id}:{tag_id}:{amount}:{timestamp}"
+        token = hashlib.md5(token_data.encode()).hexdigest()[:16]
         
-        # 2. Zaman kontrolü - ÇOK HIZLI (DB erişimi yok)
-        current_time = int(time.time())
-        if current_time - timestamp > 300:
-            return {"success": False, "detail": "QR kod süresi dolmuş"}
+        # QR string formatı: leylekpay://pay?d=driver_id&p=passenger_id&t=tag_id&a=amount&ts=timestamp&tk=token
+        qr_string = f"leylekpay://pay?d={driver_id}&p={passenger_id}&t={tag_id}&a={amount}&ts={timestamp}&tk={token}"
         
-        # 3. Kendini taramadığını kontrol et - ÇOK HIZLI
-        if scanner_user_id == scanned_user_id:
-            return {"success": False, "detail": "Kendi QR kodunuzu tarayamazsınız"}
-        
-        # 4. Cache'den tag al (30sn cache)
-        tag = await get_cached_tag(tag_id)
-        if not tag or tag.get("status") not in ["matched", "in_progress"]:
-            return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
-        
-        passenger_id = tag.get("passenger_id")
-        driver_id = tag.get("driver_id")
-        
-        # 5. Kullanıcı kontrolü
-        valid_users = {passenger_id, driver_id}
-        if scanner_user_id not in valid_users or scanned_user_id not in valid_users:
-            return {"success": False, "detail": "Bu yolculuğa ait kullanıcılar değil"}
-        
-        # 6. HIZLI: Tek bir update ile yolculuğu bitir
-        completed_at = datetime.utcnow().isoformat()
+        # Ödeme talebini kaydet
         try:
-            supabase.table("tags").update({
-                "status": "completed",
-                "completed_at": completed_at
-            }).eq("id", tag_id).execute()
-            
-            # Cache'i temizle
-            invalidate_tag_cache(tag_id)
-            
-        except Exception as update_err:
-            logger.error(f"Tag güncelleme hatası: {update_err}")
-            return {"success": False, "detail": "Yolculuk güncellenemedi"}
-        
-        # 7. ASYNC: Puan güncelleme arka planda - Kullanıcıyı bekletme
-        asyncio.create_task(update_user_points_async(passenger_id, driver_id, tag_id, scanner_user_id, scanned_user_id, latitude, longitude, completed_at))
-        
-        logger.info(f"✅ QR HIZLI tamamlandı: tag={tag_id}")
+            supabase.table("payment_requests").insert({
+                "driver_id": driver_id,
+                "passenger_id": passenger_id,
+                "tag_id": tag_id,
+                "amount": amount,
+                "description": description,
+                "status": "pending",
+                "token": token,
+                "expires_at": datetime.utcfromtimestamp(timestamp + 300).isoformat()
+            }).execute()
+        except Exception as db_err:
+            logger.warning(f"Payment request kayıt hatası: {db_err}")
         
         return {
             "success": True,
-            "message": "Yolculuk tamamlandı! +3 puan",
-            "tag_id": tag_id
+            "qr_string": qr_string,
+            "token": token,
+            "amount": amount,
+            "expires_in": 300
         }
-        
     except Exception as e:
-        logger.error(f"QR verify error: {e}")
+        logger.error(f"Payment create error: {e}")
         return {"success": False, "detail": str(e)}
 
-async def update_user_points_async(passenger_id: str, driver_id: str, tag_id: str, scanner_id: str, scanned_id: str, lat: float, lng: float, completed_at: str):
-    """Arka planda puan güncelle - Kullanıcıyı bekletmez"""
+@api_router.post("/payment/verify")
+async def verify_payment(
+    payer_user_id: str,
+    driver_id: str,
+    tag_id: str,
+    amount: float,
+    timestamp: int,
+    token: str
+):
+    """⚡ Ödeme doğrula ve kaydet"""
     try:
-        # QR completion bilgisini kaydet
-        try:
-            qr_data = json.dumps({
-                "scanner_id": scanner_id,
-                "scanned_id": scanned_id,
-                "completed_at": completed_at,
-                "latitude": lat,
-                "longitude": lng,
-                "method": "qr_code"
-            })
-            supabase.table("tags").update({"qr_completion": qr_data}).eq("id", tag_id).execute()
-        except:
-            pass  # Kritik değil
+        # Token doğrula
+        expected_token_data = f"{driver_id}:{payer_user_id}:{tag_id}:{amount}:{timestamp}"
+        expected_token = hashlib.md5(expected_token_data.encode()).hexdigest()[:16]
         
-        # Her iki kullanıcıya puan ver
-        for uid in [passenger_id, driver_id]:
-            try:
-                user_result = supabase.table("users").select("total_trips, rating").eq("id", uid).execute()
-                if user_result.data:
-                    current_trips = user_result.data[0].get("total_trips", 0) or 0
-                    current_rating = user_result.data[0].get("rating", 5.0) or 5.0
-                    new_rating = min(5.0, current_rating + 0.1)
-                    
-                    supabase.table("users").update({
-                        "total_trips": current_trips + 1,
-                        "rating": new_rating
-                    }).eq("id", uid).execute()
-            except Exception as e:
-                logger.warning(f"Puan güncelleme hatası {uid}: {e}")
-                
+        if token != expected_token:
+            return {"success": False, "detail": "Geçersiz ödeme kodu"}
+        
+        # Süre kontrolü (5 dakika)
+        if int(time.time()) - timestamp > 300:
+            return {"success": False, "detail": "Ödeme süresi dolmuş"}
+        
+        # Ödemeyi kaydet
+        payment_data = {
+            "payer_id": payer_user_id,
+            "receiver_id": driver_id,
+            "tag_id": tag_id,
+            "amount": amount,
+            "status": "completed",
+            "completed_at": datetime.utcnow().isoformat()
+        }
+        
+        try:
+            supabase.table("payments").insert(payment_data).execute()
+        except Exception as db_err:
+            logger.warning(f"Payment kayıt hatası: {db_err}")
+        
+        # Şoföre bildirim gönder
+        try:
+            payer = await get_cached_user(payer_user_id)
+            payer_name = payer.get("name", "Yolcu") if payer else "Yolcu"
+            
+            await sio.emit("payment_received", {
+                "tag_id": tag_id,
+                "amount": amount,
+                "payer_name": payer_name,
+                "message": f"{payer_name} size {amount}₺ ödeme yaptı!"
+            }, room=f"user_{driver_id}")
+        except Exception as socket_err:
+            logger.warning(f"Payment socket hatası: {socket_err}")
+        
+        logger.info(f"✅ Ödeme tamamlandı: {payer_user_id} -> {driver_id}, {amount}₺")
+        
+        return {
+            "success": True,
+            "message": f"{amount}₺ ödeme başarılı!",
+            "payment_id": payment_data.get("id")
+        }
     except Exception as e:
-        logger.error(f"Async puan güncelleme hatası: {e}")
+        logger.error(f"Payment verify error: {e}")
+        return {"success": False, "detail": str(e)}
+
+# ==================== YOLCULUK LOG SİSTEMİ (DEVLET İÇİN) ====================
+
+@api_router.get("/admin/trip-logs")
+async def get_trip_logs(limit: int = 100, start_date: str = None, end_date: str = None):
+    """Admin için detaylı yolculuk logları - Devlet raporu için"""
+    try:
+        query = supabase.table("tags").select(
+            "id, passenger_id, driver_id, status, created_at, completed_at, "
+            "start_address, destination_address, price, distance_km, rating_by_passenger, rating_by_driver"
+        ).order("created_at", desc=True).limit(limit)
+        
+        if start_date:
+            query = query.gte("created_at", start_date)
+        if end_date:
+            query = query.lte("created_at", end_date)
+        
+        result = query.execute()
+        
+        logs = []
+        for tag in result.data:
+            # Kullanıcı bilgilerini al
+            passenger = await get_cached_user(tag.get("passenger_id", ""))
+            driver = await get_cached_user(tag.get("driver_id", ""))
+            
+            logs.append({
+                "tag_id": tag.get("id"),
+                "passenger_name": passenger.get("name") if passenger else "Bilinmiyor",
+                "passenger_id": tag.get("passenger_id"),
+                "driver_name": driver.get("name") if driver else "Bilinmiyor", 
+                "driver_id": tag.get("driver_id"),
+                "status": tag.get("status"),
+                "start_address": tag.get("start_address"),
+                "destination_address": tag.get("destination_address"),
+                "distance_km": tag.get("distance_km"),
+                "price": tag.get("price"),
+                "rating_passenger_gave": tag.get("rating_by_passenger"),
+                "rating_driver_gave": tag.get("rating_by_driver"),
+                "started_at": tag.get("created_at"),
+                "completed_at": tag.get("completed_at")
+            })
+        
+        return {"success": True, "logs": logs, "total": len(logs)}
+    except Exception as e:
+        logger.error(f"Trip logs error: {e}")
+        return {"success": True, "logs": []}
+
+@api_router.get("/admin/payment-logs")
+async def get_payment_logs(limit: int = 100):
+    """Admin için ödeme logları"""
+    try:
+        result = supabase.table("payments").select("*").order("completed_at", desc=True).limit(limit).execute()
+        
+        logs = []
+        for p in result.data:
+            payer = await get_cached_user(p.get("payer_id", ""))
+            receiver = await get_cached_user(p.get("receiver_id", ""))
+            
+            logs.append({
+                "payment_id": p.get("id"),
+                "payer_name": payer.get("name") if payer else "Bilinmiyor",
+                "receiver_name": receiver.get("name") if receiver else "Bilinmiyor",
+                "amount": p.get("amount"),
+                "tag_id": p.get("tag_id"),
+                "completed_at": p.get("completed_at")
+            })
+        
+        return {"success": True, "logs": logs}
+    except Exception as e:
+        logger.error(f"Payment logs error: {e}")
+        return {"success": True, "logs": []}
 
 @api_router.post("/qr/rate")
 async def rate_after_qr(
