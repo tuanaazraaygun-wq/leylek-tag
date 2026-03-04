@@ -2364,7 +2364,7 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
 
 @api_router.get("/passenger/active-tag")
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
-    """Aktif TAG getir - cancelled durumunda da döndür (frontend algılasın)"""
+    """Aktif TAG getir - önce aktif tag'leri kontrol et"""
     try:
         # Arka planda inaktif TAG'leri temizle
         await auto_cleanup_inactive_tags()
@@ -2377,19 +2377,7 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(uid)
         
-        # 🔥 ÖNCELİK 1: Son 30 saniyede cancelled olmuş TAG var mı kontrol et
-        # Bu sayede frontend eşleşmenin bitirildiğini algılayabilir
-        from datetime import timedelta
-        thirty_seconds_ago = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
-        
-        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", thirty_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
-        
-        if cancelled_result.data:
-            cancelled_tag = cancelled_result.data[0]
-            logger.info(f"🛑 Cancelled TAG bulundu ve döndürülüyor: {cancelled_tag['id']}")
-            return {"success": True, "tag": cancelled_tag, "was_cancelled": True}
-        
-        # ÖNCELİK 2: Aktif tag'leri ara
+        # ÖNCELİK 1: Aktif tag'leri ara (waiting, matched, in_progress)
         result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
         
         if result.data:
@@ -2409,6 +2397,18 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
             tag["driver_location"] = driver_location
             
             return {"success": True, "tag": tag}
+        
+        # ÖNCELİK 2: Aktif tag yoksa, son 10 saniyede cancelled olmuş TAG kontrol et
+        # (Sadece trip bittiğinde bir kez uyarı göstermek için)
+        from datetime import timedelta
+        ten_seconds_ago = (datetime.utcnow() - timedelta(seconds=10)).isoformat()
+        
+        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", ten_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
+        
+        if cancelled_result.data:
+            cancelled_tag = cancelled_result.data[0]
+            logger.info(f"🛑 Cancelled TAG bulundu (10sn içinde): {cancelled_tag['id']}")
+            return {"success": True, "tag": cancelled_tag, "was_cancelled": True}
         
         return {"success": True, "tag": None}
     except Exception as e:
@@ -2928,11 +2928,11 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "tag": tag_data
             }
         
-        # ÖNCELİK 2: Aktif tag yoksa, son 30 saniyede cancelled olmuş TAG kontrol et
+        # ÖNCELİK 2: Aktif tag yoksa, son 10 saniyede cancelled olmuş TAG kontrol et
         from datetime import timedelta
-        thirty_seconds_ago = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
+        ten_seconds_ago = (datetime.utcnow() - timedelta(seconds=10)).isoformat()
         
-        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", thirty_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
+        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", ten_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
         
         if cancelled_result.data:
             cancelled_tag = cancelled_result.data[0]
