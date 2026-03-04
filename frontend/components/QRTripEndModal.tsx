@@ -40,23 +40,74 @@ export default function QRTripEndModal({
   const [qrString, setQrString] = useState<string>('');
   const [hasPermission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [proximityChecked, setProximityChecked] = useState(false);
+  const [canProceed, setCanProceed] = useState(false);
+  const [proximityMessage, setProximityMessage] = useState('');
 
-  // Sadece ilk ismi al
   const firstName = otherUserName?.split(' ')[0] || 'Kullanıcı';
 
   useEffect(() => {
     if (visible) {
-      if (isDriver) {
-        // ŞOFÖR: QR kodunu getir
-        fetchMyQRCode();
-      } else {
-        // YOLCU: Kamera izni iste
-        if (!hasPermission?.granted) {
-          requestPermission();
-        }
-      }
+      // Her açılışta sıfırla
+      setProximityChecked(false);
+      setCanProceed(false);
+      setProximityMessage('');
+      setScanned(false);
+      setQrCode('');
+      setQrString('');
+      
+      // Konum kontrolü yap
+      checkProximity();
     }
-  }, [visible, isDriver]);
+  }, [visible]);
+
+  const checkProximity = async () => {
+    setLoading(true);
+    try {
+      // Konum al
+      const location = await Location.getCurrentPositionAsync({ 
+        accuracy: Location.Accuracy.High 
+      });
+      
+      const { latitude, longitude } = location.coords;
+      
+      // Backend'e yakınlık kontrolü yap
+      const response = await fetch(
+        `${API_URL}/api/qr/check-proximity?user_id=${userId}&tag_id=${tagId}&latitude=${latitude}&longitude=${longitude}`,
+        { method: 'POST' }
+      );
+      const data = await response.json();
+      
+      setProximityChecked(true);
+      
+      if (data.can_end) {
+        setCanProceed(true);
+        setProximityMessage('');
+        
+        // Yakınlarsa devam et
+        if (isDriver) {
+          fetchMyQRCode();
+        } else {
+          if (!hasPermission?.granted) {
+            requestPermission();
+          }
+        }
+      } else {
+        setCanProceed(false);
+        setProximityMessage(data.message || 'Yol paylaşımını bitirmek için bir araya gelmelisiniz!');
+      }
+    } catch (error) {
+      console.error('Proximity check error:', error);
+      // Konum alınamazsa yine de devam et
+      setProximityChecked(true);
+      setCanProceed(true);
+      if (isDriver) {
+        fetchMyQRCode();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchMyQRCode = async () => {
     setLoading(true);
@@ -84,15 +135,14 @@ export default function QRTripEndModal({
     setLoading(true);
 
     try {
-      // QR kod formatı: leylekpay://user?code=LEYLEK-XXXX&id=user_id
+      // QR kod formatı: leylekpay://u?c=LYK-XXXX&i=user_id
       let scannedQRCode: string | null = null;
 
-      if (data.startsWith('leylekpay://user?')) {
+      if (data.startsWith('leylekpay://u?')) {
         const queryString = data.split('?')[1];
         const params = new URLSearchParams(queryString);
-        scannedQRCode = params.get('code');
-      } else if (data.startsWith('LEYLEK-')) {
-        // Direkt QR kod
+        scannedQRCode = params.get('c');
+      } else if (data.startsWith('LYK-')) {
         scannedQRCode = data;
       }
 
@@ -104,8 +154,8 @@ export default function QRTripEndModal({
       }
 
       // Konum al
-      let latitude = null;
-      let longitude = null;
+      let latitude = 0;
+      let longitude = 0;
       try {
         const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         latitude = location.coords.latitude;
@@ -114,9 +164,9 @@ export default function QRTripEndModal({
         console.log('Konum alınamadı:', e);
       }
 
-      // API'ye gönder
+      // API'ye gönder - HIZLI
       const response = await fetch(
-        `${API_URL}/api/qr/scan-trip-end?scanner_user_id=${userId}&scanned_qr_code=${scannedQRCode}&tag_id=${tagId}&latitude=${latitude || 0}&longitude=${longitude || 0}`,
+        `${API_URL}/api/qr/scan-trip-end?scanner_user_id=${userId}&scanned_qr_code=${scannedQRCode}&tag_id=${tagId}&latitude=${latitude}&longitude=${longitude}`,
         { method: 'POST' }
       );
       const result = await response.json();
@@ -142,6 +192,8 @@ export default function QRTripEndModal({
     setScanned(false);
     setQrCode('');
     setQrString('');
+    setProximityChecked(false);
+    setCanProceed(false);
     onClose();
   };
 
@@ -161,7 +213,22 @@ export default function QRTripEndModal({
 
           {/* Content */}
           <View style={styles.content}>
-            {loading ? (
+            {loading && !proximityChecked ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#3FA9F5" />
+                <Text style={styles.loadingText}>Konum kontrol ediliyor...</Text>
+              </View>
+            ) : !canProceed && proximityChecked ? (
+              /* YAKIN DEĞİLLER - UYARI */
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningIcon}>⚠️</Text>
+                <Text style={styles.warningTitle}>Bir Araya Gelmelisiniz!</Text>
+                <Text style={styles.warningText}>{proximityMessage}</Text>
+                <TouchableOpacity style={styles.retryBtn} onPress={checkProximity}>
+                  <Text style={styles.retryBtnText}>Tekrar Kontrol Et</Text>
+                </TouchableOpacity>
+              </View>
+            ) : loading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#3FA9F5" />
                 <Text style={styles.loadingText}>
@@ -192,7 +259,7 @@ export default function QRTripEndModal({
                 )}
                 
                 <Text style={styles.note}>
-                  Bu sizin kişisel QR kodunuz. Ödeme almak için de kullanabilirsiniz.
+                  Bu sizin kişisel QR kodunuz.
                 </Text>
               </View>
             ) : (
@@ -299,6 +366,28 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: '#9CA3AF',
+  },
+  warningContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  warningIcon: {
+    fontSize: 60,
+    marginBottom: 16,
+  },
+  warningTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#F59E0B',
+    marginBottom: 12,
+  },
+  warningText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 24,
+    lineHeight: 24,
   },
   qrContainer: {
     alignItems: 'center',

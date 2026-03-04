@@ -4100,16 +4100,24 @@ async def approve_trip_end(tag_id: str, user_id: str):
 
 import hashlib
 import time
+import math
 
 # ==================== HIZLI QR SİSTEMİ ====================
 # In-memory cache for QR verifications (1000+ concurrent users support)
-import functools
 from typing import Dict, Tuple
 import asyncio
 
 # Simple in-memory cache with TTL
 _qr_cache: Dict[str, Tuple[dict, float]] = {}
 _user_cache: Dict[str, Tuple[dict, float]] = {}
+_user_qr_codes: Dict[str, str] = {}  # user_id -> qr_code mapping
+
+def generate_user_qr_code(user_id: str) -> str:
+    """Kullanıcı için benzersiz QR kodu oluştur (hash tabanlı, sabit)"""
+    # Her kullanıcı için sabit QR - user_id'den türetilir
+    hash_input = f"LEYLEK_QR_SECRET_{user_id}"
+    hash_code = hashlib.md5(hash_input.encode()).hexdigest()[:10].upper()
+    return f"LYK-{hash_code}"
 
 async def get_cached_tag(tag_id: str) -> dict | None:
     """Cache'den tag al veya DB'den çek"""
@@ -4142,7 +4150,7 @@ async def get_cached_user(user_id: str) -> dict | None:
         else:
             del _user_cache[cache_key]
     
-    result = supabase.table("users").select("id,name,personal_qr_code,rating,total_trips").eq("id", user_id).execute()
+    result = supabase.table("users").select("id,name,rating,total_trips,points").eq("id", user_id).execute()
     if result.data:
         user = result.data[0]
         _user_cache[cache_key] = (user, current_time + 60)
@@ -4155,35 +4163,108 @@ def invalidate_tag_cache(tag_id: str):
     if cache_key in _qr_cache:
         del _qr_cache[cache_key]
 
+def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """İki konum arasındaki mesafeyi metre olarak hesapla (Haversine)"""
+    R = 6371000  # Dünya yarıçapı metre
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_phi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+
+# ==================== KONUM KONTROLÜ ====================
+
+@api_router.post("/qr/check-proximity")
+async def check_proximity_for_trip_end(
+    user_id: str,
+    tag_id: str,
+    latitude: float,
+    longitude: float
+):
+    """⚡ Yolculuk bitirmeden önce yakınlık kontrolü - HIZLI"""
+    try:
+        # 1. Tag'i kontrol et
+        tag = await get_cached_tag(tag_id)
+        if not tag or tag.get("status") not in ["matched", "in_progress"]:
+            return {"success": False, "detail": "Aktif yolculuk bulunamadı", "can_end": False}
+        
+        passenger_id = tag.get("passenger_id")
+        driver_id = tag.get("driver_id")
+        
+        # 2. Kullanıcının bu yolculuğa ait olduğunu kontrol et
+        if user_id not in [passenger_id, driver_id]:
+            return {"success": False, "detail": "Bu yolculuğa erişim yetkiniz yok", "can_end": False}
+        
+        # 3. Diğer kullanıcının konumunu al (aktif konumlar tablosundan)
+        other_user_id = driver_id if user_id == passenger_id else passenger_id
+        
+        # Aktif konum kontrolü - son 5 dakika içindeki konum
+        try:
+            other_location = supabase.table("user_locations").select("latitude,longitude,updated_at").eq("user_id", other_user_id).order("updated_at", desc=True).limit(1).execute()
+            
+            if other_location.data:
+                other_lat = other_location.data[0].get("latitude")
+                other_lng = other_location.data[0].get("longitude")
+                
+                if other_lat and other_lng:
+                    # Mesafe hesapla
+                    distance = calculate_distance_meters(latitude, longitude, other_lat, other_lng)
+                    
+                    # 500 metre içinde mi?
+                    if distance <= 500:
+                        return {
+                            "success": True,
+                            "can_end": True,
+                            "distance_meters": round(distance),
+                            "message": "Yakınlık doğrulandı"
+                        }
+                    else:
+                        return {
+                            "success": True,
+                            "can_end": False,
+                            "distance_meters": round(distance),
+                            "message": f"Yol paylaşımını bitirmek için bir araya gelmelisiniz! Aradaki mesafe: {round(distance)}m"
+                        }
+        except Exception as loc_err:
+            logger.warning(f"Konum kontrolü hatası: {loc_err}")
+        
+        # Konum bulunamadıysa yine de izin ver (edge case)
+        return {
+            "success": True,
+            "can_end": True,
+            "distance_meters": 0,
+            "message": "Konum doğrulanamadı, devam edilebilir"
+        }
+        
+    except Exception as e:
+        logger.error(f"Proximity check error: {e}")
+        return {"success": False, "detail": str(e), "can_end": False}
+
 # ==================== KİŞİYE ÖZEL QR KOD API'LERİ ====================
 
 @api_router.get("/qr/my-code")
 async def get_my_qr_code(user_id: str):
-    """⚡ Kullanıcının kişiye özel QR kodunu getir"""
+    """⚡ Kullanıcının kişiye özel QR kodunu getir - HIZLI (DB'siz)"""
     try:
-        result = supabase.table("users").select("id,name,personal_qr_code").eq("id", user_id).execute()
+        # QR kodu user_id'den türetilir - her zaman aynı
+        qr_code = generate_user_qr_code(user_id)
         
-        if not result.data:
-            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        # Kullanıcı adını al (cache'den)
+        user = await get_cached_user(user_id)
+        user_name = user.get("name", "Kullanıcı") if user else "Kullanıcı"
         
-        user = result.data[0]
-        qr_code = user.get("personal_qr_code")
-        
-        # Eğer QR kodu yoksa oluştur
-        if not qr_code:
-            import uuid
-            qr_code = f"LEYLEK-{uuid.uuid4().hex[:12].upper()}"
-            supabase.table("users").update({"personal_qr_code": qr_code}).eq("id", user_id).execute()
-            logger.info(f"✅ QR kod oluşturuldu: {user_id} -> {qr_code}")
-        
-        # QR string formatı: leylekpay://user?code=LEYLEK-XXXX&id=user_id
-        qr_string = f"leylekpay://user?code={qr_code}&id={user_id}"
+        # QR string formatı
+        qr_string = f"leylekpay://u?c={qr_code}&i={user_id}"
         
         return {
             "success": True,
             "qr_code": qr_code,
             "qr_string": qr_string,
-            "user_name": user.get("name", "Kullanıcı")
+            "user_name": user_name
         }
     except Exception as e:
         logger.error(f"QR get error: {e}")
@@ -4194,25 +4275,20 @@ async def scan_qr_for_trip_end(
     scanner_user_id: str,
     scanned_qr_code: str,
     tag_id: str,
-    latitude: float = None,
-    longitude: float = None
+    latitude: float = 0,
+    longitude: float = 0
 ):
-    """⚡ HIZLI - Yolcu şoförün QR'ını tarar, yolculuk biter, İKİ TARAFTA puanlama açılır"""
+    """⚡ SÜPER HIZLI - Yolcu şoförün QR'ını tarar, yolculuk biter"""
+    start_time = time.time()
+    
     try:
-        # 1. Taranan QR kodundan şoförü bul
-        scanned_user = supabase.table("users").select("id,name,personal_qr_code").eq("personal_qr_code", scanned_qr_code).execute()
+        # 1. QR kodundan user_id bul (QR kod formatı: LYK-XXXXXXXXXX)
+        scanned_user_id = None
         
-        if not scanned_user.data:
-            return {"success": False, "detail": "Geçersiz QR kod"}
+        # Tüm kullanıcıların QR kodlarını kontrol et (cache'den)
+        # Veya QR kodunu çöz - user_id'yi bulmak için
         
-        scanned_user_id = scanned_user.data[0]["id"]
-        scanned_user_name = scanned_user.data[0].get("name", "Kullanıcı")
-        
-        # 2. Kendini taramadığını kontrol et
-        if scanner_user_id == scanned_user_id:
-            return {"success": False, "detail": "Kendi QR kodunuzu tarayamazsınız"}
-        
-        # 3. Tag kontrolü - bu tag'de bu iki kullanıcı var mı?
+        # Tag'den diğer kullanıcıyı bul
         tag = await get_cached_tag(tag_id)
         if not tag or tag.get("status") not in ["matched", "in_progress"]:
             return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
@@ -4220,33 +4296,59 @@ async def scan_qr_for_trip_end(
         passenger_id = tag.get("passenger_id")
         driver_id = tag.get("driver_id")
         
-        # 4. Kullanıcıların bu yolculuğa ait olduğunu doğrula
-        valid_users = {passenger_id, driver_id}
-        if scanner_user_id not in valid_users or scanned_user_id not in valid_users:
-            return {"success": False, "detail": "Bu yolculuğa ait kullanıcılar değil"}
+        # Scanner yolcu ise, taranan şoför olmalı (ve tersi)
+        if scanner_user_id == passenger_id:
+            expected_user_id = driver_id
+        elif scanner_user_id == driver_id:
+            expected_user_id = passenger_id
+        else:
+            return {"success": False, "detail": "Bu yolculuğa erişim yetkiniz yok"}
         
-        # 5. HIZLI: Yolculuğu bitir
+        # Beklenen kullanıcının QR kodunu kontrol et
+        expected_qr = generate_user_qr_code(expected_user_id)
+        
+        if scanned_qr_code != expected_qr:
+            return {"success": False, "detail": "Geçersiz QR kod - Yanlış kişinin kodunu taradınız"}
+        
+        scanned_user_id = expected_user_id
+        
+        # 2. HIZLI: Yolculuğu bitir
         completed_at = datetime.utcnow().isoformat()
+        
         supabase.table("tags").update({
             "status": "completed",
-            "completed_at": completed_at,
-            "completion_method": "qr_scan"
+            "completed_at": completed_at
         }).eq("id", tag_id).execute()
         
         # Cache temizle
         invalidate_tag_cache(tag_id)
         
-        # 6. Scanner (yolcu) bilgilerini al
-        scanner_user = await get_cached_user(scanner_user_id)
-        scanner_name = scanner_user.get("name", "Kullanıcı") if scanner_user else "Kullanıcı"
+        # 3. QR tamamlama logunu kaydet (Admin için)
+        try:
+            supabase.table("qr_completions").insert({
+                "tag_id": tag_id,
+                "scanner_id": scanner_user_id,
+                "scanned_id": scanned_user_id,
+                "latitude": latitude,
+                "longitude": longitude,
+                "completed_at": completed_at
+            }).execute()
+        except Exception as log_err:
+            logger.warning(f"QR log kaydedilemedi: {log_err}")
         
-        # 7. Socket.IO ile İKİ TARAFA DA puanlama modalı gönder
+        # 4. Kullanıcı isimlerini al
+        scanner_user = await get_cached_user(scanner_user_id)
+        scanned_user = await get_cached_user(scanned_user_id)
+        scanner_name = scanner_user.get("name", "Kullanıcı") if scanner_user else "Kullanıcı"
+        scanned_name = scanned_user.get("name", "Kullanıcı") if scanned_user else "Kullanıcı"
+        
+        # 5. Socket.IO ile İKİ TARAFA DA puanlama modalı gönder
         try:
             # Yolcuya: Şoförü puanla
             await sio.emit("show_rating_modal", {
                 "tag_id": tag_id,
                 "rate_user_id": driver_id,
-                "rate_user_name": scanned_user_name,
+                "rate_user_name": scanned_name if scanner_user_id == passenger_id else scanner_name,
                 "message": "Yolculuk tamamlandı! Şoförü puanlayın."
             }, room=f"user_{passenger_id}")
             
@@ -4254,7 +4356,7 @@ async def scan_qr_for_trip_end(
             await sio.emit("show_rating_modal", {
                 "tag_id": tag_id,
                 "rate_user_id": passenger_id,
-                "rate_user_name": scanner_name,
+                "rate_user_name": scanner_name if scanner_user_id == passenger_id else scanned_name,
                 "message": "Yolculuk tamamlandı! Yolcuyu puanlayın."
             }, room=f"user_{driver_id}")
             
@@ -4262,17 +4364,19 @@ async def scan_qr_for_trip_end(
         except Exception as socket_err:
             logger.warning(f"Socket emit hatası: {socket_err}")
         
-        # 8. Arka planda puan güncelle
+        # 6. Arka planda puan güncelle
         asyncio.create_task(update_trip_points_async(passenger_id, driver_id, tag_id, latitude, longitude, completed_at))
         
-        logger.info(f"✅ QR ile yolculuk tamamlandı: tag={tag_id}")
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"✅ QR tamamlandı {elapsed:.0f}ms: tag={tag_id}")
         
         return {
             "success": True,
             "message": "Yolculuk tamamlandı!",
             "tag_id": tag_id,
-            "scanned_user_name": scanned_user_name,
-            "show_rating": True
+            "scanned_user_name": scanned_name,
+            "show_rating": True,
+            "elapsed_ms": round(elapsed)
         }
         
     except Exception as e:
@@ -4282,7 +4386,7 @@ async def scan_qr_for_trip_end(
 async def update_trip_points_async(passenger_id: str, driver_id: str, tag_id: str, lat: float, lng: float, completed_at: str):
     """Arka planda puan güncelle - Kullanıcıyı bekletmez"""
     try:
-        # Her iki kullanıcıya puan ver
+        # Her iki kullanıcıya +3 puan ver
         for uid in [passenger_id, driver_id]:
             try:
                 user_result = supabase.table("users").select("total_trips, rating, points").eq("id", uid).execute()
@@ -4313,7 +4417,7 @@ async def rate_user_after_trip(
     tag_id: str,
     rating: int
 ):
-    """⚡ Yolculuk sonrası puanlama"""
+    """⚡ HIZLI - Yolculuk sonrası puanlama"""
     try:
         if rating < 1 or rating > 5:
             return {"success": False, "detail": "Puan 1-5 arasında olmalı"}
@@ -4341,7 +4445,6 @@ async def rate_user_after_trip(
         
         # Tag'e puanlama bilgisi ekle
         try:
-            # Hangi taraf puanladı?
             tag_result = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).execute()
             if tag_result.data:
                 tag = tag_result.data[0]
@@ -4352,7 +4455,12 @@ async def rate_user_after_trip(
         except:
             pass
         
-        logger.info(f"✅ Puanlama kaydedildi: {rated_user_id} -> {rating}⭐ (yeni ort: {new_rating})")
+        # Cache temizle
+        cache_key = f"user:{rated_user_id}"
+        if cache_key in _user_cache:
+            del _user_cache[cache_key]
+        
+        logger.info(f"✅ Puanlama: {rated_user_id} -> {rating}⭐ (ort: {new_rating})")
         
         return {
             "success": True,
@@ -4363,6 +4471,35 @@ async def rate_user_after_trip(
     except Exception as e:
         logger.error(f"Rate user error: {e}")
         return {"success": False, "detail": str(e)}
+
+# ==================== ADMİN: QR TAMAMLAMALARI ====================
+
+@api_router.get("/admin/qr-completions")
+async def get_qr_completions(limit: int = 50):
+    """Admin için QR ile tamamlanan yolculukları listele"""
+    try:
+        result = supabase.table("qr_completions").select("*").order("completed_at", desc=True).limit(limit).execute()
+        
+        completions = []
+        for c in result.data:
+            # Kullanıcı isimlerini al
+            scanner = await get_cached_user(c.get("scanner_id", ""))
+            scanned = await get_cached_user(c.get("scanned_id", ""))
+            
+            completions.append({
+                "id": c.get("id"),
+                "tag_id": c.get("tag_id"),
+                "scanner_name": scanner.get("name") if scanner else "Bilinmiyor",
+                "scanned_name": scanned.get("name") if scanned else "Bilinmiyor",
+                "latitude": c.get("latitude"),
+                "longitude": c.get("longitude"),
+                "completed_at": c.get("completed_at")
+            })
+        
+        return {"success": True, "completions": completions}
+    except Exception as e:
+        logger.error(f"QR completions error: {e}")
+        return {"success": True, "completions": []}
         logger.error(f"QR generate error: {e}")
         return {"success": False, "detail": str(e)}
 
