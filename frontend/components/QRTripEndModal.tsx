@@ -14,7 +14,7 @@ import QRCode from 'react-native-qrcode-svg';
 import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://ride-completion.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://qr-trip-end.preview.emergentagent.com';
 
 // Mesafe hesaplama (metre)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {

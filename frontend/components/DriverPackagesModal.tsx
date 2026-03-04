@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://ride-completion.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://qr-trip-end.preview.emergentagent.com';
 
 interface Package {
   id: string;
