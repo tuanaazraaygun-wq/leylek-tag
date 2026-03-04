@@ -368,6 +368,16 @@ DAILY_API_KEY = os.getenv("DAILY_API_KEY", "")
 DAILY_API_URL = "https://api.daily.co/v1"
 logger.info("✅ Daily.co API yapılandırıldı")
 
+# ==================== SÜRÜCÜ AÇILIŞ PAKETLERİ ====================
+DRIVER_PACKAGES = {
+    "3_hours": {"hours": 3, "price_tl": 120, "name": "3 Saat"},
+    "6_hours": {"hours": 6, "price_tl": 200, "name": "6 Saat"},
+    "9_hours": {"hours": 9, "price_tl": 260, "name": "9 Saat"},
+    "12_hours": {"hours": 12, "price_tl": 320, "name": "12 Saat"},
+    "24_hours": {"hours": 24, "price_tl": 400, "name": "24 Saat"},
+}
+logger.info("✅ Sürücü paketleri yapılandırıldı")
+
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50
 ADMIN_PHONE_NUMBERS = ["5326497412"]  # Ana admin numarası
@@ -4250,7 +4260,203 @@ async def check_proximity_for_trip_end(
         logger.error(f"Proximity check error: {e}")
         return {"success": False, "detail": str(e), "can_end": False}
 
-# ==================== KİŞİYE ÖZEL QR KOD API'LERİ ====================
+# ==================== DİNAMİK TRIP QR KOD SİSTEMİ ====================
+# Her yolculuk için unique QR kod oluşturur
+
+import secrets
+import hmac
+
+# Aktif trip QR kodları cache'i: {qr_token: {trip_id, driver_id, passenger_id, timestamp, expires}}
+active_trip_qr_codes: dict = {}
+
+def generate_trip_qr_token(tag_id: str, driver_id: str, passenger_id: str) -> str:
+    """Trip için güvenli QR token oluştur"""
+    timestamp = int(time.time())
+    # Unique token: tag_id + timestamp + random
+    raw = f"{tag_id}:{driver_id}:{passenger_id}:{timestamp}:{secrets.token_hex(8)}"
+    token = hashlib.sha256(raw.encode()).hexdigest()[:16].upper()
+    return f"TRP-{token}"
+
+@api_router.get("/qr/trip-code")
+async def get_trip_qr_code(tag_id: str, user_id: str):
+    """⚡ Yolculuk için dinamik QR kod oluştur - ŞOFÖR KULLANIR"""
+    try:
+        # 1. Tag'i kontrol et
+        tag = await get_cached_tag(tag_id)
+        if not tag or tag.get("status") not in ["matched", "in_progress"]:
+            return {"success": False, "detail": "Aktif yolculuk bulunamadı"}
+        
+        passenger_id = tag.get("passenger_id")
+        driver_id = tag.get("driver_id")
+        
+        # 2. Sadece şoför QR kod oluşturabilir
+        if user_id != driver_id:
+            return {"success": False, "detail": "Sadece sürücü QR kod oluşturabilir"}
+        
+        # 3. QR token oluştur
+        timestamp = int(time.time())
+        qr_token = generate_trip_qr_token(tag_id, driver_id, passenger_id)
+        
+        # 4. Cache'e kaydet (5 dakika geçerli)
+        active_trip_qr_codes[qr_token] = {
+            "tag_id": tag_id,
+            "driver_id": driver_id,
+            "passenger_id": passenger_id,
+            "timestamp": timestamp,
+            "expires": timestamp + 300  # 5 dakika
+        }
+        
+        # 5. Kullanıcı adını al
+        user = await get_cached_user(driver_id)
+        user_name = user.get("first_name") or user.get("name", "Sürücü").split()[0] if user else "Sürücü"
+        
+        # 6. QR string formatı - Yolcu bu kodu tarayacak
+        qr_string = f"leylektag://trip?t={qr_token}&tag={tag_id}"
+        
+        logger.info(f"✅ Trip QR oluşturuldu: {qr_token} for tag={tag_id}")
+        
+        return {
+            "success": True,
+            "qr_code": qr_token,
+            "qr_string": qr_string,
+            "user_name": user_name,
+            "expires_in": 300,
+            "tag_id": tag_id
+        }
+    except Exception as e:
+        logger.error(f"Trip QR oluşturma hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/qr/verify-trip")
+async def verify_trip_qr(
+    qr_token: str,
+    scanner_user_id: str,
+    latitude: float = 0,
+    longitude: float = 0
+):
+    """⚡ SÜPER HIZLI - Yolcu şoförün trip QR'ını tarar, yolculuk biter"""
+    start_time = time.time()
+    
+    try:
+        # 1. QR token'ı kontrol et
+        qr_data = active_trip_qr_codes.get(qr_token)
+        if not qr_data:
+            return {"success": False, "detail": "Geçersiz veya süresi dolmuş QR kod"}
+        
+        # 2. Süre kontrolü
+        if time.time() > qr_data["expires"]:
+            del active_trip_qr_codes[qr_token]
+            return {"success": False, "detail": "QR kod süresi dolmuş, yeni kod isteyin"}
+        
+        tag_id = qr_data["tag_id"]
+        driver_id = qr_data["driver_id"]
+        passenger_id = qr_data["passenger_id"]
+        
+        # 3. Tarayan kişi yolcu mu?
+        if scanner_user_id != passenger_id:
+            return {"success": False, "detail": "Sadece yolcu QR kodu tarayabilir"}
+        
+        # 4. Tag'i kontrol et
+        tag = await get_cached_tag(tag_id)
+        if not tag or tag.get("status") not in ["matched", "in_progress"]:
+            return {"success": False, "detail": "Bu yolculuk artık aktif değil"}
+        
+        # 5. HIZLI: Yolculuğu bitir
+        completed_at = datetime.utcnow().isoformat()
+        
+        supabase.table("tags").update({
+            "status": "completed",
+            "completed_at": completed_at,
+            "end_method": "qr_dynamic"
+        }).eq("id", tag_id).execute()
+        
+        # Cache temizle
+        invalidate_tag_cache(tag_id)
+        del active_trip_qr_codes[qr_token]
+        
+        # 6. Kullanıcı isimlerini al
+        driver_user = await get_cached_user(driver_id)
+        passenger_user = await get_cached_user(scanner_user_id)
+        driver_name = driver_user.get("first_name") or driver_user.get("name", "Sürücü").split()[0] if driver_user else "Sürücü"
+        passenger_name = passenger_user.get("first_name") or passenger_user.get("name", "Yolcu").split()[0] if passenger_user else "Yolcu"
+        
+        # 7. Socket.IO ile İKİ TARAFA DA puanlama modalı gönder
+        try:
+            # Yolcuya: Şoförü puanla
+            await sio.emit("show_rating_modal", {
+                "tag_id": tag_id,
+                "rate_user_id": driver_id,
+                "rate_user_name": driver_name,
+                "message": "Yolculuk tamamlandı! Sürücüyü puanlayın."
+            }, room=f"user_{passenger_id}")
+            
+            # Şoföre: Yolcuyu puanla
+            await sio.emit("show_rating_modal", {
+                "tag_id": tag_id,
+                "rate_user_id": passenger_id,
+                "rate_user_name": passenger_name,
+                "message": "Yolculuk tamamlandı! Yolcuyu puanlayın."
+            }, room=f"user_{driver_id}")
+            
+            logger.info(f"✅ Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
+        except Exception as socket_err:
+            logger.warning(f"Socket emit hatası: {socket_err}")
+        
+        # 8. Trip log kaydet (arka planda)
+        asyncio.create_task(log_trip_completion(tag_id, driver_id, passenger_id, latitude, longitude, completed_at, "qr_dynamic"))
+        
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"✅ Trip QR tamamlandı {elapsed:.0f}ms: tag={tag_id}")
+        
+        return {
+            "success": True,
+            "message": "Yolculuk tamamlandı!",
+            "tag_id": tag_id,
+            "driver_name": driver_name,
+            "show_rating": True,
+            "elapsed_ms": round(elapsed)
+        }
+        
+    except Exception as e:
+        logger.error(f"Trip QR verify error: {e}")
+        return {"success": False, "detail": str(e)}
+
+async def log_trip_completion(tag_id: str, driver_id: str, passenger_id: str, lat: float, lng: float, completed_at: str, method: str):
+    """Arka planda trip logunu kaydet"""
+    try:
+        # Her iki kullanıcıya +3 puan ver
+        for uid in [passenger_id, driver_id]:
+            try:
+                user_result = supabase.table("users").select("total_trips, points").eq("id", uid).execute()
+                if user_result.data:
+                    current_trips = user_result.data[0].get("total_trips", 0) or 0
+                    current_points = user_result.data[0].get("points", 100) or 100
+                    
+                    supabase.table("users").update({
+                        "total_trips": current_trips + 1,
+                        "points": current_points + 3
+                    }).eq("id", uid).execute()
+            except Exception as e:
+                logger.warning(f"Puan güncelleme hatası {uid}: {e}")
+        
+        # Trip log kaydet
+        try:
+            supabase.table("trip_logs").insert({
+                "tag_id": tag_id,
+                "driver_id": driver_id,
+                "passenger_id": passenger_id,
+                "end_latitude": lat,
+                "end_longitude": lng,
+                "completed_at": completed_at,
+                "end_method": method
+            }).execute()
+        except:
+            pass  # Tablo yoksa sorun değil
+            
+    except Exception as e:
+        logger.error(f"Trip log hatası: {e}")
+
+# ==================== KİŞİYE ÖZEL QR KOD API'LERİ (ESKİ - GERİYE UYUMLULUK) ====================
 
 @api_router.get("/qr/my-code")
 async def get_my_qr_code(user_id: str):
@@ -6071,6 +6277,235 @@ async def admin_stats(phone: str, days: int = 7):
     except Exception as e:
         logger.error(f"❌ Admin stats error: {e}")
         return {"success": False, "error": str(e)}
+
+# ==================== SÜRÜCÜ AÇILIŞ PAKETLERİ API ====================
+
+@api_router.get("/driver/packages")
+async def get_driver_packages():
+    """Mevcut sürücü açılış paketlerini getir"""
+    packages = []
+    for key, pkg in DRIVER_PACKAGES.items():
+        packages.append({
+            "id": key,
+            "name": pkg["name"],
+            "hours": pkg["hours"],
+            "price_tl": pkg["price_tl"],
+        })
+    return {"success": True, "packages": packages}
+
+@api_router.get("/driver/status")
+async def get_driver_status(user_id: str):
+    """Sürücünün aktif durumunu ve kalan süresini getir"""
+    try:
+        result = supabase.table("users").select("driver_active_until, driver_online, driver_details").eq("id", user_id).execute()
+        
+        if not result.data:
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        user = result.data[0]
+        driver_active_until = user.get("driver_active_until")
+        driver_online = user.get("driver_online", False)
+        driver_details = user.get("driver_details") or {}
+        
+        # KYC kontrolü
+        is_verified_driver = driver_details.get("kyc_status") == "approved" and driver_details.get("is_verified", False)
+        
+        if not is_verified_driver:
+            return {
+                "success": True,
+                "is_active": False,
+                "is_verified_driver": False,
+                "remaining_seconds": 0,
+                "remaining_text": "KYC onayı gerekli",
+                "driver_online": False
+            }
+        
+        # Süre kontrolü
+        if driver_active_until:
+            try:
+                # ISO formatını parse et
+                active_until = datetime.fromisoformat(driver_active_until.replace("Z", "+00:00"))
+                now = datetime.now(active_until.tzinfo) if active_until.tzinfo else datetime.utcnow()
+                
+                remaining = (active_until - now).total_seconds()
+                
+                if remaining > 0:
+                    hours = int(remaining // 3600)
+                    minutes = int((remaining % 3600) // 60)
+                    seconds = int(remaining % 60)
+                    remaining_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    
+                    return {
+                        "success": True,
+                        "is_active": True,
+                        "is_verified_driver": True,
+                        "remaining_seconds": int(remaining),
+                        "remaining_text": remaining_text,
+                        "driver_online": driver_online,
+                        "active_until": driver_active_until
+                    }
+                else:
+                    # Süre dolmuş - otomatik offline yap
+                    supabase.table("users").update({
+                        "driver_online": False
+                    }).eq("id", user_id).execute()
+                    
+                    return {
+                        "success": True,
+                        "is_active": False,
+                        "is_verified_driver": True,
+                        "remaining_seconds": 0,
+                        "remaining_text": "Süre doldu",
+                        "driver_online": False
+                    }
+            except Exception as parse_err:
+                logger.warning(f"Tarih parse hatası: {parse_err}")
+        
+        return {
+            "success": True,
+            "is_active": False,
+            "is_verified_driver": True,
+            "remaining_seconds": 0,
+            "remaining_text": "Paket satın alın",
+            "driver_online": False
+        }
+        
+    except Exception as e:
+        logger.error(f"Driver status error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/driver/activate-package")
+async def activate_driver_package(user_id: str, package_id: str):
+    """Sürücü paketini aktifleştir (ödeme doğrulandıktan sonra çağrılır)"""
+    try:
+        # Paket kontrolü
+        if package_id not in DRIVER_PACKAGES:
+            return {"success": False, "detail": "Geçersiz paket"}
+        
+        package = DRIVER_PACKAGES[package_id]
+        hours = package["hours"]
+        
+        # Kullanıcı kontrolü
+        result = supabase.table("users").select("driver_details, driver_active_until").eq("id", user_id).execute()
+        if not result.data:
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        user = result.data[0]
+        driver_details = user.get("driver_details") or {}
+        
+        # KYC kontrolü
+        if driver_details.get("kyc_status") != "approved":
+            return {"success": False, "detail": "Sürücü kaydınız henüz onaylanmamış"}
+        
+        # Mevcut süreye ekle veya yeni süre başlat
+        current_until = user.get("driver_active_until")
+        now = datetime.utcnow()
+        
+        if current_until:
+            try:
+                active_until = datetime.fromisoformat(current_until.replace("Z", "+00:00"))
+                if active_until.tzinfo:
+                    active_until = active_until.replace(tzinfo=None)
+                
+                if active_until > now:
+                    # Mevcut süreye ekle
+                    new_until = active_until + timedelta(hours=hours)
+                else:
+                    # Yeni süre başlat
+                    new_until = now + timedelta(hours=hours)
+            except:
+                new_until = now + timedelta(hours=hours)
+        else:
+            new_until = now + timedelta(hours=hours)
+        
+        # Güncelle
+        supabase.table("users").update({
+            "driver_active_until": new_until.isoformat(),
+            "driver_online": True,
+            "updated_at": now.isoformat()
+        }).eq("id", user_id).execute()
+        
+        # Paket satın alma logunu kaydet
+        try:
+            supabase.table("driver_package_purchases").insert({
+                "user_id": user_id,
+                "package_id": package_id,
+                "package_name": package["name"],
+                "hours": hours,
+                "price_tl": package["price_tl"],
+                "purchased_at": now.isoformat(),
+                "expires_at": new_until.isoformat()
+            }).execute()
+        except Exception as log_err:
+            logger.warning(f"Paket log hatası (tablo yok olabilir): {log_err}")
+        
+        logger.info(f"✅ Sürücü paketi aktifleştirildi: {user_id} -> {package_id} ({hours} saat)")
+        
+        return {
+            "success": True,
+            "message": f"{package['name']} paketi aktifleştirildi!",
+            "active_until": new_until.isoformat(),
+            "hours_added": hours
+        }
+        
+    except Exception as e:
+        logger.error(f"Package activation error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/driver/go-offline")
+async def driver_go_offline(user_id: str):
+    """Sürücüyü offline yap (manuel)"""
+    try:
+        supabase.table("users").update({
+            "driver_online": False,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        logger.info(f"🔴 Sürücü offline oldu: {user_id}")
+        return {"success": True, "message": "Offline oldunuz"}
+    except Exception as e:
+        logger.error(f"Driver offline error: {e}")
+        return {"success": False, "detail": str(e)}
+
+@api_router.post("/driver/go-online")
+async def driver_go_online(user_id: str):
+    """Sürücüyü online yap (aktif paketi varsa)"""
+    try:
+        result = supabase.table("users").select("driver_active_until, driver_details").eq("id", user_id).execute()
+        if not result.data:
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        user = result.data[0]
+        driver_details = user.get("driver_details") or {}
+        driver_active_until = user.get("driver_active_until")
+        
+        # KYC kontrolü
+        if driver_details.get("kyc_status") != "approved":
+            return {"success": False, "detail": "Sürücü kaydınız henüz onaylanmamış"}
+        
+        # Süre kontrolü
+        if not driver_active_until:
+            return {"success": False, "detail": "Aktif paketiniz yok. Lütfen bir paket satın alın."}
+        
+        try:
+            active_until = datetime.fromisoformat(driver_active_until.replace("Z", "+00:00"))
+            now = datetime.now(active_until.tzinfo) if active_until.tzinfo else datetime.utcnow()
+            
+            if active_until <= now:
+                return {"success": False, "detail": "Paket süreniz dolmuş. Lütfen yeni bir paket satın alın."}
+        except:
+            return {"success": False, "detail": "Paket süresi kontrol edilemedi"}
+        
+        supabase.table("users").update({
+            "driver_online": True,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        logger.info(f"🟢 Sürücü online oldu: {user_id}")
+        return {"success": True, "message": "Online oldunuz"}
+    except Exception as e:
+        logger.error(f"Driver online error: {e}")
+        return {"success": False, "detail": str(e)}
 
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!

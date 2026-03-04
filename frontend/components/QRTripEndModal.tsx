@@ -105,11 +105,15 @@ export default function QRTripEndModal({
     qrLoadedRef.current = true;
     
     try {
-      const response = await fetch(`${API_URL}/api/qr/my-code?user_id=${userId}`);
+      // 🆕 DİNAMİK TRIP QR - Her yolculuk için unique
+      const response = await fetch(`${API_URL}/api/qr/trip-code?tag_id=${tagId}&user_id=${userId}`);
       const data = await response.json();
       if (data.success) {
         setQrCode(data.qr_code);
         setQrString(data.qr_string);
+        console.log('✅ Trip QR oluşturuldu:', data.qr_code);
+      } else {
+        console.error('QR oluşturulamadı:', data.detail);
       }
     } catch (error) {
       console.error('QR fetch error:', error);
@@ -123,17 +127,41 @@ export default function QRTripEndModal({
     setProcessing(true);
 
     try {
-      // QR kod parse
-      let scannedQRCode: string | null = null;
-      if (data.startsWith('leylekpay://u?')) {
+      // 🆕 YENİ DİNAMİK QR FORMAT: leylektag://trip?t=TOKEN&tag=TAG_ID
+      let qrToken: string | null = null;
+      
+      if (data.startsWith('leylektag://trip?')) {
         const params = new URLSearchParams(data.split('?')[1]);
-        scannedQRCode = params.get('c');
-      } else if (data.startsWith('LYK-')) {
-        scannedQRCode = data;
+        qrToken = params.get('t');
+      } else if (data.startsWith('TRP-')) {
+        // Direkt token
+        qrToken = data;
+      } else if (data.startsWith('leylekpay://u?')) {
+        // ESKİ FORMAT - Geriye uyumluluk
+        const params = new URLSearchParams(data.split('?')[1]);
+        const oldCode = params.get('c');
+        if (oldCode) {
+          // Eski API'yi kullan
+          const lat = myLatitude || 0, lng = myLongitude || 0;
+          const response = await fetch(
+            `${API_URL}/api/qr/scan-trip-end?scanner_user_id=${userId}&scanned_qr_code=${oldCode}&tag_id=${tagId}&latitude=${lat}&longitude=${lng}`,
+            { method: 'POST' }
+          );
+          const result = await response.json();
+          if (result.success) {
+            onComplete(true, '', result.scanned_user_name || firstName);
+            onClose();
+          } else {
+            Alert.alert('Hata', result.detail || 'QR doğrulanamadı');
+            setScanned(false);
+          }
+          setProcessing(false);
+          return;
+        }
       }
 
-      if (!scannedQRCode) {
-        Alert.alert('Hata', 'Geçersiz QR kod');
+      if (!qrToken) {
+        Alert.alert('Hata', 'Geçersiz QR kod formatı');
         setScanned(false);
         setProcessing(false);
         return;
@@ -148,22 +176,24 @@ export default function QRTripEndModal({
         } catch {}
       }
 
-      // ⚡ API çağrısı
+      // 🆕 YENİ API: /api/qr/verify-trip
       const response = await fetch(
-        `${API_URL}/api/qr/scan-trip-end?scanner_user_id=${userId}&scanned_qr_code=${scannedQRCode}&tag_id=${tagId}&latitude=${lat}&longitude=${lng}`,
+        `${API_URL}/api/qr/verify-trip?qr_token=${qrToken}&scanner_user_id=${userId}&latitude=${lat}&longitude=${lng}`,
         { method: 'POST' }
       );
       const result = await response.json();
 
       if (result.success) {
         // ✅ Başarılı - Puanlama modalı AÇ
-        onComplete(true, '', result.scanned_user_name || firstName);
+        console.log('✅ Trip QR doğrulandı:', result);
+        onComplete(true, '', result.driver_name || firstName);
         onClose();
       } else {
         Alert.alert('Hata', result.detail || 'QR doğrulanamadı');
         setScanned(false);
       }
     } catch (error) {
+      console.error('QR scan error:', error);
       Alert.alert('Hata', 'Bağlantı hatası');
       setScanned(false);
     } finally {
