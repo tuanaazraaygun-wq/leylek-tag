@@ -386,11 +386,25 @@ DISPATCH_CONFIG = {
     "enabled": True,                 # Dispatch queue aktif mi
 }
 
+# Sürücü Aktiflik Kuralları
+DRIVER_ACTIVATION_CONFIG = {
+    "min_active_hours": 3,           # Minimum aktif kalma süresi (saat)
+}
+
 # Aktif dispatch task'ları (tag_id -> asyncio.Task)
 active_dispatch_tasks: dict = {}
 
 # Dispatch Queue In-Memory State (Supabase'e de yazılacak)
 dispatch_queues: dict = {}  # tag_id -> list of driver entries
+
+# ==================== PROMOSYON KODU SİSTEMİ ====================
+import random
+import string
+
+def generate_promo_code(length: int = 8) -> str:
+    """Rastgele promosyon kodu üret"""
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
 
 async def get_dispatch_config() -> dict:
     """Config tablosundan dispatch ayarlarını oku, yoksa default kullan"""
@@ -416,8 +430,8 @@ async def find_eligible_drivers(pickup_lat: float, pickup_lng: float, exclude_id
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
         query = supabase.table("users").select(
-            "id, name, rating, latitude, longitude, last_active, driver_active_until, is_driver_online"
-        ).eq("is_driver_online", True).gt("driver_active_until", now)
+            "id, name, rating, latitude, longitude, last_active, driver_active_until, driver_online"
+        ).eq("driver_online", True).gt("driver_active_until", now)
         
         result = query.execute()
         
@@ -6228,6 +6242,678 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
     except Exception as e:
         logger.error(f"❌ Get available offers error: {e}")
         return {"success": False, "error": str(e), "offers": []}
+
+# ==================== PROMOSYON KODU SİSTEMİ ====================
+
+@api_router.post("/admin/promo/create")
+async def create_promo_code(admin_phone: str, hours: int, code: str = None, max_uses: int = 1, description: str = ""):
+    """Admin - Promosyon kodu oluştur"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        promo_code = code or generate_promo_code()
+        
+        promo_data = {
+            "code": promo_code.upper(),
+            "hours": hours,
+            "max_uses": max_uses,
+            "used_count": 0,
+            "description": description,
+            "is_active": True,
+            "created_by": admin_phone,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table("promo_codes").insert(promo_data).execute()
+        
+        logger.info(f"✅ Promosyon kodu oluşturuldu: {promo_code} ({hours} saat)")
+        return {"success": True, "promo": result.data[0] if result.data else promo_data}
+    except Exception as e:
+        logger.error(f"Create promo error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/promo/list")
+async def list_promo_codes(admin_phone: str):
+    """Admin - Tüm promosyon kodlarını listele"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        result = supabase.table("promo_codes").select("*").order("created_at", desc=True).execute()
+        
+        return {"success": True, "promos": result.data or []}
+    except Exception as e:
+        logger.error(f"List promo error: {e}")
+        return {"success": False, "promos": []}
+
+@api_router.post("/admin/promo/deactivate")
+async def deactivate_promo(admin_phone: str, code: str):
+    """Admin - Promosyon kodunu deaktive et"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        supabase.table("promo_codes").update({"is_active": False}).eq("code", code.upper()).execute()
+        
+        return {"success": True, "message": "Promosyon kodu deaktive edildi"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@api_router.post("/driver/promo/redeem")
+async def redeem_promo_code(user_id: str, code: str):
+    """Sürücü - Promosyon kodunu kullan"""
+    try:
+        code = code.upper().strip()
+        
+        # Promosyon kodunu kontrol et
+        result = supabase.table("promo_codes").select("*").eq("code", code).eq("is_active", True).execute()
+        
+        if not result.data:
+            return {"success": False, "error": "Geçersiz veya süresi dolmuş promosyon kodu"}
+        
+        promo = result.data[0]
+        
+        # Kullanım limitini kontrol et
+        if promo["used_count"] >= promo["max_uses"]:
+            return {"success": False, "error": "Bu promosyon kodu kullanım limitine ulaştı"}
+        
+        # Kullanıcı daha önce kullanmış mı?
+        usage_check = supabase.table("promo_usage").select("id").eq("user_id", user_id).eq("promo_code", code).execute()
+        if usage_check.data:
+            return {"success": False, "error": "Bu promosyon kodunu daha önce kullandınız"}
+        
+        # Sürücünün mevcut aktif süresini al
+        user_result = supabase.table("users").select("driver_active_until").eq("id", user_id).execute()
+        
+        current_until = None
+        if user_result.data and user_result.data[0].get("driver_active_until"):
+            current_until = datetime.fromisoformat(user_result.data[0]["driver_active_until"].replace("Z", ""))
+        
+        # Yeni süreyi hesapla
+        now = datetime.utcnow()
+        if current_until and current_until > now:
+            new_until = current_until + timedelta(hours=promo["hours"])
+        else:
+            new_until = now + timedelta(hours=promo["hours"])
+        
+        # Kullanıcıyı güncelle
+        supabase.table("users").update({
+            "driver_active_until": new_until.isoformat()
+        }).eq("id", user_id).execute()
+        
+        # Promosyon kullanım sayısını artır
+        supabase.table("promo_codes").update({
+            "used_count": promo["used_count"] + 1
+        }).eq("code", code).execute()
+        
+        # Kullanım kaydı oluştur
+        supabase.table("promo_usage").insert({
+            "user_id": user_id,
+            "promo_code": code,
+            "hours_added": promo["hours"],
+            "used_at": datetime.utcnow().isoformat()
+        }).execute()
+        
+        logger.info(f"✅ Promosyon kullanıldı: {code} -> {user_id} ({promo['hours']} saat)")
+        
+        return {
+            "success": True,
+            "message": f"{promo['hours']} saat eklendi!",
+            "hours_added": promo["hours"],
+            "active_until": new_until.isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Redeem promo error: {e}")
+        return {"success": False, "error": str(e)}
+
+# ==================== SÜRÜCÜ AKTİFLİK KURALLARI (3 SAAT MİNİMUM) ====================
+
+@api_router.post("/driver/toggle-online")
+async def toggle_driver_online(user_id: str, is_online: bool):
+    """Sürücü online/offline durumunu değiştir - 3 SAAT MİNİMUM KURALI"""
+    try:
+        now = datetime.utcnow()
+        
+        # Mevcut durumu al
+        user_result = supabase.table("users").select(
+            "driver_online, driver_active_until, driver_activated_at"
+        ).eq("id", user_id).execute()
+        
+        if not user_result.data:
+            return {"success": False, "error": "Kullanıcı bulunamadı"}
+        
+        user = user_result.data[0]
+        current_online = user.get("driver_online", False)
+        active_until = user.get("driver_active_until")
+        activated_at = user.get("driver_activated_at")
+        
+        # Aktif paketi kontrol et
+        if is_online:
+            if not active_until:
+                return {"success": False, "error": "Aktif paketiniz yok. Lütfen paket satın alın veya promosyon kodu kullanın."}
+            
+            active_until_dt = datetime.fromisoformat(active_until.replace("Z", ""))
+            if active_until_dt < now:
+                return {"success": False, "error": "Paket süreniz dolmuş. Lütfen yeni paket alın."}
+        
+        # KAPAMA İSTEĞİ - 3 saat kuralını kontrol et
+        if not is_online and current_online:
+            if activated_at:
+                activated_at_dt = datetime.fromisoformat(activated_at.replace("Z", ""))
+                hours_active = (now - activated_at_dt).total_seconds() / 3600
+                
+                if hours_active < 3:
+                    remaining_minutes = int((3 - hours_active) * 60)
+                    return {
+                        "success": False,
+                        "error": f"En az 3 saat aktif kalmalısınız. Kalan süre: {remaining_minutes} dakika",
+                        "min_hours": 3,
+                        "hours_active": round(hours_active, 1),
+                        "remaining_minutes": remaining_minutes
+                    }
+        
+        # Durumu güncelle
+        update_data = {"driver_online": is_online}
+        
+        if is_online and not current_online:
+            # Açılıyor - aktivasyon zamanını kaydet
+            update_data["driver_activated_at"] = now.isoformat()
+        elif not is_online and current_online:
+            # Kapanıyor - aktivasyon zamanını temizle
+            update_data["driver_activated_at"] = None
+        
+        supabase.table("users").update(update_data).eq("id", user_id).execute()
+        
+        status_text = "aktif" if is_online else "pasif"
+        logger.info(f"🚗 Sürücü {status_text}: {user_id}")
+        
+        return {
+            "success": True,
+            "is_online": is_online,
+            "message": f"Sürücü modu {'açıldı' if is_online else 'kapatıldı'}"
+        }
+    except Exception as e:
+        logger.error(f"Toggle driver online error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/driver/activation-status")
+async def get_driver_activation_status(user_id: str):
+    """Sürücünün aktivasyon durumunu getir"""
+    try:
+        user_result = supabase.table("users").select(
+            "driver_online, driver_active_until, driver_activated_at"
+        ).eq("id", user_id).execute()
+        
+        if not user_result.data:
+            return {"success": False, "error": "Kullanıcı bulunamadı"}
+        
+        user = user_result.data[0]
+        now = datetime.utcnow()
+        
+        is_online = user.get("driver_online", False)
+        active_until = user.get("driver_active_until")
+        activated_at = user.get("driver_activated_at")
+        
+        # Kalan paket süresini hesapla
+        remaining_package_minutes = 0
+        if active_until:
+            active_until_dt = datetime.fromisoformat(active_until.replace("Z", ""))
+            if active_until_dt > now:
+                remaining_package_minutes = int((active_until_dt - now).total_seconds() / 60)
+        
+        # Minimum aktiflik süresini hesapla
+        can_deactivate = True
+        remaining_min_minutes = 0
+        hours_active = 0
+        
+        if is_online and activated_at:
+            activated_at_dt = datetime.fromisoformat(activated_at.replace("Z", ""))
+            hours_active = (now - activated_at_dt).total_seconds() / 3600
+            
+            if hours_active < 3:
+                can_deactivate = False
+                remaining_min_minutes = int((3 - hours_active) * 60)
+        
+        return {
+            "success": True,
+            "is_online": is_online,
+            "active_until": active_until,
+            "remaining_package_minutes": remaining_package_minutes,
+            "hours_active": round(hours_active, 2),
+            "can_deactivate": can_deactivate,
+            "remaining_min_minutes": remaining_min_minutes,
+            "min_hours_required": 3
+        }
+    except Exception as e:
+        logger.error(f"Get activation status error: {e}")
+        return {"success": False, "error": str(e)}
+
+# ==================== GELİŞMİŞ ADMİN PANELİ ====================
+
+@api_router.get("/admin/dashboard/full")
+async def admin_full_dashboard(admin_phone: str):
+    """Admin - Tam dashboard istatistikleri"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        week_start = (now - timedelta(days=7)).isoformat()
+        
+        # Kullanıcı istatistikleri
+        users_result = supabase.table("users").select("id, driver_details, driver_online, created_at", count="exact").execute()
+        total_users = users_result.count or 0
+        
+        drivers = []
+        online_drivers = 0
+        new_users_today = 0
+        
+        for u in users_result.data or []:
+            if u.get("driver_details"):
+                drivers.append(u)
+                if u.get("driver_online"):
+                    online_drivers += 1
+            if u.get("created_at", "") >= today_start:
+                new_users_today += 1
+        
+        # Trip istatistikleri
+        completed_today = supabase.table("tags").select("id", count="exact").eq("status", "completed").gte("completed_at", today_start).execute()
+        completed_week = supabase.table("tags").select("id", count="exact").eq("status", "completed").gte("completed_at", week_start).execute()
+        active_trips = supabase.table("tags").select("id", count="exact").in_("status", ["matched", "in_progress"]).execute()
+        waiting_trips = supabase.table("tags").select("id", count="exact").eq("status", "waiting").execute()
+        
+        # KYC istatistikleri
+        kyc_pending_count = 0
+        try:
+            kyc_pending = supabase.table("driver_kyc").select("id", count="exact").eq("status", "pending").execute()
+            kyc_pending_count = kyc_pending.count or 0
+        except:
+            pass
+        
+        # Promosyon istatistikleri
+        active_promos_count = 0
+        try:
+            active_promos = supabase.table("promo_codes").select("id", count="exact").eq("is_active", True).execute()
+            active_promos_count = active_promos.count or 0
+        except:
+            pass
+        
+        return {
+            "success": True,
+            "stats": {
+                "users": {
+                    "total": total_users,
+                    "drivers": len(drivers),
+                    "passengers": total_users - len(drivers),
+                    "online_drivers": online_drivers,
+                    "new_today": new_users_today
+                },
+                "trips": {
+                    "completed_today": completed_today.count or 0,
+                    "completed_week": completed_week.count or 0,
+                    "active": active_trips.count or 0,
+                    "waiting": waiting_trips.count or 0
+                },
+                "kyc": {
+                    "pending": kyc_pending_count
+                },
+                "promos": {
+                    "active": active_promos_count
+                }
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin full dashboard error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/users/full")
+async def admin_get_users_full(admin_phone: str, page: int = 1, limit: int = 20, search: str = None, filter_type: str = None):
+    """Admin - Detaylı kullanıcı listesi"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        offset = (page - 1) * limit
+        
+        query = supabase.table("users").select("*", count="exact")
+        
+        if search:
+            query = query.or_(f"phone.ilike.%{search}%,name.ilike.%{search}%")
+        
+        if filter_type == "drivers":
+            query = query.not_.is_("driver_details", "null")
+        elif filter_type == "online":
+            query = query.eq("driver_online", True)
+        
+        result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        
+        users = []
+        for u in result.data:
+            users.append({
+                "id": u["id"],
+                "phone": u["phone"],
+                "name": u["name"],
+                "city": u.get("city"),
+                "rating": float(u.get("rating", 5.0)),
+                "total_trips": u.get("total_trips", 0),
+                "is_active": u.get("is_active", True),
+                "is_driver": bool(u.get("driver_details")),
+                "is_online": u.get("driver_online", False),
+                "driver_active_until": u.get("driver_active_until"),
+                "profile_photo": u.get("profile_photo"),
+                "created_at": u.get("created_at"),
+                "last_active": u.get("last_active")
+            })
+        
+        return {
+            "success": True,
+            "users": users,
+            "total": result.count or 0,
+            "page": page,
+            "limit": limit
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin get users full error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/trips")
+async def admin_get_trips(admin_phone: str, page: int = 1, limit: int = 20, status: str = None):
+    """Admin - Trip listesi"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        offset = (page - 1) * limit
+        
+        query = supabase.table("tags").select("*", count="exact")
+        
+        if status:
+            query = query.eq("status", status)
+        
+        result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        
+        return {
+            "success": True,
+            "trips": result.data or [],
+            "total": result.count or 0,
+            "page": page,
+            "limit": limit
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin get trips error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/login-logs")
+async def admin_get_login_logs(admin_phone: str, page: int = 1, limit: int = 50):
+    """Admin - Giriş logları"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        offset = (page - 1) * limit
+        
+        result = supabase.table("login_logs").select("*", count="exact").order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        
+        return {
+            "success": True,
+            "logs": result.data or [],
+            "total": result.count or 0,
+            "page": page,
+            "limit": limit
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin login logs error: {e}")
+        return {"success": True, "logs": [], "total": 0, "page": page, "limit": limit}
+
+@api_router.post("/admin/user/ban")
+async def admin_ban_user(admin_phone: str, user_id: str, is_banned: bool):
+    """Admin - Kullanıcı banla/ban kaldır"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        supabase.table("users").update({
+            "is_active": not is_banned,
+            "banned_at": datetime.utcnow().isoformat() if is_banned else None
+        }).eq("id", user_id).execute()
+        
+        action = "banlandı" if is_banned else "ban kaldırıldı"
+        logger.info(f"🚫 Kullanıcı {action}: {user_id}")
+        
+        return {"success": True, "message": f"Kullanıcı {action}"}
+    except Exception as e:
+        logger.error(f"Admin ban user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/user/add-time")
+async def admin_add_driver_time(admin_phone: str, user_id: str, hours: int):
+    """Admin - Sürücüye süre ekle"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        user_result = supabase.table("users").select("driver_active_until").eq("id", user_id).execute()
+        
+        now = datetime.utcnow()
+        current_until = None
+        
+        if user_result.data and user_result.data[0].get("driver_active_until"):
+            current_until = datetime.fromisoformat(user_result.data[0]["driver_active_until"].replace("Z", ""))
+        
+        if current_until and current_until > now:
+            new_until = current_until + timedelta(hours=hours)
+        else:
+            new_until = now + timedelta(hours=hours)
+        
+        supabase.table("users").update({
+            "driver_active_until": new_until.isoformat()
+        }).eq("id", user_id).execute()
+        
+        logger.info(f"⏱️ Admin süre ekledi: {user_id} ({hours} saat)")
+        
+        return {
+            "success": True,
+            "message": f"{hours} saat eklendi",
+            "active_until": new_until.isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Admin add time error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== PUSH NOTİFİKASYON SİSTEMİ ====================
+
+@api_router.post("/notifications/register-token")
+async def register_push_token(user_id: str, token: str, platform: str = "android"):
+    """Push notification token kaydet"""
+    try:
+        # Mevcut token'ı kontrol et
+        existing = supabase.table("push_tokens").select("id").eq("user_id", user_id).execute()
+        
+        if existing.data:
+            # Güncelle
+            supabase.table("push_tokens").update({
+                "token": token,
+                "platform": platform,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("user_id", user_id).execute()
+        else:
+            # Yeni kayıt
+            supabase.table("push_tokens").insert({
+                "user_id": user_id,
+                "token": token,
+                "platform": platform,
+                "created_at": datetime.utcnow().isoformat()
+            }).execute()
+        
+        logger.info(f"📱 Push token kaydedildi: {user_id}")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Register push token error: {e}")
+        return {"success": False, "error": str(e)}
+
+async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
+    """Tek kullanıcıya push bildirim gönder"""
+    try:
+        # Token'ı al
+        token_result = supabase.table("push_tokens").select("token").eq("user_id", user_id).execute()
+        
+        if not token_result.data:
+            logger.warning(f"Push token bulunamadı: {user_id}")
+            return False
+        
+        token = token_result.data[0]["token"]
+        
+        # Expo Push API'ye gönder
+        import httpx
+        
+        message = {
+            "to": token,
+            "sound": "default",
+            "title": title,
+            "body": body,
+            "data": data or {}
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=message,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"📤 Push gönderildi: {user_id} - {title}")
+                return True
+            else:
+                logger.error(f"Push gönderme hatası: {response.text}")
+                return False
+    except Exception as e:
+        logger.error(f"Send push error: {e}")
+        return False
+
+async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):
+    """Toplu push bildirim gönder"""
+    try:
+        query = supabase.table("push_tokens").select("token, user_id")
+        
+        if target == "drivers":
+            # Sadece sürücülere
+            driver_ids = supabase.table("users").select("id").not_.is_("driver_details", "null").execute()
+            if driver_ids.data:
+                ids = [d["id"] for d in driver_ids.data]
+                query = query.in_("user_id", ids)
+        elif target == "online_drivers":
+            # Sadece online sürücülere
+            driver_ids = supabase.table("users").select("id").eq("driver_online", True).execute()
+            if driver_ids.data:
+                ids = [d["id"] for d in driver_ids.data]
+                query = query.in_("user_id", ids)
+        
+        tokens_result = query.execute()
+        
+        if not tokens_result.data:
+            return 0
+        
+        # Expo Push API'ye toplu gönder
+        import httpx
+        
+        messages = []
+        for t in tokens_result.data:
+            messages.append({
+                "to": t["token"],
+                "sound": "default",
+                "title": title,
+                "body": body,
+                "data": data or {}
+            })
+        
+        sent_count = 0
+        async with httpx.AsyncClient() as client:
+            # 100'lük gruplar halinde gönder
+            for i in range(0, len(messages), 100):
+                batch = messages[i:i+100]
+                response = await client.post(
+                    "https://exp.host/--/api/v2/push/send",
+                    json=batch,
+                    headers={"Content-Type": "application/json"}
+                )
+                if response.status_code == 200:
+                    sent_count += len(batch)
+        
+        logger.info(f"📤 Toplu push gönderildi: {sent_count} kullanıcı - {title}")
+        return sent_count
+    except Exception as e:
+        logger.error(f"Bulk push error: {e}")
+        return 0
+
+@api_router.post("/admin/notifications/send")
+async def admin_send_push(admin_phone: str, title: str, body: str, target: str = "all", user_id: str = None):
+    """Admin - Push bildirim gönder"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        # Bildirimi kaydet
+        notification_data = {
+            "title": title,
+            "body": body,
+            "target": target,
+            "user_id": user_id,
+            "sent_by": admin_phone,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        supabase.table("admin_notifications").insert(notification_data).execute()
+        
+        # Gönder
+        if user_id:
+            success = await send_push_notification(user_id, title, body)
+            sent_count = 1 if success else 0
+        else:
+            sent_count = await send_bulk_push_notification(title, body, target)
+        
+        return {
+            "success": True,
+            "sent_count": sent_count,
+            "message": f"{sent_count} kullanıcıya bildirim gönderildi"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin send push error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/notifications/history")
+async def admin_get_notification_history(admin_phone: str, page: int = 1, limit: int = 20):
+    """Admin - Bildirim geçmişi"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        offset = (page - 1) * limit
+        
+        result = supabase.table("admin_notifications").select("*", count="exact").order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+        
+        return {
+            "success": True,
+            "notifications": result.data or [],
+            "total": result.count or 0,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        logger.error(f"Admin notification history error: {e}")
+        return {"success": True, "notifications": [], "total": 0}
 
 # ==================== LEYLEK MUHABBETİ (COMMUNITY) ====================
 # Tamamen izole modül - mevcut sistemlere dokunmaz
