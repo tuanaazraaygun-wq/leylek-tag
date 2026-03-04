@@ -781,39 +781,39 @@ export default function App() {
   }
 
   if (screen === 'login') {
-    // Login arka plan URL
-    const loginBgUrl = 'https://customer-assets.emergentagent.com/job_0749704d-49ce-4b01-9e79-7317b58bc150/artifacts/zr5ck0go_loginarkaplan%20%281%29.png';
     const screenWidth = Dimensions.get('window').width;
     const screenHeight = Dimensions.get('window').height;
     
     return (
       <View style={{ flex: 1, width: '100%', height: '100%' }}>
-        {/* Arka Plan Resmi */}
-        <Image 
-          source={Platform.OS === 'web' ? { uri: loginBgUrl } : require('../assets/images/login-background.png')}
-          style={{
+        {/* Arka Plan Resmi - SADECE MOBİL */}
+        {Platform.OS !== 'web' && (
+          <Image 
+            source={require('../assets/images/login-background.png')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: screenWidth,
+              height: screenHeight,
+            }}
+            resizeMode="cover"
+          />
+        )}
+        
+        {/* Yarı saydam overlay - içeriğin okunabilirliği için (sadece mobil) */}
+        {Platform.OS !== 'web' && (
+          <View style={{
             position: 'absolute',
             top: 0,
             left: 0,
-            width: screenWidth,
-            height: screenHeight,
-          }}
-          resizeMode="cover"
-          onLoad={() => console.log('✅ Login arka plan resmi yüklendi')}
-          onError={(e) => console.log('❌ Login arka plan resmi yüklenemedi:', e.nativeEvent?.error)}
-        />
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(255,255,255,0.3)',
+          }} />
+        )}
         
-        {/* Yarı saydam overlay - içeriğin okunabilirliği için */}
-        <View style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(255,255,255,0.3)',
-        }} />
-        
-        <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
           {/* Hareketli Bulutlar Arka Plan */}
           <AnimatedClouds />
           
