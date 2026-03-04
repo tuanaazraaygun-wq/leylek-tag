@@ -4849,11 +4849,22 @@ async def complete_trip_with_qr(request: Request):
         # 3. Yolculuğu tamamla
         completed_at = datetime.utcnow().isoformat()
         
-        supabase.table("tags").update({
+        # Güncelleme - end_method opsiyonel (kolon yoksa hata vermesin)
+        update_data = {
             "status": "completed",
-            "completed_at": completed_at,
-            "end_method": "qr_personal"
-        }).eq("id", tag_id).execute()
+            "completed_at": completed_at
+        }
+        
+        try:
+            # end_method kolonunu eklemeyi dene
+            supabase.table("tags").update({
+                **update_data,
+                "end_method": "qr"
+            }).eq("id", tag_id).execute()
+        except Exception as col_err:
+            # Kolon yoksa sadece status güncelle
+            logger.warning(f"end_method kolonu yok, sadece status güncelleniyor: {col_err}")
+            supabase.table("tags").update(update_data).eq("id", tag_id).execute()
         
         # Cache temizle
         invalidate_tag_cache(tag_id)
