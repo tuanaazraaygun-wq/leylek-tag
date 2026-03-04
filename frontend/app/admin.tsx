@@ -27,9 +27,9 @@ import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
-const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL 
-  || process.env.EXPO_PUBLIC_BACKEND_URL 
-  || 'https://qr-trip-end.preview.emergentagent.com';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL 
+  || Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL 
+  || 'https://api.leylektag.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 type TabType = 'dashboard' | 'users' | 'drivers' | 'trips' | 'promos' | 'notifications' | 'settings';
