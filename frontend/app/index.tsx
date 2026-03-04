@@ -781,131 +781,157 @@ export default function App() {
   }
 
   if (screen === 'login') {
+    // Login arka plan URL
+    const loginBgUrl = 'https://customer-assets.emergentagent.com/job_0749704d-49ce-4b01-9e79-7317b58bc150/artifacts/zr5ck0go_loginarkaplan%20%281%29.png';
+    const screenWidth = Dimensions.get('window').width;
+    const screenHeight = Dimensions.get('window').height;
+    
     return (
-      <ImageBackground 
-        source={require('../assets/images/login-background.png')} 
-        style={styles.loginBackgroundContainer}
-        imageStyle={styles.loginBackgroundImage}
-      >
-      <SafeAreaView style={styles.containerTransparent}>
-        {/* Hareketli Bulutlar Arka Plan */}
-        <AnimatedClouds />
+      <View style={{ flex: 1, width: '100%', height: '100%' }}>
+        {/* Arka Plan Resmi */}
+        <Image 
+          source={Platform.OS === 'web' ? { uri: loginBgUrl } : require('../assets/images/login-background.png')}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: screenWidth,
+            height: screenHeight,
+          }}
+          resizeMode="cover"
+          onLoad={() => console.log('✅ Login arka plan resmi yüklendi')}
+          onError={(e) => console.log('❌ Login arka plan resmi yüklenemedi:', e.nativeEvent?.error)}
+        />
         
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            {/* Yuvarlak Logo */}
-            <View style={styles.roundLogoWrapper}>
-              <Image 
-                source={require('../assets/images/logo.png')} 
-                style={styles.roundLogo}
-                resizeMode="cover"
-              />
-            </View>
-            <Text style={styles.heroTitle}>Yolculuk Eşleştirme</Text>
-            <Text style={styles.heroSubtitle}>Güvenli ve hızlı yolculuk deneyimi</Text>
-          </View>
-
-          <View style={styles.modernFormContainer}>
-            <Text style={styles.modernLabel}>Telefon Numaranız</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                placeholder="5XX XXX XX XX"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
-                maxLength={11}
-              />
-            </View>
-
-            {/* KVKK Checkbox - Tıklanabilir Metin */}
-            <TouchableOpacity 
-              style={styles.kvkkContainer} 
-              onPress={() => setKvkkAccepted(!kvkkAccepted)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
-                {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
+        {/* Yarı saydam overlay - içeriğin okunabilirliği için */}
+        <View style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(255,255,255,0.3)',
+        }} />
+        
+        <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+          {/* Hareketli Bulutlar Arka Plan */}
+          <AnimatedClouds />
+          
+          <ScrollView contentContainerStyle={styles.loginScrollContent} style={{ backgroundColor: 'transparent' }}>
+            <View style={styles.logoContainer}>
+              {/* Yuvarlak Logo */}
+              <View style={styles.roundLogoWrapper}>
+                <Image 
+                  source={require('../assets/images/logo.png')} 
+                  style={styles.roundLogo}
+                  resizeMode="cover"
+                />
               </View>
-              <Text style={styles.kvkkText}>
-                <Text 
-                  style={styles.kvkkLink} 
-                  onPress={() => setShowKVKKModal(true)}
-                >
-                  Aydınlatma Metni ve Gizlilik Politikası
-                </Text>
-                <Text>'nı okudum, anladım ve kabul ediyorum.</Text>
-              </Text>
-            </TouchableOpacity>
+              <Text style={styles.heroTitle}>Yolculuk Eşleştirme</Text>
+              <Text style={styles.heroSubtitle}>Güvenli ve hızlı yolculuk deneyimi</Text>
+            </View>
 
-            <TouchableOpacity 
-              style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
-              onPress={() => {
-                if (!kvkkAccepted) {
-                  Alert.alert(
-                    '⚠️ Onay Gerekli', 
-                    'Devam etmek için Aydınlatma Metni ve Gizlilik Politikasını kabul etmelisiniz.',
-                    [{ text: 'Tamam', style: 'default' }]
-                  );
-                  return;
-                }
-                handleSendOTP();
-              }}
-            >
-              <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFF" />
-            </TouchableOpacity>
-            
-            {/* Kayıt Ol Butonu */}
-            <TouchableOpacity 
-              style={styles.registerButton}
-              onPress={() => setScreen('register')}
-            >
-              <Ionicons name="person-add-outline" size={20} color="#3FA9F5" />
-              <Text style={styles.registerButtonText}>Kayıt Ol</Text>
-            </TouchableOpacity>
-            
-            {/* Şifremi Unuttum */}
-            <TouchableOpacity 
-              style={styles.forgotPasswordButton}
-              onPress={() => setScreen('forgot-password')}
-            >
-              <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
-            </TouchableOpacity>
-            
-            {/* Destek Butonu */}
-            <TouchableOpacity 
-              style={styles.supportButton}
-              onPress={() => setShowSupportModal(true)}
-            >
-              <Ionicons name="headset-outline" size={20} color="#3FA9F5" />
-              <Text style={styles.supportButtonText}>Destek</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-        
-        {/* KVKK Modal */}
-        <KVKKConsentModal
-          visible={showKVKKModal}
-          onAccept={() => {
-            setKvkkAccepted(true);
-            setShowKVKKModal(false);
-          }}
-          onDecline={() => {
-            setKvkkAccepted(false);
-            setShowKVKKModal(false);
-          }}
-        />
-        
-        {/* Destek Modal */}
-        <SupportModal
-          visible={showSupportModal}
-          onClose={() => setShowSupportModal(false)}
-        />
-      </SafeAreaView>
-      </ImageBackground>
+            <View style={styles.modernFormContainer}>
+              <Text style={styles.modernLabel}>Telefon Numaranız</Text>
+              <View style={styles.modernInputContainer}>
+                <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.modernInput}
+                  placeholder="5XX XXX XX XX"
+                  placeholderTextColor="#A0A0A0"
+                  keyboardType="phone-pad"
+                  value={phone}
+                  onChangeText={setPhone}
+                  maxLength={11}
+                />
+              </View>
+
+              {/* KVKK Checkbox - Tıklanabilir Metin */}
+              <TouchableOpacity 
+                style={styles.kvkkContainer} 
+                onPress={() => setKvkkAccepted(!kvkkAccepted)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
+                  {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                </View>
+                <Text style={styles.kvkkText}>
+                  <Text 
+                    style={styles.kvkkLink} 
+                    onPress={() => setShowKVKKModal(true)}
+                  >
+                    Aydınlatma Metni ve Gizlilik Politikası
+                  </Text>
+                  <Text>'nı okudum, anladım ve kabul ediyorum.</Text>
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
+                onPress={() => {
+                  if (!kvkkAccepted) {
+                    Alert.alert(
+                      '⚠️ Onay Gerekli', 
+                      'Devam etmek için Aydınlatma Metni ve Gizlilik Politikasını kabul etmelisiniz.',
+                      [{ text: 'Tamam', style: 'default' }]
+                    );
+                    return;
+                  }
+                  handleSendOTP();
+                }}
+              >
+                <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
+                <Ionicons name="arrow-forward" size={20} color="#FFF" />
+              </TouchableOpacity>
+              
+              {/* Kayıt Ol Butonu */}
+              <TouchableOpacity 
+                style={styles.registerButton}
+                onPress={() => setScreen('register')}
+              >
+                <Ionicons name="person-add-outline" size={20} color="#3FA9F5" />
+                <Text style={styles.registerButtonText}>Kayıt Ol</Text>
+              </TouchableOpacity>
+              
+              {/* Şifremi Unuttum */}
+              <TouchableOpacity 
+                style={styles.forgotPasswordButton}
+                onPress={() => setScreen('forgot-password')}
+              >
+                <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+              </TouchableOpacity>
+              
+              {/* Destek Butonu */}
+              <TouchableOpacity 
+                style={styles.supportButton}
+                onPress={() => setShowSupportModal(true)}
+              >
+                <Ionicons name="headset-outline" size={20} color="#3FA9F5" />
+                <Text style={styles.supportButtonText}>Destek</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+          
+          {/* KVKK Modal */}
+          <KVKKConsentModal
+            visible={showKVKKModal}
+            onAccept={() => {
+              setKvkkAccepted(true);
+              setShowKVKKModal(false);
+            }}
+            onDecline={() => {
+              setKvkkAccepted(false);
+              setShowKVKKModal(false);
+            }}
+          />
+          
+          {/* Destek Modal */}
+          <SupportModal
+            visible={showSupportModal}
+            onClose={() => setShowSupportModal(false)}
+          />
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -8773,15 +8799,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
-  // Login Arka Plan Stilleri
-  loginBackgroundContainer: {
+  // Login Ekran Container - Arka plan resmi için
+  loginScreenContainer: {
     flex: 1,
     width: '100%',
     height: '100%',
   },
-  loginBackgroundImage: {
-    resizeMode: 'cover',
-    opacity: 0.9,
+  // Login için şeffaf scroll content
+  loginScrollContent: {
+    flexGrow: 1,
+    padding: 20,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   // Yeni Yolcu Sayfa Stilleri
   welcomeQuestionVeryTop: {
