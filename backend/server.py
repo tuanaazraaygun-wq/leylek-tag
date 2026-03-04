@@ -2,7 +2,7 @@
 Leylek TAG - Supabase Backend
 Full PostgreSQL Backend with Supabase + Socket.IO
 """
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -377,6 +377,342 @@ DRIVER_PACKAGES = {
     "24_hours": {"hours": 24, "price_tl": 400, "name": "24 Saat"},
 }
 logger.info("✅ Sürücü paketleri yapılandırıldı")
+
+# ==================== DISPATCH QUEUE CONFIG ====================
+DISPATCH_CONFIG = {
+    "matching_radius_km": 15,        # Sürücü arama yarıçapı (km)
+    "max_driver_dispatch": 5,        # Maksimum kaç sürücüye teklif gönderilsin
+    "driver_offer_timeout": 20,      # Sürücü yanıt süresi (saniye)
+    "enabled": True,                 # Dispatch queue aktif mi
+}
+
+# Aktif dispatch task'ları (tag_id -> asyncio.Task)
+active_dispatch_tasks: dict = {}
+
+# Dispatch Queue In-Memory State (Supabase'e de yazılacak)
+dispatch_queues: dict = {}  # tag_id -> list of driver entries
+
+async def get_dispatch_config() -> dict:
+    """Config tablosundan dispatch ayarlarını oku, yoksa default kullan"""
+    try:
+        result = supabase.table("config").select("*").eq("key", "dispatch_config").execute()
+        if result.data:
+            import json
+            return json.loads(result.data[0].get("value", "{}"))
+    except:
+        pass
+    return DISPATCH_CONFIG
+
+async def find_eligible_drivers(pickup_lat: float, pickup_lng: float, exclude_ids: list = None) -> list:
+    """
+    Uygun sürücüleri bul ve öncelik sırasına göre sırala
+    Kriterler: online, aktif paket, mesafe içinde
+    Sıralama: mesafe (yakın), rating (yüksek), last_active (yeni)
+    """
+    try:
+        config = await get_dispatch_config()
+        radius_km = config.get("matching_radius_km", 15)
+        
+        # Online ve aktif paketi olan sürücüleri getir
+        now = datetime.utcnow().isoformat()
+        query = supabase.table("users").select(
+            "id, name, rating, latitude, longitude, last_active, driver_active_until, is_driver_online"
+        ).eq("is_driver_online", True).gt("driver_active_until", now)
+        
+        result = query.execute()
+        
+        if not result.data:
+            return []
+        
+        eligible_drivers = []
+        exclude_set = set(exclude_ids or [])
+        
+        for driver in result.data:
+            # Exclude listesinde mi?
+            if driver["id"] in exclude_set:
+                continue
+            
+            # Konum var mı?
+            if not driver.get("latitude") or not driver.get("longitude"):
+                continue
+            
+            # Mesafe hesapla
+            from math import radians, sin, cos, sqrt, atan2
+            R = 6371  # Dünya yarıçapı (km)
+            
+            lat1, lon1 = radians(pickup_lat), radians(pickup_lng)
+            lat2, lon2 = radians(driver["latitude"]), radians(driver["longitude"])
+            
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            distance_km = R * c
+            
+            # Yarıçap içinde mi?
+            if distance_km <= radius_km:
+                eligible_drivers.append({
+                    "driver_id": driver["id"],
+                    "driver_name": driver.get("name", "Sürücü"),
+                    "distance_km": round(distance_km, 2),
+                    "rating": driver.get("rating", 5.0) or 5.0,
+                    "last_active": driver.get("last_active"),
+                })
+        
+        # Sırala: önce mesafe (yakın), sonra rating (yüksek)
+        eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
+        
+        logger.info(f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü bulundu")
+        return eligible_drivers
+        
+    except Exception as e:
+        logger.error(f"❌ Find eligible drivers error: {e}")
+        return []
+
+async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
+    """
+    Tag için dispatch queue oluştur
+    Uygun sürücüleri bul, sırala ve queue'ya ekle
+    """
+    try:
+        config = await get_dispatch_config()
+        max_drivers = config.get("max_driver_dispatch", 5)
+        
+        # Uygun sürücüleri bul
+        drivers = await find_eligible_drivers(
+            tag_data.get("pickup_lat", 0),
+            tag_data.get("pickup_lng", 0)
+        )
+        
+        if not drivers:
+            logger.warning(f"⚠️ Dispatch: Tag {tag_id} için uygun sürücü bulunamadı")
+            return False
+        
+        # En iyi N sürücüyü seç
+        selected_drivers = drivers[:max_drivers]
+        
+        # Queue'ya ekle
+        queue_entries = []
+        for idx, driver in enumerate(selected_drivers):
+            entry = {
+                "id": str(uuid.uuid4()),
+                "tag_id": tag_id,
+                "driver_id": driver["driver_id"],
+                "driver_name": driver["driver_name"],
+                "priority": idx + 1,
+                "distance_km": driver["distance_km"],
+                "status": "waiting",
+                "created_at": datetime.utcnow().isoformat(),
+                "sent_at": None,
+                "responded_at": None,
+            }
+            queue_entries.append(entry)
+        
+        # Supabase'e kaydet (dispatch_queue tablosu varsa)
+        try:
+            for entry in queue_entries:
+                supabase.table("dispatch_queue").insert(entry).execute()
+        except Exception as db_err:
+            logger.warning(f"Dispatch queue DB kayıt hatası (tablo olmayabilir): {db_err}")
+        
+        # In-memory'de tut
+        dispatch_queues[tag_id] = queue_entries
+        
+        logger.info(f"✅ Dispatch queue oluşturuldu: tag={tag_id}, {len(queue_entries)} sürücü")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Create dispatch queue error: {e}")
+        return False
+
+async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
+    """
+    Sıradaki sürücüye teklif gönder
+    Timeout sonrası otomatik olarak sonrakine geç
+    """
+    try:
+        config = await get_dispatch_config()
+        timeout = config.get("driver_offer_timeout", 20)
+        
+        queue = dispatch_queues.get(tag_id, [])
+        
+        # Bekleyen sürücü bul
+        next_entry = None
+        for entry in queue:
+            if entry["status"] == "waiting":
+                next_entry = entry
+                break
+        
+        if not next_entry:
+            logger.info(f"📭 Dispatch: Tag {tag_id} - Tüm sürücüler denendi, broadcast'a geç")
+            # Tüm sürücüler denendi, broadcast yap (fallback)
+            await broadcast_offer_to_all(tag_id, tag_data)
+            return
+        
+        driver_id = next_entry["driver_id"]
+        driver_name = next_entry["driver_name"]
+        
+        # Status'u sent yap
+        next_entry["status"] = "sent"
+        next_entry["sent_at"] = datetime.utcnow().isoformat()
+        
+        # Supabase güncelle
+        try:
+            supabase.table("dispatch_queue").update({
+                "status": "sent",
+                "sent_at": next_entry["sent_at"]
+            }).eq("id", next_entry["id"]).execute()
+        except:
+            pass
+        
+        # Socket ile sürücüye teklif gönder
+        offer_data = {
+            "tag_id": tag_id,
+            "passenger_id": tag_data.get("passenger_id"),
+            "passenger_name": tag_data.get("passenger_name", "Yolcu"),
+            "pickup_location": tag_data.get("pickup_location"),
+            "pickup_lat": tag_data.get("pickup_lat"),
+            "pickup_lng": tag_data.get("pickup_lng"),
+            "dropoff_location": tag_data.get("dropoff_location"),
+            "dropoff_lat": tag_data.get("dropoff_lat"),
+            "dropoff_lng": tag_data.get("dropoff_lng"),
+            "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
+            "distance_km": tag_data.get("distance_km", 0),
+            "estimated_minutes": tag_data.get("estimated_minutes", 0),
+            "distance_to_pickup": next_entry.get("distance_km", 0),
+            "dispatch_timeout": timeout,
+            "is_dispatch": True,  # Bu bir dispatch teklifi
+        }
+        
+        await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
+        logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
+        
+        # Timeout task başlat
+        async def timeout_handler():
+            await asyncio.sleep(timeout)
+            
+            # Tag hala waiting durumunda mı?
+            tag_result = supabase.table("tags").select("status").eq("id", tag_id).execute()
+            if tag_result.data and tag_result.data[0].get("status") == "waiting":
+                # Bu sürücü yanıt vermedi, expired yap
+                next_entry["status"] = "expired"
+                try:
+                    supabase.table("dispatch_queue").update({"status": "expired"}).eq("id", next_entry["id"]).execute()
+                except:
+                    pass
+                
+                logger.info(f"⏱️ Dispatch timeout: tag={tag_id}, sürücü={driver_name}")
+                
+                # Sonraki sürücüye geç
+                await dispatch_offer_to_next_driver(tag_id, tag_data)
+        
+        # Task'ı kaydet
+        task = asyncio.create_task(timeout_handler())
+        active_dispatch_tasks[f"{tag_id}_{driver_id}"] = task
+        
+    except Exception as e:
+        logger.error(f"❌ Dispatch offer error: {e}")
+
+async def broadcast_offer_to_all(tag_id: str, tag_data: dict):
+    """Fallback: Tüm online sürücülere broadcast"""
+    try:
+        offer_data = {
+            "tag_id": tag_id,
+            "passenger_id": tag_data.get("passenger_id"),
+            "passenger_name": tag_data.get("passenger_name", "Yolcu"),
+            "pickup_location": tag_data.get("pickup_location"),
+            "pickup_lat": tag_data.get("pickup_lat"),
+            "pickup_lng": tag_data.get("pickup_lng"),
+            "dropoff_location": tag_data.get("dropoff_location"),
+            "dropoff_lat": tag_data.get("dropoff_lat"),
+            "dropoff_lng": tag_data.get("dropoff_lng"),
+            "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
+            "is_broadcast": True,
+        }
+        
+        await sio.emit("new_passenger_offer", offer_data, room="drivers")
+        logger.info(f"📢 Broadcast teklif gönderildi: tag={tag_id}")
+    except Exception as e:
+        logger.error(f"Broadcast error: {e}")
+
+async def handle_dispatch_accept(tag_id: str, driver_id: str):
+    """
+    Sürücü dispatch teklifini kabul etti
+    Queue'daki diğer kayıtları expire yap ve task'ları iptal et
+    """
+    try:
+        queue = dispatch_queues.get(tag_id, [])
+        
+        for entry in queue:
+            if entry["driver_id"] == driver_id:
+                entry["status"] = "accepted"
+                entry["responded_at"] = datetime.utcnow().isoformat()
+            elif entry["status"] in ["waiting", "sent"]:
+                entry["status"] = "expired"
+        
+        # Supabase güncelle
+        try:
+            supabase.table("dispatch_queue").update({"status": "accepted", "responded_at": datetime.utcnow().isoformat()}).eq("tag_id", tag_id).eq("driver_id", driver_id).execute()
+            supabase.table("dispatch_queue").update({"status": "expired"}).eq("tag_id", tag_id).neq("driver_id", driver_id).in_("status", ["waiting", "sent"]).execute()
+        except:
+            pass
+        
+        # Bekleyen task'ları iptal et
+        for key in list(active_dispatch_tasks.keys()):
+            if key.startswith(f"{tag_id}_"):
+                task = active_dispatch_tasks.pop(key, None)
+                if task and not task.done():
+                    task.cancel()
+        
+        # Queue'yu temizle
+        dispatch_queues.pop(tag_id, None)
+        
+        logger.info(f"✅ Dispatch accept: tag={tag_id}, sürücü={driver_id}")
+        
+    except Exception as e:
+        logger.error(f"Handle dispatch accept error: {e}")
+
+async def handle_dispatch_reject(tag_id: str, driver_id: str):
+    """Sürücü dispatch teklifini reddetti, sonrakine geç"""
+    try:
+        queue = dispatch_queues.get(tag_id, [])
+        
+        for entry in queue:
+            if entry["driver_id"] == driver_id:
+                entry["status"] = "rejected"
+                entry["responded_at"] = datetime.utcnow().isoformat()
+                break
+        
+        # Supabase güncelle
+        try:
+            supabase.table("dispatch_queue").update({
+                "status": "rejected",
+                "responded_at": datetime.utcnow().isoformat()
+            }).eq("tag_id", tag_id).eq("driver_id", driver_id).execute()
+        except:
+            pass
+        
+        # Bekleyen task'ı iptal et
+        task_key = f"{tag_id}_{driver_id}"
+        task = active_dispatch_tasks.pop(task_key, None)
+        if task and not task.done():
+            task.cancel()
+        
+        # Tag durumunu kontrol et
+        tag_result = supabase.table("tags").select("status, passenger_id, passenger_name, pickup_lat, pickup_lng, pickup_location, dropoff_lat, dropoff_lng, dropoff_location, final_price").eq("id", tag_id).execute()
+        
+        if tag_result.data and tag_result.data[0].get("status") == "waiting":
+            # Sonraki sürücüye teklif gönder
+            tag_data = tag_result.data[0]
+            await dispatch_offer_to_next_driver(tag_id, tag_data)
+        
+        logger.info(f"❌ Dispatch reject: tag={tag_id}, sürücü={driver_id}")
+        
+    except Exception as e:
+        logger.error(f"Handle dispatch reject error: {e}")
+
+logger.info("✅ Dispatch Queue sistemi yapılandırıldı")
 
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50
@@ -4456,6 +4792,105 @@ async def log_trip_completion(tag_id: str, driver_id: str, passenger_id: str, la
     except Exception as e:
         logger.error(f"Trip log hatası: {e}")
 
+# ==================== SÜPER HIZLI QR - KİŞİYE ÖZEL ====================
+
+@api_router.post("/trip/complete-qr")
+async def complete_trip_with_qr(request: Request):
+    """⚡ SÜPER HIZLI - Kişiye özel QR ile yolculuk bitirme
+    
+    Frontend QR değeri: leylektag://end?u={driver_user_id}&t={tag_id}
+    Yolcu tarar → Trip tamamlanır → İki tarafa da puanlama modalı açılır
+    """
+    start_time = time.time()
+    
+    try:
+        body = await request.json()
+        tag_id = body.get("tag_id")
+        scanner_user_id = body.get("scanner_user_id")  # Yolcu
+        scanned_user_id = body.get("scanned_user_id")  # Sürücü (QR'dan)
+        latitude = body.get("latitude", 0)
+        longitude = body.get("longitude", 0)
+        
+        if not tag_id or not scanner_user_id or not scanned_user_id:
+            return {"success": False, "detail": "Eksik parametreler"}
+        
+        # 1. Tag'i getir
+        tag = await get_cached_tag(tag_id)
+        if not tag:
+            return {"success": False, "detail": "Yolculuk bulunamadı"}
+        
+        if tag.get("status") not in ["matched", "in_progress"]:
+            return {"success": False, "detail": "Bu yolculuk aktif değil"}
+        
+        # 2. Tarayan yolcu mu? Taranan sürücü mü?
+        driver_id = tag.get("driver_id")
+        passenger_id = tag.get("passenger_id")
+        
+        if scanner_user_id != passenger_id:
+            return {"success": False, "detail": "Sadece yolcu QR tarayabilir"}
+        
+        if scanned_user_id != driver_id:
+            return {"success": False, "detail": "QR kod bu yolculuğun sürücüsüne ait değil"}
+        
+        # 3. Yolculuğu tamamla
+        completed_at = datetime.utcnow().isoformat()
+        
+        supabase.table("tags").update({
+            "status": "completed",
+            "completed_at": completed_at,
+            "end_method": "qr_personal"
+        }).eq("id", tag_id).execute()
+        
+        # Cache temizle
+        invalidate_tag_cache(tag_id)
+        
+        # 4. İsimleri al
+        driver_user = await get_cached_user(driver_id)
+        passenger_user = await get_cached_user(scanner_user_id)
+        driver_name = (driver_user.get("first_name") or driver_user.get("name", "Sürücü").split()[0]) if driver_user else "Sürücü"
+        passenger_name = (passenger_user.get("first_name") or passenger_user.get("name", "Yolcu").split()[0]) if passenger_user else "Yolcu"
+        
+        # 5. Socket.IO ile İKİ TARAFA DA puanlama modalı gönder
+        try:
+            # Yolcuya: Şoförü puanla
+            await sio.emit("show_rating_modal", {
+                "tag_id": tag_id,
+                "rate_user_id": driver_id,
+                "rate_user_name": driver_name,
+                "message": "Yolculuk tamamlandı!"
+            }, room=f"user_{passenger_id}")
+            
+            # Şoföre: Yolcuyu puanla
+            await sio.emit("show_rating_modal", {
+                "tag_id": tag_id,
+                "rate_user_id": passenger_id,
+                "rate_user_name": passenger_name,
+                "message": "Yolculuk tamamlandı!"
+            }, room=f"user_{driver_id}")
+            
+            logger.info(f"✅ QR Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
+        except Exception as socket_err:
+            logger.warning(f"Socket emit hatası: {socket_err}")
+        
+        # 6. Trip log (arka planda)
+        asyncio.create_task(log_trip_completion(tag_id, driver_id, passenger_id, latitude, longitude, completed_at, "qr_personal"))
+        
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"✅ QR Trip tamamlandı {elapsed:.0f}ms: tag={tag_id}")
+        
+        return {
+            "success": True,
+            "message": "Yolculuk tamamlandı!",
+            "tag_id": tag_id,
+            "driver_name": driver_name,
+            "show_rating": True,
+            "elapsed_ms": round(elapsed)
+        }
+        
+    except Exception as e:
+        logger.error(f"QR Trip complete error: {e}")
+        return {"success": False, "detail": str(e)}
+
 # ==================== KİŞİYE ÖZEL QR KOD API'LERİ (ESKİ - GERİYE UYUMLULUK) ====================
 
 @api_router.get("/qr/my-code")
@@ -5672,6 +6107,28 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             tag["distance_km"] = request.distance_km
             tag["estimated_minutes"] = request.estimated_minutes
             logger.info(f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL")
+            
+            # 🆕 DISPATCH QUEUE - Sıralı teklif gönderimi
+            config = await get_dispatch_config()
+            if config.get("enabled", True):
+                # Tag verilerini hazırla
+                full_tag_data = {
+                    **tag_data,
+                    "offered_price": request.offered_price,
+                    "distance_km": request.distance_km,
+                    "estimated_minutes": request.estimated_minutes,
+                }
+                
+                # Dispatch queue oluştur ve ilk sürücüye teklif gönder
+                queue_created = await create_dispatch_queue(tag_id, full_tag_data)
+                if queue_created:
+                    # İlk sürücüye teklif gönder (async olarak)
+                    asyncio.create_task(dispatch_offer_to_next_driver(tag_id, full_tag_data))
+                    logger.info(f"📤 Dispatch başlatıldı: {tag_id}")
+                else:
+                    # Uygun sürücü yok, fallback: tüm sürücülere broadcast
+                    await broadcast_offer_to_all(tag_id, full_tag_data)
+            
             return {
                 "success": True,
                 "tag": tag,
@@ -5706,8 +6163,9 @@ async def accept_ride(tag_id: str, driver_id: str):
         driver_result = supabase.table("users").select("name, phone").eq("id", driver_id).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
         
-        # Yolcu bilgisini al
-        passenger_result = supabase.table("users").select("name, phone").eq("id", tag["user_id"]).execute()
+        # Yolcu bilgisini al - passenger_id kullan
+        passenger_id = tag.get("passenger_id") or tag.get("user_id")
+        passenger_result = supabase.table("users").select("name, phone").eq("id", passenger_id).execute()
         passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
         
         # Atomik güncelleme - sadece status='waiting' ise güncelle
@@ -5715,7 +6173,6 @@ async def accept_ride(tag_id: str, driver_id: str):
             "status": "matched",
             "driver_id": driver_id,
             "driver_name": driver_name,
-            "final_price": tag["offered_price"],
             "matched_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id).eq("status", "waiting").execute()
         
@@ -5725,12 +6182,15 @@ async def accept_ride(tag_id: str, driver_id: str):
         updated_tag = update_result.data[0]
         updated_tag["passenger_name"] = passenger_name
         
-        logger.info(f"✅ Eşleşme: {tag_id} - Sürücü: {driver_name} - Fiyat: {tag['offered_price']}TL")
+        # 🆕 DISPATCH QUEUE - Kabul edildi, diğer sürücülerin tekliflerini expire et
+        await handle_dispatch_accept(tag_id, driver_id)
+        
+        logger.info(f"✅ Eşleşme: {tag_id} - Sürücü: {driver_name}")
         
         return {
             "success": True,
             "tag": updated_tag,
-            "message": f"Teklif kabul edildi! {tag['offered_price']} TL"
+            "message": "Teklif kabul edildi!"
         }
     except Exception as e:
         logger.error(f"❌ Accept ride error: {e}")
@@ -5771,6 +6231,77 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
 
 # ==================== LEYLEK MUHABBETİ (COMMUNITY) ====================
 # Tamamen izole modül - mevcut sistemlere dokunmaz
+
+# 🆕 DISPATCH QUEUE - Reject Endpoint
+@api_router.post("/ride/reject")
+async def reject_ride(tag_id: str, driver_id: str):
+    """
+    Sürücü dispatch teklifini reddetti
+    Sonraki sürücüye otomatik geçilir
+    """
+    try:
+        # Dispatch reject handler'ı çağır
+        await handle_dispatch_reject(tag_id, driver_id)
+        
+        return {"success": True, "message": "Teklif reddedildi"}
+    except Exception as e:
+        logger.error(f"❌ Reject ride error: {e}")
+        return {"success": False, "error": str(e)}
+
+# 🆕 DISPATCH CONFIG API'LERİ
+@api_router.get("/dispatch/config")
+async def get_dispatch_config_api():
+    """Dispatch queue ayarlarını getir"""
+    try:
+        config = await get_dispatch_config()
+        return {"success": True, "config": config}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@api_router.post("/dispatch/config")
+async def update_dispatch_config_api(request: Request):
+    """Dispatch queue ayarlarını güncelle (Admin only)"""
+    try:
+        body = await request.json()
+        
+        # Config tablosuna kaydet
+        import json
+        config_value = json.dumps(body)
+        
+        # Upsert - varsa güncelle, yoksa ekle
+        try:
+            existing = supabase.table("config").select("*").eq("key", "dispatch_config").execute()
+            if existing.data:
+                supabase.table("config").update({"value": config_value}).eq("key", "dispatch_config").execute()
+            else:
+                supabase.table("config").insert({"key": "dispatch_config", "value": config_value}).execute()
+        except:
+            # Tablo yoksa in-memory güncelle
+            DISPATCH_CONFIG.update(body)
+        
+        logger.info(f"✅ Dispatch config güncellendi: {body}")
+        return {"success": True, "config": body}
+    except Exception as e:
+        logger.error(f"❌ Update dispatch config error: {e}")
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/dispatch/queue/{tag_id}")
+async def get_dispatch_queue(tag_id: str):
+    """Belirli bir tag için dispatch queue durumunu getir"""
+    try:
+        queue = dispatch_queues.get(tag_id, [])
+        
+        # DB'den de kontrol et
+        if not queue:
+            try:
+                result = supabase.table("dispatch_queue").select("*").eq("tag_id", tag_id).order("priority").execute()
+                queue = result.data if result.data else []
+            except:
+                pass
+        
+        return {"success": True, "queue": queue}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # Community Pydantic modelleri
 class CommunityMessageCreate(BaseModel):
