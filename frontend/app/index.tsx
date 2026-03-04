@@ -247,7 +247,7 @@ interface Offer {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin' | 'community'>('login');
+  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin' | 'community' | 'driver-kyc'>('login');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
@@ -9213,6 +9213,17 @@ const styles = StyleSheet.create({
     color: '#1B1B1E',
     paddingVertical: 14,
     letterSpacing: 1,
+  },
+  modernPhoneInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1B1B1E',
+    paddingVertical: 14,
+    letterSpacing: 1,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
   modernPrimaryButton: {
     backgroundColor: '#3FA9F5',
