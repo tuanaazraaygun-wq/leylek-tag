@@ -15,7 +15,8 @@ import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://qr-trip-end.preview.emergentagent.com';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://qr-trip-end.preview.emergentagent.com';
+const API_URL = `${BACKEND_URL}/api`;
 
 interface QRTripEndModalProps {
   visible: boolean;
@@ -98,7 +99,7 @@ export default function QRTripEndModal({
       }
 
       // Backend'e doğrulama isteği
-      const response = await fetch(`${API_URL}/api/trip/complete-qr`, {
+      const response = await fetch(`${API_URL}/trip/complete-qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

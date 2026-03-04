@@ -2879,7 +2879,7 @@ async def send_offer(
 
 @api_router.get("/driver/active-trip")
 async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
-    """Şoförün aktif yolculuğu - cancelled durumunda da döndür (frontend algılasın)"""
+    """Şoförün aktif yolculuğu - öncelikle aktif tag'leri kontrol et"""
     try:
         # driver_id veya user_id kabul et
         did = driver_id or user_id
@@ -2889,28 +2889,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
-        # 🔥 ÖNCELİK 1: Son 30 saniyede cancelled olmuş TAG var mı kontrol et
-        from datetime import timedelta
-        thirty_seconds_ago = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
-        
-        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", thirty_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
-        
-        if cancelled_result.data:
-            cancelled_tag = cancelled_result.data[0]
-            passenger_info = cancelled_tag.get("users", {}) or {}
-            
-            tag_data = {
-                "id": cancelled_tag["id"],
-                "passenger_id": cancelled_tag["passenger_id"],
-                "passenger_name": passenger_info.get("name"),
-                "status": "cancelled",
-                "final_price": float(cancelled_tag["final_price"]) if cancelled_tag.get("final_price") else None
-            }
-            
-            logger.info(f"🛑 Sürücü için cancelled TAG bulundu: {cancelled_tag['id']}")
-            return {"success": True, "trip": tag_data, "tag": tag_data, "was_cancelled": True}
-        
-        # ÖNCELİK 2: Aktif tag'leri ara
+        # ÖNCELİK 1: Aktif tag'leri ara (matched veya in_progress)
         result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
         
         if result.data:
@@ -2932,7 +2911,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "passenger_phone": passenger_info.get("phone"),
                 "passenger_rating": float(passenger_info.get("rating", 5.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
-                "passenger_location": passenger_location,  # EKLENDİ
+                "passenger_location": passenger_location,
                 "pickup_location": tag["pickup_location"],
                 "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
                 "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
@@ -2946,8 +2925,29 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
             return {
                 "success": True,
                 "trip": tag_data,
-                "tag": tag_data  # Frontend uyumluluğu için
+                "tag": tag_data
             }
+        
+        # ÖNCELİK 2: Aktif tag yoksa, son 30 saniyede cancelled olmuş TAG kontrol et
+        from datetime import timedelta
+        thirty_seconds_ago = (datetime.utcnow() - timedelta(seconds=30)).isoformat()
+        
+        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", thirty_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
+        
+        if cancelled_result.data:
+            cancelled_tag = cancelled_result.data[0]
+            passenger_info = cancelled_tag.get("users", {}) or {}
+            
+            tag_data = {
+                "id": cancelled_tag["id"],
+                "passenger_id": cancelled_tag["passenger_id"],
+                "passenger_name": passenger_info.get("name"),
+                "status": "cancelled",
+                "final_price": float(cancelled_tag["final_price"]) if cancelled_tag.get("final_price") else None
+            }
+            
+            logger.info(f"🛑 Sürücü için cancelled TAG bulundu: {cancelled_tag['id']}")
+            return {"success": True, "trip": tag_data, "tag": tag_data, "was_cancelled": True}
         
         return {"success": True, "trip": None, "tag": None}
     except Exception as e:
