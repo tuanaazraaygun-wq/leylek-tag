@@ -18,8 +18,8 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 
-// Socket.IO Sunucusu
-const SOCKET_URL = 'https://socket.leylektag.com';
+// Socket.IO Sunucusu - Backend URL'den al
+const SOCKET_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://ride-completion.preview.emergentagent.com';
 
 // ═══════════════════════════════════════════════════════════════════
 // SINGLETON SOCKET - Modül seviyesinde TEK instance
@@ -31,7 +31,7 @@ function getOrCreateSocket(): Socket {
   if (!singletonSocket) {
     console.log('🔌 [SocketContext] Singleton socket oluşturuluyor...');
     singletonSocket = io(SOCKET_URL, {
-      path: '/socket.io',
+      path: '/api/socket.io',  // 🔥 Backend path ile eşleştir
       transports: ['websocket', 'polling'],  // WebSocket öncelikli, polling fallback
       forceNew: false,
       reconnection: true,
