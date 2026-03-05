@@ -20,6 +20,13 @@ Ride-sharing application with QR-based trip ending, symmetric rating system, dri
 
 ## What's Been Implemented
 
+### 2026-03-05 - QR Konum Kontrolü
+- **YENİ ÖZELLİK:** Sürücü QR kodu göstermeden önce yolcu konumu kontrol edilir
+- Yolcu 150 metre içindeyse → QR kod gösterilir
+- Yolcu uzaktaysa → "Yolcu Yakın Değil" uyarısı gösterilir
+- Yolcu akışı değiştirilmedi (hızlı ve akıcı)
+- **FILE:** `/app/frontend/components/LiveMapView.tsx`
+
 ### 2026-03-05 - Admin Panel Fix
 - **ROOT CAUSE IDENTIFIED:** API parameter mismatch
   - Frontend was sending `phone` but backend expected `admin_phone`

@@ -675,13 +675,36 @@ export default function LiveMapView({
               <Text style={styles.whatsappButtonText}>Destek</Text>
             </TouchableOpacity>
 
-            {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile */}
+            {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile + KONUM KONTROLÜ */}
             <Animated.View style={{ 
               transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.98, 1.02] }) }]
             }}>
               <TouchableOpacity 
                 style={styles.qrEndButton} 
-                onPress={() => onShowQRModal?.()}
+                onPress={() => {
+                  // 🔥 KONUM KONTROLÜ - Sadece sürücü için
+                  if (isDriver && userLocation && otherLocation) {
+                    const distance = calculateDistance(
+                      userLocation.latitude, 
+                      userLocation.longitude, 
+                      otherLocation.latitude, 
+                      otherLocation.longitude
+                    );
+                    const distanceMeters = distance * 1000; // km to meters
+                    
+                    if (distanceMeters > 150) {
+                      // Yolcu uzakta - QR gösterme
+                      Alert.alert(
+                        '📍 Yolcu Yakın Değil',
+                        `Yolcu sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : (distance).toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için yolcunun yakınınızda olması gerekiyor.`,
+                        [{ text: 'Tamam', style: 'default' }]
+                      );
+                      return;
+                    }
+                  }
+                  // Yolcu yakında veya konum bilgisi yok - QR göster
+                  onShowQRModal?.();
+                }}
                 activeOpacity={0.7}
               >
                 <LinearGradient
