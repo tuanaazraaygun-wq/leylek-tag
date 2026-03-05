@@ -99,9 +99,10 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   
   const loadDashboard = async () => {
     try {
-      // Yeni admin/dashboard endpoint'ini kullan
-      const res = await fetch(`${API_URL}/admin/dashboard?phone=${adminPhone}`);
+      // Yeni admin/dashboard/full endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/dashboard/full?admin_phone=${adminPhone}`);
       const data = await res.json();
+      console.log('[AdminPanel] Dashboard response:', data);
       if (data.success) {
         setStats(data.stats);
         // Aktif TAG'leri de yükle
@@ -109,25 +110,27 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           setTrips(data.active_tags);
         }
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('[AdminPanel] Dashboard error:', e); }
   };
   
   const loadUsers = async () => {
     try {
-      // Yeni admin/users endpoint'ini kullan
-      const res = await fetch(`${API_URL}/admin/users?phone=${adminPhone}&limit=100`);
+      // Yeni admin/users/full endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=100`);
       const data = await res.json();
+      console.log('[AdminPanel] Users response:', data.success, data.users?.length);
       if (data.success) setUsers(data.users || []);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('[AdminPanel] Users error:', e); }
   };
   
   const loadTrips = async () => {
     try {
-      // Yeni admin/tags endpoint'ini kullan
-      const res = await fetch(`${API_URL}/admin/tags?phone=${adminPhone}&limit=50`);
+      // Yeni admin/trips endpoint'ini kullan
+      const res = await fetch(`${API_URL}/admin/trips?admin_phone=${adminPhone}&page=1&limit=100`);
       const data = await res.json();
-      if (data.success) setTrips(data.tags || []);
-    } catch (e) { console.error(e); }
+      console.log('[AdminPanel] Trips response:', data.success, data.trips?.length);
+      if (data.success) setTrips(data.trips || []);
+    } catch (e) { console.error('[AdminPanel] Trips error:', e); }
   };
   
   const loadCalls = async () => {
@@ -145,6 +148,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       // Yeni admin/pricing endpoint'ini kullan
       const res = await fetch(`${API_URL}/admin/pricing?phone=${adminPhone}`);
       const data = await res.json();
+      console.log('[AdminPanel] Settings response:', data);
       if (data.success) {
         setSettings(data.settings || {});
         // Fiyatlandırma ayarlarını settings'e kaydet
@@ -153,7 +157,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           setMaxCallDuration(String(data.settings.min_price_per_km_normal || 20));
         }
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('[AdminPanel] Settings error:', e); }
   };
 
   // KYC Fonksiyonları
@@ -442,38 +446,50 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       <View style={styles.statsGrid}>
         <View style={[styles.statCard, { backgroundColor: COLORS.info }]}>
           <Ionicons name="people" size={32} color="#FFF" />
-          <Text style={styles.statValue}>{stats?.total_users || 0}</Text>
+          <Text style={styles.statValue}>{stats?.users?.total || 0}</Text>
           <Text style={styles.statLabel}>Toplam Kullanıcı</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.success }]}>
           <Ionicons name="car" size={32} color="#FFF" />
-          <Text style={styles.statValue}>{stats?.total_drivers || 0}</Text>
-          <Text style={styles.statLabel}>Şoför</Text>
+          <Text style={styles.statValue}>{stats?.users?.drivers || 0}</Text>
+          <Text style={styles.statLabel}>Sürücü</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.warning }]}>
           <Ionicons name="person" size={32} color="#FFF" />
-          <Text style={styles.statValue}>{stats?.total_passengers || 0}</Text>
+          <Text style={styles.statValue}>{stats?.users?.passengers || 0}</Text>
           <Text style={styles.statLabel}>Yolcu</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.primary }]}>
-          <Ionicons name="navigate" size={32} color="#FFF" />
-          <Text style={styles.statValue}>{stats?.active_trips || 0}</Text>
-          <Text style={styles.statLabel}>Aktif Yolculuk</Text>
+          <Ionicons name="radio-button-on" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.users?.online_drivers || 0}</Text>
+          <Text style={styles.statLabel}>Online Sürücü</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: '#8B5CF6' }]}>
-          <Ionicons name="call" size={32} color="#FFF" />
-          <Text style={styles.statValue}>{stats?.total_calls || 0}</Text>
-          <Text style={styles.statLabel}>Toplam Arama</Text>
+          <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.trips?.completed_today || 0}</Text>
+          <Text style={styles.statLabel}>Bugün Tamamlanan</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: '#EC4899' }]}>
+          <Ionicons name="time" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.trips?.waiting || 0}</Text>
+          <Text style={styles.statLabel}>Bekleyen</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: '#14B8A6' }]}>
+          <Ionicons name="navigate" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.trips?.active || 0}</Text>
+          <Text style={styles.statLabel}>Aktif Yolculuk</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.danger }]}>
-          <Ionicons name="warning" size={32} color="#FFF" />
-          <Text style={styles.statValue}>{stats?.stuck_tags || 0}</Text>
-          <Text style={styles.statLabel}>Takılı Eşleşme</Text>
+          <Ionicons name="calendar" size={32} color="#FFF" />
+          <Text style={styles.statValue}>{stats?.trips?.completed_week || 0}</Text>
+          <Text style={styles.statLabel}>Bu Hafta</Text>
         </View>
       </View>
       
@@ -495,6 +511,8 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         onChangeText={setUserSearch}
       />
       
+      <Text style={styles.countText}>{users.length} kullanıcı bulundu</Text>
+      
       <FlatList
         data={users.filter(u => 
           u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -508,14 +526,15 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                 <Text style={styles.userAvatarText}>{item.name?.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.userDetails}>
-                <Text style={styles.userName}>{item.name}</Text>
-                <Text style={styles.userPhone}>{item.phone}</Text>
+                <Text style={styles.userName}>{item.name || 'İsimsiz'}</Text>
+                <Text style={styles.userPhone}>{item.phone || '-'}</Text>
                 <View style={styles.userMeta}>
                   <Text style={styles.userMetaText}>
-                    {item.role === 'driver' ? '🚗 Şoför' : '👤 Yolcu'} • {item.city || 'Şehir yok'}
+                    {item.is_driver ? '🚗 Sürücü' : '👤 Yolcu'} • {item.city || 'Şehir yok'}
                   </Text>
                   <Text style={styles.userMetaText}>
-                    📱 {item.device_count || 0} cihaz • IP: {item.last_ip || '-'}
+                    ⭐ {(item.rating || 5).toFixed(1)} • {item.total_trips || 0} trip
+                    {item.is_online ? ' • 🟢 Online' : ''}
                   </Text>
                 </View>
               </View>
@@ -539,37 +558,49 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           </View>
         )}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={<Text style={styles.emptyText}>Kullanıcı bulunamadı</Text>}
       />
     </View>
   );
   
   // ========== TRIPS (Metadata) ==========
   const renderTrips = () => (
-    <FlatList
-      style={styles.content}
-      data={trips}
-      keyExtractor={(item, index) => item.id || index.toString()}
-      renderItem={({ item }) => (
-        <View style={styles.logCard}>
-          <View style={styles.logHeader}>
-            <Ionicons name="navigate" size={20} color={COLORS.primary} />
-            <Text style={styles.logTitle}>Yolculuk #{item.id?.slice(-6)}</Text>
-            <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+    <View style={styles.content}>
+      <Text style={styles.countText}>{trips.length} yolculuk bulundu</Text>
+      <FlatList
+        data={trips}
+        keyExtractor={(item, index) => item.id || index.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.logCard}>
+            <View style={styles.logHeader}>
+              <Ionicons 
+                name={item.status === 'completed' ? 'checkmark-circle' : 
+                      item.status === 'cancelled' ? 'close-circle' : 'navigate'} 
+                size={20} 
+                color={item.status === 'completed' ? COLORS.success : 
+                       item.status === 'cancelled' ? COLORS.danger : COLORS.primary} 
+              />
+              <Text style={styles.logTitle}>
+                {item.status === 'completed' ? 'Tamamlandı' : 
+                 item.status === 'cancelled' ? 'İptal' :
+                 item.status === 'matched' ? 'Eşleşti' : 'Bekliyor'}
+              </Text>
+              <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+            </View>
+            <View style={styles.logBody}>
+              <Text style={styles.logText}>👤 Yolcu: {item.passenger_name || '-'}</Text>
+              <Text style={styles.logText}>🚗 Sürücü: {item.driver_name || '-'}</Text>
+              <Text style={styles.logText}>📍 Başlangıç: {item.pickup_location || '-'}</Text>
+              <Text style={styles.logText}>🎯 Hedef: {item.dropoff_location || '-'}</Text>
+              <Text style={styles.logText}>💰 Fiyat: ₺{item.final_price || 0}</Text>
+              {item.end_method && <Text style={styles.logText}>✅ Bitirme: {item.end_method}</Text>}
+            </View>
           </View>
-          <View style={styles.logBody}>
-            <Text style={styles.logText}>👤 Yolcu: {item.passenger_name} ({item.passenger_phone})</Text>
-            <Text style={styles.logText}>🚗 Şoför: {item.driver_name} ({item.driver_phone})</Text>
-            <Text style={styles.logText}>📍 Başlangıç: {item.pickup_address || '-'}</Text>
-            <Text style={styles.logText}>🎯 Hedef: {item.dropoff_address || '-'}</Text>
-            <Text style={styles.logText}>📏 Mesafe: {item.distance_km || 0} km • Süre: {item.duration_min || 0} dk</Text>
-            <Text style={styles.logText}>💰 Fiyat: ₺{item.price || 0}</Text>
-            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
-          </View>
-        </View>
-      )}
-      showsVerticalScrollIndicator={false}
-      ListEmptyComponent={<Text style={styles.emptyText}>Henüz yolculuk kaydı yok</Text>}
-    />
+        )}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={<Text style={styles.emptyText}>Henüz yolculuk kaydı yok</Text>}
+      />
+    </View>
   );
   
   // ========== CALLS (Metadata) ==========

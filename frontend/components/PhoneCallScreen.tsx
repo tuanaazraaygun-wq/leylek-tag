@@ -35,7 +35,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ==================== CONFIG ====================
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    'https://qr-trip-end.preview.emergentagent.com';
+                    'https://driver-kyc-system.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';

@@ -228,7 +228,7 @@ CREATE TABLE daily_rooms (
 ## 5. API ENDPOINTS
 
 ### Base URL
-- **Development**: `https://qr-trip-end.preview.emergentagent.com/api`
+- **Development**: `https://driver-kyc-system.preview.emergentagent.com/api`
 - **Backend Port**: 8001
 
 ### Auth Endpoints
@@ -705,12 +705,12 @@ const SOCKET_URL = 'https://socket.leylektag.com';
 ### Frontend (.env)
 ```env
 # Expo
-EXPO_TUNNEL_SUBDOMAIN=qr-trip-end
-EXPO_PACKAGER_HOSTNAME=https://qr-trip-end.preview.emergentagent.com
-EXPO_PACKAGER_PROXY_URL=https://qr-trip-end.preview.emergentagent.com
+EXPO_TUNNEL_SUBDOMAIN=driver-kyc-system
+EXPO_PACKAGER_HOSTNAME=https://driver-kyc-system.preview.emergentagent.com
+EXPO_PACKAGER_PROXY_URL=https://driver-kyc-system.preview.emergentagent.com
 
 # Backend
-EXPO_PUBLIC_BACKEND_URL=https://qr-trip-end.preview.emergentagent.com
+EXPO_PUBLIC_BACKEND_URL=https://driver-kyc-system.preview.emergentagent.com
 
 # EAS Build
 EXPO_TOKEN=S6hM0DkhaviyggW6pRn2Sfq7NIAPr5GkXRpj5cYI
@@ -744,7 +744,7 @@ MONGO_URL=mongodb://localhost:27017
 ## 11. SUNUCU BİLGİLERİ
 
 ### Ana Sunucu (Emergent)
-- **URL**: https://qr-trip-end.preview.emergentagent.com
+- **URL**: https://driver-kyc-system.preview.emergentagent.com
 - **Frontend**: Port 3000
 - **Backend**: Port 8001 (/api/* prefix)
 

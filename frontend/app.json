@@ -3,7 +3,7 @@
     "name": "Leylek TAG",
     "slug": "leylektag-app",
     "owner": "leylektagapp",
-    "version": "1.0.19",
+    "version": "1.0.20",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "leylektag",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.leylektag.app",
-      "versionCode": 20,
+      "versionCode": 21,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#3FA9F5"

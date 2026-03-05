@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 # Test configuration from review request
-BACKEND_URL = "https://qr-trip-end.preview.emergentagent.com"
+BACKEND_URL = "https://driver-kyc-system.preview.emergentagent.com"
 API_BASE = f"{BACKEND_URL}/api"
 
 # Test data from review request

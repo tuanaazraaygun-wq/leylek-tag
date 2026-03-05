@@ -1,6 +1,6 @@
 /**
  * Admin Panel - Leylek TAG
- * Basit ve güvenilir admin paneli
+ * Tam Kapsamlı Yönetim Paneli
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,7 +17,6 @@ import {
   Modal,
   SafeAreaView,
   StatusBar,
-  Dimensions,
   FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -25,49 +24,53 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width } = Dimensions.get('window');
+// SABIT API URL - Değişmez
+const API_BASE = 'https://api.leylektag.com/api';
 
-// API URL - Production
-const API_URL = 'https://api.leylektag.com/api';
+type Tab = 'dashboard' | 'users' | 'trips' | 'promos' | 'notifs';
 
-type TabType = 'dashboard' | 'users' | 'promos' | 'notifications';
-
-export default function AdminScreen() {
+export default function AdminPanel() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminPhone, setAdminPhone] = useState('');
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [tab, setTab] = useState<Tab>('dashboard');
   
-  // Data states
+  // Data
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
+  const [trips, setTrips] = useState<any[]>([]);
   const [promos, setPromos] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  
+  // Search
+  const [search, setSearch] = useState('');
   
   // Modals
-  const [promoModal, setPromoModal] = useState(false);
-  const [notifModal, setNotifModal] = useState(false);
-  const [timeModal, setTimeModal] = useState(false);
+  const [showPromoModal, setShowPromoModal] = useState(false);
+  const [showNotifModal, setShowNotifModal] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [showTripModal, setShowTripModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedTrip, setSelectedTrip] = useState<any>(null);
   
-  // Form states
+  // Forms
   const [promoHours, setPromoHours] = useState('3');
-  const [promoCode, setPromoCode] = useState('');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
-  const [notifTarget, setNotifTarget] = useState('all');
   const [addHours, setAddHours] = useState('3');
-  const [searchText, setSearchText] = useState('');
 
   useEffect(() => {
-    checkAdmin();
+    initAdmin();
   }, []);
 
-  const checkAdmin = async () => {
+  const initAdmin = async () => {
     try {
+      console.log('[ADMIN] Başlatılıyor...');
+      
       const userData = await AsyncStorage.getItem('leylek_user');
+      console.log('[ADMIN] User data:', userData ? 'var' : 'yok');
+      
       if (!userData) {
         Alert.alert('Hata', 'Giriş yapmalısınız');
         router.replace('/');
@@ -75,441 +78,464 @@ export default function AdminScreen() {
       }
       
       const user = JSON.parse(userData);
-      const phone = user.phone?.replace(/\D/g, '') || '';
+      const userPhone = (user.phone || '').replace(/\D/g, '');
+      console.log('[ADMIN] Phone:', userPhone);
       
-      console.log('Admin check for phone:', phone);
+      // Admin check
+      const checkUrl = `${API_BASE}/admin/check?phone=${userPhone}`;
+      console.log('[ADMIN] Check URL:', checkUrl);
       
-      const res = await fetch(`${API_URL}/admin/check?phone=${phone}`);
+      const res = await fetch(checkUrl);
       const data = await res.json();
-      
-      console.log('Admin check result:', data);
+      console.log('[ADMIN] Check result:', data);
       
       if (data.is_admin) {
         setIsAdmin(true);
-        setAdminPhone(phone);
-        await loadAllData(phone);
+        setPhone(userPhone);
+        await loadData(userPhone);
       } else {
         Alert.alert('Yetkisiz', 'Admin değilsiniz');
         router.replace('/');
       }
     } catch (err) {
-      console.error('Admin check error:', err);
+      console.error('[ADMIN] Init error:', err);
       Alert.alert('Hata', 'Bağlantı hatası');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const loadAllData = async (phone: string) => {
+  const loadData = async (adminPhone: string) => {
+    console.log('[ADMIN] loadData başladı, phone:', adminPhone);
     setRefreshing(true);
+    
     try {
       // Dashboard
-      const dashRes = await fetch(`${API_URL}/admin/dashboard/full?admin_phone=${phone}`);
+      const dashUrl = `${API_BASE}/admin/dashboard/full?admin_phone=${adminPhone}`;
+      console.log('[ADMIN] Dashboard URL:', dashUrl);
+      const dashRes = await fetch(dashUrl);
       const dashData = await dashRes.json();
-      console.log('Dashboard data:', dashData);
+      console.log('[ADMIN] Dashboard:', dashData.success, dashData.stats?.users?.total);
       if (dashData.success) setStats(dashData.stats);
       
       // Users
-      const usersRes = await fetch(`${API_URL}/admin/users/full?admin_phone=${phone}&page=1&limit=50`);
+      const usersUrl = `${API_BASE}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=100`;
+      console.log('[ADMIN] Users URL:', usersUrl);
+      const usersRes = await fetch(usersUrl);
       const usersData = await usersRes.json();
-      console.log('Users data:', usersData.users?.length);
-      if (usersData.success) setUsers(usersData.users || []);
+      console.log('[ADMIN] Users:', usersData.success, usersData.users?.length);
+      if (usersData.success && usersData.users) {
+        setUsers(usersData.users);
+      }
+      
+      // Trips
+      const tripsUrl = `${API_BASE}/admin/trips?admin_phone=${adminPhone}&page=1&limit=100`;
+      console.log('[ADMIN] Trips URL:', tripsUrl);
+      const tripsRes = await fetch(tripsUrl);
+      const tripsData = await tripsRes.json();
+      console.log('[ADMIN] Trips:', tripsData.success, tripsData.trips?.length);
+      if (tripsData.success && tripsData.trips) {
+        setTrips(tripsData.trips);
+      }
       
       // Promos
       try {
-        const promosRes = await fetch(`${API_URL}/admin/promo/list?admin_phone=${phone}`);
+        const promosUrl = `${API_BASE}/admin/promo/list?admin_phone=${adminPhone}`;
+        const promosRes = await fetch(promosUrl);
         const promosData = await promosRes.json();
         if (promosData.success) setPromos(promosData.promos || []);
       } catch (e) {
-        console.log('Promos not available');
+        console.log('[ADMIN] Promos yüklenemedi');
       }
       
-      // Notifications
-      try {
-        const notifsRes = await fetch(`${API_URL}/admin/notifications/history?admin_phone=${phone}`);
-        const notifsData = await notifsRes.json();
-        if (notifsData.success) setNotifications(notifsData.notifications || []);
-      } catch (e) {
-        console.log('Notifications not available');
-      }
     } catch (err) {
-      console.error('Load data error:', err);
+      console.error('[ADMIN] loadData error:', err);
+      Alert.alert('Hata', 'Veri yüklenemedi');
     } finally {
       setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
-    if (adminPhone) loadAllData(adminPhone);
+  const refresh = () => {
+    if (phone) loadData(phone);
   };
 
   const createPromo = async () => {
     try {
-      const url = `${API_URL}/admin/promo/create?admin_phone=${adminPhone}&hours=${promoHours}&max_uses=10${promoCode ? `&code=${promoCode}` : ''}`;
+      const url = `${API_BASE}/admin/promo/create?admin_phone=${phone}&hours=${promoHours}&max_uses=100`;
       const res = await fetch(url, { method: 'POST' });
       const data = await res.json();
-      
       if (data.success) {
-        Alert.alert('Başarılı', `Kod: ${data.promo?.code || 'Oluşturuldu'}`);
-        setPromoModal(false);
-        setPromoCode('');
-        onRefresh();
-      } else {
-        Alert.alert('Hata', data.detail || 'Oluşturulamadı');
+        Alert.alert('Başarılı', `Kod: ${data.promo?.code}`);
+        setShowPromoModal(false);
+        refresh();
       }
     } catch (err) {
-      Alert.alert('Hata', 'Bağlantı hatası');
+      Alert.alert('Hata', 'Oluşturulamadı');
     }
   };
 
-  const sendNotification = async () => {
+  const sendNotif = async () => {
     if (!notifTitle || !notifBody) {
       Alert.alert('Hata', 'Başlık ve mesaj gerekli');
       return;
     }
-    
     try {
-      const url = `${API_URL}/admin/notifications/send?admin_phone=${adminPhone}&title=${encodeURIComponent(notifTitle)}&body=${encodeURIComponent(notifBody)}&target=${notifTarget}`;
+      const url = `${API_BASE}/admin/notifications/send?admin_phone=${phone}&title=${encodeURIComponent(notifTitle)}&body=${encodeURIComponent(notifBody)}&target=all`;
       const res = await fetch(url, { method: 'POST' });
       const data = await res.json();
-      
-      if (data.success) {
-        Alert.alert('Başarılı', `${data.sent_count} kişiye gönderildi`);
-        setNotifModal(false);
-        setNotifTitle('');
-        setNotifBody('');
-        onRefresh();
-      } else {
-        Alert.alert('Hata', data.detail || 'Gönderilemedi');
-      }
+      Alert.alert('Başarılı', `${data.sent_count || 0} kişiye gönderildi`);
+      setShowNotifModal(false);
+      setNotifTitle('');
+      setNotifBody('');
     } catch (err) {
-      Alert.alert('Hata', 'Bağlantı hatası');
+      Alert.alert('Hata', 'Gönderilemedi');
     }
   };
 
-  const addDriverTime = async () => {
+  const addTime = async () => {
     if (!selectedUser) return;
-    
     try {
-      const url = `${API_URL}/admin/user/add-time?admin_phone=${adminPhone}&user_id=${selectedUser.id}&hours=${addHours}`;
+      const url = `${API_BASE}/admin/user/add-time?admin_phone=${phone}&user_id=${selectedUser.id}&hours=${addHours}`;
       const res = await fetch(url, { method: 'POST' });
       const data = await res.json();
-      
       if (data.success) {
         Alert.alert('Başarılı', `${addHours} saat eklendi`);
-        setTimeModal(false);
-        setSelectedUser(null);
-        onRefresh();
-      } else {
-        Alert.alert('Hata', data.error || 'Eklenemedi');
+        setShowTimeModal(false);
+        refresh();
       }
     } catch (err) {
-      Alert.alert('Hata', 'Bağlantı hatası');
+      Alert.alert('Hata', 'Eklenemedi');
     }
   };
 
-  const banUser = (user: any) => {
-    Alert.alert(
-      user.is_active ? 'Banla' : 'Ban Kaldır',
-      `${user.name} kullanıcısını ${user.is_active ? 'banlamak' : 'aktif etmek'} istiyor musunuz?`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Evet',
-          onPress: async () => {
-            try {
-              const url = `${API_URL}/admin/user/ban?admin_phone=${adminPhone}&user_id=${user.id}&is_banned=${user.is_active}`;
-              await fetch(url, { method: 'POST' });
-              onRefresh();
-            } catch (err) {
-              Alert.alert('Hata', 'İşlem başarısız');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  if (isLoading) {
+  if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={s.center}>
         <ActivityIndicator size="large" color="#3FA9F5" />
-        <Text style={styles.loadingText}>Yükleniyor...</Text>
+        <Text style={s.loadingText}>Admin Panel Yükleniyor...</Text>
       </View>
     );
   }
 
   if (!isAdmin) return null;
 
-  const filteredUsers = searchText 
+  // Filter users
+  const filteredUsers = search 
     ? users.filter(u => 
-        u.name?.toLowerCase().includes(searchText.toLowerCase()) || 
-        u.phone?.includes(searchText)
+        (u.name || '').toLowerCase().includes(search.toLowerCase()) ||
+        (u.phone || '').includes(search)
       )
     : users;
 
+  // Drivers only
+  const drivers = users.filter(u => u.is_driver);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={s.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
       
       {/* Header */}
-      <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.header}>
+      <LinearGradient colors={['#0F172A', '#1E293B']} style={s.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Admin Panel</Text>
-        <TouchableOpacity onPress={onRefresh}>
-          <Ionicons name="refresh" size={24} color="white" />
+        <Text style={s.title}>Admin Panel</Text>
+        <TouchableOpacity onPress={refresh}>
+          <Ionicons name="refresh" size={24} color="#fff" />
         </TouchableOpacity>
       </LinearGradient>
       
       {/* Tabs */}
-      <View style={styles.tabs}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabs}>
         {[
-          { key: 'dashboard', icon: 'grid', label: 'Panel' },
-          { key: 'users', icon: 'people', label: 'Kullanıcılar' },
-          { key: 'promos', icon: 'gift', label: 'Promosyon' },
-          { key: 'notifications', icon: 'notifications', label: 'Bildirim' },
-        ].map(tab => (
+          { k: 'dashboard', i: 'grid', t: 'Panel' },
+          { k: 'users', i: 'people', t: 'Kullanıcılar' },
+          { k: 'trips', i: 'car', t: 'Yolculuklar' },
+          { k: 'promos', i: 'gift', t: 'Promosyon' },
+          { k: 'notifs', i: 'notifications', t: 'Bildirim' },
+        ].map(x => (
           <TouchableOpacity
-            key={tab.key}
-            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-            onPress={() => setActiveTab(tab.key as TabType)}
+            key={x.k}
+            style={[s.tab, tab === x.k && s.tabActive]}
+            onPress={() => setTab(x.k as Tab)}
           >
-            <Ionicons 
-              name={tab.icon as any} 
-              size={20} 
-              color={activeTab === tab.key ? '#3FA9F5' : '#9CA3AF'} 
-            />
-            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
-              {tab.label}
-            </Text>
+            <Ionicons name={x.i as any} size={18} color={tab === x.k ? '#3FA9F5' : '#9CA3AF'} />
+            <Text style={[s.tabText, tab === x.k && s.tabTextActive]}>{x.t}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
       
-      {/* Dashboard */}
-      {activeTab === 'dashboard' && (
-        <ScrollView 
-          style={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          <Text style={styles.sectionTitle}>Özet</Text>
+      {/* DASHBOARD */}
+      {tab === 'dashboard' && (
+        <ScrollView style={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+          <Text style={s.section}>Genel Bakış</Text>
           
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Ionicons name="people" size={28} color="#3FA9F5" />
-              <Text style={styles.statNum}>{stats?.users?.total || 0}</Text>
-              <Text style={styles.statLabel}>Toplam</Text>
+          <View style={s.row}>
+            <View style={s.card}>
+              <Ionicons name="people" size={24} color="#3FA9F5" />
+              <Text style={s.cardNum}>{stats?.users?.total || 0}</Text>
+              <Text style={s.cardLabel}>Toplam Kullanıcı</Text>
             </View>
-            <View style={styles.statCard}>
-              <Ionicons name="car" size={28} color="#10B981" />
-              <Text style={styles.statNum}>{stats?.users?.drivers || 0}</Text>
-              <Text style={styles.statLabel}>Sürücü</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="radio-button-on" size={28} color="#F59E0B" />
-              <Text style={styles.statNum}>{stats?.users?.online_drivers || 0}</Text>
-              <Text style={styles.statLabel}>Online</Text>
+            <View style={s.card}>
+              <Ionicons name="car" size={24} color="#10B981" />
+              <Text style={s.cardNum}>{stats?.users?.drivers || 0}</Text>
+              <Text style={s.cardLabel}>Sürücü</Text>
             </View>
           </View>
           
-          <Text style={styles.sectionTitle}>Yolculuklar</Text>
-          
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Ionicons name="checkmark-circle" size={28} color="#10B981" />
-              <Text style={styles.statNum}>{stats?.trips?.completed_today || 0}</Text>
-              <Text style={styles.statLabel}>Bugün</Text>
+          <View style={s.row}>
+            <View style={s.card}>
+              <Ionicons name="radio-button-on" size={24} color="#F59E0B" />
+              <Text style={s.cardNum}>{stats?.users?.online_drivers || 0}</Text>
+              <Text style={s.cardLabel}>Online Sürücü</Text>
             </View>
-            <View style={styles.statCard}>
-              <Ionicons name="time" size={28} color="#F59E0B" />
-              <Text style={styles.statNum}>{stats?.trips?.active || 0}</Text>
-              <Text style={styles.statLabel}>Aktif</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="hourglass" size={28} color="#EF4444" />
-              <Text style={styles.statNum}>{stats?.trips?.waiting || 0}</Text>
-              <Text style={styles.statLabel}>Bekleyen</Text>
+            <View style={s.card}>
+              <Ionicons name="person-add" size={24} color="#8B5CF6" />
+              <Text style={s.cardNum}>{stats?.users?.new_today || 0}</Text>
+              <Text style={s.cardLabel}>Bugün Kayıt</Text>
             </View>
           </View>
           
-          <View style={styles.weekCard}>
-            <Text style={styles.weekTitle}>Bu Hafta</Text>
-            <Text style={styles.weekNum}>{stats?.trips?.completed_week || 0} yolculuk tamamlandı</Text>
+          <Text style={s.section}>Yolculuklar</Text>
+          
+          <View style={s.row}>
+            <View style={s.card}>
+              <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+              <Text style={s.cardNum}>{stats?.trips?.completed_today || 0}</Text>
+              <Text style={s.cardLabel}>Bugün Tamamlanan</Text>
+            </View>
+            <View style={s.card}>
+              <Ionicons name="time" size={24} color="#F59E0B" />
+              <Text style={s.cardNum}>{stats?.trips?.active || 0}</Text>
+              <Text style={s.cardLabel}>Aktif</Text>
+            </View>
           </View>
+          
+          <View style={s.row}>
+            <View style={s.card}>
+              <Ionicons name="hourglass" size={24} color="#EF4444" />
+              <Text style={s.cardNum}>{stats?.trips?.waiting || 0}</Text>
+              <Text style={s.cardLabel}>Bekleyen</Text>
+            </View>
+            <View style={s.card}>
+              <Ionicons name="calendar" size={24} color="#3FA9F5" />
+              <Text style={s.cardNum}>{stats?.trips?.completed_week || 0}</Text>
+              <Text style={s.cardLabel}>Bu Hafta</Text>
+            </View>
+          </View>
+          
+          <Text style={s.section}>Sürücüler ({drivers.length})</Text>
+          {drivers.map(d => (
+            <View key={d.id} style={s.driverCard}>
+              <View style={s.driverInfo}>
+                <Text style={s.driverName}>{d.name || 'İsimsiz'}</Text>
+                <Text style={s.driverPhone}>{d.phone}</Text>
+                {d.driver_active_until && (
+                  <Text style={s.driverTime}>
+                    Aktif: {new Date(d.driver_active_until).toLocaleString('tr-TR')}
+                  </Text>
+                )}
+              </View>
+              <View style={[s.badge, d.is_online ? s.badgeOn : s.badgeOff]}>
+                <Text style={s.badgeText}>{d.is_online ? 'Online' : 'Offline'}</Text>
+              </View>
+            </View>
+          ))}
         </ScrollView>
       )}
       
-      {/* Users */}
-      {activeTab === 'users' && (
-        <View style={styles.content}>
-          <View style={styles.searchBox}>
+      {/* USERS */}
+      {tab === 'users' && (
+        <View style={s.content}>
+          <View style={s.searchBox}>
             <Ionicons name="search" size={20} color="#9CA3AF" />
             <TextInput
-              style={styles.searchInput}
+              style={s.searchInput}
               placeholder="İsim veya telefon ara..."
               placeholderTextColor="#9CA3AF"
-              value={searchText}
-              onChangeText={setSearchText}
+              value={search}
+              onChangeText={setSearch}
             />
           </View>
           
+          <Text style={s.countText}>{filteredUsers.length} kullanıcı</Text>
+          
           <FlatList
             data={filteredUsers}
-            keyExtractor={(item) => item.id}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            keyExtractor={item => item.id}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
             renderItem={({ item }) => (
-              <View style={styles.userCard}>
-                <View style={styles.userInfo}>
-                  <View style={styles.userRow}>
-                    <Text style={styles.userName}>{item.name || 'İsimsiz'}</Text>
+              <TouchableOpacity 
+                style={s.userCard}
+                onPress={() => {
+                  if (item.is_driver) {
+                    setSelectedUser(item);
+                    setShowTimeModal(true);
+                  }
+                }}
+              >
+                <View style={s.userInfo}>
+                  <View style={s.userRow}>
+                    <Text style={s.userName}>{item.name || 'İsimsiz'}</Text>
                     {item.is_driver && (
-                      <View style={[styles.badge, item.is_online ? styles.badgeOnline : styles.badgeDriver]}>
-                        <Text style={styles.badgeText}>{item.is_online ? 'Online' : 'Sürücü'}</Text>
+                      <View style={[s.smallBadge, item.is_online ? s.badgeOn : s.badgeDriver]}>
+                        <Text style={s.smallBadgeText}>{item.is_online ? 'Online' : 'Sürücü'}</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={styles.userPhone}>{item.phone || 'Telefon yok'}</Text>
-                  <Text style={styles.userMeta}>
-                    ⭐ {(item.rating || 5).toFixed(1)} • {item.total_trips || 0} trip
+                  <Text style={s.userPhone}>{item.phone || '-'}</Text>
+                  <Text style={s.userMeta}>
+                    ⭐ {(item.rating || 5).toFixed(1)} • {item.total_trips || 0} trip • {item.city || '-'}
                   </Text>
                 </View>
-                
-                <View style={styles.userActions}>
-                  {item.is_driver && (
-                    <TouchableOpacity
-                      style={styles.actionBtn}
-                      onPress={() => { setSelectedUser(item); setTimeModal(true); }}
-                    >
-                      <Ionicons name="time" size={22} color="#10B981" />
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => banUser(item)}>
-                    <Ionicons 
-                      name={item.is_active ? 'ban' : 'checkmark-circle'} 
-                      size={22} 
-                      color={item.is_active ? '#EF4444' : '#10B981'} 
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
+                {item.is_driver && (
+                  <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                )}
+              </TouchableOpacity>
             )}
-            ListEmptyComponent={
-              <Text style={styles.empty}>Kullanıcı bulunamadı</Text>
-            }
+            ListEmptyComponent={<Text style={s.empty}>Kullanıcı yok</Text>}
           />
         </View>
       )}
       
-      {/* Promos */}
-      {activeTab === 'promos' && (
-        <View style={styles.content}>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setPromoModal(true)}>
-            <Ionicons name="add" size={24} color="white" />
-            <Text style={styles.addBtnText}>Yeni Promosyon</Text>
+      {/* TRIPS */}
+      {tab === 'trips' && (
+        <View style={s.content}>
+          <Text style={s.countText}>{trips.length} yolculuk</Text>
+          
+          <FlatList
+            data={trips}
+            keyExtractor={item => item.id}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                style={s.tripCard}
+                onPress={() => {
+                  setSelectedTrip(item);
+                  setShowTripModal(true);
+                }}
+              >
+                <View style={s.tripHeader}>
+                  <View style={[s.statusBadge, 
+                    item.status === 'completed' ? s.statusComplete :
+                    item.status === 'cancelled' ? s.statusCancel :
+                    item.status === 'matched' ? s.statusMatch :
+                    s.statusWait
+                  ]}>
+                    <Text style={s.statusText}>
+                      {item.status === 'completed' ? 'Tamamlandı' :
+                       item.status === 'cancelled' ? 'İptal' :
+                       item.status === 'matched' ? 'Eşleşti' :
+                       item.status === 'in_progress' ? 'Devam' : 'Bekliyor'}
+                    </Text>
+                  </View>
+                  <Text style={s.tripPrice}>{item.final_price || item.offered_price || 0} ₺</Text>
+                </View>
+                
+                <Text style={s.tripRoute} numberOfLines={1}>
+                  📍 {item.pickup_location || 'Başlangıç'} → {item.dropoff_location || 'Varış'}
+                </Text>
+                
+                <Text style={s.tripDate}>
+                  {item.created_at ? new Date(item.created_at).toLocaleString('tr-TR') : '-'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={<Text style={s.empty}>Yolculuk yok</Text>}
+          />
+        </View>
+      )}
+      
+      {/* PROMOS */}
+      {tab === 'promos' && (
+        <View style={s.content}>
+          <TouchableOpacity style={s.addBtn} onPress={() => setShowPromoModal(true)}>
+            <Ionicons name="add" size={24} color="#fff" />
+            <Text style={s.addBtnText}>Yeni Promosyon Kodu</Text>
           </TouchableOpacity>
           
           <FlatList
             data={promos}
             keyExtractor={(item, idx) => item.id || idx.toString()}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
             renderItem={({ item }) => (
-              <View style={styles.promoCard}>
-                <Text style={styles.promoCode}>{item.code}</Text>
-                <Text style={styles.promoInfo}>{item.hours} Saat • {item.used_count}/{item.max_uses} Kullanım</Text>
+              <View style={s.promoCard}>
+                <Text style={s.promoCode}>{item.code}</Text>
+                <Text style={s.promoInfo}>{item.hours} Saat • {item.used_count}/{item.max_uses} Kullanım</Text>
               </View>
             )}
-            ListEmptyComponent={
-              <Text style={styles.empty}>Promosyon kodu yok</Text>
-            }
+            ListEmptyComponent={<Text style={s.empty}>Promosyon kodu yok</Text>}
           />
         </View>
       )}
       
-      {/* Notifications */}
-      {activeTab === 'notifications' && (
-        <View style={styles.content}>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setNotifModal(true)}>
-            <Ionicons name="send" size={24} color="white" />
-            <Text style={styles.addBtnText}>Bildirim Gönder</Text>
+      {/* NOTIFICATIONS */}
+      {tab === 'notifs' && (
+        <View style={s.content}>
+          <TouchableOpacity style={s.addBtn} onPress={() => setShowNotifModal(true)}>
+            <Ionicons name="send" size={24} color="#fff" />
+            <Text style={s.addBtnText}>Bildirim Gönder</Text>
           </TouchableOpacity>
           
-          <FlatList
-            data={notifications}
-            keyExtractor={(item, idx) => item.id || idx.toString()}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            renderItem={({ item }) => (
-              <View style={styles.notifCard}>
-                <Text style={styles.notifTitle}>{item.title}</Text>
-                <Text style={styles.notifBody}>{item.body}</Text>
-              </View>
-            )}
-            ListEmptyComponent={
-              <Text style={styles.empty}>Bildirim geçmişi boş</Text>
-            }
-          />
+          <View style={s.infoBox}>
+            <Ionicons name="information-circle" size={24} color="#3FA9F5" />
+            <Text style={s.infoText}>
+              Tüm kullanıcılara push bildirim gönderebilirsiniz.
+            </Text>
+          </View>
         </View>
       )}
       
-      {/* Promo Modal */}
-      <Modal visible={promoModal} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Yeni Promosyon Kodu</Text>
+      {/* PROMO MODAL */}
+      <Modal visible={showPromoModal} transparent animationType="slide">
+        <View style={s.modalBg}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>Yeni Promosyon</Text>
             
-            <Text style={styles.inputLabel}>Kod (Opsiyonel)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Otomatik oluşturulur"
-              placeholderTextColor="#9CA3AF"
-              value={promoCode}
-              onChangeText={text => setPromoCode(text.toUpperCase())}
-            />
-            
-            <Text style={styles.inputLabel}>Süre (Saat)</Text>
-            <View style={styles.hoursRow}>
+            <Text style={s.label}>Süre Seç</Text>
+            <View style={s.optRow}>
               {['3', '6', '12', '24'].map(h => (
                 <TouchableOpacity
                   key={h}
-                  style={[styles.hourBtn, promoHours === h && styles.hourBtnActive]}
+                  style={[s.optBtn, promoHours === h && s.optBtnActive]}
                   onPress={() => setPromoHours(h)}
                 >
-                  <Text style={[styles.hourText, promoHours === h && styles.hourTextActive]}>{h}</Text>
+                  <Text style={[s.optText, promoHours === h && s.optTextActive]}>{h} Saat</Text>
                 </TouchableOpacity>
               ))}
             </View>
             
-            <View style={styles.modalBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setPromoModal(false)}>
-                <Text style={styles.cancelText}>İptal</Text>
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => setShowPromoModal(false)}>
+                <Text style={s.cancelText}>İptal</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={createPromo}>
-                <Text style={styles.submitText}>Oluştur</Text>
+              <TouchableOpacity style={s.submitBtn} onPress={createPromo}>
+                <Text style={s.submitText}>Oluştur</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
       
-      {/* Notification Modal */}
-      <Modal visible={notifModal} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Bildirim Gönder</Text>
+      {/* NOTIF MODAL */}
+      <Modal visible={showNotifModal} transparent animationType="slide">
+        <View style={s.modalBg}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>Bildirim Gönder</Text>
             
-            <Text style={styles.inputLabel}>Başlık</Text>
+            <Text style={s.label}>Başlık</Text>
             <TextInput
-              style={styles.input}
+              style={s.input}
               placeholder="Bildirim başlığı"
               placeholderTextColor="#9CA3AF"
               value={notifTitle}
               onChangeText={setNotifTitle}
             />
             
-            <Text style={styles.inputLabel}>Mesaj</Text>
+            <Text style={s.label}>Mesaj</Text>
             <TextInput
-              style={[styles.input, { height: 80 }]}
+              style={[s.input, { height: 80 }]}
               placeholder="Bildirim mesajı"
               placeholderTextColor="#9CA3AF"
               multiline
@@ -517,62 +543,97 @@ export default function AdminScreen() {
               onChangeText={setNotifBody}
             />
             
-            <Text style={styles.inputLabel}>Hedef</Text>
-            <View style={styles.hoursRow}>
-              {[
-                { key: 'all', label: 'Herkes' },
-                { key: 'drivers', label: 'Sürücüler' },
-                { key: 'online_drivers', label: 'Online' },
-              ].map(t => (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[styles.hourBtn, notifTarget === t.key && styles.hourBtnActive]}
-                  onPress={() => setNotifTarget(t.key)}
-                >
-                  <Text style={[styles.hourText, notifTarget === t.key && styles.hourTextActive]}>{t.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
-            <View style={styles.modalBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setNotifModal(false)}>
-                <Text style={styles.cancelText}>İptal</Text>
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => setShowNotifModal(false)}>
+                <Text style={s.cancelText}>İptal</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={sendNotification}>
-                <Text style={styles.submitText}>Gönder</Text>
+              <TouchableOpacity style={s.submitBtn} onPress={sendNotif}>
+                <Text style={s.submitText}>Gönder</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
       
-      {/* Add Time Modal */}
-      <Modal visible={timeModal} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Süre Ekle</Text>
-            <Text style={styles.modalSub}>{selectedUser?.name}</Text>
+      {/* TIME MODAL */}
+      <Modal visible={showTimeModal} transparent animationType="slide">
+        <View style={s.modalBg}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>Süre Ekle</Text>
+            <Text style={s.modalSub}>{selectedUser?.name}</Text>
             
-            <View style={styles.hoursRow}>
+            <View style={s.optRow}>
               {['3', '6', '12', '24'].map(h => (
                 <TouchableOpacity
                   key={h}
-                  style={[styles.hourBtn, addHours === h && styles.hourBtnActive]}
+                  style={[s.optBtn, addHours === h && s.optBtnActive]}
                   onPress={() => setAddHours(h)}
                 >
-                  <Text style={[styles.hourText, addHours === h && styles.hourTextActive]}>{h} Saat</Text>
+                  <Text style={[s.optText, addHours === h && s.optTextActive]}>{h}h</Text>
                 </TouchableOpacity>
               ))}
             </View>
             
-            <View style={styles.modalBtns}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setTimeModal(false)}>
-                <Text style={styles.cancelText}>İptal</Text>
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => setShowTimeModal(false)}>
+                <Text style={s.cancelText}>İptal</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitBtn} onPress={addDriverTime}>
-                <Text style={styles.submitText}>Ekle</Text>
+              <TouchableOpacity style={s.submitBtn} onPress={addTime}>
+                <Text style={s.submitText}>Ekle</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* TRIP DETAIL MODAL */}
+      <Modal visible={showTripModal} transparent animationType="slide">
+        <View style={s.modalBg}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>Yolculuk Detayı</Text>
+            
+            {selectedTrip && (
+              <>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Durum:</Text>
+                  <Text style={s.detailValue}>{selectedTrip.status}</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Fiyat:</Text>
+                  <Text style={s.detailValue}>{selectedTrip.final_price || selectedTrip.offered_price} ₺</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Mesafe:</Text>
+                  <Text style={s.detailValue}>{selectedTrip.distance_km || '-'} km</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Yolcu ID:</Text>
+                  <Text style={s.detailValue} numberOfLines={1}>{selectedTrip.passenger_id || '-'}</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Sürücü ID:</Text>
+                  <Text style={s.detailValue} numberOfLines={1}>{selectedTrip.driver_id || '-'}</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Başlangıç:</Text>
+                  <Text style={s.detailValue} numberOfLines={2}>{selectedTrip.pickup_location || '-'}</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Varış:</Text>
+                  <Text style={s.detailValue} numberOfLines={2}>{selectedTrip.dropoff_location || '-'}</Text>
+                </View>
+                <View style={s.detailRow}>
+                  <Text style={s.detailLabel}>Tarih:</Text>
+                  <Text style={s.detailValue}>
+                    {selectedTrip.created_at ? new Date(selectedTrip.created_at).toLocaleString('tr-TR') : '-'}
+                  </Text>
+                </View>
+              </>
+            )}
+            
+            <TouchableOpacity style={[s.submitBtn, { marginTop: 20 }]} onPress={() => setShowTripModal(false)}>
+              <Text style={s.submitText}>Kapat</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -580,150 +641,100 @@ export default function AdminScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' },
   loadingText: { color: '#9CA3AF', marginTop: 12 },
   
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    padding: 16,
-    paddingTop: 8,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: 'white' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
+  title: { fontSize: 20, fontWeight: '700', color: '#fff' },
   
-  tabs: { 
-    flexDirection: 'row', 
-    backgroundColor: '#1E293B', 
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  tab: { 
-    flex: 1, 
-    alignItems: 'center', 
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  activeTab: { backgroundColor: 'rgba(63,169,245,0.15)' },
-  tabText: { color: '#9CA3AF', fontSize: 11, marginTop: 4 },
-  activeTabText: { color: '#3FA9F5', fontWeight: '600' },
+  tabs: { backgroundColor: '#1E293B', paddingVertical: 8 },
+  tab: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, marginHorizontal: 4, borderRadius: 8 },
+  tabActive: { backgroundColor: 'rgba(63,169,245,0.15)' },
+  tabText: { color: '#9CA3AF', marginLeft: 6, fontSize: 13 },
+  tabTextActive: { color: '#3FA9F5', fontWeight: '600' },
   
   content: { flex: 1, padding: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: 'white', marginBottom: 12, marginTop: 8 },
+  section: { fontSize: 18, fontWeight: '700', color: '#fff', marginVertical: 12 },
+  countText: { color: '#9CA3AF', marginBottom: 12 },
   
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  statCard: { 
-    flex: 1, 
-    backgroundColor: '#1E293B', 
-    borderRadius: 12, 
-    padding: 16, 
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  statNum: { fontSize: 24, fontWeight: '700', color: 'white', marginTop: 8 },
-  statLabel: { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
+  row: { flexDirection: 'row', marginBottom: 12 },
+  card: { flex: 1, backgroundColor: '#1E293B', borderRadius: 12, padding: 16, alignItems: 'center', marginHorizontal: 4 },
+  cardNum: { fontSize: 24, fontWeight: '700', color: '#fff', marginTop: 8 },
+  cardLabel: { fontSize: 11, color: '#9CA3AF', marginTop: 4, textAlign: 'center' },
   
-  weekCard: { 
-    backgroundColor: '#1E293B', 
-    borderRadius: 12, 
-    padding: 20, 
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  weekTitle: { fontSize: 14, color: '#9CA3AF' },
-  weekNum: { fontSize: 20, fontWeight: '700', color: '#3FA9F5', marginTop: 8 },
+  driverCard: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 8, alignItems: 'center' },
+  driverInfo: { flex: 1 },
+  driverName: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  driverPhone: { fontSize: 14, color: '#9CA3AF', marginTop: 2 },
+  driverTime: { fontSize: 12, color: '#10B981', marginTop: 4 },
   
-  searchBox: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#1E293B', 
-    borderRadius: 12, 
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  searchInput: { flex: 1, color: 'white', paddingVertical: 12, marginLeft: 8 },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  badgeOn: { backgroundColor: 'rgba(16,185,129,0.2)' },
+  badgeOff: { backgroundColor: 'rgba(239,68,68,0.2)' },
+  badgeDriver: { backgroundColor: 'rgba(63,169,245,0.2)' },
+  badgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   
-  userCard: { 
-    flexDirection: 'row', 
-    backgroundColor: '#1E293B', 
-    borderRadius: 12, 
-    padding: 14, 
-    marginBottom: 10,
-  },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', borderRadius: 12, paddingHorizontal: 12, marginBottom: 12 },
+  searchInput: { flex: 1, color: '#fff', paddingVertical: 12, marginLeft: 8 },
+  
+  userCard: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 8, alignItems: 'center' },
   userInfo: { flex: 1 },
   userRow: { flexDirection: 'row', alignItems: 'center' },
-  userName: { fontSize: 16, fontWeight: '600', color: 'white' },
-  userPhone: { fontSize: 14, color: '#9CA3AF', marginTop: 4 },
+  userName: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  userPhone: { fontSize: 14, color: '#9CA3AF', marginTop: 2 },
   userMeta: { fontSize: 12, color: '#6B7280', marginTop: 4 },
-  userActions: { flexDirection: 'row', alignItems: 'center' },
-  actionBtn: { padding: 8, marginLeft: 4 },
   
-  badge: { marginLeft: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  badgeDriver: { backgroundColor: 'rgba(63,169,245,0.2)' },
-  badgeOnline: { backgroundColor: 'rgba(16,185,129,0.2)' },
-  badgeText: { fontSize: 10, color: 'white', fontWeight: '600' },
+  smallBadge: { marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  smallBadgeText: { color: '#fff', fontSize: 10, fontWeight: '600' },
   
-  addBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    backgroundColor: '#3FA9F5', 
-    borderRadius: 12, 
-    padding: 14, 
-    marginBottom: 16,
-  },
-  addBtnText: { color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  tripCard: { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 8 },
+  tripHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tripPrice: { fontSize: 18, fontWeight: '700', color: '#10B981' },
+  tripRoute: { fontSize: 14, color: '#9CA3AF', marginTop: 8 },
+  tripDate: { fontSize: 12, color: '#6B7280', marginTop: 6 },
   
-  promoCard: { backgroundColor: '#1E293B', borderRadius: 12, padding: 16, marginBottom: 10 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  statusComplete: { backgroundColor: 'rgba(16,185,129,0.2)' },
+  statusCancel: { backgroundColor: 'rgba(239,68,68,0.2)' },
+  statusMatch: { backgroundColor: 'rgba(63,169,245,0.2)' },
+  statusWait: { backgroundColor: 'rgba(245,158,11,0.2)' },
+  statusText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#3FA9F5', borderRadius: 12, padding: 14, marginBottom: 16 },
+  addBtnText: { color: '#fff', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  
+  promoCard: { backgroundColor: '#1E293B', borderRadius: 12, padding: 16, marginBottom: 8 },
   promoCode: { fontSize: 18, fontWeight: '700', color: '#3FA9F5' },
   promoInfo: { fontSize: 14, color: '#9CA3AF', marginTop: 4 },
   
-  notifCard: { backgroundColor: '#1E293B', borderRadius: 12, padding: 16, marginBottom: 10 },
-  notifTitle: { fontSize: 16, fontWeight: '600', color: 'white' },
-  notifBody: { fontSize: 14, color: '#9CA3AF', marginTop: 4 },
+  infoBox: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 12, padding: 16, alignItems: 'center' },
+  infoText: { flex: 1, color: '#9CA3AF', marginLeft: 12, fontSize: 14 },
   
   empty: { textAlign: 'center', color: '#6B7280', marginTop: 40 },
   
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 },
-  modalBox: { backgroundColor: '#1E293B', borderRadius: 16, padding: 20 },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: 'white', textAlign: 'center' },
-  modalSub: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', marginBottom: 16 },
+  modal: { backgroundColor: '#1E293B', borderRadius: 16, padding: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  modalSub: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', marginTop: 4, marginBottom: 16 },
   
-  inputLabel: { fontSize: 14, color: '#9CA3AF', marginTop: 16, marginBottom: 8 },
-  input: { backgroundColor: '#0F172A', borderRadius: 12, padding: 14, color: 'white' },
+  label: { fontSize: 14, color: '#9CA3AF', marginTop: 16, marginBottom: 8 },
+  input: { backgroundColor: '#0F172A', borderRadius: 12, padding: 14, color: '#fff' },
   
-  hoursRow: { flexDirection: 'row', marginTop: 8 },
-  hourBtn: { 
-    flex: 1, 
-    backgroundColor: '#0F172A', 
-    borderRadius: 8, 
-    padding: 12, 
-    marginRight: 8, 
-    alignItems: 'center',
-  },
-  hourBtnActive: { backgroundColor: '#3FA9F5' },
-  hourText: { color: '#9CA3AF', fontWeight: '500' },
-  hourTextActive: { color: 'white' },
+  optRow: { flexDirection: 'row', marginTop: 8 },
+  optBtn: { flex: 1, backgroundColor: '#0F172A', borderRadius: 8, padding: 12, marginRight: 8, alignItems: 'center' },
+  optBtnActive: { backgroundColor: '#3FA9F5' },
+  optText: { color: '#9CA3AF', fontWeight: '500' },
+  optTextActive: { color: '#fff' },
   
   modalBtns: { flexDirection: 'row', marginTop: 20 },
-  cancelBtn: { 
-    flex: 1, 
-    backgroundColor: '#374151', 
-    borderRadius: 12, 
-    padding: 14, 
-    marginRight: 8, 
-    alignItems: 'center',
-  },
-  cancelText: { color: 'white', fontWeight: '600' },
-  submitBtn: { 
-    flex: 1, 
-    backgroundColor: '#3FA9F5', 
-    borderRadius: 12, 
-    padding: 14, 
-    marginLeft: 8, 
-    alignItems: 'center',
-  },
-  submitText: { color: 'white', fontWeight: '600' },
+  cancelBtn: { flex: 1, backgroundColor: '#374151', borderRadius: 12, padding: 14, marginRight: 8, alignItems: 'center' },
+  cancelText: { color: '#fff', fontWeight: '600' },
+  submitBtn: { flex: 1, backgroundColor: '#3FA9F5', borderRadius: 12, padding: 14, marginLeft: 8, alignItems: 'center' },
+  submitText: { color: '#fff', fontWeight: '600' },
+  
+  detailRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#374151' },
+  detailLabel: { width: 80, color: '#9CA3AF', fontSize: 14 },
+  detailValue: { flex: 1, color: '#fff', fontSize: 14 },
 });

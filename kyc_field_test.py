@@ -8,7 +8,7 @@ import requests
 import json
 from datetime import datetime
 
-BASE_URL = "https://qr-trip-end.preview.emergentagent.com/api"
+BASE_URL = "https://driver-kyc-system.preview.emergentagent.com/api"
 ADMIN_PHONE = "5326497412"
 
 def log_test(test_name, status, details=""):

@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://qr-trip-end.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://driver-kyc-system.preview.emergentagent.com';
 
 interface DriverStatusBarProps {
   userId: string;
