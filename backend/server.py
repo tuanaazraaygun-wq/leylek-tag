@@ -8268,6 +8268,67 @@ async def admin_send_push_notification(admin_phone: str, title: str, message: st
         logger.error(f"Admin push notification error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==================== GOOGLE DIRECTIONS API - IN-APP NAVİGASYON ====================
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+@api_router.get("/directions")
+async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float):
+    """Google Directions API - Turn-by-turn navigasyon için"""
+    try:
+        if not GOOGLE_MAPS_API_KEY:
+            return {"success": False, "error": "Google Maps API key not configured"}
+        
+        url = f"https://maps.googleapis.com/maps/api/directions/json"
+        params = {
+            "origin": f"{origin_lat},{origin_lng}",
+            "destination": f"{dest_lat},{dest_lng}",
+            "mode": "driving",
+            "language": "tr",
+            "key": GOOGLE_MAPS_API_KEY
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=10.0)
+            data = response.json()
+        
+        if data.get("status") != "OK":
+            return {"success": False, "error": data.get("status")}
+        
+        route = data.get("routes", [{}])[0]
+        leg = route.get("legs", [{}])[0]
+        
+        steps = []
+        for step in leg.get("steps", []):
+            # Manevra türünü çıkar
+            maneuver = step.get("maneuver", "straight")
+            
+            # HTML taglerini temizle
+            instruction = step.get("html_instructions", "")
+            import re
+            instruction = re.sub('<[^<]+?>', '', instruction)
+            
+            steps.append({
+                "maneuver": maneuver,
+                "instruction": instruction,
+                "distance": step.get("distance", {}).get("text", ""),
+                "duration": step.get("duration", {}).get("text", ""),
+                "start_location": step.get("start_location"),
+                "end_location": step.get("end_location"),
+                "polyline": step.get("polyline", {}).get("points", "")
+            })
+        
+        return {
+            "success": True,
+            "steps": steps,
+            "total_distance": leg.get("distance", {}).get("text", ""),
+            "total_duration": leg.get("duration", {}).get("text", ""),
+            "polyline": route.get("overview_polyline", {}).get("points", "")
+        }
+        
+    except Exception as e:
+        logger.error(f"Directions API error: {e}")
+        return {"success": False, "error": str(e)}
+
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
 app.include_router(api_router)

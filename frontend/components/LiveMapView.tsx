@@ -500,10 +500,17 @@ export default function LiveMapView({
         resizeMode="cover"
       />
       
-      {/* 🆕 MATRIX DURUM YAZISI - Sol üst köşe */}
-      {matrixStatus && (
-        <View style={styles.matrixContainer}>
-          <Text style={styles.matrixText}>{matrixStatus}</Text>
+      {/* 🆕 MATRIX DURUM YAZISI - SÜRÜCÜ - Çerçeve altına sabit (SOL) */}
+      {matrixStatus && isDriver && (
+        <View style={styles.matrixContainerDriver}>
+          <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
+        </View>
+      )}
+      
+      {/* 🆕 MATRIX DURUM YAZISI - YOLCU - Çerçeve altına sabit (SOL) - KIRMIZI */}
+      {matrixStatus && !isDriver && (
+        <View style={styles.matrixContainerPassenger}>
+          <Text style={styles.matrixTextPassenger}>{matrixStatus.replace('SURUCU', 'SÜRÜCÜ').replace('SIZIN', 'SİZİN').replace('ICIN', 'İÇİN')}</Text>
         </View>
       )}
       
@@ -596,24 +603,24 @@ export default function LiveMapView({
       <View style={styles.topInfoPanel}>
         <View style={styles.topInfoBorder}>
           <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,0.95)']} style={styles.infoGradient}>
-          {/* Buluşma Bilgisi - Yeşil */}
+          {/* Buluşma Bilgisi - Yeşil - MODERN */}
           <View style={styles.routeInfoRow}>
             <View style={[styles.routeIndicator, { backgroundColor: '#22C55E' }]} />
             <View style={styles.routeDetails}>
-              <Text style={styles.routeLabel}>🚗 Buluşma</Text>
-              <Text style={styles.routeValue}>
+              <Text style={styles.routeLabelModern}>BULUŞMA</Text>
+              <Text style={styles.routeValueModern}>
                 {meetingDistance ? `${meetingDistance.toFixed(1)} km` : '...'} • {meetingDuration ? `${meetingDuration} dk` : '...'}
               </Text>
             </View>
           </View>
           
-          {/* Hedef Bilgisi - Turuncu */}
+          {/* Hedef Bilgisi - Turuncu - MODERN */}
           {destinationLocation && (
             <View style={styles.routeInfoRow}>
               <View style={[styles.routeIndicator, { backgroundColor: '#F97316' }]} />
               <View style={styles.routeDetails}>
-                <Text style={styles.routeLabel}>🏁 Hedefe</Text>
-                <Text style={styles.routeValue}>
+                <Text style={styles.routeLabelModern}>HEDEF</Text>
+                <Text style={styles.routeValueModern}>
                   {destinationDistance ? `${destinationDistance.toFixed(1)} km` : '...'} • {destinationDuration ? `${destinationDuration} dk` : '...'}
                 </Text>
               </View>
@@ -1070,6 +1077,19 @@ const styles = StyleSheet.create({
   routeDetails: { flex: 1 },
   routeLabel: { fontSize: 13, color: '#666', fontWeight: '500' },
   routeValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
+  // 🆕 MODERN Yazı Stilleri
+  routeLabelModern: { 
+    fontSize: 11, 
+    color: '#374151', 
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  routeValueModern: { 
+    fontSize: 20, 
+    fontWeight: '900', 
+    color: '#111827',
+    letterSpacing: 0.5,
+  },
   nearBadge: { backgroundColor: '#F97316', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   nearBadgeText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
   offeredPriceBadge: { 
@@ -1456,23 +1476,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
   },
-  // 🆕 Matrix Durum Yazısı Stilleri
-  matrixContainer: {
+  // 🆕 Matrix Durum Yazısı Stilleri - SÜRÜCÜ (YEŞİL)
+  matrixContainerDriver: {
     position: 'absolute',
-    top: 100,
+    top: 175,
     left: 12,
     zIndex: 1000,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 4,
-    borderLeftWidth: 3,
+    backgroundColor: 'rgba(0, 20, 0, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderLeftWidth: 4,
     borderLeftColor: '#00FF00',
   },
-  matrixText: {
-    fontSize: 11,
-    fontWeight: '700',
+  matrixTextDriver: {
+    fontSize: 12,
+    fontWeight: '800',
     color: '#00FF00',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+  },
+  // 🆕 Matrix Durum Yazısı Stilleri - YOLCU (KIRMIZI)
+  matrixContainerPassenger: {
+    position: 'absolute',
+    top: 175,
+    left: 12,
+    zIndex: 1000,
+    backgroundColor: 'rgba(30, 0, 0, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF3B30',
+  },
+  matrixTextPassenger: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FF3B30',
+    letterSpacing: 1.5,
   },
 });
