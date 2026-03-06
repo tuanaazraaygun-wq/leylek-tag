@@ -4871,6 +4871,8 @@ function PassengerDashboard({
     // 🆕 TAG EŞLEŞTİ - Yolcu teklifi kabul ettiğinde
     onTagMatched: (data) => {
       console.log('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
+      // 🔊 EŞLEŞME SESİ - Ding ding ding
+      playMatchSound();
       // 🔥 TÜM TEKLİFLERİ TEMİZLE - Artık yeni teklif alamaz
       clearOffers();
       
@@ -6717,6 +6719,29 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     receiverId: string;
   } | null>(null);
   
+  // 🔊 SES EFEKTLERI - SOFOR
+  const soundRef = useRef<Audio.Sound | null>(null);
+  
+  const playMatchSound = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' },
+        { shouldPlay: true, volume: 0.8 }
+      );
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.log('Eslesme sesi hatasi:', error);
+    }
+  };
+  
   // 🆕 Chat State'leri (Sürücü)
   const [driverChatVisible, setDriverChatVisible] = useState(false);
   const [driverIncomingMessage, setDriverIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
@@ -7019,6 +7044,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
+      // 🔊 EŞLEŞME SESİ - Ding ding ding
+      playMatchSound();
       // 🔥 EŞLEŞTİĞİNDE TÜM LİSTEYİ TEMİZLE - Artık yeni teklif kabul edemez
       setRequests([]);
       

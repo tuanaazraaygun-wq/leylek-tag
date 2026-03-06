@@ -246,6 +246,9 @@ export default function LiveMapView({
   const [nearDestination, setNearDestination] = useState(false);
   const autoCompleteTriggered = useRef(false);
   
+  // 🆕 Matrix Tarzı Durum Mesajları
+  const [matrixStatus, setMatrixStatus] = useState('');
+  
   // API çağrı sayacı (rate limiting için)
   const lastRouteCall = useRef<number>(0);
   
@@ -272,6 +275,44 @@ export default function LiveMapView({
     
     return () => pulseAnimation.stop();
   }, []);
+  
+  // 🆕 Matrix Durum Yazıları - Mesafeye göre güncelle
+  useEffect(() => {
+    if (!userLocation || !otherLocation) return;
+    
+    const distance = calculateDistance(
+      userLocation.latitude, 
+      userLocation.longitude, 
+      otherLocation.latitude, 
+      otherLocation.longitude
+    );
+    const meters = distance * 1000;
+    
+    if (isDriver) {
+      // SÜRÜCÜ İÇİN MESAJLAR
+      if (meters > 500) {
+        setMatrixStatus('> YOLCUYU ALINIZ');
+      } else if (meters > 100) {
+        setMatrixStatus('> YOLCUYA YAKLASTINIZ');
+      } else if (meters <= 100 && !destinationLocation) {
+        setMatrixStatus('> YOLCUYU ALDINIZ');
+      } else if (destinationLocation) {
+        setMatrixStatus('> YOLCUNUN HEDEFINE GIDIN');
+      }
+    } else {
+      // YOLCU İÇİN MESAJLAR
+      if (meters > 500) {
+        setMatrixStatus('> SURUCU YOLA CIKTI');
+      } else if (meters > 100) {
+        setMatrixStatus('> SURUCU SIZIN ICIN GELIYOR');
+      } else if (meters <= 100) {
+        setMatrixStatus('> SURUCU GELDI');
+      }
+      if (destinationLocation && meters <= 100) {
+        setMatrixStatus('> IYI YOLCULUKLAR');
+      }
+    }
+  }, [userLocation, otherLocation, isDriver, destinationLocation]);
   
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
@@ -458,6 +499,13 @@ export default function LiveMapView({
         style={styles.cloudBackground}
         resizeMode="cover"
       />
+      
+      {/* 🆕 MATRIX DURUM YAZISI - Sol üst köşe */}
+      {matrixStatus && (
+        <View style={styles.matrixContainer}>
+          <Text style={styles.matrixText}>{matrixStatus}</Text>
+        </View>
+      )}
       
       {/* HARİTA - Google Maps */}
       {MapView ? (
@@ -649,7 +697,7 @@ export default function LiveMapView({
 
           {/* 🆕 ALT BUTONLAR - Destek ve Bitir */}
           <View style={styles.actionButtons}>
-            {/* WhatsApp Destek Butonu - Sadece "Destek" yazısı */}
+            {/* WhatsApp Destek Butonu - Küçük, ortalı ikon */}
             <TouchableOpacity 
               style={styles.whatsappButton} 
               onPress={() => {
@@ -671,8 +719,7 @@ export default function LiveMapView({
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="logo-whatsapp" size={20} color="#FFF" />
-              <Text style={styles.whatsappButtonText}>Destek</Text>
+              <Ionicons name="logo-whatsapp" size={18} color="#FFF" />
             </TouchableOpacity>
 
             {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile + KONUM KONTROLÜ */}
@@ -682,7 +729,7 @@ export default function LiveMapView({
               <TouchableOpacity 
                 style={styles.qrEndButton} 
                 onPress={() => {
-                  // 🔥 KONUM KONTROLÜ - Sadece sürücü için
+                  // 🔥 KONUM KONTROLÜ - Sadece sürücü için (1 KM mesafe)
                   if (isDriver && userLocation && otherLocation) {
                     const distance = calculateDistance(
                       userLocation.latitude, 
@@ -692,8 +739,8 @@ export default function LiveMapView({
                     );
                     const distanceMeters = distance * 1000; // km to meters
                     
-                    if (distanceMeters > 150) {
-                      // Yolcu uzakta - QR gösterme
+                    if (distanceMeters > 1000) {
+                      // Yolcu 1km'den uzakta - QR gösterme
                       Alert.alert(
                         '📍 Yolcu Yakın Değil',
                         `Yolcu sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : (distance).toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için yolcunun yakınınızda olması gerekiyor.`,
@@ -1198,18 +1245,17 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   whatsappButton: { 
-    flex: 1, 
-    flexDirection: 'row', 
+    width: 44, 
+    height: 44, 
     alignItems: 'center', 
     justifyContent: 'center', 
-    paddingVertical: 12, 
-    backgroundColor: '#25D366', // WhatsApp Yeşil
-    borderRadius: 12,
+    backgroundColor: '#25D366',
+    borderRadius: 22,
   },
   whatsappButtonText: { 
-    fontSize: 14, 
+    fontSize: 10, 
     fontWeight: '600', 
-    marginLeft: 6, 
+    marginTop: 2, 
     color: '#FFF',
   },
   supportButton: { 
@@ -1409,5 +1455,28 @@ const styles = StyleSheet.create({
   infoCardFooterText: {
     fontSize: 12,
     color: '#9CA3AF',
+  },
+  // 🆕 Matrix Durum Yazısı Stilleri
+  matrixContainer: {
+    position: 'absolute',
+    top: 100,
+    left: 12,
+    zIndex: 1000,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#00FF00',
+  },
+  matrixText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00FF00',
+    fontFamily: 'monospace',
+    letterSpacing: 1,
+    textShadowColor: '#00FF00',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
   },
 });
