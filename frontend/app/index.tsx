@@ -1914,7 +1914,24 @@ export default function App() {
     );
   }
 
-  return null;
+  // 🔒 FALLBACK - Beklenmeyen durumlarda login ekranına yönlendir
+  // Bu beyaz ekran sorununu önler
+  console.log('⚠️ Unexpected screen state:', { screen, hasUser: !!user });
+  
+  // Eğer user yoksa login'e, user varsa role-select'e yönlendir
+  if (!user && screen !== 'login' && screen !== 'register' && screen !== 'otp' && screen !== 'forgot-password' && screen !== 'reset-pin') {
+    setTimeout(() => setScreen('login'), 100);
+  } else if (user && screen !== 'dashboard' && screen !== 'role-select' && screen !== 'community' && screen !== 'driver-kyc') {
+    setTimeout(() => setScreen('role-select'), 100);
+  }
+  
+  // Loading göster (beyaz ekran yerine)
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
+      <ActivityIndicator size="large" color="#3FA9F5" />
+      <Text style={{ color: '#fff', marginTop: 12 }}>Yükleniyor...</Text>
+    </View>
+  );
 }
 
 // ==================== YANIP SÖNEN TEKLİF GÖNDER BUTONU ====================
@@ -4434,6 +4451,17 @@ function PassengerDashboard({
   setShowDestinationPicker: (show: boolean) => void;
   setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
 }) {
+  // 🔒 NULL SAFETY - User yoksa early return
+  if (!user || !user.id) {
+    console.log('⚠️ PassengerDashboard: User is null or invalid');
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#3FA9F5" />
+        <Text style={{ color: '#fff', marginTop: 12 }}>Yükleniyor...</Text>
+      </View>
+    );
+  }
+  
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -6678,6 +6706,17 @@ interface DriverDashboardProps {
 }
 
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp }: DriverDashboardProps) {
+  // 🔒 NULL SAFETY - User yoksa early return
+  if (!user || !user.id) {
+    console.log('⚠️ DriverDashboard: User is null or invalid');
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#3FA9F5" />
+        <Text style={{ color: '#fff', marginTop: 12 }}>Yükleniyor...</Text>
+      </View>
+    );
+  }
+  
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
