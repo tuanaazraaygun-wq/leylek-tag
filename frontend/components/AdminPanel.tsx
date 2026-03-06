@@ -373,86 +373,83 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     </ScrollView>
   );
   
-  const renderUsers = () => (
-    <View style={styles.content}>
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Kullanici ara (isim veya telefon)..."
-        placeholderTextColor={COLORS.textSecondary}
-        value={userSearch}
-        onChangeText={setUserSearch}
-      />
-      
-      <Text style={styles.countText}>{users.length} kullanici bulundu</Text>
-      
-      <FlatList
-        data={users.filter(u => 
-          u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
-          u.phone?.includes(userSearch)
-        )}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.userCard}>
-            <View style={styles.userInfo}>
-              <View style={styles.userAvatar}>
-                <Text style={styles.userAvatarText}>{item.name?.charAt(0) || '?'}</Text>
-              </View>
-              <View style={styles.userDetails}>
-                <Text style={styles.userName}>{item.name || 'Isimsiz'}</Text>
-                <Text style={styles.userPhone}>{item.phone || '-'}</Text>
-                <View style={styles.userMeta}>
-                  <Text style={styles.userMetaText}>
-                    {item.is_driver ? 'Surucu' : 'Yolcu'} | {item.city || '-'}
-                  </Text>
-                  <Text style={styles.userMetaText}>
-                    {(item.rating || 5).toFixed(1)} | {item.total_trips || 0} yolculuk
-                    {item.is_online ? ' | Online' : ''}
-                  </Text>
-                  {item.last_ip && (
-                    <Text style={styles.userMetaText}>IP: {item.last_ip}</Text>
-                  )}
-                  {item.last_device_id && (
-                    <Text style={styles.userMetaText}>Cihaz: {item.last_device_id?.slice(0, 15)}...</Text>
-                  )}
+  const renderUsers = () => {
+    const filteredUsers = users.filter(u => 
+      u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+      u.phone?.includes(userSearch)
+    );
+    
+    return (
+      <View style={styles.content}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Kullanici ara (isim veya telefon)..."
+          placeholderTextColor={COLORS.textSecondary}
+          value={userSearch}
+          onChangeText={setUserSearch}
+        />
+        
+        <Text style={styles.countText}>{filteredUsers.length} kullanici bulundu</Text>
+        
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {filteredUsers.length === 0 ? (
+            <Text style={styles.emptyText}>Kullanici bulunamadi</Text>
+          ) : (
+            filteredUsers.slice(0, 50).map((item) => (
+              <View key={item.id} style={styles.userCard}>
+                <View style={styles.userInfo}>
+                  <View style={styles.userAvatar}>
+                    <Text style={styles.userAvatarText}>{item.name?.charAt(0) || '?'}</Text>
+                  </View>
+                  <View style={styles.userDetails}>
+                    <Text style={styles.userName}>{item.name || 'Isimsiz'}</Text>
+                    <Text style={styles.userPhone}>{item.phone || '-'}</Text>
+                    <View style={styles.userMeta}>
+                      <Text style={styles.userMetaText}>
+                        {item.is_driver ? 'Surucu' : 'Yolcu'} | {item.city || '-'}
+                      </Text>
+                      <Text style={styles.userMetaText}>
+                        {(item.rating || 5).toFixed(1)} | {item.total_trips || 0} yolculuk
+                        {item.is_online ? ' | Online' : ''}
+                      </Text>
+                      {item.last_ip && (
+                        <Text style={styles.userMetaText}>IP: {item.last_ip}</Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+                
+                <View style={styles.userActions}>
+                  <TouchableOpacity
+                    style={[styles.userActionBtn, item.is_active !== false ? styles.btnWarning : styles.btnSuccess]}
+                    onPress={() => toggleUserStatus(item.id, item.is_active !== false)}
+                  >
+                    <Ionicons name={item.is_active !== false ? "pause" : "play"} size={14} color="#FFF" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.userActionBtn, styles.btnDanger]}
+                    onPress={() => softDeleteUser(item.id, item.name)}
+                  >
+                    <Ionicons name="trash" size={14} color="#FFF" />
+                  </TouchableOpacity>
                 </View>
               </View>
-            </View>
-            
-            <View style={styles.userActions}>
-              <TouchableOpacity
-                style={[styles.userActionBtn, item.is_active !== false ? styles.btnWarning : styles.btnSuccess]}
-                onPress={() => toggleUserStatus(item.id, item.is_active !== false)}
-              >
-                <Ionicons name={item.is_active !== false ? "pause" : "play"} size={14} color="#FFF" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.userActionBtn, styles.btnDanger]}
-                onPress={() => softDeleteUser(item.id, item.name)}
-              >
-                <Ionicons name="trash" size={14} color="#FFF" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<Text style={styles.emptyText}>Kullanici bulunamadi</Text>}
-      />
-    </View>
-  );
+            ))
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
   
   const renderTrips = () => (
-    <View style={styles.content}>
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
       {activeTrips.length > 0 && (
         <>
           <Text style={styles.sectionTitle}>Aktif Yolculuklar ({activeTrips.length})</Text>
-          <FlatList
-            data={activeTrips}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item, index) => item.id || index.toString()}
-            renderItem={({ item }) => (
-              <View style={[styles.tripCard, { backgroundColor: COLORS.primary, width: 280, marginRight: 12 }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+            {activeTrips.map((item, index) => (
+              <View key={item.id || index} style={[styles.tripCard, { backgroundColor: COLORS.primary, width: 280, marginRight: 12 }]}>
                 <View style={styles.tripHeader}>
                   <Ionicons name="navigate" size={18} color="#FFF" />
                   <Text style={styles.tripStatus}>{item.status}</Text>
@@ -462,18 +459,17 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                 <Text style={styles.tripText}>Baslangic: {item.pickup || '-'}</Text>
                 <Text style={styles.tripText}>Hedef: {item.dropoff || '-'}</Text>
               </View>
-            )}
-            style={{ marginBottom: 20 }}
-          />
+            ))}
+          </ScrollView>
         </>
       )}
       
       <Text style={styles.sectionTitle}>Tum Yolculuklar ({trips.length})</Text>
-      <FlatList
-        data={trips}
-        keyExtractor={(item, index) => item.id || index.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.tripCard}>
+      {trips.length === 0 ? (
+        <Text style={styles.emptyText}>Yolculuk bulunamadi</Text>
+      ) : (
+        trips.map((item, index) => (
+          <View key={item.id || index} style={styles.tripCard}>
             <View style={styles.tripHeader}>
               <Ionicons 
                 name={item.status === 'completed' ? 'checkmark-circle' : item.status === 'cancelled' ? 'close-circle' : 'navigate'} 
@@ -490,22 +486,20 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
             <Text style={styles.tripText}>Fiyat: {item.final_price || 0} TL</Text>
             {item.end_method && <Text style={styles.tripText}>Bitirme: {item.end_method}</Text>}
           </View>
-        )}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<Text style={styles.emptyText}>Yolculuk bulunamadi</Text>}
-      />
-    </View>
+        ))
+      )}
+    </ScrollView>
   );
   
   const renderOnlineDrivers = () => (
-    <View style={styles.content}>
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.sectionTitle}>Online Suruculer ({onlineDrivers.length})</Text>
       
-      <FlatList
-        data={onlineDrivers}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.driverCard}>
+      {onlineDrivers.length === 0 ? (
+        <Text style={styles.emptyText}>Online surucu yok</Text>
+      ) : (
+        onlineDrivers.map((item) => (
+          <View key={item.id} style={styles.driverCard}>
             <View style={styles.driverInfo}>
               <View style={[styles.onlineDot, { backgroundColor: COLORS.success }]} />
               <View>
@@ -528,11 +522,9 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
               <Text style={{ color: '#FFF', fontSize: 10, marginTop: 2 }}>Offline</Text>
             </TouchableOpacity>
           </View>
-        )}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<Text style={styles.emptyText}>Online surucu yok</Text>}
-      />
-    </View>
+        ))
+      )}
+    </ScrollView>
   );
   
   const renderPromotions = () => (
@@ -656,31 +648,31 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
         ))}
       </View>
       
-      <FlatList
-        data={loginLogs}
-        keyExtractor={(item, index) => item.id || index.toString()}
-        renderItem={({ item }) => (
-          <View style={[styles.logCard, { borderLeftColor: item.success ? COLORS.success : COLORS.danger, borderLeftWidth: 3 }]}>
-            <View style={styles.logHeader}>
-              <Ionicons 
-                name={item.success ? "checkmark-circle" : "close-circle"} 
-                size={16} 
-                color={item.success ? COLORS.success : COLORS.danger} 
-              />
-              <Text style={styles.logPhone}>{item.phone || '-'}</Text>
-              <Text style={[styles.logCountry, { color: item.country === 'TR' ? COLORS.success : COLORS.danger }]}>
-                {item.country || '-'}
-              </Text>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {loginLogs.length === 0 ? (
+          <Text style={styles.emptyText}>Log bulunamadi</Text>
+        ) : (
+          loginLogs.slice(0, 50).map((item, index) => (
+            <View key={item.id || index} style={[styles.logCard, { borderLeftColor: item.success ? COLORS.success : COLORS.danger, borderLeftWidth: 3 }]}>
+              <View style={styles.logHeader}>
+                <Ionicons 
+                  name={item.success ? "checkmark-circle" : "close-circle"} 
+                  size={16} 
+                  color={item.success ? COLORS.success : COLORS.danger} 
+                />
+                <Text style={styles.logPhone}>{item.phone || '-'}</Text>
+                <Text style={[styles.logCountry, { color: item.country === 'TR' ? COLORS.success : COLORS.danger }]}>
+                  {item.country || '-'}
+                </Text>
+              </View>
+              <Text style={styles.logText}>IP: {item.ip_address || '-'}</Text>
+              <Text style={styles.logText}>Cihaz: {item.device_id?.slice(0, 20) || '-'}...</Text>
+              {item.fail_reason && <Text style={[styles.logText, { color: COLORS.danger }]}>Hata: {item.fail_reason}</Text>}
+              <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
             </View>
-            <Text style={styles.logText}>IP: {item.ip_address || '-'}</Text>
-            <Text style={styles.logText}>Cihaz: {item.device_id?.slice(0, 20) || '-'}...</Text>
-            {item.fail_reason && <Text style={[styles.logText, { color: COLORS.danger }]}>Hata: {item.fail_reason}</Text>}
-            <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
-          </View>
+          ))
         )}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<Text style={styles.emptyText}>Log bulunamadi</Text>}
-      />
+      </ScrollView>
     </View>
   );
   
@@ -929,7 +921,6 @@ const styles = StyleSheet.create({
   },
   userActions: {
     flexDirection: 'row',
-    gap: 6,
   },
   userActionBtn: {
     width: 32,
@@ -937,6 +928,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 6,
   },
   btnSuccess: { backgroundColor: COLORS.success },
   btnDanger: { backgroundColor: COLORS.danger },

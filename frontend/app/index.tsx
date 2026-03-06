@@ -6720,7 +6720,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   } | null>(null);
   
   // 🔊 SES EFEKTLERI - SOFOR
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<any>(null);
   
   const playMatchSound = async () => {
     try {
@@ -6732,7 +6732,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         { shouldPlay: true, volume: 0.8 }
       );
       soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
+      sound.setOnPlaybackStatusUpdate((status: any) => {
         if (status.isLoaded && status.didJustFinish) {
           sound.unloadAsync();
         }
