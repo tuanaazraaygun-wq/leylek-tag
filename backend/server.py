@@ -1388,34 +1388,84 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
 
 # verify-pin endpoint - Frontend uyumluluğu için
 @api_router.post("/auth/verify-pin")
-async def verify_pin_endpoint(phone: str = None, pin: str = None, device_id: str = None):
+async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = None, device_id: str = None):
     """PIN doğrulama - login ile aynı işlevi görür"""
     try:
         if not phone or not pin:
             raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
         
+        # IP adresi al
+        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if not client_ip:
+            client_ip = request.headers.get("x-real-ip", "")
+        if not client_ip and request.client:
+            client_ip = request.client.host
+        
         result = supabase.table("users").select("*").eq("phone", phone).execute()
         
         if not result.data:
+            # Login log - başarısız
+            try:
+                supabase.table("login_logs").insert({
+                    "id": str(uuid.uuid4()),
+                    "phone": phone,
+                    "ip_address": client_ip,
+                    "device_id": device_id,
+                    "success": False,
+                    "fail_reason": "USER_NOT_FOUND",
+                    "country": "TR",
+                    "created_at": datetime.utcnow().isoformat()
+                }).execute()
+            except: pass
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
         user = result.data[0]
         
         if not verify_pin(pin, user.get("pin_hash", "")):
+            # Login log - başarısız PIN
+            try:
+                supabase.table("login_logs").insert({
+                    "id": str(uuid.uuid4()),
+                    "user_id": user["id"],
+                    "phone": phone,
+                    "ip_address": client_ip,
+                    "device_id": device_id,
+                    "success": False,
+                    "fail_reason": "WRONG_PIN",
+                    "country": "TR",
+                    "created_at": datetime.utcnow().isoformat()
+                }).execute()
+            except: pass
             raise HTTPException(status_code=401, detail="Yanlış PIN")
         
-        # Son giriş zamanını güncelle (device_id kolonu Supabase'de yok, bu yüzden eklenmedi)
+        # Son giriş zamanını ve IP/cihaz bilgisini güncelle
         try:
             supabase.table("users").update({
                 "last_login": datetime.utcnow().isoformat(),
+                "last_ip": client_ip,
+                "last_device_id": device_id,
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("id", user["id"]).execute()
         except Exception as update_err:
             logger.warning(f"Last login update error (ignored): {update_err}")
         
+        # Login log - başarılı
+        try:
+            supabase.table("login_logs").insert({
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "phone": phone,
+                "ip_address": client_ip,
+                "device_id": device_id,
+                "success": True,
+                "country": "TR",
+                "created_at": datetime.utcnow().isoformat()
+            }).execute()
+        except: pass
+        
         is_admin = phone in ADMIN_PHONE_NUMBERS
         
-        logger.info(f"✅ PIN doğrulandı: {phone}, Admin: {is_admin}")
+        logger.info(f"✅ PIN doğrulandı: {phone}, Admin: {is_admin}, IP: {client_ip}")
         
         return {
             "success": True,

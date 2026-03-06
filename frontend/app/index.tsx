@@ -560,8 +560,18 @@ export default function App() {
 
   // ==================== AUTH FUNCTIONS ====================
   const handleSendOTP = async () => {
-    if (!phone || phone.length < 10) {
-      Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
+    // 🔒 TELEFON NUMARASI VALİDASYONU
+    const cleanPhone = phone.replace(/\D/g, ''); // Sadece rakamlar
+    
+    // 10 hane kontrolü
+    if (cleanPhone.length !== 10) {
+      Alert.alert('Hata', 'Telefon numarası 10 haneli olmalıdır (5XX XXX XX XX)');
+      return;
+    }
+    
+    // 5 ile başlama kontrolü
+    if (!cleanPhone.startsWith('5')) {
+      Alert.alert('Hata', 'Telefon numarası 5 ile başlamalıdır');
       return;
     }
 
@@ -573,7 +583,7 @@ export default function App() {
       const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, device_id: currentDeviceId })
+        body: JSON.stringify({ phone: cleanPhone, device_id: currentDeviceId })
       });
 
       const checkData = await checkResponse.json();
@@ -593,27 +603,44 @@ export default function App() {
         const response = await fetch(`${API_URL}/auth/send-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone })
+          body: JSON.stringify({ phone: cleanPhone })
         });
         const data = await response.json();
         if (data.success) {
           Alert.alert('Şifre Oluşturma 🔐', 'Hesabınız için 6 haneli şifre belirlemeniz gerekiyor. SMS kodunu girin.\n\nTest: 123456');
           setScreen('otp');
+        } else {
+          Alert.alert('Hata', data.message || 'SMS gönderilemedi');
         }
       } else {
-        // 🆕 YENİ KULLANICI - OTP ile kayıt
-        setUserExists(false);
-        setHasPin(false);
-        const response = await fetch(`${API_URL}/auth/send-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone })
-        });
-        const data = await response.json();
-        if (data.success) {
-          Alert.alert('Kayıt 📝', 'Telefon doğrulaması için SMS kodu gönderildi.\n\nTest: 123456');
-          setScreen('otp');
-        }
+        // 🆕 YENİ KULLANICI - Kayıt sayfasına yönlendir
+        Alert.alert(
+          'Kayıt Ol 📝', 
+          'Bu numara kayıtlı değil. Kayıt olmak ister misiniz?',
+          [
+            { text: 'İptal', style: 'cancel' },
+            { 
+              text: 'Kayıt Ol', 
+              onPress: async () => {
+                setUserExists(false);
+                setHasPin(false);
+                const response = await fetch(`${API_URL}/auth/send-otp`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone: cleanPhone })
+                });
+                const data = await response.json();
+                if (data.success) {
+                  Alert.alert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.\n\nTest: 123456');
+                  setScreen('otp');
+                } else {
+                  Alert.alert('Hata', data.message || 'SMS gönderilemedi');
+                }
+              }
+            }
+          ]
+        );
+        return;
       }
     } catch (error) {
       console.error('handleSendOTP error:', error);
@@ -846,8 +873,8 @@ export default function App() {
                   placeholderTextColor="#A0A0A0"
                   keyboardType="phone-pad"
                   value={phone}
-                  onChangeText={setPhone}
-                  maxLength={11}
+                  onChangeText={(text) => setPhone(text.replace(/\D/g, ''))}
+                  maxLength={10}
                 />
               </View>
 
