@@ -7841,6 +7841,433 @@ async def get_driver_dashboard(user_id: str):
         logger.error(f"Driver dashboard error: {e}")
         return {"success": False, "detail": str(e)}
 
+# ==================== TÜRKİYE IP KONTROLÜ ====================
+TURKEY_IP_RANGES = [
+    # Türkiye IP aralıkları (CIDR)
+    "31.3.", "31.6.", "31.7.", "31.14.", "31.15.",
+    "37.9.", "37.75.", "37.130.", "37.148.", "37.202.", "37.230.",
+    "46.1.", "46.2.", "46.3.", "46.4.", "46.5.", "46.6.", "46.45.", "46.154.", "46.196.",
+    "78.160.", "78.161.", "78.162.", "78.163.", "78.164.", "78.165.", "78.166.", "78.167.", "78.168.", "78.169.", "78.170.", "78.171.", "78.172.", "78.173.", "78.174.", "78.175.", "78.176.", "78.177.", "78.178.", "78.179.", "78.180.", "78.181.", "78.182.", "78.183.", "78.184.", "78.185.", "78.186.", "78.187.", "78.188.", "78.189.", "78.190.", "78.191.",
+    "81.212.", "81.213.", "81.214.", "81.215.",
+    "85.96.", "85.97.", "85.98.", "85.99.", "85.100.", "85.101.", "85.102.", "85.103.", "85.104.", "85.105.", "85.106.", "85.107.", "85.108.", "85.109.", "85.110.", "85.111.",
+    "88.224.", "88.225.", "88.226.", "88.227.", "88.228.", "88.229.", "88.230.", "88.231.", "88.232.", "88.233.", "88.234.", "88.235.", "88.236.", "88.237.", "88.238.", "88.239.", "88.240.", "88.241.", "88.242.", "88.243.", "88.244.", "88.245.", "88.246.", "88.247.", "88.248.", "88.249.", "88.250.", "88.251.", "88.252.", "88.253.", "88.254.", "88.255.",
+    "89.252.", "89.253.", "89.254.", "89.255.",
+    "94.54.", "94.55.", "94.102.", "94.122.", "94.123.", "94.136.", "94.137.", "94.138.", "94.139.",
+    "95.0.", "95.1.", "95.2.", "95.3.", "95.4.", "95.5.", "95.6.", "95.7.", "95.8.", "95.9.", "95.10.", "95.11.", "95.12.", "95.13.", "95.14.", "95.15.",
+    "176.33.", "176.34.", "176.35.", "176.36.", "176.37.", "176.38.", "176.39.", "176.40.", "176.41.", "176.42.", "176.43.", "176.44.", "176.45.", "176.46.", "176.47.", "176.48.", "176.49.", "176.50.", "176.51.", "176.52.", "176.53.", "176.54.", "176.55.", "176.56.", "176.57.", "176.58.", "176.59.", "176.88.", "176.89.", "176.90.", "176.91.", "176.92.", "176.93.", "176.94.", "176.95.", "176.96.", "176.97.", "176.98.", "176.99.", "176.234.", "176.235.", "176.236.", "176.237.", "176.238.", "176.239.", "176.240.", "176.241.",
+    "178.244.", "178.245.", "178.246.", "178.247.", "178.248.", "178.249.", "178.250.", "178.251.",
+    "185.4.", "185.13.", "185.26.", "185.28.", "185.30.", "185.32.", "185.33.", "185.34.", "185.35.", "185.36.", "185.37.", "185.38.", "185.39.", "185.40.", "185.41.", "185.42.", "185.43.", "185.44.", "185.45.", "185.46.", "185.47.", "185.48.", "185.49.", "185.50.", "185.51.", "185.52.", "185.53.", "185.54.", "185.55.", "185.56.", "185.57.", "185.58.", "185.59.", "185.60.", "185.61.", "185.62.", "185.63.", "185.64.", "185.65.", "185.66.", "185.67.", "185.68.", "185.69.", "185.70.", "185.86.", "185.87.", "185.88.", "185.89.", "185.94.", "185.95.", "185.100.", "185.101.", "185.102.", "185.103.",
+    "188.57.", "188.58.", "188.59.", "188.119.", "188.120.", "188.121.", "188.132.",
+    "193.140.", "193.141.", "193.142.", "193.254.", "193.255.",
+    "194.27.", "194.28.", "194.29.", "194.31.",
+    "195.85.", "195.112.", "195.155.", "195.174.", "195.175.",
+    "212.2.", "212.58.", "212.98.", "212.154.", "212.174.", "212.175.", "212.252.", "212.253.",
+    "213.14.", "213.142.", "213.153.", "213.238.",
+    "217.17.", "217.65.", "217.66.", "217.114.", "217.130.", "217.131.",
+]
+
+def is_turkey_ip(ip: str) -> bool:
+    """IP adresinin Türkiye'den olup olmadığını kontrol et"""
+    if not ip:
+        return True  # IP yoksa izin ver (localhost vs)
+    
+    # Localhost ve private IP'ler için izin ver
+    if ip.startswith("127.") or ip.startswith("192.168.") or ip.startswith("10.") or ip.startswith("172."):
+        return True
+    
+    # Türkiye IP kontrolü
+    for prefix in TURKEY_IP_RANGES:
+        if ip.startswith(prefix):
+            return True
+    
+    return False
+
+def get_client_ip(request: Request) -> str:
+    """Request'ten gerçek IP adresini al"""
+    # X-Forwarded-For header'ını kontrol et (proxy/load balancer arkasında)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    
+    # X-Real-IP header'ı
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    
+    # Client IP
+    if request.client:
+        return request.client.host
+    
+    return ""
+
+# ==================== LOGIN LOG SİSTEMİ ====================
+async def log_login_attempt(user_id: str, phone: str, ip_address: str, device_id: str, device_info: str, success: bool, fail_reason: str = None):
+    """Giriş denemesini logla"""
+    try:
+        log_data = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "phone": phone,
+            "ip_address": ip_address,
+            "device_id": device_id,
+            "device_info": device_info,
+            "success": success,
+            "fail_reason": fail_reason,
+            "country": "TR" if is_turkey_ip(ip_address) else "FOREIGN",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        supabase.table("login_logs").insert(log_data).execute()
+    except Exception as e:
+        logger.error(f"Login log error: {e}")
+
+# ==================== GÜVENLİ GİRİŞ - TÜRKİYE IP KONTROLÜ ====================
+@api_router.post("/auth/secure-login")
+async def secure_login(request: Request, phone: str, pin: str, device_id: str = None, device_info: str = None):
+    """Güvenli giriş - Türkiye IP kontrolü ile"""
+    try:
+        client_ip = get_client_ip(request)
+        
+        # Türkiye IP kontrolü
+        if not is_turkey_ip(client_ip):
+            await log_login_attempt(None, phone, client_ip, device_id, device_info, False, "FOREIGN_IP")
+            raise HTTPException(
+                status_code=403, 
+                detail="Bu uygulama sadece Türkiye'den erişilebilir. VPN kullanıyorsanız lütfen kapatın."
+            )
+        
+        # Kullanıcıyı bul
+        result = supabase.table("users").select("*").eq("phone", phone).execute()
+        
+        if not result.data:
+            await log_login_attempt(None, phone, client_ip, device_id, device_info, False, "USER_NOT_FOUND")
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        user = result.data[0]
+        
+        # Kullanıcı aktif mi?
+        if user.get("is_deleted", False):
+            await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, False, "USER_DELETED")
+            raise HTTPException(status_code=403, detail="Bu hesap silinmiş")
+        
+        if not user.get("is_active", True):
+            await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, False, "USER_BANNED")
+            raise HTTPException(status_code=403, detail="Bu hesap askıya alınmış")
+        
+        # PIN kontrolü
+        if not verify_pin(pin, user.get("pin_hash", "")):
+            await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, False, "WRONG_PIN")
+            raise HTTPException(status_code=401, detail="Yanlış PIN")
+        
+        # Başarılı giriş - güncelle
+        supabase.table("users").update({
+            "last_login": datetime.utcnow().isoformat(),
+            "last_ip": client_ip,
+            "last_device_id": device_id,
+            "last_device_info": device_info,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user["id"]).execute()
+        
+        # Başarılı log
+        await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, True, None)
+        
+        is_admin = phone in ADMIN_PHONE_NUMBERS
+        
+        return {
+            "success": True,
+            "user": {
+                "id": user["id"],
+                "phone": user["phone"],
+                "name": user["name"],
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "city": user.get("city"),
+                "rating": float(user.get("rating", 5.0)),
+                "total_trips": user.get("total_trips", 0),
+                "profile_photo": user.get("profile_photo"),
+                "driver_details": user.get("driver_details"),
+                "is_admin": is_admin
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Secure login error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - SOFT DELETE ====================
+@api_router.post("/admin/soft-delete-user")
+async def admin_soft_delete_user(admin_phone: str, user_id: str, reason: str = "Admin tarafından silindi"):
+    """Kullanıcıyı soft delete yap - Supabase'de kalır ama giriş yapamaz"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        supabase.table("users").update({
+            "is_deleted": True,
+            "is_active": False,
+            "deleted_at": datetime.utcnow().isoformat(),
+            "deleted_reason": reason,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        return {"success": True, "message": "Kullanıcı silindi (soft delete)"}
+    except Exception as e:
+        logger.error(f"Soft delete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - SÜRÜCÜ ONLİNE/OFFLİNE ====================
+@api_router.post("/admin/set-driver-offline")
+async def admin_set_driver_offline(admin_phone: str, driver_id: str):
+    """Admin - Sürücüyü zorla offline yap"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        supabase.table("users").update({
+            "driver_online": False,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", driver_id).execute()
+        
+        return {"success": True, "message": "Sürücü offline yapıldı"}
+    except Exception as e:
+        logger.error(f"Admin set driver offline error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - ONLINE SÜRÜCÜLER ====================
+@api_router.get("/admin/online-drivers")
+async def admin_get_online_drivers(admin_phone: str):
+    """Admin - Online sürücüleri listele"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        result = supabase.table("users").select(
+            "id, name, phone, city, rating, latitude, longitude, driver_online, driver_active_until, last_activity"
+        ).eq("driver_online", True).execute()
+        
+        drivers = []
+        for driver in (result.data or []):
+            drivers.append({
+                "id": driver["id"],
+                "name": driver.get("name", "İsimsiz"),
+                "phone": driver.get("phone"),
+                "city": driver.get("city"),
+                "rating": float(driver.get("rating", 5.0)),
+                "latitude": driver.get("latitude"),
+                "longitude": driver.get("longitude"),
+                "active_until": driver.get("driver_active_until"),
+                "last_active": driver.get("last_activity")
+            })
+        
+        return {"success": True, "drivers": drivers, "total": len(drivers)}
+    except Exception as e:
+        logger.error(f"Admin online drivers error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - AKTİF YOLCULUKLAR ====================
+@api_router.get("/admin/active-trips")
+async def admin_get_active_trips(admin_phone: str):
+    """Admin - Aktif yolculukları listele"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        # Aktif ve eşleşmiş yolculukları getir
+        result = supabase.table("tags").select("*").in_("status", ["waiting", "matched", "in_progress"]).execute()
+        
+        trips = []
+        for tag in (result.data or []):
+            # Yolcu ve sürücü bilgisi
+            passenger_name = "-"
+            driver_name = "-"
+            
+            try:
+                if tag.get("user_id"):
+                    p_result = supabase.table("users").select("name, phone").eq("id", tag["user_id"]).execute()
+                    if p_result.data:
+                        passenger_name = f"{p_result.data[0].get('name', '-')} ({p_result.data[0].get('phone', '')})"
+                
+                if tag.get("driver_id"):
+                    d_result = supabase.table("users").select("name, phone").eq("id", tag["driver_id"]).execute()
+                    if d_result.data:
+                        driver_name = f"{d_result.data[0].get('name', '-')} ({d_result.data[0].get('phone', '')})"
+            except:
+                pass
+            
+            trips.append({
+                "id": tag["id"],
+                "status": tag.get("status"),
+                "passenger": passenger_name,
+                "driver": driver_name,
+                "pickup": tag.get("pickup_location") or tag.get("start_address"),
+                "dropoff": tag.get("dropoff_location") or tag.get("destination_name"),
+                "price": tag.get("final_price") or tag.get("calculated_price"),
+                "created_at": tag.get("created_at")
+            })
+        
+        return {"success": True, "trips": trips, "total": len(trips)}
+    except Exception as e:
+        logger.error(f"Admin active trips error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - LOGIN LOGS ====================
+@api_router.get("/admin/login-logs-full")
+async def admin_get_login_logs_full(admin_phone: str, page: int = 1, limit: int = 50, filter_country: str = None):
+    """Admin - Giriş loglarını getir (IP, cihaz bilgisi ile)"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        offset = (page - 1) * limit
+        
+        query = supabase.table("login_logs").select("*", count="exact").order("created_at", desc=True)
+        
+        if filter_country:
+            query = query.eq("country", filter_country)
+        
+        result = query.range(offset, offset + limit - 1).execute()
+        
+        return {
+            "success": True, 
+            "logs": result.data or [], 
+            "total": result.count or 0,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        logger.error(f"Admin login logs error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - PROMOSYON TAM CRUD ====================
+@api_router.get("/admin/promotions")
+async def admin_get_promotions(admin_phone: str):
+    """Admin - Tüm promosyonları listele"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        result = supabase.table("promotions").select("*").order("created_at", desc=True).execute()
+        
+        return {"success": True, "promotions": result.data or []}
+    except Exception as e:
+        logger.error(f"Admin promotions error: {e}")
+        return {"success": False, "promotions": []}
+
+@api_router.post("/admin/promotions/create")
+async def admin_create_promotion(admin_phone: str, code: str = None, hours: int = 3, max_uses: int = 100, description: str = ""):
+    """Admin - Yeni promosyon kodu oluştur"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        promo_code = code.upper() if code else generate_promo_code().upper()
+        
+        promo_data = {
+            "id": str(uuid.uuid4()),
+            "code": promo_code,
+            "hours": hours,
+            "max_uses": max_uses,
+            "used_count": 0,
+            "is_active": True,
+            "description": description,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = supabase.table("promotions").insert(promo_data).execute()
+        
+        return {"success": True, "promotion": result.data[0] if result.data else promo_data}
+    except Exception as e:
+        logger.error(f"Create promotion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/promotions/toggle")
+async def admin_toggle_promotion(admin_phone: str, promo_id: str, is_active: bool):
+    """Admin - Promosyonu aktif/pasif yap"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        supabase.table("promotions").update({"is_active": is_active}).eq("id", promo_id).execute()
+        
+        return {"success": True, "message": f"Promosyon {'aktif' if is_active else 'pasif'} yapıldı"}
+    except Exception as e:
+        logger.error(f"Toggle promotion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ADMIN - PUSH NOTIFICATION ====================
+@api_router.post("/admin/push/send")
+async def admin_send_push_notification(admin_phone: str, title: str, message: str, target: str = "all", user_ids: str = None):
+    """Admin - Push bildirim gönder (all, drivers, passengers, specific)"""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        
+        # Hedef kullanıcıları belirle
+        push_tokens = []
+        
+        if target == "all":
+            result = supabase.table("users").select("push_token").not_.is_("push_token", "null").execute()
+            push_tokens = [u["push_token"] for u in (result.data or []) if u.get("push_token")]
+        elif target == "drivers":
+            result = supabase.table("users").select("push_token").eq("driver_online", True).not_.is_("push_token", "null").execute()
+            push_tokens = [u["push_token"] for u in (result.data or []) if u.get("push_token")]
+        elif target == "passengers":
+            # Driver olmayan kullanıcılar
+            result = supabase.table("users").select("push_token, driver_online").not_.is_("push_token", "null").execute()
+            push_tokens = [u["push_token"] for u in (result.data or []) if u.get("push_token") and not u.get("driver_online")]
+        elif target == "specific" and user_ids:
+            ids = [uid.strip() for uid in user_ids.split(",")]
+            for uid in ids:
+                result = supabase.table("users").select("push_token").eq("id", uid).execute()
+                if result.data and result.data[0].get("push_token"):
+                    push_tokens.append(result.data[0]["push_token"])
+        
+        # Expo push notification gönder
+        sent_count = 0
+        failed_count = 0
+        
+        async with httpx.AsyncClient() as client:
+            for token in push_tokens:
+                try:
+                    response = await client.post(
+                        "https://exp.host/--/api/v2/push/send",
+                        json={
+                            "to": token,
+                            "title": title,
+                            "body": message,
+                            "sound": "default",
+                            "priority": "high"
+                        }
+                    )
+                    if response.status_code == 200:
+                        sent_count += 1
+                    else:
+                        failed_count += 1
+                except:
+                    failed_count += 1
+        
+        # Log kaydet
+        supabase.table("notification_logs").insert({
+            "id": str(uuid.uuid4()),
+            "admin_phone": admin_phone,
+            "title": title,
+            "message": message,
+            "target": target,
+            "sent_count": sent_count,
+            "failed_count": failed_count,
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+        
+        return {
+            "success": True, 
+            "sent": sent_count, 
+            "failed": failed_count,
+            "total_tokens": len(push_tokens)
+        }
+    except Exception as e:
+        logger.error(f"Admin push notification error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
 app.include_router(api_router)

@@ -31,7 +31,7 @@ interface AdminPanelProps {
   onClose: () => void;
 }
 
-type TabType = 'dashboard' | 'users' | 'trips' | 'calls' | 'auth' | 'notifications' | 'kyc' | 'settings';
+type TabType = 'dashboard' | 'users' | 'trips' | 'drivers' | 'promos' | 'notifications' | 'logs' | 'settings';
 
 export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -44,35 +44,31 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
   // Users
   const [users, setUsers] = useState<any[]>([]);
   const [userSearch, setUserSearch] = useState('');
-  const [selectedUser, setSelectedUser] = useState<any>(null);
   
-  // Trips (Metadata)
+  // Trips
   const [trips, setTrips] = useState<any[]>([]);
+  const [activeTrips, setActiveTrips] = useState<any[]>([]);
   
-  // Calls (Metadata)
-  const [calls, setCalls] = useState<any[]>([]);
+  // Online Drivers
+  const [onlineDrivers, setOnlineDrivers] = useState<any[]>([]);
   
-  // Auth Logs (Metadata)
-  const [authLogs, setAuthLogs] = useState<any[]>([]);
+  // Promotions
+  const [promotions, setPromotions] = useState<any[]>([]);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoHours, setNewPromoHours] = useState('3');
+  const [newPromoMaxUses, setNewPromoMaxUses] = useState('100');
   
   // Notifications
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
-  const [notifTarget, setNotifTarget] = useState<'all' | 'drivers' | 'passengers' | 'user'>('all');
-  const [notifUserId, setNotifUserId] = useState('');
+  const [notifTarget, setNotifTarget] = useState<'all' | 'drivers' | 'passengers'>('all');
+  
+  // Login Logs
+  const [loginLogs, setLoginLogs] = useState<any[]>([]);
+  const [logFilter, setLogFilter] = useState<'all' | 'TR' | 'FOREIGN'>('all');
   
   // Settings
   const [settings, setSettings] = useState<any>({});
-  const [driverRadius, setDriverRadius] = useState('50');
-  const [maxCallDuration, setMaxCallDuration] = useState('30');
-  
-  // KYC
-  const [pendingKYCs, setPendingKYCs] = useState<any[]>([]);
-  const [approvedKYCs, setApprovedKYCs] = useState<any[]>([]);
-  const [rejectedKYCs, setRejectedKYCs] = useState<any[]>([]);
-  const [selectedKYC, setSelectedKYC] = useState<any>(null);
-  const [kycImageModal, setKycImageModal] = useState<string | null>(null);
-  const [kycFilter, setKycFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   
   useEffect(() => {
     loadData();
@@ -84,434 +80,310 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
       switch(activeTab) {
         case 'dashboard': await loadDashboard(); break;
         case 'users': await loadUsers(); break;
-        case 'trips': await loadTrips(); break;
-        case 'calls': await loadCalls(); break;
-        case 'auth': await loadAuthLogs(); break;
-        case 'kyc': await loadAllKYCs(); break;
+        case 'trips': await loadTrips(); await loadActiveTrips(); break;
+        case 'drivers': await loadOnlineDrivers(); break;
+        case 'promos': await loadPromotions(); break;
+        case 'logs': await loadLoginLogs(); break;
         case 'settings': await loadSettings(); break;
       }
     } catch (e) {
-      console.error('Veri yükleme hatası:', e);
+      console.error('Veri yukleme hatasi:', e);
     }
     setLoading(false);
     setRefreshing(false);
   };
   
+  // ==================== API CALLS ====================
+  
   const loadDashboard = async () => {
     try {
-      // Yeni admin/dashboard/full endpoint'ini kullan
       const res = await fetch(`${API_URL}/admin/dashboard/full?admin_phone=${adminPhone}`);
       const data = await res.json();
-      console.log('[AdminPanel] Dashboard response:', data);
       if (data.success) {
         setStats(data.stats);
-        // Aktif TAG'leri de yükle
-        if (data.active_tags) {
-          setTrips(data.active_tags);
-        }
       }
-    } catch (e) { console.error('[AdminPanel] Dashboard error:', e); }
+    } catch (e) { console.error('[Dashboard]', e); }
   };
   
   const loadUsers = async () => {
     try {
-      // Yeni admin/users/full endpoint'ini kullan
-      const res = await fetch(`${API_URL}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=100`);
+      const res = await fetch(`${API_URL}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=200`);
       const data = await res.json();
-      console.log('[AdminPanel] Users response:', data.success, data.users?.length);
       if (data.success) setUsers(data.users || []);
-    } catch (e) { console.error('[AdminPanel] Users error:', e); }
+    } catch (e) { console.error('[Users]', e); }
   };
   
   const loadTrips = async () => {
     try {
-      // Yeni admin/trips endpoint'ini kullan
       const res = await fetch(`${API_URL}/admin/trips?admin_phone=${adminPhone}&page=1&limit=100`);
       const data = await res.json();
-      console.log('[AdminPanel] Trips response:', data.success, data.trips?.length);
       if (data.success) setTrips(data.trips || []);
-    } catch (e) { console.error('[AdminPanel] Trips error:', e); }
+    } catch (e) { console.error('[Trips]', e); }
   };
   
-  const loadCalls = async () => {
-    // Calls için şimdilik boş bırak
-    setCalls([]);
+  const loadActiveTrips = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/active-trips?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) setActiveTrips(data.trips || []);
+    } catch (e) { console.error('[ActiveTrips]', e); }
   };
   
-  const loadAuthLogs = async () => {
-    // Auth logs için şimdilik boş bırak
-    setAuthLogs([]);
+  const loadOnlineDrivers = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/online-drivers?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) setOnlineDrivers(data.drivers || []);
+    } catch (e) { console.error('[OnlineDrivers]', e); }
+  };
+  
+  const loadPromotions = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/promotions?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) setPromotions(data.promotions || []);
+    } catch (e) { console.error('[Promotions]', e); }
+  };
+  
+  const loadLoginLogs = async () => {
+    try {
+      const filter = logFilter !== 'all' ? `&filter_country=${logFilter}` : '';
+      const res = await fetch(`${API_URL}/admin/login-logs-full?admin_phone=${adminPhone}&limit=100${filter}`);
+      const data = await res.json();
+      if (data.success) setLoginLogs(data.logs || []);
+    } catch (e) { console.error('[LoginLogs]', e); }
   };
   
   const loadSettings = async () => {
     try {
-      // Yeni admin/pricing endpoint'ini kullan
       const res = await fetch(`${API_URL}/admin/pricing?phone=${adminPhone}`);
       const data = await res.json();
-      console.log('[AdminPanel] Settings response:', data);
-      if (data.success) {
-        setSettings(data.settings || {});
-        // Fiyatlandırma ayarlarını settings'e kaydet
-        if (data.settings) {
-          setDriverRadius(String(data.settings.minimum_price || 100));
-          setMaxCallDuration(String(data.settings.min_price_per_km_normal || 20));
-        }
-      }
-    } catch (e) { console.error('[AdminPanel] Settings error:', e); }
-  };
-
-  // KYC Fonksiyonları
-  const loadPendingKYCs = async () => {
-    try {
-      const res = await fetch(`${API_URL}/admin/kyc/pending?admin_phone=${adminPhone}`);
-      const data = await res.json();
-      if (data.success) {
-        setPendingKYCs(data.requests || []);
-      }
-    } catch (e) { console.error(e); }
-  };
-
-  const loadAllKYCs = async () => {
-    try {
-      console.log('Loading all KYCs...');
-      const res = await fetch(`${API_URL}/admin/kyc/all?admin_phone=${adminPhone}`);
-      const data = await res.json();
-      console.log('All KYCs response:', data);
-      if (data.success) {
-        setPendingKYCs(data.pending || []);
-        setApprovedKYCs(data.approved || []);
-        setRejectedKYCs(data.rejected || []);
-      }
-    } catch (e) { console.error('Load all KYCs error:', e); }
-  };
-
-  const approveKYC = async (userId: string) => {
-    console.log('approveKYC called with userId:', userId);
-    console.log('API_URL:', API_URL);
-    console.log('adminPhone:', adminPhone);
-    
-    const doApprove = async () => {
-      try {
-        setLoading(true);
-        const url = `${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`;
-        console.log('Fetching:', url);
-        
-        const res = await fetch(url, {
-          method: 'POST'
-        });
-        console.log('Response status:', res.status);
-        
-        const data = await res.json();
-        console.log('Response data:', data);
-        
-        if (data.success) {
-          if (Platform.OS === 'web') {
-            window.alert('✅ Sürücü kaydı onaylandı');
-          } else {
-            Alert.alert('Başarılı', 'Sürücü kaydı onaylandı');
-          }
-          loadPendingKYCs();
-          loadAllKYCs(); // Tüm KYC'leri yenile
-        } else {
-          if (Platform.OS === 'web') {
-            window.alert('Hata: ' + (data.detail || data.message || 'İşlem başarısız'));
-          } else {
-            Alert.alert('Hata', data.detail || data.message || 'İşlem başarısız');
-          }
-        }
-      } catch (e: any) {
-        console.error('Approve error:', e);
-        if (Platform.OS === 'web') {
-          window.alert('Hata: ' + (e.message || 'İşlem başarısız'));
-        } else {
-          Alert.alert('Hata', e.message || 'İşlem başarısız');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    // Web'de direkt çalıştır, mobile'da confirm sor
-    if (Platform.OS === 'web') {
-      if (window.confirm('Bu sürücü başvurusunu onaylıyor musunuz?')) {
-        await doApprove();
-      }
-    } else {
-      Alert.alert(
-        'Onayla',
-        'Bu sürücü başvurusunu onaylıyor musunuz?',
-        [
-          { text: 'İptal', style: 'cancel' },
-          { text: 'Onayla', onPress: doApprove }
-        ]
-      );
-    }
-  };
-
-  const rejectKYC = async (userId: string) => {
-    console.log('rejectKYC called with userId:', userId);
-    
-    const doReject = async () => {
-      try {
-        setLoading(true);
-        const url = `${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`;
-        console.log('Fetching:', url);
-        
-        const res = await fetch(url, {
-          method: 'POST'
-        });
-        console.log('Response status:', res.status);
-        
-        const data = await res.json();
-        console.log('Response data:', data);
-        
-        if (data.success) {
-          if (Platform.OS === 'web') {
-            window.alert('❌ Sürücü kaydı reddedildi');
-          } else {
-            Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
-          }
-          loadPendingKYCs();
-          loadAllKYCs(); // Tüm KYC'leri yenile
-        } else {
-          if (Platform.OS === 'web') {
-            window.alert('Hata: ' + (data.detail || data.message || 'İşlem başarısız'));
-          } else {
-            Alert.alert('Hata', data.detail || data.message || 'İşlem başarısız');
-          }
-        }
-      } catch (e: any) {
-        console.error('Reject error:', e);
-        if (Platform.OS === 'web') {
-          window.alert('Hata: ' + (e.message || 'İşlem başarısız'));
-        } else {
-          Alert.alert('Hata', e.message || 'İşlem başarısız');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    if (Platform.OS === 'web') {
-      if (window.confirm('Bu sürücü başvurusunu reddediyor musunuz?')) {
-        await doReject();
-      }
-    } else {
-      Alert.alert(
-        'Reddet',
-        'Bu sürücü başvurusunu reddediyor musunuz?',
-        [
-          { text: 'İptal', style: 'cancel' },
-          { text: 'Reddet', style: 'destructive', onPress: doReject }
-        ]
-      );
-    }
+      if (data.success) setSettings(data.settings || {});
+    } catch (e) { console.error('[Settings]', e); }
   };
   
-  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
-    try {
-      // Yeni admin/user/action endpoint'ini kullan
-      const res = await fetch(`${API_URL}/admin/user/action`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          phone: adminPhone, 
-          user_id: userId,
-          action: currentStatus ? 'unban' : 'ban'
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        Alert.alert('Başarılı', data.message);
-        loadUsers();
-      }
-    } catch (e) { console.error(e); }
-  };
+  // ==================== ACTIONS ====================
   
-  const deleteUser = async (userId: string) => {
+  const softDeleteUser = async (userId: string, userName: string) => {
     Alert.alert(
-      'Kullanıcı Sil',
-      'Bu kullanıcıyı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
+      'Kullanici Sil',
+      `${userName} kullanicisini silmek istediginize emin misiniz?\n\nNot: Kullanici Supabase'de kalir ama giris yapamaz.`,
       [
-        { text: 'İptal', style: 'cancel' },
-        { 
-          text: 'Sil', 
+        { text: 'Iptal', style: 'cancel' },
+        {
+          text: 'Sil',
           style: 'destructive',
           onPress: async () => {
             try {
-              // Yeni admin/user/action endpoint'ini kullan
-              const res = await fetch(`${API_URL}/admin/user/action`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  phone: adminPhone, 
-                  user_id: userId,
-                  action: 'delete'
-                })
+              const res = await fetch(`${API_URL}/admin/soft-delete-user?admin_phone=${adminPhone}&user_id=${userId}`, {
+                method: 'POST'
               });
               const data = await res.json();
               if (data.success) {
-                Alert.alert('Başarılı', data.message);
+                Alert.alert('Basarili', 'Kullanici silindi');
                 loadUsers();
               }
-            } catch (e) { console.error(e); }
+            } catch (e) {
+              Alert.alert('Hata', 'Silme islemi basarisiz');
+            }
           }
         }
       ]
     );
   };
   
-  const cleanupStuckTags = async () => {
+  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
-      const res = await fetch(`${API_URL}/admin/cleanup-inactive-tags`, {
+      const res = await fetch(`${API_URL}/admin/toggle-user?admin_phone=${adminPhone}&user_id=${userId}&is_active=${!currentStatus}`, {
         method: 'POST'
       });
       const data = await res.json();
-      Alert.alert('Temizlendi', `${data.cleaned_count || 0} takılı eşleşme temizlendi`);
-      loadDashboard();
-    } catch (e) { console.error(e); }
-  };
-  
-  const saveSettings = async () => {
-    try {
-      const params = new URLSearchParams({
-        admin_phone: adminPhone,
-        driver_radius_km: driverRadius,
-        max_call_duration_minutes: maxCallDuration
-      });
-      const res = await fetch(`${API_URL}/admin/settings?${params.toString()}`, {
-        method: 'POST',
-      });
-      const data = await res.json();
       if (data.success) {
-        Alert.alert('Kaydedildi', 'Ayarlar başarıyla güncellendi');
+        loadUsers();
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      Alert.alert('Hata', 'Islem basarisiz');
+    }
   };
   
-  const sendNotification = async () => {
-    if (!notifTitle || !notifMessage) {
-      Alert.alert('Hata', 'Başlık ve mesaj gerekli');
+  const setDriverOffline = async (driverId: string, driverName: string) => {
+    Alert.alert(
+      'Surucu Offline Yap',
+      `${driverName} surucusunu offline yapmak istediginize emin misiniz?`,
+      [
+        { text: 'Iptal', style: 'cancel' },
+        {
+          text: 'Offline Yap',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/admin/set-driver-offline?admin_phone=${adminPhone}&driver_id=${driverId}`, {
+                method: 'POST'
+              });
+              const data = await res.json();
+              if (data.success) {
+                Alert.alert('Basarili', 'Surucu offline yapildi');
+                loadOnlineDrivers();
+              }
+            } catch (e) {
+              Alert.alert('Hata', 'Islem basarisiz');
+            }
+          }
+        }
+      ]
+    );
+  };
+  
+  const createPromotion = async () => {
+    if (!newPromoHours) {
+      Alert.alert('Hata', 'Saat degeri giriniz');
       return;
     }
     
     try {
-      setLoading(true);
-      const res = await fetch(`${API_URL}/admin/send-notification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: adminPhone,
-          title: notifTitle,
-          body: notifMessage,
-          target: notifTarget,
-        })
+      const code = newPromoCode || '';
+      const res = await fetch(`${API_URL}/admin/promotions/create?admin_phone=${adminPhone}&code=${code}&hours=${newPromoHours}&max_uses=${newPromoMaxUses}`, {
+        method: 'POST'
       });
       const data = await res.json();
       if (data.success) {
-        Alert.alert('✅ Gönderildi', `${data.sent || 0}/${data.valid_tokens || 0} kişiye bildirim gönderildi`);
+        Alert.alert('Basarili', `Promosyon kodu: ${data.promotion?.code || 'Olusturuldu'}`);
+        setNewPromoCode('');
+        setNewPromoHours('3');
+        setNewPromoMaxUses('100');
+        loadPromotions();
+      }
+    } catch (e) {
+      Alert.alert('Hata', 'Promosyon olusturulamadi');
+    }
+  };
+  
+  const togglePromotion = async (promoId: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/promotions/toggle?admin_phone=${adminPhone}&promo_id=${promoId}&is_active=${!currentStatus}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadPromotions();
+      }
+    } catch (e) {
+      Alert.alert('Hata', 'Islem basarisiz');
+    }
+  };
+  
+  const sendNotification = async () => {
+    if (!notifTitle || !notifMessage) {
+      Alert.alert('Hata', 'Baslik ve mesaj giriniz');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/admin/push/send?admin_phone=${adminPhone}&title=${encodeURIComponent(notifTitle)}&message=${encodeURIComponent(notifMessage)}&target=${notifTarget}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Basarili', `${data.sent} kisi bildirim aldi, ${data.failed} basarisiz`);
         setNotifTitle('');
         setNotifMessage('');
-      } else {
-        Alert.alert('Hata', data.error || 'Bildirim gönderilemedi');
       }
-    } catch (e) { 
-      Alert.alert('Hata', 'Bildirim gönderilemedi');
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      Alert.alert('Hata', 'Bildirim gonderilemedi');
     }
   };
   
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
-    const d = new Date(dateStr);
-    return d.toLocaleString('tr-TR');
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('tr-TR') + ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
   };
   
-  const renderTab = (tab: TabType, icon: string, label: string) => (
-    <TouchableOpacity
-      style={[styles.tab, activeTab === tab && styles.tabActive]}
-      onPress={() => setActiveTab(tab)}
-    >
-      <Ionicons name={icon as any} size={20} color={activeTab === tab ? COLORS.primary : COLORS.textSecondary} />
-      <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
+  // ==================== TAB MENU ====================
   
-  // ========== DASHBOARD ==========
+  const tabs: { key: TabType; icon: string; label: string }[] = [
+    { key: 'dashboard', icon: 'stats-chart', label: 'Dashboard' },
+    { key: 'users', icon: 'people', label: 'Kullanicilar' },
+    { key: 'trips', icon: 'car', label: 'Yolculuklar' },
+    { key: 'drivers', icon: 'location', label: 'Online Suruculer' },
+    { key: 'promos', icon: 'pricetag', label: 'Promosyonlar' },
+    { key: 'notifications', icon: 'notifications', label: 'Bildirimler' },
+    { key: 'logs', icon: 'document-text', label: 'Giris Loglari' },
+    { key: 'settings', icon: 'settings', label: 'Ayarlar' },
+  ];
+  
+  // ==================== RENDERS ====================
+  
   const renderDashboard = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.sectionTitle}>Genel Bakış</Text>
+      <Text style={styles.sectionTitle}>Genel Bakis</Text>
       
       <View style={styles.statsGrid}>
         <View style={[styles.statCard, { backgroundColor: COLORS.info }]}>
-          <Ionicons name="people" size={32} color="#FFF" />
+          <Ionicons name="people" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.users?.total || 0}</Text>
-          <Text style={styles.statLabel}>Toplam Kullanıcı</Text>
+          <Text style={styles.statLabel}>Toplam Kullanici</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.success }]}>
-          <Ionicons name="car" size={32} color="#FFF" />
+          <Ionicons name="car" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.users?.drivers || 0}</Text>
-          <Text style={styles.statLabel}>Sürücü</Text>
+          <Text style={styles.statLabel}>Surucu</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.warning }]}>
-          <Ionicons name="person" size={32} color="#FFF" />
+          <Ionicons name="person" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.users?.passengers || 0}</Text>
           <Text style={styles.statLabel}>Yolcu</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.primary }]}>
-          <Ionicons name="radio-button-on" size={32} color="#FFF" />
+          <Ionicons name="radio-button-on" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.users?.online_drivers || 0}</Text>
-          <Text style={styles.statLabel}>Online Sürücü</Text>
+          <Text style={styles.statLabel}>Online Surucu</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: '#8B5CF6' }]}>
-          <Ionicons name="checkmark-circle" size={32} color="#FFF" />
+          <Ionicons name="checkmark-circle" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.trips?.completed_today || 0}</Text>
-          <Text style={styles.statLabel}>Bugün Tamamlanan</Text>
+          <Text style={styles.statLabel}>Bugun Tamamlanan</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: '#EC4899' }]}>
-          <Ionicons name="time" size={32} color="#FFF" />
+          <Ionicons name="time" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.trips?.waiting || 0}</Text>
           <Text style={styles.statLabel}>Bekleyen</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: '#14B8A6' }]}>
-          <Ionicons name="navigate" size={32} color="#FFF" />
+          <Ionicons name="navigate" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.trips?.active || 0}</Text>
           <Text style={styles.statLabel}>Aktif Yolculuk</Text>
         </View>
         
         <View style={[styles.statCard, { backgroundColor: COLORS.danger }]}>
-          <Ionicons name="calendar" size={32} color="#FFF" />
+          <Ionicons name="calendar" size={28} color="#FFF" />
           <Text style={styles.statValue}>{stats?.trips?.completed_week || 0}</Text>
           <Text style={styles.statLabel}>Bu Hafta</Text>
         </View>
       </View>
-      
-      <TouchableOpacity style={styles.actionButton} onPress={cleanupStuckTags}>
-        <Ionicons name="trash" size={20} color="#FFF" />
-        <Text style={styles.actionButtonText}>Takılı Eşleşmeleri Temizle</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
   
-  // ========== USERS ==========
   const renderUsers = () => (
     <View style={styles.content}>
       <TextInput
         style={styles.searchInput}
-        placeholder="Kullanıcı ara (isim veya telefon)..."
+        placeholder="Kullanici ara (isim veya telefon)..."
         placeholderTextColor={COLORS.textSecondary}
         value={userSearch}
         onChangeText={setUserSearch}
       />
       
-      <Text style={styles.countText}>{users.length} kullanıcı bulundu</Text>
+      <Text style={styles.countText}>{users.length} kullanici bulundu</Text>
       
       <FlatList
         data={users.filter(u => 
@@ -526,546 +398,379 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
                 <Text style={styles.userAvatarText}>{item.name?.charAt(0) || '?'}</Text>
               </View>
               <View style={styles.userDetails}>
-                <Text style={styles.userName}>{item.name || 'İsimsiz'}</Text>
+                <Text style={styles.userName}>{item.name || 'Isimsiz'}</Text>
                 <Text style={styles.userPhone}>{item.phone || '-'}</Text>
                 <View style={styles.userMeta}>
                   <Text style={styles.userMetaText}>
-                    {item.is_driver ? '🚗 Sürücü' : '👤 Yolcu'} • {item.city || 'Şehir yok'}
+                    {item.is_driver ? 'Surucu' : 'Yolcu'} | {item.city || '-'}
                   </Text>
                   <Text style={styles.userMetaText}>
-                    ⭐ {(item.rating || 5).toFixed(1)} • {item.total_trips || 0} trip
-                    {item.is_online ? ' • 🟢 Online' : ''}
+                    {(item.rating || 5).toFixed(1)} | {item.total_trips || 0} yolculuk
+                    {item.is_online ? ' | Online' : ''}
                   </Text>
+                  {item.last_ip && (
+                    <Text style={styles.userMetaText}>IP: {item.last_ip}</Text>
+                  )}
+                  {item.last_device_id && (
+                    <Text style={styles.userMetaText}>Cihaz: {item.last_device_id?.slice(0, 15)}...</Text>
+                  )}
                 </View>
               </View>
             </View>
             
             <View style={styles.userActions}>
               <TouchableOpacity
-                style={[styles.userActionBtn, item.is_active ? styles.btnDanger : styles.btnSuccess]}
-                onPress={() => toggleUserStatus(item.id, item.is_active)}
+                style={[styles.userActionBtn, item.is_active !== false ? styles.btnWarning : styles.btnSuccess]}
+                onPress={() => toggleUserStatus(item.id, item.is_active !== false)}
               >
-                <Ionicons name={item.is_active ? "ban" : "checkmark"} size={16} color="#FFF" />
+                <Ionicons name={item.is_active !== false ? "pause" : "play"} size={14} color="#FFF" />
               </TouchableOpacity>
               
               <TouchableOpacity
                 style={[styles.userActionBtn, styles.btnDanger]}
-                onPress={() => deleteUser(item.id)}
+                onPress={() => softDeleteUser(item.id, item.name)}
               >
-                <Ionicons name="trash" size={16} color="#FFF" />
+                <Ionicons name="trash" size={14} color="#FFF" />
               </TouchableOpacity>
             </View>
           </View>
         )}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<Text style={styles.emptyText}>Kullanıcı bulunamadı</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}>Kullanici bulunamadi</Text>}
       />
     </View>
   );
   
-  // ========== TRIPS (Metadata) ==========
   const renderTrips = () => (
     <View style={styles.content}>
-      <Text style={styles.countText}>{trips.length} yolculuk bulundu</Text>
+      {activeTrips.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Aktif Yolculuklar ({activeTrips.length})</Text>
+          <FlatList
+            data={activeTrips}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item, index) => item.id || index.toString()}
+            renderItem={({ item }) => (
+              <View style={[styles.tripCard, { backgroundColor: COLORS.primary, width: 280, marginRight: 12 }]}>
+                <View style={styles.tripHeader}>
+                  <Ionicons name="navigate" size={18} color="#FFF" />
+                  <Text style={styles.tripStatus}>{item.status}</Text>
+                </View>
+                <Text style={styles.tripText}>Yolcu: {item.passenger || '-'}</Text>
+                <Text style={styles.tripText}>Surucu: {item.driver || '-'}</Text>
+                <Text style={styles.tripText}>Baslangic: {item.pickup || '-'}</Text>
+                <Text style={styles.tripText}>Hedef: {item.dropoff || '-'}</Text>
+              </View>
+            )}
+            style={{ marginBottom: 20 }}
+          />
+        </>
+      )}
+      
+      <Text style={styles.sectionTitle}>Tum Yolculuklar ({trips.length})</Text>
       <FlatList
         data={trips}
         keyExtractor={(item, index) => item.id || index.toString()}
         renderItem={({ item }) => (
-          <View style={styles.logCard}>
-            <View style={styles.logHeader}>
+          <View style={styles.tripCard}>
+            <View style={styles.tripHeader}>
               <Ionicons 
-                name={item.status === 'completed' ? 'checkmark-circle' : 
-                      item.status === 'cancelled' ? 'close-circle' : 'navigate'} 
-                size={20} 
-                color={item.status === 'completed' ? COLORS.success : 
-                       item.status === 'cancelled' ? COLORS.danger : COLORS.primary} 
+                name={item.status === 'completed' ? 'checkmark-circle' : item.status === 'cancelled' ? 'close-circle' : 'navigate'} 
+                size={18} 
+                color={item.status === 'completed' ? COLORS.success : item.status === 'cancelled' ? COLORS.danger : COLORS.primary} 
               />
-              <Text style={styles.logTitle}>
-                {item.status === 'completed' ? 'Tamamlandı' : 
-                 item.status === 'cancelled' ? 'İptal' :
-                 item.status === 'matched' ? 'Eşleşti' : 'Bekliyor'}
+              <Text style={styles.tripStatus}>
+                {item.status === 'completed' ? 'Tamamlandi' : item.status === 'cancelled' ? 'Iptal' : item.status === 'matched' ? 'Eslesti' : 'Bekliyor'}
               </Text>
-              <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+              <Text style={styles.tripTime}>{formatDate(item.created_at)}</Text>
             </View>
-            <View style={styles.logBody}>
-              <Text style={styles.logText}>👤 Yolcu: {item.passenger_name || '-'}</Text>
-              <Text style={styles.logText}>🚗 Sürücü: {item.driver_name || '-'}</Text>
-              <Text style={styles.logText}>📍 Başlangıç: {item.pickup_location || '-'}</Text>
-              <Text style={styles.logText}>🎯 Hedef: {item.dropoff_location || '-'}</Text>
-              <Text style={styles.logText}>💰 Fiyat: ₺{item.final_price || 0}</Text>
-              {item.end_method && <Text style={styles.logText}>✅ Bitirme: {item.end_method}</Text>}
-            </View>
+            <Text style={styles.tripText}>Yolcu: {item.passenger_name || '-'}</Text>
+            <Text style={styles.tripText}>Surucu: {item.driver_name || '-'}</Text>
+            <Text style={styles.tripText}>Fiyat: {item.final_price || 0} TL</Text>
+            {item.end_method && <Text style={styles.tripText}>Bitirme: {item.end_method}</Text>}
           </View>
         )}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<Text style={styles.emptyText}>Henüz yolculuk kaydı yok</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}>Yolculuk bulunamadi</Text>}
       />
     </View>
   );
   
-  // ========== CALLS (Metadata) ==========
-  const renderCalls = () => (
-    <FlatList
-      style={styles.content}
-      data={calls}
-      keyExtractor={(item, index) => item.id || index.toString()}
-      renderItem={({ item }) => (
-        <View style={styles.logCard}>
-          <View style={styles.logHeader}>
-            <Ionicons name={item.call_type === 'video' ? 'videocam' : 'call'} size={20} color={COLORS.success} />
-            <Text style={styles.logTitle}>{item.call_type === 'video' ? 'Görüntülü' : 'Sesli'} Arama</Text>
-            <Text style={styles.logTime}>{formatDate(item.start_time)}</Text>
+  const renderOnlineDrivers = () => (
+    <View style={styles.content}>
+      <Text style={styles.sectionTitle}>Online Suruculer ({onlineDrivers.length})</Text>
+      
+      <FlatList
+        data={onlineDrivers}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.driverCard}>
+            <View style={styles.driverInfo}>
+              <View style={[styles.onlineDot, { backgroundColor: COLORS.success }]} />
+              <View>
+                <Text style={styles.driverName}>{item.name || 'Isimsiz'}</Text>
+                <Text style={styles.driverPhone}>{item.phone}</Text>
+                <Text style={styles.driverMeta}>
+                  {item.city || '-'} | {(item.rating || 5).toFixed(1)}
+                </Text>
+                {item.active_until && (
+                  <Text style={styles.driverMeta}>Paket: {formatDate(item.active_until)}</Text>
+                )}
+              </View>
+            </View>
+            
+            <TouchableOpacity
+              style={[styles.userActionBtn, styles.btnDanger]}
+              onPress={() => setDriverOffline(item.id, item.name)}
+            >
+              <Ionicons name="power" size={16} color="#FFF" />
+              <Text style={{ color: '#FFF', fontSize: 10, marginTop: 2 }}>Offline</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.logBody}>
-            <Text style={styles.logText}>📞 Arayan: {item.caller_name} ({item.caller_phone})</Text>
-            <Text style={styles.logText}>📱 Aranan: {item.receiver_name} ({item.receiver_phone})</Text>
-            <Text style={styles.logText}>⏱️ Süre: {item.duration_seconds || 0} saniye</Text>
-            <Text style={styles.logText}>📊 Durum: {item.status}</Text>
-            <Text style={styles.logText}>🌐 Arayan IP: {item.caller_ip || '-'}</Text>
-            <Text style={styles.logText}>🌐 Aranan IP: {item.receiver_ip || '-'}</Text>
-          </View>
-        </View>
-      )}
-      showsVerticalScrollIndicator={false}
-      ListEmptyComponent={<Text style={styles.emptyText}>Henüz arama kaydı yok</Text>}
-    />
+        )}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={<Text style={styles.emptyText}>Online surucu yok</Text>}
+      />
+    </View>
   );
   
-  // ========== AUTH LOGS (Metadata) ==========
-  const renderAuthLogs = () => (
-    <FlatList
-      style={styles.content}
-      data={authLogs}
-      keyExtractor={(item, index) => item.id || index.toString()}
-      renderItem={({ item }) => (
-        <View style={styles.logCard}>
-          <View style={styles.logHeader}>
-            <Ionicons 
-              name={item.action === 'login' ? 'log-in' : item.action === 'logout' ? 'log-out' : 'key'} 
-              size={20} 
-              color={item.success ? COLORS.success : COLORS.danger} 
-            />
-            <Text style={styles.logTitle}>{item.action?.toUpperCase()}</Text>
-            <Text style={styles.logTime}>{formatDate(item.timestamp)}</Text>
-          </View>
-          <View style={styles.logBody}>
-            <Text style={styles.logText}>👤 Kullanıcı: {item.user_name} ({item.phone})</Text>
-            <Text style={styles.logText}>📱 Cihaz ID: {item.device_id?.slice(0, 20)}...</Text>
-            <Text style={styles.logText}>🌐 IP Adresi: {item.ip_address || '-'}</Text>
-            <Text style={styles.logText}>📊 Sonuç: {item.success ? '✅ Başarılı' : '❌ Başarısız'}</Text>
-            {item.failure_reason && <Text style={styles.logText}>⚠️ Sebep: {item.failure_reason}</Text>}
-          </View>
+  const renderPromotions = () => (
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <Text style={styles.sectionTitle}>Yeni Promosyon Olustur</Text>
+      
+      <View style={styles.formCard}>
+        <TextInput
+          style={styles.input}
+          placeholder="Kod (bos birakilirsa otomatik)"
+          placeholderTextColor={COLORS.textSecondary}
+          value={newPromoCode}
+          onChangeText={setNewPromoCode}
+          autoCapitalize="characters"
+        />
+        
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.input, { flex: 1, marginRight: 8 }]}
+            placeholder="Saat"
+            placeholderTextColor={COLORS.textSecondary}
+            value={newPromoHours}
+            onChangeText={setNewPromoHours}
+            keyboardType="numeric"
+          />
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Max Kullanim"
+            placeholderTextColor={COLORS.textSecondary}
+            value={newPromoMaxUses}
+            onChangeText={setNewPromoMaxUses}
+            keyboardType="numeric"
+          />
         </View>
-      )}
-      showsVerticalScrollIndicator={false}
-      ListEmptyComponent={<Text style={styles.emptyText}>Henüz auth kaydı yok</Text>}
-    />
+        
+        <TouchableOpacity style={styles.primaryBtn} onPress={createPromotion}>
+          <Text style={styles.primaryBtnText}>Promosyon Olustur</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <Text style={styles.sectionTitle}>Mevcut Promosyonlar ({promotions.length})</Text>
+      
+      {promotions.map((promo, index) => (
+        <View key={promo.id || index} style={styles.promoCard}>
+          <View style={styles.promoInfo}>
+            <Text style={styles.promoCode}>{promo.code}</Text>
+            <Text style={styles.promoMeta}>{promo.hours} saat | {promo.used_count}/{promo.max_uses} kullanim</Text>
+            <Text style={styles.promoMeta}>{formatDate(promo.created_at)}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.userActionBtn, promo.is_active ? styles.btnDanger : styles.btnSuccess]}
+            onPress={() => togglePromotion(promo.id, promo.is_active)}
+          >
+            <Ionicons name={promo.is_active ? "close" : "checkmark"} size={16} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+      ))}
+    </ScrollView>
   );
   
-  // ========== NOTIFICATIONS ==========
   const renderNotifications = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.sectionTitle}>Bildirim Gönder</Text>
+      <Text style={styles.sectionTitle}>Push Bildirim Gonder</Text>
       
-      <Text style={styles.inputLabel}>Hedef Kitle</Text>
-      <View style={styles.targetButtons}>
-        {[
-          { key: 'all', label: 'Herkese', icon: 'people' },
-          { key: 'drivers', label: 'Şoförlere', icon: 'car' },
-          { key: 'passengers', label: 'Yolculara', icon: 'person' },
-          { key: 'user', label: 'Kişiye Özel', icon: 'person-circle' },
-        ].map((t) => (
+      <View style={styles.formCard}>
+        <TextInput
+          style={styles.input}
+          placeholder="Baslik"
+          placeholderTextColor={COLORS.textSecondary}
+          value={notifTitle}
+          onChangeText={setNotifTitle}
+        />
+        
+        <TextInput
+          style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+          placeholder="Mesaj"
+          placeholderTextColor={COLORS.textSecondary}
+          value={notifMessage}
+          onChangeText={setNotifMessage}
+          multiline
+        />
+        
+        <Text style={styles.label}>Hedef Kitle</Text>
+        <View style={styles.targetButtons}>
+          {(['all', 'drivers', 'passengers'] as const).map(target => (
+            <TouchableOpacity
+              key={target}
+              style={[styles.targetBtn, notifTarget === target && styles.targetBtnActive]}
+              onPress={() => setNotifTarget(target)}
+            >
+              <Text style={[styles.targetBtnText, notifTarget === target && styles.targetBtnTextActive]}>
+                {target === 'all' ? 'Herkes' : target === 'drivers' ? 'Suruculer' : 'Yolcular'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        
+        <TouchableOpacity style={styles.primaryBtn} onPress={sendNotification}>
+          <Ionicons name="send" size={18} color="#FFF" />
+          <Text style={styles.primaryBtnText}> Bildirim Gonder</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+  
+  const renderLogs = () => (
+    <View style={styles.content}>
+      <Text style={styles.sectionTitle}>Giris Loglari</Text>
+      
+      <View style={styles.filterButtons}>
+        {(['all', 'TR', 'FOREIGN'] as const).map(filter => (
           <TouchableOpacity
-            key={t.key}
-            style={[styles.targetBtn, notifTarget === t.key && styles.targetBtnActive]}
-            onPress={() => setNotifTarget(t.key as any)}
+            key={filter}
+            style={[styles.filterBtn, logFilter === filter && styles.filterBtnActive]}
+            onPress={() => { setLogFilter(filter); }}
           >
-            <Ionicons name={t.icon as any} size={18} color={notifTarget === t.key ? '#FFF' : COLORS.textSecondary} />
-            <Text style={[styles.targetBtnText, notifTarget === t.key && styles.targetBtnTextActive]}>
-              {t.label}
+            <Text style={[styles.filterBtnText, logFilter === filter && styles.filterBtnTextActive]}>
+              {filter === 'all' ? 'Tumu' : filter === 'TR' ? 'Turkiye' : 'Yabanci'}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
       
-      {notifTarget === 'user' && (
-        <TextInput
-          style={styles.input}
-          placeholder="Kullanıcı ID veya Telefon"
-          placeholderTextColor={COLORS.textSecondary}
-          value={notifUserId}
-          onChangeText={setNotifUserId}
-        />
-      )}
-      
-      <Text style={styles.inputLabel}>Başlık</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Bildirim başlığı"
-        placeholderTextColor={COLORS.textSecondary}
-        value={notifTitle}
-        onChangeText={setNotifTitle}
+      <FlatList
+        data={loginLogs}
+        keyExtractor={(item, index) => item.id || index.toString()}
+        renderItem={({ item }) => (
+          <View style={[styles.logCard, { borderLeftColor: item.success ? COLORS.success : COLORS.danger, borderLeftWidth: 3 }]}>
+            <View style={styles.logHeader}>
+              <Ionicons 
+                name={item.success ? "checkmark-circle" : "close-circle"} 
+                size={16} 
+                color={item.success ? COLORS.success : COLORS.danger} 
+              />
+              <Text style={styles.logPhone}>{item.phone || '-'}</Text>
+              <Text style={[styles.logCountry, { color: item.country === 'TR' ? COLORS.success : COLORS.danger }]}>
+                {item.country || '-'}
+              </Text>
+            </View>
+            <Text style={styles.logText}>IP: {item.ip_address || '-'}</Text>
+            <Text style={styles.logText}>Cihaz: {item.device_id?.slice(0, 20) || '-'}...</Text>
+            {item.fail_reason && <Text style={[styles.logText, { color: COLORS.danger }]}>Hata: {item.fail_reason}</Text>}
+            <Text style={styles.logTime}>{formatDate(item.created_at)}</Text>
+          </View>
+        )}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={<Text style={styles.emptyText}>Log bulunamadi</Text>}
       />
-      
-      <Text style={styles.inputLabel}>Mesaj</Text>
-      <TextInput
-        style={[styles.input, styles.inputMultiline]}
-        placeholder="Bildirim mesajı"
-        placeholderTextColor={COLORS.textSecondary}
-        value={notifMessage}
-        onChangeText={setNotifMessage}
-        multiline
-        numberOfLines={4}
-      />
-      
-      <TouchableOpacity style={styles.sendButton} onPress={sendNotification}>
-        <Ionicons name="send" size={20} color="#FFF" />
-        <Text style={styles.sendButtonText}>Bildirim Gönder</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-  
-  // ========== SETTINGS ==========
-  const renderSettings = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.sectionTitle}>Uygulama Ayarları</Text>
-      
-      <View style={styles.settingCard}>
-        <View style={styles.settingHeader}>
-          <Ionicons name="locate" size={24} color={COLORS.primary} />
-          <Text style={styles.settingTitle}>Şoför Görme Mesafesi</Text>
-        </View>
-        <Text style={styles.settingDesc}>Şoförlerin kaç km uzaklıktaki yolcuları görebileceği</Text>
-        <View style={styles.settingInput}>
-          <TextInput
-            style={styles.settingTextInput}
-            value={driverRadius}
-            onChangeText={setDriverRadius}
-            keyboardType="numeric"
-          />
-          <Text style={styles.settingUnit}>km</Text>
-        </View>
-      </View>
-      
-      <View style={styles.settingCard}>
-        <View style={styles.settingHeader}>
-          <Ionicons name="call" size={24} color={COLORS.success} />
-          <Text style={styles.settingTitle}>Maksimum Arama Süresi</Text>
-        </View>
-        <Text style={styles.settingDesc}>Bir aramanın maksimum süresi</Text>
-        <View style={styles.settingInput}>
-          <TextInput
-            style={styles.settingTextInput}
-            value={maxCallDuration}
-            onChangeText={setMaxCallDuration}
-            keyboardType="numeric"
-          />
-          <Text style={styles.settingUnit}>dakika</Text>
-        </View>
-      </View>
-      
-      <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
-        <Ionicons name="save" size={20} color="#FFF" />
-        <Text style={styles.saveButtonText}>Ayarları Kaydet</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-  
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <LinearGradient colors={[COLORS.primaryDark, COLORS.background]} style={styles.header}>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-          <Ionicons name="close" size={28} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Admin Panel</Text>
-        <View style={{ width: 40 }} />
-      </LinearGradient>
-      
-      {/* Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
-        {renderTab('dashboard', 'grid', 'Panel')}
-        {renderTab('users', 'people', 'Kullanıcılar')}
-        {renderTab('trips', 'navigate', 'Yolculuklar')}
-        {renderTab('calls', 'call', 'Aramalar')}
-        {renderTab('auth', 'key', 'Girişler')}
-        {renderTab('notifications', 'notifications', 'Bildirim')}
-        {renderTab('kyc', 'car-sport', 'KYC')}
-        {renderTab('settings', 'settings', 'Ayarlar')}
-      </ScrollView>
-      
-      {/* Content */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      ) : (
-        <>
-          {activeTab === 'dashboard' && renderDashboard()}
-          {activeTab === 'users' && renderUsers()}
-          {activeTab === 'trips' && renderTrips()}
-          {activeTab === 'calls' && renderCalls()}
-          {activeTab === 'auth' && renderAuthLogs()}
-          {activeTab === 'notifications' && renderNotifications()}
-          {activeTab === 'kyc' && renderKYCTab()}
-          {activeTab === 'settings' && renderSettings()}
-        </>
-      )}
     </View>
   );
-
-  // KYC Tab Render
-  function renderKYCTab() {
-    const getCurrentList = () => {
-      switch (kycFilter) {
-        case 'pending': return pendingKYCs;
-        case 'approved': return approvedKYCs;
-        case 'rejected': return rejectedKYCs;
-        default: return pendingKYCs;
-      }
-    };
-    
-    const currentList = getCurrentList();
-    
-    return (
-      <ScrollView style={styles.tabContent}>
-        <Text style={styles.sectionTitle}>🚗 Sürücü Başvuruları</Text>
-        
-        {/* Filter Buttons */}
-        <View style={styles.kycFilterContainer}>
-          <TouchableOpacity 
-            style={[styles.kycFilterBtn, kycFilter === 'pending' && styles.kycFilterBtnActive]}
-            onPress={() => setKycFilter('pending')}
-          >
-            <Text style={[styles.kycFilterText, kycFilter === 'pending' && styles.kycFilterTextActive]}>
-              Bekleyen ({pendingKYCs.length})
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.kycFilterBtn, kycFilter === 'approved' && styles.kycFilterBtnActiveGreen]}
-            onPress={() => setKycFilter('approved')}
-          >
-            <Text style={[styles.kycFilterText, kycFilter === 'approved' && styles.kycFilterTextActive]}>
-              Onaylı ({approvedKYCs.length})
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.kycFilterBtn, kycFilter === 'rejected' && styles.kycFilterBtnActiveRed]}
-            onPress={() => setKycFilter('rejected')}
-          >
-            <Text style={[styles.kycFilterText, kycFilter === 'rejected' && styles.kycFilterTextActive]}>
-              Reddedilen ({rejectedKYCs.length})
-            </Text>
-          </TouchableOpacity>
+  
+  const renderSettings = () => (
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <Text style={styles.sectionTitle}>Sistem Ayarlari</Text>
+      
+      <View style={styles.formCard}>
+        <Text style={styles.label}>Fiyatlandirma</Text>
+        <Text style={styles.settingText}>Minimum Fiyat: {settings.minimum_price || 0} TL</Text>
+        <Text style={styles.settingText}>KM Basina (Normal): {settings.min_price_per_km_normal || 0} TL</Text>
+        <Text style={styles.settingText}>KM Basina (Gece): {settings.min_price_per_km_night || 0} TL</Text>
+        <Text style={styles.settingText}>KM Basina (Yagmur): {settings.min_price_per_km_rain || 0} TL</Text>
+      </View>
+      
+      <View style={styles.formCard}>
+        <Text style={styles.label}>Dispatch Ayarlari</Text>
+        <Text style={styles.settingText}>Surucu Arama Mesafesi: {settings.driver_search_radius || 10} km</Text>
+        <Text style={styles.settingText}>Teklif Suresi: {settings.offer_timeout || 30} sn</Text>
+      </View>
+    </ScrollView>
+  );
+  
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Yukleniyor...</Text>
         </View>
-        
-        {currentList.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons 
-              name={kycFilter === 'pending' ? 'checkmark-circle' : kycFilter === 'approved' ? 'people' : 'close-circle'} 
-              size={48} 
-              color={kycFilter === 'pending' ? COLORS.success : kycFilter === 'approved' ? COLORS.primary : COLORS.error} 
-            />
-            <Text style={styles.emptyText}>
-              {kycFilter === 'pending' ? 'Bekleyen başvuru yok' : 
-               kycFilter === 'approved' ? 'Henüz onaylı sürücü yok' : 
-               'Reddedilen başvuru yok'}
-            </Text>
-          </View>
-        ) : (
-          currentList.map((kyc, index) => (
-            <View key={kyc.user_id || index} style={styles.kycCard}>
-              <View style={styles.kycHeader}>
-                <View>
-                  <Text style={styles.kycName}>{kyc.name}</Text>
-                  <Text style={styles.kycPhone}>{kyc.phone}</Text>
-                  <Text style={styles.kycPlate}>Plaka: {kyc.plate_number}</Text>
-                  {(kyc.vehicle_brand || kyc.vehicle_model) && (
-                    <Text style={styles.kycVehicle}>
-                      🚗 {kyc.vehicle_brand || ''} {kyc.vehicle_model || ''}
-                      {kyc.vehicle_year ? ` (${kyc.vehicle_year})` : ''}
-                    </Text>
-                  )}
-                  {kyc.vehicle_color && (
-                    <Text style={styles.kycColor}>🎨 Renk: {kyc.vehicle_color}</Text>
-                  )}
-                  {kyc.rejection_reason && (
-                    <Text style={styles.kycRejectionReason}>❌ Red sebebi: {kyc.rejection_reason}</Text>
-                  )}
-                </View>
-                <View style={[
-                  styles.kycBadge, 
-                  kycFilter === 'approved' && styles.kycBadgeGreen,
-                  kycFilter === 'rejected' && styles.kycBadgeRed
-                ]}>
-                  <Text style={styles.kycBadgeText}>
-                    {kycFilter === 'pending' ? 'Bekliyor' : 
-                     kycFilter === 'approved' ? 'Onaylı' : 'Reddedildi'}
-                  </Text>
-                </View>
-              </View>
-              
-              <View style={styles.kycPhotos}>
-                <TouchableOpacity 
-                  style={styles.kycPhotoBox}
-                  onPress={() => kyc.vehicle_photo_url && setKycImageModal(kyc.vehicle_photo_url)}
-                >
-                  <Text style={styles.kycPhotoLabel}>Araç Fotoğrafı</Text>
-                  <Ionicons name="car" size={24} color={COLORS.primary} />
-                  <Text style={styles.kycPhotoAction}>Görüntüle</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.kycPhotoBox}
-                  onPress={() => kyc.license_photo_url && setKycImageModal(kyc.license_photo_url)}
-                >
-                  <Text style={styles.kycPhotoLabel}>Ehliyet</Text>
-                  <Ionicons name="card" size={24} color={COLORS.primary} />
-                  <Text style={styles.kycPhotoAction}>Görüntüle</Text>
-                </TouchableOpacity>
-              </View>
-              
-              {kycFilter === 'pending' && (
-                <View style={styles.kycActions}>
-                  <Pressable 
-                    style={[styles.kycButton, styles.kycApprove]}
-                    onPress={() => {
-                      const userId = kyc.user_id;
-                      const confirmMsg = 'Bu sürücü başvurusunu onaylıyor musunuz?';
-                      
-                      if (Platform.OS === 'web') {
-                        const confirmed = window.confirm(confirmMsg);
-                        if (confirmed) {
-                          const apiUrl = `${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`;
-                          
-                          fetch(apiUrl, { method: 'POST' })
-                            .then(response => response.json())
-                            .then(result => {
-                              if (result.success) {
-                                window.alert('✅ Sürücü kaydı onaylandı');
-                                loadAllKYCs();
-                              } else {
-                                window.alert('Hata: ' + (result.message || 'İşlem başarısız'));
-                              }
-                            })
-                            .catch(error => {
-                              window.alert('Hata: ' + error.message);
-                            });
-                        }
-                      } else {
-                        Alert.alert('Onayla', confirmMsg, [
-                          { text: 'İptal', style: 'cancel' },
-                          { 
-                            text: 'Onayla', 
-                            onPress: () => {
-                              fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, { method: 'POST' })
-                                .then(res => res.json())
-                                .then(data => {
-                                  if (data.success) {
-                                    Alert.alert('Başarılı', 'Sürücü kaydı onaylandı');
-                                    loadAllKYCs();
-                                  } else {
-                                    Alert.alert('Hata', data.message || 'İşlem başarısız');
-                                  }
-                                })
-                                .catch(err => Alert.alert('Hata', err.message));
-                            }
-                          }
-                        ]);
-                      }
-                    }}
-                  >
-                    <Ionicons name="checkmark" size={18} color="#FFF" />
-                    <Text style={styles.kycButtonText}>Onayla</Text>
-                  </Pressable>
-                  
-                  <Pressable 
-                    style={[styles.kycButton, styles.kycReject]}
-                    onPress={() => {
-                      const userId = kyc.user_id;
-                      const confirmMsg = 'Bu sürücü başvurusunu reddediyor musunuz?';
-                      
-                      if (Platform.OS === 'web') {
-                        const confirmed = window.confirm(confirmMsg);
-                        if (confirmed) {
-                          const apiUrl = `${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`;
-                          
-                          fetch(apiUrl, { method: 'POST' })
-                            .then(response => response.json())
-                            .then(result => {
-                              if (result.success) {
-                                window.alert('❌ Sürücü kaydı reddedildi');
-                                loadAllKYCs();
-                              } else {
-                                window.alert('Hata: ' + (result.message || 'İşlem başarısız'));
-                              }
-                            })
-                            .catch(error => {
-                              window.alert('Hata: ' + error.message);
-                            });
-                        }
-                      } else {
-                        Alert.alert('Reddet', confirmMsg, [
-                          { text: 'İptal', style: 'cancel' },
-                          { 
-                            text: 'Reddet', 
-                            style: 'destructive',
-                            onPress: () => {
-                              fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=Belgeler uygun değil`, { method: 'POST' })
-                                .then(res => res.json())
-                                .then(data => {
-                                  if (data.success) {
-                                    Alert.alert('Başarılı', 'Sürücü kaydı reddedildi');
-                                    loadAllKYCs();
-                                  } else {
-                                    Alert.alert('Hata', data.message || 'İşlem başarısız');
-                                  }
-                                })
-                                .catch(err => Alert.alert('Hata', err.message));
-                            }
-                          }
-                        ]);
-                      }
-                    }}
-                  >
-                    <Ionicons name="close" size={18} color="#FFF" />
-                    <Text style={styles.kycButtonText}>Reddet</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          ))
-        )}
-        
-        {/* Image Modal */}
-        <Modal visible={!!kycImageModal} transparent animationType="fade">
-          <TouchableOpacity 
-            style={styles.imageModalOverlay}
-            activeOpacity={1}
-            onPress={() => setKycImageModal(null)}
-          >
-            <View style={styles.imageModalContent}>
-              {kycImageModal && (
-                <Image 
-                  source={{ uri: kycImageModal }} 
-                  style={styles.imageModalImage}
-                  resizeMode="contain"
-                />
-              )}
-              <TouchableOpacity 
-                style={styles.imageModalClose}
-                onPress={() => setKycImageModal(null)}
-              >
-                <Ionicons name="close" size={24} color="#FFF" />
-              </TouchableOpacity>
-            </View>
+      );
+    }
+    
+    switch(activeTab) {
+      case 'dashboard': return renderDashboard();
+      case 'users': return renderUsers();
+      case 'trips': return renderTrips();
+      case 'drivers': return renderOnlineDrivers();
+      case 'promos': return renderPromotions();
+      case 'notifications': return renderNotifications();
+      case 'logs': return renderLogs();
+      case 'settings': return renderSettings();
+      default: return null;
+    }
+  };
+  
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <View style={styles.container}>
+        {/* Header */}
+        <LinearGradient colors={[COLORS.primaryDark, COLORS.background]} style={styles.header}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <Ionicons name="close" size={24} color="#FFF" />
           </TouchableOpacity>
-        </Modal>
-      </ScrollView>
-    );
-  }
+          <Text style={styles.headerTitle}>Admin Panel</Text>
+          <TouchableOpacity onPress={() => loadData()} style={styles.refreshBtn}>
+            <Ionicons name="refresh" size={22} color="#FFF" />
+          </TouchableOpacity>
+        </LinearGradient>
+        
+        {/* Tab Menu */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.tabBar}
+          contentContainerStyle={styles.tabBarContent}
+        >
+          {tabs.map(tab => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Ionicons 
+                name={tab.icon as any} 
+                size={18} 
+                color={activeTab === tab.key ? '#FFF' : COLORS.textSecondary} 
+              />
+              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        
+        {/* Content */}
+        {renderContent()}
+      </View>
+    </Modal>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -1077,63 +782,72 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'ios' ? 50 : 40,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
     paddingBottom: 15,
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
   },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 8,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#FFF',
   },
+  refreshBtn: {
+    padding: 8,
+  },
   tabBar: {
+    maxHeight: 50,
     backgroundColor: COLORS.card,
-    paddingVertical: 10,
-    paddingHorizontal: 5,
+  },
+  tabBarContent: {
+    paddingHorizontal: 8,
+    alignItems: 'center',
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginHorizontal: 4,
-    borderRadius: 20,
-    backgroundColor: 'transparent',
+    borderRadius: 8,
   },
   tabActive: {
-    backgroundColor: 'rgba(63,169,245,0.2)',
+    backgroundColor: COLORS.primary,
   },
   tabText: {
+    fontSize: 12,
     color: COLORS.textSecondary,
-    fontSize: 13,
     marginLeft: 6,
   },
   tabTextActive: {
-    color: COLORS.primary,
+    color: '#FFF',
     fontWeight: '600',
   },
   content: {
     flex: 1,
-    padding: 15,
+    padding: 16,
   },
   loadingContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: COLORS.textSecondary,
+    marginTop: 12,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FFF',
-    marginBottom: 15,
+    marginBottom: 12,
+  },
+  countText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 12,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -1142,426 +856,296 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: '48%',
-    padding: 15,
+    padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#FFF',
     marginTop: 8,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: 'rgba(255,255,255,0.8)',
     marginTop: 4,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.danger,
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  actionButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    marginLeft: 8,
+    textAlign: 'center',
   },
   searchInput: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 12,
     color: '#FFF',
-    marginBottom: 15,
+    marginBottom: 12,
+    fontSize: 14,
   },
   userCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 12,
     marginBottom: 10,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   userInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
     flex: 1,
   },
   userAvatar: {
-    width: 45,
-    height: 45,
-    borderRadius: 23,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: COLORS.primary,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   userAvatarText: {
-    fontSize: 18,
-    fontWeight: 'bold',
     color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   userDetails: {
-    marginLeft: 12,
     flex: 1,
   },
   userName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFF',
   },
   userPhone: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSecondary,
   },
   userMeta: {
     marginTop: 4,
   },
   userMetaText: {
-    fontSize: 11,
+    fontSize: 10,
     color: COLORS.textSecondary,
   },
   userActions: {
     flexDirection: 'row',
+    gap: 6,
   },
   userActionBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
+    borderRadius: 6,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  btnSuccess: { backgroundColor: COLORS.success },
+  btnDanger: { backgroundColor: COLORS.danger },
+  btnWarning: { backgroundColor: COLORS.warning },
+  emptyText: {
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 40,
+    fontSize: 14,
+  },
+  tripCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  tripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  tripStatus: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFF',
     marginLeft: 8,
+    flex: 1,
   },
-  btnSuccess: {
-    backgroundColor: COLORS.success,
+  tripTime: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
   },
-  btnDanger: {
-    backgroundColor: COLORS.danger,
+  tripText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  driverCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  driverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  onlineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 12,
+  },
+  driverName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  driverPhone: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  driverMeta: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+  },
+  formCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+  },
+  input: {
+    backgroundColor: COLORS.cardLight,
+    borderRadius: 8,
+    padding: 12,
+    color: '#FFF',
+    marginBottom: 12,
+    fontSize: 14,
+  },
+  inputRow: {
+    flexDirection: 'row',
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFF',
+    marginBottom: 8,
+  },
+  primaryBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  primaryBtnText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  targetButtons: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  targetBtn: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.cardLight,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  targetBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  targetBtnText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  targetBtnTextActive: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  promoCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  promoInfo: {
+    flex: 1,
+  },
+  promoCode: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  promoMeta: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  filterButtons: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  filterBtn: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.card,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  filterBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  filterBtnText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  filterBtnTextActive: {
+    color: '#FFF',
+    fontWeight: '600',
   },
   logCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 12,
     marginBottom: 10,
   },
   logHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardLight,
-    paddingBottom: 8,
+    marginBottom: 6,
   },
-  logTitle: {
-    fontSize: 14,
+  logPhone: {
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFF',
     marginLeft: 8,
     flex: 1,
   },
-  logTime: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-  },
-  logBody: {
+  logCountry: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   logText: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.textSecondary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  emptyText: {
-    textAlign: 'center',
+  logTime: {
+    fontSize: 10,
     color: COLORS.textSecondary,
-    marginTop: 50,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
-    marginBottom: 8,
-    marginTop: 15,
-  },
-  input: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 12,
-    color: '#FFF',
-  },
-  inputMultiline: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  targetButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  targetBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: COLORS.card,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  targetBtnActive: {
-    backgroundColor: COLORS.primary,
-  },
-  targetBtnText: {
-    color: COLORS.textSecondary,
-    marginLeft: 6,
-    fontSize: 13,
-  },
-  targetBtnTextActive: {
-    color: '#FFF',
-  },
-  sendButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 20,
-  },
-  sendButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  settingCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-  },
-  settingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  settingTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-    marginLeft: 10,
-  },
-  settingDesc: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    marginBottom: 12,
-  },
-  settingInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingTextInput: {
-    backgroundColor: COLORS.cardLight,
-    borderRadius: 8,
-    padding: 10,
-    color: '#FFF',
-    width: 80,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  settingUnit: {
-    color: COLORS.textSecondary,
-    marginLeft: 10,
-    fontSize: 14,
-  },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.success,
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  saveButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  // KYC Styles
-  kycCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.3)',
-  },
-  kycHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  kycName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFF',
-    marginBottom: 4,
-  },
-  kycPhone: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-  },
-  kycPlate: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  kycVehicle: {
-    fontSize: 14,
-    color: '#FFF',
     marginTop: 4,
-    fontWeight: '500',
   },
-  kycColor: {
+  settingText: {
     fontSize: 13,
     color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  kycBadge: {
-    backgroundColor: 'rgba(251, 191, 36, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  kycBadgeText: {
-    color: '#FBbf24',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  kycPhotos: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  kycPhotoBox: {
-    flex: 1,
-    backgroundColor: 'rgba(63, 169, 245, 0.1)',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.3)',
-  },
-  kycPhotoLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginBottom: 8,
-  },
-  kycPhotoAction: {
-    fontSize: 12,
-    color: COLORS.primary,
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  kycActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  kycButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  kycApprove: {
-    backgroundColor: COLORS.success,
-  },
-  kycReject: {
-    backgroundColor: COLORS.danger,
-  },
-  kycButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  imageModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageModalContent: {
-    width: '90%',
-    height: '70%',
-  },
-  imageModalImage: {
-    width: '100%',
-    height: '100%',
-  },
-  imageModalClose: {
-    position: 'absolute',
-    top: -40,
-    right: 0,
-    padding: 10,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    color: COLORS.textSecondary,
-    fontSize: 16,
-    marginTop: 12,
-  },
-  // KYC Filter Styles
-  kycFilterContainer: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
-  },
-  kycFilterBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-  },
-  kycFilterBtnActive: {
-    backgroundColor: COLORS.primary,
-  },
-  kycFilterBtnActiveGreen: {
-    backgroundColor: COLORS.success,
-  },
-  kycFilterBtnActiveRed: {
-    backgroundColor: COLORS.danger,
-  },
-  kycFilterText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  kycFilterTextActive: {
-    color: '#FFF',
-  },
-  kycBadgeGreen: {
-    backgroundColor: COLORS.success,
-  },
-  kycBadgeRed: {
-    backgroundColor: COLORS.danger,
-  },
-  kycRejectionReason: {
-    fontSize: 12,
-    color: COLORS.danger,
-    marginTop: 4,
+    marginBottom: 6,
   },
 });

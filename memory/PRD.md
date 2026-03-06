@@ -20,6 +20,19 @@ Ride-sharing application with QR-based trip ending, symmetric rating system, dri
 
 ## What's Been Implemented
 
+### 2026-03-06 - Admin Panel Tam Güncelleme
+- **YENİ ÖZELLİKLER:**
+  - Dashboard: Kullanıcı, sürücü, yolcu, online sürücü, bugün/hafta tamamlanan istatistikleri
+  - Kullanıcılar: Arama, soft delete (Supabase'de kalır), ban/unban, IP ve cihaz bilgisi gösterimi
+  - Yolculuklar: Aktif yolculuklar (yatay scroll) + tüm yolculuk geçmişi
+  - Online Sürücüler: Anlık online sürücü listesi, admin'in sürücüyü offline yapabilmesi
+  - Promosyonlar: Kod oluşturma, aktif/pasif yapma, kullanım takibi
+  - Bildirimler: Push notification gönderme (herkese, sürücülere, yolculara)
+  - Giriş Logları: IP, cihaz, başarılı/başarısız girişler, Türkiye/Yabancı filtresi
+  - Ayarlar: Fiyatlandırma ve dispatch ayarları görüntüleme
+- **TÜRKİYE IP KONTROLÜ:** VPN ile girişi engelleyen /auth/secure-login endpoint'i eklendi
+- **FILES:** `/app/frontend/components/AdminPanel.tsx`, `/app/backend/server.py`
+
 ### 2026-03-05 - QR Konum Kontrolü
 - **YENİ ÖZELLİK:** Sürücü QR kodu göstermeden önce yolcu konumu kontrol edilir
 - Yolcu 150 metre içindeyse → QR kod gösterilir
