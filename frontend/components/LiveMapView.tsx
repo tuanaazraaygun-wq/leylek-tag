@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing, Modal, Image, ImageBackground } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Speech from 'expo-speech';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -254,6 +255,13 @@ export default function LiveMapView({
   const [isNavigating, setIsNavigating] = useState(false);
   const [navigationInfo, setNavigationInfo] = useState<{distance: string; duration: string} | null>(null);
   
+  // 🆕 SESLİ NAVİGASYON - Adım adım yönlendirme
+  const [navSteps, setNavSteps] = useState<any[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [currentInstruction, setCurrentInstruction] = useState('');
+  const lastSpokenStep = useRef(-1);
+  const navigationInterval = useRef<any>(null);
+  
   // API çağrı sayacı (rate limiting için)
   const lastRouteCall = useRef<number>(0);
   
@@ -482,34 +490,220 @@ export default function LiveMapView({
     return points;
   };
 
-  // 🆕 IN-APP NAVİGASYON - Mevcut OSRM rotasını kullan
+  // 🆕 IN-APP NAVİGASYON - Mevcut OSRM rotasını kullan + SESLİ YÖNLENDİRME
   const startInAppNavigation = async () => {
     if (!userLocation || !otherLocation) {
       Alert.alert('Hata', 'Konum bilgisi alınamadı');
       return;
     }
     
-    // Mevcut OSRM rotası zaten çizili (meetingRoute)
-    // Haritayı rotaya zoom yap
-    if (mapRef.current && meetingRoute.length > 0) {
-      mapRef.current.fitToCoordinates(meetingRoute, {
-        edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
-        animated: true
-      });
+    try {
+      // OSRM'den adım adım yönlendirme al
+      const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.longitude},${userLocation.latitude};${otherLocation.longitude},${otherLocation.latitude}?overview=full&geometries=polyline&steps=true&language=tr`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const leg = route.legs[0];
+        const steps = leg.steps || [];
+        
+        // Adımları Türkçe'ye çevir ve kaydet
+        const turkishSteps = steps.map((step: any, index: number) => {
+          let instruction = translateManeuver(step.maneuver?.type, step.maneuver?.modifier, step.name);
+          const distance = step.distance;
+          const duration = step.duration;
+          
+          return {
+            index,
+            instruction,
+            distance: distance,
+            distanceText: distance >= 1000 ? `${(distance/1000).toFixed(1)} km` : `${Math.round(distance)} metre`,
+            duration: duration,
+            location: step.maneuver?.location ? {
+              longitude: step.maneuver.location[0],
+              latitude: step.maneuver.location[1]
+            } : null
+          };
+        });
+        
+        setNavSteps(turkishSteps);
+        setCurrentStepIndex(0);
+        setIsNavigating(true);
+        
+        // İlk adımı seslendir
+        if (turkishSteps.length > 0) {
+          const firstStep = turkishSteps[0];
+          setCurrentInstruction(`${firstStep.distanceText} sonra ${firstStep.instruction}`);
+          speakInstruction(`Navigasyon başladı. ${firstStep.distanceText} sonra ${firstStep.instruction}`);
+        }
+        
+        // Haritayı rotaya zoom yap
+        if (mapRef.current && meetingRoute.length > 0) {
+          mapRef.current.fitToCoordinates(meetingRoute, {
+            edgePadding: { top: 150, right: 50, bottom: 300, left: 50 },
+            animated: true
+          });
+        }
+        
+        // Konum takibi başlat - Her 3 saniyede kontrol et
+        navigationInterval.current = setInterval(() => {
+          checkNavigationProgress();
+        }, 3000);
+        
+      } else {
+        // OSRM başarısız olursa basit navigasyon
+        setIsNavigating(true);
+        const distText = meetingDistance ? `${meetingDistance.toFixed(1)} km` : 'Hesaplanıyor';
+        setCurrentInstruction(`Yolcuya git - ${distText}`);
+        speakInstruction(`Navigasyon başladı. Yolcuya mesafe ${distText}`);
+      }
+      
+    } catch (error) {
+      console.error('Navigation error:', error);
+      // Hata durumunda basit navigasyon
+      setIsNavigating(true);
+      const distText = meetingDistance ? `${meetingDistance.toFixed(1)} km` : '';
+      setCurrentInstruction(`Yolcuya git - ${distText}`);
+      speakInstruction(`Navigasyon başladı. Yeşil rotayı takip edin.`);
+    }
+  };
+  
+  // 🆕 Manevra türünü Türkçe'ye çevir
+  const translateManeuver = (type: string, modifier: string, streetName: string): string => {
+    const street = streetName ? ` ${streetName} yoluna` : '';
+    
+    switch (type) {
+      case 'turn':
+        if (modifier === 'left') return `sola dönün${street}`;
+        if (modifier === 'right') return `sağa dönün${street}`;
+        if (modifier === 'slight left') return `hafif sola dönün${street}`;
+        if (modifier === 'slight right') return `hafif sağa dönün${street}`;
+        if (modifier === 'sharp left') return `keskin sola dönün${street}`;
+        if (modifier === 'sharp right') return `keskin sağa dönün${street}`;
+        return `dönün${street}`;
+      case 'new name':
+        return `devam edin${street}`;
+      case 'depart':
+        return `yola çıkın${street}`;
+      case 'arrive':
+        return `hedefinize ulaştınız`;
+      case 'merge':
+        return `yola katılın${street}`;
+      case 'on ramp':
+        return `rampa'ya girin${street}`;
+      case 'off ramp':
+        return `rampadan çıkın${street}`;
+      case 'fork':
+        if (modifier === 'left') return `soldan devam edin${street}`;
+        if (modifier === 'right') return `sağdan devam edin${street}`;
+        return `çatalda devam edin${street}`;
+      case 'end of road':
+        if (modifier === 'left') return `yol sonunda sola dönün`;
+        if (modifier === 'right') return `yol sonunda sağa dönün`;
+        return `yol sonuna ulaştınız`;
+      case 'continue':
+        return `düz devam edin${street}`;
+      case 'roundabout':
+        return `dönel kavşakta devam edin${street}`;
+      case 'rotary':
+        return `dönel kavşakta devam edin${street}`;
+      case 'roundabout turn':
+        return `dönel kavşaktan çıkın${street}`;
+      case 'notification':
+        return `bilgilendirme${street}`;
+      default:
+        return `devam edin${street}`;
+    }
+  };
+  
+  // 🆕 Sesli yönlendirme
+  const speakInstruction = (text: string) => {
+    if (Platform.OS === 'web') return;
+    
+    // Önce mevcut konuşmayı durdur
+    Speech.stop();
+    
+    // Yeni talimatı söyle
+    Speech.speak(text, {
+      language: 'tr-TR',
+      pitch: 1.0,
+      rate: 0.9,
+    });
+  };
+  
+  // 🆕 Navigasyon ilerlemesini kontrol et
+  const checkNavigationProgress = () => {
+    if (!isNavigating || !userLocation || navSteps.length === 0) return;
+    
+    const currentStep = navSteps[currentStepIndex];
+    if (!currentStep || !currentStep.location) return;
+    
+    // Mevcut adıma olan mesafeyi hesapla
+    const distanceToStep = calculateDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      currentStep.location.latitude,
+      currentStep.location.longitude
+    ) * 1000; // metre cinsinden
+    
+    // 50 metreden yakınsa sonraki adıma geç
+    if (distanceToStep < 50 && currentStepIndex < navSteps.length - 1) {
+      const nextIndex = currentStepIndex + 1;
+      setCurrentStepIndex(nextIndex);
+      
+      const nextStep = navSteps[nextIndex];
+      if (nextStep && lastSpokenStep.current !== nextIndex) {
+        lastSpokenStep.current = nextIndex;
+        const instruction = `${nextStep.distanceText} sonra ${nextStep.instruction}`;
+        setCurrentInstruction(instruction);
+        speakInstruction(instruction);
+      }
     }
     
-    setIsNavigating(true);
-    
-    // Mesafe ve süre bilgisini göster
-    const distText = meetingDistance ? `${meetingDistance.toFixed(1)} km` : 'Hesaplanıyor...';
-    const durText = meetingDuration ? `${meetingDuration} dakika` : '';
-    
-    Alert.alert(
-      '🧭 Navigasyon Aktif', 
-      `Yolcuya mesafe: ${distText}\nTahmini süre: ${durText}\n\nYeşil rota sizi yolcuya götürür.`,
-      [{ text: 'Tamam', style: 'default' }]
-    );
+    // Yolcuya ulaşıldı mı kontrol et
+    if (otherLocation) {
+      const distanceToPassenger = calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        otherLocation.latitude,
+        otherLocation.longitude
+      ) * 1000;
+      
+      if (distanceToPassenger < 50) {
+        stopNavigation();
+        speakInstruction('Yolcuya ulaştınız!');
+        setCurrentInstruction('Yolcuya ulaştınız!');
+      }
+    }
   };
+  
+  // 🆕 Navigasyonu durdur
+  const stopNavigation = () => {
+    setIsNavigating(false);
+    setNavSteps([]);
+    setCurrentStepIndex(0);
+    setCurrentInstruction('');
+    lastSpokenStep.current = -1;
+    
+    if (navigationInterval.current) {
+      clearInterval(navigationInterval.current);
+      navigationInterval.current = null;
+    }
+    
+    Speech.stop();
+  };
+  
+  // Component unmount olduğunda navigasyonu durdur
+  useEffect(() => {
+    return () => {
+      if (navigationInterval.current) {
+        clearInterval(navigationInterval.current);
+      }
+      Speech.stop();
+    };
+  }, []);
   
   // Eski fonksiyon - artık kullanılmıyor ama backup olarak kalıyor
   const openExternalNavigation = () => {
@@ -570,8 +764,42 @@ export default function LiveMapView({
         resizeMode="cover"
       />
       
+      {/* 🆕 SESLİ NAVİGASYON TALİMAT BANDI - Üstte sabit */}
+      {isNavigating && currentInstruction && (
+        <View style={styles.navigationBanner}>
+          <LinearGradient 
+            colors={['#1E40AF', '#3B82F6']} 
+            style={styles.navigationBannerGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <View style={styles.navBannerContent}>
+              <View style={styles.navIconBox}>
+                <Ionicons name="navigate" size={28} color="#FFF" />
+              </View>
+              <View style={styles.navTextBox}>
+                <Text style={styles.navInstructionText} numberOfLines={2}>
+                  {currentInstruction}
+                </Text>
+                {navSteps.length > 0 && (
+                  <Text style={styles.navStepCounter}>
+                    Adım {currentStepIndex + 1} / {navSteps.length}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity 
+                style={styles.navCloseBtn} 
+                onPress={stopNavigation}
+              >
+                <Ionicons name="close-circle" size={32} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </View>
+      )}
+      
       {/* 🆕 MATRIX DURUM YAZISI - SÜRÜCÜ - Çerçeve altına sabit (SOL) */}
-      {matrixStatus && isDriver && (
+      {matrixStatus && isDriver && !isNavigating && (
         <View style={styles.matrixContainerDriver}>
           <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
         </View>
@@ -1583,5 +1811,48 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FF3B30',
     letterSpacing: 1.5,
+  },
+  // 🆕 Sesli Navigasyon Banner Stilleri
+  navigationBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2000,
+  },
+  navigationBannerGradient: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingBottom: 15,
+    paddingHorizontal: 15,
+  },
+  navBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  navIconBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  navTextBox: {
+    flex: 1,
+  },
+  navInstructionText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  navStepCounter: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+  },
+  navCloseBtn: {
+    padding: 5,
   },
 });
