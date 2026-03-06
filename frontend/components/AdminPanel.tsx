@@ -5,7 +5,6 @@ import {
   RefreshControl, Platform, Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -719,11 +718,25 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
     }
   };
   
+  // 🔒 ERROR BOUNDARY - Hata durumunda beyaz ekran yerine mesaj göster
+  if (!adminPhone) {
+    return (
+      <Modal visible animationType="slide" onRequestClose={onClose}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={{ color: '#FFF', fontSize: 16 }}>Admin yetkisi gerekli</Text>
+          <TouchableOpacity onPress={onClose} style={{ marginTop: 20, padding: 12, backgroundColor: COLORS.primary, borderRadius: 8 }}>
+            <Text style={{ color: '#FFF' }}>Kapat</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    );
+  }
+  
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
-        {/* Header */}
-        <LinearGradient colors={[COLORS.primaryDark, COLORS.background]} style={styles.header}>
+        {/* Header - LinearGradient yerine düz View (eski cihaz uyumluluğu) */}
+        <View style={[styles.header, { backgroundColor: COLORS.primaryDark }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color="#FFF" />
           </TouchableOpacity>
@@ -731,7 +744,7 @@ export default function AdminPanel({ adminPhone, onClose }: AdminPanelProps) {
           <TouchableOpacity onPress={() => loadData()} style={styles.refreshBtn}>
             <Ionicons name="refresh" size={22} color="#FFF" />
           </TouchableOpacity>
-        </LinearGradient>
+        </View>
         
         {/* Tab Menu */}
         <ScrollView 
