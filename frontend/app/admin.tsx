@@ -17,12 +17,10 @@ import {
   Modal,
   SafeAreaView,
   StatusBar,
-  FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 
 // SABIT API URL - Değişmez
 const API_BASE = 'https://api.leylektag.com/api';
@@ -235,8 +233,8 @@ export default function AdminPanel() {
     <SafeAreaView style={s.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
       
-      {/* Header */}
-      <LinearGradient colors={['#0F172A', '#1E293B']} style={s.header}>
+      {/* Header - Basit View */}
+      <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
@@ -244,7 +242,7 @@ export default function AdminPanel() {
         <TouchableOpacity onPress={refresh}>
           <Ionicons name="refresh" size={24} color="#fff" />
         </TouchableOpacity>
-      </LinearGradient>
+      </View>
       
       {/* Tabs */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabs}>
@@ -345,9 +343,9 @@ export default function AdminPanel() {
         </ScrollView>
       )}
       
-      {/* USERS */}
+      {/* USERS - ScrollView ile */}
       {tab === 'users' && (
-        <View style={s.content}>
+        <ScrollView style={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
           <View style={s.searchBox}>
             <Ionicons name="search" size={20} color="#9CA3AF" />
             <TextInput
@@ -361,12 +359,12 @@ export default function AdminPanel() {
           
           <Text style={s.countText}>{filteredUsers.length} kullanıcı</Text>
           
-          <FlatList
-            data={filteredUsers}
-            keyExtractor={item => item.id}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-            renderItem={({ item }) => (
+          {filteredUsers.length === 0 ? (
+            <Text style={s.empty}>Kullanıcı yok</Text>
+          ) : (
+            filteredUsers.map((item) => (
               <TouchableOpacity 
+                key={item.id}
                 style={s.userCard}
                 onPress={() => {
                   if (item.is_driver) {
@@ -393,23 +391,22 @@ export default function AdminPanel() {
                   <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
                 )}
               </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={s.empty}>Kullanıcı yok</Text>}
-          />
-        </View>
+            ))
+          )}
+        </ScrollView>
       )}
       
-      {/* TRIPS */}
+      {/* TRIPS - ScrollView ile */}
       {tab === 'trips' && (
-        <View style={s.content}>
+        <ScrollView style={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
           <Text style={s.countText}>{trips.length} yolculuk</Text>
           
-          <FlatList
-            data={trips}
-            keyExtractor={item => item.id}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-            renderItem={({ item }) => (
+          {trips.length === 0 ? (
+            <Text style={s.empty}>Yolculuk yok</Text>
+          ) : (
+            trips.map((item) => (
               <TouchableOpacity 
+                key={item.id}
                 style={s.tripCard}
                 onPress={() => {
                   setSelectedTrip(item);
@@ -441,33 +438,30 @@ export default function AdminPanel() {
                   {item.created_at ? new Date(item.created_at).toLocaleString('tr-TR') : '-'}
                 </Text>
               </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={s.empty}>Yolculuk yok</Text>}
-          />
-        </View>
+            ))
+          )}
+        </ScrollView>
       )}
       
-      {/* PROMOS */}
+      {/* PROMOS - ScrollView ile */}
       {tab === 'promos' && (
-        <View style={s.content}>
+        <ScrollView style={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
           <TouchableOpacity style={s.addBtn} onPress={() => setShowPromoModal(true)}>
             <Ionicons name="add" size={24} color="#fff" />
             <Text style={s.addBtnText}>Yeni Promosyon Kodu</Text>
           </TouchableOpacity>
           
-          <FlatList
-            data={promos}
-            keyExtractor={(item, idx) => item.id || idx.toString()}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-            renderItem={({ item }) => (
-              <View style={s.promoCard}>
+          {promos.length === 0 ? (
+            <Text style={s.empty}>Promosyon kodu yok</Text>
+          ) : (
+            promos.map((item, idx) => (
+              <View key={item.id || idx.toString()} style={s.promoCard}>
                 <Text style={s.promoCode}>{item.code}</Text>
                 <Text style={s.promoInfo}>{item.hours} Saat • {item.used_count}/{item.max_uses} Kullanım</Text>
               </View>
-            )}
-            ListEmptyComponent={<Text style={s.empty}>Promosyon kodu yok</Text>}
-          />
-        </View>
+            ))
+          )}
+        </ScrollView>
       )}
       
       {/* NOTIFICATIONS */}
@@ -646,7 +640,7 @@ const s = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' },
   loadingText: { color: '#9CA3AF', marginTop: 12 },
   
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#0F172A' },
   title: { fontSize: 20, fontWeight: '700', color: '#fff' },
   
   tabs: { backgroundColor: '#1E293B', paddingVertical: 8 },

@@ -15,7 +15,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://driver-kyc-system.preview.emergentagent.com';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-dev.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 interface QRTripEndModalProps {

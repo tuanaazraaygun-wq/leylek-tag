@@ -249,6 +249,11 @@ export default function LiveMapView({
   // 🆕 Matrix Tarzı Durum Mesajları
   const [matrixStatus, setMatrixStatus] = useState('');
   
+  // 🆕 IN-APP NAVİGASYON - Rota çizimi için
+  const [navigationRoute, setNavigationRoute] = useState<{latitude: number; longitude: number}[]>([]);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [navigationInfo, setNavigationInfo] = useState<{distance: string; duration: string} | null>(null);
+  
   // API çağrı sayacı (rate limiting için)
   const lastRouteCall = useRef<number>(0);
   
@@ -447,7 +452,67 @@ export default function LiveMapView({
   }, [userLocation, otherLocation, destinationLocation]);
 
   // Google/Apple Maps navigasyon aç
-  const openNavigation = () => {
+  // 🆕 Polyline decode fonksiyonu - Google'dan gelen encoded polyline'ı koordinatlara çevir
+  const decodePolyline = (encoded: string): {latitude: number; longitude: number}[] => {
+    const points: {latitude: number; longitude: number}[] = [];
+    let index = 0, lat = 0, lng = 0;
+    
+    while (index < encoded.length) {
+      let b, shift = 0, result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+      
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+      
+      points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+    }
+    return points;
+  };
+
+  // 🆕 IN-APP NAVİGASYON - Mevcut OSRM rotasını kullan
+  const startInAppNavigation = async () => {
+    if (!userLocation || !otherLocation) {
+      Alert.alert('Hata', 'Konum bilgisi alınamadı');
+      return;
+    }
+    
+    // Mevcut OSRM rotası zaten çizili (meetingRoute)
+    // Haritayı rotaya zoom yap
+    if (mapRef.current && meetingRoute.length > 0) {
+      mapRef.current.fitToCoordinates(meetingRoute, {
+        edgePadding: { top: 100, right: 50, bottom: 200, left: 50 },
+        animated: true
+      });
+    }
+    
+    setIsNavigating(true);
+    
+    // Mesafe ve süre bilgisini göster
+    const distText = meetingDistance ? `${meetingDistance.toFixed(1)} km` : 'Hesaplanıyor...';
+    const durText = meetingDuration ? `${meetingDuration} dakika` : '';
+    
+    Alert.alert(
+      '🧭 Navigasyon Aktif', 
+      `Yolcuya mesafe: ${distText}\nTahmini süre: ${durText}\n\nYeşil rota sizi yolcuya götürür.`,
+      [{ text: 'Tamam', style: 'default' }]
+    );
+  };
+  
+  // Eski fonksiyon - artık kullanılmıyor ama backup olarak kalıyor
+  const openExternalNavigation = () => {
     if (!otherLocation) return;
     
     const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
@@ -464,6 +529,11 @@ export default function LiveMapView({
     } else {
       Linking.openURL(webUrl);
     }
+  };
+
+  // 🆕 Ana navigasyon fonksiyonu - Uygulama içi navigasyon
+  const openNavigation = () => {
+    startInAppNavigation();
   };
 
   // Web fallback
@@ -1476,10 +1546,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
   },
-  // 🆕 Matrix Durum Yazısı Stilleri - SÜRÜCÜ (YEŞİL)
+  // 🆕 Matrix Durum Yazısı Stilleri - SÜRÜCÜ (YEŞİL) - Üst çerçevenin altında
   matrixContainerDriver: {
     position: 'absolute',
-    top: 175,
+    top: 155, // Üst info panelin hemen altında
     left: 12,
     zIndex: 1000,
     backgroundColor: 'rgba(0, 20, 0, 0.9)',
@@ -1495,10 +1565,10 @@ const styles = StyleSheet.create({
     color: '#00FF00',
     letterSpacing: 1.5,
   },
-  // 🆕 Matrix Durum Yazısı Stilleri - YOLCU (KIRMIZI)
+  // 🆕 Matrix Durum Yazısı Stilleri - YOLCU (KIRMIZI) - Üst çerçevenin altında
   matrixContainerPassenger: {
     position: 'absolute',
-    top: 175,
+    top: 155, // Üst info panelin hemen altında
     left: 12,
     zIndex: 1000,
     backgroundColor: 'rgba(30, 0, 0, 0.9)',
