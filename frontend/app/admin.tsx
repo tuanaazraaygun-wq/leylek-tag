@@ -1,10 +1,9 @@
 /**
  * Admin Panel - Leylek TAG
- * v7 - TÜM CİHAZLARLA UYUMLU MİNİMAL VERSİYON
- * Sadece temel React Native componentleri kullanılıyor
+ * v8 - ERROR BOUNDARY İLE SARMALANMIŞ VERSİYON
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import {
   View,
   Text,
@@ -12,121 +11,161 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   RefreshControl,
   ActivityIndicator,
-  Modal,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// API URL
 const API_BASE = 'https://api.leylektag.com/api';
 
-export default function AdminPanel() {
-  const router = useRouter();
-  
-  // State
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [phone, setPhone] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  
-  const [tab, setTab] = useState('dashboard');
-  const [stats, setStats] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [trips, setTrips] = useState([]);
-  const [search, setSearch] = useState('');
+// Error Boundary Class Component
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
-  // Init
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.log('Admin Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorStyles.container}>
+          <Text style={errorStyles.title}>Bir hata oluştu</Text>
+          <Text style={errorStyles.message}>{String(this.state.error)}</Text>
+          <TouchableOpacity 
+            style={errorStyles.button} 
+            onPress={() => this.setState({ hasError: false, error: null })}
+          >
+            <Text style={errorStyles.buttonText}>Tekrar Dene</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  title: { color: '#F00', fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  message: { color: '#FFF', fontSize: 14, textAlign: 'center', marginBottom: 20 },
+  button: { backgroundColor: '#3B82F6', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 8 },
+  buttonText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
+});
+
+// Main Admin Component
+function AdminContent() {
+  const router = useRouter();
+  const [state, setState] = useState({
+    loading: true,
+    error: '',
+    isAdmin: false,
+    phone: '',
+    tab: 'dashboard',
+    stats: null,
+    users: [],
+    trips: [],
+    search: '',
+    refreshing: false,
+  });
+
   useEffect(() => {
-    checkAdmin();
+    init();
   }, []);
 
-  const checkAdmin = async () => {
+  const init = async () => {
     try {
       const userData = await AsyncStorage.getItem('leylek_user');
+      
       if (!userData) {
-        setError('Giriş yapmalısınız');
-        setLoading(false);
+        setState(s => ({ ...s, loading: false, error: 'Giriş yapmalısınız' }));
         return;
       }
       
-      const user = JSON.parse(userData);
+      let user;
+      try {
+        user = JSON.parse(userData);
+      } catch (e) {
+        setState(s => ({ ...s, loading: false, error: 'Kullanıcı verisi okunamadı' }));
+        return;
+      }
+      
       const userPhone = String(user.phone || '').replace(/\D/g, '');
       
-      console.log('[Admin] Checking phone:', userPhone);
+      const checkRes = await fetch(`${API_BASE}/admin/check?phone=${userPhone}`);
+      const checkData = await checkRes.json();
       
-      const res = await fetch(`${API_BASE}/admin/check?phone=${userPhone}`);
-      const data = await res.json();
-      
-      console.log('[Admin] Check result:', data);
-      
-      if (data.is_admin === true) {
-        setIsAdmin(true);
-        setPhone(userPhone);
-        loadData(userPhone);
-      } else {
-        setError('Admin yetkisi yok');
-        setLoading(false);
+      if (checkData.is_admin !== true) {
+        setState(s => ({ ...s, loading: false, error: 'Admin yetkisi yok' }));
+        return;
       }
+      
+      setState(s => ({ ...s, isAdmin: true, phone: userPhone }));
+      await loadData(userPhone);
+      
     } catch (err) {
-      console.log('[Admin] Error:', err);
-      setError('Bağlantı hatası');
-      setLoading(false);
+      setState(s => ({ ...s, loading: false, error: 'Bağlantı hatası: ' + String(err.message || err) }));
     }
   };
 
   const loadData = async (adminPhone) => {
     try {
       // Dashboard
-      const dashRes = await fetch(`${API_BASE}/admin/dashboard/full?admin_phone=${adminPhone}`);
-      const dashData = await dashRes.json();
-      if (dashData.success && dashData.stats) {
-        setStats(dashData.stats);
-      }
+      let stats = null;
+      try {
+        const dashRes = await fetch(`${API_BASE}/admin/dashboard/full?admin_phone=${adminPhone}`);
+        const dashData = await dashRes.json();
+        if (dashData.success) stats = dashData.stats;
+      } catch (e) {}
       
       // Users
-      const usersRes = await fetch(`${API_BASE}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=50`);
-      const usersData = await usersRes.json();
-      if (usersData.success && usersData.users) {
-        setUsers(usersData.users);
-      }
+      let users = [];
+      try {
+        const usersRes = await fetch(`${API_BASE}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=50`);
+        const usersData = await usersRes.json();
+        if (usersData.success && Array.isArray(usersData.users)) users = usersData.users;
+      } catch (e) {}
       
       // Trips
-      const tripsRes = await fetch(`${API_BASE}/admin/trips?admin_phone=${adminPhone}&page=1&limit=50`);
-      const tripsData = await tripsRes.json();
-      if (tripsData.success && tripsData.trips) {
-        setTrips(tripsData.trips);
-      }
+      let trips = [];
+      try {
+        const tripsRes = await fetch(`${API_BASE}/admin/trips?admin_phone=${adminPhone}&page=1&limit=50`);
+        const tripsData = await tripsRes.json();
+        if (tripsData.success && Array.isArray(tripsData.trips)) trips = tripsData.trips;
+      } catch (e) {}
+      
+      setState(s => ({ ...s, loading: false, refreshing: false, stats, users, trips }));
     } catch (err) {
-      console.log('[Admin] Load error:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setState(s => ({ ...s, loading: false, refreshing: false }));
     }
   };
 
   const refresh = () => {
-    setRefreshing(true);
-    loadData(phone);
+    setState(s => ({ ...s, refreshing: true }));
+    loadData(state.phone);
   };
 
   const goBack = () => {
-    try {
-      router.back();
-    } catch (e) {
-      router.replace('/');
-    }
+    try { router.back(); } catch (e) { router.replace('/'); }
   };
 
-  // LOADING SCREEN
-  if (loading) {
+  const setTab = (tab) => setState(s => ({ ...s, tab }));
+  const setSearch = (search) => setState(s => ({ ...s, search }));
+
+  // LOADING
+  if (state.loading) {
     return (
-      <View style={styles.fullScreen}>
-        <View style={styles.center}>
+      <View style={styles.screen}>
+        <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
           <Text style={styles.loadingText}>Yükleniyor...</Text>
         </View>
@@ -134,15 +173,14 @@ export default function AdminPanel() {
     );
   }
 
-  // ERROR SCREEN
-  if (error) {
+  // ERROR
+  if (state.error) {
     return (
-      <View style={styles.fullScreen}>
-        <View style={styles.center}>
-          <Text style={styles.errorIcon}>!</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.btn} onPress={goBack}>
-            <Text style={styles.btnText}>Geri Dön</Text>
+      <View style={styles.screen}>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>{state.error}</Text>
+          <TouchableOpacity style={styles.blueBtn} onPress={goBack}>
+            <Text style={styles.blueBtnText}>Geri Dön</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -150,13 +188,13 @@ export default function AdminPanel() {
   }
 
   // NOT ADMIN
-  if (!isAdmin) {
+  if (!state.isAdmin) {
     return (
-      <View style={styles.fullScreen}>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>Yetkisiz erişim</Text>
-          <TouchableOpacity style={styles.btn} onPress={goBack}>
-            <Text style={styles.btnText}>Geri Dön</Text>
+      <View style={styles.screen}>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>Yetkisiz</Text>
+          <TouchableOpacity style={styles.blueBtn} onPress={goBack}>
+            <Text style={styles.blueBtnText}>Geri Dön</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -164,186 +202,128 @@ export default function AdminPanel() {
   }
 
   // Filter users
-  const filteredUsers = search.length > 0
-    ? users.filter(u => {
-        const name = String(u.name || '').toLowerCase();
-        const ph = String(u.phone || '');
-        return name.includes(search.toLowerCase()) || ph.includes(search);
+  const filteredUsers = state.search
+    ? state.users.filter(u => {
+        const n = String(u.name || '').toLowerCase();
+        const p = String(u.phone || '');
+        return n.includes(state.search.toLowerCase()) || p.includes(state.search);
       })
-    : users;
+    : state.users;
 
-  // MAIN ADMIN PANEL
+  // MAIN PANEL
   return (
-    <View style={styles.fullScreen}>
-      {/* HEADER */}
+    <View style={styles.screen}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.headerBtn}>
           <Text style={styles.headerBtnText}>{'<'}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Admin Panel</Text>
+        <Text style={styles.headerTitle}>Admin</Text>
         <TouchableOpacity onPress={refresh} style={styles.headerBtn}>
-          <Text style={styles.headerBtnText}>↻</Text>
+          <Text style={styles.headerBtnText}>R</Text>
         </TouchableOpacity>
       </View>
-      
-      {/* TABS */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity 
-          style={[styles.tabBtn, tab === 'dashboard' && styles.tabActive]} 
-          onPress={() => setTab('dashboard')}
-        >
-          <Text style={[styles.tabText, tab === 'dashboard' && styles.tabTextActive]}>Panel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tabBtn, tab === 'users' && styles.tabActive]} 
-          onPress={() => setTab('users')}
-        >
-          <Text style={[styles.tabText, tab === 'users' && styles.tabTextActive]}>Kullanıcılar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tabBtn, tab === 'trips' && styles.tabActive]} 
-          onPress={() => setTab('trips')}
-        >
-          <Text style={[styles.tabText, tab === 'trips' && styles.tabTextActive]}>Yolculuklar</Text>
-        </TouchableOpacity>
+
+      {/* Tabs */}
+      <View style={styles.tabs}>
+        {['dashboard', 'users', 'trips'].map(t => (
+          <TouchableOpacity 
+            key={t}
+            style={[styles.tabBtn, state.tab === t && styles.tabActive]}
+            onPress={() => setTab(t)}
+          >
+            <Text style={[styles.tabText, state.tab === t && styles.tabTextActive]}>
+              {t === 'dashboard' ? 'Panel' : t === 'users' ? 'Kullanıcılar' : 'Yolculuklar'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
-      
-      {/* CONTENT */}
-      <ScrollView 
+
+      {/* Content */}
+      <ScrollView
         style={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
-        }
+        refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={refresh} />}
       >
-        {/* DASHBOARD TAB */}
-        {tab === 'dashboard' && (
+        {/* Dashboard */}
+        {state.tab === 'dashboard' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Genel Bakış</Text>
-            
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{stats?.users?.total || 0}</Text>
+            <View style={styles.row}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.users?.total || 0}</Text>
                 <Text style={styles.statLabel}>Kullanıcı</Text>
               </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{stats?.users?.drivers || 0}</Text>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.users?.drivers || 0}</Text>
                 <Text style={styles.statLabel}>Sürücü</Text>
               </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{stats?.users?.online_drivers || 0}</Text>
+            </View>
+            <View style={styles.row}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.users?.online_drivers || 0}</Text>
                 <Text style={styles.statLabel}>Online</Text>
               </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{stats?.trips?.completed_today || 0}</Text>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.trips?.completed_today || 0}</Text>
                 <Text style={styles.statLabel}>Bugün</Text>
               </View>
             </View>
-            
-            <Text style={styles.sectionTitle}>Son Yolculuklar</Text>
-            {trips.slice(0, 5).map((trip, idx) => (
-              <View key={trip.id || idx} style={styles.listItem}>
-                <View style={styles.listItemLeft}>
-                  <Text style={styles.listItemTitle}>{trip.pickup_location || 'Bilinmiyor'}</Text>
-                  <Text style={styles.listItemSub}>{trip.dropoff_location || ''}</Text>
-                </View>
-                <View style={styles.listItemRight}>
-                  <Text style={styles.listItemPrice}>{trip.final_price || trip.offered_price || 0} ₺</Text>
-                  <Text style={[
-                    styles.listItemStatus,
-                    trip.status === 'completed' ? styles.statusGreen : styles.statusOrange
-                  ]}>
-                    {trip.status === 'completed' ? 'Tamamlandı' : 
-                     trip.status === 'cancelled' ? 'İptal' : 
-                     trip.status === 'matched' ? 'Eşleşti' : 'Bekliyor'}
-                  </Text>
-                </View>
-              </View>
-            ))}
           </View>
         )}
-        
-        {/* USERS TAB */}
-        {tab === 'users' && (
+
+        {/* Users */}
+        {state.tab === 'users' && (
           <View style={styles.section}>
             <TextInput
-              style={styles.searchInput}
-              placeholder="İsim veya telefon ara..."
-              placeholderTextColor="#888"
-              value={search}
+              style={styles.input}
+              placeholder="Ara..."
+              placeholderTextColor="#666"
+              value={state.search}
               onChangeText={setSearch}
             />
-            
             <Text style={styles.countText}>{filteredUsers.length} kullanıcı</Text>
-            
-            {filteredUsers.map((user, idx) => (
-              <View key={user.id || idx} style={styles.listItem}>
-                <View style={styles.listItemLeft}>
-                  <Text style={styles.listItemTitle}>{user.name || 'İsimsiz'}</Text>
-                  <Text style={styles.listItemSub}>{user.phone || ''}</Text>
-                  <Text style={styles.listItemMeta}>
-                    {user.is_driver ? 'Sürücü' : 'Yolcu'} • {user.total_trips || 0} trip
-                  </Text>
-                </View>
-                <View style={styles.listItemRight}>
-                  {user.is_online && (
-                    <View style={styles.onlineBadge}>
-                      <Text style={styles.onlineText}>Online</Text>
-                    </View>
-                  )}
-                </View>
+            {filteredUsers.slice(0, 30).map((u, i) => (
+              <View key={u.id || i} style={styles.card}>
+                <Text style={styles.cardTitle}>{u.name || 'İsimsiz'}</Text>
+                <Text style={styles.cardSub}>{u.phone || ''}</Text>
               </View>
             ))}
           </View>
         )}
-        
-        {/* TRIPS TAB */}
-        {tab === 'trips' && (
+
+        {/* Trips */}
+        {state.tab === 'trips' && (
           <View style={styles.section}>
-            <Text style={styles.countText}>{trips.length} yolculuk</Text>
-            
-            {trips.map((trip, idx) => (
-              <View key={trip.id || idx} style={styles.listItem}>
-                <View style={styles.listItemLeft}>
-                  <Text style={styles.listItemTitle} numberOfLines={1}>
-                    {trip.pickup_location || 'Başlangıç'}
-                  </Text>
-                  <Text style={styles.listItemSub} numberOfLines={1}>
-                    → {trip.dropoff_location || 'Varış'}
-                  </Text>
-                  <Text style={styles.listItemMeta}>
-                    {trip.created_at ? new Date(trip.created_at).toLocaleDateString('tr-TR') : ''}
-                  </Text>
-                </View>
-                <View style={styles.listItemRight}>
-                  <Text style={styles.listItemPrice}>{trip.final_price || trip.offered_price || 0} ₺</Text>
-                  <Text style={[
-                    styles.listItemStatus,
-                    trip.status === 'completed' ? styles.statusGreen : 
-                    trip.status === 'cancelled' ? styles.statusRed : styles.statusOrange
-                  ]}>
-                    {trip.status === 'completed' ? 'Tamamlandı' : 
-                     trip.status === 'cancelled' ? 'İptal' : 
-                     trip.status === 'matched' ? 'Eşleşti' : 'Bekliyor'}
-                  </Text>
-                </View>
+            <Text style={styles.countText}>{state.trips.length} yolculuk</Text>
+            {state.trips.slice(0, 30).map((t, i) => (
+              <View key={t.id || i} style={styles.card}>
+                <Text style={styles.cardTitle}>{t.pickup_location || 'Bilinmiyor'}</Text>
+                <Text style={styles.cardSub}>{t.final_price || t.offered_price || 0} TL</Text>
               </View>
             ))}
           </View>
         )}
-        
-        <View style={styles.bottomSpace} />
+
+        <View style={styles.spacer} />
       </ScrollView>
     </View>
   );
 }
 
-// MINIMAL STYLES - No complex properties
+// Wrap with Error Boundary
+export default function AdminPanel() {
+  return (
+    <ErrorBoundary>
+      <AdminContent />
+    </ErrorBoundary>
+  );
+}
+
 const styles = StyleSheet.create({
-  fullScreen: {
+  screen: {
     flex: 1,
-    backgroundColor: '#111827',
+    backgroundColor: '#0F172A',
   },
-  center: {
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -351,60 +331,46 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: '#FFF',
-    marginTop: 16,
+    marginTop: 15,
     fontSize: 16,
-  },
-  errorIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#EF4444',
-    color: '#FFF',
-    fontSize: 36,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    lineHeight: 60,
-    marginBottom: 16,
   },
   errorText: {
     color: '#EF4444',
     fontSize: 18,
-    textAlign: 'center',
     marginBottom: 20,
+    textAlign: 'center',
   },
-  btn: {
+  blueBtn: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: 30,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 8,
   },
-  btnText: {
+  blueBtnText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1F2937',
-    paddingTop: Platform.OS === 'ios' ? 50 : 35,
+    backgroundColor: '#1E293B',
+    paddingTop: Platform.OS === 'ios' ? 50 : 40,
     paddingBottom: 15,
     paddingHorizontal: 15,
   },
   headerBtn: {
     width: 44,
     height: 44,
+    backgroundColor: '#334155',
     borderRadius: 22,
-    backgroundColor: '#374151',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerBtnText: {
     color: '#FFF',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   headerTitle: {
@@ -412,162 +378,90 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  
-  // Tabs
-  tabsRow: {
+  tabs: {
     flexDirection: 'row',
-    backgroundColor: '#1F2937',
+    backgroundColor: '#1E293B',
     paddingHorizontal: 10,
     paddingBottom: 10,
   },
   tabBtn: {
     flex: 1,
+    backgroundColor: '#334155',
+    marginHorizontal: 3,
     paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: '#374151',
-    marginHorizontal: 4,
     borderRadius: 8,
+    alignItems: 'center',
   },
   tabActive: {
     backgroundColor: '#3B82F6',
   },
   tabText: {
-    color: '#9CA3AF',
-    fontSize: 14,
+    color: '#94A3B8',
+    fontSize: 13,
     fontWeight: '600',
   },
   tabTextActive: {
     color: '#FFF',
   },
-  
-  // Content
   content: {
     flex: 1,
   },
   section: {
     padding: 15,
   },
-  sectionTitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 15,
-    marginTop: 10,
-  },
-  
-  // Stats
-  statsGrid: {
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     marginBottom: 10,
   },
-  statBox: {
-    width: '48%',
-    backgroundColor: '#1F2937',
+  statCard: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    marginHorizontal: 5,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 10,
-    marginRight: '2%',
   },
   statNum: {
     color: '#FFF',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
   },
   statLabel: {
-    color: '#9CA3AF',
-    fontSize: 13,
+    color: '#94A3B8',
+    fontSize: 12,
     marginTop: 5,
   },
-  
-  // Search
-  searchInput: {
-    backgroundColor: '#1F2937',
-    borderRadius: 10,
+  input: {
+    backgroundColor: '#1E293B',
+    color: '#FFF',
     paddingHorizontal: 15,
     paddingVertical: 12,
-    color: '#FFF',
+    borderRadius: 8,
     fontSize: 16,
-    marginBottom: 15,
+    marginBottom: 10,
   },
   countText: {
-    color: '#9CA3AF',
+    color: '#94A3B8',
     fontSize: 14,
     marginBottom: 10,
   },
-  
-  // List Items
-  listItem: {
-    flexDirection: 'row',
-    backgroundColor: '#1F2937',
-    borderRadius: 10,
+  card: {
+    backgroundColor: '#1E293B',
     padding: 15,
+    borderRadius: 10,
     marginBottom: 10,
   },
-  listItemLeft: {
-    flex: 1,
-  },
-  listItemRight: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  listItemTitle: {
+  cardTitle: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  listItemSub: {
-    color: '#9CA3AF',
+  cardSub: {
+    color: '#94A3B8',
     fontSize: 14,
     marginTop: 3,
   },
-  listItemMeta: {
-    color: '#6B7280',
-    fontSize: 12,
-    marginTop: 5,
-  },
-  listItemPrice: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  listItemStatus: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 5,
-    overflow: 'hidden',
-  },
-  statusGreen: {
-    backgroundColor: '#059669',
-    color: '#FFF',
-  },
-  statusOrange: {
-    backgroundColor: '#D97706',
-    color: '#FFF',
-  },
-  statusRed: {
-    backgroundColor: '#DC2626',
-    color: '#FFF',
-  },
-  
-  // Online badge
-  onlineBadge: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  onlineText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  
-  bottomSpace: {
+  spacer: {
     height: 50,
   },
 });
