@@ -425,7 +425,7 @@ NETGSM_HEADER=xxx
 
 ### Frontend (.env)
 ```
-EXPO_PUBLIC_BACKEND_URL=https://tag-dispatch.preview.emergentagent.com
+EXPO_PUBLIC_BACKEND_URL=https://notify-rating.preview.emergentagent.com
 EXPO_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
 EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=xxx

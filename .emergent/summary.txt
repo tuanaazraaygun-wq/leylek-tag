@@ -1,179 +1,197 @@
-<analysis>**original_problem_statement**: The user wants to build a full-stack ride-sharing application called LeylekTag.
+<analysis>**original_problem_statement**: The user wants to build a full-stack ride-sharing application called LeylekTag. The latest user requests focus on fixing critical broken features and enhancing the user experience for both drivers and passengers.
 
 **PRODUCT REQUIREMENTS (Latest User-defined Priority):**
-1.  **Core Ride-Hailing Flow:** A robust system for passengers to request rides, a dispatch queue, and a matching system.
-2.  **Admin Panel (Web & APK):** A comprehensive dashboard for admins to manage the application. It must be stable across all Android devices. Currently, it needs features like push notifications to be re-implemented.
-3.  **Driver Rating System:** After a trip ends (QR code scan), the driver must be prompted to rate the passenger. This was fixed in the session.
-4.  **Navigation:** When a driver clicks Yolcuya Git (Go to Passenger), the system should automatically calculate the route and open it in the default external navigation app (e.g., Google Maps in browser/app). This was changed multiple times and is the final user-approved behavior.
-5.  **Modern Community Chat (Leylek Muhabbeti):** A redesigned chat interface resembling a mix of Twitter, WhatsApp, and Discord, with colored message bubbles, reactions, media sharing capabilities, and an online user count. The Supabase real-time backend should be preserved.
-6.  **Push Notification System:** Admins need to send manual notifications (to all, drivers, or passengers). The system should also send automatic notifications for key events (new ride offer, match found, etc.), even when the app is offline.
-7.  **Payment Integration (iyzico):** Integrate the iyzico payment gateway for drivers to purchase activation time packages.
-8.  **Enhanced Security & Validation:** Block access from outside Turkey, log all login attempts.
+1.  **Fix Push Notifications (CRITICAL):** Notifications for new ride offers, matches, and other key events are not working, especially when the app is in the background or closed. This is the highest priority issue.
+2.  **Fix Driver Rating System:** The driver is not prompted to rate the passenger after a trip is completed via QR code scan. This core loop is broken.
+3.  **Implement Driver Live Heatmap:** The driver's home screen should be redesigned to show a live map of hot zones (areas with high demand) and include a button for drivers to go offline.
+4.  **Premium Passenger Waiting Screen:** The screen shown to passengers after sending a ride offer needs a premium redesign with a live map, countdown timer, and better status updates. (This was partially implemented).
+5.  **Fix UI Bugs:** The on-screen keyboard covers text input fields, and the number of nearby drivers shown to passengers is incorrect.
+6.  **Full Admin Panel Functionality:** Restore missing features to the Admin Panel (which was simplified to fix a critical bug).
+7.  **iyzico Payment Integration:** Implement the full payment flow for drivers to purchase activation packages.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-The application is a full-stack ride-sharing app with a React Native frontend and a FastAPI backend. The backend is now successfully deployed and running on the user's dedicated server (), which has resolved the NETGSM SMS IP blocking issue.
-
-A critical, long-standing white screen bug on Android devices that made the Admin Panel unusable has been **resolved**. This was achieved by identifying that the wrong file was being edited ( instead of ) and then completely rewriting the correct component with a simpler, more compatible structure. As a result, the Admin Panel is now visible but is functionally minimal, missing many of its previous features.
-
-The Leylek Muhabbeti community chat has been completely redesigned with a modern UI, and a bug where the keyboard would cover the input field has been fixed. The driver rating system has been fixed using a polling mechanism to ensure the rating modal appears for the driver after a trip. The navigation flow has been finalized to use an external  call.
+A full-stack ride-sharing app with a React Native frontend and a FastAPI backend deployed on the user's dedicated server (). The app has core features like user auth, ride requests, and a dispatch queue. A Community Chat and a Premium Passenger Waiting Screen have been recently implemented. However, several critical features like push notifications and driver-side rating are currently broken. The Admin Panel is functional but minimal, lacking most of its intended features. The backend has been updated with numerous new endpoints to support requested features, but the frontend integration is either incomplete or buggy.
 
 **Last working item**:
--   Last item agent was working: The user requested the implementation of a comprehensive Push Notification system. The agent started planning, outlined the required features (manual admin notifications, automatic event-based notifications), and asked the user to choose a service provider (Expo Push, FCM, OneSignal). The user then asked the agent to check if a notification infrastructure already existed from previous work. The agent was about to investigate the existing codebase for any push notification setup.
--   Status: **IN PROGRESS**
+-   Last item agent was working: The agent was simultaneously trying to address two main user requests:
+    1.  **Debugging Push Notifications:** After multiple attempts to implement them, the user confirmed notifications are still not working. The agent was investigating the frontend hooks () and backend logic.
+    2.  **Implementing Driver Heatmap:** The user requested a redesign of the driver's home screen with a live activity map. The agent was starting this implementation.
+    The session was severely hampered by persistent platform connection issues (Bad Gateway), which blocked the agent from making further progress. The agent was stuck in a loop trying to execute basic commands.
+-   Status: **BLOCKED**
 -   Agent Testing Done: N
--   Which testing method agent to use? **integration_playbook_expert_v2** to get the best practice for the chosen push notification service, followed by **manual testing by user** via a new APK build to confirm notifications are received on a real device.
--   User Testing Done: N
+-   Which testing method agent to use? **manual testing by curl** to verify backend endpoints individually, followed by user testing of a new **APK build** to confirm fixes on a real device.
+-   User Testing Done: Y (User confirmed that notifications and driver rating are still broken in the latest APK).
 
 **All Pending/In progress Issue list**:
--   **Issue 1: Admin Panel Features Missing (P0)**
--   **Issue 2: Driver Rating Polling is a Workaround (P1)**
--   **Issue 3:  Table Missing in Database (P2)**
+-   **Issue 1: Push Notifications Not Working (P0)**
+-   **Issue 2: Driver Cannot Rate Passenger (P0)**
+-   **Issue 3: Keyboard Hides Input Fields (P1)**
+-   **Issue 4: Admin Panel Features Missing (P1)**
+-   **Issue 5: Inaccurate Nearby Driver Count (P2)**
 
 **Issues Detail:**
--   **Issue 1: Admin Panel Features Missing**
-    -   **Description:** To fix the critical white screen bug, the Admin Panel () was rewritten to be extremely simple. It now only displays basic User and Trip lists. Features like Online Driver monitoring, Promotions, Notification Sending, Login Logs, and Settings are missing from the UI.
-    -   **Attempted fixes:** N/A (This is a result of a fix for a more critical bug).
+-   **Issue 1: Push Notifications Not Working**
+    -   **Description:** A comprehensive push notification system was implemented on the backend () and frontend (, ), but no notifications (new offer, match accepted, etc.) are delivered to user devices. This is a critical failure.
+    -   **Attempted fixes:** The agent added notification triggers to the backend dispatch and matching logic, created a notifications tab in the Admin Panel, and deployed the changes. The user was also provided SQL to create  and  structures. The fixes have not worked. The agent was unable to debug further due to platform instability.
     -   **Next debug checklist:**
-        1.  Confirm with the user which features to add back first (user has already requested Notifications).
-        2.  Incrementally add back the features to , ensuring each addition does not re-introduce the white screen bug.
-        3.  Create separate components for each tab/feature within the Admin Panel to keep the main file clean and prevent future instability.
-    -   **Why fix this issue and what will be achieved with the fix?** To restore full administrative functionality to the application.
-    -   **Status**: NOT STARTED
-    -   **Is recurring issue?** N
+        1.  Verify that a user's push token is successfully obtained and saved to the  table in the database upon login. Check the  endpoint logs and logic.
+        2.  Add extensive logging to the  function in  to see the exact payload and the response from the Expo push server.
+        3.  Create a temporary backend endpoint to send a test notification to a hardcoded, known-good push token to isolate the problem (Expo vs. app logic).
+        4.  Confirm the frontend correctly requests notification permissions on app startup.
+    -   **Why fix this issue and what will be achieved with the fix?** This is essential for the app's real-time functionality. Without it, drivers and passengers miss critical, time-sensitive updates.
+    -   **Status**: IN PROGRESS
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on other issue:** None.
+
+-   **Issue 2: Driver Cannot Rate Passenger**
+    -   **Description:** After a trip ends, the passenger is prompted to rate the driver, but the driver never receives the prompt to rate the passenger. This breaks the two-way rating system.
+    -   **Attempted fixes:** The handoff mentioned a polling mechanism was implemented as a workaround. During this session, the agent verified that the backend sends a  socket event to the driver. A corresponding listener was confirmed to exist in . A  endpoint was also added to support polling. Despite these measures, the feature remains broken.
+    -   **Next debug checklist:**
+        1.  In , add  statements inside the driver's  hook that polls the trip status to ensure it's running and checking the correct trip ID.
+        2.  In , add a  inside the driver's  socket event handler to confirm if the event is being received from the backend.
+        3.  The issue is very likely a state management bug within the monolithic . Trace the  state variable for the driver to see why it isn't being set correctly.
+    -   **Why fix this issue and what will be achieved with the fix?** A two-way rating system is fundamental for building trust and safety on the platform.
+    -   **Status**: IN PROGRESS
+    -   **Is recurring issue?** Y
     -   **Should Test frontend/backend/both after fix?** Frontend
     -   **Blocked on other issue:** None.
--   **Issue 2: Driver Rating Polling is a Workaround**
-    -   **Description:** The issue where drivers were not getting the rating modal was fixed by adding a  hook that polls the trip status every 3 seconds. If the status is completed, the modal is shown. This works but is inefficient.
-    -   **Attempted fixes:** A polling mechanism was implemented. The original issue seems to be that the driver's frontend client was not correctly handling the  Socket.IO event.
-    -   **Next debug checklist:**
-        1.  Re-investigate the Socket.IO event listener in  for the driver.
-        2.  Add debug logs on the frontend to confirm if the  event is received but not acted upon, or not received at all.
-        3.  Ensure the driver's socket connection remains active and joined to the correct room throughout the trip lifecycle.
-    -   **Why fix this issue and what will be achieved with the fix?** Replacing polling with a direct event-driven approach will be more efficient, reduce unnecessary network requests, and provide a more real-time experience.
-    -   **Status**: RESOLVED (with workaround)
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Frontend
--   **Issue 3:  Table Missing in Database**
-    -   **Description:** The backend has API endpoints for creating promotions, but the user's Supabase database is missing the corresponding  table, causing these API calls to fail.
-    -   **Attempted fixes:** This was identified in the system analysis but not yet addressed.
-    -   **Next debug checklist:**
-        1.  Provide the user with the correct SQL  script for the  table.
-        2.  Instruct the user to run this script in their Supabase SQL Editor.
-    -   **Why fix this issue and what will be achieved with the fix?** Will enable the admin to create and manage promotion codes.
-    -   **Status**: NOT STARTED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Backend
 
 **In progress Task List**:
--   **Task 1: Implement Push Notification System (P0)**
-    -   **Where to resume**: The agent needs to first investigate the codebase (as requested by the user) to see if  or a similar library is already partially set up in  or .
-    -   **What will be achieved with this?** A complete push notification system allowing admins to send manual alerts and the system to send automatic, event-driven notifications.
+-   **Task 1: Implement Driver's Live Heatmap Screen (P0)**
+    -   **Description:** The user wants to replace the driver's current home screen with a live activity map. This map should display hot zones (areas with high ride demand) using animated, pulsating circles. It must also feature a prominent OFF button that allows the driver to stop receiving ride offers.
+    -   **Where to resume**: A basic  component and a  backend endpoint were created. This foundation needs to be built upon to meet the user's detailed request. The next steps are to modify  to render pulsating circles based on the API data and implement the OFF button functionality on both the frontend and backend (e.g., toggling an  flag in the  table and filtering the dispatch queue).
+    -   **What will be achieved with this?** It will provide drivers with valuable real-time demand information and give them control over their work status.
     -   **Status**: IN PROGRESS
     -   **Should Test frontend/backend/both after fix?** Both
-    -   **Blocked on something**: Waiting on the investigation of existing code before proceeding.
+    -   **Blocked on something**: The critical notification and rating bugs should be fixed first.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   (P1) **Integrate Backend Service Modules:** The created services in  (especially ) need to be imported and wired into the main  logic.
-    -   (P1) **iyzico Payment Integration (Frontend):** Implement the frontend UI for drivers to select and pay for activation packages.
+    -   (P1) **Fix Keyboard Overlap:** Ensure  is used correctly on all screens with text inputs (especially Leylek Muhabbeti) to prevent the keyboard from covering the input field.
+    -   (P1) **Restore Admin Panel Features:** Incrementally re-implement missing admin features like sending notifications, viewing online drivers, and managing promotions in .
+    -   (P1) **iyzico Payment Integration:** Build the frontend UI for driver package purchases and connect it to the backend .
 -   **Future Tasks:**
-    -   (P2) **Refactor :** This >12,000 line monolithic component remains a major source of technical debt and potential future bugs. It must be broken down into smaller, manageable components and custom hooks.
-    -   (P2) **Refactor :** As features are added back, they should be built as separate sub-components imported into the main panel to maintain stability.
+    -   (P2) **Create  table and Admin UI.**
+    -   (P2) **Refactor :** Decompose the massive component into smaller, manageable hooks and components to improve stability and maintainability.
+    -   (P2) **Block access from outside Turkey.**
 
 **Completed work in this session**
--   **Resolved CRITICAL Admin Panel White Screen Bug:** After a lengthy debugging process, discovered the issue was editing the wrong file. Rewrote the correct file () with a minimal, stable implementation, making the panel accessible on all Android devices.
--   **Backend Deployment & SMS Fix:** Deployed the backend to the user's server (), which resolved the NETGSM IP whitelist issue. SMS OTPs are now working correctly.
--   **Finalized Navigation Flow:** After implementing and removing in-app voice navigation and a WebView modal, the flow was finalized to the user's specification: opening the Google Maps route in an external browser/app via .
--   **Fixed Driver Rating System:** Implemented a polling mechanism in the frontend to ensure the driver is prompted to rate the passenger after a trip is completed.
--   **Redesigned Community Chat (Leylek Muhabbeti):** Overhauled the UI to a modern design with new features, and fixed a  bug.
--   **Conducted System Capacity Analysis:** Performed load testing and provided the user with a detailed report on system performance and bottlenecks.
+-   **Premium Passenger Waiting Screen:** Created a new, feature-rich waiting screen () with an animated map, countdown, and nearby driver display.
+-   **Leylek Muhabbeti Redesign:** Completely overhauled the community chat UI () with a modern design.
+-   **Dispatch Queue Logic Enhanced:** Updated backend logic to limit ride offers to a 20km radius and use a 10-second timeout before offering to the next driver.
+-   **New Backend Endpoints:** Created several new endpoints, including , , , and  to support new features and bug fixes.
+-   **Backend Deployment:** Successfully deployed multiple updates of  to the user's live server.
+-   **APK Generation:** Generated multiple APK builds via EAS for user testing.
 
 **Earlier issues found/mentioned but not fixed**
--   ** table missing**: Identified during system analysis but not yet fixed.
--   **Modular backend services not integrated**: The services in  are still not used by .
+-   The  table is still missing in the database.
+-   Modular backend services () are still not properly integrated into .
 
 **Known issue recurrence from previous fork**
--   **Frontend Instability (White Screen Bug):** This was the primary recurring issue. It was **resolved** during this session by identifying the correct file () and rewriting it for stability. The root cause was component complexity and editing the wrong file.
+-   **Driver Rating System:** This feature was fixed with a workaround in a previous session but has broken again, indicating an unstable implementation.
+-   **Platform Instability:** The agent's work was completely blocked by repeated Bad Gateway connection errors towards the end of the session. This is a new and critical environmental issue.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Device-Specific Rendering Bug:** The white screen issue was a classic example of a bug appearing only on certain devices due to frontend code complexity.
--   **Importance of File Tracing:** The resolution of the white screen bug hinged on realizing the agent was editing  (a route) instead of  (the rendered component).
--   **Remote Server Deployment:** The backend now runs on the user's private server. Changes require  and a .
--   **Polling as a Workaround:** A polling mechanism was used to fix the driver rating modal as a temporary, effective solution when the event-driven approach failed.
--   **Iterative Feature Design:** The navigation feature went through four major iterations based on user feedback (polyline -> voice nav -> WebView -> external link).
+-   **Remote Server Deployment:** The manual workflow of using  to copy  and  to deploy changes to the user's live server () is standard practice for this project.
+-   **Expo Application Services (EAS) Build:** EAS is used to create  files for user testing.
+-   **Monolithic Frontend ():** The primary source of technical debt and recurring bugs. Changes to this file are high-risk.
 
 **key DB schema**
--   **users**: Core user data.
--   **tags**: Ride request data.
--   **login_logs**: Records all user login attempts.
--   **community_messages**: Stores messages for the Leylek Muhabbeti chat.
+-   **users**: Now requires a  (text) column and an  (boolean) column.
+-   **notifications**: A table to log all sent notifications. The user was given an SQL script to create it.
 -   **The  table is still missing.**
 
 **changes in tech stack**
--    was installed but the feature using it was reverted. It may still be in .
--    was used for a feature that was subsequently removed.
+-   None.
 
 **All files of reference**
--   : **CRITICAL FILE.** This is the correct Admin Panel component. It has been rewritten to be minimal and now needs features added back carefully.
--   : The main monolithic file. Contains the logic for rendering the Admin Panel modal, the rating system, and navigation.
--   : The file for the newly redesigned community chat.
--   : The complete backend source, which is now deployed and running on the user's remote server.
+-   : Contains all backend logic. Key areas for debugging are , , and the dispatch queue functions.
+-   : The source of most frontend logic and bugs. Key areas are the  for trip polling and the  event listeners.
+-   : The recently added premium passenger waiting screen.
+-   : The new component for the driver heatmap.
+-   : Contains the logic for registering push tokens.
 
 **Areas that need refactoring**:
--   : Still the highest priority for refactoring to improve app stability and maintainability.
--   : As features are added back, it must be structured with sub-components to avoid repeating the previous instability issues.
+-   : Critically needs to be broken down into smaller components and custom hooks to address the constant stream of bugs and improve maintainability.
+-   **Push Notification Token Storage:** The logic for storing push tokens is inconsistent (referencing both a  table and a  column on the  table). This must be consolidated to a single source of truth (the  table is preferred).
 
 **key api endpoints**
--   All backend endpoints are now running on , served from the user's server at .
--   : Login endpoint.
--   : Main endpoint for admin data.
+-   
+-   
+-   
+-   
+-   
 
 **Critical Info for New Agent**
--   **The Admin Panel white screen bug is fixed, but the panel is now minimal.** The key to the fix was realizing the agent was editing  while the actual component was . Your top priority is to add features back to  without reintroducing instability. Start with Push Notifications as requested.
--   **The backend is LIVE on the user's server.** All backend changes must be manually deployed:  the updated  to  on  and run . Do not test backend changes on the preview environment, especially for services like NETGSM that rely on the server's IP.
--   **Communicate exclusively in Turkish.** The user is responsive and provides clear feedback in Turkish.
+-   **Prioritize Critical Bug Fixes:** Your immediate focus must be on fixing the **Push Notifications** and **Driver Rating** system. The user is blocked and frustrated by these failures. Do not start new features until these are resolved and verified by the user.
+-   **Platform Instability Alert:** The previous agent was completely blocked by Bad Gateway errors. If you experience persistent connection failures, it is a platform issue. Start with simple commands (README.md
+android
+app
+app.json
+assets
+components
+constants
+contexts
+dist
+eas.json
+eslint.config.js
+expo-env.d.ts
+hooks
+incoming_daily_call
+index.js
+ios
+lib
+metro.config.js
+node_modules
+package-lock.json
+package.json
+public
+scripts
+stores
+tsconfig.json
+yarn.lock) to test connectivity before proceeding with file edits.
+-   **The  Monolith is Dangerous:** This file is over 12,000 lines long and is the root cause of many recurring bugs. Be extremely careful when editing it. Use extensive  debugging to trace state and props, as state management is highly complex and prone to error.
+-   **Manual Backend Deployment:** Remember the deployment process:  then .
+-   **The last stable APK** mentioned by the user was . This build contains the new premium passenger waiting screen. Use this as a functional baseline.
 
 **documents and test reports created in this job**
 -   None.
 
 **Last 10 User Messages and any pending HUMAN messages**
--   **10. User:** The APK has a white screen on the admin page. (PENDING)
--   **9. Agent:** Explains the login was from a non-admin number and provides an APK with  fixes.
--   **8. User:** Confirms the admin page is still a white screen. (PENDING)
--   **7. Agent:** Provides a new, ultra-simplified APK and confirms from logs that the user's admin login is now successful, meaning the backend is working.
--   **6. User:** Confirms it's still a white screen. (PENDING)
--   **5. Agent:** Provides an APK with an Error Boundary to catch the crash.
--   **4. User:** Confirms no error message, just a white screen, and explains the flow. (PENDING)
--   **3. Agent:** Discovers the *correct* file () was the source of the bug, rewrites it, and provides a new APK.
--   **2. User:** Confirms the admin page is now visible but incomplete. Asks about data storage and legal compliance. (RESOLVED)
--   **1. User:** Asks the agent to implement the push notification feature in the Admin Panel. (IN PROGRESS)
+-   The user is reporting that the app is not working and asks the agent to look into it.
+-   The user asks to revert to a previous APK (), indicating the latest changes introduced problems.
+-   The user is repeatedly asking why the agent is pausing or stopping, which was due to platform connection errors.
+-   The user re-iterated the two main priorities: fixing the broken push notifications and implementing the driver's live heatmap screen.
+-   The user confirmed the premium passenger waiting screen APK was good and asked to continue from there.
 
 **Project Health Check:**
--   **Mocked**: The Admin Panel is currently a mock of its full-featured self. It's functional but missing most of its features, which were temporarily removed to fix a critical bug.
+-   **Broken**: Push Notifications, Driver Rating System.
+-   **Mocked**: Admin Panel (minimal features).
 
 **3rd Party Integrations**
 -   **Supabase**: PostgreSQL DB, Auth, Storage, Realtime.
--   **NETGSM**: SMS OTP. **(FIXED)** - Now works correctly from the user's deployed server.
+-   **NETGSM**: SMS OTP.
 -   **Expo Application Services (EAS)**: For building APKs.
--   **Google Maps Platform**: Used for displaying maps and generating external navigation links.
--   **iyzico**: Planned for payment integration (Backend service exists but is not integrated).
--   **Expo Push Notifications / FCM / OneSignal**: One of these will be integrated next.
+-   **Google Maps Platform**: For map display and navigation.
+-   **iyzico**: Planned for payment integration (backend service exists but is not integrated).
 
 **Testing status**
 -   Testing agent used after significant changes: NO
 -   Troubleshoot agent used after agent stuck in loop: NO
 -   Test files created: []
--   Known regressions: The Admin Panel lost most of its features as a consequence of fixing the white screen bug.
+-   Known regressions: Push notifications and Driver Rating are confirmed broken by the user. The app was reported as not working after the agent's last attempts, which were plagued by connection issues.
 
 **Credentials to test flow:**
--   **Server SSH:**  (Password was provided in chat history).
+-   **Server SSH:**  (Password: ).
 -   **Admin User:** Phone , PIN .
 
 **What agent forgot to execute**
--   The agent created modular backend service files (, ) in a previous session, but still has not integrated them into the main  application. They remain unused.
--   The  table still has not been created in the database.</analysis>
+-   The agent did not resolve the core issues of push notifications and driver rating despite multiple attempts.
+-   The agent did not consolidate the push token storage logic, leaving it in an inconsistent state.
+-   The platform instability was not resolved, and the agent did not escalate it via a  call.</analysis>

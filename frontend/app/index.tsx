@@ -55,7 +55,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 // Backend URL - önce extra'dan, sonra env'den, en son hardcoded
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://tag-dispatch.preview.emergentagent.com';
+                    'https://notify-rating.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 console.log('🌐 BACKEND_URL:', BACKEND_URL);
@@ -477,6 +477,12 @@ export default function App() {
           const interval = setInterval(updateUserLocation, 500);
           return () => clearInterval(interval);
         }
+      });
+      
+      // 🔔 Dashboard'a her girişte push token'ı kaydet
+      console.log('🔔 Dashboard açıldı, push token kaydediliyor...');
+      registerPushToken(user.id).then(success => {
+        console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
       });
     }
   }, [user, screen]);
@@ -5443,7 +5449,7 @@ function PassengerDashboard({
     
     const message = `🚗 Leylek TAG - Yolculuk Teklifi\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
     
-    const webAppUrl = 'https://tag-dispatch.preview.emergentagent.com';
+    const webAppUrl = 'https://notify-rating.preview.emergentagent.com';
     const deepLink = `leylektag://ride/${activeTag.id}`;
     
     try {

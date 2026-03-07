@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_HEIGHT = 220;
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://tag-dispatch.preview.emergentagent.com';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://notify-rating.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 interface NearbyTag {

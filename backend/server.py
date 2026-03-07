@@ -3312,16 +3312,34 @@ class ExpoPushService:
             return {"sent": 0, "failed": len(valid_tokens)}
 
 @api_router.post("/user/register-push-token")
-async def register_push_token(user_id: str, push_token: str):
-    """Push token kaydet"""
+async def register_push_token_endpoint(user_id: str, push_token: str):
+    """Push token kaydet - GELİŞTİRİLMİŞ LOG İLE"""
     try:
+        logger.info(f"📱 Push token kayıt isteği: user_id={user_id}, token={push_token[:40] if push_token else 'NONE'}...")
+        
+        # Token formatı kontrolü
+        if not push_token or not push_token.startswith("ExponentPushToken"):
+            logger.warning(f"❌ Geçersiz token formatı: {push_token[:40] if push_token else 'NONE'}")
+            return {"success": False, "detail": "Geçersiz token formatı"}
+        
+        # Kullanıcı var mı kontrol et
+        user_check = supabase.table("users").select("id, name").eq("id", user_id).execute()
+        if not user_check.data:
+            logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
+            return {"success": False, "detail": "Kullanıcı bulunamadı"}
+        
+        user_name = user_check.data[0].get("name", "Unknown")
+        
+        # Users tablosuna kaydet
         supabase.table("users").update({
             "push_token": push_token,
             "push_token_updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
         
-        return {"success": True}
+        logger.info(f"✅ Push token kaydedildi: {user_name} ({user_id})")
+        return {"success": True, "message": f"Token kaydedildi: {user_name}"}
     except Exception as e:
+        logger.error(f"❌ Push token kayıt hatası: {e}")
         return {"success": False, "detail": str(e)}
 
 @api_router.delete("/user/remove-push-token")
@@ -3336,6 +3354,50 @@ async def remove_push_token(user_id: str):
         return {"success": True}
     except Exception as e:
         return {"success": False}
+
+# Test endpoint - Push bildirim sistemini test et
+@api_router.post("/test/push-notification")
+async def test_push_notification(user_id: str, title: str = "Test Bildirimi", body: str = "Bu bir test bildirimidir"):
+    """Push bildirim sistemini test et - DEBUG için"""
+    try:
+        logger.info(f"🧪 TEST: Push bildirim testi başlıyor: {user_id}")
+        
+        # Kullanıcı ve token bilgisi
+        user_result = supabase.table("users").select("id, name, phone, push_token, push_token_updated_at").eq("id", user_id).execute()
+        
+        if not user_result.data:
+            return {"success": False, "error": "Kullanıcı bulunamadı", "user_id": user_id}
+        
+        user = user_result.data[0]
+        token = user.get("push_token")
+        
+        debug_info = {
+            "user_id": user_id,
+            "user_name": user.get("name"),
+            "phone": user.get("phone"),
+            "has_push_token": bool(token),
+            "token_preview": token[:40] + "..." if token else None,
+            "token_updated_at": user.get("push_token_updated_at")
+        }
+        
+        if not token:
+            return {"success": False, "error": "Push token yok", "debug": debug_info}
+        
+        if not token.startswith("ExponentPushToken"):
+            return {"success": False, "error": "Geçersiz token formatı", "debug": debug_info}
+        
+        # Bildirimi gönder
+        result = await send_push_notification(user_id, title, body, {"type": "test", "timestamp": datetime.utcnow().isoformat()})
+        
+        return {
+            "success": result,
+            "message": "Bildirim gönderildi" if result else "Bildirim gönderilemedi",
+            "debug": debug_info
+        }
+    except Exception as e:
+        logger.error(f"🧪 TEST: Hata: {e}")
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 # ==================== ADMIN BİLDİRİM SİSTEMİ ====================
 
@@ -6905,25 +6967,28 @@ async def register_push_token(user_id: str, token: str, platform: str = "android
         return {"success": False, "error": str(e)}
 
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
-    """Tek kullanıcıya push bildirim gönder"""
+    """Tek kullanıcıya push bildirim gönder - GELİŞTİRİLMİŞ LOG İLE"""
     try:
-        # Token'ı önce push_tokens tablosundan dene
+        logger.info(f"🔔 Push gönderimi başlıyor: user_id={user_id}, title={title}")
+        
+        # Token'ı users tablosundan al (tek kaynak - tutarlılık için)
         token = None
-        try:
-            token_result = supabase.table("push_tokens").select("token").eq("user_id", user_id).execute()
-            if token_result.data:
-                token = token_result.data[0]["token"]
-        except:
-            pass
+        user_result = supabase.table("users").select("push_token, name").eq("id", user_id).execute()
         
-        # push_tokens'da yoksa users tablosundan al
-        if not token:
-            user_result = supabase.table("users").select("push_token").eq("id", user_id).execute()
-            if user_result.data and user_result.data[0].get("push_token"):
-                token = user_result.data[0]["push_token"]
+        if user_result.data:
+            token = user_result.data[0].get("push_token")
+            user_name = user_result.data[0].get("name", "Unknown")
+            logger.info(f"🔔 Kullanıcı bulundu: {user_name}, token: {token[:30] if token else 'YOK'}...")
+        else:
+            logger.warning(f"🔔 Kullanıcı bulunamadı: {user_id}")
         
         if not token:
-            logger.warning(f"Push token bulunamadı: {user_id}")
+            logger.warning(f"❌ Push token bulunamadı: {user_id}")
+            return False
+        
+        # Token formatı kontrolü
+        if not token.startswith("ExponentPushToken"):
+            logger.warning(f"❌ Geçersiz token formatı: {token[:30]}...")
             return False
         
         # Expo Push API'ye gönder
@@ -6936,19 +7001,36 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             "body": body,
             "data": data or {},
             "priority": "high",
-            "channelId": "default"
+            "channelId": "default",
+            "_displayInForeground": True
         }
         
-        async with httpx.AsyncClient() as client:
+        logger.info(f"🔔 Expo API'ye gönderiliyor: {token[:30]}...")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 "https://exp.host/--/api/v2/push/send",
                 json=message,
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Accept-encoding": "gzip, deflate"
+                }
             )
             
+            logger.info(f"🔔 Expo API yanıtı: status={response.status_code}, body={response.text[:200]}")
+            
             if response.status_code == 200:
-                logger.info(f"📤 Push gönderildi: {user_id} - {title}")
-                # Bildirimi kaydet
+                response_data = response.json()
+                # Expo API'nin döndürdüğü veriyi kontrol et
+                if response_data.get("data", {}).get("status") == "error":
+                    error_msg = response_data.get("data", {}).get("message", "Unknown error")
+                    logger.error(f"❌ Expo API hatası: {error_msg}")
+                    return False
+                
+                logger.info(f"✅ Push başarıyla gönderildi: {user_id} - {title}")
+                
+                # Bildirimi notifications tablosuna kaydet
                 try:
                     supabase.table("notifications").insert({
                         "user_id": user_id,
@@ -6959,14 +7041,18 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
                         "sent_at": datetime.utcnow().isoformat(),
                         "read": False
                     }).execute()
+                    logger.info(f"✅ Bildirim DB'ye kaydedildi")
                 except Exception as save_err:
-                    logger.warning(f"Bildirim kaydedilemedi: {save_err}")
+                    logger.warning(f"⚠️ Bildirim DB'ye kaydedilemedi: {save_err}")
+                
                 return True
             else:
-                logger.error(f"Push gönderme hatası: {response.text}")
+                logger.error(f"❌ Push gönderme hatası: HTTP {response.status_code} - {response.text}")
                 return False
     except Exception as e:
-        logger.error(f"Send push error: {e}")
+        logger.error(f"❌ Send push exception: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):

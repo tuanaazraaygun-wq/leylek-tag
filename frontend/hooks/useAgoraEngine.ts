@@ -25,7 +25,7 @@ const AGORA_APP_ID = Constants.expoConfig?.extra?.agoraAppId ||
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://tag-dispatch.preview.emergentagent.com';
+                    'https://notify-rating.preview.emergentagent.com';
 
 console.log('🎙️ Agora App ID:', AGORA_APP_ID);
 

@@ -20,8 +20,13 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Backend URL - önce extra'dan, sonra env'den, en son hardcoded
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
+                    process.env.EXPO_PUBLIC_BACKEND_URL || 
+                    'https://api.leylektag.com';
 const API_URL = `${BACKEND_URL}/api`;
+
+console.log('🔔 Push Notifications - API_URL:', API_URL);
 
 interface PushNotificationState {
   expoPushToken: string | null;
@@ -122,10 +127,13 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   // Token'ı backend'e kaydet
   const registerPushToken = useCallback(async (userId: string): Promise<boolean> => {
     try {
+      console.log('🔔 registerPushToken başlıyor, userId:', userId);
+      
       let token = expoPushToken;
       
       // Token yoksa al
       if (!token) {
+        console.log('🔔 Token yok, getExpoPushToken çağrılıyor...');
         token = await getExpoPushToken();
       }
 
@@ -134,21 +142,30 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         return false;
       }
 
+      console.log('🔔 Token alındı:', token.substring(0, 40) + '...');
+      console.log('🔔 Backend URL:', API_URL);
+
       // Backend'e kaydet
-      const response = await fetch(`${API_URL}/user/register-push-token?user_id=${userId}&push_token=${encodeURIComponent(token)}`, {
+      const url = `${API_URL}/user/register-push-token?user_id=${userId}&push_token=${encodeURIComponent(token)}`;
+      console.log('🔔 Kayıt URL:', url.substring(0, 100) + '...');
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
       });
 
+      console.log('🔔 Backend yanıtı status:', response.status);
+      
       const data = await response.json();
+      console.log('🔔 Backend yanıtı data:', JSON.stringify(data));
 
       if (data.success) {
         console.log('✅ Push token backend\'e kaydedildi');
         return true;
       } else {
-        console.error('❌ Push token kayıt hatası:', data.detail);
+        console.error('❌ Push token kayıt hatası:', data.detail || data.error);
         return false;
       }
     } catch (err) {
