@@ -11701,6 +11701,8 @@ const styles = StyleSheet.create({
   communityLogo: {
     width: 50,
     height: 50,
+    borderRadius: 25,
+    backgroundColor: 'transparent',
   },
   communityTextBox: {
     flex: 1,

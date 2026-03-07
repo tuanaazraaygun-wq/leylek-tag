@@ -1,6 +1,7 @@
 /**
  * Leylek Muhabbeti (Community) Screen
- * v5 - ŞEHİR TEMALI + EMOJİ + MODERN 3D TASARIM
+ * v6 - MODERN TWITTER + WHATSAPP + DISCORD TASARIMI
+ * Supabase Realtime ile anlık mesajlaşma
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -20,36 +21,40 @@ import {
   RefreshControl,
   ScrollView,
   Modal,
-  ImageBackground,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { io, Socket } from 'socket.io-client';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Şehir temaları - her şehir için özel renk ve simge
-const CITY_THEMES: { [key: string]: { gradient: string[], icon: string, landmark: string } } = {
-  'Ankara': { gradient: ['#DC2626', '#991B1B'], icon: 'business', landmark: 'Anıtkabir' },
-  'İstanbul': { gradient: ['#7C3AED', '#5B21B6'], icon: 'boat', landmark: 'Boğaz Köprüsü' },
-  'İzmir': { gradient: ['#0891B2', '#0E7490'], icon: 'sunny', landmark: 'Saat Kulesi' },
-  'Antalya': { gradient: ['#F97316', '#EA580C'], icon: 'umbrella', landmark: 'Kaleiçi' },
-  'Bursa': { gradient: ['#16A34A', '#15803D'], icon: 'leaf', landmark: 'Uludağ' },
-  'Adana': { gradient: ['#EAB308', '#CA8A04'], icon: 'restaurant', landmark: 'Taş Köprü' },
-  'Konya': { gradient: ['#06B6D4', '#0891B2'], icon: 'flower', landmark: 'Mevlana' },
-  'Gaziantep': { gradient: ['#DC2626', '#B91C1C'], icon: 'cafe', landmark: 'Zeugma' },
-  'Trabzon': { gradient: ['#059669', '#047857'], icon: 'rainy', landmark: 'Sümela' },
-  'Çanakkale': { gradient: ['#1D4ED8', '#1E40AF'], icon: 'time', landmark: 'Saat Kulesi' },
-  'Eskişehir': { gradient: ['#8B5CF6', '#7C3AED'], icon: 'school', landmark: 'Porsuk' },
-  'Mersin': { gradient: ['#0EA5E9', '#0284C7'], icon: 'water', landmark: 'Kız Kalesi' },
-  'Samsun': { gradient: ['#10B981', '#059669'], icon: 'flag', landmark: 'Bandırma' },
-  'Diyarbakır': { gradient: ['#78350F', '#92400E'], icon: 'shield', landmark: 'Surlar' },
-  'Kayseri': { gradient: ['#6366F1', '#4F46E5'], icon: 'snow', landmark: 'Erciyes' },
-  'default': { gradient: ['#3B82F6', '#2563EB'], icon: 'location', landmark: '' },
+const CITY_THEMES: { [key: string]: { gradient: string[], icon: string, landmark: string, bgImage: string } } = {
+  'Ankara': { gradient: ['#DC2626', '#991B1B'], icon: 'business', landmark: 'Anıtkabir', bgImage: '' },
+  'İstanbul': { gradient: ['#7C3AED', '#5B21B6'], icon: 'boat', landmark: 'Boğaz Köprüsü', bgImage: '' },
+  'İzmir': { gradient: ['#0891B2', '#0E7490'], icon: 'sunny', landmark: 'Saat Kulesi', bgImage: '' },
+  'Antalya': { gradient: ['#F97316', '#EA580C'], icon: 'umbrella', landmark: 'Kaleiçi', bgImage: '' },
+  'Bursa': { gradient: ['#16A34A', '#15803D'], icon: 'leaf', landmark: 'Uludağ', bgImage: '' },
+  'Adana': { gradient: ['#EAB308', '#CA8A04'], icon: 'restaurant', landmark: 'Taş Köprü', bgImage: '' },
+  'Konya': { gradient: ['#06B6D4', '#0891B2'], icon: 'flower', landmark: 'Mevlana', bgImage: '' },
+  'Gaziantep': { gradient: ['#DC2626', '#B91C1C'], icon: 'cafe', landmark: 'Zeugma', bgImage: '' },
+  'Trabzon': { gradient: ['#059669', '#047857'], icon: 'rainy', landmark: 'Sümela', bgImage: '' },
+  'Çanakkale': { gradient: ['#1D4ED8', '#1E40AF'], icon: 'time', landmark: 'Saat Kulesi', bgImage: '' },
+  'Eskişehir': { gradient: ['#8B5CF6', '#7C3AED'], icon: 'school', landmark: 'Porsuk', bgImage: '' },
+  'Mersin': { gradient: ['#0EA5E9', '#0284C7'], icon: 'water', landmark: 'Kız Kalesi', bgImage: '' },
+  'Samsun': { gradient: ['#10B981', '#059669'], icon: 'flag', landmark: 'Bandırma', bgImage: '' },
+  'Diyarbakır': { gradient: ['#78350F', '#92400E'], icon: 'shield', landmark: 'Surlar', bgImage: '' },
+  'Kayseri': { gradient: ['#6366F1', '#4F46E5'], icon: 'snow', landmark: 'Erciyes', bgImage: '' },
+  'default': { gradient: ['#3B82F6', '#2563EB'], icon: 'location', landmark: '', bgImage: '' },
 };
 
-// Emojiler
-const EMOJI_LIST = ['😀', '😂', '🥰', '😎', '🤔', '👍', '👏', '❤️', '🔥', '✨', '🎉', '💪', '🚗', '🏠', '☀️', '🌙'];
+// Reaksiyon emojileri
+const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+// Mesaj emojileri
+const EMOJI_LIST = ['😀', '😂', '🥰', '😎', '🤔', '👍', '👏', '❤️', '🔥', '✨', '🎉', '💪', '🚗', '🏠', '☀️', '🌙', '👋', '🙏', '💯', '🎯'];
 
 // Türkiye şehirleri
 const CITIES = [
@@ -67,15 +72,24 @@ const CITIES = [
 
 const SOCKET_URL = 'https://socket.leylektag.com';
 
+interface MessageReaction {
+  emoji: string;
+  count: number;
+  users: string[];
+}
+
 interface CommunityMessage {
   id: string;
   user_id: string;
   name: string;
   role: 'passenger' | 'driver';
   content: string;
+  image_url?: string;
   likes_count: number;
+  reactions?: MessageReaction[];
   created_at: string;
   city?: string;
+  rating?: number;
   _temp?: boolean;
 }
 
@@ -114,6 +128,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   const [likedMessages, setLikedMessages] = useState<Set<string>>(new Set());
   const [lastSentTime, setLastSentTime] = useState(0);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
   
   const socketRef = useRef<Socket | null>(null);
   const flatListRef = useRef<FlatList>(null);
@@ -128,7 +143,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   useEffect(() => {
     if (!selectedCity) return;
     
-    // /community namespace'ine bağlan - ŞEHİR BAZLI FİLTRELEME
     const socket = io(`${SOCKET_URL}/community`, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
@@ -157,7 +171,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
     socket.on('community_new_message', (data: CommunityMessage) => {
       console.log('[Community] 📩 Yeni mesaj geldi:', data.content?.substring(0, 30));
-      // Sunucu zaten şehir bazlı filtreleme yapıyor, ekstra kontrol güvenlik için
       if (data.city && data.city !== selectedCity) return;
       
       setMessages(prev => {
@@ -173,7 +186,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         
         return [data, ...prev];
       });
-      // Yeni mesaj geldiğinde en alta kaydır
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
 
@@ -190,7 +202,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     socketRef.current = socket;
 
     return () => {
-      // Şehir bilgisi ile çık
       socket.emit('community_leave', { user_id: user.id, city: selectedCity });
       socket.disconnect();
     };
@@ -224,7 +235,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     setCitySearch('');
   };
 
-  // GERİ TUŞU - Şehir seçimine dön
+  // GERİ TUŞU
   const handleBack = () => {
     if (selectedCity && !showCityPicker) {
       setShowCityPicker(true);
@@ -241,7 +252,21 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     setShowEmojiPicker(false);
   };
 
-  // MESAJ GÖNDER - ANINDA
+  // Fotoğraf seç
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    
+    if (!result.canceled && result.assets[0]) {
+      // TODO: Fotoğraf yükleme backend entegrasyonu
+      Alert.alert('Yakında', 'Fotoğraf paylaşımı yakında aktif olacak!');
+    }
+  };
+
+  // MESAJ GÖNDER
   const handleSendMessage = async () => {
     const content = newMessage.trim();
     if (!content || content.length > 300) return;
@@ -262,13 +287,13 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       likes_count: 0,
       created_at: new Date().toISOString(),
       city: selectedCity,
+      rating: user.rating || 4.5,
       _temp: true,
     };
 
     setMessages(prev => [tempMsg, ...prev]);
     setNewMessage('');
     setLastSentTime(now);
-    // Kendi mesajımızı gönderdikten sonra en alta kaydır
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
@@ -286,11 +311,10 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
       const data = await response.json();
       if (data.success && data.message) {
-        // 🔥 Socket'e mesaj gönder - diğer kullanıcılar anında görsün
         console.log('[Community] 📤 Socket ile mesaj yayınlanıyor:', data.message.id);
         socketRef.current?.emit('community_message', {
           ...data.message,
-          city: selectedCity,  // Şehir bilgisini ekle
+          city: selectedCity,
         });
         setMessages(prev => prev.map(msg => msg.id === tempId ? { ...data.message, _temp: false } : msg));
       } else {
@@ -302,7 +326,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     }
   };
 
-  // Beğen
+  // Beğen / Reaksiyon
   const handleLike = async (messageId: string) => {
     if (likedMessages.has(messageId)) return;
 
@@ -319,7 +343,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       });
       const data = await response.json();
       if (data.success) {
-        // Şehir bilgisi ile socket'e gönder
         socketRef.current?.emit('community_like', { 
           message_id: messageId, 
           likes_count: data.likes_count,
@@ -327,62 +350,112 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         });
       }
     } catch {}
+    
+    setShowReactionPicker(null);
   };
 
   // Zaman formatla
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'şimdi';
+    if (diffMins < 60) return `${diffMins}dk`;
+    if (diffMins < 1440) return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
   };
 
-  // Mesaj kartı
+  // Mesaj kartı - MODERN TASARIM
   const renderMessage = ({ item }: { item: CommunityMessage }) => {
     const isOwn = item.user_id === user.id;
     const firstName = getFirstName(item.name);
     const avatarColor = getAvatarColor(item.name);
     const isLiked = likedMessages.has(item.id);
-    const rating = 4.5; // Örnek puan
+    const rating = item.rating || 4.5;
 
     return (
-      <View style={[styles.messageCard, isOwn && styles.messageCardOwn, item._temp && styles.messageCardTemp]}>
-        {/* Avatar */}
+      <View style={[
+        styles.messageContainer,
+        isOwn ? styles.messageContainerOwn : styles.messageContainerOther,
+        item._temp && styles.messageTemp
+      ]}>
+        {/* Avatar - Sol taraf (Başkalarının mesajı) */}
         {!isOwn && (
-          <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
+          <View style={[styles.avatarContainer, { backgroundColor: avatarColor }]}>
             <Text style={styles.avatarText}>{firstName.charAt(0).toUpperCase()}</Text>
           </View>
         )}
         
-        <View style={[styles.messageBubble, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
-          {/* İsim ve Puan */}
+        {/* Mesaj Balonu */}
+        <View style={[
+          styles.messageBubble,
+          isOwn ? styles.bubbleOwn : styles.bubbleOther
+        ]}>
+          {/* Header - İsim, Puan, Rol */}
           {!isOwn && (
             <View style={styles.messageHeader}>
-              <Text style={[styles.messageName, { color: avatarColor }]}>{firstName}</Text>
-              <View style={styles.ratingBadge}>
-                <Ionicons name="star" size={10} color="#FFD700" />
-                <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
-              </View>
-              <View style={[styles.roleBadge, { backgroundColor: item.role === 'driver' ? '#F59E0B' : '#10B981' }]}>
-                <Text style={styles.roleText}>{item.role === 'driver' ? 'S' : 'Y'}</Text>
+              <Text style={styles.userName}>{firstName}</Text>
+              <View style={styles.userBadges}>
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={10} color="#FFD700" />
+                  <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+                </View>
+                <View style={[styles.roleBadge, item.role === 'driver' ? styles.driverBadge : styles.passengerBadge]}>
+                  <Text style={styles.roleText}>{item.role === 'driver' ? 'Sürücü' : 'Yolcu'}</Text>
+                </View>
               </View>
             </View>
           )}
           
-          {/* Mesaj */}
-          <Text style={styles.messageText}>{item.content}</Text>
+          {/* Mesaj İçeriği */}
+          <Text style={[styles.messageText, isOwn && styles.messageTextOwn]}>{item.content}</Text>
           
-          {/* Alt bilgi */}
+          {/* Fotoğraf varsa */}
+          {item.image_url && (
+            <Image source={{ uri: item.image_url }} style={styles.messageImage} resizeMode="cover" />
+          )}
+          
+          {/* Alt Bilgi - Saat ve Reaksiyonlar */}
           <View style={styles.messageFooter}>
-            <TouchableOpacity style={styles.likeBtn} onPress={() => handleLike(item.id)} disabled={isLiked}>
-              <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={16} color={isLiked ? '#EF4444' : '#9CA3AF'} />
-              {item.likes_count > 0 && <Text style={styles.likeCount}>{item.likes_count}</Text>}
-            </TouchableOpacity>
-            <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
-            {isOwn && <Ionicons name="checkmark-done" size={14} color="#3B82F6" />}
+            <Text style={[styles.timeText, isOwn && styles.timeTextOwn]}>{formatTime(item.created_at)}</Text>
+            
+            <View style={styles.reactionArea}>
+              {/* Beğeni butonu */}
+              <TouchableOpacity 
+                style={styles.reactionBtn} 
+                onPress={() => handleLike(item.id)}
+                onLongPress={() => setShowReactionPicker(item.id)}
+              >
+                <Ionicons 
+                  name={isLiked ? 'heart' : 'heart-outline'} 
+                  size={16} 
+                  color={isLiked ? '#EF4444' : (isOwn ? 'rgba(255,255,255,0.7)' : '#9CA3AF')} 
+                />
+                {item.likes_count > 0 && (
+                  <Text style={[styles.reactionCount, isOwn && styles.reactionCountOwn]}>
+                    {item.likes_count}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              
+              {/* Gönderildi işareti */}
+              {isOwn && (
+                <Ionicons 
+                  name={item._temp ? 'time-outline' : 'checkmark-done'} 
+                  size={14} 
+                  color="rgba(255,255,255,0.7)" 
+                  style={{ marginLeft: 8 }}
+                />
+              )}
+            </View>
           </View>
         </View>
         
+        {/* Avatar - Sağ taraf (Kendi mesajım) */}
         {isOwn && (
-          <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
+          <View style={[styles.avatarContainer, { backgroundColor: avatarColor }]}>
             <Text style={styles.avatarText}>{firstName.charAt(0).toUpperCase()}</Text>
           </View>
         )}
@@ -394,28 +467,22 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   if (showCityPicker || !selectedCity) {
     return (
       <SafeAreaView style={styles.container}>
-        <LinearGradient colors={['#1E3A5F', '#2D5A87']} style={styles.cityPickerGradient}>
+        <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.cityPickerContainer}>
           {/* Header */}
           <View style={styles.cityHeader}>
-            <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+            <TouchableOpacity onPress={onBack} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color="#FFF" />
             </TouchableOpacity>
-            <Text style={styles.cityHeaderTitle}>🪿 Leylek Muhabbeti</Text>
+            <View style={styles.headerTitleContainer}>
+              <Text style={styles.headerTitle}>Leylek Muhabbeti</Text>
+              <Text style={styles.headerSubtitle}>Şehir topluluğuna katıl</Text>
+            </View>
             <View style={{ width: 40 }} />
           </View>
-
-          {/* Bilgi */}
-          <View style={styles.cityInfo}>
-            <View style={styles.cityInfoIcon}>
-              <Ionicons name="earth" size={60} color="#FFF" />
-            </View>
-            <Text style={styles.cityInfoTitle}>Şehir Topluluğunu Seç</Text>
-            <Text style={styles.cityInfoText}>Hemşerilerinle sohbet et, paylaşım yap!</Text>
-          </View>
-
+          
           {/* Arama */}
-          <View style={styles.searchBox}>
-            <Ionicons name="search" size={20} color="#6B7280" />
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#9CA3AF" />
             <TextInput
               style={styles.searchInput}
               placeholder="Şehir ara..."
@@ -424,65 +491,94 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
               onChangeText={setCitySearch}
             />
           </View>
-
+          
           {/* Şehir Listesi */}
           <ScrollView style={styles.cityList} showsVerticalScrollIndicator={false}>
             {filteredCities.map(city => {
               const theme = getCityTheme(city);
               return (
-                <TouchableOpacity key={city} style={styles.cityItem} onPress={() => handleCitySelect(city)}>
-                  <LinearGradient colors={theme.gradient} style={styles.cityItemIcon}>
-                    <Ionicons name={theme.icon as any} size={22} color="#FFF" />
+                <TouchableOpacity 
+                  key={city} 
+                  style={styles.cityCard}
+                  onPress={() => handleCitySelect(city)}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient 
+                    colors={theme.gradient} 
+                    style={styles.cityCardGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <View style={styles.cityIconBox}>
+                      <Ionicons name={theme.icon as any} size={24} color="#FFF" />
+                    </View>
+                    <View style={styles.cityInfo}>
+                      <Text style={styles.cityName}>{city}</Text>
+                      {theme.landmark && (
+                        <Text style={styles.cityLandmark}>{theme.landmark}</Text>
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
                   </LinearGradient>
-                  <View style={styles.cityItemInfo}>
-                    <Text style={styles.cityItemName}>{city}</Text>
-                    {theme.landmark && <Text style={styles.cityItemLandmark}>{theme.landmark}</Text>}
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
                 </TouchableOpacity>
               );
             })}
+            <View style={{ height: 30 }} />
           </ScrollView>
         </LinearGradient>
       </SafeAreaView>
     );
   }
 
-  // ANA SOHBET EKRANI
+  // SOHBET EKRANI
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Header - Şehir temalı */}
-        <LinearGradient colors={cityTheme.gradient} style={styles.chatHeader}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="#FFF" />
-          </TouchableOpacity>
-          <View style={styles.chatHeaderInfo}>
-            <View style={styles.chatHeaderRow}>
-              <Ionicons name={cityTheme.icon as any} size={20} color="#FFF" />
-              <Text style={styles.chatHeaderTitle}>{selectedCity}</Text>
+      {/* Arka Plan Gradient */}
+      <LinearGradient 
+        colors={['#0F172A', '#1E293B', '#0F172A']} 
+        style={styles.chatContainer}
+      >
+        {/* Header */}
+        <View style={styles.chatHeader}>
+          <LinearGradient 
+            colors={cityTheme.gradient} 
+            style={styles.chatHeaderGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#FFF" />
+            </TouchableOpacity>
+            
+            <View style={styles.chatHeaderInfo}>
+              <View style={styles.cityIconCircle}>
+                <Ionicons name={cityTheme.icon as any} size={20} color="#FFF" />
+              </View>
+              <View style={styles.chatHeaderText}>
+                <Text style={styles.chatHeaderTitle}>{selectedCity}</Text>
+                <View style={styles.onlineIndicator}>
+                  <View style={styles.onlineDot} />
+                  <Text style={styles.onlineText}>{onlineCount} kişi çevrimiçi</Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.onlineBox}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>{onlineCount} çevrimiçi</Text>
-            </View>
-          </View>
-          <TouchableOpacity onPress={() => setShowCityPicker(true)}>
-            <Ionicons name="globe-outline" size={24} color="#FFF" />
-          </TouchableOpacity>
-        </LinearGradient>
-
-        {/* Mesajlar - Şehir temalı arka plan */}
-        <View style={styles.chatBody}>
-          {/* Arka plan efekti */}
-          <View style={[styles.bgPattern, { opacity: 0.05 }]}>
-            <Ionicons name={cityTheme.icon as any} size={200} color={cityTheme.gradient[0]} />
-          </View>
-          
-          {loading ? (
-            <View style={styles.loadingBox}>
+            
+            <TouchableOpacity style={styles.refreshButton} onPress={fetchMessages}>
+              <Ionicons name="refresh" size={22} color="#FFF" />
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+        
+        {/* Mesaj Listesi */}
+        <KeyboardAvoidingView 
+          style={styles.chatContent}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={90}
+        >
+          {loading && messages.length === 0 ? (
+            <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={cityTheme.gradient[0]} />
-              <Text style={styles.loadingText}>{selectedCity} yükleniyor...</Text>
+              <Text style={styles.loadingText}>Mesajlar yükleniyor...</Text>
             </View>
           ) : (
             <FlatList
@@ -492,163 +588,504 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
               keyExtractor={item => item.id}
               contentContainerStyle={styles.messageList}
               showsVerticalScrollIndicator={false}
-              inverted={false}
               refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMessages(); }} colors={cityTheme.gradient} />
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => { setRefreshing(true); fetchMessages(); }}
+                  colors={cityTheme.gradient}
+                  tintColor={cityTheme.gradient[0]}
+                />
               }
               ListEmptyComponent={
-                <View style={styles.emptyBox}>
-                  <Ionicons name={cityTheme.icon as any} size={70} color={cityTheme.gradient[0]} />
-                  <Text style={styles.emptyTitle}>{selectedCity} Topluluğu</Text>
-                  <Text style={styles.emptyText}>Henüz mesaj yok. İlk sen başlat!</Text>
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="chatbubbles-outline" size={60} color="#4B5563" />
+                  <Text style={styles.emptyText}>Henüz mesaj yok</Text>
+                  <Text style={styles.emptySubtext}>İlk mesajı sen gönder!</Text>
                 </View>
               }
-              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-              onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
             />
           )}
-        </View>
-
-        {/* Mesaj girişi - 3D Modern tasarım */}
-        <View style={styles.inputArea}>
-          <LinearGradient colors={['#F8FAFC', '#FFFFFF']} style={styles.inputGradient}>
-            <View style={styles.inputRow}>
-              {/* Emoji butonu */}
-              <TouchableOpacity style={styles.emojiBtn} onPress={() => setShowEmojiPicker(true)}>
-                <Text style={styles.emojiBtnText}>😊</Text>
+          
+          {/* Emoji Picker Modal */}
+          <Modal visible={showEmojiPicker} transparent animationType="slide">
+            <TouchableOpacity 
+              style={styles.emojiModalOverlay} 
+              activeOpacity={1} 
+              onPress={() => setShowEmojiPicker(false)}
+            >
+              <View style={styles.emojiPickerContainer}>
+                <View style={styles.emojiPickerHeader}>
+                  <Text style={styles.emojiPickerTitle}>Emoji Seç</Text>
+                  <TouchableOpacity onPress={() => setShowEmojiPicker(false)}>
+                    <Ionicons name="close" size={24} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.emojiGrid}>
+                  {EMOJI_LIST.map((emoji, index) => (
+                    <TouchableOpacity 
+                      key={index} 
+                      style={styles.emojiButton}
+                      onPress={() => addEmoji(emoji)}
+                    >
+                      <Text style={styles.emojiText}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+          
+          {/* Mesaj Yazma Alanı */}
+          <View style={styles.inputContainer}>
+            <View style={styles.inputWrapper}>
+              {/* Emoji Butonu */}
+              <TouchableOpacity 
+                style={styles.inputIconButton}
+                onPress={() => setShowEmojiPicker(true)}
+              >
+                <Ionicons name="happy-outline" size={24} color="#9CA3AF" />
               </TouchableOpacity>
               
-              {/* Input */}
-              <View style={styles.inputBox}>
-                <TextInput
-                  style={styles.input}
-                  placeholder={`${selectedCity}'e mesaj yaz...`}
-                  placeholderTextColor="#9CA3AF"
-                  value={newMessage}
-                  onChangeText={setNewMessage}
-                  maxLength={300}
-                  multiline
-                />
-              </View>
+              {/* Fotoğraf Butonu */}
+              <TouchableOpacity 
+                style={styles.inputIconButton}
+                onPress={pickImage}
+              >
+                <Ionicons name="image-outline" size={24} color="#9CA3AF" />
+              </TouchableOpacity>
               
-              {/* Gönder butonu */}
-              <TouchableOpacity
-                style={[styles.sendBtn, !newMessage.trim() && styles.sendBtnDisabled]}
+              {/* Metin Girişi */}
+              <TextInput
+                style={styles.textInput}
+                placeholder={`${selectedCity} topluluğuna mesaj yaz...`}
+                placeholderTextColor="#6B7280"
+                value={newMessage}
+                onChangeText={setNewMessage}
+                multiline
+                maxLength={300}
+              />
+              
+              {/* Gönder Butonu */}
+              <TouchableOpacity 
+                style={[
+                  styles.sendButton,
+                  { backgroundColor: newMessage.trim() ? cityTheme.gradient[0] : '#374151' }
+                ]}
                 onPress={handleSendMessage}
                 disabled={!newMessage.trim()}
               >
-                <LinearGradient colors={newMessage.trim() ? cityTheme.gradient : ['#D1D5DB', '#9CA3AF']} style={styles.sendBtnGradient}>
-                  <Ionicons name="send" size={20} color="#FFF" />
-                </LinearGradient>
+                <Ionicons name="send" size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
-            
-            {/* Karakter sayısı */}
-            <Text style={styles.charCount}>{newMessage.length}/300</Text>
-          </LinearGradient>
-        </View>
-
-        {/* Emoji Picker Modal */}
-        <Modal visible={showEmojiPicker} transparent animationType="slide">
-          <TouchableOpacity style={styles.emojiModalBg} onPress={() => setShowEmojiPicker(false)}>
-            <View style={styles.emojiPicker}>
-              <Text style={styles.emojiPickerTitle}>Emoji Seç</Text>
-              <View style={styles.emojiGrid}>
-                {EMOJI_LIST.map(emoji => (
-                  <TouchableOpacity key={emoji} style={styles.emojiItem} onPress={() => addEmoji(emoji)}>
-                    <Text style={styles.emojiItemText}>{emoji}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-      </KeyboardAvoidingView>
+          </View>
+        </KeyboardAvoidingView>
+      </LinearGradient>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
   
-  // City Picker
-  cityPickerGradient: { flex: 1 },
-  cityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
-  cityHeaderTitle: { fontSize: 20, fontWeight: '800', color: '#FFF' },
-  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  cityInfo: { alignItems: 'center', paddingVertical: 30 },
-  cityInfoIcon: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  cityInfoTitle: { fontSize: 24, fontWeight: '800', color: '#FFF' },
-  cityInfoText: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: 8 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', marginHorizontal: 20, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16 },
-  searchInput: { flex: 1, fontSize: 16, marginLeft: 10, color: '#1F2937' },
-  cityList: { flex: 1, paddingHorizontal: 20 },
-  cityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16, padding: 14, marginBottom: 10 },
-  cityItemIcon: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  cityItemInfo: { flex: 1, marginLeft: 14 },
-  cityItemName: { fontSize: 17, fontWeight: '700', color: '#1F2937' },
-  cityItemLandmark: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  // ŞEHİR SEÇİM
+  cityPickerContainer: {
+    flex: 1,
+  },
+  cityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 10 : 20,
+    paddingBottom: 16,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: 16,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 14,
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#FFF',
+  },
+  cityList: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  cityCard: {
+    marginBottom: 10,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  cityCardGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  cityIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cityInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  cityName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  cityLandmark: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 2,
+  },
   
-  // Chat Header
-  chatHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14 },
-  chatHeaderInfo: { flex: 1, marginLeft: 8 },
-  chatHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  chatHeaderTitle: { fontSize: 20, fontWeight: '800', color: '#FFF' },
-  onlineBox: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 },
-  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
-  onlineText: { fontSize: 12, color: 'rgba(255,255,255,0.9)' },
+  // SOHBET EKRANI
+  chatContainer: {
+    flex: 1,
+  },
+  chatHeader: {
+    overflow: 'hidden',
+  },
+  chatHeaderGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 10 : 20,
+    paddingBottom: 16,
+  },
+  chatHeaderInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  cityIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatHeaderText: {
+    marginLeft: 12,
+  },
+  chatHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  onlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  onlineText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  refreshButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   
-  // Chat Body
-  chatBody: { flex: 1, backgroundColor: '#F3F4F6', position: 'relative' },
-  bgPattern: { position: 'absolute', top: '30%', left: '50%', marginLeft: -100 },
-  loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14, color: '#6B7280' },
-  messageList: { padding: 12, paddingBottom: 10 },
+  // Mesaj Listesi
+  chatContent: {
+    flex: 1,
+  },
+  messageList: {
+    paddingHorizontal: 12,
+    paddingVertical: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#9CA3AF',
+    marginTop: 12,
+    fontSize: 14,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyText: {
+    color: '#9CA3AF',
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    color: '#6B7280',
+    fontSize: 14,
+    marginTop: 4,
+  },
   
-  // Messages
-  messageCard: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
-  messageCardOwn: { flexDirection: 'row-reverse' },
-  messageCardTemp: { opacity: 0.6 },
-  avatar: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
-  messageBubble: { maxWidth: '70%', padding: 12, borderRadius: 18, marginHorizontal: 8 },
-  bubbleOwn: { backgroundColor: '#3B82F6', borderBottomRightRadius: 4 },
-  bubbleOther: { backgroundColor: '#FFF', borderBottomLeftRadius: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 2 },
-  messageHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 },
-  messageName: { fontSize: 13, fontWeight: '700' },
-  ratingBadge: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  ratingText: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
-  roleBadge: { width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
-  roleText: { fontSize: 10, fontWeight: '700', color: '#FFF' },
-  messageText: { fontSize: 15, color: '#1F2937', lineHeight: 21 },
-  messageFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 8 },
-  likeBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  likeCount: { fontSize: 12, color: '#9CA3AF' },
-  timeText: { fontSize: 11, color: '#9CA3AF', marginLeft: 'auto' },
-  
-  // Empty
-  emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 100 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#1F2937', marginTop: 16 },
-  emptyText: { fontSize: 14, color: '#6B7280', marginTop: 6 },
-  
-  // Input Area
-  inputArea: { borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  inputGradient: { padding: 12 },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-  emojiBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 22 },
-  emojiBtnText: { fontSize: 24 },
-  inputBox: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, maxHeight: 100 },
-  input: { fontSize: 15, color: '#1F2937', maxHeight: 70 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden' },
-  sendBtnDisabled: { opacity: 0.6 },
-  sendBtnGradient: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  charCount: { fontSize: 11, color: '#9CA3AF', textAlign: 'right', marginTop: 6 },
+  // Mesaj Kartı
+  messageContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    alignItems: 'flex-end',
+  },
+  messageContainerOwn: {
+    justifyContent: 'flex-end',
+  },
+  messageContainerOther: {
+    justifyContent: 'flex-start',
+  },
+  messageTemp: {
+    opacity: 0.7,
+  },
+  avatarContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  messageBubble: {
+    maxWidth: SCREEN_WIDTH * 0.72,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 8,
+  },
+  bubbleOwn: {
+    backgroundColor: '#F97316', // Turuncu
+    borderBottomRightRadius: 6,
+  },
+  bubbleOther: {
+    backgroundColor: '#1E3A5F', // Lacivert
+    borderBottomLeftRadius: 6,
+  },
+  messageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    flexWrap: 'wrap',
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+    marginRight: 8,
+  },
+  userBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,215,0,0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginRight: 6,
+  },
+  ratingText: {
+    fontSize: 10,
+    color: '#FFD700',
+    fontWeight: '600',
+    marginLeft: 2,
+  },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  driverBadge: {
+    backgroundColor: 'rgba(249,115,22,0.3)',
+  },
+  passengerBadge: {
+    backgroundColor: 'rgba(16,185,129,0.3)',
+  },
+  roleText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  messageText: {
+    fontSize: 15,
+    color: '#FFF',
+    lineHeight: 22,
+  },
+  messageTextOwn: {
+    color: '#FFF',
+  },
+  messageImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  messageFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  timeText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  timeTextOwn: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  reactionArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reactionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reactionCount: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginLeft: 4,
+  },
+  reactionCountOwn: {
+    color: 'rgba(255,255,255,0.7)',
+  },
   
   // Emoji Picker
-  emojiModalBg: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  emojiPicker: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
-  emojiPickerTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937', textAlign: 'center', marginBottom: 16 },
-  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
-  emojiItem: { width: 50, height: 50, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 12 },
-  emojiItemText: { fontSize: 28 },
+  emojiModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  emojiPickerContainer: {
+    backgroundColor: '#1E293B',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 30,
+  },
+  emojiPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  emojiPickerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 12,
+    justifyContent: 'center',
+  },
+  emojiButton: {
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+  },
+  emojiText: {
+    fontSize: 28,
+  },
+  
+  // Mesaj Yazma
+  inputContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#1E293B',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#0F172A',
+    borderRadius: 24,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  inputIconButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textInput: {
+    flex: 1,
+    maxHeight: 100,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#FFF',
+  },
+  sendButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
 });
