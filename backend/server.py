@@ -602,6 +602,16 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
         logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
         
+        # 🔔 PUSH NOTIFICATION - Sürücüye teklif bildirimi
+        price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
+        pickup = tag_data.get("pickup_location", "Bilinmeyen konum")[:30]
+        asyncio.create_task(send_push_notification(
+            driver_id,
+            "🚗 Yeni Yolculuk Teklifi!",
+            f"₺{price} - {pickup}",
+            {"type": "new_offer", "tag_id": tag_id, "price": price}
+        ))
+        
         # Timeout task başlat
         async def timeout_handler():
             await asyncio.sleep(timeout)
@@ -6260,6 +6270,25 @@ async def accept_ride(tag_id: str, driver_id: str):
         # 🆕 DISPATCH QUEUE - Kabul edildi, diğer sürücülerin tekliflerini expire et
         await handle_dispatch_accept(tag_id, driver_id)
         
+        # 🔔 PUSH NOTIFICATIONS - Eşleşme bildirimleri
+        price = updated_tag.get("final_price") or updated_tag.get("offered_price", 0)
+        
+        # Yolcuya bildirim
+        asyncio.create_task(send_push_notification(
+            passenger_id,
+            "✅ Eşleşme Sağlandı!",
+            f"Sürücünüz {driver_name} yola çıktı. Lütfen bekleyin.",
+            {"type": "match_found", "tag_id": tag_id, "driver_name": driver_name}
+        ))
+        
+        # Sürücüye bildirim (uygulama kapalıysa)
+        asyncio.create_task(send_push_notification(
+            driver_id,
+            "🚗 Eşleşme Onaylandı!",
+            f"₺{price} - {passenger_name} sizi bekliyor. Yolcuya gidin!",
+            {"type": "match_confirmed", "tag_id": tag_id, "passenger_name": passenger_name}
+        ))
+        
         logger.info(f"✅ Eşleşme: {tag_id} - Sürücü: {driver_name}")
         
         return {
@@ -6601,6 +6630,12 @@ async def admin_full_dashboard(admin_phone: str):
         except:
             pass
         
+        # Push token istatistikleri
+        push_token_count = 0
+        for u in users_result.data or []:
+            if u.get("push_token"):
+                push_token_count += 1
+        
         return {
             "success": True,
             "stats": {
@@ -6609,7 +6644,8 @@ async def admin_full_dashboard(admin_phone: str):
                     "drivers": len(drivers),
                     "passengers": total_users - len(drivers),
                     "online_drivers": online_drivers,
-                    "new_today": new_users_today
+                    "new_today": new_users_today,
+                    "with_push_token": push_token_count
                 },
                 "trips": {
                     "completed_today": completed_today.count or 0,
@@ -6825,14 +6861,24 @@ async def register_push_token(user_id: str, token: str, platform: str = "android
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
     """Tek kullanıcıya push bildirim gönder"""
     try:
-        # Token'ı al
-        token_result = supabase.table("push_tokens").select("token").eq("user_id", user_id).execute()
+        # Token'ı önce push_tokens tablosundan dene
+        token = None
+        try:
+            token_result = supabase.table("push_tokens").select("token").eq("user_id", user_id).execute()
+            if token_result.data:
+                token = token_result.data[0]["token"]
+        except:
+            pass
         
-        if not token_result.data:
+        # push_tokens'da yoksa users tablosundan al
+        if not token:
+            user_result = supabase.table("users").select("push_token").eq("id", user_id).execute()
+            if user_result.data and user_result.data[0].get("push_token"):
+                token = user_result.data[0]["push_token"]
+        
+        if not token:
             logger.warning(f"Push token bulunamadı: {user_id}")
             return False
-        
-        token = token_result.data[0]["token"]
         
         # Expo Push API'ye gönder
         import httpx
@@ -6842,7 +6888,9 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             "sound": "default",
             "title": title,
             "body": body,
-            "data": data or {}
+            "data": data or {},
+            "priority": "high",
+            "channelId": "default"
         }
         
         async with httpx.AsyncClient() as client:
@@ -6854,6 +6902,19 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             
             if response.status_code == 200:
                 logger.info(f"📤 Push gönderildi: {user_id} - {title}")
+                # Bildirimi kaydet
+                try:
+                    supabase.table("notifications").insert({
+                        "user_id": user_id,
+                        "title": title,
+                        "body": body,
+                        "data": data or {},
+                        "type": data.get("type", "general") if data else "general",
+                        "sent_at": datetime.utcnow().isoformat(),
+                        "read": False
+                    }).execute()
+                except Exception as save_err:
+                    logger.warning(f"Bildirim kaydedilemedi: {save_err}")
                 return True
             else:
                 logger.error(f"Push gönderme hatası: {response.text}")
@@ -6863,40 +6924,48 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
         return False
 
 async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):
-    """Toplu push bildirim gönder"""
+    """Toplu push bildirim gönder - users tablosundan push_token kullanır"""
     try:
-        query = supabase.table("push_tokens").select("token, user_id")
-        
-        if target == "drivers":
-            # Sadece sürücülere
-            driver_ids = supabase.table("users").select("id").not_.is_("driver_details", "null").execute()
-            if driver_ids.data:
-                ids = [d["id"] for d in driver_ids.data]
-                query = query.in_("user_id", ids)
-        elif target == "online_drivers":
-            # Sadece online sürücülere
-            driver_ids = supabase.table("users").select("id").eq("driver_online", True).execute()
-            if driver_ids.data:
-                ids = [d["id"] for d in driver_ids.data]
-                query = query.in_("user_id", ids)
-        
-        tokens_result = query.execute()
-        
-        if not tokens_result.data:
-            return 0
-        
-        # Expo Push API'ye toplu gönder
         import httpx
         
+        # Users tablosundan push_token'ları al
+        query = supabase.table("users").select("id, push_token, driver_details, driver_online")
+        
+        if target == "drivers":
+            # Sadece sürücülere (driver_details olan)
+            query = query.not_.is_("driver_details", "null")
+        elif target == "passengers":
+            # Sadece yolculara (driver_details olmayan)
+            query = query.is_("driver_details", "null")
+        elif target == "online_drivers":
+            # Sadece online sürücülere
+            query = query.eq("driver_online", True)
+        
+        result = query.execute()
+        
+        if not result.data:
+            return 0
+        
+        # Push token'ı olan kullanıcıları filtrele
         messages = []
-        for t in tokens_result.data:
-            messages.append({
-                "to": t["token"],
-                "sound": "default",
-                "title": title,
-                "body": body,
-                "data": data or {}
-            })
+        user_ids = []
+        for user in result.data:
+            token = user.get("push_token")
+            if token and token.startswith("ExponentPushToken"):
+                messages.append({
+                    "to": token,
+                    "sound": "default",
+                    "title": title,
+                    "body": body,
+                    "data": data or {},
+                    "priority": "high",
+                    "channelId": "default"
+                })
+                user_ids.append(user["id"])
+        
+        if not messages:
+            logger.info(f"📭 Push token'ı olan kullanıcı bulunamadı (target={target})")
+            return 0
         
         sent_count = 0
         async with httpx.AsyncClient() as client:
@@ -6911,7 +6980,20 @@ async def send_bulk_push_notification(title: str, body: str, target: str = "all"
                 if response.status_code == 200:
                     sent_count += len(batch)
         
-        logger.info(f"📤 Toplu push gönderildi: {sent_count} kullanıcı - {title}")
+        logger.info(f"📤 Toplu push gönderildi: {sent_count}/{len(messages)} kullanıcı - {title}")
+        
+        # Admin bildirimini kaydet
+        try:
+            supabase.table("admin_notifications_log").insert({
+                "title": title,
+                "body": body,
+                "target": target,
+                "sent_count": sent_count,
+                "created_at": datetime.utcnow().isoformat()
+            }).execute()
+        except:
+            pass
+        
         return sent_count
     except Exception as e:
         logger.error(f"Bulk push error: {e}")

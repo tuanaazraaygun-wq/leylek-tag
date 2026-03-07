@@ -218,6 +218,16 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 <Text style={styles.statLabel}>Bugün</Text>
               </View>
             </View>
+            <View style={styles.statsRow}>
+              <View style={[styles.statBox, { backgroundColor: '#1E40AF' }]}>
+                <Text style={styles.statNum}>{stats?.users?.with_push_token || 0}</Text>
+                <Text style={styles.statLabel}>Bildirim İzni</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{stats?.trips?.waiting || 0}</Text>
+                <Text style={styles.statLabel}>Bekleyen</Text>
+              </View>
+            </View>
             
             <Text style={styles.sectionTitle}>Son Yolculuklar</Text>
             {trips.slice(0, 5).map((t, i) => (
