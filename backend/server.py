@@ -2471,6 +2471,17 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
     """Yolcu TAG oluştur (alias)"""
     return await create_tag(request, user_id)
 
+@api_router.get("/trip/{tag_id}")
+async def get_trip_status(tag_id: str):
+    """Yolculuk durumunu al - polling için"""
+    try:
+        result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        if result.data:
+            return {"success": True, "tag": result.data[0]}
+        return {"success": False, "error": "Trip bulunamadı"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @api_router.get("/passenger/active-tag")
 async def get_active_tag(passenger_id: str = None, user_id: str = None):
     """Aktif TAG getir - önce aktif tag'leri kontrol et"""
@@ -7702,6 +7713,69 @@ async def get_driver_packages():
             "price_tl": pkg["price_tl"],
         })
     return {"success": True, "packages": packages}
+
+@api_router.get("/driver/nearby-activity")
+async def get_nearby_activity(lat: float, lng: float, radius_km: float = 20):
+    """Sürücü için yakındaki aktif yolculuklar ve yoğunluk bilgisi"""
+    try:
+        # 1. Yakındaki aktif (bekleyen) yolculukları al
+        active_tags = supabase.table("tags").select(
+            "id, pickup_lat, pickup_lng, pickup_location, status, final_price"
+        ).eq("status", "waiting").execute()
+        
+        nearby_tags = []
+        region_counts = {}  # Bölge yoğunluğu
+        
+        for tag in (active_tags.data or []):
+            tag_lat = tag.get("pickup_lat")
+            tag_lng = tag.get("pickup_lng")
+            if tag_lat and tag_lng:
+                distance = haversine_distance(lat, lng, tag_lat, tag_lng)
+                if distance <= radius_km:
+                    nearby_tags.append({
+                        "id": tag["id"],
+                        "lat": tag_lat,
+                        "lng": tag_lng,
+                        "location": tag.get("pickup_location", ""),
+                        "price": tag.get("final_price", 0),
+                        "distance_km": round(distance, 1)
+                    })
+                    
+                    # Bölge yoğunluğu hesapla
+                    location = tag.get("pickup_location", "")
+                    if location:
+                        # İlk kelimeyi bölge olarak al (örn: "Çankaya")
+                        region = location.split(",")[0].split("/")[0].strip()
+                        region_counts[region] = region_counts.get(region, 0) + 1
+        
+        # 2. Yoğun bölgeleri belirle (2+ istek olan yerler)
+        busy_regions = [
+            {"name": region, "count": count, "message": f"{region} bölgesi yoğun"}
+            for region, count in region_counts.items() if count >= 2
+        ]
+        
+        # 3. Yakındaki online sürücü sayısı
+        now = datetime.utcnow().isoformat()
+        drivers_result = supabase.table("users").select("id, latitude, longitude").eq("driver_online", True).gt("driver_active_until", now).execute()
+        
+        nearby_drivers = 0
+        for d in (drivers_result.data or []):
+            d_lat, d_lng = d.get("latitude"), d.get("longitude")
+            if d_lat and d_lng:
+                if haversine_distance(lat, lng, d_lat, d_lng) <= radius_km:
+                    nearby_drivers += 1
+        
+        return {
+            "success": True,
+            "nearby_tags": nearby_tags,
+            "nearby_tag_count": len(nearby_tags),
+            "nearby_driver_count": nearby_drivers,
+            "busy_regions": busy_regions,
+            "radius_km": radius_km
+        }
+    except Exception as e:
+        logger.error(f"Nearby activity error: {e}")
+        return {"success": False, "detail": str(e)}
 
 @api_router.get("/driver/status")
 async def get_driver_status(user_id: str):

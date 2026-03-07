@@ -509,8 +509,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         {/* Mesajlar */}
         <KeyboardAvoidingView 
           style={styles.chatContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
         >
           {loading ? (
             <View style={styles.loadingContainer}>

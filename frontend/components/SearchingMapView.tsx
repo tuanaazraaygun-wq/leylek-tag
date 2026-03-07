@@ -46,6 +46,7 @@ interface SearchingMapViewProps {
   destinationLocation?: { latitude: number; longitude: number } | null;
   driverLocations: DriverLocation[];
   height?: number;
+  nearbyDriverCount?: number; // 20 km içindeki toplam sürücü sayısı
 }
 
 export default function SearchingMapView({
@@ -53,6 +54,7 @@ export default function SearchingMapView({
   destinationLocation,
   driverLocations,
   height = SCREEN_HEIGHT * 0.35,
+  nearbyDriverCount = 0,
 }: SearchingMapViewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -174,7 +176,9 @@ export default function SearchingMapView({
       {/* Sürücü Sayısı Badge */}
       <View style={styles.driverCountBadge}>
         <Ionicons name="car" size={16} color="#FFF" />
-        <Text style={styles.driverCountText}>{driverLocations.length} sürücü</Text>
+        <Text style={styles.driverCountText}>
+          {nearbyDriverCount > 0 ? nearbyDriverCount : driverLocations.length} sürücü
+        </Text>
       </View>
     </View>
   );

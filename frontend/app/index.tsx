@@ -40,6 +40,7 @@ import { LegalConsentModal, LegalPage, LocationWarningModal } from '../component
 import SplashScreen from '../components/SplashScreen';
 import { KVKKConsentModal, SupportModal } from '../components/KVKKComponents';
 import CommunityScreen from '../components/CommunityScreen';
+import DriverActivityMap from '../components/DriverActivityMap';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
@@ -4505,9 +4506,40 @@ function PassengerDashboard({
   // 🆕 Teklif veren sürücülerin konumları (SEARCHING phase için)
   const [offerDriverLocations, setOfferDriverLocations] = useState<DriverLocation[]>([]);
   
+  // 🆕 20 km çevredeki sürücü sayısı
+  const [nearbyDriverCount, setNearbyDriverCount] = useState(0);
+  
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+
+  // 🆕 Yolcu için yakındaki sürücü sayısını çek (SEARCHING phase)
+  useEffect(() => {
+    if (!activeTag || activeTag.status === 'matched' || activeTag.status === 'in_progress') {
+      return;
+    }
+    
+    const fetchNearbyDrivers = async () => {
+      if (!userLocation) return;
+      
+      try {
+        const response = await fetch(
+          `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20`
+        );
+        const data = await response.json();
+        if (data.success && typeof data.nearby_driver_count === 'number') {
+          setNearbyDriverCount(data.nearby_driver_count);
+        }
+      } catch (e) {
+        console.log('Nearby drivers fetch error:', e);
+      }
+    };
+    
+    fetchNearbyDrivers();
+    const interval = setInterval(fetchNearbyDrivers, 10000); // Her 10 saniyede güncelle
+    
+    return () => clearInterval(interval);
+  }, [activeTag, userLocation]);
   
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
@@ -5793,6 +5825,7 @@ function PassengerDashboard({
             destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
             driverLocations={offerDriverLocations}
             height={SCREEN_HEIGHT * 0.32}
+            nearbyDriverCount={nearbyDriverCount}
           />
         </View>
 
@@ -7881,15 +7914,25 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       
       {/* 🆕 Sürücü Dashboard Paneli - Kazanç ve Aktif Süre (Aktif yolculuk YOKKEN) */}
       {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
-        <DriverDashboardPanel
-          userId={user.id}
-          onPackagePress={() => setShowDriverPackagesModal(true)}
-          onToggleOnline={(isOnline) => {
-            console.log('Sürücü online durumu değişti:', isOnline);
-          }}
-          expanded={driverDashboardExpanded}
-          onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
-        />
+        <View style={styles.driverTopSection}>
+          <DriverDashboardPanel
+            userId={user.id}
+            onPackagePress={() => setShowDriverPackagesModal(true)}
+            onToggleOnline={(isOnline) => {
+              console.log('Sürücü online durumu değişti:', isOnline);
+            }}
+            expanded={driverDashboardExpanded}
+            onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
+          />
+          
+          {/* 🆕 Aktivite Haritası - Yakındaki yolcular ve yoğunluk */}
+          <View style={styles.activityMapContainer}>
+            <DriverActivityMap 
+              userLocation={userLocation}
+              city={user.city || 'Ankara'}
+            />
+          </View>
+        </View>
       )}
 
       {/* CANLI HARİTA - Tam Ekran (Şoför) */}
@@ -8573,6 +8616,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
+  // 🆕 Sürücü Üst Bölüm
+  driverTopSection: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  activityMapContainer: {
+    marginTop: 12,
+  },
   // 📋 KYC PENDING SCREEN STYLES
   kycPendingContainer: {
     flex: 1,
