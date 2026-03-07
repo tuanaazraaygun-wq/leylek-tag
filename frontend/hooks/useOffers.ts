@@ -18,7 +18,7 @@ import Constants from 'expo-constants';
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://leylektag-dev.preview.emergentagent.com';
+                    'https://tag-dispatch.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 // ==================== TYPES ====================

@@ -6924,17 +6924,19 @@ async def admin_send_push(admin_phone: str, title: str, body: str, target: str =
         if admin_phone not in ADMIN_PHONE_NUMBERS:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
-        # Bildirimi kaydet
-        notification_data = {
-            "title": title,
-            "body": body,
-            "target": target,
-            "user_id": user_id,
-            "sent_by": admin_phone,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        
-        supabase.table("admin_notifications").insert(notification_data).execute()
+        # Bildirimi kaydetmeyi dene (tablo yoksa atla)
+        try:
+            notification_data = {
+                "title": title,
+                "body": body,
+                "target": target,
+                "user_id": user_id,
+                "sent_by": admin_phone,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            supabase.table("notifications").insert(notification_data).execute()
+        except Exception as save_err:
+            logger.warning(f"Bildirim kaydedilemedi (tablo olmayabilir): {save_err}")
         
         # Gönder
         if user_id:

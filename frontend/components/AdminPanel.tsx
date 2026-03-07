@@ -1,6 +1,6 @@
 /**
  * AdminPanel Component - Leylek TAG
- * v9 - MODAL İÇİN ULTRA MİNİMAL VERSİYON
+ * v10 - Bildirim Özelliği Eklendi
  * Tüm Android cihazlarla uyumlu
  */
 
@@ -15,6 +15,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 
 const API_URL = 'https://api.leylektag.com/api';
@@ -62,6 +64,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [users, setUsers] = useState<any[]>([]);
   const [trips, setTrips] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  
+  // Notification states
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifBody, setNotifBody] = useState('');
+  const [notifTarget, setNotifTarget] = useState<'all' | 'drivers' | 'passengers'>('all');
+  const [sendingNotif, setSendingNotif] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -94,6 +102,34 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const refresh = () => {
     setRefreshing(true);
     loadAll();
+  };
+
+  // Send notification function
+  const sendNotification = async () => {
+    if (!notifTitle.trim() || !notifBody.trim()) {
+      Alert.alert('Hata', 'Başlık ve mesaj gerekli');
+      return;
+    }
+    
+    setSendingNotif(true);
+    try {
+      const response = await fetch(
+        `${API_URL}/admin/notifications/send?admin_phone=${adminPhone}&title=${encodeURIComponent(notifTitle)}&body=${encodeURIComponent(notifBody)}&target=${notifTarget}`,
+        { method: 'POST' }
+      );
+      const data = await response.json();
+      
+      if (data.success) {
+        Alert.alert('Başarılı', `Bildirim ${data.sent_count || 0} kişiye gönderildi`);
+        setNotifTitle('');
+        setNotifBody('');
+      } else {
+        Alert.alert('Hata', data.error || data.detail || 'Bildirim gönderilemedi');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e.message || 'Bildirim gönderilemedi');
+    }
+    setSendingNotif(false);
   };
 
   const filteredUsers = search
@@ -144,6 +180,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
           onPress={() => setTab('trips')}
         >
           <Text style={[styles.tabText, tab === 'trips' && styles.tabTextActive]}>Yolculuklar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tabBtn, tab === 'notif' && styles.tabActive]}
+          onPress={() => setTab('notif')}
+        >
+          <Text style={[styles.tabText, tab === 'notif' && styles.tabTextActive]}>Bildirim</Text>
         </TouchableOpacity>
       </View>
 
@@ -246,6 +288,82 @@ function AdminContent({ adminPhone, onClose }: Props) {
               </View>
             ))}
           </View>
+        )}
+
+        {/* Notifications */}
+        {tab === 'notif' && (
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.section}
+          >
+            <Text style={styles.sectionTitle}>Bildirim Gönder</Text>
+            
+            {/* Target Selection */}
+            <View style={styles.targetRow}>
+              <TouchableOpacity
+                style={[styles.targetBtn, notifTarget === 'all' && styles.targetActive]}
+                onPress={() => setNotifTarget('all')}
+              >
+                <Text style={[styles.targetText, notifTarget === 'all' && styles.targetTextActive]}>Herkese</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.targetBtn, notifTarget === 'drivers' && styles.targetActive]}
+                onPress={() => setNotifTarget('drivers')}
+              >
+                <Text style={[styles.targetText, notifTarget === 'drivers' && styles.targetTextActive]}>Sürücüler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.targetBtn, notifTarget === 'passengers' && styles.targetActive]}
+                onPress={() => setNotifTarget('passengers')}
+              >
+                <Text style={[styles.targetText, notifTarget === 'passengers' && styles.targetTextActive]}>Yolcular</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {/* Title Input */}
+            <TextInput
+              style={styles.notifInput}
+              placeholder="Bildirim Başlığı"
+              placeholderTextColor="#64748B"
+              value={notifTitle}
+              onChangeText={setNotifTitle}
+              maxLength={100}
+            />
+            
+            {/* Body Input */}
+            <TextInput
+              style={[styles.notifInput, styles.notifBodyInput]}
+              placeholder="Bildirim Mesajı"
+              placeholderTextColor="#64748B"
+              value={notifBody}
+              onChangeText={setNotifBody}
+              multiline
+              numberOfLines={4}
+              maxLength={500}
+              textAlignVertical="top"
+            />
+            
+            {/* Send Button */}
+            <TouchableOpacity
+              style={[styles.sendBtn, sendingNotif && styles.sendBtnDisabled]}
+              onPress={sendNotification}
+              disabled={sendingNotif}
+            >
+              {sendingNotif ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.sendBtnText}>Bildirimi Gönder</Text>
+              )}
+            </TouchableOpacity>
+            
+            {/* Info Box */}
+            <View style={styles.infoBox}>
+              <Text style={styles.infoTitle}>Bilgi</Text>
+              <Text style={styles.infoText}>
+                Push bildirimleri yalnızca uygulamayı yüklemiş ve bildirim izni vermiş kullanıcılara gönderilir.
+              </Text>
+            </View>
+          </KeyboardAvoidingView>
         )}
 
         <View style={styles.bottomPadding} />
@@ -479,5 +597,81 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 50,
+  },
+  // Notification styles
+  targetRow: {
+    flexDirection: 'row',
+    marginBottom: 15,
+  },
+  targetBtn: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    marginHorizontal: 3,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  targetActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  targetText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  targetTextActive: {
+    color: '#FFF',
+  },
+  notifInput: {
+    backgroundColor: '#1E293B',
+    color: '#FFF',
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    borderRadius: 10,
+    fontSize: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  notifBodyInput: {
+    height: 120,
+    paddingTop: 14,
+  },
+  sendBtn: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  sendBtnDisabled: {
+    backgroundColor: '#64748B',
+  },
+  sendBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoBox: {
+    backgroundColor: '#1E293B',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+  },
+  infoTitle: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+  infoText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    lineHeight: 20,
   },
 });
