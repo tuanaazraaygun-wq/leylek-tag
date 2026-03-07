@@ -3311,35 +3311,59 @@ class ExpoPushService:
             logger.error(f"Push error: {e}")
             return {"sent": 0, "failed": len(valid_tokens)}
 
+class PushTokenRequest(BaseModel):
+    user_id: str
+    push_token: str
+    platform: Optional[str] = "android"
+
 @api_router.post("/user/register-push-token")
-async def register_push_token_endpoint(user_id: str, push_token: str):
-    """Push token kaydet - GELİŞTİRİLMİŞ LOG İLE"""
+async def register_push_token_endpoint(
+    request: PushTokenRequest = None,
+    user_id: str = None,
+    push_token: str = None
+):
+    """Push token kaydet - JSON body veya query params kabul eder"""
     try:
-        logger.info(f"📱 Push token kayıt isteği: user_id={user_id}, token={push_token[:40] if push_token else 'NONE'}...")
+        # JSON body veya query params'tan al
+        _user_id = request.user_id if request else user_id
+        _push_token = request.push_token if request else push_token
+        _platform = request.platform if request else "android"
+        
+        logger.info(f"📱 Push token kayıt isteği: user_id={_user_id}, platform={_platform}, token={_push_token[:40] if _push_token else 'NONE'}...")
+        
+        # Validasyonlar
+        if not _user_id:
+            return {"success": False, "detail": "user_id gerekli"}
+        
+        if not _push_token:
+            return {"success": False, "detail": "push_token gerekli"}
         
         # Token formatı kontrolü
-        if not push_token or not push_token.startswith("ExponentPushToken"):
-            logger.warning(f"❌ Geçersiz token formatı: {push_token[:40] if push_token else 'NONE'}")
-            return {"success": False, "detail": "Geçersiz token formatı"}
+        if not _push_token.startswith("ExponentPushToken"):
+            logger.warning(f"❌ Geçersiz token formatı: {_push_token[:40]}")
+            return {"success": False, "detail": "Geçersiz token formatı - ExponentPushToken ile başlamalı"}
         
         # Kullanıcı var mı kontrol et
-        user_check = supabase.table("users").select("id, name").eq("id", user_id).execute()
+        user_check = supabase.table("users").select("id, name").eq("id", _user_id).execute()
         if not user_check.data:
-            logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
+            logger.warning(f"❌ Kullanıcı bulunamadı: {_user_id}")
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
         
         user_name = user_check.data[0].get("name", "Unknown")
         
         # Users tablosuna kaydet
         supabase.table("users").update({
-            "push_token": push_token,
-            "push_token_updated_at": datetime.utcnow().isoformat()
-        }).eq("id", user_id).execute()
+            "push_token": _push_token,
+            "push_token_updated_at": datetime.utcnow().isoformat(),
+            "push_platform": _platform
+        }).eq("id", _user_id).execute()
         
-        logger.info(f"✅ Push token kaydedildi: {user_name} ({user_id})")
-        return {"success": True, "message": f"Token kaydedildi: {user_name}"}
+        logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform}")
+        return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform}
     except Exception as e:
         logger.error(f"❌ Push token kayıt hatası: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {"success": False, "detail": str(e)}
 
 @api_router.delete("/user/remove-push-token")
