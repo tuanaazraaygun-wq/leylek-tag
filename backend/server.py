@@ -7714,6 +7714,50 @@ async def get_driver_packages():
         })
     return {"success": True, "packages": packages}
 
+@api_router.get("/drivers/nearby")
+async def get_nearby_drivers(lat: float, lng: float, radius_km: float = 20):
+    """Yakındaki online sürücülerin konum ve bilgilerini al"""
+    try:
+        now = datetime.utcnow().isoformat()
+        drivers_result = supabase.table("users").select(
+            "id, name, latitude, longitude, rating, driver_details"
+        ).eq("driver_online", True).gt("driver_active_until", now).execute()
+        
+        nearby_drivers = []
+        for driver in (drivers_result.data or []):
+            d_lat = driver.get("latitude")
+            d_lng = driver.get("longitude")
+            if d_lat and d_lng:
+                distance = haversine_distance(lat, lng, d_lat, d_lng)
+                if distance <= radius_km:
+                    vehicle = None
+                    if driver.get("driver_details"):
+                        details = driver["driver_details"]
+                        if isinstance(details, dict):
+                            vehicle = f"{details.get('vehicle_brand', '')} {details.get('vehicle_model', '')}".strip()
+                    
+                    nearby_drivers.append({
+                        "id": driver["id"],
+                        "name": driver.get("name", "Sürücü"),
+                        "latitude": d_lat,
+                        "longitude": d_lng,
+                        "rating": driver.get("rating"),
+                        "vehicle": vehicle,
+                        "distance_km": round(distance, 1)
+                    })
+        
+        # Mesafeye göre sırala
+        nearby_drivers.sort(key=lambda x: x["distance_km"])
+        
+        return {
+            "success": True,
+            "drivers": nearby_drivers,
+            "count": len(nearby_drivers)
+        }
+    except Exception as e:
+        logger.error(f"Nearby drivers error: {e}")
+        return {"success": False, "drivers": [], "count": 0}
+
 @api_router.get("/driver/nearby-activity")
 async def get_nearby_activity(lat: float, lng: float, radius_km: float = 20):
     """Sürücü için yakındaki aktif yolculuklar ve yoğunluk bilgisi"""

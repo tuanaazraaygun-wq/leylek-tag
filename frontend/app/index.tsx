@@ -11,6 +11,7 @@ import LiveMapView from '../components/LiveMapView';
 import QRTripEndModal from '../components/QRTripEndModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
+import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
 import VideoCall from '../components/VideoCall';
 import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
@@ -5800,6 +5801,26 @@ function PassengerDashboard({
   if (activeTag && activeTag.status !== 'matched' && activeTag.status !== 'in_progress') {
     const isSearching = activeTag.status === 'pending' || activeTag.status === 'offers_received';
     
+    // Teklif yoksa premium bekleme ekranını göster
+    if (offers.length === 0) {
+      return (
+        <PassengerWaitingScreen
+          userLocation={userLocation}
+          destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
+          pickupAddress={activeTag.pickup_location || ''}
+          dropoffAddress={activeTag.dropoff_location || ''}
+          tagId={activeTag.id}
+          offeredPrice={activeTag.final_price || activeTag.offered_price || 0}
+          onCancel={handleCancelTag}
+          onMatch={(driverData) => {
+            // Eşleşme olduğunda
+            console.log('Match received:', driverData);
+          }}
+        />
+      );
+    }
+    
+    // Teklif varsa mevcut listeyi göster
     return (
       <SafeAreaView style={searchingStyles.container}>
         {/* Üst Bar - Geri + Durum + İptal */}
@@ -5852,40 +5873,32 @@ function PassengerDashboard({
         </View>
 
         {/* TEKLİF LİSTESİ - Scrollable */}
-        {offers.length > 0 ? (
-          <View style={searchingStyles.offersContainer}>
-            <View style={searchingStyles.offersHeader}>
-              <Text style={searchingStyles.offersTitle}>Teklifler</Text>
-              <View style={searchingStyles.liveIndicator}>
-                <View style={searchingStyles.liveDot} />
-                <Text style={searchingStyles.liveText}>Canlı</Text>
-              </View>
+        <View style={searchingStyles.offersContainer}>
+          <View style={searchingStyles.offersHeader}>
+            <Text style={searchingStyles.offersTitle}>Teklifler</Text>
+            <View style={searchingStyles.liveIndicator}>
+              <View style={searchingStyles.liveDot} />
+              <Text style={searchingStyles.liveText}>Canlı</Text>
             </View>
-            
-            <FlatList
-              data={offers}
-              keyExtractor={(item, index) => item.id || index.toString()}
-              renderItem={({ item, index }) => (
-                <PassengerOfferCard
-                  offer={item}
-                  index={index}
-                  total={offers.length}
-                  onAccept={() => handleAcceptOffer(item.id)}
-                  onDismiss={() => handleDismissOffer(item.id)}
-                  isBest={index === 0}
-                />
-              )}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
-            />
           </View>
-        ) : (
-          <View style={searchingStyles.emptyOffersContainer}>
-            <ActivityIndicator size="large" color="#3FA9F5" />
-            <Text style={searchingStyles.emptyTitle}>Yakındaki sürücüler bilgilendiriliyor...</Text>
-            <Text style={searchingStyles.emptySubtitle}>Teklifler birkaç saniye içinde gelecek</Text>
-          </View>
-        )}
+          
+          <FlatList
+            data={offers}
+            keyExtractor={(item, index) => item.id || index.toString()}
+            renderItem={({ item, index }) => (
+              <PassengerOfferCard
+                offer={item}
+                index={index}
+                total={offers.length}
+                onAccept={() => handleAcceptOffer(item.id)}
+                onDismiss={() => handleDismissOffer(item.id)}
+                isBest={index === 0}
+              />
+            )}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+          />
+        </View>
       </SafeAreaView>
     );
   }
