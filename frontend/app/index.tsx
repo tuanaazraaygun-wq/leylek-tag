@@ -7260,6 +7260,55 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     };
   }, [user?.id]);
 
+  // 🆕 SÜRÜCÜ PUANLAMA - Trip "completed" olduğunda puanlama modalını aç
+  // Socket event gelmezse polling ile kontrol et
+  const lastCheckedStatus = useRef<string | null>(null);
+  const ratingModalShownForTag = useRef<string | null>(null);
+  
+  useEffect(() => {
+    if (!activeTag || !user?.id) return;
+    
+    // Her 2 saniyede trip durumunu kontrol et
+    const checkTripStatus = async () => {
+      try {
+        const response = await fetch(`${API_URL}/trip/${activeTag.id}`);
+        const data = await response.json();
+        
+        // Trip completed olduysa ve daha önce bu tag için modal gösterilmediyse
+        if (data.success && data.tag?.status === 'completed' && 
+            lastCheckedStatus.current !== 'completed' &&
+            ratingModalShownForTag.current !== activeTag.id) {
+          
+          console.log('✅ SÜRÜCÜ - Trip completed detected via polling!');
+          lastCheckedStatus.current = 'completed';
+          ratingModalShownForTag.current = activeTag.id;
+          
+          // QR modal açıksa kapat
+          setShowQRModal(false);
+          
+          // Puanlama modalını aç
+          setRatingModalData({
+            visible: true,
+            tagId: activeTag.id,
+            rateUserId: activeTag.passenger_id || '',
+            rateUserName: activeTag.passenger_name || 'Yolcu'
+          });
+        } else if (data.tag?.status) {
+          lastCheckedStatus.current = data.tag.status;
+        }
+      } catch (error) {
+        // Sessizce geç
+      }
+    };
+    
+    // İlk kontrol
+    checkTripStatus();
+    
+    // Polling
+    const interval = setInterval(checkTripStatus, 2000);
+    return () => clearInterval(interval);
+  }, [activeTag?.id, user?.id]);
+
   // CANLI YOLCU KONUM GÜNCELLEME - Eşleşince başla
   useEffect(() => {
     if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {

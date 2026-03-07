@@ -482,23 +482,24 @@ export default function LiveMapView({
     return points;
   };
 
-  // 🆕 IN-APP NAVİGASYON - Google Maps WebView olarak aç
+  // 🆕 IN-APP NAVİGASYON - Google Maps tarayıcıda/uygulamada aç
   const openGoogleMapsNavigation = () => {
     if (!userLocation || !otherLocation) {
       Alert.alert('Hata', 'Konum bilgisi alınamadı');
       return;
     }
     
-    // Google Maps navigasyon URL'i oluştur
-    const origin = `${userLocation.latitude},${userLocation.longitude}`;
+    // Hedef koordinatları
     const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
-    const passengerName = encodeURIComponent(otherUserName || 'Yolcu');
     
-    // Google Maps embed URL - direkt navigasyon modunda açılır
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving&dir_action=navigate`;
+    // Google Maps navigasyon URL - tarayıcıda veya Google Maps uygulamasında açılır
+    const googleNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving&dir_action=navigate`;
     
-    setGoogleMapsUrl(mapsUrl);
-    setShowGoogleMapsModal(true);
+    // Tarayıcıda aç
+    Linking.openURL(googleNavUrl).catch((err) => {
+      console.error('Navigation error:', err);
+      Alert.alert('Hata', 'Navigasyon açılamadı');
+    });
   };
   
   // Eski fonksiyon - artık kullanılmıyor ama backup olarak kalıyor
