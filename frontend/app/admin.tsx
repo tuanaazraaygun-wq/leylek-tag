@@ -16,12 +16,22 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE = 'https://api.leylektag.com/api';
+// API URL - Ortama göre dinamik
+const getApiUrl = () => {
+  // Önce environment variable kontrol et
+  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+  if (envUrl) return `${envUrl}/api`;
+  // Fallback
+  return 'https://api.leylektag.com/api';
+};
+
+const API_BASE = getApiUrl();
 
 type Tab = 'dashboard' | 'users' | 'trips' | 'promos' | 'notifs';
 
@@ -166,35 +176,41 @@ export default function AdminPanel() {
   // Loading
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#3FA9F5" />
-        <Text style={styles.loadingText}>Yükleniyor...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#3FA9F5" />
+          <Text style={styles.loadingText}>Yükleniyor...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   // Error
   if (error) {
     return (
-      <View style={styles.centerContainer}>
-        <Ionicons name="alert-circle" size={48} color="#EF4444" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Geri Dön</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerContainer}>
+          <Ionicons name="alert-circle" size={48} color="#EF4444" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   // Not admin
   if (!isAdmin) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Yetkisiz erişim</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Geri Dön</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>Yetkisiz erişim</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>Geri Dön</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -208,7 +224,7 @@ export default function AdminPanel() {
   const drivers = users.filter(u => u.is_driver);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
@@ -492,7 +508,7 @@ export default function AdminPanel() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
