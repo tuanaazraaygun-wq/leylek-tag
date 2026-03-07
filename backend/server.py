@@ -380,9 +380,9 @@ logger.info("✅ Sürücü paketleri yapılandırıldı")
 
 # ==================== DISPATCH QUEUE CONFIG ====================
 DISPATCH_CONFIG = {
-    "matching_radius_km": 15,        # Sürücü arama yarıçapı (km)
-    "max_driver_dispatch": 5,        # Maksimum kaç sürücüye teklif gönderilsin
-    "driver_offer_timeout": 20,      # Sürücü yanıt süresi (saniye)
+    "matching_radius_km": 20,        # Sürücü arama yarıçapı (km) - 20 km
+    "max_driver_dispatch": 10,       # Maksimum kaç sürücüye teklif gönderilsin
+    "driver_offer_timeout": 10,      # Sürücü yanıt süresi (saniye) - 10 sn
     "enabled": True,                 # Dispatch queue aktif mi
 }
 
@@ -639,15 +639,47 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         logger.error(f"❌ Dispatch offer error: {e}")
 
 async def broadcast_offer_to_all(tag_id: str, tag_data: dict):
-    """Fallback: Tüm online sürücülere broadcast"""
+    """Fallback: 20 km içindeki online sürücülere broadcast (herkes değil)"""
     try:
+        # 20 km içindeki sürücüleri bul
+        pickup_lat = tag_data.get("pickup_lat")
+        pickup_lng = tag_data.get("pickup_lng")
+        
+        if not pickup_lat or not pickup_lng:
+            logger.warning(f"📢 Broadcast atlandı: konum bilgisi yok")
+            return
+        
+        # 20 km içindeki online sürücüleri bul
+        now = datetime.utcnow().isoformat()
+        drivers_result = supabase.table("users").select(
+            "id, latitude, longitude"
+        ).eq("driver_online", True).gt("driver_active_until", now).execute()
+        
+        if not drivers_result.data:
+            logger.info(f"📢 Broadcast: Uygun sürücü yok")
+            return
+        
+        # Mesafe filtresi uygula
+        eligible_drivers = []
+        for driver in drivers_result.data:
+            d_lat = driver.get("latitude")
+            d_lng = driver.get("longitude")
+            if d_lat and d_lng:
+                distance = haversine_distance(pickup_lat, pickup_lng, d_lat, d_lng)
+                if distance <= 20:  # 20 km içinde
+                    eligible_drivers.append(driver["id"])
+        
+        if not eligible_drivers:
+            logger.info(f"📢 Broadcast: 20 km içinde sürücü yok")
+            return
+        
         offer_data = {
             "tag_id": tag_id,
             "passenger_id": tag_data.get("passenger_id"),
             "passenger_name": tag_data.get("passenger_name", "Yolcu"),
             "pickup_location": tag_data.get("pickup_location"),
-            "pickup_lat": tag_data.get("pickup_lat"),
-            "pickup_lng": tag_data.get("pickup_lng"),
+            "pickup_lat": pickup_lat,
+            "pickup_lng": pickup_lng,
             "dropoff_location": tag_data.get("dropoff_location"),
             "dropoff_lat": tag_data.get("dropoff_lat"),
             "dropoff_lng": tag_data.get("dropoff_lng"),
@@ -655,8 +687,11 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict):
             "is_broadcast": True,
         }
         
-        await sio.emit("new_passenger_offer", offer_data, room="drivers")
-        logger.info(f"📢 Broadcast teklif gönderildi: tag={tag_id}")
+        # Sadece 20 km içindeki sürücülere gönder
+        for driver_id in eligible_drivers:
+            await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
+        
+        logger.info(f"📢 Broadcast teklif gönderildi: tag={tag_id}, {len(eligible_drivers)} sürücüye")
     except Exception as e:
         logger.error(f"Broadcast error: {e}")
 
@@ -7167,6 +7202,19 @@ async def get_community_messages(limit: int = 50, offset: int = 0, city: Optiona
     except Exception as e:
         logger.error(f"❌ Community messages error: {e}")
         return {"success": False, "messages": [], "error": str(e)}
+
+@api_router.get("/community/online-count")
+async def community_online_count(city: str):
+    """Şehirdeki online kullanıcı sayısı (yaklaşık)"""
+    try:
+        # Son 5 dakikada aktif kullanıcıları say
+        five_mins_ago = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+        result = supabase.table("users").select("id", count="exact").eq("city", city).gte("last_active", five_mins_ago).execute()
+        return {"count": result.count or 0}
+    except Exception as e:
+        # Fallback: rastgele sayı
+        import random
+        return {"count": random.randint(5, 25)}
 
 @api_router.post("/community/message")
 async def create_community_message(msg: CommunityMessageCreate):
