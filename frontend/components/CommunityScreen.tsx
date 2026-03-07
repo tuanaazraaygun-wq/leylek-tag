@@ -572,9 +572,10 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         {/* Mesaj Listesi */}
         <KeyboardAvoidingView 
           style={styles.chatContent}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={90}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
+          <View style={{ flex: 1 }}>
           {loading && messages.length === 0 ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={cityTheme.gradient[0]} />
@@ -677,6 +678,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
                 <Ionicons name="send" size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
+          </View>
           </View>
         </KeyboardAvoidingView>
       </LinearGradient>

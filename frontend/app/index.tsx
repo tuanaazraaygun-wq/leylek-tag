@@ -1853,7 +1853,9 @@ export default function App() {
             </View>
 
             <TouchableOpacity style={styles.communityBtnCompact} onPress={() => setScreen('community')}>
-              <Image source={require('../assets/images/leylek-splash.png')} style={styles.communityLogo} resizeMode="contain" />
+              <View style={styles.communityLogoBox}>
+                <Ionicons name="chatbubbles" size={28} color="#FFF" />
+              </View>
               <View style={styles.communityTextBox}>
                 <Text style={styles.communityBtnTitle}>Leylek Muhabbeti</Text>
                 <Text style={styles.communityBtnSub}>Şehir Topluluğuna Katıl</Text>
@@ -11692,11 +11694,19 @@ const styles = StyleSheet.create({
   communityBtnCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    backgroundColor: '#1E3A5F',
     borderRadius: 16,
     padding: 14,
     borderWidth: 2,
     borderColor: '#3FA9F5',
+  },
+  communityLogoBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1E3A5F',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   communityLogo: {
     width: 50,
@@ -11711,11 +11721,11 @@ const styles = StyleSheet.create({
   communityBtnTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#1E5F8A',
+    color: '#FFFFFF',
   },
   communityBtnSub: {
     fontSize: 13,
-    color: '#3FA9F5',
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
   communityArrow: {
