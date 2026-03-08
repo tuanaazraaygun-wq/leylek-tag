@@ -1,30 +1,24 @@
 /**
- * Expo Push Notifications Hook - TAM YENİDEN YAZILDI
- * Push token alma ve backend'e kaydetme işlemlerini yönetir
- * Uygulama kapalıyken de bildirim alır (FCM üzerinden)
+ * Expo Push Notifications Hook - STABIL VERSİYON
+ * Alert yok, crash yok, sessizce çalışır
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Platform, AppState, Alert } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 
-// Backend URL - SABIT - asla değişmemeli
+// Backend URL
 const API_URL = 'https://api.leylektag.com/api';
 
-// Notification handler - uygulama açıkken VE arka plandayken bildirimleri göster
+// Notification handler
 Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    console.log('🔔 [HANDLER] Bildirim alındı:', notification.request.content.title);
-    return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    };
-  },
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
 });
 
 interface UsePushNotificationsReturn {
@@ -35,8 +29,6 @@ interface UsePushNotificationsReturn {
   registerPushToken: (userId: string) => Promise<boolean>;
   removePushToken: (userId: string) => Promise<void>;
   scheduleLocalNotification: (title: string, body: string, data?: Record<string, unknown>) => Promise<void>;
-  getExpoPushToken: () => Promise<string | null>;
-  requestPermissionAndGetToken: () => Promise<string | null>;
 }
 
 export function usePushNotifications(): UsePushNotificationsReturn {
@@ -47,231 +39,130 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
-  const appStateRef = useRef(AppState.currentState);
 
-  // Android için notification channel'ları oluştur
+  // Android için notification channel oluştur
   const setupAndroidChannels = useCallback(async () => {
     if (Platform.OS !== 'android') return;
 
     try {
-      // Varsayılan kanal - tüm bildirimler
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'Varsayılan Bildirimler',
+        name: 'Varsayılan',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#3FA9F5',
         sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true, // Rahatsız etmeyin modunu geç
       });
-
-      // Acil bildirimler - yolculuk teklifleri
-      await Notifications.setNotificationChannelAsync('ride_offers', {
-        name: 'Yolculuk Teklifleri',
-        description: 'Yeni yolculuk teklifi bildirimleri',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 200, 500, 200, 500],
-        lightColor: '#00FF00',
-        sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-      });
-
-      // Eşleşme bildirimleri
-      await Notifications.setNotificationChannelAsync('matches', {
-        name: 'Eşleşme Bildirimleri',
-        description: 'Sürücü-yolcu eşleşme bildirimleri',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 300, 150, 300],
-        lightColor: '#FFD700',
-        sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-      });
-
-      console.log('✅ Android notification kanalları oluşturuldu');
+      console.log('✅ Android channel oluşturuldu');
     } catch (err) {
-      console.error('❌ Android kanal oluşturma hatası:', err);
+      console.log('Android channel hatası:', err);
     }
   }, []);
 
-  // İzin iste ve token al - ANA FONKSİYON - AGRESİF DEBUG
-  const requestPermissionAndGetToken = useCallback(async (): Promise<string | null> => {
+  // Token al - güvenli, crash-proof
+  const getTokenSafe = useCallback(async (): Promise<string | null> => {
     try {
-      console.log('🔔 [INIT] Push notification setup başlıyor...');
-      Alert.alert('🔔 TOKEN ALMA 1', 'requestPermissionAndGetToken başladı');
-
-      // Fiziksel cihaz kontrolü
+      // Simülatör kontrolü
       if (!Device.isDevice) {
-        console.log('📱 Simülatörde push bildirimleri desteklenmiyor');
-        Alert.alert('❌ TOKEN ALMA', 'Simülatör tespit edildi - push desteklenmiyor');
-        setError('Simülatörde desteklenmiyor');
+        console.log('Simülatör - push desteklenmiyor');
         return null;
       }
-      
-      Alert.alert('🔔 TOKEN ALMA 2', `Fiziksel cihaz: EVET\nPlatform: ${Platform.OS}`);
 
-      // Android kanalları oluştur
+      // Android kanalları
       await setupAndroidChannels();
 
-      // Mevcut izin durumunu kontrol et
+      // İzin kontrolü
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      console.log('🔔 Mevcut izin durumu:', existingStatus);
-      Alert.alert('🔔 TOKEN ALMA 3', `Mevcut izin durumu: ${existingStatus}`);
-
       let finalStatus = existingStatus;
 
-      // İzin yoksa iste
       if (existingStatus !== 'granted') {
-        console.log('🔔 Bildirim izni isteniyor...');
-        Alert.alert('🔔 TOKEN ALMA 4', 'İzin isteniyor...');
-        const { status } = await Notifications.requestPermissionsAsync({
-          ios: {
-            allowAlert: true,
-            allowBadge: true,
-            allowSound: true,
-            allowAnnouncements: true,
-          },
-        });
+        const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
-        console.log('🔔 Yeni izin durumu:', finalStatus);
-        Alert.alert('🔔 TOKEN ALMA 5', `Yeni izin durumu: ${finalStatus}`);
       }
 
       if (finalStatus !== 'granted') {
-        console.log('❌ Bildirim izni reddedildi');
-        Alert.alert('❌ TOKEN ALMA', `İzin VERİLMEDİ: ${finalStatus}`);
-        setError('Bildirim izni verilmedi');
+        console.log('Bildirim izni verilmedi');
         return null;
       }
 
-      // Expo Push Token al
+      // Token al
       const projectId = Constants.expoConfig?.extra?.eas?.projectId || 'f00346b0-b9cb-47f9-a647-7f56b168e3a9';
-      console.log('🔔 Project ID:', projectId);
-      Alert.alert('🔔 TOKEN ALMA 6', `İzin TAMAM! Token alınıyor...\nProject ID: ${projectId}`);
+      
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: projectId,
+      });
 
-      try {
-        const tokenData = await Notifications.getExpoPushTokenAsync({
-          projectId: projectId,
-        });
+      const token = tokenData.data;
+      console.log('✅ Token alındı:', token?.substring(0, 30));
+      return token;
 
-        const token = tokenData.data;
-        console.log('✅ Push Token alındı:', token);
-        Alert.alert('✅ TOKEN ALMA BAŞARILI', `Token: ${token.substring(0, 45)}...`);
-        
-        setExpoPushToken(token);
-        setError(null);
-        setIsInitialized(true);
-
-        return token;
-      } catch (tokenError: any) {
-        console.error('❌ getExpoPushTokenAsync hatası:', tokenError);
-        Alert.alert('❌ TOKEN ALMA HATASI', `getExpoPushTokenAsync failed:\n${tokenError.message || tokenError}`);
-        return null;
-      }
     } catch (err: any) {
-      console.error('❌ Push token alma hatası:', err);
-      Alert.alert('❌ TOKEN ALMA EXCEPTION', `Genel hata:\n${err.message || err}`);
-      setError(err.message);
+      console.log('Token alma hatası:', err?.message || err);
       return null;
     }
   }, [setupAndroidChannels]);
 
-  // Sadece token al (izin istemeden)
-  const getExpoPushToken = useCallback(async (): Promise<string | null> => {
-    if (expoPushToken) return expoPushToken;
-    return await requestPermissionAndGetToken();
-  }, [expoPushToken, requestPermissionAndGetToken]);
-
-  // Token'ı backend'e kaydet - AGRESİF DEBUG
+  // Token'ı backend'e kaydet
   const registerPushToken = useCallback(async (userId: string): Promise<boolean> => {
     try {
-      console.log('🔔 [REGISTER] Başlıyor, userId:', userId);
-      
-      // DEBUG ALERT 1: Başlangıç
-      Alert.alert('🔔 DEBUG 1', `registerPushToken başladı\nuserId: ${userId}\nmevcut token: ${expoPushToken ? 'VAR' : 'YOK'}`);
+      if (!userId) {
+        console.log('userId yok, kayıt atlandı');
+        return false;
+      }
 
       // Token al
       let token = expoPushToken;
       if (!token) {
-        console.log('🔔 Token yok, alınıyor...');
-        Alert.alert('🔔 DEBUG 2', 'Token yok, requestPermissionAndGetToken çağrılıyor...');
-        token = await requestPermissionAndGetToken();
+        token = await getTokenSafe();
+        if (token) {
+          setExpoPushToken(token);
+        }
       }
 
-      // DEBUG ALERT 2: Token durumu
       if (!token) {
-        console.log('⚠️ Token alınamadı');
-        Alert.alert('❌ DEBUG 3', 'TOKEN ALINAMADI! requestPermissionAndGetToken null döndü.');
+        console.log('Token alınamadı, kayıt atlandı');
         return false;
       }
-      
-      Alert.alert('✅ DEBUG 4', `Token alındı!\n${token.substring(0, 40)}...`);
-      console.log('🔔 Token:', token.substring(0, 50) + '...');
 
-      // Backend'e kaydet
-      const url = `${API_URL}/user/register-push-token`;
-      console.log('🔔 API URL:', url);
-      
-      const requestBody = {
-        user_id: userId,
-        push_token: token,
-        platform: Platform.OS,
-      };
-      
-      Alert.alert('🔔 DEBUG 5', `API çağrısı yapılıyor...\nURL: ${url}\nBody: ${JSON.stringify(requestBody).substring(0, 100)}...`);
-
-      const response = await fetch(url, {
+      // Backend'e gönder
+      const response = await fetch(`${API_URL}/user/register-push-token`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          push_token: token,
+          platform: Platform.OS,
+        }),
       });
 
-      console.log('🔔 Response status:', response.status);
-      Alert.alert('🔔 DEBUG 6', `Response status: ${response.status}`);
-
       const data = await response.json();
-      console.log('🔔 Response data:', JSON.stringify(data));
       
-      // DEBUG ALERT 3: Sonuç
-      Alert.alert('🔔 DEBUG 7 - SONUÇ', `success: ${data.success}\nmessage: ${data.message || data.detail || 'N/A'}`);
-
       if (data.success) {
-        console.log('✅ Token backend\'e kaydedildi');
+        console.log('✅ Token kaydedildi');
         return true;
       } else {
-        console.error('❌ Kayıt hatası:', data.detail || data.error);
+        console.log('Token kayıt hatası:', data.detail);
         return false;
       }
+
     } catch (err: any) {
-      console.error('❌ registerPushToken hatası:', err);
-      Alert.alert('❌ DEBUG HATA', `registerPushToken exception:\n${err.message || err}`);
+      console.log('registerPushToken hatası:', err?.message || err);
       return false;
     }
-  }, [expoPushToken, requestPermissionAndGetToken]);
+  }, [expoPushToken, getTokenSafe]);
 
-  // Token'ı sil (logout)
+  // Token sil
   const removePushToken = useCallback(async (userId: string): Promise<void> => {
     try {
       await fetch(`${API_URL}/user/remove-push-token?user_id=${userId}`, {
         method: 'DELETE',
       });
-      console.log('✅ Token silindi');
       setExpoPushToken(null);
     } catch (err) {
-      console.error('❌ Token silme hatası:', err);
+      console.log('Token silme hatası:', err);
     }
   }, []);
 
-  // Yerel bildirim gönder
+  // Yerel bildirim
   const scheduleLocalNotification = useCallback(async (
     title: string,
     body: string,
@@ -279,52 +170,23 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   ): Promise<void> => {
     try {
       await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data: data || {},
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-        },
-        trigger: null, // Hemen gönder
+        content: { title, body, data: data || {}, sound: 'default' },
+        trigger: null,
       });
-      console.log('✅ Yerel bildirim gönderildi:', title);
     } catch (err) {
-      console.error('❌ Yerel bildirim hatası:', err);
+      console.log('Yerel bildirim hatası:', err);
     }
   }, []);
 
-  // Notification listeners
+  // Listeners
   useEffect(() => {
-    // Gelen bildirim listener
     notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
-      console.log('🔔 [RECEIVED] Bildirim alındı:', notification.request.content.title);
+      console.log('Bildirim alındı:', notification.request.content.title);
       setNotification(notification);
     });
 
-    // Bildirime tıklama listener
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log('🔔 [TAP] Bildirime tıklandı:', response.notification.request.content);
-      const data = response.notification.request.content.data;
-      
-      // Bildirim tipine göre işlem yap
-      if (data?.type === 'new_offer') {
-        console.log('🔔 Yeni teklif bildirimine tıklandı');
-      } else if (data?.type === 'match_accepted') {
-        console.log('🔔 Eşleşme bildirimine tıklandı');
-      }
-    });
-
-    // App state listener - arka plandan döndüğünde token kontrolü
-    const appStateListener = AppState.addEventListener('change', async (nextAppState) => {
-      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
-        console.log('🔔 Uygulama ön plana geldi, token kontrolü...');
-        // Token yoksa almayı dene
-        if (!expoPushToken) {
-          await requestPermissionAndGetToken();
-        }
-      }
-      appStateRef.current = nextAppState;
+      console.log('Bildirime tıklandı');
     });
 
     return () => {
@@ -334,16 +196,22 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       if (responseListener.current) {
         Notifications.removeNotificationSubscription(responseListener.current);
       }
-      appStateListener.remove();
     };
-  }, [expoPushToken, requestPermissionAndGetToken]);
+  }, []);
 
-  // İlk yüklemede token almayı dene
+  // İlk yüklemede token al
   useEffect(() => {
     if (!isInitialized) {
-      requestPermissionAndGetToken();
+      getTokenSafe().then((token) => {
+        if (token) {
+          setExpoPushToken(token);
+        }
+        setIsInitialized(true);
+      }).catch(() => {
+        setIsInitialized(true);
+      });
     }
-  }, [isInitialized, requestPermissionAndGetToken]);
+  }, [isInitialized, getTokenSafe]);
 
   return {
     expoPushToken,
@@ -353,8 +221,6 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     registerPushToken,
     removePushToken,
     scheduleLocalNotification,
-    getExpoPushToken,
-    requestPermissionAndGetToken,
   };
 }
 
