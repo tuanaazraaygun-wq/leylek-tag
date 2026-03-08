@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "799713179254",
+    "project_id": "leylektag",
+    "storage_bucket": "leylektag.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:799713179254:android:807bb3c38e51bdc24f9157",
+        "android_client_info": {
+          "package_name": "com.leylektag.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGGpNQizium1y5Uiw7R8EtR2Jgy3vxB6s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
