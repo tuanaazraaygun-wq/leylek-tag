@@ -6191,13 +6191,58 @@ async def mark_messages_read(tag_id: str, user_id: str):
 # ==================== MARTI TAG - FİYAT HESAPLAMA ====================
 
 def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """İki nokta arası mesafe (km)"""
+    """İki nokta arası mesafe (km) - Kuş uçuşu"""
     import math
     R = 6371  # Dünya yarıçapı km
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
     return R * 2 * math.asin(math.sqrt(a))
+
+async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
+    """
+    Google Directions API ile gerçek yol mesafesi hesapla
+    Returns: {"distance_km": float, "duration_min": int} veya None
+    """
+    try:
+        import httpx
+        
+        # Google Maps API Key
+        api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        if not api_key:
+            logger.warning("⚠️ GOOGLE_MAPS_API_KEY bulunamadı, haversine kullanılacak")
+            return None
+        
+        url = f"https://maps.googleapis.com/maps/api/directions/json"
+        params = {
+            "origin": f"{origin_lat},{origin_lng}",
+            "destination": f"{dest_lat},{dest_lng}",
+            "mode": "driving",
+            "key": api_key
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            data = response.json()
+        
+        if data.get("status") == "OK" and data.get("routes"):
+            leg = data["routes"][0]["legs"][0]
+            distance_km = leg["distance"]["value"] / 1000  # metre -> km
+            duration_min = int(leg["duration"]["value"] / 60)  # saniye -> dakika
+            
+            logger.info(f"📍 Google Directions: {distance_km:.1f} km, {duration_min} dk")
+            
+            return {
+                "distance_km": round(distance_km, 1),
+                "duration_min": max(1, duration_min)
+            }
+        else:
+            logger.warning(f"⚠️ Google Directions API hatası: {data.get('status')}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Google Directions API hatası: {e}")
+        return None
 
 def is_peak_hour() -> bool:
     """Yoğun saat kontrolü (08:00-10:00, 17:00-20:00)"""
@@ -6227,21 +6272,31 @@ class CalculatePriceRequest(BaseModel):
 async def calculate_price(request: CalculatePriceRequest):
     """
     Leylek TAG Fiyat Hesaplama - DİNAMİK SİSTEM
-    
-    Admin panelinden ayarlanabilir fiyatlar
+    Google Directions API ile gerçek yol mesafesi kullanır
     """
     try:
-        # 1. Yolcu → Hedef mesafesi hesapla
-        trip_distance_km = haversine_distance(
+        # 1. Önce Google Directions API ile gerçek mesafe dene
+        road_info = await get_road_distance(
             request.pickup_lat, request.pickup_lng,
             request.dropoff_lat, request.dropoff_lng
         )
         
+        if road_info:
+            trip_distance_km = road_info["distance_km"]
+            estimated_minutes = road_info["duration_min"]
+            logger.info(f"📍 Google API ile hesaplandı: {trip_distance_km} km, {estimated_minutes} dk")
+        else:
+            # Fallback: Haversine (kuş uçuşu) + %30 ekleme (yol kıvrımları için)
+            haversine_km = haversine_distance(
+                request.pickup_lat, request.pickup_lng,
+                request.dropoff_lat, request.dropoff_lng
+            )
+            trip_distance_km = round(haversine_km * 1.3, 1)  # %30 ekleme
+            estimated_minutes = int((trip_distance_km / 30) * 60)
+            logger.info(f"📍 Haversine ile hesaplandı: {trip_distance_km} km (kuş uçuşu: {haversine_km:.1f} km)")
+        
         # Minimum mesafe 1 km
         trip_distance_km = max(1.0, trip_distance_km)
-        
-        # Tahmini süre (ortalama 30 km/h şehir içi)
-        estimated_minutes = int((trip_distance_km / 30) * 60)
         estimated_minutes = max(5, estimated_minutes)  # Minimum 5 dakika
         
         # Yoğun saat kontrolü

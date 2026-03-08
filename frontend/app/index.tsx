@@ -189,6 +189,42 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(distance * 10) / 10; // 1 ondalık basamak
 };
 
+// 🆕 Google Maps Directions API ile gerçek yol mesafesi hesapla
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+
+const calculateRoadDistance = async (
+  originLat: number, 
+  originLng: number, 
+  destLat: number, 
+  destLng: number
+): Promise<{ distance_km: number; duration_min: number } | null> => {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originLat},${originLng}&destination=${destLat},${destLng}&mode=driving&key=${GOOGLE_MAPS_API_KEY}`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.routes.length > 0) {
+      const route = data.routes[0].legs[0];
+      const distanceKm = route.distance.value / 1000; // metre -> km
+      const durationMin = Math.ceil(route.duration.value / 60); // saniye -> dakika
+      
+      console.log(`📍 Gerçek yol mesafesi: ${distanceKm.toFixed(1)} km, ${durationMin} dk`);
+      
+      return {
+        distance_km: Math.round(distanceKm * 10) / 10,
+        duration_min: durationMin
+      };
+    }
+    
+    console.log('⚠️ Google Directions API hatası:', data.status);
+    return null;
+  } catch (error) {
+    console.error('❌ Yol mesafesi hesaplama hatası:', error);
+    return null;
+  }
+};
+
 // Leylek TAG Colors
 const COLORS = {
   primary: '#3FA9F5',
