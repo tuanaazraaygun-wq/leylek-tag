@@ -4629,6 +4629,26 @@ function PassengerDashboard({
   
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
+  const tapSoundRef = useRef<Audio.Sound | null>(null);
+  
+  // 🔊 TUŞ SESİ - Nazik tıklama sesi
+  const playTapSound = async () => {
+    try {
+      // Her tıklamada yeni ses objesi oluştur (hızlı ardışık tıklamalar için)
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3' }, // Soft click
+        { shouldPlay: true, volume: 0.3 }
+      );
+      // Ses bitince temizle
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      // Sessiz hata - kullanıcı deneyimini bozma
+    }
+  };
   
   // 🔊 EŞLEŞME SESİ - Modern ding-dong
   const playMatchSound = async () => {

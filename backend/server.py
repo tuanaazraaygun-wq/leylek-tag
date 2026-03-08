@@ -6081,6 +6081,7 @@ async def send_chat_message(msg: ChatMessageCreate):
     HYBRID CHAT: 
     1. FIRST save to Supabase (source of truth)
     2. THEN emit socket event (best-effort, non-blocking)
+    3. Send push notification to receiver
     """
     try:
         # 1. Supabase'e kaydet (SOURCE OF TRUTH)
@@ -6100,15 +6101,29 @@ async def send_chat_message(msg: ChatMessageCreate):
         saved_message = result.data[0]
         logger.info(f"💬 Chat message saved to Supabase: {saved_message['id']}")
         
-        # 2. Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
+        # 2. Gönderenin adını al
+        sender_result = supabase.table("users").select("name").eq("id", msg.sender_id).execute()
+        sender_name = sender_result.data[0].get("name", "Birisi") if sender_result.data else "Birisi"
+        
+        # 3. 🔔 PUSH NOTIFICATION - Alıcıya mesaj bildirimi
+        asyncio.create_task(send_push_notification(
+            msg.receiver_id,
+            f"💬 {sender_name}",
+            msg.message[:100] + ("..." if len(msg.message) > 100 else ""),
+            {"type": "chat_message", "tag_id": msg.tag_id, "sender_id": msg.sender_id}
+        ))
+        logger.info(f"📤 Chat push notification sent to {msg.receiver_id}")
+        
+        # 4. Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
         try:
-            # External socket server'a HTTP ile bildir
-            socket_notify_url = "https://socket.leylektag.com"
-            # Socket server'a direkt emit yapamıyoruz, ama receiver polling yapacak
-            logger.info(f"📤 Socket notification skipped (receiver will poll)")
+            # Receiver'a socket emit
+            await sio.emit("new_chat_message", {
+                "tag_id": msg.tag_id,
+                "message": saved_message,
+                "sender_name": sender_name
+            }, room=f"user_{msg.receiver_id}")
         except Exception as socket_err:
             logger.warning(f"⚠️ Socket notification failed (non-blocking): {socket_err}")
-            # Socket hatası mesaj kaydını ETKİLEMEZ
         
         return {
             "success": True,
