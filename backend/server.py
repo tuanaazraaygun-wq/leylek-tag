@@ -963,9 +963,23 @@ async def resolve_user_id(user_id: str) -> str:
 # OpenStreetMap'in routing servisi - Daha güvenilir ve limitsiz
 
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
-    """OSRM ile rota bilgisi al (TAMAMEN ÜCRETSİZ - LİMİTSİZ)"""
+    """Google Directions API ile rota bilgisi al - EN DOĞRU SONUÇ"""
     try:
-        # OSRM Public API - 5 saniye timeout
+        # Önce Google Directions API dene
+        road_info = await get_road_distance(
+            float(origin_lat), float(origin_lng),
+            float(dest_lat), float(dest_lng)
+        )
+        
+        if road_info:
+            return {
+                "distance_km": road_info["distance_km"],
+                "duration_min": road_info["duration_min"],
+                "distance_text": f"{road_info['distance_km']} km",
+                "duration_text": f"{road_info['duration_min']} dk"
+            }
+        
+        # Google başarısız olursa OSRM dene
         url = f"https://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
         
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -989,7 +1003,7 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                     "duration_text": f"{int(duration_min)} dk"
                 }
     except Exception as e:
-        logger.warning(f"OSRM timeout/error: {e}")
+        logger.warning(f"Route info error: {e}")
     
     # Fallback: Düz çizgi mesafesi hesapla
     try:

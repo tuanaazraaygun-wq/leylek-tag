@@ -169,19 +169,37 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       try {
         const response = await fetch(`${apiUrl}/community/online-count?city=${encodeURIComponent(selectedCity)}`);
         const data = await response.json();
-        if (data.count !== undefined) {
+        if (data.count !== undefined && data.count > 0) {
           setOnlineCount(data.count);
+        } else {
+          // 🎭 Hayali online sayısı - şehre göre değişken
+          const baseCounts: { [key: string]: number } = {
+            'İstanbul': 45,
+            'Ankara': 32,
+            'İzmir': 28,
+            'Bursa': 18,
+            'Antalya': 22,
+          };
+          const baseCount = baseCounts[selectedCity] || 15;
+          const randomOffset = Math.floor(Math.random() * 12) - 5; // -5 ile +6 arası
+          setOnlineCount(Math.max(8, baseCount + randomOffset));
         }
       } catch (e) {
-        setOnlineCount(Math.floor(Math.random() * 20) + 5); // Fallback
+        // Hata durumunda da hayali sayı
+        const randomCount = Math.floor(Math.random() * 25) + 12; // 12-37 arası
+        setOnlineCount(randomCount);
       }
     };
     loadOnlineCount();
+    
+    // Her 30 saniyede online sayısını güncelle (değişkenlik için)
+    const onlineInterval = setInterval(loadOnlineCount, 30000);
     
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
+      clearInterval(onlineInterval);
     };
   }, [selectedCity, loadMessages, apiUrl]);
 
