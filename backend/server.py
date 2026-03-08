@@ -2722,7 +2722,7 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
 # POST method için alias (frontend uyumluluğu)
 @api_router.post("/passenger/cancel-tag")
 async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, passenger_id: str = None, user_id: str = None):
-    """TAG iptal et (POST)"""
+    """TAG iptal et (POST) - TÜM SÜRÜCÜLERE ANINDA BİLDİR"""
     try:
         tid = request.tag_id if request else tag_id
         pid = passenger_id or user_id
@@ -2733,6 +2733,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(pid) if pid else None
         
+        # 1. TAG'i iptal et
         update_query = supabase.table("tags").update({
             "status": "cancelled",
             "cancelled_at": datetime.utcnow().isoformat()
@@ -2743,9 +2744,24 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
         
         update_query.execute()
         
-        # Aktif teklifleri de iptal et
+        # 2. Aktif teklifleri de iptal et
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tid).eq("status", "pending").execute()
         
+        # 3. 🔥 Dispatch queue'dan sil - SÜRÜCÜLERDEN HEMEN KALDIR
+        try:
+            supabase.table("dispatch_queue").delete().eq("tag_id", tid).execute()
+            logger.info(f"🗑️ Dispatch queue temizlendi: {tid}")
+        except Exception as dq_err:
+            logger.warning(f"Dispatch queue temizleme hatası: {dq_err}")
+        
+        # 4. 🔔 Socket ile tüm sürücülere bildir - TAG iptal edildi
+        try:
+            await sio.emit("tag_cancelled", {"tag_id": tid}, room="drivers")
+            logger.info(f"📢 Tüm sürücülere iptal bildirimi gönderildi: {tid}")
+        except Exception as socket_err:
+            logger.warning(f"Socket emit hatası: {socket_err}")
+        
+        logger.info(f"✅ TAG iptal edildi: {tid}")
         return {"success": True, "message": "TAG iptal edildi"}
     except HTTPException:
         raise
@@ -7003,9 +7019,10 @@ async def admin_ban_user(admin_phone: str, user_id: str, is_banned: bool):
         if admin_phone not in ADMIN_PHONE_NUMBERS:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
+        # is_active alanını güncelle (banned = is_active: false)
         supabase.table("users").update({
             "is_active": not is_banned,
-            "banned_at": datetime.utcnow().isoformat() if is_banned else None
+            "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
         
         action = "banlandı" if is_banned else "ban kaldırıldı"
@@ -8499,19 +8516,18 @@ async def secure_login(request: Request, phone: str, pin: str, device_id: str = 
 # ==================== ADMIN - SOFT DELETE ====================
 @api_router.post("/admin/soft-delete-user")
 async def admin_soft_delete_user(admin_phone: str, user_id: str, reason: str = "Admin tarafından silindi"):
-    """Kullanıcıyı soft delete yap - Supabase'de kalır ama giriş yapamaz"""
+    """Kullanıcıyı soft delete yap - is_active: false yaparak giriş engelle"""
     try:
         if admin_phone not in ADMIN_PHONE_NUMBERS:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
+        # Sadece is_active = false yaparak hesabı devre dışı bırak
         supabase.table("users").update({
-            "is_deleted": True,
             "is_active": False,
-            "deleted_at": datetime.utcnow().isoformat(),
-            "deleted_reason": reason,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
         
+        logger.info(f"🗑️ Kullanıcı silindi (soft): {user_id} - Sebep: {reason}")
         return {"success": True, "message": "Kullanıcı silindi (soft delete)"}
     except Exception as e:
         logger.error(f"Soft delete error: {e}")

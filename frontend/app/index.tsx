@@ -56,7 +56,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 // Backend URL - önce extra'dan, sonra env'den, en son hardcoded
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://notify-rating.preview.emergentagent.com';
+                    'https://leylektag-debug.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 console.log('🌐 BACKEND_URL:', BACKEND_URL);
@@ -5635,7 +5635,7 @@ function PassengerDashboard({
     
     const message = `🚗 Leylek TAG - Yolculuk Teklifi\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
     
-    const webAppUrl = 'https://notify-rating.preview.emergentagent.com';
+    const webAppUrl = 'https://leylektag-debug.preview.emergentagent.com';
     const deepLink = `leylektag://ride/${activeTag.id}`;
     
     try {

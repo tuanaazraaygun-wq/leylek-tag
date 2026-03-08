@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://notify-rating.preview.emergentagent.com';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
 
 interface RatingModalProps {
   visible: boolean;

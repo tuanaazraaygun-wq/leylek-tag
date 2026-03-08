@@ -16,7 +16,7 @@ import Constants from 'expo-constants';
 // ==================== CONFIG ====================
 
 const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    'https://notify-rating.preview.emergentagent.com';
+                    'https://leylektag-debug.preview.emergentagent.com';
 const API_URL = `${BACKEND_URL}/api`;
 
 const SUPABASE_URL = 'https://ujvploftywsxprlzejgc.supabase.co';

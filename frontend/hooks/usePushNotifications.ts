@@ -101,17 +101,21 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     }
   }, []);
 
-  // İzin iste ve token al - ANA FONKSİYON
+  // İzin iste ve token al - ANA FONKSİYON - AGRESİF DEBUG
   const requestPermissionAndGetToken = useCallback(async (): Promise<string | null> => {
     try {
       console.log('🔔 [INIT] Push notification setup başlıyor...');
+      Alert.alert('🔔 TOKEN ALMA 1', 'requestPermissionAndGetToken başladı');
 
       // Fiziksel cihaz kontrolü
       if (!Device.isDevice) {
         console.log('📱 Simülatörde push bildirimleri desteklenmiyor');
+        Alert.alert('❌ TOKEN ALMA', 'Simülatör tespit edildi - push desteklenmiyor');
         setError('Simülatörde desteklenmiyor');
         return null;
       }
+      
+      Alert.alert('🔔 TOKEN ALMA 2', `Fiziksel cihaz: EVET\nPlatform: ${Platform.OS}`);
 
       // Android kanalları oluştur
       await setupAndroidChannels();
@@ -119,12 +123,14 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       // Mevcut izin durumunu kontrol et
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       console.log('🔔 Mevcut izin durumu:', existingStatus);
+      Alert.alert('🔔 TOKEN ALMA 3', `Mevcut izin durumu: ${existingStatus}`);
 
       let finalStatus = existingStatus;
 
       // İzin yoksa iste
       if (existingStatus !== 'granted') {
         console.log('🔔 Bildirim izni isteniyor...');
+        Alert.alert('🔔 TOKEN ALMA 4', 'İzin isteniyor...');
         const { status } = await Notifications.requestPermissionsAsync({
           ios: {
             allowAlert: true,
@@ -135,40 +141,43 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         });
         finalStatus = status;
         console.log('🔔 Yeni izin durumu:', finalStatus);
+        Alert.alert('🔔 TOKEN ALMA 5', `Yeni izin durumu: ${finalStatus}`);
       }
 
       if (finalStatus !== 'granted') {
         console.log('❌ Bildirim izni reddedildi');
+        Alert.alert('❌ TOKEN ALMA', `İzin VERİLMEDİ: ${finalStatus}`);
         setError('Bildirim izni verilmedi');
-        
-        // Kullanıcıya bilgi ver
-        Alert.alert(
-          'Bildirim İzni Gerekli',
-          'Yolculuk tekliflerinden haberdar olmak için bildirim iznini ayarlardan açın.',
-          [{ text: 'Tamam' }]
-        );
-        
         return null;
       }
 
       // Expo Push Token al
       const projectId = Constants.expoConfig?.extra?.eas?.projectId || 'f00346b0-b9cb-47f9-a647-7f56b168e3a9';
       console.log('🔔 Project ID:', projectId);
+      Alert.alert('🔔 TOKEN ALMA 6', `İzin TAMAM! Token alınıyor...\nProject ID: ${projectId}`);
 
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: projectId,
-      });
+      try {
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: projectId,
+        });
 
-      const token = tokenData.data;
-      console.log('✅ Push Token alındı:', token);
-      
-      setExpoPushToken(token);
-      setError(null);
-      setIsInitialized(true);
+        const token = tokenData.data;
+        console.log('✅ Push Token alındı:', token);
+        Alert.alert('✅ TOKEN ALMA BAŞARILI', `Token: ${token.substring(0, 45)}...`);
+        
+        setExpoPushToken(token);
+        setError(null);
+        setIsInitialized(true);
 
-      return token;
+        return token;
+      } catch (tokenError: any) {
+        console.error('❌ getExpoPushTokenAsync hatası:', tokenError);
+        Alert.alert('❌ TOKEN ALMA HATASI', `getExpoPushTokenAsync failed:\n${tokenError.message || tokenError}`);
+        return null;
+      }
     } catch (err: any) {
       console.error('❌ Push token alma hatası:', err);
+      Alert.alert('❌ TOKEN ALMA EXCEPTION', `Genel hata:\n${err.message || err}`);
       setError(err.message);
       return null;
     }
@@ -180,45 +189,60 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     return await requestPermissionAndGetToken();
   }, [expoPushToken, requestPermissionAndGetToken]);
 
-  // Token'ı backend'e kaydet
+  // Token'ı backend'e kaydet - AGRESİF DEBUG
   const registerPushToken = useCallback(async (userId: string): Promise<boolean> => {
     try {
       console.log('🔔 [REGISTER] Başlıyor, userId:', userId);
+      
+      // DEBUG ALERT 1: Başlangıç
+      Alert.alert('🔔 DEBUG 1', `registerPushToken başladı\nuserId: ${userId}\nmevcut token: ${expoPushToken ? 'VAR' : 'YOK'}`);
 
       // Token al
       let token = expoPushToken;
       if (!token) {
         console.log('🔔 Token yok, alınıyor...');
+        Alert.alert('🔔 DEBUG 2', 'Token yok, requestPermissionAndGetToken çağrılıyor...');
         token = await requestPermissionAndGetToken();
       }
 
+      // DEBUG ALERT 2: Token durumu
       if (!token) {
         console.log('⚠️ Token alınamadı');
+        Alert.alert('❌ DEBUG 3', 'TOKEN ALINAMADI! requestPermissionAndGetToken null döndü.');
         return false;
       }
-
+      
+      Alert.alert('✅ DEBUG 4', `Token alındı!\n${token.substring(0, 40)}...`);
       console.log('🔔 Token:', token.substring(0, 50) + '...');
 
       // Backend'e kaydet
       const url = `${API_URL}/user/register-push-token`;
       console.log('🔔 API URL:', url);
+      
+      const requestBody = {
+        user_id: userId,
+        push_token: token,
+        platform: Platform.OS,
+      };
+      
+      Alert.alert('🔔 DEBUG 5', `API çağrısı yapılıyor...\nURL: ${url}\nBody: ${JSON.stringify(requestBody).substring(0, 100)}...`);
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          user_id: userId,
-          push_token: token,
-          platform: Platform.OS,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       console.log('🔔 Response status:', response.status);
+      Alert.alert('🔔 DEBUG 6', `Response status: ${response.status}`);
 
       const data = await response.json();
       console.log('🔔 Response data:', JSON.stringify(data));
+      
+      // DEBUG ALERT 3: Sonuç
+      Alert.alert('🔔 DEBUG 7 - SONUÇ', `success: ${data.success}\nmessage: ${data.message || data.detail || 'N/A'}`);
 
       if (data.success) {
         console.log('✅ Token backend\'e kaydedildi');
@@ -227,8 +251,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         console.error('❌ Kayıt hatası:', data.detail || data.error);
         return false;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('❌ registerPushToken hatası:', err);
+      Alert.alert('❌ DEBUG HATA', `registerPushToken exception:\n${err.message || err}`);
       return false;
     }
   }, [expoPushToken, requestPermissionAndGetToken]);

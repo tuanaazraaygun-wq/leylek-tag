@@ -1,197 +1,181 @@
-<analysis>**original_problem_statement**: The user wants to build a full-stack ride-sharing application called LeylekTag. The latest user requests focus on fixing critical broken features and enhancing the user experience for both drivers and passengers.
+<analysis>**original_problem_statement**: The user wants to build a full-stack ride-sharing application called LeylekTag.
 
 **PRODUCT REQUIREMENTS (Latest User-defined Priority):**
-1.  **Fix Push Notifications (CRITICAL):** Notifications for new ride offers, matches, and other key events are not working, especially when the app is in the background or closed. This is the highest priority issue.
-2.  **Fix Driver Rating System:** The driver is not prompted to rate the passenger after a trip is completed via QR code scan. This core loop is broken.
-3.  **Implement Driver Live Heatmap:** The driver's home screen should be redesigned to show a live map of hot zones (areas with high demand) and include a button for drivers to go offline.
-4.  **Premium Passenger Waiting Screen:** The screen shown to passengers after sending a ride offer needs a premium redesign with a live map, countdown timer, and better status updates. (This was partially implemented).
-5.  **Fix UI Bugs:** The on-screen keyboard covers text input fields, and the number of nearby drivers shown to passengers is incorrect.
-6.  **Full Admin Panel Functionality:** Restore missing features to the Admin Panel (which was simplified to fix a critical bug).
-7.  **iyzico Payment Integration:** Implement the full payment flow for drivers to purchase activation packages.
+1.  **Fix Push Notifications (CRITICAL):** Notifications for new ride offers, matches, chat messages, and admin announcements are not working because the user's push token is never successfully registered. This is the highest priority issue.
+2.  **Fix Ride Cancellation Bug (CRITICAL):** When a passenger cancels a ride offer, it remains visible to other drivers, who can still accept it.
+3.  **Fix User Registration Flow (CRITICAL):** The user reported that registration is failing after SMS OTP verification.
+4.  **Improve Driver KYC:** The driver registration process must be updated to force the user to take and upload a selfie inside their car. This photo must be visible to the admin for approval.
+5.  **Fix Admin Panel Bugs:** The admin cannot send notifications (due to the push token issue), and the online driver count is inaccurate. Add Ban and Delete user functionality.
+6.  **Fix In-App vs. Google Maps Distance Mismatch:** The distance shown in the app should match the route provided by Google Maps navigation.
+7.  **Enhance UX:**
+    *   Show trip earnings in the destination reached notification.
+    *   Implement live location tracking on the map for both passenger and driver during a trip.
+    *   Add a Report User feature.
+    *   Add a subtle sound effect to all button presses.
 
 **User's preferred language**: Turkish
 
 **what currently exists?**
-A full-stack ride-sharing app with a React Native frontend and a FastAPI backend deployed on the user's dedicated server (). The app has core features like user auth, ride requests, and a dispatch queue. A Community Chat and a Premium Passenger Waiting Screen have been recently implemented. However, several critical features like push notifications and driver-side rating are currently broken. The Admin Panel is functional but minimal, lacking most of its intended features. The backend has been updated with numerous new endpoints to support requested features, but the frontend integration is either incomplete or buggy.
+A full-stack ride-sharing app with a React Native frontend ( monolith) and a FastAPI backend ( monolith). The app has core features like user authentication, ride requests, a dispatch queue, and a community chat. Several recent improvements have been made, including a new Admin KYC approval panel, use of Google Directions API for accurate pricing, and a modernized map UI with better markers and interactivity. However, the application is plagued by critical bugs, most notably a completely non-functional push notification system.
 
 **Last working item**:
--   Last item agent was working: The agent was simultaneously trying to address two main user requests:
-    1.  **Debugging Push Notifications:** After multiple attempts to implement them, the user confirmed notifications are still not working. The agent was investigating the frontend hooks () and backend logic.
-    2.  **Implementing Driver Heatmap:** The user requested a redesign of the driver's home screen with a live activity map. The agent was starting this implementation.
-    The session was severely hampered by persistent platform connection issues (Bad Gateway), which blocked the agent from making further progress. The agent was stuck in a loop trying to execute basic commands.
--   Status: **BLOCKED**
+-   Last item agent was working: The agent was working on a large batch of user requests, primarily focusing on fixing the ride cancellation bug and adding admin functionality. The agent implemented backend logic to handle ride cancellations and added Ban/Delete user endpoints and UI to the admin panel.
+-   Status: **IN PROGRESS**
 -   Agent Testing Done: N
--   Which testing method agent to use? **manual testing by curl** to verify backend endpoints individually, followed by user testing of a new **APK build** to confirm fixes on a real device.
--   User Testing Done: Y (User confirmed that notifications and driver rating are still broken in the latest APK).
+-   Which testing method agent to use? backend testing agent to verify the new , , and  endpoints. A new APK build is required for user testing.
+-   User Testing Done: Y (for the previous APK, which was still buggy)
 
 **All Pending/In progress Issue list**:
 -   **Issue 1: Push Notifications Not Working (P0)**
--   **Issue 2: Driver Cannot Rate Passenger (P0)**
--   **Issue 3: Keyboard Hides Input Fields (P1)**
--   **Issue 4: Admin Panel Features Missing (P1)**
--   **Issue 5: Inaccurate Nearby Driver Count (P2)**
+-   **Issue 2: Cancelled Ride Offers Not Removed from Dispatch (P0)**
+-   **Issue 3: Inaccurate Nearby User Count (P1)**
+-   **Issue 4: Admin Cannot Send Notifications (P1)**
 
 **Issues Detail:**
 -   **Issue 1: Push Notifications Not Working**
-    -   **Description:** A comprehensive push notification system was implemented on the backend () and frontend (, ), but no notifications (new offer, match accepted, etc.) are delivered to user devices. This is a critical failure.
-    -   **Attempted fixes:** The agent added notification triggers to the backend dispatch and matching logic, created a notifications tab in the Admin Panel, and deployed the changes. The user was also provided SQL to create  and  structures. The fixes have not worked. The agent was unable to debug further due to platform instability.
+    -   **Attempted fixes:** The  hook was rewritten multiple times, and token registration calls were added after login/registration. The backend sending logic was also debugged. However, investigation via  repeatedly shows that the  column in the  table is almost always . The frontend is failing to obtain the token from Expo and/or save it to the backend.
     -   **Next debug checklist:**
-        1.  Verify that a user's push token is successfully obtained and saved to the  table in the database upon login. Check the  endpoint logs and logic.
-        2.  Add extensive logging to the  function in  to see the exact payload and the response from the Expo push server.
-        3.  Create a temporary backend endpoint to send a test notification to a hardcoded, known-good push token to isolate the problem (Expo vs. app logic).
-        4.  Confirm the frontend correctly requests notification permissions on app startup.
-    -   **Why fix this issue and what will be achieved with the fix?** This is essential for the app's real-time functionality. Without it, drivers and passengers miss critical, time-sensitive updates.
+        1.  In , add extensive  and  popups to visually confirm on the device: the value of the token from , the parameters sent to the backend, and the API call's response.
+        2.  Create a simple, isolated test screen with a single button to Get and Register Push Token to debug the process away from the complexity of .
+        3.  After applying a fix, you MUST verify with  that the test user's  is no longer  before building an APK.
+    -   **Why fix this issue and what will be achieved with the fix?** This is the app's most critical bug. Fixing it will enable all real-time event communication (new offers, matches, chat, etc.).
     -   **Status**: IN PROGRESS
     -   **Is recurring issue?** Y
-    -   **Should Test frontend/backend/both after fix?** Both
-    -   **Blocked on other issue:** None.
+    -   **Should Test frontend/backend/both after fix?** Both.
 
--   **Issue 2: Driver Cannot Rate Passenger**
-    -   **Description:** After a trip ends, the passenger is prompted to rate the driver, but the driver never receives the prompt to rate the passenger. This breaks the two-way rating system.
-    -   **Attempted fixes:** The handoff mentioned a polling mechanism was implemented as a workaround. During this session, the agent verified that the backend sends a  socket event to the driver. A corresponding listener was confirmed to exist in . A  endpoint was also added to support polling. Despite these measures, the feature remains broken.
+-   **Issue 2: Cancelled Ride Offers Not Removed from Dispatch**
+    -   **Attempted fixes:** The agent added logic to the  endpoint in  to find and delete the corresponding entry from the  table. This change has not been tested.
     -   **Next debug checklist:**
-        1.  In , add  statements inside the driver's  hook that polls the trip status to ensure it's running and checking the correct trip ID.
-        2.  In , add a  inside the driver's  socket event handler to confirm if the event is being received from the backend.
-        3.  The issue is very likely a state management bug within the monolithic . Trace the  state variable for the driver to see why it isn't being set correctly.
-    -   **Why fix this issue and what will be achieved with the fix?** A two-way rating system is fundamental for building trust and safety on the platform.
+        1.  Use  or a testing agent to call the  endpoint.
+        2.  Verify via  that the entry in the  table is deleted after the call.
+    -   **Why fix this issue and what will be achieved with the fix?** Prevents drivers from accepting rides that no longer exist.
+    -   **Status**: IN PROGRESS
+    -   **Is recurring issue?** N
+    -   **Should Test frontend/backend/both after fix?** Backend first, then Both.
+
+-   **Issue 3: Inaccurate Nearby User Count**
+    -   **Attempted fixes:** The agent identified that the backend query only counts drivers who are explicitly . While the user requested showing fake drivers (which was implemented), they also want the *real* count to work.
+    -   **Next debug checklist:**
+        1.  Discuss with the user whether the count should include *all* nearby drivers or only those who are online.
+        2.  If all nearby drivers should be shown, modify the backend endpoints (, ) to remove the  filter.
+    -   **Why fix this issue and what will be achieved with the fix?** Provides users with accurate information about platform activity, making the app feel more alive.
     -   **Status**: IN PROGRESS
     -   **Is recurring issue?** Y
-    -   **Should Test frontend/backend/both after fix?** Frontend
-    -   **Blocked on other issue:** None.
+    -   **Should Test frontend/backend/both after fix?** Both.
+
+-   **Issue 4: Admin Cannot Send Notifications**
+    -   **Attempted fixes:** None, as this is a direct symptom of Issue 1.
+    -   **Next debug checklist:** Resolve Issue 1.
+    -   **Why fix this issue and what will be achieved with the fix?** Enables the admin to communicate with all users.
+    -   **Status**: BLOCKED
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** Backend
+    -   **Blocked on other issue:** Issue 1: Push Notifications Not Working
 
 **In progress Task List**:
--   **Task 1: Implement Driver's Live Heatmap Screen (P0)**
-    -   **Description:** The user wants to replace the driver's current home screen with a live activity map. This map should display hot zones (areas with high ride demand) using animated, pulsating circles. It must also feature a prominent OFF button that allows the driver to stop receiving ride offers.
-    -   **Where to resume**: A basic  component and a  backend endpoint were created. This foundation needs to be built upon to meet the user's detailed request. The next steps are to modify  to render pulsating circles based on the API data and implement the OFF button functionality on both the frontend and backend (e.g., toggling an  flag in the  table and filtering the dispatch queue).
-    -   **What will be achieved with this?** It will provide drivers with valuable real-time demand information and give them control over their work status.
+-   **Task 1: Add Admin Ban/Delete/Report Functionality**
+    -   **Where to resume**: Backend endpoints (, ) and frontend UI in  have been created. They need to be tested. The Report User feature on the map screen has not been started.
+    -   **What will be achieved with this?** Admins will have essential user moderation tools.
     -   **Status**: IN PROGRESS
     -   **Should Test frontend/backend/both after fix?** Both
-    -   **Blocked on something**: The critical notification and rating bugs should be fixed first.
+    -   **Blocked on something**: None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   (P1) **Fix Keyboard Overlap:** Ensure  is used correctly on all screens with text inputs (especially Leylek Muhabbeti) to prevent the keyboard from covering the input field.
-    -   (P1) **Restore Admin Panel Features:** Incrementally re-implement missing admin features like sending notifications, viewing online drivers, and managing promotions in .
-    -   (P1) **iyzico Payment Integration:** Build the frontend UI for driver package purchases and connect it to the backend .
+    -   **(P0) Driver Selfie in KYC:** Modify the driver registration flow in  to use the device camera for an in-car selfie. Upload this to Supabase Storage and display it in the  KYC tab.
+    -   **(P1) Show Earnings in Notification:** Modify the trip completion logic in  to include the trip price in the push notification body.
+    -   **(P1) Add Button Sounds:** Apply the  wrapper component to all  elements throughout the app to add a click sound.
+    -   **(P2) Add KVKK/User Agreement:** The user will provide legal text. Create a modal or screen to display it, likely during registration. **Do not build the next APK until the user provides this text or gives the go-ahead.**
 -   **Future Tasks:**
-    -   (P2) **Create  table and Admin UI.**
-    -   (P2) **Refactor :** Decompose the massive component into smaller, manageable hooks and components to improve stability and maintainability.
-    -   (P2) **Block access from outside Turkey.**
+    -   **(P2) Refactor :** Decompose the massive component into smaller, manageable hooks and components.
+    -   **(P2) Refactor :** Decompose the monolithic file into a proper FastAPI project structure with modular routers.
+    -   **(P2) Fix Driver Rating System:** This was a known issue from a previous fork that was not addressed. The driver is not prompted to rate the passenger after a trip.
 
 **Completed work in this session**
--   **Premium Passenger Waiting Screen:** Created a new, feature-rich waiting screen () with an animated map, countdown, and nearby driver display.
--   **Leylek Muhabbeti Redesign:** Completely overhauled the community chat UI () with a modern design.
--   **Dispatch Queue Logic Enhanced:** Updated backend logic to limit ride offers to a 20km radius and use a 10-second timeout before offering to the next driver.
--   **New Backend Endpoints:** Created several new endpoints, including , , , and  to support new features and bug fixes.
--   **Backend Deployment:** Successfully deployed multiple updates of  to the user's live server.
--   **APK Generation:** Generated multiple APK builds via EAS for user testing.
+-   **User Registration Flow:** Fixed the bug where users were not created after OTP verification and added a 30-second SMS resend countdown.
+-   **Admin KYC Panel:** Added a Sürücü Onay tab to the Admin Panel () for approving/rejecting driver applications.
+-   **Accurate Distance Calculation:** Replaced Haversine formula with Google Maps Directions API on the backend () for realistic road distance calculation.
+-   **Modernized Map UI:** Updated map markers, thickened route lines, and enabled zoom/scroll for a better user experience in  and .
+-   **Fake Data for UX:** Implemented fake driver counts on the waiting map and fake online user counts in the chat screen.
+-   **Chat Notifications:** Added backend logic to send a push notification when a user receives a chat message.
 
 **Earlier issues found/mentioned but not fixed**
--   The  table is still missing in the database.
--   Modular backend services () are still not properly integrated into .
+-   The driver rating system has been broken for multiple sessions and was not addressed.
 
 **Known issue recurrence from previous fork**
--   **Driver Rating System:** This feature was fixed with a workaround in a previous session but has broken again, indicating an unstable implementation.
--   **Platform Instability:** The agent's work was completely blocked by repeated Bad Gateway connection errors towards the end of the session. This is a new and critical environmental issue.
+-   **Push Notifications:** This is a chronic, unresolved issue. The core problem remains the frontend's inability to register the push token.
+-   **Driver Rating System:** A known recurring bug that needs to be properly addressed.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Remote Server Deployment:** The manual workflow of using  to copy  and  to deploy changes to the user's live server () is standard practice for this project.
--   **Expo Application Services (EAS) Build:** EAS is used to create  files for user testing.
--   **Monolithic Frontend ():** The primary source of technical debt and recurring bugs. Changes to this file are high-risk.
+-   **Monolithic Architecture:** Both the frontend () and backend () are dangerously large single files, which is the primary source of bugs and technical debt.
+-   **Real-time Communication:** Uses Socket.IO for live updates and Expo Push Notifications for background events. The push notification system is critically broken.
+-   **Distance/Pricing:** Now uses the Google Maps Directions API on the backend for accurate road distance calculation.
 
 **key DB schema**
--   **users**: Now requires a  (text) column and an  (boolean) column.
--   **notifications**: A table to log all sent notifications. The user was given an SQL script to create it.
--   **The  table is still missing.**
+-   **users**: uid=0(root) gid=0(root) groups=0(root), , , ,  (TEXT, almost always NULL),  (BOOLEAN, new).
+-   **tags**: Stores ride offers and their status (uid=0(root) gid=0(root) groups=0(root), ).
+-   **dispatch_queue**: Tracks which driver is being offered which ride (, ). Needs to be cleared on ride cancellation.
+-   **driver_kyc**: Stores driver document verification requests (, , ).
 
 **changes in tech stack**
--   None.
+-   The  Python library was added to the backend to support the Google Maps Directions API.
 
 **All files of reference**
--   : Contains all backend logic. Key areas for debugging are , , and the dispatch queue functions.
--   : The source of most frontend logic and bugs. Key areas are the  for trip polling and the  event listeners.
--   : The recently added premium passenger waiting screen.
--   : The new component for the driver heatmap.
--   : Contains the logic for registering push tokens.
+-   : Main source of frontend logic and bugs.
+-   : Main source of backend logic and bugs.
+-   : Central point of failure for notifications.
+-   : Recently updated with KYC and admin tools.
 
 **Areas that need refactoring**:
--   : Critically needs to be broken down into smaller components and custom hooks to address the constant stream of bugs and improve maintainability.
--   **Push Notification Token Storage:** The logic for storing push tokens is inconsistent (referencing both a  table and a  column on the  table). This must be consolidated to a single source of truth (the  table is preferred).
+-   ** (CRITICAL):** Must be broken down into smaller components and hooks to improve stability.
+-   ** (CRITICAL):** Must be refactored into a modular project structure with separate routers for different API concerns.
 
 **key api endpoints**
--   
--   
--   
--   
--   
+-   : The endpoint to save the Expo push token. The problem lies in the data being sent (or not sent) to it.
+-   : Recently modified to clear the . Needs testing.
+-   : **NEW**, untested.
+-   : **NEW**, untested.
 
 **Critical Info for New Agent**
--   **Prioritize Critical Bug Fixes:** Your immediate focus must be on fixing the **Push Notifications** and **Driver Rating** system. The user is blocked and frustrated by these failures. Do not start new features until these are resolved and verified by the user.
--   **Platform Instability Alert:** The previous agent was completely blocked by Bad Gateway errors. If you experience persistent connection failures, it is a platform issue. Start with simple commands (README.md
-android
-app
-app.json
-assets
-components
-constants
-contexts
-dist
-eas.json
-eslint.config.js
-expo-env.d.ts
-hooks
-incoming_daily_call
-index.js
-ios
-lib
-metro.config.js
-node_modules
-package-lock.json
-package.json
-public
-scripts
-stores
-tsconfig.json
-yarn.lock) to test connectivity before proceeding with file edits.
--   **The  Monolith is Dangerous:** This file is over 12,000 lines long and is the root cause of many recurring bugs. Be extremely careful when editing it. Use extensive  debugging to trace state and props, as state management is highly complex and prone to error.
--   **Manual Backend Deployment:** Remember the deployment process:  then .
--   **The last stable APK** mentioned by the user was . This build contains the new premium passenger waiting screen. Use this as a functional baseline.
+-   **FIX PUSH NOTIFICATIONS FIRST:** This is the absolute highest priority. The user is blocked and frustrated. The root cause is the frontend's failure to get and save the push token. Use aggressive debugging ( popups) on the frontend to trace the token from generation to the API call. Confirm a token is saved in the database before building a new APK.
+-   **WAIT FOR USER GO-AHEAD:** The user has explicitly asked you to wait for KVKK (privacy policy) text before building the next APK. After fixing the bugs, use the  tool to confirm if you should add the text or proceed with the build.
+-   **Monoliths are Risky:** Be extremely cautious when editing  and . Your changes can have unexpected side effects.
+-   **Test Backend Changes:** Use  to test new or modified backend endpoints (, , ) before integrating them with the frontend.
 
 **documents and test reports created in this job**
 -   None.
 
 **Last 10 User Messages and any pending HUMAN messages**
--   The user is reporting that the app is not working and asks the agent to look into it.
--   The user asks to revert to a previous APK (), indicating the latest changes introduced problems.
--   The user is repeatedly asking why the agent is pausing or stopping, which was due to platform connection errors.
--   The user re-iterated the two main priorities: fixing the broken push notifications and implementing the driver's live heatmap screen.
--   The user confirmed the premium passenger waiting screen APK was good and asked to continue from there.
+-   User reported that the latest APK still has broken notifications, and cancelled offers are not removed.
+-   User requested several new features: Admin ban/delete, user reporting, and a mandatory in-car selfie for driver registration.
+-   User also requested UI/UX improvements: show earnings in notifications and live location tracking on the map.
+-   User approved the plan for professional map markers and thicker route lines.
+-   **PENDING:** The user will provide text for a KVKK/User Agreement to be added to the app and has asked the agent not to build an APK until then.
 
 **Project Health Check:**
--   **Broken**: Push Notifications, Driver Rating System.
--   **Mocked**: Admin Panel (minimal features).
+-   **Broken**: Push Notifications, Ride Offer Cancellation Logic, Admin Notifications.
+-   **Mocked**: Nearby driver count (uses a mix of real and fake data), Community Chat online count (fake).
 
 **3rd Party Integrations**
--   **Supabase**: PostgreSQL DB, Auth, Storage, Realtime.
+-   **Supabase**: PostgreSQL DB, Auth, Storage.
 -   **NETGSM**: SMS OTP.
 -   **Expo Application Services (EAS)**: For building APKs.
--   **Google Maps Platform**: For map display and navigation.
--   **iyzico**: Planned for payment integration (backend service exists but is not integrated).
+-   **Google Maps Platform**: Used for map display and Directions API for distance calculation.
 
 **Testing status**
 -   Testing agent used after significant changes: NO
 -   Troubleshoot agent used after agent stuck in loop: NO
 -   Test files created: []
--   Known regressions: Push notifications and Driver Rating are confirmed broken by the user. The app was reported as not working after the agent's last attempts, which were plagued by connection issues.
+-   Known regressions: The push notification system remains broken. The ride cancellation bug is a new critical regression.
 
 **Credentials to test flow:**
 -   **Server SSH:**  (Password: ).
 -   **Admin User:** Phone , PIN .
 
 **What agent forgot to execute**
--   The agent did not resolve the core issues of push notifications and driver rating despite multiple attempts.
--   The agent did not consolidate the push token storage logic, leaving it in an inconsistent state.
--   The platform instability was not resolved, and the agent did not escalate it via a  call.</analysis>
+-   The agent consistently failed to solve the root cause of the push notification issue, which is the frontend's inability to register the Expo Push Token.
+-   The agent did not address the long-standing Driver Rating System bug mentioned in previous handoffs.
+-   Backend changes for ride cancellation and admin tools were implemented but not tested before the session ended.</analysis>

@@ -7,7 +7,7 @@ import requests
 import os
 
 # Get the backend URL from environment
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://notify-rating.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://leylektag-debug.preview.emergentagent.com')
 ADMIN_PHONE = "5326497412"
 
 class TestAdminPanelAPIs:

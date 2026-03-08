@@ -126,6 +126,42 @@ function AdminContent({ adminPhone, onClose }: Props) {
       Alert.alert('Hata', e.message || 'Red başarısız');
     }
   };
+  
+  // 🆕 Kullanıcı Engelle
+  const banUser = async (userId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/user/ban?admin_phone=${adminPhone}&user_id=${userId}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Başarılı', 'Kullanıcı engellendi');
+        loadAll();
+      } else {
+        Alert.alert('Hata', data.detail || 'Engelleme başarısız');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e.message || 'Engelleme başarısız');
+    }
+  };
+  
+  // 🆕 Kullanıcı Sil
+  const deleteUser = async (userId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/user/delete?admin_phone=${adminPhone}&user_id=${userId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Başarılı', 'Kullanıcı silindi');
+        loadAll();
+      } else {
+        Alert.alert('Hata', data.detail || 'Silme başarısız');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e.message || 'Silme başarısız');
+    }
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -320,6 +356,39 @@ function AdminContent({ adminPhone, onClose }: Props) {
                       <Text style={styles.onlineText}>Online</Text>
                     </View>
                   )}
+                </View>
+                {/* Sil / Engelle Butonları */}
+                <View style={styles.userActionRow}>
+                  <TouchableOpacity
+                    style={styles.banBtn}
+                    onPress={() => {
+                      Alert.alert(
+                        'Kullanıcıyı Engelle',
+                        `${u.name} kullanıcısını engellemek istediğinize emin misiniz?`,
+                        [
+                          { text: 'İptal', style: 'cancel' },
+                          { text: 'Engelle', style: 'destructive', onPress: () => banUser(u.id) }
+                        ]
+                      );
+                    }}
+                  >
+                    <Text style={styles.banBtnText}>🚫 Engelle</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => {
+                      Alert.alert(
+                        'Kullanıcıyı Sil',
+                        `${u.name} kullanıcısını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+                        [
+                          { text: 'İptal', style: 'cancel' },
+                          { text: 'Sil', style: 'destructive', onPress: () => deleteUser(u.id) }
+                        ]
+                      );
+                    }}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑️ Sil</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             ))}

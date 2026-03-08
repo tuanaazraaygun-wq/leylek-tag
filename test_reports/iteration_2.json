@@ -29,7 +29,7 @@
   },
   "test_credentials": {
     "admin_phone": "5326497412",
-    "backend_url": "https://notify-rating.preview.emergentagent.com"
+    "backend_url": "https://leylektag-debug.preview.emergentagent.com"
   },
   "seed_data_creation": "None",
   "retest_needed": false,
