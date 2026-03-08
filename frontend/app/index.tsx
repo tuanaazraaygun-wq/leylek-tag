@@ -774,6 +774,14 @@ export default function App() {
       if (data.success) {
         await saveUser(data.user);
         
+        // 🔔 Kayıt başarılı - Push token kaydet
+        console.log('🔔 Kayıt başarılı, push token kaydediliyor...');
+        registerPushToken(data.user.id).then(tokenSuccess => {
+          console.log('🔔 Push token kayıt sonucu:', tokenSuccess ? 'BAŞARILI' : 'BAŞARISIZ');
+        }).catch(err => {
+          console.log('🔔 Push token kayıt hatası:', err);
+        });
+        
         setScreen('role-select'); // Kayıttan sonra rol seçimi
       } else {
         Alert.alert('Hata', data.detail || 'Kayıt oluşturulamadı');
@@ -1412,6 +1420,14 @@ export default function App() {
         if (data.success) {
           setUser(data.user);
           saveUser(data.user);
+          
+          // 🔔 Login başarılı - Push token kaydet
+          console.log('🔔 Login başarılı, push token kaydediliyor...');
+          registerPushToken(data.user.id).then(tokenSuccess => {
+            console.log('🔔 Push token kayıt sonucu:', tokenSuccess ? 'BAŞARILI' : 'BAŞARISIZ');
+          }).catch(err => {
+            console.log('🔔 Push token kayıt hatası:', err);
+          });
           
           // Admin kontrolü
           const cleanPhone = phone.replace(/\D/g, '');
