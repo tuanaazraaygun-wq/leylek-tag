@@ -713,16 +713,38 @@ export default function App() {
 
   const requestLocationPermission = async () => {
     try {
+      console.log('📍 Konum izni isteniyor...');
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         setLocationPermission(true);
+        console.log('✅ Konum izni verildi');
+        
+        // Konum izni verildiyse hemen konumu al
+        try {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High
+          });
+          const coords = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude
+          };
+          setUserLocation(coords);
+          console.log('📍 Konum alındı:', coords);
+        } catch (locErr) {
+          console.log('⚠️ İlk konum alınamadı:', locErr);
+        }
+        
         return true;
       } else {
-        Alert.alert('İzin Gerekli', 'Konum izni olmadan uygulama çalışamaz');
+        Alert.alert(
+          'Konum İzni Gerekli',
+          'LeylekTag\'ı kullanabilmek için konum izni vermeniz gerekmektedir. Ayarlardan konum iznini açabilirsiniz.',
+          [{ text: 'Tamam' }]
+        );
         return false;
       }
     } catch (error) {
-      console.error('Konum izni hatası:', error);
+      console.error('❌ Konum izni hatası:', error);
       return false;
     }
   };
@@ -1766,20 +1788,32 @@ export default function App() {
           // Kullanıcının rolünü güncelle
           const updatedUser = { ...user, role: selectedRole };
           setUser(updatedUser);
-          setScreen('dashboard');
           
-          // Push token'ı backend'e kaydet
-          registerPushToken(user.id);
+          // 📍 Hemen konum izni iste
+          console.log('📍 Rol seçildi, konum izni isteniyor...');
+          requestLocationPermission();
+          
+          // 🔔 Push token'ı backend'e kaydet
+          console.log('🔔 Push token kaydediliyor...');
+          registerPushToken(user.id).then(success => {
+            console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
+          });
+          
+          setScreen('dashboard');
         }
       } catch (error) {
         console.error('Role kaydedilemedi:', error);
         if (selectedRole && user) {
           const updatedUser = { ...user, role: selectedRole };
           setUser(updatedUser);
-          setScreen('dashboard');
           
-          // Push token'ı backend'e kaydet
+          // 📍 Konum izni iste
+          requestLocationPermission();
+          
+          // 🔔 Push token kaydet
           registerPushToken(user.id);
+          
+          setScreen('dashboard');
         }
       }
     };
@@ -5335,9 +5369,25 @@ function PassengerDashboard({
 
     setPriceLoading(true);
     
-    // GPS konumu varsa kullan, yoksa mock konum
-    const pickupLat = userLocation?.latitude || 41.0082;
-    const pickupLng = userLocation?.longitude || 28.9784;
+    // GPS konumu yoksa önce konum izni iste
+    if (!userLocation) {
+      const granted = await requestLocationPermission();
+      if (!granted) {
+        Alert.alert(
+          'Konum İzni Gerekli',
+          'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
+          [{ text: 'Tamam' }]
+        );
+        setPriceLoading(false);
+        return;
+      }
+      // Konum izni alındı, userLocation güncellenene kadar bekle
+      setPriceLoading(false);
+      return;
+    }
+    
+    const pickupLat = userLocation.latitude;
+    const pickupLng = userLocation.longitude;
     
     try {
       // Fiyat hesaplama API'sini çağır
@@ -5376,8 +5426,15 @@ function PassengerDashboard({
     setShowPriceModal(false);
     setLoading(true);
     
-    const pickupLat = userLocation?.latitude || 41.0082;
-    const pickupLng = userLocation?.longitude || 28.9784;
+    // GPS konumu yoksa hata ver
+    if (!userLocation) {
+      Alert.alert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+      setLoading(false);
+      return;
+    }
+    
+    const pickupLat = userLocation.latitude;
+    const pickupLng = userLocation.longitude;
     
     // Reverse geocoding ile adres al
     let pickupAddress = 'Mevcut Konumunuz';
