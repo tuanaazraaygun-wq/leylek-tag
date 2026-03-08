@@ -155,37 +155,51 @@ export default function SearchingMapView({
         showsUserLocation={false}
         showsMyLocationButton={false}
         onMapReady={() => setMapReady(true)}
+        scrollEnabled={true}
+        zoomEnabled={true}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        minZoomLevel={10}
+        maxZoomLevel={18}
+        mapType="standard"
       >
-        {/* Yolcu Konumu - Mavi */}
+        {/* Yolcu Konumu - Profesyonel 3D Pin */}
         {userLocation && (
           <Marker
             coordinate={userLocation}
             title="Konumunuz"
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={{ x: 0.5, y: 0.9 }}
           >
-            <View style={styles.userMarker}>
-              <View style={styles.userMarkerInner}>
-                <Ionicons name="person" size={16} color="#FFF" />
+            <View style={styles.passengerMarker}>
+              <View style={styles.passengerPin}>
+                <View style={styles.passengerPinHead}>
+                  <Ionicons name="person" size={18} color="#FFF" />
+                </View>
+                <View style={styles.passengerPinTail} />
               </View>
-              <View style={styles.userMarkerPulse} />
+              <View style={styles.markerShadow} />
             </View>
           </Marker>
         )}
 
-        {/* Hedef Konum - Kırmızı */}
+        {/* Hedef Konum - Bayrak Stili */}
         {destinationLocation && (
           <Marker
             coordinate={destinationLocation}
             title="Hedef"
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={{ x: 0.15, y: 0.95 }}
           >
-            <View style={styles.destinationMarker}>
-              <Ionicons name="location" size={32} color="#EF4444" />
+            <View style={styles.flagMarker}>
+              <View style={styles.flagPole} />
+              <View style={styles.flagBody}>
+                <Ionicons name="flag" size={16} color="#FFF" />
+              </View>
+              <View style={styles.flagBase} />
             </View>
           </Marker>
         )}
 
-        {/* Teklif Veren Sürücüler - Yeşil Araç İkonları */}
+        {/* Sürücüler - Profesyonel Araç Görünümü */}
         {displayDrivers.map((driver) => (
           <Marker
             key={driver.driver_id}
@@ -194,11 +208,13 @@ export default function SearchingMapView({
             description={driver.vehicle_model || (driver.price ? `₺${driver.price}` : undefined)}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={styles.driverMarker}>
-              <Ionicons name="car-sport" size={24} color="#FFF" />
+            <View style={styles.carMarker}>
+              <View style={styles.carBody}>
+                <Ionicons name="car" size={22} color="#FFF" />
+              </View>
               {driver.price && (
-                <View style={styles.priceTag}>
-                  <Text style={styles.priceText}>₺{driver.price}</Text>
+                <View style={styles.carPriceTag}>
+                  <Text style={styles.carPriceText}>₺{driver.price}</Text>
                 </View>
               )}
             </View>
@@ -310,6 +326,117 @@ const styles = StyleSheet.create({
   priceText: {
     color: '#FFF',
     fontSize: 10,
+    fontWeight: '700',
+  },
+  
+  // 🆕 Profesyonel Yolcu Pin Marker
+  passengerMarker: {
+    alignItems: 'center',
+  },
+  passengerPin: {
+    alignItems: 'center',
+  },
+  passengerPinHead: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  passengerPinTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderTopWidth: 14,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#3B82F6',
+    marginTop: -2,
+  },
+  markerShadow: {
+    width: 24,
+    height: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  
+  // 🆕 Bayrak Stili Hedef Marker
+  flagMarker: {
+    alignItems: 'flex-start',
+  },
+  flagPole: {
+    width: 3,
+    height: 45,
+    backgroundColor: '#1F2937',
+    borderRadius: 2,
+  },
+  flagBody: {
+    position: 'absolute',
+    top: 0,
+    left: 3,
+    width: 36,
+    height: 24,
+    backgroundColor: '#EF4444',
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  flagBase: {
+    width: 12,
+    height: 6,
+    backgroundColor: '#374151',
+    borderRadius: 3,
+    marginLeft: -4,
+  },
+  
+  // 🆕 Profesyonel Araç Marker
+  carMarker: {
+    alignItems: 'center',
+  },
+  carBody: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F97316',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#F97316',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  carPriceTag: {
+    position: 'absolute',
+    top: -22,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  carPriceText: {
+    color: '#FFF',
+    fontSize: 11,
     fontWeight: '700',
   },
   // Sürücü sayısı badge

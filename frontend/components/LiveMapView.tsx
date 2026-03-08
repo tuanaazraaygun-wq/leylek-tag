@@ -612,7 +612,7 @@ export default function LiveMapView({
         </View>
       )}
       
-      {/* HARİTA - Google Maps */}
+      {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF */}
       {MapView ? (
         <MapView
           ref={mapRef}
@@ -627,64 +627,77 @@ export default function LiveMapView({
           showsUserLocation={false}
           showsMyLocationButton={false}
           showsCompass={false}
+          scrollEnabled={true}
+          zoomEnabled={true}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          minZoomLevel={10}
+          maxZoomLevel={18}
           customMapStyle={mapStyle}
         >
-          {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) */}
+          {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) - KALIN VE PROFESYONel */}
           {meetingRoute.length > 1 && (
             <Polyline
               coordinates={meetingRoute}
-              strokeColor="#22C55E"
-              strokeWidth={6}
+              strokeColor="#047857"
+              strokeWidth={8}
               lineDashPattern={[0]}
+              lineJoin="round"
+              lineCap="round"
             />
           )}
           
-          {/* TURUNCU ROTA: Yolcu → Hedef */}
+          {/* TURUNCU ROTA: Yolcu → Hedef - KALIN */}
           {destinationRoute.length > 1 && destinationLocation && (
             <Polyline
               coordinates={destinationRoute}
-              strokeColor="#F97316"
-              strokeWidth={5}
-              lineDashPattern={[10, 5]}
+              strokeColor="#EA580C"
+              strokeWidth={6}
+              lineDashPattern={[12, 6]}
+              lineJoin="round"
+              lineCap="round"
             />
           )}
 
-          {/* BEN - Marker */}
+          {/* BEN - Profesyonel Marker */}
           {userLocation && (
-            <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={styles.markerContainer}>
-                <View style={[styles.markerCircle, { backgroundColor: themeColor }]}>
-                  <Text style={styles.markerIcon}>{isDriver ? '🚗' : '👤'}</Text>
+            <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.9 }}>
+              <View style={styles.proMarkerContainer}>
+                <View style={[styles.proMarkerHead, { backgroundColor: themeColor }]}>
+                  <Ionicons name={isDriver ? "car" : "person"} size={20} color="#FFF" />
                 </View>
-                <View style={[styles.markerArrow, { borderTopColor: themeColor }]} />
+                <View style={[styles.proMarkerTail, { borderTopColor: themeColor }]} />
+                <View style={styles.proMarkerShadow} />
               </View>
             </Marker>
           )}
 
-          {/* KARŞI TARAF - Marker - Tıklanabilir */}
+          {/* KARŞI TARAF - Profesyonel Marker - Tıklanabilir */}
           {otherLocation && (
             <Marker 
               coordinate={otherLocation} 
-              anchor={{ x: 0.5, y: 0.5 }}
+              anchor={{ x: 0.5, y: 0.9 }}
               onPress={() => setShowInfoCard(true)}
             >
-              <View style={styles.markerContainer}>
-                <View style={[styles.markerCircle, { backgroundColor: isDriver ? '#8B5CF6' : '#22C55E' }]}>
-                  <Text style={styles.markerIcon}>{isDriver ? '👤' : '🚗'}</Text>
+              <View style={styles.proMarkerContainer}>
+                <View style={[styles.proMarkerHead, { backgroundColor: isDriver ? '#8B5CF6' : '#059669' }]}>
+                  <Ionicons name={isDriver ? "person" : "car"} size={20} color="#FFF" />
                 </View>
-                <View style={[styles.markerArrow, { borderTopColor: isDriver ? '#8B5CF6' : '#22C55E' }]} />
+                <View style={[styles.proMarkerTail, { borderTopColor: isDriver ? '#8B5CF6' : '#059669' }]} />
+                <View style={styles.proMarkerShadow} />
               </View>
             </Marker>
           )}
 
-          {/* HEDEF - Turuncu Bayrak */}
+          {/* HEDEF - Bayrak Stili */}
           {destinationLocation && (
-            <Marker coordinate={destinationLocation} anchor={{ x: 0.5, y: 1 }}>
-              <View style={styles.destinationMarker}>
-                <View style={styles.destinationCircle}>
-                  <Text style={styles.destinationIcon}>🏁</Text>
+            <Marker coordinate={destinationLocation} anchor={{ x: 0.15, y: 0.95 }}>
+              <View style={styles.proFlagMarker}>
+                <View style={styles.proFlagPole} />
+                <View style={styles.proFlagBody}>
+                  <Ionicons name="flag" size={14} color="#FFF" />
                 </View>
-                <Text style={styles.destinationLabel}>HEDEF</Text>
+                <View style={styles.proFlagBase} />
               </View>
             </Marker>
           )}
@@ -1086,6 +1099,78 @@ const styles = StyleSheet.create({
   markerCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5 },
   markerIcon: { fontSize: 22 },
   markerArrow: { width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', marginTop: -2 },
+  
+  // 🆕 Profesyonel Marker Stilleri
+  proMarkerContainer: {
+    alignItems: 'center',
+  },
+  proMarkerHead: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  proMarkerTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderTopWidth: 14,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -3,
+  },
+  proMarkerShadow: {
+    width: 26,
+    height: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 13,
+    marginTop: 4,
+  },
+  
+  // 🆕 Profesyonel Bayrak Marker
+  proFlagMarker: {
+    alignItems: 'flex-start',
+  },
+  proFlagPole: {
+    width: 4,
+    height: 50,
+    backgroundColor: '#1F2937',
+    borderRadius: 2,
+  },
+  proFlagBody: {
+    position: 'absolute',
+    top: 0,
+    left: 4,
+    width: 38,
+    height: 26,
+    backgroundColor: '#DC2626',
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 7,
+  },
+  proFlagBase: {
+    width: 14,
+    height: 7,
+    backgroundColor: '#374151',
+    borderRadius: 4,
+    marginLeft: -5,
+    marginTop: 2,
+  },
   
   // Destination Marker
   destinationMarker: { alignItems: 'center' },
