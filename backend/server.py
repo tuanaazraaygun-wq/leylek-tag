@@ -3354,8 +3354,7 @@ async def register_push_token_endpoint(
         # Users tablosuna kaydet
         supabase.table("users").update({
             "push_token": _push_token,
-            "push_token_updated_at": datetime.utcnow().isoformat(),
-            "push_platform": _platform
+            "push_token_updated_at": datetime.utcnow().isoformat()
         }).eq("id", _user_id).execute()
         
         logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform}")
@@ -6721,22 +6720,37 @@ async def admin_full_dashboard(admin_phone: str):
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         now = datetime.utcnow()
+        now_iso = now.isoformat()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         week_start = (now - timedelta(days=7)).isoformat()
         
-        # Kullanıcı istatistikleri
-        users_result = supabase.table("users").select("id, driver_details, driver_online, created_at", count="exact").execute()
-        total_users = users_result.count or 0
+        # Kullanıcı istatistikleri - push_token ve driver_active_until da al
+        users_result = supabase.table("users").select(
+            "id, driver_details, driver_online, driver_active_until, created_at, push_token"
+        ).execute()
+        
+        total_users = len(users_result.data) if users_result.data else 0
         
         drivers = []
         online_drivers = 0
         new_users_today = 0
+        push_token_count = 0
         
         for u in users_result.data or []:
+            # Push token sayısı
+            if u.get("push_token"):
+                push_token_count += 1
+            
+            # Sürücü kontrolü
             if u.get("driver_details"):
                 drivers.append(u)
+                # driver_online VE driver_active_until geçerli mi?
                 if u.get("driver_online"):
-                    online_drivers += 1
+                    active_until = u.get("driver_active_until")
+                    if active_until and active_until > now_iso:
+                        online_drivers += 1
+            
+            # Bugün kayıt olan
             if u.get("created_at", "") >= today_start:
                 new_users_today += 1
         
@@ -6761,12 +6775,6 @@ async def admin_full_dashboard(admin_phone: str):
             active_promos_count = active_promos.count or 0
         except:
             pass
-        
-        # Push token istatistikleri
-        push_token_count = 0
-        for u in users_result.data or []:
-            if u.get("push_token"):
-                push_token_count += 1
         
         return {
             "success": True,
