@@ -70,10 +70,62 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [notifBody, setNotifBody] = useState('');
   const [notifTarget, setNotifTarget] = useState<'all' | 'drivers' | 'passengers'>('all');
   const [sendingNotif, setSendingNotif] = useState(false);
+  
+  // KYC states
+  const [pendingKYC, setPendingKYC] = useState<any[]>([]);
+  const [approvingKYC, setApprovingKYC] = useState<string | null>(null);
 
   useEffect(() => {
     loadAll();
   }, []);
+  
+  const loadKYC = async () => {
+    try {
+      const res = await fetch(`${API_URL}/admin/kyc/pending?admin_phone=${adminPhone}`);
+      const data = await res.json();
+      if (data.success) {
+        setPendingKYC(data.requests || []);
+      }
+    } catch (e) {
+      console.log('KYC yüklenemedi:', e);
+    }
+  };
+  
+  const approveKYC = async (userId: string) => {
+    setApprovingKYC(userId);
+    try {
+      const res = await fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Başarılı', 'Sürücü onaylandı!');
+        loadKYC();
+      } else {
+        Alert.alert('Hata', data.detail || 'Onay başarısız');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e.message || 'Onay başarısız');
+    }
+    setApprovingKYC(null);
+  };
+  
+  const rejectKYC = async (userId: string, reason: string) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=${encodeURIComponent(reason)}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert('Başarılı', 'Başvuru reddedildi');
+        loadKYC();
+      } else {
+        Alert.alert('Hata', data.detail || 'Red başarısız');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e.message || 'Red başarısız');
+    }
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -92,6 +144,9 @@ function AdminContent({ adminPhone, onClose }: Props) {
       const tripsRes = await fetch(`${API_URL}/admin/trips?admin_phone=${adminPhone}&page=1&limit=50`);
       const tripsData = await tripsRes.json();
       if (tripsData.success && tripsData.trips) setTrips(tripsData.trips);
+      
+      // KYC
+      await loadKYC();
     } catch (e) {
       console.log('Load error:', e);
     }
@@ -176,10 +231,10 @@ function AdminContent({ adminPhone, onClose }: Props) {
           <Text style={[styles.tabText, tab === 'users' && styles.tabTextActive]}>Kullanıcılar</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={[styles.tabBtn, tab === 'trips' && styles.tabActive]}
-          onPress={() => setTab('trips')}
+          style={[styles.tabBtn, tab === 'kyc' && styles.tabActive]}
+          onPress={() => setTab('kyc')}
         >
-          <Text style={[styles.tabText, tab === 'trips' && styles.tabTextActive]}>Yolculuklar</Text>
+          <Text style={[styles.tabText, tab === 'kyc' && styles.tabTextActive]}>Sürücü Onay</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.tabBtn, tab === 'notif' && styles.tabActive]}
@@ -297,6 +352,78 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 </View>
               </View>
             ))}
+          </View>
+        )}
+
+        {/* KYC / Sürücü Onay */}
+        {tab === 'kyc' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Bekleyen Sürücü Başvuruları</Text>
+            <Text style={styles.countText}>{pendingKYC.length} başvuru bekliyor</Text>
+            
+            {pendingKYC.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>Bekleyen başvuru yok</Text>
+              </View>
+            ) : (
+              pendingKYC.map((kyc, i) => (
+                <View key={kyc.user_id || i} style={styles.kycCard}>
+                  <Text style={styles.kycName}>{kyc.name || 'İsimsiz'}</Text>
+                  <Text style={styles.kycPhone}>{kyc.phone}</Text>
+                  <Text style={styles.kycCity}>{kyc.city}</Text>
+                  
+                  {/* Araç Bilgileri */}
+                  {kyc.driver_details && (
+                    <View style={styles.kycVehicle}>
+                      <Text style={styles.kycVehicleText}>
+                        {kyc.driver_details.brand} {kyc.driver_details.model} - {kyc.driver_details.color}
+                      </Text>
+                      <Text style={styles.kycVehicleText}>
+                        Plaka: {kyc.driver_details.plate}
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {/* Belgeler */}
+                  <View style={styles.kycDocs}>
+                    <Text style={styles.kycDocLabel}>Selfie: {kyc.driver_details?.selfie_url ? '✅' : '❌'}</Text>
+                    <Text style={styles.kycDocLabel}>Araç Fotoğrafı: {kyc.driver_details?.car_photo_url ? '✅' : '❌'}</Text>
+                    <Text style={styles.kycDocLabel}>Ehliyet: {kyc.driver_details?.license_url ? '✅' : '❌'}</Text>
+                  </View>
+                  
+                  {/* Butonlar */}
+                  <View style={styles.kycBtnRow}>
+                    <TouchableOpacity
+                      style={[styles.kycBtn, styles.kycApproveBtn]}
+                      onPress={() => approveKYC(kyc.user_id)}
+                      disabled={approvingKYC === kyc.user_id}
+                    >
+                      {approvingKYC === kyc.user_id ? (
+                        <ActivityIndicator color="#FFF" size="small" />
+                      ) : (
+                        <Text style={styles.kycBtnText}>✓ Onayla</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.kycBtn, styles.kycRejectBtn]}
+                      onPress={() => {
+                        Alert.prompt(
+                          'Red Sebebi',
+                          'Başvurunun reddedilme sebebini yazın:',
+                          [
+                            { text: 'İptal', style: 'cancel' },
+                            { text: 'Reddet', onPress: (reason) => rejectKYC(kyc.user_id, reason || 'Belirtilmedi') }
+                          ],
+                          'plain-text'
+                        );
+                      }}
+                    >
+                      <Text style={styles.kycBtnText}>✗ Reddet</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         )}
 
@@ -683,5 +810,86 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 13,
     lineHeight: 20,
+  },
+  // KYC Styles
+  kycCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  kycName: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  kycPhone: {
+    color: '#94A3B8',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  kycCity: {
+    color: '#3B82F6',
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  kycVehicle: {
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  kycVehicleText: {
+    color: '#FFF',
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  kycDocs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  kycDocLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  kycBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  kycBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  kycApproveBtn: {
+    backgroundColor: '#10B981',
+  },
+  kycRejectBtn: {
+    backgroundColor: '#EF4444',
+  },
+  kycBtnText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyBox: {
+    backgroundColor: '#1E293B',
+    padding: 30,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#64748B',
+    fontSize: 14,
   },
 });

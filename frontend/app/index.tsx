@@ -27,6 +27,7 @@ import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü K
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
+import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
 // 🚫 SESLİ ARAMA KALDIRILDI - Sadece mesajlaşma aktif
 // import DailyCallScreen from '../components/DailyCallScreen';
 // import IncomingCallScreen from '../components/IncomingCallScreen';
@@ -687,8 +688,47 @@ export default function App() {
             setScreen('set-pin');
           }
         } else {
-          // Yeni kullanıcı - Kayıt ekranı
-          setScreen('register');
+          // Yeni kullanıcı - Eğer isim ve şehir zaten girilmişse kayıt yap
+          if (name && selectedCity) {
+            // Kayıt yap
+            try {
+              const registerResponse = await fetch(`${API_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  phone, 
+                  name, 
+                  city: selectedCity,
+                  role: 'passenger' // Varsayılan olarak yolcu
+                })
+              });
+              
+              const registerData = await registerResponse.json();
+              console.log('📝 Register response:', registerData);
+              
+              if (registerData.success && registerData.user) {
+                await saveUser(registerData.user);
+                setUser(registerData.user);
+                
+                // Push token kaydet
+                registerPushToken(registerData.user.id);
+                
+                Alert.alert('Başarılı', 'Kayıt tamamlandı! Şimdi PIN oluşturun.', [
+                  { text: 'Tamam', onPress: () => setScreen('set-pin') }
+                ]);
+              } else {
+                Alert.alert('Hata', registerData.detail || 'Kayıt oluşturulamadı');
+                setScreen('register');
+              }
+            } catch (regError) {
+              console.error('Kayıt hatası:', regError);
+              Alert.alert('Hata', 'Kayıt işlemi başarısız');
+              setScreen('register');
+            }
+          } else {
+            // İsim ve şehir girilmemiş - kayıt ekranına git
+            setScreen('register');
+          }
         }
       } else {
         Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
@@ -1032,6 +1072,23 @@ export default function App() {
                 maxLength={6}
               />
             </View>
+            
+            {/* 30 Saniye Geri Sayım */}
+            <OTPCountdown phone={phone} onResend={async () => {
+              try {
+                const response = await fetch(`${API_URL}/auth/send-otp`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone })
+                });
+                const data = await response.json();
+                if (data.success) {
+                  Alert.alert('Başarılı', 'Yeni kod gönderildi');
+                }
+              } catch (error) {
+                Alert.alert('Hata', 'Kod gönderilemedi');
+              }
+            }} />
 
             <TouchableOpacity style={styles.modernPrimaryButton} onPress={handleVerifyOTP}>
               <Text style={styles.modernPrimaryButtonText}>DOĞRULA</Text>
