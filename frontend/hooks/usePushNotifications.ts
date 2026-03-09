@@ -9,7 +9,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 
-const API_URL = 'https://api.leylektag.com/api';
+const API_URL = 'https://leylektag-debug.preview.emergentagent.com/api';
 
 // Bildirim handler - uygulama açıkken bildirimleri göster
 Notifications.setNotificationHandler({
