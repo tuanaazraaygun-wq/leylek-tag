@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
@@ -376,53 +377,75 @@ export default function App() {
   // PERMISSION GATE - Request ALL permissions at app start
   // ═══════════════════════════════════════════════════════════════════════════
   const requestAllPermissions = async (): Promise<boolean> => {
-    if (Platform.OS !== 'android') {
-      console.log('🔐 iOS - izinler otomatik isteniyor');
-      setMicrophonePermission(true);
-      setCameraPermission(true);
-      setPermissionsGranted(true);
-      setPermissionChecking(false);
-      return true;
-    }
-
-    console.log('🔐 Android - Tüm izinler isteniyor...');
+    console.log('🔐 Tüm izinler isteniyor...');
     
     try {
-      // Core permissions
-      const permissions: any[] = [
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        PermissionsAndroid.PERMISSIONS.CAMERA,
-      ];
-
-      console.log('🔐 İstenen izinler:', permissions);
-
-      const results = await PermissionsAndroid.requestMultiple(permissions);
-      
-      console.log('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
-
-      const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
-      const cameraGranted = results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
-
-      setMicrophonePermission(audioGranted);
-      setCameraPermission(cameraGranted);
-
-      // En önemli izin: RECORD_AUDIO - bu olmadan arama yapılamaz
-      if (!audioGranted) {
-        console.log('❌ RECORD_AUDIO izni REDDEDİLDİ - Arama yapılamaz!');
-        Alert.alert(
-          'Mikrofon İzni Gerekli',
-          'Sesli ve görüntülü arama yapabilmek için mikrofon izni vermeniz gerekiyor. Lütfen ayarlardan izin verin.',
-          [
-            { text: 'Tamam', onPress: () => Linking.openSettings() }
-          ]
-        );
-        setPermissionsGranted(false);
-        setPermissionChecking(false);
-        return false;
+      // 1. PUSH NOTIFICATION İZNİ - ÖNCELİKLİ
+      console.log('🔔 Push notification izni isteniyor...');
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        console.log('🔔 Mevcut push izni:', existingStatus);
+        
+        if (existingStatus !== 'granted') {
+          const { status } = await Notifications.requestPermissionsAsync();
+          console.log('🔔 Yeni push izni:', status);
+        }
+        
+        // Android kanalları oluştur
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('default', {
+            name: 'Bildirimler',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#3FA9F5',
+            sound: 'default',
+          });
+        }
+      } catch (pushErr) {
+        console.log('🔔 Push izin hatası:', pushErr);
       }
+      
+      // 2. ANDROID SPESİFİK İZİNLER
+      if (Platform.OS === 'android') {
+        console.log('🔐 Android izinleri isteniyor...');
+        
+        const permissions: any[] = [
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+        ];
+        
+        // Android 13+ için POST_NOTIFICATIONS izni
+        if (Platform.Version >= 33) {
+          permissions.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        }
 
-      console.log('✅ RECORD_AUDIO izni verildi');
-      console.log(cameraGranted ? '✅ CAMERA izni verildi' : '⚠️ CAMERA izni reddedildi (opsiyonel)');
+        const results = await PermissionsAndroid.requestMultiple(permissions);
+        console.log('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
+
+        const audioGranted = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === 'granted';
+        const cameraGranted = results[PermissionsAndroid.PERMISSIONS.CAMERA] === 'granted';
+
+        setMicrophonePermission(audioGranted);
+        setCameraPermission(cameraGranted);
+
+        if (!audioGranted) {
+          console.log('❌ RECORD_AUDIO izni REDDEDİLDİ');
+          Alert.alert(
+            'Mikrofon İzni Gerekli',
+            'Sesli ve görüntülü arama için mikrofon izni gerekli.',
+            [{ text: 'Tamam', onPress: () => Linking.openSettings() }]
+          );
+          setPermissionsGranted(false);
+          setPermissionChecking(false);
+          return false;
+        }
+
+        console.log('✅ Gerekli izinler alındı');
+      } else {
+        // iOS
+        setMicrophonePermission(true);
+        setCameraPermission(true);
+      }
 
       setPermissionsGranted(true);
       setPermissionChecking(false);
