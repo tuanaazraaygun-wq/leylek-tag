@@ -3544,6 +3544,36 @@ async def admin_push_stats(phone: str):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+@api_router.post("/admin/cleanup-invalid-tokens")
+async def cleanup_invalid_tokens(admin_phone: str):
+    """Geçersiz/test push token'ları temizle"""
+    if not is_admin(admin_phone):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    try:
+        # Token'ı olan tüm kullanıcıları al
+        result = supabase.table("users").select("id, name, push_token").not_.is_("push_token", "null").execute()
+        
+        cleaned = 0
+        for user in result.data or []:
+            token = user.get("push_token", "")
+            # Test token'ları veya geçersiz formatları temizle
+            if "TEST" in token or "test" in token or not token.startswith("ExponentPushToken["):
+                supabase.table("users").update({"push_token": None}).eq("id", user["id"]).execute()
+                cleaned += 1
+                logger.info(f"🧹 Geçersiz token temizlendi: {user['name']} - {token[:30]}...")
+        
+        return {
+            "success": True,
+            "cleaned": cleaned,
+            "message": f"{cleaned} geçersiz token temizlendi"
+        }
+    except Exception as e:
+        logger.error(f"Token cleanup error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ==================== ADMIN ENDPOINTS ====================
 
 @api_router.get("/admin/dashboard")
