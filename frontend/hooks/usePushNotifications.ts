@@ -1,6 +1,6 @@
 /**
- * Expo Push Notifications Hook - V4 ULTRA AGGRESSIVE
- * Uygulama açılır açılmaz izin iste
+ * LeylekTag Push Notifications Hook
+ * Minimalist, sağlam, test edilmiş versiyon
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -9,10 +9,9 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 
-// Backend URL
 const API_URL = 'https://api.leylektag.com/api';
 
-// Notification handler
+// Bildirim handler - uygulama açıkken bildirimleri göster
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -21,88 +20,120 @@ Notifications.setNotificationHandler({
   }),
 });
 
-interface UsePushNotificationsReturn {
+export interface PushNotificationHook {
   expoPushToken: string | null;
   notification: Notifications.Notification | null;
-  error: string | null;
-  isInitialized: boolean;
+  registerForPushNotifications: () => Promise<string | null>;
   registerPushToken: (userId: string) => Promise<boolean>;
   removePushToken: (userId: string) => Promise<void>;
-  requestPermission: () => Promise<string | null>;
 }
 
-export function usePushNotifications(): UsePushNotificationsReturn {
+export function usePushNotifications(): PushNotificationHook {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
+  
+  const notificationListener = useRef<Notifications.Subscription>();
+  const responseListener = useRef<Notifications.Subscription>();
 
-  const notificationListener = useRef<Notifications.Subscription | null>(null);
-  const responseListener = useRef<Notifications.Subscription | null>(null);
+  /**
+   * Android bildirim kanallarını oluştur
+   */
+  const setupNotificationChannels = async () => {
+    if (Platform.OS !== 'android') return;
 
-  // Android kanalları
-  const setupAndroidChannels = async () => {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Bildirimler',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#3FA9F5',
-        sound: 'default',
-      });
-    }
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Genel Bildirimler',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#3FA9F5',
+      sound: 'default',
+    });
+
+    await Notifications.setNotificationChannelAsync('offers', {
+      name: 'Yolculuk Teklifleri',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 200, 500],
+      lightColor: '#00FF00',
+      sound: 'default',
+    });
+
+    await Notifications.setNotificationChannelAsync('chat', {
+      name: 'Mesajlar',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+    });
   };
 
-  // İzin iste ve token al
-  const requestPermission = useCallback(async (): Promise<string | null> => {
-    try {
-      // Android kanalları
-      await setupAndroidChannels();
+  /**
+   * Push notification için izin al ve token oluştur
+   */
+  const registerForPushNotifications = useCallback(async (): Promise<string | null> => {
+    // Simülatör kontrolü
+    if (!Device.isDevice) {
+      console.log('[PUSH] Simülatör - token alınamaz');
+      return null;
+    }
 
-      // İzin kontrolü
+    try {
+      // Android kanallarını oluştur
+      await setupNotificationChannels();
+
+      // Mevcut izin durumunu kontrol et
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
 
+      // İzin yoksa iste
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
 
+      // İzin verilmediyse
       if (finalStatus !== 'granted') {
+        console.log('[PUSH] İzin verilmedi:', finalStatus);
         return null;
       }
 
+      // Expo Project ID
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId 
+        ?? 'f00346b0-b9cb-47f9-a647-7f56b168e3a9';
+
       // Token al
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId || 'f00346b0-b9cb-47f9-a647-7f56b168e3a9';
-      
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: projectId,
-      });
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+      const token = tokenResponse.data;
 
-      const token = tokenData.data;
-      if (token) {
-        setExpoPushToken(token);
-      }
+      console.log('[PUSH] Token alındı:', token.substring(0, 40) + '...');
+      setExpoPushToken(token);
+
       return token;
-
-    } catch (err: any) {
-      console.log('Push error:', err?.message);
+    } catch (error) {
+      console.log('[PUSH] Token alma hatası:', error);
       return null;
     }
   }, []);
 
-  // Token kaydet
+  /**
+   * Token'ı backend'e kaydet
+   */
   const registerPushToken = useCallback(async (userId: string): Promise<boolean> => {
-    try {
-      if (!userId) return false;
+    if (!userId) {
+      console.log('[PUSH] userId yok');
+      return false;
+    }
 
+    try {
+      // Token al (yoksa)
       let token = expoPushToken;
       if (!token) {
-        token = await requestPermission();
+        token = await registerForPushNotifications();
       }
 
-      if (!token) return false;
+      if (!token) {
+        console.log('[PUSH] Token alınamadı');
+        return false;
+      }
 
+      // Backend'e gönder
       const response = await fetch(`${API_URL}/user/register-push-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,30 +145,47 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       });
 
       const data = await response.json();
-      return data.success === true;
-
-    } catch (err) {
+      
+      if (data.success) {
+        console.log('[PUSH] Token kaydedildi');
+        return true;
+      }
+      
+      console.log('[PUSH] Kayıt başarısız:', data.detail);
+      return false;
+    } catch (error) {
+      console.log('[PUSH] Kayıt hatası:', error);
       return false;
     }
-  }, [expoPushToken, requestPermission]);
+  }, [expoPushToken, registerForPushNotifications]);
 
-  // Token sil
+  /**
+   * Token'ı backend'den sil
+   */
   const removePushToken = useCallback(async (userId: string): Promise<void> => {
     try {
       await fetch(`${API_URL}/user/remove-push-token?user_id=${userId}`, {
         method: 'DELETE',
       });
       setExpoPushToken(null);
-    } catch (err) {}
+    } catch (error) {
+      console.log('[PUSH] Token silme hatası:', error);
+    }
   }, []);
 
-  // Listeners
+  // Bildirim dinleyicileri
   useEffect(() => {
-    notificationListener.current = Notifications.addNotificationReceivedListener((notif) => {
+    // Bildirim alındığında
+    notificationListener.current = Notifications.addNotificationReceivedListener(notif => {
+      console.log('[PUSH] Bildirim alındı:', notif.request.content.title);
       setNotification(notif);
     });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {});
+    // Bildirime tıklandığında
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      console.log('[PUSH] Bildirime tıklandı, data:', data);
+    });
 
     return () => {
       if (notificationListener.current) {
@@ -149,21 +197,17 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     };
   }, []);
 
-  // Başlangıçta token al
+  // Uygulama başladığında token al
   useEffect(() => {
-    if (!isInitialized) {
-      requestPermission().finally(() => setIsInitialized(true));
-    }
-  }, [isInitialized, requestPermission]);
+    registerForPushNotifications();
+  }, [registerForPushNotifications]);
 
   return {
     expoPushToken,
     notification,
-    error,
-    isInitialized,
+    registerForPushNotifications,
     registerPushToken,
     removePushToken,
-    requestPermission,
   };
 }
 
