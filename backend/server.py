@@ -3377,8 +3377,17 @@ async def register_push_token_endpoint(
         _user_id = request.user_id if request else user_id
         _push_token = request.push_token if request else push_token
         _platform = request.platform if request else "android"
+        _token_type = getattr(request, 'token_type', None) if request else None
         
-        logger.info(f"📱 Push token kayıt isteği: user_id={_user_id}, platform={_platform}, token={_push_token[:40] if _push_token else 'NONE'}...")
+        # Token tipini belirle
+        if _token_type:
+            token_type = _token_type
+        elif _push_token and _push_token.startswith("ExponentPushToken"):
+            token_type = "expo"
+        else:
+            token_type = "fcm"
+        
+        logger.info(f"📱 Push token kayıt isteği: user_id={_user_id}, platform={_platform}, type={token_type}, token={_push_token[:40] if _push_token else 'NONE'}...")
         
         # Validasyonlar
         if not _user_id:
@@ -3386,11 +3395,6 @@ async def register_push_token_endpoint(
         
         if not _push_token:
             return {"success": False, "detail": "push_token gerekli"}
-        
-        # Token formatı kontrolü
-        if not _push_token.startswith("ExponentPushToken"):
-            logger.warning(f"❌ Geçersiz token formatı: {_push_token[:40]}")
-            return {"success": False, "detail": "Geçersiz token formatı - ExponentPushToken ile başlamalı"}
         
         # Kullanıcı var mı kontrol et
         user_check = supabase.table("users").select("id, name").eq("id", _user_id).execute()
@@ -3403,11 +3407,12 @@ async def register_push_token_endpoint(
         # Users tablosuna kaydet
         supabase.table("users").update({
             "push_token": _push_token,
+            "push_token_type": token_type,
             "push_token_updated_at": datetime.utcnow().isoformat()
         }).eq("id", _user_id).execute()
         
-        logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform}")
-        return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform}
+        logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform} - {token_type}")
+        return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform, "token_type": token_type}
     except Exception as e:
         logger.error(f"❌ Push token kayıt hatası: {e}")
         import traceback
@@ -7149,36 +7154,34 @@ async def register_push_token(user_id: str, token: str, platform: str = "android
         return {"success": False, "error": str(e)}
 
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
-    """Tek kullanıcıya push bildirim gönder - FCM v1 + Expo Hybrid"""
+    """Tek kullanıcıya push bildirim gönder - FCM v1 veya Expo"""
     try:
         logger.info(f"🔔 Push gönderimi başlıyor: user_id={user_id}, title={title}")
         
-        # Token'ı users tablosundan al
-        token = None
-        user_result = supabase.table("users").select("push_token, name").eq("id", user_id).execute()
+        # Token ve tip bilgisini al
+        user_result = supabase.table("users").select("push_token, push_token_type, name").eq("id", user_id).execute()
         
-        if user_result.data:
-            token = user_result.data[0].get("push_token")
-            user_name = user_result.data[0].get("name", "Unknown")
-            logger.info(f"🔔 Kullanıcı bulundu: {user_name}, token: {token[:30] if token else 'YOK'}...")
-        else:
+        if not user_result.data:
             logger.warning(f"🔔 Kullanıcı bulunamadı: {user_id}")
+            return False
+            
+        token = user_result.data[0].get("push_token")
+        token_type = user_result.data[0].get("push_token_type", "expo")
+        user_name = user_result.data[0].get("name", "Unknown")
+        
+        logger.info(f"🔔 Kullanıcı: {user_name}, token_type: {token_type}, token: {token[:30] if token else 'YOK'}...")
         
         if not token:
             logger.warning(f"❌ Push token bulunamadı: {user_id}")
             return False
         
-        # Token formatı kontrolü - Expo token ise FCM'e çevir
-        if token.startswith("ExponentPushToken"):
-            # FCM v1 ile gönder (Firebase Admin SDK)
-            if FCM_ENABLED:
-                return await send_fcm_v1_notification(token, title, body, data)
-            else:
-                # Fallback: Expo Push API (eski yöntem)
-                return await send_expo_notification(token, title, body, data)
+        # Token tipine göre gönder
+        if token_type == 'fcm' or (not token.startswith("ExponentPushToken")):
+            # Native FCM token - doğrudan FCM v1 ile gönder
+            return await send_fcm_v1_direct(token, title, body, data)
         else:
-            logger.warning(f"❌ Geçersiz token formatı: {token[:30]}...")
-            return False
+            # Expo token - Expo API ile gönder (FCM credential yoksa çalışmaz)
+            return await send_expo_notification(token, title, body, data)
             
     except Exception as e:
         logger.error(f"❌ Send push exception: {e}")
@@ -7186,25 +7189,21 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
         logger.error(traceback.format_exc())
         return False
 
-async def send_fcm_v1_notification(expo_token: str, title: str, body: str, data: dict = None):
-    """FCM v1 API ile bildirim gönder"""
+async def send_fcm_v1_direct(fcm_token: str, title: str, body: str, data: dict = None):
+    """FCM v1 API ile doğrudan bildirim gönder"""
     try:
-        # Expo token'dan device token'ı çıkar
-        # ExponentPushToken[xxx] formatından xxx'i al
-        if expo_token.startswith("ExponentPushToken[") and expo_token.endswith("]"):
-            device_token = expo_token[18:-1]
-        else:
-            device_token = expo_token
+        if not FCM_ENABLED:
+            logger.error("❌ FCM v1 devre dışı - Firebase credential yok")
+            return False
+            
+        logger.info(f"🔔 FCM v1 doğrudan gönderimi: {fcm_token[:30]}...")
         
-        logger.info(f"🔔 FCM v1 gönderimi: {device_token[:20]}...")
+        # Data'yı string'e çevir
+        string_data = {}
+        if data:
+            string_data = {k: str(v) for k, v in data.items()}
         
         # FCM message oluştur
-        notification_data = data or {}
-        notification_data["click_action"] = "FLUTTER_NOTIFICATION_CLICK"
-        
-        # String'e çevir (FCM data sadece string kabul eder)
-        string_data = {k: str(v) for k, v in notification_data.items()}
-        
         message = messaging.Message(
             notification=messaging.Notification(
                 title=title,
@@ -7222,7 +7221,7 @@ async def send_fcm_v1_notification(expo_token: str, title: str, body: str, data:
                     default_vibrate_timings=True,
                 ),
             ),
-            token=device_token,
+            token=fcm_token,
         )
         
         # FCM'e gönder
@@ -7231,16 +7230,17 @@ async def send_fcm_v1_notification(expo_token: str, title: str, body: str, data:
         return True
         
     except messaging.UnregisteredError:
-        logger.warning(f"⚠️ FCM: Token geçersiz/kayıtsız")
+        logger.warning(f"⚠️ FCM: Token geçersiz/kayıtsız - {fcm_token[:20]}...")
+        return False
+    except messaging.SenderIdMismatchError:
+        logger.error(f"❌ FCM: Sender ID uyuşmuyor - token farklı projeye ait")
         return False
     except Exception as e:
-        logger.error(f"❌ FCM v1 hatası: {e}")
-        # Fallback to Expo API
-        logger.info("🔄 Expo API'ye fallback...")
-        return await send_expo_notification(expo_token, title, body, data)
+        logger.error(f"❌ FCM v1 doğrudan gönderim hatası: {e}")
+        return False
 
 async def send_expo_notification(token: str, title: str, body: str, data: dict = None):
-    """Expo Push API ile bildirim gönder (fallback)"""
+    """Expo Push API ile bildirim gönder"""
     try:
         import httpx
         
@@ -7264,11 +7264,10 @@ async def send_expo_notification(token: str, title: str, body: str, data: dict =
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json",
-                    "Accept-encoding": "gzip, deflate"
                 }
             )
             
-            logger.info(f"🔔 Expo API yanıtı: status={response.status_code}, body={response.text[:200]}")
+            logger.info(f"🔔 Expo API yanıtı: status={response.status_code}")
             
             if response.status_code == 200:
                 response_data = response.json()

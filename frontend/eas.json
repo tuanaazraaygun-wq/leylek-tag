@@ -35,6 +35,10 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./firebase-service-account.json"
+      }
+    }
   }
 }
