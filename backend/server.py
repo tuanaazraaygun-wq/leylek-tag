@@ -252,7 +252,19 @@ async def force_end_trip(sid, data):
         # Bitiren kişiden -3 puan düş
         new_points, new_rating = await deduct_points(ender_id, 3, "Tek taraflı yolculuk bitirme")
         
-        # Her iki tarafa da ANINDA bildir
+        # Karşı tarafa PUSH bildirim gönder
+        other_user_id = driver_id if ender_type == 'passenger' else passenger_id
+        ender_role = "Yolcu" if ender_type == 'passenger' else "Sürücü"
+        
+        if other_user_id:
+            asyncio.create_task(send_push_notification(
+                other_user_id,
+                "⚠️ Yolculuk Sonlandırıldı!",
+                f"{ender_role} yolculuğu tek taraflı sonlandırdı. Şikayet etmek için tıklayın.",
+                {"type": "force_ended", "tag_id": tag_id, "ender_type": ender_type, "can_report": True}
+            ))
+        
+        # Her iki tarafa da ANINDA bildir (Socket)
         for user_id in [passenger_id, driver_id]:
             if user_id:
                 user_sid = connected_users.get(user_id)
@@ -621,14 +633,28 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
         logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
         
-        # 🔔 PUSH NOTIFICATION - Sürücüye teklif bildirimi
+        # 🔔 PUSH NOTIFICATION - Sürücüye teklif bildirimi (detaylı)
         price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
-        pickup = tag_data.get("pickup_location", "Bilinmeyen konum")[:30]
+        pickup = tag_data.get("pickup_location", "")[:25]
+        duration = tag_data.get("estimated_minutes", 0)
+        distance = tag_data.get("distance_km", 0)
+        
+        # Bildirim metni: ₺350 - 25 dk - 3.5 km
+        notification_body = f"₺{int(price)} • {int(duration)} dk • {round(distance, 1)} km\n⏱️ {timeout} saniye içinde kabul et!"
+        
         asyncio.create_task(send_push_notification(
             driver_id,
             "🚗 Yeni Yolculuk Teklifi!",
-            f"₺{price} - {pickup}",
-            {"type": "new_offer", "tag_id": tag_id, "price": price}
+            notification_body,
+            {
+                "type": "new_offer", 
+                "tag_id": tag_id, 
+                "price": price,
+                "duration": duration,
+                "distance": distance,
+                "timeout": timeout,
+                "pickup": pickup
+            }
         ))
         
         # Timeout task başlat
@@ -1599,6 +1625,14 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
             "last_login": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user["id"]).execute()
+        
+        # 🔔 GİRİŞ BİLDİRİMİ - Güvenlik için
+        asyncio.create_task(send_push_notification(
+            user["id"],
+            "🔐 Hesabınıza Giriş Yapıldı",
+            "Siz değilseniz hemen hesabınızı güvene alın!",
+            {"type": "login_alert", "timestamp": datetime.utcnow().isoformat()}
+        ))
         
         is_admin = phone_val in ADMIN_PHONE_NUMBERS
         
@@ -3193,6 +3227,33 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
             logger.info(f"🗑️ Chat mesajları silindi: tag_id={tag_id}")
         except Exception as chat_err:
             logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
+        
+        # 🔔 PUSH NOTIFICATIONS - Yolculuk tamamlandı
+        # TAG bilgisini al
+        tag_info = supabase.table("tags").select("final_price, offered_price, passenger_id, driver_id").eq("id", tag_id).execute()
+        if tag_info.data:
+            tag_data = tag_info.data[0]
+            price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
+            p_id = tag_data.get("passenger_id")
+            d_id = tag_data.get("driver_id")
+            
+            # Yolcuya bildirim
+            if p_id:
+                asyncio.create_task(send_push_notification(
+                    p_id,
+                    "🎉 Yolculuk Tamamlandı!",
+                    f"İyi yolculuklar! Lütfen sürücüyü puanlayın.",
+                    {"type": "trip_completed", "tag_id": tag_id, "price": price}
+                ))
+            
+            # Sürücüye bildirim (kazanç ile)
+            if d_id:
+                asyncio.create_task(send_push_notification(
+                    d_id,
+                    "🎉 Yolculuk Tamamlandı!",
+                    f"Kazancınız: ₺{int(price)}. Yolcuyu puanlayın.",
+                    {"type": "trip_completed", "tag_id": tag_id, "earnings": price}
+                ))
         
         logger.info(f"✅ Yolculuk tamamlandı: {tag_id}")
         return {"success": True, "message": "Yolculuk tamamlandı"}
