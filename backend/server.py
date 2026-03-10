@@ -29,12 +29,31 @@ from supabase import create_client, Client
 # Agora Token Builder
 from agora_token_builder import RtcTokenBuilder
 
+# Firebase Admin SDK for FCM v1
+import firebase_admin
+from firebase_admin import credentials, messaging
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
+
+# ==================== FIREBASE FCM V1 INIT ====================
+firebase_cred_path = ROOT_DIR / 'firebase-service-account.json'
+if firebase_cred_path.exists():
+    try:
+        cred = credentials.Certificate(str(firebase_cred_path))
+        firebase_admin.initialize_app(cred)
+        logger.info("✅ Firebase Admin SDK initialized (FCM v1)")
+        FCM_ENABLED = True
+    except Exception as e:
+        logger.error(f"❌ Firebase init error: {e}")
+        FCM_ENABLED = False
+else:
+    logger.warning("⚠️ Firebase service account not found - FCM disabled")
+    FCM_ENABLED = False
 
 # ==================== SOCKET.IO SERVER ====================
 # Emergent /api/* path'ini kullanıyor, bu yüzden /api/socket.io kullanıyoruz
@@ -7130,11 +7149,11 @@ async def register_push_token(user_id: str, token: str, platform: str = "android
         return {"success": False, "error": str(e)}
 
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
-    """Tek kullanıcıya push bildirim gönder - GELİŞTİRİLMİŞ LOG İLE"""
+    """Tek kullanıcıya push bildirim gönder - FCM v1 + Expo Hybrid"""
     try:
         logger.info(f"🔔 Push gönderimi başlıyor: user_id={user_id}, title={title}")
         
-        # Token'ı users tablosundan al (tek kaynak - tutarlılık için)
+        # Token'ı users tablosundan al
         token = None
         user_result = supabase.table("users").select("push_token, name").eq("id", user_id).execute()
         
@@ -7149,12 +7168,80 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             logger.warning(f"❌ Push token bulunamadı: {user_id}")
             return False
         
-        # Token formatı kontrolü
-        if not token.startswith("ExponentPushToken"):
+        # Token formatı kontrolü - Expo token ise FCM'e çevir
+        if token.startswith("ExponentPushToken"):
+            # FCM v1 ile gönder (Firebase Admin SDK)
+            if FCM_ENABLED:
+                return await send_fcm_v1_notification(token, title, body, data)
+            else:
+                # Fallback: Expo Push API (eski yöntem)
+                return await send_expo_notification(token, title, body, data)
+        else:
             logger.warning(f"❌ Geçersiz token formatı: {token[:30]}...")
             return False
+            
+    except Exception as e:
+        logger.error(f"❌ Send push exception: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+async def send_fcm_v1_notification(expo_token: str, title: str, body: str, data: dict = None):
+    """FCM v1 API ile bildirim gönder"""
+    try:
+        # Expo token'dan device token'ı çıkar
+        # ExponentPushToken[xxx] formatından xxx'i al
+        if expo_token.startswith("ExponentPushToken[") and expo_token.endswith("]"):
+            device_token = expo_token[18:-1]
+        else:
+            device_token = expo_token
         
-        # Expo Push API'ye gönder
+        logger.info(f"🔔 FCM v1 gönderimi: {device_token[:20]}...")
+        
+        # FCM message oluştur
+        notification_data = data or {}
+        notification_data["click_action"] = "FLUTTER_NOTIFICATION_CLICK"
+        
+        # String'e çevir (FCM data sadece string kabul eder)
+        string_data = {k: str(v) for k, v in notification_data.items()}
+        
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=title,
+                body=body,
+            ),
+            data=string_data,
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    title=title,
+                    body=body,
+                    channel_id='offers',
+                    priority='max',
+                    default_sound=True,
+                    default_vibrate_timings=True,
+                ),
+            ),
+            token=device_token,
+        )
+        
+        # FCM'e gönder
+        response = messaging.send(message)
+        logger.info(f"✅ FCM v1 başarılı: {response}")
+        return True
+        
+    except messaging.UnregisteredError:
+        logger.warning(f"⚠️ FCM: Token geçersiz/kayıtsız")
+        return False
+    except Exception as e:
+        logger.error(f"❌ FCM v1 hatası: {e}")
+        # Fallback to Expo API
+        logger.info("🔄 Expo API'ye fallback...")
+        return await send_expo_notification(expo_token, title, body, data)
+
+async def send_expo_notification(token: str, title: str, body: str, data: dict = None):
+    """Expo Push API ile bildirim gönder (fallback)"""
+    try:
         import httpx
         
         message = {
@@ -7164,7 +7251,7 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             "body": body,
             "data": data or {},
             "priority": "high",
-            "channelId": "default",
+            "channelId": "offers",
             "_displayInForeground": True
         }
         
@@ -7185,37 +7272,18 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             
             if response.status_code == 200:
                 response_data = response.json()
-                # Expo API'nin döndürdüğü veriyi kontrol et
                 if response_data.get("data", {}).get("status") == "error":
                     error_msg = response_data.get("data", {}).get("message", "Unknown error")
                     logger.error(f"❌ Expo API hatası: {error_msg}")
                     return False
                 
-                logger.info(f"✅ Push başarıyla gönderildi: {user_id} - {title}")
-                
-                # Bildirimi notifications tablosuna kaydet
-                try:
-                    supabase.table("notifications").insert({
-                        "user_id": user_id,
-                        "title": title,
-                        "body": body,
-                        "data": data or {},
-                        "type": data.get("type", "general") if data else "general",
-                        "sent_at": datetime.utcnow().isoformat(),
-                        "read": False
-                    }).execute()
-                    logger.info(f"✅ Bildirim DB'ye kaydedildi")
-                except Exception as save_err:
-                    logger.warning(f"⚠️ Bildirim DB'ye kaydedilemedi: {save_err}")
-                
+                logger.info(f"✅ Expo push başarılı")
                 return True
             else:
-                logger.error(f"❌ Push gönderme hatası: HTTP {response.status_code} - {response.text}")
+                logger.error(f"❌ Expo push hatası: HTTP {response.status_code}")
                 return False
     except Exception as e:
-        logger.error(f"❌ Send push exception: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"❌ Expo API exception: {e}")
         return False
 
 async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):
