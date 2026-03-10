@@ -3404,12 +3404,20 @@ async def register_push_token_endpoint(
         
         user_name = user_check.data[0].get("name", "Unknown")
         
-        # Users tablosuna kaydet
-        supabase.table("users").update({
-            "push_token": _push_token,
-            "push_token_type": token_type,
-            "push_token_updated_at": datetime.utcnow().isoformat()
-        }).eq("id", _user_id).execute()
+        # Users tablosuna kaydet (push_token_type kolonu yoksa sadece token kaydet)
+        try:
+            supabase.table("users").update({
+                "push_token": _push_token,
+                "push_token_type": token_type,
+                "push_token_updated_at": datetime.utcnow().isoformat()
+            }).eq("id", _user_id).execute()
+        except Exception as col_err:
+            # push_token_type kolonu yoksa sadece token'ı kaydet
+            logger.warning(f"⚠️ push_token_type kolonu yok, sadece token kaydediliyor: {col_err}")
+            supabase.table("users").update({
+                "push_token": _push_token,
+                "push_token_updated_at": datetime.utcnow().isoformat()
+            }).eq("id", _user_id).execute()
         
         logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform} - {token_type}")
         return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform, "token_type": token_type}
@@ -3448,11 +3456,15 @@ async def test_push_notification(user_id: str, title: str = "Test Bildirimi", bo
         user = user_result.data[0]
         token = user.get("push_token")
         
+        # Token tipini belirle
+        token_type = "fcm" if token and not token.startswith("ExponentPushToken") else "expo"
+        
         debug_info = {
             "user_id": user_id,
             "user_name": user.get("name"),
             "phone": user.get("phone"),
             "has_push_token": bool(token),
+            "token_type": token_type,
             "token_preview": token[:40] + "..." if token else None,
             "token_updated_at": user.get("push_token_updated_at")
         }
@@ -3460,10 +3472,8 @@ async def test_push_notification(user_id: str, title: str = "Test Bildirimi", bo
         if not token:
             return {"success": False, "error": "Push token yok", "debug": debug_info}
         
-        if not token.startswith("ExponentPushToken"):
-            return {"success": False, "error": "Geçersiz token formatı", "debug": debug_info}
-        
         # Bildirimi gönder
+        logger.info(f"🧪 TEST: Token tipi: {token_type}, gönderiliyor...")
         result = await send_push_notification(user_id, title, body, {"type": "test", "timestamp": datetime.utcnow().isoformat()})
         
         return {
@@ -7158,16 +7168,21 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
     try:
         logger.info(f"🔔 Push gönderimi başlıyor: user_id={user_id}, title={title}")
         
-        # Token ve tip bilgisini al
-        user_result = supabase.table("users").select("push_token, push_token_type, name").eq("id", user_id).execute()
+        # Token bilgisini al (push_token_type kolonu olmayabilir)
+        user_result = supabase.table("users").select("push_token, name").eq("id", user_id).execute()
         
         if not user_result.data:
             logger.warning(f"🔔 Kullanıcı bulunamadı: {user_id}")
             return False
             
         token = user_result.data[0].get("push_token")
-        token_type = user_result.data[0].get("push_token_type", "expo")
         user_name = user_result.data[0].get("name", "Unknown")
+        
+        # Token tipini token formatından belirle
+        if token and token.startswith("ExponentPushToken"):
+            token_type = "expo"
+        else:
+            token_type = "fcm"
         
         logger.info(f"🔔 Kullanıcı: {user_name}, token_type: {token_type}, token: {token[:30] if token else 'YOK'}...")
         
@@ -7176,11 +7191,11 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             return False
         
         # Token tipine göre gönder
-        if token_type == 'fcm' or (not token.startswith("ExponentPushToken")):
+        if token_type == 'fcm':
             # Native FCM token - doğrudan FCM v1 ile gönder
             return await send_fcm_v1_direct(token, title, body, data)
         else:
-            # Expo token - Expo API ile gönder (FCM credential yoksa çalışmaz)
+            # Expo token - Expo API ile gönder
             return await send_expo_notification(token, title, body, data)
             
     except Exception as e:
