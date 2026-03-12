@@ -642,20 +642,24 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         # Bildirim metni: ₺350 - 25 dk - 3.5 km
         notification_body = f"₺{int(price)} • {int(duration)} dk • {round(distance, 1)} km\n⏱️ {timeout} saniye içinde kabul et!"
         
-        asyncio.create_task(send_push_notification(
-            driver_id,
-            "🚗 Yeni Yolculuk Teklifi!",
-            notification_body,
-            {
-                "type": "new_offer", 
-                "tag_id": tag_id, 
-                "price": price,
-                "duration": duration,
-                "distance": distance,
-                "timeout": timeout,
-                "pickup": pickup
-            }
-        ))
+        try:
+            asyncio.ensure_future(send_push_notification(
+                driver_id,
+                "🚗 Yeni Yolculuk Teklifi!",
+                notification_body,
+                {
+                    "type": "new_offer", 
+                    "tag_id": tag_id, 
+                    "price": price,
+                    "duration": duration,
+                    "distance": distance,
+                    "timeout": timeout,
+                    "pickup": pickup
+                }
+            ))
+            logger.info(f"🔔 Teklif bildirimi gönderildi: {driver_name} - ₺{price}")
+        except Exception as notif_err:
+            logger.warning(f"⚠️ Teklif bildirimi gönderilemedi: {notif_err}")
         
         # Timeout task başlat
         async def timeout_handler():
@@ -1626,13 +1630,18 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user["id"]).execute()
         
-        # 🔔 GİRİŞ BİLDİRİMİ - Güvenlik için
-        asyncio.create_task(send_push_notification(
-            user["id"],
-            "🔐 Hesabınıza Giriş Yapıldı",
-            "Siz değilseniz hemen hesabınızı güvene alın!",
-            {"type": "login_alert", "timestamp": datetime.utcnow().isoformat()}
-        ))
+        # 🔔 GİRİŞ BİLDİRİMİ - Güvenlik için (arka planda gönder)
+        try:
+            import asyncio
+            asyncio.ensure_future(send_push_notification(
+                user["id"],
+                "🔐 Hesabınıza Giriş Yapıldı",
+                "Siz değilseniz hemen hesabınızı güvene alın!",
+                {"type": "login_alert", "timestamp": datetime.utcnow().isoformat()}
+            ))
+            logger.info(f"🔔 Giriş bildirimi gönderildi: {user['name']}")
+        except Exception as notif_err:
+            logger.warning(f"⚠️ Giriş bildirimi gönderilemedi: {notif_err}")
         
         is_admin = phone_val in ADMIN_PHONE_NUMBERS
         
