@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 
 // Bildirim ayarları
 Notifications.setNotificationHandler({
@@ -13,9 +11,14 @@ Notifications.setNotificationHandler({
   }),
 });
 
+export type TappedNotificationData = { type?: string; tag_id?: string; action?: string; [key: string]: any } | null;
+
 interface NotificationContextType {
   expoPushToken: string | null;
   notification: Notifications.Notification | null;
+  /** Bildirime tıklandığında set edilir (örn. new_offer → tag_id ile teklif ekranına git) */
+  lastTappedNotificationData: TappedNotificationData;
+  clearLastTappedNotification: () => void;
   sendLocalNotification: (title: string, body: string, data?: any) => Promise<void>;
   requestPermissions: () => Promise<boolean>;
 }
@@ -23,42 +26,65 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType>({
   expoPushToken: null,
   notification: null,
+  lastTappedNotificationData: null,
+  clearLastTappedNotification: () => {},
   sendLocalNotification: async () => {},
   requestPermissions: async () => false,
 });
 
+function setTappedData(
+  data: TappedNotificationData,
+  set: React.Dispatch<React.SetStateAction<TappedNotificationData>>
+) {
+  if (data && typeof data === 'object') {
+    set({ ...data });
+  }
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
+  const [expoPushToken] = useState<string | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
+  const [lastTappedNotificationData, setLastTappedNotificationData] = useState<TappedNotificationData>(null);
   const notificationListener = useRef<any>();
   const responseListener = useRef<any>();
 
-  useEffect(() => {
-    // Push token al
-    registerForPushNotificationsAsync().then(token => {
-      if (token) {
-        setExpoPushToken(token);
-        console.log('📱 Push Token:', token);
-      }
-    });
+  const clearLastTappedNotification = React.useCallback(() => {
+    setLastTappedNotificationData(null);
+  }, []);
 
-    // Bildirim dinleyicileri
+  useEffect(() => {
+    // Web'de expo-notifications API'leri tam destekli değil; yalnızca native'de kur.
+    if (Platform.OS === 'web') {
+      return;
+    }
+
+    // Bu provider sadece dinleyicileri yönetir.
+    // Token alma ve izin isteme akışı usePushNotifications içinde tekilleştirildi.
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('🔔 Bildirim alındı:', notification);
       setNotification(notification);
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('👆 Bildirime tıklandı:', response);
-      // Burada bildirime tıklandığında yapılacak işlemler
+      const data = response?.notification?.request?.content?.data;
+      console.log('👆 Bildirime tıklandı:', data);
+      setTappedData(data || null, setLastTappedNotificationData);
+    });
+
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) {
+        const data = response.notification.request.content.data;
+        console.log('📬 Uygulama bildirim ile açıldı:', data);
+        setTappedData(data || null, setLastTappedNotificationData);
+      }
     });
 
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, []);
@@ -91,6 +117,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   // Yerel bildirim gönder
   const sendLocalNotification = async (title: string, body: string, data?: any) => {
+    if (Platform.OS === 'web') {
+      // Web'de expo-notifications desteklenmediği için sessizce çık.
+      return;
+    }
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
@@ -108,6 +138,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       value={{
         expoPushToken,
         notification,
+        lastTappedNotificationData,
+        clearLastTappedNotification,
         sendLocalNotification,
         requestPermissions,
       }}
@@ -119,73 +151,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
 export function useNotifications() {
   return useContext(NotificationContext);
-}
-
-// Push token kayıt fonksiyonu
-async function registerForPushNotificationsAsync(): Promise<string | null> {
-  let token = null;
-
-  if (Platform.OS === 'web') {
-    return null;
-  }
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'Varsayılan',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#3FA9F5',
-      sound: 'default',
-    });
-
-    // Eşleşme bildirimleri için kanal
-    await Notifications.setNotificationChannelAsync('match', {
-      name: 'Eşleşme Bildirimleri',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 500, 200, 500],
-      lightColor: '#10B981',
-      sound: 'default',
-    });
-
-    // Mesaj bildirimleri için kanal
-    await Notifications.setNotificationChannelAsync('message', {
-      name: 'Mesaj Bildirimleri',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 100, 100, 100],
-      lightColor: '#3B82F6',
-      sound: 'default',
-    });
-  }
-
-  if (Device.isDevice) {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      console.log('❌ Bildirim izni reddedildi');
-      return null;
-    }
-
-    try {
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-      if (projectId) {
-        token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-      } else {
-        token = (await Notifications.getExpoPushTokenAsync()).data;
-      }
-    } catch (error) {
-      console.log('Push token alınamadı:', error);
-    }
-  } else {
-    console.log('⚠️ Fiziksel cihaz gerekli');
-  }
-
-  return token;
 }
 
 export default NotificationContext;

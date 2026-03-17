@@ -18,8 +18,16 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 
-// Socket.IO Sunucusu - LeylekTag production sunucusu
-const SOCKET_URL = 'https://socket.leylektag.com';
+// Socket.IO backend server (NOT localhost/127.0.0.1) — backend uvicorn port 8001
+const SOCKET_URL = 'http://157.173.113.156:8001';
+
+// ═══════════════════════════════════════════════════════════════════
+// EMIT WITH LOG - Debug için tüm emit'lerde kullanılabilir
+// ═══════════════════════════════════════════════════════════════════
+export const emitWithLog = (socket: Socket, event: string, payload: any) => {
+  console.log('📤 EMIT:', event, payload);
+  socket.emit(event, payload);
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // SINGLETON SOCKET - Modül seviyesinde TEK instance
@@ -29,102 +37,61 @@ let pingInterval: NodeJS.Timeout | null = null;
 
 function getOrCreateSocket(): Socket {
   if (!singletonSocket) {
-    console.log('🔌 [SocketContext] Singleton socket oluşturuluyor...');
+    console.log('🔌 [SocketContext] Singleton socket oluşturuluyor:', SOCKET_URL);
     singletonSocket = io(SOCKET_URL, {
-      path: '/socket.io',  // LeylekTag production path
-      transports: ['websocket', 'polling'],  // WebSocket öncelikli, polling fallback
-      forceNew: false,
+      path: '/socket.io',
+      transports: ['polling'],
       reconnection: true,
-      reconnectionAttempts: Infinity,       // Sonsuz deneme
-      reconnectionDelay: 500,               // 🔥 Daha hızlı başla (0.5 saniye)
-      reconnectionDelayMax: 3000,           // 🔥 Max 3 saniye bekle
-      randomizationFactor: 0.3,             // Rastgelelik ekle
-      timeout: 30000,                       // 🔥 30 saniye timeout
-      autoConnect: true,                    // 🔥 HEMEN BAĞLAN - bekletme!
+      timeout: 20000,
     });
-    
+
     let reconnectAttempts = 0;
-    
-    // Temel bağlantı logları
+
     singletonSocket.on('connect', () => {
-      console.log('✅ [SocketContext] Socket bağlandı:', singletonSocket?.id);
-      reconnectAttempts = 0; // Reset
-      
-      // 🔥 HEARTBEAT mekanizması - bağlantıyı canlı tut
+      console.log('✅ CONNECTED:', singletonSocket?.id);
+      reconnectAttempts = 0;
       if (pingInterval) clearInterval(pingInterval);
       pingInterval = setInterval(() => {
         if (singletonSocket?.connected) {
           singletonSocket.emit('heartbeat', { timestamp: Date.now() });
         }
-      }, 20000); // Her 20 saniyede heartbeat
+      }, 20000);
     });
-    
+
+    singletonSocket.on('connect_error', (err) => {
+      console.log('❌ CONNECT ERROR:', err.message);
+    });
+
     singletonSocket.on('disconnect', (reason) => {
-      console.log('⚠️ [SocketContext] Socket koptu:', reason);
-      
-      // Heartbeat'i durdur
+      console.log('⚠️ DISCONNECTED');
       if (pingInterval) {
         clearInterval(pingInterval);
         pingInterval = null;
       }
-      
-      // 🔥 Agresif yeniden bağlanma stratejisi
       if (reason === 'io server disconnect') {
-        // Server bizi attı - hemen bağlan
-        console.log('🔄 [SocketContext] Server disconnect - hemen bağlanılıyor...');
         singletonSocket?.connect();
       } else if (reason === 'transport close' || reason === 'transport error') {
-        // Transport sorunu - kademeli bekleme
         reconnectAttempts++;
         const delay = Math.min(500 * reconnectAttempts, 3000);
-        console.log(`🔄 [SocketContext] Transport error - ${delay}ms sonra bağlanılıyor (attempt: ${reconnectAttempts})`);
         setTimeout(() => {
           if (singletonSocket && !singletonSocket.connected) {
             singletonSocket.connect();
           }
         }, delay);
       } else if (reason === 'ping timeout') {
-        // Ping timeout - hemen bağlan
-        console.log('🔄 [SocketContext] Ping timeout - hemen bağlanılıyor...');
         singletonSocket?.connect();
       }
-      // 'io client disconnect' durumunda otomatik bağlanmıyoruz (kullanıcı kasten kapattı)
     });
-    
-    singletonSocket.on('reconnect', (attemptNumber) => {
-      console.log('🔄 [SocketContext] Reconnect başarılı, attempt:', attemptNumber);
+
+    singletonSocket.on('reconnect', () => {
       reconnectAttempts = 0;
     });
-    
-    singletonSocket.on('reconnect_attempt', (attemptNumber) => {
-      console.log(`🔄 [SocketContext] Reconnect deneme #${attemptNumber}`);
-    });
-    
-    singletonSocket.on('reconnect_error', (error) => {
-      console.error('❌ [SocketContext] Reconnect hatası:', error.message);
-    });
-    
-    singletonSocket.on('connect_error', (error) => {
-      console.error('❌ [SocketContext] Bağlantı hatası:', error.message);
-      // 🔥 Bağlantı hatası durumunda transport'u değiştir
-      if (singletonSocket) {
-        const currentTransport = singletonSocket.io.opts.transports;
-        if (currentTransport && currentTransport[0] === 'websocket') {
-          console.log('🔄 [SocketContext] Polling\'e geçiliyor...');
-          // Polling'i öne al
-          singletonSocket.io.opts.transports = ['polling', 'websocket'];
-        }
-      }
-    });
-    
+
     singletonSocket.on('registered', (data) => {
       console.log('✅ [SocketContext] Kayıt başarılı:', data);
     });
-    
-    // 🔥 Server'dan pong gelirse logla
-    singletonSocket.on('pong_keepalive', () => {
-      // Sessiz - sadece bağlantı canlı
-    });
+
+    singletonSocket.on('pong_keepalive', () => {});
   }
   return singletonSocket;
 }
@@ -146,6 +113,8 @@ interface SocketContextType {
   
   // Generic emit
   emit: (event: string, data: any) => void;
+  /** Emit with console log for debugging outgoing events */
+  emitWithLog: (event: string, payload: any, ack?: (response: any) => void) => void;
   
   // Teklif sistemi
   emitSendOffer: (data: any) => void;
@@ -454,6 +423,16 @@ export function SocketProvider({ children }: SocketProviderProps) {
     });
   }, []);
 
+  const emitWithLogFromContext = useCallback((event: string, payload: any, ack?: (response: any) => void) => {
+    const socket = getOrCreateSocket();
+    if (typeof ack === 'function') {
+      console.log('📤 EMIT:', event, payload);
+      socket.emit(event, payload, ack);
+    } else {
+      emitWithLog(socket, event, payload);
+    }
+  }, []);
+
   const emitSendOffer = useCallback((data: any) => {
     console.log('💰 [SocketProvider] emitSendOffer:', JSON.stringify(data));
     emit('send_offer', data);
@@ -569,6 +548,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     connect,
     disconnect,
     emit,
+    emitWithLog: emitWithLogFromContext,
     emitSendOffer,
     emitAcceptOffer,
     emitRejectOffer,

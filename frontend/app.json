@@ -2,13 +2,14 @@
   "expo": {
     "name": "Leylek TAG",
     "slug": "leylektag-app",
-    "owner": "leylektagapp",
+    "owner": "leylektagappp",
     "version": "1.0.20",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "leylektag",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
+
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.leylektag.app",
@@ -22,15 +23,20 @@
         "NSLocationWhenInUseUsageDescription": "Yakındaki sürücüleri bulmak ve konumunuzu paylaşmak için konum izni gereklidir.",
         "NSLocationAlwaysUsageDescription": "Yolculuk sırasında konumunuzu takip etmek için konum izni gereklidir.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Sürücü ve yolcu eşleştirmesi için konum izni gereklidir.",
-        "UIBackgroundModes": ["audio", "voip", "location"],
+        "UIBackgroundModes": [
+          "audio",
+          "voip",
+          "location"
+        ],
         "NSBluetoothAlwaysUsageDescription": "Bluetooth kulaklık kullanımı için izin gereklidir.",
         "NSBluetoothPeripheralUsageDescription": "Bluetooth cihazları ile bağlantı için izin gereklidir."
       }
     },
+
     "android": {
       "package": "com.leylektag.app",
       "versionCode": 22,
-      "googleServicesFile": "./android/app/google-services.json",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#3FA9F5"
@@ -63,11 +69,13 @@
         }
       }
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
       "expo-secure-store",
@@ -76,11 +84,12 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "compileSdkVersion": 34,
-            "targetSdkVersion": 34,
-            "buildToolsVersion": "34.0.0",
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
             "enableProguardInReleaseBuilds": false,
-            "newArchEnabled": false
+            "newArchEnabled": false,
+            "enableMinifyInReleaseBuilds": false
           },
           "ios": {
             "deploymentTarget": "15.1",
@@ -111,23 +120,27 @@
         {
           "icon": "./assets/images/icon.png",
           "color": "#3FA9F5",
-          "sounds": []
+          "sounds": [],
+          "defaultChannelId": "default"
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true
     },
+
     "splash": {
       "image": "./assets/images/splash-image.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
+
     "extra": {
       "router": {},
       "backendUrl": "https://api.leylektag.com",
       "eas": {
-        "projectId": "f00346b0-b9cb-47f9-a647-7f56b168e3a9"
+        "projectId": "08db7f23-ccd6-4e54-a2ce-5ab599335d0c"
       }
     }
   }

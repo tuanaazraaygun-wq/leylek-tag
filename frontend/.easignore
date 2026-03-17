@@ -44,6 +44,30 @@ build/
 # Cache
 .cache/
 .expo/
+.expo-shared/
+.metro-cache/
+.metro-cache/**
+/.metro-cache
+/.metro-cache/**
+**/.metro-cache/**
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+ios/build/
+ios/Pods/
 
 # TypeScript
 *.tsbuildinfo
+
+# EAS upload size
+*.mp4
+*.mov
+*.avi
+*.zip
+*.tar.gz
+coverage/
+.cursor/
+agent-tools/
+**/__pycache__/

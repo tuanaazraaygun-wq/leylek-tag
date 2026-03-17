@@ -54,7 +54,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/leylek-backend
-ExecStart=/usr/bin/python3 -m uvicorn server:app --host 0.0.0.0 --port 8001
+# CRITICAL: Use socket_app so /socket.io is served. Using app would return 404 for Socket.IO.
+ExecStart=/usr/bin/python3 -m uvicorn server:socket_app --host 0.0.0.0 --port 8001
 Restart=always
 RestartSec=5
 
@@ -62,11 +63,15 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# Servisi başlat
-systemctl daemon-reload
-systemctl enable leylek-backend
-systemctl start leylek-backend
+# Servisi başlat (mevcut servisi güncellediyseniz: daemon-reload + restart)
+sudo systemctl daemon-reload
+sudo systemctl enable leylek-backend
+sudo systemctl start leylek-backend
+# Güncelleme sonrası: sudo systemctl restart leylek-backend
 ```
+
+**Socket.IO doğrulama:** Backend çalışırken şu URL'yi açın; JSON yanıt (404 değil) görmelisiniz:
+`http://157.173.113.156:8001/socket.io/?EIO=4&transport=polling`
 
 ### Adım 3: Nginx ile HTTPS Ayarla
 
@@ -141,7 +146,7 @@ EXPO_PUBLIC_SOCKET_URL=https://socket.leylektag.com
 2. "New Web Service" seç
 3. GitHub repo bağla
 4. Build command: `pip install -r requirements.txt`
-5. Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT`
+5. Start command: `uvicorn server:socket_app --host 0.0.0.0 --port $PORT`
 
 **Avantaj**: Ücretsiz tier var
 **Maliyet**: Ücretsiz (kısıtlı) veya $7/ay

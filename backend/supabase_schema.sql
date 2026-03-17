@@ -183,6 +183,22 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
 
 -- =============================================
+-- NOTIFICATIONS LOG TABLE (trip lifecycle + tüm push kayıtları)
+-- =============================================
+CREATE TABLE IF NOT EXISTS notifications_log (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    type TEXT NOT NULL,
+    user_id UUID REFERENCES users(id),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_log_user_id ON notifications_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_log_type ON notifications_log(type);
+CREATE INDEX IF NOT EXISTS idx_notifications_log_created_at ON notifications_log(created_at DESC);
+
+-- =============================================
 -- APP SETTINGS TABLE
 -- =============================================
 CREATE TABLE IF NOT EXISTS app_settings (

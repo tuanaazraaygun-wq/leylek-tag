@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
@@ -35,7 +34,6 @@ import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
 // import OutgoingCallScreen from '../components/OutgoingCallScreen';
 import useSocket from '../hooks/useSocket';
 import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
-import { useNotifications } from '../contexts/NotificationContext'; // 🔔 BİLDİRİM SİSTEMİ
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete from '../components/PlacesAutocomplete';
 import AdminPanel from '../components/AdminPanel';
@@ -46,6 +44,7 @@ import CommunityScreen from '../components/CommunityScreen';
 import DriverActivityMap from '../components/DriverActivityMap';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
 import { useCall } from '../hooks/useCall';
@@ -360,8 +359,50 @@ export default function App() {
 
   // Push Notifications Hook - Expo Push ile (Firebase olmadan)
   const { registerPushToken, removePushToken, notification } = usePushNotifications();
+  const { lastTappedNotificationData, clearLastTappedNotification } = useNotifications();
+  const lastRegisteredPushUserIdRef = useRef<string | null>(null);
+  const lastPushRegisterTimeRef = useRef<number>(0);
+  const PUSH_REREGISTER_INTERVAL_MS = 15000; // Uygulama her ön plana geldiğinde en fazla 15 sn'de bir tekrar dene
 
-  // Push notification geldiğinde işle
+  // Giriş yapıldığında token kaydet
+  useEffect(() => {
+    if (!user?.id) {
+      lastRegisteredPushUserIdRef.current = null;
+      return;
+    }
+
+    if (lastRegisteredPushUserIdRef.current === user.id) {
+      return;
+    }
+
+    lastRegisteredPushUserIdRef.current = user.id;
+    registerPushToken(user.id).then(success => {
+      console.log('🔔 Otomatik push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
+      if (!success) {
+        lastRegisteredPushUserIdRef.current = null;
+      } else {
+        lastPushRegisterTimeRef.current = Date.now();
+      }
+    }).catch(err => {
+      console.log('🔔 Otomatik push token kayıt hatası:', err);
+      lastRegisteredPushUserIdRef.current = null;
+    });
+  }, [user?.id, registerPushToken]);
+
+  // Uygulama ön plana geldiğinde token'ı tekrar kaydet (izin sonradan verildiyse token artık hazır olur)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active' || !user?.id) return;
+      const now = Date.now();
+      if (now - lastPushRegisterTimeRef.current < PUSH_REREGISTER_INTERVAL_MS) return;
+      lastPushRegisterTimeRef.current = now;
+      registerPushToken(user.id).then(success => {
+        if (success) console.log('🔔 [AppState] Push token yeniden kaydedildi');
+      });
+    });
+    return () => subscription.remove();
+  }, [user?.id, registerPushToken]);
+
   useEffect(() => {
     if (notification) {
       console.log('📬 Yeni bildirim:', notification.request.content.title);
@@ -380,32 +421,10 @@ export default function App() {
     console.log('🔐 Tüm izinler isteniyor...');
     
     try {
-      // 1. PUSH NOTIFICATION İZNİ - ÖNCELİKLİ
-      console.log('🔔 Push notification izni isteniyor...');
-      try {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        console.log('🔔 Mevcut push izni:', existingStatus);
-        
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          console.log('🔔 Yeni push izni:', status);
-        }
-        
-        // Android kanalları oluştur
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'Bildirimler',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#3FA9F5',
-            sound: 'default',
-          });
-        }
-      } catch (pushErr) {
-        console.log('🔔 Push izin hatası:', pushErr);
-      }
-      
-      // 2. ANDROID SPESİFİK İZİNLER
+      // Bildirim izni usePushNotifications icinde tek noktadan yonetilir.
+      // Burada sadece uygulamanin calismasi icin gereken cihaz izinleri istenir.
+
+      // ANDROID SPESİFİK İZİNLER
       if (Platform.OS === 'android') {
         console.log('🔐 Android izinleri isteniyor...');
         
@@ -413,11 +432,6 @@ export default function App() {
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           PermissionsAndroid.PERMISSIONS.CAMERA,
         ];
-        
-        // Android 13+ için POST_NOTIFICATIONS izni
-        if (Platform.Version >= 33) {
-          permissions.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-        }
 
         const results = await PermissionsAndroid.requestMultiple(permissions);
         console.log('🔐 İzin sonuçları:', JSON.stringify(results, null, 2));
@@ -7035,8 +7049,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [dailyRoomName, setDailyRoomName] = useState<string>('');
   const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
   
-  // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext'ten
-  const { incomingCallData: driverIncomingCallData, clearIncomingCall: driverClearIncomingCall, getIncomingCallData: driverGetIncomingCallData } = useSocketContext();
+  // 🔥 MERKEZİ GELEN ARAMA STATE + GLOBAL SOCKET (backend aynı bağlantıyı dinler)
+  const { socket, emitWithLog, incomingCallData: driverIncomingCallData, clearIncomingCall: driverClearIncomingCall, getIncomingCallData: driverGetIncomingCallData } = useSocketContext();
   
   // Giden Arama State (Araniyor...) - SOFOR
   const [outgoingCall, setOutgoingCall] = useState(false);
@@ -7134,7 +7148,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
-    socket: driverSocket,  // 🆕 Socket instance
     isConnected: socketConnected,
     isRegistered: socketRegistered,
     startCall: socketStartCall,
@@ -7503,7 +7516,51 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
   });
-  
+
+  // 🔔 Bildirime tıklandığında (Yeni yolculuk teklifi) – teklifi listeye ekle, "Kabul et" göster
+  useEffect(() => {
+    const data = lastTappedNotificationData;
+    if (!data || data.type !== 'new_offer' || !data.tag_id) return;
+    clearLastTappedNotification();
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/trip/${data.tag_id}`);
+        const json = await res.json();
+        if (!json.success || !json.tag || json.tag.status !== 'waiting') return;
+        const tag = json.tag;
+        setRequests(prev => {
+          if (prev.some(r => r.id === tag.id)) return prev;
+          return [...prev, {
+            id: tag.id,
+            request_id: tag.id,
+            passenger_id: tag.passenger_id,
+            passenger_name: tag.passenger_name || 'Yolcu',
+            pickup_lat: tag.pickup_lat,
+            pickup_lng: tag.pickup_lng,
+            pickup_address: tag.pickup_location,
+            pickup_location: tag.pickup_location,
+            dropoff_lat: tag.dropoff_lat,
+            dropoff_lng: tag.dropoff_lng,
+            dropoff_address: tag.dropoff_location,
+            dropoff_location: tag.dropoff_location,
+            offered_price: tag.final_price ?? tag.offered_price ?? 0,
+            distance_km: tag.distance_km ?? 0,
+            estimated_minutes: tag.estimated_minutes ?? 0,
+            distance_to_pickup: null,
+            status: 'pending',
+            created_at: tag.created_at || new Date().toISOString(),
+            distance_to_passenger_km: null,
+            time_to_passenger_min: null,
+            trip_distance_km: tag.distance_km ?? null,
+            trip_duration_min: tag.estimated_minutes ?? null,
+          }];
+        });
+      } catch (e) {
+        console.warn('Bildirimden teklif yüklenemedi:', e);
+      }
+    })();
+  }, [lastTappedNotificationData]);
+
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
   const [tripEndRequesterType, setTripEndRequesterType] = useState<'passenger' | 'driver' | null>(null);
@@ -7841,24 +7898,48 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     }
   };
 
-  // 🆕 MARTI TAG: Sürücü teklifi kabul eder - İLK KABUL EDEN KAZANIR
-  const handleDriverAcceptOffer = async (tagId: string) => {
+  // 🆕 MARTI TAG: Sürücü teklifi kabul eder — global socket.emit (singleton, backend: driver_accept_offer)
+  const handleDriverAcceptOffer = (tagId: string) => {
+    console.log('ACCEPT BUTTON PRESSED');
+
     const tag = requests.find(r => r.id === tagId);
     if (!tag) return;
-    
-    console.log('✅ SÜRÜCÜ TEKLİFİ KABUL EDİYOR:', tagId, tag.offered_price, 'TL');
-    
-    // 🔥 SADECE Socket ile kabul gönder - Backend API KALDIRILDI
-    // Socket server zaten DB'yi güncelliyor ve her iki tarafa bildirim gönderiyor
-    if (emitDriverAcceptOffer) {
-      emitDriverAcceptOffer({
-        tag_id: tagId,
-        driver_id: user.id,
-        driver_name: user.name || user.phone || 'Sürücü',
-      });
+
+    const tripId = tagId;
+    const userId = user?.id ?? null;
+
+    if (!tripId) {
+      console.error('tripId is missing!');
+      return;
     }
-    
-    // Kartı listeden kaldır (socket'ten yanıt beklemeden)
+    if (!userId) {
+      console.error('userId is missing!');
+      return;
+    }
+
+    console.log('SOCKET INSTANCE:', socket);
+    console.log('SOCKET CONNECTED:', socket?.connected);
+
+    if (!socket) {
+      console.error('Socket not initialized!');
+      return;
+    }
+
+    if (!socket.connected) {
+      console.log('Reconnecting socket...');
+      socket.connect();
+    }
+
+    const payload = {
+      tag_id: tripId,
+      trip_id: tripId,
+      driver_id: userId,
+    };
+
+    emitWithLog('driver_accept_offer', payload, (ack: unknown) => {
+      console.log('ACK FROM SERVER:', ack);
+    });
+
     setRequests(prev => prev.filter(r => r.id !== tagId));
   };
 

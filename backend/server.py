@@ -29,10 +29,6 @@ from supabase import create_client, Client
 # Agora Token Builder
 from agora_token_builder import RtcTokenBuilder
 
-# Firebase Admin SDK for FCM v1
-import firebase_admin
-from firebase_admin import credentials, messaging
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -40,28 +36,12 @@ load_dotenv(ROOT_DIR / '.env')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
-# ==================== FIREBASE FCM V1 INIT ====================
-firebase_cred_path = ROOT_DIR / 'firebase-service-account.json'
-if firebase_cred_path.exists():
-    try:
-        cred = credentials.Certificate(str(firebase_cred_path))
-        firebase_admin.initialize_app(cred)
-        logger.info("✅ Firebase Admin SDK initialized (FCM v1)")
-        FCM_ENABLED = True
-    except Exception as e:
-        logger.error(f"❌ Firebase init error: {e}")
-        FCM_ENABLED = False
-else:
-    logger.warning("⚠️ Firebase service account not found - FCM disabled")
-    FCM_ENABLED = False
-
 # ==================== SOCKET.IO SERVER ====================
-# Emergent /api/* path'ini kullanıyor, bu yüzden /api/socket.io kullanıyoruz
 sio = socketio.AsyncServer(
-    async_mode='asgi',
-    cors_allowed_origins='*',
+    async_mode="asgi",
+    cors_allowed_origins="*",
     logger=True,
-    engineio_logger=True
+    engineio_logger=True,
 )
 
 # Aktif kullanıcılar: {user_id: socket_id}
@@ -69,11 +49,13 @@ connected_users = {}
 
 @sio.event
 async def connect(sid, environ):
+    print("🔥 SOCKET CLIENT CONNECTED:", sid)
     logger.info(f"🔌 Socket bağlandı: {sid}")
     logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
 
 @sio.event
 async def disconnect(sid):
+    print("❌ SOCKET CLIENT DISCONNECTED:", sid)
     # Kullanıcıyı connected_users'dan kaldır
     user_to_remove = None
     for user_id, socket_id in connected_users.items():
@@ -133,6 +115,23 @@ async def call_user(sid, data):
     else:
         logger.warning(f"⚠️ Alıcı çevrimdışı veya kayıtlı değil: {receiver_id}")
         logger.warning(f"⚠️ Kayıtlı kullanıcılar: {connected_users}")
+        try:
+            asyncio.create_task(send_push_notification(
+                receiver_id,
+                f"📞 {caller_name}",
+                "Size gelen bir arama var.",
+                {
+                    "type": "incoming_call",
+                    "call_id": call_id,
+                    "caller_id": caller_id,
+                    "caller_name": caller_name,
+                    "channel_name": channel_name,
+                    "agora_token": agora_token,
+                    "call_type": call_type,
+                }
+            ))
+        except Exception as push_err:
+            logger.warning(f"⚠️ Offline arama push gönderilemedi: {push_err}")
         await sio.emit('call_ringing', {'success': False, 'receiver_online': False, 'reason': 'user_offline'}, room=sid)
 
 @sio.event
@@ -632,34 +631,7 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         
         await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
         logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
-        
-        # 🔔 PUSH NOTIFICATION - Sürücüye teklif bildirimi (detaylı)
-        price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
-        pickup = tag_data.get("pickup_location", "")[:25]
-        duration = tag_data.get("estimated_minutes", 0)
-        distance = tag_data.get("distance_km", 0)
-        
-        # Bildirim metni: ₺350 - 25 dk - 3.5 km
-        notification_body = f"₺{int(price)} • {int(duration)} dk • {round(distance, 1)} km\n⏱️ {timeout} saniye içinde kabul et!"
-        
-        try:
-            asyncio.ensure_future(send_push_notification(
-                driver_id,
-                "🚗 Yeni Yolculuk Teklifi!",
-                notification_body,
-                {
-                    "type": "new_offer", 
-                    "tag_id": tag_id, 
-                    "price": price,
-                    "duration": duration,
-                    "distance": distance,
-                    "timeout": timeout,
-                    "pickup": pickup
-                }
-            ))
-            logger.info(f"🔔 Teklif bildirimi gönderildi: {driver_name} - ₺{price}")
-        except Exception as notif_err:
-            logger.warning(f"⚠️ Teklif bildirimi gönderilemedi: {notif_err}")
+        # Push tüm kuyruktakilere create_ride_offer içinde gönderildi; burada tekrar göndermiyoruz.
         
         # Timeout task başlat
         async def timeout_handler():
@@ -736,11 +708,27 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict):
             "is_broadcast": True,
         }
         
-        # Sadece 20 km içindeki sürücülere gönder
+        # Sadece 20 km içindeki sürücülere socket + push (fiyat, mesafe, 10 sn içinde kabul et)
+        price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
+        distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
+        timeout_sec = 10
+        price_int = int(price) if price else 0
+        distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
+        body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
         for driver_id in eligible_drivers:
             await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
+            try:
+                await send_trip_push_and_log(
+                    driver_id,
+                    "new_ride_request",
+                    "Yeni yolculuk teklifi",
+                    body,
+                    {"type": "new_offer", "tag_id": tag_id, "price": price, "distance_km": distance_km, "timeout": timeout_sec, "action": "accept", "is_broadcast": True}
+                )
+            except Exception as push_err:
+                logger.warning(f"⚠️ Broadcast push sürücüye gönderilemedi: {driver_id} - {push_err}")
         
-        logger.info(f"📢 Broadcast teklif gönderildi: tag={tag_id}, {len(eligible_drivers)} sürücüye")
+        logger.info(f"📢 Broadcast teklif + push gönderildi: tag={tag_id}, {len(eligible_drivers)} sürücüye")
     except Exception as e:
         logger.error(f"Broadcast error: {e}")
 
@@ -824,8 +812,9 @@ logger.info("✅ Dispatch Queue sistemi yapılandırıldı")
 
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50
-ADMIN_PHONE_NUMBERS = ["5326497412"]  # Ana admin numarası
+ADMIN_PHONE_NUMBERS = ["5326497412", "5354169632"]  # Ana admin numaraları
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+EXPO_ACCESS_TOKEN = os.getenv("EXPO_ACCESS_TOKEN", "")  # Expo Push API 403 önlemek için: Authorization Bearer
 
 # Sahte/geçersiz numara kalıpları
 FAKE_NUMBER_PATTERNS = [
@@ -905,13 +894,15 @@ TURKEY_CITIES = [
     "Ardahan", "Bayburt"
 ]
 
-# Create app
-app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
+# Create FastAPI app (app alias keeps all existing routes working)
+fastapi_app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
+app = fastapi_app
 api_router = APIRouter(prefix="/api")
 
 # ==================== SOCKET.IO ASGI APP ====================
 # Socket.IO'yu /api/socket.io path'inde çalıştır
 # NOT: socket_app dosyanın sonunda oluşturulacak (route'lar eklendikten sonra)
+SOCKET_SERVER_PORT = int(os.getenv("PORT", "8001"))
 
 # Son temizlik zamanı (global)
 last_cleanup_time = None
@@ -921,7 +912,8 @@ async def startup():
     global last_cleanup_time
     init_supabase()
     last_cleanup_time = datetime.utcnow()
-    logger.info("✅ Server started with Supabase + Socket.IO (path: /api/socket.io)")
+    print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
+    logger.info("✅ Server started with Supabase + Socket.IO (path: /socket.io)")
 
 # Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
 async def auto_cleanup_inactive_tags():
@@ -1188,6 +1180,39 @@ def normalize_turkish_phone(phone: str) -> str:
         phone = "90" + phone
     
     return phone
+
+
+def normalize_phone_e164(phone: str, default_country_code: str = "90") -> str:
+    """
+    Normalize phone to E.164 format (with + prefix).
+    Removes spaces and non-digits, then formats Turkish numbers as +905XXXXXXXXX.
+    Example: 5326427412 -> +905326427412, 905326427412 -> +905326427412
+    """
+    if not phone:
+        return ""
+    raw = (phone or "").strip().replace(" ", "").replace("\t", "").replace("-", "").replace("(", "").replace(")", "")
+    digits = "".join(c for c in raw if c.isdigit())
+    if not digits:
+        return ""
+    # 0090... -> +90... (digits[2:14] = 12 chars: 905326427412)
+    if digits.startswith("0090") and len(digits) >= 12:
+        return "+" + digits[2:14]
+    # 90... (12 digits) -> +90...
+    if len(digits) == 12 and digits.startswith("90"):
+        return "+" + digits
+    # 0 5XX... (11 digits) -> +90 5XX...
+    if len(digits) == 11 and digits.startswith("0") and digits[1] == "5":
+        return f"+{default_country_code}{digits[1:]}"
+    # 5XX... (10 digits, Turkish mobile) -> +90 5XX...
+    if len(digits) == 10 and digits.startswith("5"):
+        return f"+{default_country_code}{digits}"
+    # Longer string starting with 90: take first 12 digits
+    if len(digits) >= 12 and digits.startswith("90"):
+        return "+" + digits[:12]
+    if len(digits) >= 10 and digits.startswith("5"):
+        return f"+{default_country_code}{digits[:10]}"
+    return "+" + digits
+
 
 async def send_sms_via_netgsm(phone: str, message: str) -> dict:
     """
@@ -2149,7 +2174,7 @@ async def approve_driver_kyc(admin_phone: str, user_id: str):
         if push_token:
             try:
                 await send_push_notification(
-                    [push_token],
+                    user_id,
                     "✅ Sürücü Kaydınız Onaylandı!",
                     "Artık sürücü olarak çalışabilirsiniz. Yolcuları bekliyoruz!",
                     {"type": "kyc_approved"}
@@ -2195,7 +2220,7 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
         if push_token:
             try:
                 await send_push_notification(
-                    [push_token],
+                    user_id,
                     "❌ Sürücü Başvurunuz Reddedildi",
                     f"Sebep: {reason}. Lütfen tekrar başvurun.",
                     {"type": "kyc_rejected"}
@@ -2727,9 +2752,19 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         driver_id_final = offer["driver_id"]
         real_offer_id = offer["id"]
         
+        # TAG'i çek (passenger_id, pickup_lat/lng vs. için gerekli - önceden yoktu, bildirim hataya düşüyordu)
+        tag_result = supabase.table("tags").select("*").eq("id", tag_id_final).limit(1).execute()
+        tag = tag_result.data[0] if tag_result.data else {}
+        
         # Şoför bilgisi
         driver_result = supabase.table("users").select("name").eq("id", driver_id_final).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Şoför"
+        passenger_id_final = tag.get("passenger_id") or tag.get("user_id")
+        passenger_name = "Yolcu"
+        if passenger_id_final:
+            passenger_result = supabase.table("users").select("name").eq("id", passenger_id_final).execute()
+            if passenger_result.data:
+                passenger_name = passenger_result.data[0].get("name", "Yolcu")
         
         # Teklifi kabul et
         supabase.table("offers").update({"status": "accepted"}).eq("id", real_offer_id).execute()
@@ -2746,9 +2781,39 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             "final_price": offer["price"],
             "matched_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id_final).execute()
-        
+
+        match_payload = {
+            "tag_id": tag_id_final,
+            "offer_id": real_offer_id,
+            "passenger_id": passenger_id_final,
+            "passenger_name": passenger_name,
+            "driver_id": driver_id_final,
+            "driver_name": driver_name,
+            "pickup_location": tag.get("pickup_location"),
+            "dropoff_location": tag.get("dropoff_location"),
+            "pickup_lat": tag.get("pickup_lat"),
+            "pickup_lng": tag.get("pickup_lng"),
+            "dropoff_lat": tag.get("dropoff_lat"),
+            "dropoff_lng": tag.get("dropoff_lng"),
+            "offered_price": offer.get("price"),
+            "status": "matched",
+        }
+
+        try:
+            await sio.emit("offer_accepted", match_payload, room=f"user_{driver_id_final}")
+            await sio.emit("tag_matched", match_payload, room=f"user_{driver_id_final}")
+            if passenger_id_final:
+                await sio.emit("tag_matched", match_payload, room=f"user_{passenger_id_final}")
+        except Exception as socket_err:
+            logger.warning(f"⚠️ Eşleşme socket emit hatası: {socket_err}")
+
+        # Eşleşme tam bu anda – güncel tag'den sürücü/yolcu id'leri ile ikisine bildirim (teklif bildirimiyle aynı yol)
+        push_result = await send_match_notification_to_both(tag_id_final, driver_id_final, passenger_id_final)
+
         logger.info(f"✅ Teklif kabul edildi: {real_offer_id} - Driver: {driver_id_final}")
-        return {"success": True, "message": "Teklif kabul edildi", "driver_id": driver_id_final, "offer_id": real_offer_id}
+        resp = {"success": True, "message": "Teklif kabul edildi", "driver_id": driver_id_final, "offer_id": real_offer_id}
+        resp["push_sent"] = {"driver": push_result["driver"], "passenger": push_result["passenger"]}
+        return resp
     except HTTPException:
         raise
     except Exception as e:
@@ -3032,9 +3097,42 @@ async def send_offer(
         supabase.table("tags").update({"status": "offers_received"}).eq("id", tid).execute()
         
         logger.info(f"📤 Teklif ANINDA gönderildi: {resolved_id} -> {tid}")
+
+        passenger_id = tag.get("passenger_id") or tag.get("user_id")
+        if passenger_id:
+            offer_event_payload = {
+                "offer_id": offer_id,
+                "tag_id": tid,
+                "driver_id": resolved_id,
+                "driver_name": driver["name"],
+                "price": p,
+                "status": "pending"
+            }
+            try:
+                await sio.emit("new_offer", offer_event_payload, room=f"user_{passenger_id}")
+            except Exception as socket_err:
+                logger.warning(f"⚠️ new_offer socket emit hatası: {socket_err}")
         
         # 3. ARKA PLANDA mesafe hesapla ve güncelle (kullanıcı beklemez)
         import asyncio
+
+        if passenger_id:
+            try:
+                asyncio.create_task(send_push_notification(
+                    passenger_id,
+                    "💰 Yeni teklif geldi",
+                    f"{driver['name']} teklifinize ₺{int(p)} önerdi.",
+                    {
+                        "type": "new_offer",
+                        "tag_id": tid,
+                        "offer_id": offer_id,
+                        "driver_id": resolved_id,
+                        "driver_name": driver["name"],
+                        "price": p,
+                    }
+                ))
+            except Exception as notif_err:
+                logger.warning(f"⚠️ Teklif push bildirimi gönderilemedi: {notif_err}")
         
         async def update_distances():
             try:
@@ -3188,6 +3286,25 @@ async def start_trip(driver_id: str = None, user_id: str = None, tag_id: str = N
             "started_at": datetime.utcnow().isoformat()
         }).eq("id", tag_id).eq("driver_id", resolved_id).execute()
         
+        # Trip lifecycle push: TRIP_STARTED → yolcu + sürücü
+        tag_row = supabase.table("tags").select("passenger_id, driver_id").eq("id", tag_id).limit(1).execute()
+        if tag_row.data:
+            p_id = tag_row.data[0].get("passenger_id")
+            d_id = tag_row.data[0].get("driver_id")
+            try:
+                if p_id:
+                    asyncio.create_task(send_trip_push_and_log(
+                        p_id, "trip_started", "Yolculuk başladı", "İyi yolculuklar.",
+                        {"type": "trip_started", "tag_id": tag_id}
+                    ))
+                if d_id:
+                    asyncio.create_task(send_trip_push_and_log(
+                        d_id, "trip_started", "Yolculuk başladı", "Güvenli sürüşler.",
+                        {"type": "trip_started", "tag_id": tag_id}
+                    ))
+            except Exception as notif_err:
+                logger.warning(f"⚠️ Trip started push gönderilemedi: {notif_err}")
+        
         return {"success": True, "message": "Yolculuk başladı"}
     except HTTPException:
         raise
@@ -3237,32 +3354,31 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
         except Exception as chat_err:
             logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
         
-        # 🔔 PUSH NOTIFICATIONS - Yolculuk tamamlandı
-        # TAG bilgisini al
+        # 🔔 PUSH NOTIFICATIONS - TRIP_COMPLETED (trip lifecycle)
         tag_info = supabase.table("tags").select("final_price, offered_price, passenger_id, driver_id").eq("id", tag_id).execute()
         if tag_info.data:
             tag_data = tag_info.data[0]
             price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
+            fare_amount = int(price) if price else 0
             p_id = tag_data.get("passenger_id")
             d_id = tag_data.get("driver_id")
-            
-            # Yolcuya bildirim
-            if p_id:
-                asyncio.create_task(send_push_notification(
-                    p_id,
-                    "🎉 Yolculuk Tamamlandı!",
-                    f"İyi yolculuklar! Lütfen sürücüyü puanlayın.",
-                    {"type": "trip_completed", "tag_id": tag_id, "price": price}
-                ))
-            
-            # Sürücüye bildirim (kazanç ile)
-            if d_id:
-                asyncio.create_task(send_push_notification(
-                    d_id,
-                    "🎉 Yolculuk Tamamlandı!",
-                    f"Kazancınız: ₺{int(price)}. Yolcuyu puanlayın.",
-                    {"type": "trip_completed", "tag_id": tag_id, "earnings": price}
-                ))
+            try:
+                if p_id:
+                    asyncio.create_task(send_trip_push_and_log(
+                        p_id, "trip_completed",
+                        "Yolculuk tamamlandı",
+                        "Bizi tercih ettiğiniz için teşekkür ederiz.",
+                        {"type": "trip_completed", "tag_id": tag_id, "price": price}
+                    ))
+                if d_id:
+                    asyncio.create_task(send_trip_push_and_log(
+                        d_id, "trip_completed",
+                        "Yolculuk tamamlandı",
+                        f"Kazancınız: {fare_amount} TL. Yeni teklif almak için bekleme ekranına geçebilirsiniz.",
+                        {"type": "trip_completed", "tag_id": tag_id, "earnings": price}
+                    ))
+            except Exception as notif_err:
+                logger.warning(f"⚠️ Trip completed push gönderilemedi: {notif_err}")
         
         logger.info(f"✅ Yolculuk tamamlandı: {tag_id}")
         return {"success": True, "message": "Yolculuk tamamlandı"}
@@ -3277,6 +3393,85 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
 async def complete_tag_path(tag_id: str, driver_id: str = None, user_id: str = None):
     """Yolculuğu tamamla (path param)"""
     return await complete_trip(driver_id, user_id, tag_id)
+
+
+# ==================== DRIVER ON THE WAY / ARRIVED (trip lifecycle push) ====================
+
+@api_router.post("/driver/on-the-way")
+async def driver_on_the_way(driver_id: str = None, user_id: str = None, tag_id: str = None):
+    """Sürücü 'yolcuya git' dedi – yolcuya push: 'Eşleştiniz, sürücü yola çıktı' + tahmini varış süresi (gerçekçi yol tarifi)."""
+    try:
+        did = driver_id or user_id
+        if not did or not tag_id:
+            raise HTTPException(status_code=422, detail="user_id ve tag_id gerekli")
+        resolved_id = await resolve_user_id(did)
+        tag_result = supabase.table("tags").select("passenger_id, driver_id, status, pickup_lat, pickup_lng").eq("id", tag_id).eq("driver_id", resolved_id).limit(1).execute()
+        if not tag_result.data or tag_result.data[0].get("status") not in ("matched", "in_progress"):
+            raise HTTPException(status_code=400, detail="Aktif yolculuk bulunamadı")
+        row = tag_result.data[0]
+        passenger_id = row.get("passenger_id")
+        eta_min = 0
+        try:
+            driver_loc = supabase.table("users").select("latitude, longitude").eq("id", resolved_id).limit(1).execute()
+            p_lat, p_lng = row.get("pickup_lat"), row.get("pickup_lng")
+            if driver_loc.data and p_lat is not None and p_lng is not None:
+                d = driver_loc.data[0]
+                eta_min = _eta_minutes(d.get("latitude"), d.get("longitude"), float(p_lat), float(p_lng))
+        except Exception:
+            pass
+        title = "Eşleştiniz, sürücü yola çıktı"
+        body = f"Tahmini varış: {eta_min} dk" if eta_min else "Sürücünüz size doğru geliyor."
+        if passenger_id:
+            asyncio.create_task(send_trip_push_and_log(
+                passenger_id, "driver_on_the_way",
+                title,
+                body,
+                {"type": "driver_on_the_way", "tag_id": tag_id, "eta_min": eta_min}
+            ))
+        return {"success": True, "message": "Bildirim gönderildi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"driver_on_the_way error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/driver/arrived")
+async def driver_arrived(driver_id: str = None, user_id: str = None, tag_id: str = None):
+    """Sürücü vardı – yolcuya ve sürücüye push (trip lifecycle metinleri)."""
+    try:
+        did = driver_id or user_id
+        if not did or not tag_id:
+            raise HTTPException(status_code=422, detail="user_id ve tag_id gerekli")
+        resolved_id = await resolve_user_id(did)
+        tag_result = supabase.table("tags").select("passenger_id, driver_id, status").eq("id", tag_id).eq("driver_id", resolved_id).limit(1).execute()
+        if not tag_result.data or tag_result.data[0].get("status") not in ("matched", "in_progress"):
+            raise HTTPException(status_code=400, detail="Aktif yolculuk bulunamadı")
+        row = tag_result.data[0]
+        passenger_id = row.get("passenger_id")
+        try:
+            if passenger_id:
+                asyncio.create_task(send_trip_push_and_log(
+                    passenger_id, "driver_arrived",
+                    "Sürücü sizi bekliyor",
+                    "Sürücünüz bulunduğunuz konuma ulaştı.",
+                    {"type": "driver_arrived", "tag_id": tag_id}
+                ))
+            asyncio.create_task(send_trip_push_and_log(
+                resolved_id, "driver_arrived",
+                "Yolcuya ulaştınız",
+                "Yolcuyu aldığınızda yolculuğu başlatabilirsiniz.",
+                {"type": "driver_arrived", "tag_id": tag_id}
+            ))
+        except Exception as notif_err:
+            logger.warning(f"⚠️ driver_arrived push gönderilemedi: {notif_err}")
+        return {"success": True, "message": "Bildirimler gönderildi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"driver_arrived error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== DRIVER DISMISS REQUEST ====================
 
@@ -3401,12 +3596,55 @@ async def rate_user(rater_id: str, rated_user_id: str, rating: int, tag_id: str 
 
 # ==================== PUSH NOTIFICATIONS ====================
 
+def build_call_push_payload(
+    notification_type: str,
+    caller_id: str,
+    caller_name: str,
+    call_type: str,
+    *,
+    call_id: str = None,
+    channel_name: str = None,
+    agora_token: str = None,
+    room_url: str = None,
+    room_name: str = None,
+    tag_id: str = None,
+):
+    payload = {
+        "type": notification_type,
+        "caller_id": caller_id,
+        "caller_name": caller_name,
+        "call_type": call_type,
+    }
+
+    if call_id:
+        payload["call_id"] = call_id
+    if channel_name:
+        payload["channel_name"] = channel_name
+    if agora_token:
+        payload["agora_token"] = agora_token
+    if room_url:
+        payload["room_url"] = room_url
+    if room_name:
+        payload["room_name"] = room_name
+    if tag_id:
+        payload["tag_id"] = tag_id
+
+    return payload
+
 class ExpoPushService:
     EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
     
     @staticmethod
     def is_valid_token(token: str) -> bool:
-        return token and token.startswith("ExponentPushToken[")
+        """
+        Expo push token formatı:
+        - Eski:  ExponentPushToken[...]
+        - Yeni:  ExpoPushToken[...]
+        Her iki formatı da kabul et.
+        """
+        if not token:
+            return False
+        return token.startswith("ExponentPushToken[") or token.startswith("ExpoPushToken[")
     
     @staticmethod
     async def send(tokens: list, title: str, body: str, data: dict = None) -> dict:
@@ -3447,17 +3685,8 @@ async def register_push_token_endpoint(
         _user_id = request.user_id if request else user_id
         _push_token = request.push_token if request else push_token
         _platform = request.platform if request else "android"
-        _token_type = getattr(request, 'token_type', None) if request else None
         
-        # Token tipini belirle
-        if _token_type:
-            token_type = _token_type
-        elif _push_token and _push_token.startswith("ExponentPushToken"):
-            token_type = "expo"
-        else:
-            token_type = "fcm"
-        
-        logger.info(f"📱 Push token kayıt isteği: user_id={_user_id}, platform={_platform}, type={token_type}, token={_push_token[:40] if _push_token else 'NONE'}...")
+        logger.info(f"📱 Push token kayıt isteği: user_id={_user_id}, platform={_platform}, token={_push_token[:40] if _push_token else 'NONE'}...")
         
         # Validasyonlar
         if not _user_id:
@@ -3465,6 +3694,9 @@ async def register_push_token_endpoint(
         
         if not _push_token:
             return {"success": False, "detail": "push_token gerekli"}
+        
+        if not ExpoPushService.is_valid_token(_push_token):
+            return {"success": False, "detail": "Sadece Expo push token desteklenir"}
         
         # Kullanıcı var mı kontrol et
         user_check = supabase.table("users").select("id, name").eq("id", _user_id).execute()
@@ -3478,7 +3710,7 @@ async def register_push_token_endpoint(
         try:
             supabase.table("users").update({
                 "push_token": _push_token,
-                "push_token_type": token_type,
+                "push_token_type": "expo",
                 "push_token_updated_at": datetime.utcnow().isoformat()
             }).eq("id", _user_id).execute()
         except Exception as col_err:
@@ -3489,8 +3721,8 @@ async def register_push_token_endpoint(
                 "push_token_updated_at": datetime.utcnow().isoformat()
             }).eq("id", _user_id).execute()
         
-        logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform} - {token_type}")
-        return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform, "token_type": token_type}
+        logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform} - expo")
+        return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform, "token_type": "expo"}
     except Exception as e:
         logger.error(f"❌ Push token kayıt hatası: {e}")
         import traceback
@@ -3526,8 +3758,7 @@ async def test_push_notification(user_id: str, title: str = "Test Bildirimi", bo
         user = user_result.data[0]
         token = user.get("push_token")
         
-        # Token tipini belirle
-        token_type = "fcm" if token and not token.startswith("ExponentPushToken") else "expo"
+        token_type = "expo" if token and ExpoPushService.is_valid_token(token) else "invalid"
         
         debug_info = {
             "user_id": user_id,
@@ -3555,6 +3786,208 @@ async def test_push_notification(user_id: str, title: str = "Test Bildirimi", bo
         logger.error(f"🧪 TEST: Hata: {e}")
         import traceback
         return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@api_router.post("/test/match-notification")
+async def test_match_notification(
+    passenger_id: str,
+    driver_id: str,
+    eta_min: int = 5,
+    tag_id: str = None,
+):
+    """
+    Eşleşme bildirimlerini test et: yolcuya ve sürücüye gerçek metinlerle push gönderir.
+    Örnek: POST /api/test/match-notification?passenger_id=UUID&driver_id=UUID&eta_min=3
+    """
+    try:
+        tag_id = tag_id or str(uuid.uuid4())
+        passenger_title = "Paylaşımlı yolculuk başladı"
+        passenger_body = "Sürücüye yazmak için tıklayın."
+        driver_body = f"Yolcuya {eta_min} dk. Yolcuya git için tıklayın." if eta_min else "Yolcuya git için tıklayın."
+        results = {}
+        # Yolcu
+        ok_p = await send_trip_push_and_log(
+            passenger_id,
+            "matched",
+            passenger_title,
+            passenger_body,
+            {"type": "match_found", "tag_id": tag_id, "driver_name": "Test Sürücü", "eta_min": eta_min},
+        )
+        results["passenger"] = {"success": ok_p, "title": passenger_title, "body": passenger_body}
+        # Sürücü
+        ok_d = await send_trip_push_and_log(
+            driver_id,
+            "matched",
+            "Eşleşme sağlandı",
+            driver_body,
+            {"type": "match_confirmed", "tag_id": tag_id, "passenger_name": "Test Yolcu", "price": 0, "eta_min": eta_min},
+        )
+        results["driver"] = {"success": ok_d, "title": "Eşleşme sağlandı", "body": driver_body}
+        return {
+            "success": True,
+            "message": "Eşleşme test bildirimleri gönderildi",
+            "results": results,
+        }
+    except Exception as e:
+        logger.error(f"🧪 TEST match-notification: {e}")
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@api_router.post("/test/push-notification-by-phone")
+async def test_push_notification_by_phone(
+    admin_phone: str,
+    phone: str,
+    title: str = "Test Bildirimi",
+    body: str = "Leylek TAG bildirim sistemi testi – başarılı."
+):
+    """Admin: Telefon numarasına göre test push bildirimi gönder (sadece admin)."""
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    clean_phone = phone.replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
+    try:
+        user_result = supabase.table("users").select("id, name, push_token").eq("phone", clean_phone).execute()
+        if not user_result.data:
+            return {"success": False, "error": "Bu numaraya kayıtlı kullanıcı bulunamadı", "phone": clean_phone}
+        user = user_result.data[0]
+        user_id = user.get("id")
+        token = user.get("push_token")
+        if not token or not ExpoPushService.is_valid_token(token):
+            logger.warning(f"Test push: geçersiz veya boş token user_id={user_id}, token_preview={str(token)[:80] if token else 'NONE'}")
+            return {
+                "success": False,
+                "error": "Kullanıcının kayıtlı push token'ı yok veya geçersiz. Uygulama açılıp bildirim izni verilmiş olmalı.",
+                "user_id": user_id,
+            }
+        success, receipt = await _send_expo_and_get_receipt(
+            token, title, body, {"type": "test", "timestamp": datetime.utcnow().isoformat()}
+        )
+        return {
+            "success": success,
+            "message": "Test bildirimi gönderildi" if success else "Bildirim gönderilemedi",
+            "user_id": user_id,
+            "expo_receipt": receipt,
+        }
+    except Exception as e:
+        logger.error(f"Test push by phone error: {e}")
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@api_router.get("/test/push-user-by-phone")
+async def test_push_user_by_phone(phone: str):
+    """
+    Telefon numarasına göre kullanıcı ve push token bilgisini döner (debug).
+    Örnek: GET /api/test/push-user-by-phone?phone=5326427412
+    """
+    try:
+        phone_e164 = normalize_phone_e164(phone)
+        if not phone_e164:
+            return {"found": False, "error": "Geçersiz telefon", "phone_raw": phone}
+        digits_only = "".join(c for c in phone_e164 if c.isdigit())
+        ten_digit = digits_only[-10:] if len(digits_only) >= 10 else digits_only
+        candidates = [phone_e164, digits_only, ten_digit, "0" + ten_digit if len(ten_digit) == 10 else None]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            r = supabase.table("users").select("id, name, phone, push_token").eq("phone", candidate).limit(1).execute()
+            if r.data:
+                row = r.data[0]
+                token = row.get("push_token")
+                return {
+                    "found": True,
+                    "user_id": row.get("id"),
+                    "name": row.get("name"),
+                    "phone_stored": row.get("phone"),
+                    "has_push_token": bool(token and len(str(token)) > 10),
+                    "token_preview": (token[:40] + "...") if token else None,
+                    "tried_phone": candidate,
+                }
+        # Son deneme: phone içinde bu 10 rakam geçen kullanıcı (boşluk/tire ile kayıtlı olabilir)
+        core = ten_digit
+        if len(core) >= 10:
+            r = supabase.table("users").select("id, name, phone, push_token").like("phone", f"%{core}%").limit(5).execute()
+            if r.data:
+                for row in r.data:
+                    stored = (row.get("phone") or "")
+                    if core in "".join(c for c in stored if c.isdigit()):
+                        token = row.get("push_token")
+                        return {
+                            "found": True,
+                            "user_id": row.get("id"),
+                            "name": row.get("name"),
+                            "phone_stored": stored,
+                            "has_push_token": bool(token and len(str(token)) > 10),
+                            "token_preview": (token[:40] + "...") if token else None,
+                            "tried_phone": f"like(%{core}%)",
+                        }
+        return {"found": False, "tried_candidates": [c for c in candidates if c], "phone_e164": phone_e164}
+    except Exception as e:
+        return {"found": False, "error": str(e)}
+
+
+@api_router.post("/test/match-push-by-ids")
+async def test_match_push_by_ids(driver_id: str, passenger_id: str, tag_id: str = None):
+    """
+    Eşleşme bildirimini UUID ile test et (gerçek eşleşmedeki gibi).
+    Son eşleşen tag'in driver_id/passenger_id ile çağrılabilir.
+    Örnek: POST /api/test/match-push-by-ids?driver_id=UUID&passenger_id=UUID
+    """
+    try:
+        tid = tag_id or "test"
+        match_data = {"event": "match", "trip_id": tid, "type": "matched", "tag_id": tid}
+        driver_ok = await send_push_notification(
+            driver_id, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
+        )
+        passenger_ok = await send_push_notification(
+            passenger_id, "Sürücü bulundu", "Sürücünüz yola çıktı.", match_data,
+        )
+        return {
+            "success": True,
+            "driver_push_sent": driver_ok,
+            "passenger_push_sent": passenger_ok,
+            "message": "İkisine de gönderildi" if (driver_ok and passenger_ok) else "Bazı bildirimler gönderilemedi",
+        }
+    except Exception as e:
+        logger.exception(f"test/match-push-by-ids: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@api_router.post("/test/match-push-by-phone")
+async def test_match_push_by_phone(
+    driver_phone: str,
+    passenger_phone: str,
+    admin_phone: str = None,
+):
+    """
+    Eşleşme bildirimini TELEFON ile test et: sürücü ve yolcu numaralarına
+    aynı metinlerle push gönderir (E.164 normalize). Admin gerekmez; sadece debug.
+    Örnek: POST /api/test/match-push-by-phone?driver_phone=5326427412&passenger_phone=5361112233
+    """
+    try:
+        match_data = {"event": "match", "trip_id": "test", "type": "matched", "tag_id": "test"}
+        driver_ok = await send_push_notification(
+            driver_phone,
+            "Eşleşme sağlandı",
+            "Yolcuya gitmek için tıklayın.",
+            match_data,
+        )
+        passenger_ok = await send_push_notification(
+            passenger_phone,
+            "Sürücü bulundu",
+            "Sürücünüz yola çıktı.",
+            match_data,
+        )
+        return {
+            "success": True,
+            "driver_push_sent": driver_ok,
+            "passenger_push_sent": passenger_ok,
+            "message": "İkisine de gönderildi" if (driver_ok and passenger_ok) else "Bazı bildirimler gönderilemedi (token/ kullanıcı kontrolü)",
+        }
+    except Exception as e:
+        logger.exception(f"test/match-push-by-phone: {e}")
+        return {"success": False, "error": str(e)}
+
 
 # ==================== ADMIN BİLDİRİM SİSTEMİ ====================
 
@@ -3585,30 +4018,27 @@ async def admin_send_notification(request: AdminNotificationRequest):
         result = query.execute()
         users = result.data if result.data else []
         
-        # Push token'ları topla
-        tokens = []
-        for user in users:
-            token = user.get("push_token")
-            if token and ExpoPushService.is_valid_token(token):
-                tokens.append(token)
-        
-        if not tokens:
+        valid_user_ids = [
+            user["id"]
+            for user in users
+            if user.get("id") and ExpoPushService.is_valid_token(user.get("push_token"))
+        ]
+        if not valid_user_ids:
             return {"success": False, "error": "Bildirim gönderilebilecek kullanıcı bulunamadı", "total_users": len(users), "valid_tokens": 0}
         
-        # Bildirimi gönder
-        push_result = await ExpoPushService.send(
-            tokens=tokens,
+        push_result = await send_push_notifications_to_users(
+            user_ids=valid_user_ids,
             title=request.title,
             body=request.body,
             data=request.data or {"type": "admin_notification"}
         )
         
-        logger.info(f"📢 Admin bildirim: '{request.title}' - {push_result['sent']}/{len(tokens)} gönderildi")
+        logger.info(f"📢 Admin bildirim: '{request.title}' - {push_result['sent']}/{push_result['total']} gönderildi")
         
         return {
             "success": True,
             "total_users": len(users),
-            "valid_tokens": len(tokens),
+            "valid_tokens": len(valid_user_ids),
             "sent": push_result["sent"],
             "failed": push_result["failed"]
         }
@@ -3646,6 +4076,282 @@ async def admin_push_stats(phone: str):
             "passengers_with_push_token": with_token - drivers_with_token
         }
     except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@api_router.get("/admin/push-debug")
+async def admin_push_debug(admin_phone: str, limit: int = 50):
+    """Bildirim testi: Hangi kullanıcıların push token'ı var, format geçerli mi listele."""
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        result = supabase.table("users").select("id, phone, name, push_token, push_token_updated_at").not_.is_("push_token", "null").limit(limit).execute()
+        users = result.data or []
+        list_ = []
+        for u in users:
+            token = u.get("push_token") or ""
+            list_.append({
+                "id": u.get("id"),
+                "phone_masked": ("*" * max(0, len((u.get("phone") or "")) - 4) + (u.get("phone") or "")[-4:]) if (u.get("phone") or "") else "",
+                "name": u.get("name"),
+                "has_push_token": bool(token),
+                "token_valid_format": ExpoPushService.is_valid_token(token),
+                "token_preview": token[:50] + "..." if len(token) > 50 else token,
+                "push_token_updated_at": u.get("push_token_updated_at"),
+            })
+        return {"success": True, "users": list_, "total": len(list_)}
+    except Exception as e:
+        logger.error(f"Push debug error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@api_router.get("/admin/push-test")
+async def admin_push_test(admin_phone: str):
+    """
+    İlk push_token dolu kullanıcıya test bildirimi gönderir, Expo API yanıtını JSON döner.
+    push_token yoksa sebebini loglar ve response'ta döner.
+    """
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        # İlk push_token'ı dolu kullanıcıyı al (created_at sırasına göre)
+        result = supabase.table("users").select("id, phone, name, push_token").not_.is_("push_token", "null").order("created_at", desc=True).limit(1).execute()
+        users = result.data or []
+        if not users:
+            logger.warning("push_test: Veritabanında push_token dolu hiç kullanıcı yok. Kullanıcılar giriş yapıp bildirim izni vermeli.")
+            return {
+                "success": False,
+                "reason": "no_user_with_push_token",
+                "message": "Veritabanında push_token dolu kullanıcı yok. Kullanıcılar uygulamadan giriş yapıp bildirim izni vermeli.",
+                "expo_response": None,
+            }
+        user = users[0]
+        token = (user.get("push_token") or "").strip()
+        if not token:
+            logger.warning("push_test: İlk kullanıcının push_token alanı boş.")
+            return {
+                "success": False,
+                "reason": "push_token_empty",
+                "message": "İlk kullanıcının push_token alanı boş.",
+                "user_id": user.get("id"),
+                "expo_response": None,
+            }
+        if not ExpoPushService.is_valid_token(token):
+            logger.warning(f"push_test: Geçersiz token formatı: {token[:80]}... (ExpoPushToken[...] veya ExponentPushToken[...] olmalı)")
+            return {
+                "success": False,
+                "reason": "invalid_token_format",
+                "message": "push_token geçerli Expo formatında değil (ExpoPushToken[...] veya ExponentPushToken[...] olmalı).",
+                "user_id": user.get("id"),
+                "token_preview": token[:60] + "..." if len(token) > 60 else token,
+                "expo_response": None,
+            }
+        # Expo Push API'ye istek at, tam yanıtı döndür
+        message = {
+            "to": token,
+            "sound": "default",
+            "title": "Leylek TAG Test",
+            "body": "Push test bildirimi – endpoint /api/admin/push-test",
+            "data": {"type": "admin_push_test", "ts": datetime.utcnow().isoformat()},
+            "priority": "high",
+            "channelId": "default",
+        }
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if EXPO_ACCESS_TOKEN:
+            headers["Authorization"] = f"Bearer {EXPO_ACCESS_TOKEN}"
+        logger.info(f"push_test: Expo'ya gönderiliyor – user_id={user.get('id')}, token={token[:30]}...")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=[message],
+                headers=headers,
+            )
+        response_body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {"raw_text": response.text[:1000]}
+        logger.info(f"push_test: Expo yanıtı status={response.status_code}, body={response_body}")
+        return {
+            "success": response.status_code == 200 and (response_body.get("data") or [{}])[0].get("status") != "error",
+            "user_id": user.get("id"),
+            "phone_masked": ("*" * max(0, len((user.get("phone") or "")) - 4) + (user.get("phone") or "")[-4:]) if (user.get("phone") or "") else "",
+            "expo_response": response_body,
+            "expo_http_status": response.status_code,
+        }
+    except Exception as e:
+        logger.error(f"push_test hatası: {e}")
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc(), "expo_response": None}
+
+
+@api_router.get("/admin/push-test-by-phone")
+async def admin_push_test_by_phone(admin_phone: str, phone: str):
+    """
+    Belirtilen telefon numarasındaki kullanıcıya 'Yeni yolculuk teklifi' test push gönderir.
+    Aynı zamanda sürücünün dispatch kuyruğuna neden giremeyebileceğini görmek için
+    driver_online, driver_active_until, latitude, longitude bilgilerini döner.
+    Örnek: GET /api/admin/push-test-by-phone?admin_phone=5XX&phone=5326497412
+    """
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    if not phone or not phone.strip():
+        raise HTTPException(status_code=422, detail="phone parametresi gerekli")
+    try:
+        clean = phone.strip().replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
+        if not clean.isdigit():
+            return {"success": False, "error": "Geçersiz telefon numarası", "phone": phone}
+        # Önce 5 ile başlayan, sonra 0 ile başlayan dene
+        for candidate in [clean, "0" + clean if not clean.startswith("0") else clean]:
+            user_result = supabase.table("users").select(
+                "id, name, phone, push_token, driver_online, driver_active_until, latitude, longitude, driver_details"
+            ).eq("phone", candidate).limit(1).execute()
+            if user_result.data:
+                break
+        else:
+            return {"success": False, "error": "Bu numaraya kayıtlı kullanıcı bulunamadı", "phone": clean}
+        user = user_result.data[0]
+        user_id = user.get("id")
+        token = (user.get("push_token") or "").strip()
+        now_iso = datetime.utcnow().isoformat()
+        driver_active_until = user.get("driver_active_until")
+        has_active_package = driver_active_until and driver_active_until > now_iso
+        driver_online = user.get("driver_online") is True
+        has_location = user.get("latitude") is not None and user.get("longitude") is not None
+        # Dispatch'e girebilmesi için: driver_online, aktif paket, konum
+        dispatch_eligible = driver_online and has_active_package and has_location
+        debug = {
+            "user_id": user_id,
+            "name": user.get("name"),
+            "phone_masked": ("*" * 6 + (user.get("phone") or "")[-4:]),
+            "has_push_token": bool(token),
+            "token_valid_format": ExpoPushService.is_valid_token(token),
+            "driver_online": driver_online,
+            "driver_active_until": driver_active_until,
+            "has_active_package": has_active_package,
+            "has_location": has_location,
+            "latitude": user.get("latitude"),
+            "longitude": user.get("longitude"),
+            "dispatch_eligible": dispatch_eligible,
+            "reason_not_eligible": []
+        }
+        if not driver_online:
+            debug["reason_not_eligible"].append("driver_online değil")
+        if not has_active_package:
+            debug["reason_not_eligible"].append("aktif paket yok (driver_active_until geçmiş)")
+        if not has_location:
+            debug["reason_not_eligible"].append("konum yok (latitude/longitude)")
+        if not token:
+            debug["reason_not_eligible"].append("push_token yok")
+        if not ExpoPushService.is_valid_token(token):
+            debug["reason_not_eligible"].append("push_token formatı geçersiz")
+        if not token or not ExpoPushService.is_valid_token(token):
+            return {"success": False, "debug": debug, "message": "Push gönderilemedi: token yok veya geçersiz", "expo_response": None}
+        # Test push gönder – "Yeni yolculuk teklifi" (trip lifecycle metni)
+        success = await send_trip_push_and_log(
+            user_id, "new_ride_request",
+            "Yeni yolculuk teklifi",
+            "Yakınınızda yeni bir yolculuk isteği var.",
+            {"type": "new_offer", "tag_id": "test", "test": True}
+        )
+        return {"success": success, "debug": debug, "message": "Test bildirimi gönderildi" if success else "Gönderim başarısız", "expo_response": None}
+    except Exception as e:
+        logger.error(f"push-test-by-phone hatası: {e}")
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
+@api_router.get("/admin/driver-status")
+async def admin_driver_status(admin_phone: str, phone: str):
+    """
+    Sürücü durumunu kontrol et (push göndermez): online mı, paket var mı, teklif kuyruğuna girebilir mi?
+    Örnek: GET /api/admin/driver-status?admin_phone=5XX&phone=5326497412
+    """
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    if not phone or not phone.strip():
+        raise HTTPException(status_code=422, detail="phone parametresi gerekli")
+    try:
+        clean = phone.strip().replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
+        if not clean.isdigit():
+            return {"success": False, "error": "Geçersiz telefon numarası"}
+        for candidate in [clean, "0" + clean if not clean.startswith("0") else clean]:
+            user_result = supabase.table("users").select(
+                "id, name, phone, driver_online, driver_active_until, latitude, longitude, driver_details"
+            ).eq("phone", candidate).limit(1).execute()
+            if user_result.data:
+                break
+        else:
+            return {"success": False, "error": "Bu numaraya kayıtlı kullanıcı bulunamadı", "phone": clean}
+        user = user_result.data[0]
+        now_iso = datetime.utcnow().isoformat()
+        driver_active_until = user.get("driver_active_until")
+        has_active_package = driver_active_until and driver_active_until > now_iso
+        driver_online = user.get("driver_online") is True
+        has_location = user.get("latitude") is not None and user.get("longitude") is not None
+        dispatch_eligible = driver_online and has_active_package and has_location
+        return {
+            "success": True,
+            "phone_masked": ("*" * 6 + (user.get("phone") or "")[-4:]),
+            "name": user.get("name"),
+            "user_id": user.get("id"),
+            "driver_online": driver_online,
+            "driver_active_until": driver_active_until,
+            "aktif_paket_var": has_active_package,
+            "konum_var": has_location,
+            "latitude": user.get("latitude"),
+            "longitude": user.get("longitude"),
+            "teklif_kuyruguna_girebilir": dispatch_eligible,
+            "aciklama": "Sürücü aktif ve paket geçerli" if dispatch_eligible else (
+                "Sürücü online değil" if not driver_online else
+                "Aktif paket yok veya süresi dolmuş" if not has_active_package else
+                "Konum yok"
+            ),
+        }
+    except Exception as e:
+        logger.error(f"driver-status error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@api_router.post("/admin/driver-set-online")
+@api_router.get("/admin/driver-set-online")
+async def admin_driver_set_online(admin_phone: str, phone: str, hours: int = 24):
+    """
+    Admin: Belirtilen telefon numarasındaki sürücüyü online yap ve paket süresi ver (test için).
+    Böylece sürücü teklif kuyruğuna girer ve eşleşince bildirim alır.
+    Örnek: POST /api/admin/driver-set-online?admin_phone=5XX&phone=5326497412&hours=24
+    """
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    if not phone or not phone.strip():
+        raise HTTPException(status_code=422, detail="phone parametresi gerekli")
+    try:
+        clean = phone.strip().replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
+        if not clean.isdigit():
+            return {"success": False, "error": "Geçersiz telefon numarası"}
+        for candidate in [clean, "0" + clean if not clean.startswith("0") else clean]:
+            user_result = supabase.table("users").select("id, name, phone, driver_details").eq("phone", candidate).limit(1).execute()
+            if user_result.data:
+                break
+        else:
+            return {"success": False, "error": "Bu numaraya kayıtlı kullanıcı bulunamadı"}
+        user = user_result.data[0]
+        user_id = user.get("id")
+        now = datetime.utcnow()
+        active_until = (now + timedelta(hours=max(1, min(hours, 720)))).isoformat()
+        supabase.table("users").update({
+            "driver_online": True,
+            "driver_active_until": active_until,
+            "updated_at": now.isoformat(),
+        }).eq("id", user_id).execute()
+        logger.info(f"✅ Admin: Sürücü online yapıldı: {user.get('name')} ({phone}) -> {hours}h paket")
+        return {
+            "success": True,
+            "message": f"Sürücü online yapıldı, {hours} saat paket atandı.",
+            "user_id": user_id,
+            "name": user.get("name"),
+            "phone_masked": ("*" * 6 + (user.get("phone") or "")[-4:]),
+            "driver_online": True,
+            "driver_active_until": active_until,
+        }
+    except Exception as e:
+        logger.error(f"admin_driver_set_online error: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -3808,41 +4514,52 @@ async def admin_send_notification(admin_phone: str, title: str, message: str, ta
         if admin_phone not in ADMIN_PHONE_NUMBERS:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
-        tokens = []
+        target_user_ids = []
+        token_user_ids = []
         target_count = 0
         
         if target == "all":
             result = supabase.table("users").select("id, push_token").execute()
             target_count = len(result.data)
-            tokens = [r["push_token"] for r in result.data if r.get("push_token")]
+            target_user_ids = [r["id"] for r in result.data if r.get("id")]
+            token_user_ids = [r["id"] for r in result.data if r.get("id") and ExpoPushService.is_valid_token(r.get("push_token"))]
         elif target == "drivers":
             result = supabase.table("users").select("id, push_token, driver_details").execute()
             drivers = [r for r in result.data if r.get("driver_details")]
             target_count = len(drivers)
-            tokens = [r["push_token"] for r in drivers if r.get("push_token")]
+            target_user_ids = [r["id"] for r in drivers if r.get("id")]
+            token_user_ids = [r["id"] for r in drivers if r.get("id") and ExpoPushService.is_valid_token(r.get("push_token"))]
         elif target == "passengers":
             result = supabase.table("users").select("id, push_token, driver_details").execute()
             passengers = [r for r in result.data if not r.get("driver_details")]
             target_count = len(passengers)
-            tokens = [r["push_token"] for r in passengers if r.get("push_token")]
+            target_user_ids = [r["id"] for r in passengers if r.get("id")]
+            token_user_ids = [r["id"] for r in passengers if r.get("id") and ExpoPushService.is_valid_token(r.get("push_token"))]
         elif target == "user" and user_id:
             result = supabase.table("users").select("id, push_token").eq("id", user_id).execute()
             target_count = 1
-            if result.data and result.data[0].get("push_token"):
-                tokens = [result.data[0]["push_token"]]
+            if result.data and result.data[0].get("id"):
+                target_user_ids = [result.data[0]["id"]]
+                if ExpoPushService.is_valid_token(result.data[0].get("push_token")):
+                    token_user_ids = [result.data[0]["id"]]
         
         sent_count = 0
         failed_count = 0
         
-        # Push bildirim gönder (token varsa)
-        if tokens:
+        # Push bildirim gönder (tokenı uygun kullanıcılar)
+        if token_user_ids:
             try:
-                push_result = await ExpoPushService.send(tokens, title, message)
+                push_result = await send_push_notifications_to_users(
+                    user_ids=token_user_ids,
+                    title=title,
+                    body=message,
+                    data={"type": "admin_notification", "target": target}
+                )
                 sent_count = push_result.get("sent", 0)
                 failed_count = push_result.get("failed", 0)
             except Exception as e:
                 logger.error(f"Push notification error: {e}")
-                failed_count = len(tokens)
+                failed_count = len(token_user_ids)
         
         # Admin bilgisini al
         admin_result = supabase.table("users").select("id").eq("phone", admin_phone).execute()
@@ -3862,7 +4579,8 @@ async def admin_send_notification(admin_phone: str, title: str, message: str, ta
                     "target_count": target_count,
                     "push_sent": sent_count,
                     "push_failed": failed_count,
-                    "tokens_available": len(tokens)
+                    "tokens_available": len(token_user_ids),
+                    "target_user_ids_count": len(target_user_ids)
                 }
             }).execute()
         except Exception as e:
@@ -4379,6 +5097,24 @@ async def start_call(request: StartCallRequest):
             return {"success": False, "detail": "Arama kaydedilemedi"}
         
         logger.info(f"📞 SUPABASE: Arama başlatıldı: {call_id} - {request.caller_id} -> {receiver_id}")
+        try:
+            asyncio.create_task(send_push_notification(
+                receiver_id,
+                f"📞 {caller_name}",
+                "Size gelen bir arama var.",
+                build_call_push_payload(
+                    "incoming_call",
+                    request.caller_id,
+                    caller_name,
+                    request.call_type,
+                    call_id=call_id,
+                    channel_name=channel_name,
+                    agora_token=token,
+                    tag_id=request.tag_id,
+                )
+            ))
+        except Exception as push_err:
+            logger.warning(f"⚠️ Voice call push gönderilemedi: {push_err}")
         
         return {
             "success": True,
@@ -5986,6 +6722,24 @@ async def create_daily_room(request: dict):
                 logger.info(f"📲 Daily.co arama bildirimi gönderildi (harici socket): {receiver_id}")
             except Exception as socket_err:
                 logger.warning(f"⚠️ Socket bildirim hatası: {socket_err}")
+
+            try:
+                asyncio.create_task(send_push_notification(
+                    receiver_id,
+                    f"📞 {caller_name}",
+                    "Size gelen bir arama var.",
+                    build_call_push_payload(
+                        "incoming_daily_call",
+                        caller_id,
+                        caller_name,
+                        call_type,
+                        room_url=room_url,
+                        room_name=room_name,
+                        tag_id=tag_id,
+                    )
+                ))
+            except Exception as push_err:
+                logger.warning(f"⚠️ Daily room push gönderilemedi: {push_err}")
             
             return {
                 "success": True,
@@ -6053,7 +6807,31 @@ async def start_call(request: dict):
             
             logger.info(f"📞 Room oluşturuldu: {room_url}")
             
-            # ❌ SOCKET BİLDİRİMİ YOK - Frontend socket ile gönderiyor
+            try:
+                caller_name = "Arayan"
+                caller_result = supabase.table("users").select("name").eq("id", caller_id).limit(1).execute()
+                if caller_result.data:
+                    caller_name = caller_result.data[0].get("name", "Arayan")
+            except Exception:
+                caller_name = "Arayan"
+
+            try:
+                asyncio.create_task(send_push_notification(
+                    receiver_id,
+                    f"📞 {caller_name}",
+                    "Size gelen bir arama var.",
+                    build_call_push_payload(
+                        "incoming_daily_call",
+                        caller_id,
+                        caller_name,
+                        call_type,
+                        room_url=room_url,
+                        room_name=room_name,
+                        tag_id=tag_id,
+                    )
+                ))
+            except Exception as push_err:
+                logger.warning(f"⚠️ Call start push gönderilemedi: {push_err}")
             
             return {
                 "success": True,
@@ -6229,6 +7007,159 @@ async def end_daily_call(sid, data):
     except:
         pass  # Silme başarısız olsa da önemli değil
 
+
+# Socket event: MARTI TAG - Sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
+@sio.on("driver_accept_offer")
+async def handle_driver_accept_offer(sid, data):
+    """
+    Deterministic match flow when driver accepts:
+    1. TRIP LOCK (atomic DB update, only one driver wins via WHERE status = 'waiting')
+    2. PUSH to driver, then PUSH to passenger (always before socket)
+    3. SOCKET EMIT to driver (offer_accepted_success) and passenger (driver_matched)
+    """
+    print("🔥 SOCKET driver_accept_offer RECEIVED:", data)
+    data = data or {}
+    tag_id = data.get("tag_id")
+    driver_id = data.get("driver_id")
+    driver_name = data.get("driver_name") or "Sürücü"
+    print(f"tag_id={tag_id}, driver_id={driver_id}")
+    logger.info(f"driver_accept_offer RECEIVED tag_id={tag_id} driver_id={str(driver_id)[:20] if driver_id else '?'}")
+    if not tag_id or not driver_id:
+        logger.warning("driver_accept_offer: tag_id veya driver_id eksik")
+        await sio.emit("offer_accepted_error", {"error": "Eksik bilgi"}, room=sid)
+        return
+    driver_id = str(driver_id).strip()
+    trip_id = tag_id
+    try:
+        print("🚀 MATCH FLOW START")
+        logger.info("MATCH FLOW START")
+        # Resolve driver name and get phone for fallback
+        driver_row = supabase.table("users").select("name, phone, push_token").eq("id", driver_id).limit(1).execute()
+        if not driver_row.data and "-" in driver_id:
+            driver_row = supabase.table("users").select("name, phone, push_token").eq("id", driver_id.lower()).limit(1).execute()
+        if driver_row.data and driver_row.data[0].get("name"):
+            driver_name = driver_row.data[0]["name"]
+        driver_phone = (driver_row.data[0].get("phone") or "").strip() if driver_row.data else None
+        driver_has_token = bool(driver_row.data and driver_row.data[0].get("push_token"))
+        logger.info(f"MATCH: driver found={bool(driver_row.data)} has_token={driver_has_token} phone={driver_phone[:6] if driver_phone else '?'}...")
+
+        # Read tag for passenger_id and to validate
+        tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        if not tag_result.data:
+            await sio.emit("offer_accepted_error", {"error": "Teklif bulunamadı"}, room=sid)
+            return
+        tag = tag_result.data[0]
+        if tag.get("status") != "waiting":
+            logger.info(f"driver_accept_offer: tag {tag_id} zaten alınmış, status={tag.get('status')}")
+            await sio.emit("offer_already_taken", {"tag_id": tag_id}, room=sid)
+            return
+        passenger_id = tag.get("passenger_id") or tag.get("user_id")
+        if not passenger_id:
+            passenger_id = tag_result.data[0].get("passenger_id")
+        passenger_id = str(passenger_id).strip() if passenger_id else None
+        if not passenger_id:
+            logger.warning(f"driver_accept_offer: tag {tag_id} için passenger_id yok")
+        passenger_name = "Yolcu"
+        passenger_phone = None
+        passenger_has_token = False
+        pr = None
+        if passenger_id:
+            pr = supabase.table("users").select("name, phone, push_token").eq("id", passenger_id).limit(1).execute()
+            if not pr.data and "-" in passenger_id:
+                pr = supabase.table("users").select("name, phone, push_token").eq("id", passenger_id.lower()).limit(1).execute()
+            if pr and pr.data:
+                if pr.data[0].get("name"):
+                    passenger_name = pr.data[0]["name"]
+                passenger_phone = (pr.data[0].get("phone") or "").strip()
+                passenger_has_token = bool(pr.data[0].get("push_token"))
+        logger.info(f"MATCH: passenger_id={passenger_id[:8] if passenger_id else '?'}... found={bool(pr and pr.data)} has_token={passenger_has_token}")
+
+        # --- 2. TRIP LOCK ---
+        update_result = supabase.table("tags").update({
+            "status": "matched",
+            "driver_id": driver_id,
+            "driver_name": driver_name,
+            "matched_at": datetime.utcnow().isoformat(),
+        }).eq("id", tag_id).eq("status", "waiting").execute()
+        if not update_result.data:
+            await sio.emit("offer_already_taken", {"tag_id": tag_id}, room=sid)
+            return
+        logger.info("TRIP LOCK SUCCESS")
+        await handle_dispatch_accept(tag_id, driver_id)
+
+        # --- 3. PUSH NOTIFICATIONS (before any socket emit) ---
+        def _id_hint(uid):
+            if not uid:
+                return "?"
+            s = str(uid).strip()
+            if "-" in s:
+                return f"uuid:{s[-8:]}"
+            if s.isdigit() and len(s) >= 10:
+                return f"phone:{s[:4]}***"
+            return f"id:{s[:8]}"
+        logger.info(f"MATCH PUSH: driver_id={_id_hint(driver_id)} passenger_id={_id_hint(passenger_id)}")
+        match_data = {"event": "match", "trip_id": trip_id, "type": "matched", "tag_id": tag_id}
+
+        print("📲 SENDING PUSH DRIVER")
+        push_driver_ok = await send_push_notification(
+            driver_id, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
+        )
+        if not push_driver_ok and driver_phone and _looks_like_phone(driver_phone):
+            push_driver_ok = await send_push_notification(
+                driver_phone, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
+            )
+            if push_driver_ok:
+                logger.info("PUSH DRIVER SENT (retry by phone)")
+        print("✅ PUSH DRIVER SENT" if push_driver_ok else "❌ PUSH DRIVER FAILED")
+        logger.info("PUSH DRIVER SENT" if push_driver_ok else "PUSH DRIVER FAILED")
+
+        push_passenger_ok = False
+        if passenger_id:
+            print("📲 SENDING PUSH PASSENGER")
+            push_passenger_ok = await send_push_notification(
+                passenger_id, "Sürücü bulundu", "Sürücünüz yola çıktı.", match_data,
+            )
+            if not push_passenger_ok and passenger_phone and _looks_like_phone(passenger_phone):
+                push_passenger_ok = await send_push_notification(
+                    passenger_phone, "Sürücü bulundu", "Sürücünüz yola çıktı.", match_data,
+                )
+                if push_passenger_ok:
+                    logger.info("PUSH PASSENGER SENT (retry by phone)")
+        print("✅ PUSH PASSENGER SENT" if push_passenger_ok else "❌ PUSH PASSENGER FAILED")
+        logger.info("PUSH PASSENGER SENT" if push_passenger_ok else "PUSH PASSENGER FAILED")
+
+        # --- 4. SOCKET EVENTS (after push) ---
+        payload = {
+            "trip_id": trip_id,
+            "tag_id": tag_id,
+            "driver_id": driver_id,
+            "driver_name": driver_name,
+            "passenger_id": passenger_id,
+            "passenger_name": passenger_name,
+            "pickup_location": tag.get("pickup_location"),
+            "dropoff_location": tag.get("dropoff_location"),
+            "pickup_lat": tag.get("pickup_lat"),
+            "pickup_lng": tag.get("pickup_lng"),
+            "dropoff_lat": tag.get("dropoff_lat"),
+            "dropoff_lng": tag.get("dropoff_lng"),
+            "offered_price": tag.get("offered_price") or tag.get("final_price"),
+            "distance_km": tag.get("distance_km"),
+            "estimated_minutes": tag.get("estimated_minutes"),
+        }
+        driver_sid = connected_users.get(driver_id)
+        if driver_sid:
+            await sio.emit("offer_accepted_success", payload, room=driver_sid)
+        if passenger_id:
+            passenger_sid = connected_users.get(passenger_id)
+            if passenger_sid:
+                await sio.emit("driver_matched", payload, room=passenger_sid)
+        logger.info("SOCKET EMIT DONE")
+        logger.info("MATCH FLOW END")
+    except Exception as e:
+        logger.exception(f"driver_accept_offer error: {e}")
+        await sio.emit("offer_accepted_error", {"error": str(e)}, room=sid)
+
+
 # ==================== CHAT MESSAGING SYSTEM (HYBRID) ====================
 # Supabase = Source of Truth, Socket = Real-time notification (best-effort)
 
@@ -6362,6 +7293,16 @@ def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
     return R * 2 * math.asin(math.sqrt(a))
+
+
+def _eta_minutes(from_lat: float, from_lng: float, to_lat: float, to_lng: float) -> int:
+    """Kuş uçuşu mesafeden tahmini varış süresi (dk) - şehir içi ~25 km/h"""
+    if not all([from_lat, from_lng, to_lat, to_lng]):
+        return 0
+    km = haversine_distance(from_lat, from_lng, to_lat, to_lng)
+    # Gerçek yol genelde 1.2–1.4x; ortalama hız ~25 km/h → dk = km * 2.5
+    minutes = max(1, round(km * 2.5))
+    return min(minutes, 120)  # max 120 dk
 
 async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
     """
@@ -6572,7 +7513,35 @@ async def create_ride_offer(request: CreateRideOfferRequest):
                 # Dispatch queue oluştur ve ilk sürücüye teklif gönder
                 queue_created = await create_dispatch_queue(tag_id, full_tag_data)
                 if queue_created:
-                    # İlk sürücüye teklif gönder (async olarak)
+                    # Tüm kuyruktaki sürücülere hemen push: fiyat, mesafe, "10 sn içinde kabul et"
+                    queue = dispatch_queues.get(tag_id, [])
+                    price = full_tag_data.get("final_price") or full_tag_data.get("offered_price", 0)
+                    distance_km = full_tag_data.get("distance_km") or full_tag_data.get("trip_distance_km") or 0
+                    timeout_sec = config.get("driver_offer_timeout", 10)
+                    price_int = int(price) if price else 0
+                    distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
+                    body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
+                    for entry in queue:
+                        try:
+                            await send_trip_push_and_log(
+                                entry["driver_id"],
+                                "new_ride_request",
+                                "Yeni yolculuk teklifi",
+                                body,
+                                {
+                                    "type": "new_offer",
+                                    "tag_id": tag_id,
+                                    "price": price,
+                                    "distance_km": distance_km,
+                                    "timeout": timeout_sec,
+                                    "action": "accept",
+                                }
+                            )
+                        except Exception as push_err:
+                            logger.warning(f"⚠️ Teklif push sürücüye gönderilemedi: {entry.get('driver_id')} - {push_err}")
+                    if queue:
+                        logger.info(f"🔔 Teklif bildirimi {len(queue)} sürücüye gönderildi: {tag_id}")
+                    # İlk sürücüye socket + sıralı teklif akışı
                     asyncio.create_task(dispatch_offer_to_next_driver(tag_id, full_tag_data))
                     logger.info(f"📤 Dispatch başlatıldı: {tag_id}")
                 else:
@@ -6613,10 +7582,17 @@ async def accept_ride(tag_id: str, driver_id: str):
         driver_result = supabase.table("users").select("name, phone").eq("id", driver_id).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
         
-        # Yolcu bilgisini al - passenger_id kullan
+        # Yolcu bilgisini al - passenger_id kullan (tag'da bazen user_id olarak da saklanabilir)
         passenger_id = tag.get("passenger_id") or tag.get("user_id")
-        passenger_result = supabase.table("users").select("name, phone").eq("id", passenger_id).execute()
-        passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
+        if not passenger_id:
+            refetch = supabase.table("tags").select("passenger_id").eq("id", tag_id).limit(1).execute()
+            if refetch.data and refetch.data[0].get("passenger_id"):
+                passenger_id = refetch.data[0]["passenger_id"]
+        if passenger_id:
+            passenger_result = supabase.table("users").select("name, phone").eq("id", passenger_id).execute()
+            passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
+        else:
+            passenger_name = "Yolcu"
         
         # Atomik güncelleme - sadece status='waiting' ise güncelle
         update_result = supabase.table("tags").update({
@@ -6635,24 +7611,8 @@ async def accept_ride(tag_id: str, driver_id: str):
         # 🆕 DISPATCH QUEUE - Kabul edildi, diğer sürücülerin tekliflerini expire et
         await handle_dispatch_accept(tag_id, driver_id)
         
-        # 🔔 PUSH NOTIFICATIONS - Eşleşme bildirimleri
-        price = updated_tag.get("final_price") or updated_tag.get("offered_price", 0)
-        
-        # Yolcuya bildirim
-        asyncio.create_task(send_push_notification(
-            passenger_id,
-            "✅ Eşleşme Sağlandı!",
-            f"Sürücünüz {driver_name} yola çıktı. Lütfen bekleyin.",
-            {"type": "match_found", "tag_id": tag_id, "driver_name": driver_name}
-        ))
-        
-        # Sürücüye bildirim (uygulama kapalıysa)
-        asyncio.create_task(send_push_notification(
-            driver_id,
-            "🚗 Eşleşme Onaylandı!",
-            f"₺{price} - {passenger_name} sizi bekliyor. Yolcuya gidin!",
-            {"type": "match_confirmed", "tag_id": tag_id, "passenger_name": passenger_name}
-        ))
+        # Eşleşme tam bu anda – güncel tag'den sürücü/yolcu id'leri ile ikisine bildirim (teklif bildirimiyle aynı yol)
+        await send_match_notification_to_both(tag_id, driver_id, passenger_id)
         
         logger.info(f"✅ Eşleşme: {tag_id} - Sürücü: {driver_name}")
         
@@ -7208,174 +8168,275 @@ async def admin_add_driver_time(admin_phone: str, user_id: str, hours: int):
 async def register_push_token(user_id: str, token: str, platform: str = "android"):
     """Push notification token kaydet"""
     try:
-        # Mevcut token'ı kontrol et
-        existing = supabase.table("push_tokens").select("id").eq("user_id", user_id).execute()
-        
-        if existing.data:
-            # Güncelle
-            supabase.table("push_tokens").update({
-                "token": token,
-                "platform": platform,
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("user_id", user_id).execute()
-        else:
-            # Yeni kayıt
-            supabase.table("push_tokens").insert({
-                "user_id": user_id,
-                "token": token,
-                "platform": platform,
-                "created_at": datetime.utcnow().isoformat()
-            }).execute()
-        
+        if not token:
+            return {"success": False, "error": "token gerekli"}
+
+        if not ExpoPushService.is_valid_token(token):
+            return {"success": False, "error": "Sadece Expo push token desteklenir"}
+
+        update_payload = {
+            "push_token": token,
+            "push_token_updated_at": datetime.utcnow().isoformat()
+        }
+
+        # push_token_type kolonu yoksa geriye dönük uyumluluk için fallback
+        try:
+            update_payload["push_token_type"] = "expo"
+            supabase.table("users").update(update_payload).eq("id", user_id).execute()
+        except Exception:
+            update_payload.pop("push_token_type", None)
+            supabase.table("users").update(update_payload).eq("id", user_id).execute()
+
         logger.info(f"📱 Push token kaydedildi: {user_id}")
-        return {"success": True}
+        return {"success": True, "platform": platform, "token_type": "expo"}
     except Exception as e:
         logger.error(f"Register push token error: {e}")
         return {"success": False, "error": str(e)}
 
+def _looks_like_phone(uid: str) -> bool:
+    """user_id 10 haneli rakam ise (Türkiye telefonu) telefon kabul et."""
+    if not uid or len(uid) > 15:
+        return False
+    digits = "".join(c for c in uid if c.isdigit())
+    return len(digits) >= 10 and digits[:1] in "59"  # 5xxxxxxxxx veya 9xxxxxxxxx
+
+
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
-    """Tek kullanıcıya push bildirim gönder - FCM v1 veya Expo"""
+    """Tek kullanıcıya Expo push bildirim gönder (users.push_token). user_id = UUID veya telefon (fallback)."""
     try:
-        logger.info(f"🔔 Push gönderimi başlıyor: user_id={user_id}, title={title}")
-        
-        # Token bilgisini al (push_token_type kolonu olmayabilir)
-        user_result = supabase.table("users").select("push_token, name").eq("id", user_id).execute()
-        
+        uid = str(user_id).strip() if user_id else ""
+        if not uid:
+            logger.warning("❌ Push: user_id boş")
+            return False
+        user_result = supabase.table("users").select("push_token, name, id, phone").eq("id", uid).limit(1).execute()
+        # UUID büyük/küçük harf farkı
+        if not user_result.data and "-" in uid:
+            user_result = supabase.table("users").select("push_token, name, id, phone").eq("id", uid.lower()).limit(1).execute()
+        # Telefon ile fallback: E.164 normalize et, tüm olası DB formatlarını dene
+        if not user_result.data and _looks_like_phone(uid):
+            phone_e164 = normalize_phone_e164(uid)
+            if phone_e164:
+                # DB'de +905..., 905..., 5326..., 0532... saklanabilir; hepsini dene
+                digits_only = "".join(c for c in phone_e164 if c.isdigit())  # 905326427412
+                ten_digit = digits_only[-10:] if len(digits_only) >= 10 else digits_only  # 5326427412
+                candidates = [
+                    phone_e164,       # +905326427412
+                    digits_only,      # 905326427412
+                    ten_digit,        # 5326427412
+                    "0" + ten_digit if len(ten_digit) == 10 else None,  # 05326427412
+                ]
+                seen = set()
+                for candidate in candidates:
+                    if not candidate or candidate in seen:
+                        continue
+                    seen.add(candidate)
+                    user_result = supabase.table("users").select("push_token, name, id, phone").eq("phone", candidate).limit(1).execute()
+                    if user_result.data:
+                        logger.info(f"📱 Push: kullanıcı telefon ile bulundu (E.164={phone_e164})")
+                        break
+                # Son deneme: phone içinde bu 10 rakam geçen (boşluk/tire ile kayıtlı olabilir)
+                if not user_result.data and len(ten_digit) >= 10:
+                    like_r = supabase.table("users").select("push_token, name, id, phone").like("phone", f"%{ten_digit}%").limit(5).execute()
+                    if like_r.data:
+                        for row in like_r.data:
+                            if ten_digit in "".join(c for c in (row.get("phone") or "") if c.isdigit()):
+                                class _R: pass
+                                user_result = _R()
+                                user_result.data = [row]
+                                logger.info(f"📱 Push: kullanıcı telefon LIKE ile bulundu (core={ten_digit})")
+                                break
         if not user_result.data:
-            logger.warning(f"🔔 Kullanıcı bulunamadı: {user_id}")
+            logger.warning(f"❌ Push: kullanıcı bulunamadı (user_id={uid[:20]}...) – ID veya telefon veritabanında yok.")
             return False
-            
-        token = user_result.data[0].get("push_token")
-        user_name = user_result.data[0].get("name", "Unknown")
-        
-        # Token tipini token formatından belirle
-        if token and token.startswith("ExponentPushToken"):
-            token_type = "expo"
-        else:
-            token_type = "fcm"
-        
-        logger.info(f"🔔 Kullanıcı: {user_name}, token_type: {token_type}, token: {token[:30] if token else 'YOK'}...")
-        
+        row = user_result.data[0]
+        uid = row.get("id") or uid
+        token = row.get("push_token")
+        user_name = row.get("name", "Unknown")
+        user_phone = row.get("phone") or ""
+
         if not token:
-            logger.warning(f"❌ Push token bulunamadı: {user_id}")
+            logger.warning(f"📭 Push token yok: {user_name} (id={uid[:8]}... phone={user_phone[:4] if user_phone else '?'}) – Giriş yapıp bildirim izni verilmeli.")
             return False
-        
-        # Token tipine göre gönder
-        if token_type == 'fcm':
-            # Native FCM token - doğrudan FCM v1 ile gönder
-            return await send_fcm_v1_direct(token, title, body, data)
-        else:
-            # Expo token - Expo API ile gönder
-            return await send_expo_notification(token, title, body, data)
-            
+
+        if not ExpoPushService.is_valid_token(token):
+            logger.warning(f"⚠️ Geçersiz Expo token: {user_name} (id={uid[:8]}...) – Token ExponentPushToken/ExpoPushToken ile başlamalı.")
+            return False
+
+        ok = await send_expo_notification(token, title, body, data)
+        if not ok:
+            logger.warning(f"⚠️ Expo API bildirim göndermedi: {user_name} (id={uid[:8]}...)")
+        return ok
     except Exception as e:
         logger.error(f"❌ Send push exception: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         return False
 
-async def send_fcm_v1_direct(fcm_token: str, title: str, body: str, data: dict = None):
-    """FCM v1 API ile doğrudan bildirim gönder"""
+
+async def send_match_notification_to_both(tag_id: str, driver_id: str, passenger_id: str) -> dict:
+    """
+    Eşleşme tam bu anda – sürücü ve yolcuya anında bildirim.
+    Teklif bildirimi çalıştığı için aynı type (new_offer) + event=match ile Expo'ya gidiyor.
+    Returns: {"driver": bool, "passenger": bool}
+    """
+    out = {"driver": False, "passenger": False}
+    logger.info(f"📢 EŞLEŞME BİLDİRİMİ BAŞLADI: tag_id={tag_id}, driver_id={driver_id}, passenger_id={passenger_id}")
     try:
-        if not FCM_ENABLED:
-            logger.error("❌ FCM v1 devre dışı - Firebase credential yok")
-            return False
-            
-        logger.info(f"🔔 FCM v1 doğrudan gönderimi: {fcm_token[:30]}...")
-        
-        # Data'yı string'e çevir
-        string_data = {}
-        if data:
-            string_data = {k: str(v) for k, v in data.items()}
-        
-        # FCM message oluştur
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
-            data=string_data,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    title=title,
-                    body=body,
-                    channel_id='offers',
-                    priority='max',
-                    default_sound=True,
-                    default_vibrate_timings=True,
-                ),
-            ),
-            token=fcm_token,
-        )
-        
-        # FCM'e gönder
-        response = messaging.send(message)
-        logger.info(f"✅ FCM v1 başarılı: {response}")
-        return True
-        
-    except messaging.UnregisteredError:
-        logger.warning(f"⚠️ FCM: Token geçersiz/kayıtsız - {fcm_token[:20]}...")
-        return False
-    except messaging.SenderIdMismatchError:
-        logger.error(f"❌ FCM: Sender ID uyuşmuyor - token farklı projeye ait")
-        return False
+        tag_row = supabase.table("tags").select("id, passenger_id, driver_id, pickup_lat, pickup_lng, final_price, offered_price").eq("id", tag_id).limit(1).execute()
+        if not tag_row.data:
+            logger.warning(f"🔔 Eşleşme bildirimi: tag bulunamadı {tag_id}")
+            return out
+        row = tag_row.data[0]
+        d_id = str(row.get("driver_id") or driver_id or "").strip() or None
+        p_id = str(row.get("passenger_id") or passenger_id or "").strip() or None
+        if not d_id and not p_id:
+            logger.warning(f"🔔 Eşleşme bildirimi: driver_id ve passenger_id yok")
+            return out
+        eta_min = 0
+        try:
+            if d_id and row.get("pickup_lat") is not None and row.get("pickup_lng") is not None:
+                loc = supabase.table("users").select("latitude, longitude").eq("id", d_id).limit(1).execute()
+                if loc.data and loc.data[0].get("latitude") is not None:
+                    eta_min = _eta_minutes(
+                        loc.data[0].get("latitude"), loc.data[0].get("longitude"),
+                        float(row["pickup_lat"]), float(row["pickup_lng"])
+                    )
+        except Exception:
+            pass
+        driver_body = f"Yolcuya {eta_min} dk. Yolcuya git için tıklayın." if eta_min else "Yolcuya git için tıklayın."
+        passenger_title = "Paylaşımlı yolculuk başladı"
+        passenger_body = "Sürücüye yazmak için tıklayın."
+        # Teklif bildirimi gibi type=new_offer kullan (cihazda aynı kanal/aynı davranış); event=match ile uygulama eşleşme ekranına gidebilir
+        base_data = {"type": "new_offer", "event": "match", "tag_id": tag_id, "eta_min": eta_min}
+        if d_id:
+            driver_data = {**base_data, "role": "driver", "price": int(row.get("final_price") or row.get("offered_price") or 0)}
+            out["driver"] = await send_trip_push_and_log(d_id, "new_ride_request", "Eşleşme sağlandı", driver_body, driver_data)
+            logger.info(f"🔔 Eşleşme push sürücü: {d_id[:8]}... sonuç={out['driver']}")
+        if p_id:
+            passenger_data = {**base_data, "role": "passenger"}
+            out["passenger"] = await send_trip_push_and_log(p_id, "new_ride_request", passenger_title, passenger_body, passenger_data)
+            logger.info(f"🔔 Eşleşme push yolcu: {p_id[:8]}... sonuç={out['passenger']}")
+        logger.info(f"📢 EŞLEŞME BİLDİRİMİ BİTTİ: tag_id={tag_id}, driver={out['driver']}, passenger={out['passenger']}")
     except Exception as e:
-        logger.error(f"❌ FCM v1 doğrudan gönderim hatası: {e}")
-        return False
+        logger.exception(f"🔔 send_match_notification_to_both hata: {e}")
+    return out
 
-async def send_expo_notification(token: str, title: str, body: str, data: dict = None):
-    """Expo Push API ile bildirim gönder"""
+
+async def send_trip_push_and_log(user_id: str, notification_type: str, title: str, body: str, data: dict = None) -> bool:
+    """
+    Trip lifecycle (ve diğer) bildirimleri: önce notifications_log'a yaz, sonra push gönder.
+    Tüm bildirimler loglanır (token yoksa bile). user_id users.id (UUID string) olmalı.
+    """
+    uid = str(user_id).strip() if user_id else None
+    if not uid:
+        logger.warning("⚠️ send_trip_push_and_log: user_id boş")
+        return False
+    payload = data or {}
+    payload.setdefault("type", notification_type)
+    try:
+        supabase.table("notifications_log").insert({
+            "type": notification_type,
+            "user_id": uid,
+            "title": title,
+            "body": body,
+            "created_at": datetime.utcnow().isoformat(),
+        }).execute()
+    except Exception as log_err:
+        logger.warning(f"⚠️ notifications_log insert failed: {log_err}")
+    ok = await send_push_notification(uid, title, body, payload)
+    if not ok:
+        logger.warning(f"⚠️ Trip push gönderilemedi: user_id={uid}, type={notification_type}, title={title!r}")
+    return ok
+
+
+async def send_push_notifications_to_users(user_ids: list, title: str, body: str, data: dict = None) -> dict:
+    """Birden fazla kullanıcıya, tekil send_push_notification fonksiyonu ile gönder."""
+    sent = 0
+    failed = 0
+
+    for user_id in user_ids or []:
+        if await send_push_notification(user_id, title, body, data):
+            sent += 1
+        else:
+            failed += 1
+
+    return {"sent": sent, "failed": failed, "total": len(user_ids or [])}
+
+async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: dict = None):
+    """Expo Push API'ye istek atar; (success, receipt_dict) döner. receipt Expo'nun data[0] objesidir."""
     try:
         import httpx
-        
+        payload = data or {}
+        notification_type = payload.get("type")
+        channel_id = "default"
+        if notification_type == "new_offer":
+            channel_id = "offers"
+        elif notification_type in ["match_found", "match_confirmed", "kyc_approved", "kyc_rejected"]:
+            # Eşleşme: teklif bildirimi geldiği için "offers" kanalı kullan (aynı kanal = aynı davranış)
+            channel_id = "offers"
+        elif notification_type in ["incoming_call", "incoming_daily_call"]:
+            channel_id = "calls"
+        elif notification_type == "admin_notification":
+            channel_id = "admin"
+        elif notification_type in ("driver_on_the_way", "driver_arrived", "trip_started", "trip_completed", "new_ride_request", "matched"):
+            channel_id = "offers"
+
         message = {
             "to": token,
             "sound": "default",
             "title": title,
             "body": body,
-            "data": data or {},
+            "data": payload,
             "priority": "high",
-            "channelId": "offers",
+            "channelId": channel_id,
             "_displayInForeground": True
         }
-        
-        logger.info(f"🔔 Expo API'ye gönderiliyor: {token[:30]}...")
-        
+        messages_payload = [message]
+
+        logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId={channel_id}, token={token[:50]}...")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if EXPO_ACCESS_TOKEN:
+            headers["Authorization"] = f"Bearer {EXPO_ACCESS_TOKEN}"
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 "https://exp.host/--/api/v2/push/send",
-                json=message,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                }
+                json=messages_payload,
+                headers=headers,
             )
-            
+
             logger.info(f"🔔 Expo API yanıtı: status={response.status_code}")
-            
-            if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("data", {}).get("status") == "error":
-                    error_msg = response_data.get("data", {}).get("message", "Unknown error")
-                    logger.error(f"❌ Expo API hatası: {error_msg}")
-                    return False
-                
-                logger.info(f"✅ Expo push başarılı")
-                return True
-            else:
-                logger.error(f"❌ Expo push hatası: HTTP {response.status_code}")
-                return False
+
+            if response.status_code != 200:
+                return False, {"http_status": response.status_code, "body": response.text[:500]}
+
+            response_data = response.json()
+            receipts = response_data.get("data") or []
+            if not receipts:
+                return False, {"error": "boş receipt listesi"}
+            first = receipts[0]
+            if first.get("status") == "error":
+                err_msg = first.get("message", "bilinmeyen hata")
+                err_details = first.get("details") or first
+                logger.error(f"❌ Expo API hatası: {err_msg} | details={err_details}")
+                return False, first
+            logger.info(f"✅ Expo push başarılı (receipt status={first.get('status', 'ok')})")
+            return True, first
     except Exception as e:
         logger.error(f"❌ Expo API exception: {e}")
-        return False
+        return False, {"exception": str(e)}
+
+
+async def send_expo_notification(token: str, title: str, body: str, data: dict = None):
+    """Expo Push API ile bildirim gönder"""
+    success, _ = await _send_expo_and_get_receipt(token, title, body, data)
+    return success
 
 async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):
-    """Toplu push bildirim gönder - users tablosundan push_token kullanır"""
+    """Toplu push bildirim gönder - users.push_token kaynağını kullanır."""
     try:
-        import httpx
-        
-        # Users tablosundan push_token'ları al
         query = supabase.table("users").select("id, push_token, driver_details, driver_online")
         
         if target == "drivers":
@@ -7393,41 +8454,22 @@ async def send_bulk_push_notification(title: str, body: str, target: str = "all"
         if not result.data:
             return 0
         
-        # Push token'ı olan kullanıcıları filtrele
-        messages = []
-        user_ids = []
-        for user in result.data:
-            token = user.get("push_token")
-            if token and token.startswith("ExponentPushToken"):
-                messages.append({
-                    "to": token,
-                    "sound": "default",
-                    "title": title,
-                    "body": body,
-                    "data": data or {},
-                    "priority": "high",
-                    "channelId": "default"
-                })
-                user_ids.append(user["id"])
-        
-        if not messages:
+        user_ids = [
+            user["id"]
+            for user in result.data
+            if user.get("id")
+            and user.get("push_token")
+            and ExpoPushService.is_valid_token(user.get("push_token"))
+        ]
+
+        if not user_ids:
             logger.info(f"📭 Push token'ı olan kullanıcı bulunamadı (target={target})")
             return 0
-        
-        sent_count = 0
-        async with httpx.AsyncClient() as client:
-            # 100'lük gruplar halinde gönder
-            for i in range(0, len(messages), 100):
-                batch = messages[i:i+100]
-                response = await client.post(
-                    "https://exp.host/--/api/v2/push/send",
-                    json=batch,
-                    headers={"Content-Type": "application/json"}
-                )
-                if response.status_code == 200:
-                    sent_count += len(batch)
-        
-        logger.info(f"📤 Toplu push gönderildi: {sent_count}/{len(messages)} kullanıcı - {title}")
+
+        send_result = await send_push_notifications_to_users(user_ids, title, body, data)
+        sent_count = send_result["sent"]
+
+        logger.info(f"📤 Toplu push gönderildi: {sent_count}/{send_result['total']} kullanıcı - {title}")
         
         # Admin bildirimini kaydet
         try:
@@ -7447,7 +8489,7 @@ async def send_bulk_push_notification(title: str, body: str, target: str = "all"
         return 0
 
 @api_router.post("/admin/notifications/send")
-async def admin_send_push(admin_phone: str, title: str, body: str, target: str = "all", user_id: str = None):
+async def admin_send_push(admin_phone: str, title: str, body: str, target: str = "all", user_id: str = None, data: str = None):
     """Admin - Push bildirim gönder"""
     try:
         if admin_phone not in ADMIN_PHONE_NUMBERS:
@@ -7468,16 +8510,46 @@ async def admin_send_push(admin_phone: str, title: str, body: str, target: str =
             logger.warning(f"Bildirim kaydedilemedi (tablo olmayabilir): {save_err}")
         
         # Gönder
+        payload = {"type": "admin_notification", "target": target}
+        if data:
+            payload["raw_data"] = data
+
+        total_users = 0
+        users_with_token = 0
+
         if user_id:
-            success = await send_push_notification(user_id, title, body)
+            success = await send_push_notification(user_id, title, body, payload)
             sent_count = 1 if success else 0
         else:
-            sent_count = await send_bulk_push_notification(title, body, target)
+            # Hedef kitle sayıları (0 kişiye gidince nedenini göstermek için)
+            try:
+                if target == "all":
+                    r = supabase.table("users").select("id, push_token").execute()
+                    total_users = len(r.data or [])
+                    users_with_token = sum(1 for u in (r.data or []) if u.get("push_token") and ExpoPushService.is_valid_token(u.get("push_token")))
+                elif target == "drivers":
+                    r = supabase.table("users").select("id, push_token, driver_details").not_.is_("driver_details", "null").execute()
+                    total_users = len(r.data or [])
+                    users_with_token = sum(1 for u in (r.data or []) if u.get("push_token") and ExpoPushService.is_valid_token(u.get("push_token")))
+                elif target == "passengers":
+                    r = supabase.table("users").select("id, push_token, driver_details").execute()
+                    passengers = [u for u in (r.data or []) if not u.get("driver_details")]
+                    total_users = len(passengers)
+                    users_with_token = sum(1 for u in passengers if u.get("push_token") and ExpoPushService.is_valid_token(u.get("push_token")))
+            except Exception:
+                pass
+            sent_count = await send_bulk_push_notification(title, body, target, payload)
+        
+        msg = f"{sent_count} kullanıcıya bildirim gönderildi"
+        if sent_count == 0 and total_users >= 0:
+            msg += f". (Toplam {total_users} kullanıcı, {users_with_token} tanesinde bildirim token'ı kayıtlı. Uygulamada bildirim iznini açıp uygulamayı kapatıp açın.)"
         
         return {
             "success": True,
             "sent_count": sent_count,
-            "message": f"{sent_count} kullanıcıya bildirim gönderildi"
+            "message": msg,
+            "total_users": total_users,
+            "users_with_token": users_with_token
         }
     except HTTPException:
         raise
@@ -8903,48 +9975,37 @@ async def admin_send_push_notification(admin_phone: str, title: str, message: st
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         # Hedef kullanıcıları belirle
-        push_tokens = []
+        target_rows = []
         
         if target == "all":
-            result = supabase.table("users").select("push_token").not_.is_("push_token", "null").execute()
-            push_tokens = [u["push_token"] for u in (result.data or []) if u.get("push_token")]
+            result = supabase.table("users").select("id, push_token").execute()
+            target_rows = result.data or []
         elif target == "drivers":
-            result = supabase.table("users").select("push_token").eq("driver_online", True).not_.is_("push_token", "null").execute()
-            push_tokens = [u["push_token"] for u in (result.data or []) if u.get("push_token")]
+            result = supabase.table("users").select("id, push_token").eq("driver_online", True).execute()
+            target_rows = result.data or []
         elif target == "passengers":
             # Driver olmayan kullanıcılar
-            result = supabase.table("users").select("push_token, driver_online").not_.is_("push_token", "null").execute()
-            push_tokens = [u["push_token"] for u in (result.data or []) if u.get("push_token") and not u.get("driver_online")]
+            result = supabase.table("users").select("id, push_token, driver_online").execute()
+            target_rows = [u for u in (result.data or []) if not u.get("driver_online")]
         elif target == "specific" and user_ids:
             ids = [uid.strip() for uid in user_ids.split(",")]
-            for uid in ids:
-                result = supabase.table("users").select("push_token").eq("id", uid).execute()
-                if result.data and result.data[0].get("push_token"):
-                    push_tokens.append(result.data[0]["push_token"])
+            result = supabase.table("users").select("id, push_token").in_("id", ids).execute()
+            target_rows = result.data or []
         
-        # Expo push notification gönder
-        sent_count = 0
-        failed_count = 0
-        
-        async with httpx.AsyncClient() as client:
-            for token in push_tokens:
-                try:
-                    response = await client.post(
-                        "https://exp.host/--/api/v2/push/send",
-                        json={
-                            "to": token,
-                            "title": title,
-                            "body": message,
-                            "sound": "default",
-                            "priority": "high"
-                        }
-                    )
-                    if response.status_code == 200:
-                        sent_count += 1
-                    else:
-                        failed_count += 1
-                except:
-                    failed_count += 1
+        token_user_ids = [
+            row["id"]
+            for row in target_rows
+            if row.get("id") and ExpoPushService.is_valid_token(row.get("push_token"))
+        ]
+
+        push_result = await send_push_notifications_to_users(
+            user_ids=token_user_ids,
+            title=title,
+            body=message,
+            data={"type": "admin_push", "target": target}
+        )
+        sent_count = push_result["sent"]
+        failed_count = push_result["failed"]
         
         # Log kaydet
         supabase.table("notification_logs").insert({
@@ -8962,7 +10023,7 @@ async def admin_send_push_notification(admin_phone: str, title: str, message: st
             "success": True, 
             "sent": sent_count, 
             "failed": failed_count,
-            "total_tokens": len(push_tokens)
+            "total_tokens": len(token_user_ids)
         }
     except Exception as e:
         logger.error(f"Admin push notification error: {e}")
@@ -9034,14 +10095,14 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
 app.include_router(api_router)
 
 # ==================== SOCKET.IO ENABLED APP ====================
-# socket_app burada oluşturuluyor (route'lar eklendikten sonra)
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/api/socket.io')
-
-# Supervisor server:socket_app olarak çalıştırmalı
-# Eğer server:app olarak çalışıyorsa, app'i socket_app ile değiştir
-# Bu sayede hem FastAPI route'ları hem Socket.IO çalışır
+# Combine Socket.IO + FastAPI. Run uvicorn with socket_app, NOT app.
+socket_app = socketio.ASGIApp(
+    sio,
+    other_asgi_app=fastapi_app,
+    socketio_path="/socket.io"
+)
 
 if __name__ == "__main__":
     import uvicorn
-    # Socket.IO + FastAPI birlikte çalıştır
-    uvicorn.run(socket_app, host="0.0.0.0", port=8001)
+    # CRITICAL: Must run socket_app so /socket.io is served. FastAPI routes stay on fastapi_app.
+    uvicorn.run(socket_app, host="0.0.0.0", port=SOCKET_SERVER_PORT)

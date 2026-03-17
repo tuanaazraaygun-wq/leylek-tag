@@ -178,6 +178,7 @@ export default function useSocket({
   const socketContext = useSocketContext();
   const {
     socket,
+    emitWithLog,
     isConnected,
     isRegistered,
     connect,
@@ -627,17 +628,24 @@ export default function useSocket({
     contextEmitRejectOffer(data);
   }, [contextEmitRejectOffer]);
 
-  // 🆕 MARTI TAG: Sürücü teklifi kabul eder
+  // 🆕 MARTI TAG: Sürücü teklifi kabul eder — socket emit with debug log
   const emitDriverAcceptOffer = useCallback((data: {
     tag_id: string;
+    trip_id?: string;
     driver_id: string;
     driver_name: string;
   }) => {
-    if (socket?.connected) {
-      console.log('✅ [useSocket] SÜRÜCÜ TEKLİFİ KABUL EDİYOR:', data);
-      socket.emit('driver_accept_offer', data);
+    if (!socket?.connected) {
+      console.error('Socket not connected!');
     }
-  }, [socket]);
+    const payload = {
+      tag_id: data.tag_id,
+      trip_id: data.trip_id ?? data.tag_id,
+      driver_id: data.driver_id,
+      driver_name: data.driver_name,
+    };
+    emitWithLog('driver_accept_offer', payload);
+  }, [socket, emitWithLog]);
 
   // ══════════ KONUM FONKSİYONLARI ══════════
 

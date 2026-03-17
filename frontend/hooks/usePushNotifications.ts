@@ -1,14 +1,16 @@
 /**
- * LeylekTag Push Notifications Hook - FCM Native Token
- * Expo yerine direkt FCM token kullanır
+ * LeylekTag Push Notifications Hook
+ * Tek bir Expo push akışı kullanır.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 
-const API_URL = 'https://leylektag-debug.preview.emergentagent.com/api';
+const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 'https://api.leylektag.com';
+const API_URL = `${BACKEND_URL.replace(/\/$/, '')}/api`;
 
 // Bildirim handler
 Notifications.setNotificationHandler({
@@ -21,7 +23,7 @@ Notifications.setNotificationHandler({
 
 export interface PushNotificationHook {
   pushToken: string | null;
-  tokenType: 'fcm' | 'expo' | null;
+  tokenType: 'expo' | null;
   notification: Notifications.Notification | null;
   registerForPushNotifications: () => Promise<string | null>;
   registerPushToken: (userId: string) => Promise<boolean>;
@@ -30,7 +32,7 @@ export interface PushNotificationHook {
 
 export function usePushNotifications(): PushNotificationHook {
   const [pushToken, setPushToken] = useState<string | null>(null);
-  const [tokenType, setTokenType] = useState<'fcm' | 'expo' | null>(null);
+  const [tokenType, setTokenType] = useState<'expo' | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
   
   const notificationListener = useRef<Notifications.Subscription>();
@@ -55,9 +57,34 @@ export function usePushNotifications(): PushNotificationHook {
       lightColor: '#00FF00',
       sound: 'default',
     });
+
+    await Notifications.setNotificationChannelAsync('match', {
+      name: 'Eslesme Bildirimleri',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 400, 200, 400],
+      lightColor: '#10B981',
+      sound: 'default',
+    });
+
+    await Notifications.setNotificationChannelAsync('calls', {
+      name: 'Arama Bildirimleri',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 700, 300, 700],
+      lightColor: '#EF4444',
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+
+    await Notifications.setNotificationChannelAsync('admin', {
+      name: 'Duyurular',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 150, 250],
+      lightColor: '#3FA9F5',
+      sound: 'default',
+    });
   };
 
-  // Token al - önce native FCM, sonra Expo
+  // Tek bir Expo push token akisi kullan. Kanal önce oluşturulur, sonra token alınır.
   const registerForPushNotifications = useCallback(async (): Promise<string | null> => {
     if (!Device.isDevice) {
       console.log('[PUSH] Simülatör - token alınamaz');
@@ -65,6 +92,7 @@ export function usePushNotifications(): PushNotificationHook {
     }
 
     try {
+      // Android: "default" ve diğer kanallar token kaydından ÖNCE oluşturulur (uygulama açılışında _layout'ta da oluşturuluyor)
       await setupNotificationChannels();
 
       // İzin kontrolü
@@ -81,33 +109,24 @@ export function usePushNotifications(): PushNotificationHook {
         return null;
       }
 
-      // Önce native FCM token'ı dene (Android için)
-      if (Platform.OS === 'android') {
-        try {
-          const deviceToken = await Notifications.getDevicePushTokenAsync();
-          if (deviceToken && deviceToken.data) {
-            const token = deviceToken.data as string;
-            console.log('[PUSH] FCM Native Token alındı:', token.substring(0, 30) + '...');
-            setPushToken(token);
-            setTokenType('fcm');
-            return token;
-          }
-        } catch (fcmError) {
-          console.log('[PUSH] FCM token hatası, Expo token deneniyor:', fcmError);
-        }
-      }
-
-      // Fallback: Expo Push Token
       try {
-        const Constants = require('expo-constants').default;
-        const projectId = Constants.expoConfig?.extra?.eas?.projectId || 'f00346b0-b9cb-47f9-a647-7f56b168e3a9';
-        
+        const projectId =
+          Constants.expoConfig?.extra?.eas?.projectId ||
+          Constants.easConfig?.projectId;
+
+        if (!projectId) {
+          console.log('[PUSH] EAS projectId bulunamadı');
+          return null;
+        }
+
         const expoToken = await Notifications.getExpoPushTokenAsync({ projectId });
         if (expoToken && expoToken.data) {
-          console.log('[PUSH] Expo Token alındı:', expoToken.data.substring(0, 30) + '...');
-          setPushToken(expoToken.data);
+          const token = expoToken.data;
+          console.log('EXPO TOKEN:', token);
+          console.log('[PUSH] Expo Token alındı:', token.substring(0, 30) + '...');
+          setPushToken(token);
           setTokenType('expo');
-          return expoToken.data;
+          return token;
         }
       } catch (expoError) {
         console.log('[PUSH] Expo token hatası:', expoError);
@@ -129,11 +148,8 @@ export function usePushNotifications(): PushNotificationHook {
 
     try {
       let token = pushToken;
-      let type = tokenType;
-      
       if (!token) {
         token = await registerForPushNotifications();
-        type = tokenType;
       }
 
       if (!token) {
@@ -141,7 +157,7 @@ export function usePushNotifications(): PushNotificationHook {
         return false;
       }
 
-      console.log('[PUSH] Backend\'e kaydediliyor:', type, token.substring(0, 30) + '...');
+      console.log('[PUSH] Backend\'e kaydediliyor: expo', token.substring(0, 30) + '...');
 
       const response = await fetch(`${API_URL}/user/register-push-token`, {
         method: 'POST',
@@ -149,7 +165,6 @@ export function usePushNotifications(): PushNotificationHook {
         body: JSON.stringify({
           user_id: userId,
           push_token: token,
-          token_type: type || 'fcm',
           platform: Platform.OS,
         }),
       });
@@ -167,7 +182,7 @@ export function usePushNotifications(): PushNotificationHook {
       console.log('[PUSH] Kayıt hatası:', error);
       return false;
     }
-  }, [pushToken, tokenType, registerForPushNotifications]);
+  }, [pushToken, registerForPushNotifications]);
 
   // Token sil
   const removePushToken = useCallback(async (userId: string): Promise<void> => {
@@ -196,10 +211,10 @@ export function usePushNotifications(): PushNotificationHook {
 
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, []);
