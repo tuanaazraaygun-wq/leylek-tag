@@ -19,12 +19,14 @@ import hashlib
 import httpx
 import json
 import time
+import asyncio
 
 # Socket.IO
 import socketio
 
-# Supabase
-from supabase import create_client, Client
+# Supabase — tek service role client: backend/supabase_client.py
+from supabase import Client
+import supabase_client as _supabase_core
 
 # Agora Token Builder
 from agora_token_builder import RtcTokenBuilder
@@ -56,17 +58,21 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     print("❌ SOCKET CLIENT DISCONNECTED:", sid)
-    # Kullanıcıyı connected_users'dan kaldır
-    user_to_remove = None
-    for user_id, socket_id in connected_users.items():
-        if socket_id == sid:
-            user_to_remove = user_id
-            break
-    if user_to_remove:
-        del connected_users[user_to_remove]
-        logger.info(f"🔌 Socket ayrıldı: {sid} (user: {user_to_remove})")
+    # Aynı sid'e kayıtlı tüm key'leri kaldır (orijinal + normalized user_id)
+    to_remove = [uid for uid, s in connected_users.items() if s == sid]
+    for uid in to_remove:
+        del connected_users[uid]
+    if to_remove:
+        logger.info(f"🔌 Socket ayrıldı: {sid} (user: {to_remove})")
     else:
         logger.info(f"🔌 Socket ayrıldı: {sid}")
+
+def _normalize_user_room(user_id: str) -> str:
+    """UUID/user_id için tutarlı room adı (büyük/küçük harf uyumsuzluğunu önler)."""
+    if not user_id:
+        return ""
+    return f"user_{str(user_id).strip().lower()}"
+
 
 @sio.event
 async def register(sid, data):
@@ -74,10 +80,11 @@ async def register(sid, data):
     user_id = data.get('user_id')
     if user_id:
         connected_users[user_id] = sid
+        # Aynı kullanıcı normalized id ile de bulunabilsin (emit'te kullanılıyor)
+        connected_users[str(user_id).strip().lower()] = sid
         
-        # 🔥 KRİTİK: Kullanıcıyı kendi room'una join et
-        # Bu sayede show_rating_modal gibi eventler alınabilir
-        room_name = f"user_{user_id}"
+        # 🔥 KRİTİK: Kullanıcıyı kendi room'una join et (normalized = her zaman aynı room)
+        room_name = _normalize_user_room(user_id)
         await sio.enter_room(sid, room_name)
         
         logger.info(f"📱 Kullanıcı kayıtlı: {user_id} -> {sid} (room: {room_name})")
@@ -399,14 +406,95 @@ DAILY_API_URL = "https://api.daily.co/v1"
 logger.info("✅ Daily.co API yapılandırıldı")
 
 # ==================== SÜRÜCÜ AÇILIŞ PAKETLERİ ====================
+# DRIVER_UNLIMITED_FREE_PERIOD=True: Paket zorunluluğu yok; onaylı tüm sürücüler ücretsiz kullanır.
+# False yapıldığında: driver_active_until ile paket süresi ve aşağıdaki DRIVER_PACKAGES devreye girer.
+DRIVER_UNLIMITED_FREE_PERIOD = True
 DRIVER_PACKAGES = {
-    "3_hours": {"hours": 3, "price_tl": 120, "name": "3 Saat"},
-    "6_hours": {"hours": 6, "price_tl": 200, "name": "6 Saat"},
-    "9_hours": {"hours": 9, "price_tl": 260, "name": "9 Saat"},
-    "12_hours": {"hours": 12, "price_tl": 320, "name": "12 Saat"},
-    "24_hours": {"hours": 24, "price_tl": 400, "name": "24 Saat"},
+    "24_hours": {"hours": 24, "price_tl": 400, "name": "Günlük Paket"},
 }
-logger.info("✅ Sürücü paketleri yapılandırıldı")
+logger.info(
+    "✅ Sürücü paketleri: %s",
+    "şu an sınırsız ücretsiz dönem" if DRIVER_UNLIMITED_FREE_PERIOD else "paket süresi + günlük paket",
+)
+
+
+def _apply_driver_active_until_filter(query, now_iso: str):
+    """Ücretsiz dönemde driver_active_until > now filtresi uygulanmaz (online yeterli)."""
+    if DRIVER_UNLIMITED_FREE_PERIOD:
+        return query
+    return query.gt("driver_active_until", now_iso)
+
+
+def _has_active_package_for_dispatch(driver_active_until, now_iso: str) -> bool:
+    """Debug / admin için: ücretsiz dönemde her zaman True sayılır."""
+    if DRIVER_UNLIMITED_FREE_PERIOD:
+        return True
+    return bool(driver_active_until and driver_active_until > now_iso)
+
+
+def _canonical_vehicle_kind(value) -> Optional[str]:
+    """
+    Supabase users.driver_details içi değerler: 'car' | 'motorcycle' kabul edilir.
+    'motor' takma adı motorcycle sayılır. Tanınmayan/boş -> None (yolcu tercihi yoksa filtre yok).
+    """
+    if value is None or value == "":
+        return None
+    s = str(value).strip().lower()
+    if s == "car":
+        return "car"
+    if s in ("motorcycle", "motor"):
+        return "motorcycle"
+    return None
+
+
+def _driver_details_as_dict(user_row: dict) -> dict:
+    """users.driver_details: JSONB dict veya nadiren JSON string -> dict."""
+    dd = user_row.get("driver_details")
+    if isinstance(dd, dict):
+        return dd
+    if isinstance(dd, str) and dd.strip():
+        try:
+            import json
+            parsed = json.loads(dd)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return {}
+
+
+def _driver_vehicle_kind_from_row(user_row: dict) -> Optional[str]:
+    """Sürücü tipi: users.driver_details->>'vehicle_kind' (canonical car|motorcycle veya None)."""
+    dd = _driver_details_as_dict(user_row)
+    return _canonical_vehicle_kind(dd.get("vehicle_kind"))
+
+
+def _passenger_preferred_vehicle_from_row(user_row: dict) -> Optional[str]:
+    """Yolcu tercihi: users.driver_details->>'passenger_preferred_vehicle'."""
+    dd = _driver_details_as_dict(user_row)
+    return _canonical_vehicle_kind(dd.get("passenger_preferred_vehicle"))
+
+
+def _effective_driver_vehicle_kind(driver_row: dict) -> Optional[str]:
+    """
+    Sürücü kayıtlı tipi; yoksa eski hesaplar için 'car' (motor özelliği öncesi tüm sürücüler araç sayılır).
+    Motor talebinde yalnızca motorcycle kayıtlı sürücüler kalır.
+    """
+    dv = _driver_vehicle_kind_from_row(driver_row)
+    if dv is not None:
+        return dv
+    return "car"
+
+
+def _driver_matches_passenger_vehicle_pref(driver_eff: str, passenger_pref: str) -> bool:
+    """
+    Katı eşleşme: yolcu car → yalnızca car sürücü; yolcu motorcycle → yalnızca motorcycle sürücü.
+    (Sürücüde vehicle_kind yoksa _effective_driver_vehicle_kind -> car.)
+    """
+    pp = _canonical_vehicle_kind(passenger_pref) or "car"
+    de = _canonical_vehicle_kind(driver_eff) or "car"
+    return pp == de
+
 
 # ==================== DISPATCH QUEUE CONFIG ====================
 DISPATCH_CONFIG = {
@@ -415,6 +503,11 @@ DISPATCH_CONFIG = {
     "driver_offer_timeout": 10,      # Sürücü yanıt süresi (saniye) - 10 sn
     "enabled": True,                 # Dispatch queue aktif mi
 }
+
+# Yolcu teklifi broadcast: aynı anda en yakın N sürücü; hepsi 20 sn içinde kabul edebilir (ilk kabul kazanır)
+BROADCAST_MAX_RECIPIENTS = 5
+BROADCAST_RADIUS_KM = 20
+BROADCAST_ACCEPT_WINDOW_SECONDS = 20
 
 # Sürücü Aktiflik Kuralları
 DRIVER_ACTIVATION_CONFIG = {
@@ -426,6 +519,67 @@ active_dispatch_tasks: dict = {}
 
 # Dispatch Queue In-Memory State (Supabase'e de yazılacak)
 dispatch_queues: dict = {}  # tag_id -> list of driver entries
+
+# Sıralı dispatch: tag bazında tam teklif bağlamı (DB tag satırında olmayan alanlar)
+dispatch_tag_context: dict = {}
+
+
+def clear_dispatch_in_memory_state():
+    """
+    Bellekteki sürücü/dispatch listeleri: kuyruk, tag bağlamı, timeout task'ları.
+    Process restart zaten sıfırlar; startup'ta da çağrılır (deploy sonrası kalıntı olmaması için).
+    """
+    global dispatch_queues, dispatch_tag_context, active_dispatch_tasks
+    global rolling_dispatch_tasks, rolling_dispatch_index
+    for _key, task in list(active_dispatch_tasks.items()):
+        try:
+            if task is not None and not task.done():
+                task.cancel()
+        except Exception:
+            pass
+    active_dispatch_tasks.clear()
+    dispatch_queues.clear()
+    dispatch_tag_context.clear()
+    for _tid, task in list(rolling_dispatch_tasks.items()):
+        try:
+            if task is not None and not task.done():
+                task.cancel()
+        except Exception:
+            pass
+    rolling_dispatch_tasks.clear()
+    rolling_dispatch_index.clear()
+    logger.info("🧹 Dispatch bellek durumu temizlendi (queues, tag_context, active_dispatch_tasks, rolling_dispatch)")
+
+
+# Sıralı eşleşme yarıçapı — şimdilik sabit 20 km (config override edilmez)
+SEQUENTIAL_DISPATCH_RADIUS_KM = 20
+
+# Geçici: sıralı dispatch + broadcast'ta araç tipi eşleşmesi yapma (true = tüm uygun sürücülere gönder)
+DISPATCH_VEHICLE_FILTER_DISABLED = True  # DEBUG: araç filtresi kapalı; teklif gelirse sorun filtrede
+
+# Rolling batch dispatch (yalnızca bellek; DB dispatch_queue / Supabase kuyruk yok)
+BATCH_SIZE = 5
+DISPATCH_TIMEOUT = 20
+DISPATCH_RADIUS_KM = 20
+
+# tag_id -> asyncio.Task (20s zamanlayıcı)
+rolling_dispatch_tasks: dict = {}
+# tag_id -> {"cursor": int, "drivers": list, "full_tag": dict, "current_batch": list[str]}
+rolling_dispatch_index: dict = {}
+
+# dispatch_queue tablosu (sql_migrations/schema_updates.sql) — bilinmeyen kolonla insert tüm kaydı düşürürdü
+DISPATCH_QUEUE_DB_KEYS = frozenset(
+    {
+        "id",
+        "tag_id",
+        "driver_id",
+        "priority",
+        "status",
+        "created_at",
+        "sent_at",
+        "responded_at",
+    }
+)
 
 # ==================== PROMOSYON KODU SİSTEMİ ====================
 import random
@@ -447,21 +601,31 @@ async def get_dispatch_config() -> dict:
         pass
     return DISPATCH_CONFIG
 
-async def find_eligible_drivers(pickup_lat: float, pickup_lng: float, exclude_ids: list = None) -> list:
+async def find_eligible_drivers(
+    pickup_lat: float,
+    pickup_lng: float,
+    exclude_ids: list = None,
+    passenger_vehicle_kind: Optional[str] = None,
+    radius_km: Optional[float] = None,
+) -> list:
     """
     Uygun sürücüleri bul ve öncelik sırasına göre sırala
     Kriterler: online, aktif paket, mesafe içinde
-    Sıralama: mesafe (yakın), rating (yüksek), last_active (yeni)
+    DISPATCH_VEHICLE_FILTER_DISABLED=True iken araç tipi filtrelenmez.
+    Aksi halde: araç talebi (car) / motorcycle eşleşmesi; sürücüde vehicle_kind yoksa eff=car.
+    Sıralama: mesafe (yakın), rating (yüksek)
     """
     try:
-        config = await get_dispatch_config()
-        radius_km = config.get("matching_radius_km", 15)
+        r_km = float(radius_km) if radius_km is not None else float(SEQUENTIAL_DISPATCH_RADIUS_KM)
+        # Yolcu tercihi (log / payload için); filtre kapalıyken eşleştirmede kullanılmaz
+        pref = _canonical_vehicle_kind(passenger_vehicle_kind) or "car"
         
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
         query = supabase.table("users").select(
-            "id, name, rating, latitude, longitude, last_active, driver_active_until, driver_online"
-        ).eq("driver_online", True).gt("driver_active_until", now)
+            "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details"
+        ).eq("driver_online", True)
+        query = _apply_driver_active_until_filter(query, now)
         
         result = query.execute()
         
@@ -469,16 +633,25 @@ async def find_eligible_drivers(pickup_lat: float, pickup_lng: float, exclude_id
             return []
         
         eligible_drivers = []
-        exclude_set = set(exclude_ids or [])
+        exclude_set = {str(x).strip().lower() for x in (exclude_ids or []) if x is not None}
         
         for driver in result.data:
-            # Exclude listesinde mi?
-            if driver["id"] in exclude_set:
+            # Exclude listesinde mi? (UUID string karşılaştırması)
+            if str(driver["id"]).strip().lower() in exclude_set:
                 continue
             
             # Konum var mı?
             if not driver.get("latitude") or not driver.get("longitude"):
                 continue
+
+            if not DISPATCH_VEHICLE_FILTER_DISABLED:
+                eff = _driver_vehicle_kind_from_row(driver)
+                if eff is None:
+                    eff = "car"
+                driver_id = str(driver["id"]).strip().lower()
+                logger.info(f"FILTER check driver={driver_id} pref={pref} eff={eff}")
+                if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                    continue
             
             # Mesafe hesapla
             from math import radians, sin, cos, sqrt, atan2
@@ -495,19 +668,23 @@ async def find_eligible_drivers(pickup_lat: float, pickup_lng: float, exclude_id
             distance_km = R * c
             
             # Yarıçap içinde mi?
-            if distance_km <= radius_km:
+            if distance_km <= r_km:
                 eligible_drivers.append({
-                    "driver_id": driver["id"],
+                    "driver_id": str(driver["id"]).strip().lower(),
                     "driver_name": driver.get("name", "Sürücü"),
                     "distance_km": round(distance_km, 2),
                     "rating": driver.get("rating", 5.0) or 5.0,
-                    "last_active": driver.get("last_active"),
                 })
         
         # Sırala: önce mesafe (yakın), sonra rating (yüksek)
         eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
         
-        logger.info(f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü bulundu")
+        if DISPATCH_VEHICLE_FILTER_DISABLED:
+            logger.info(
+                f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü (araç filtresi kapalı, tercih={pref} yalnızca bilgi)"
+            )
+        else:
+            logger.info(f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü (yolcu tercihi={pref})")
         return eligible_drivers
         
     except Exception as e:
@@ -520,13 +697,39 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
     Uygun sürücüleri bul, sırala ve queue'ya ekle
     """
     try:
+        if DISPATCH_VEHICLE_FILTER_DISABLED:
+            logger.info("Dispatch debug: vehicle filter disabled")
+
         config = await get_dispatch_config()
         max_drivers = config.get("max_driver_dispatch", 5)
+        
+        pref = _canonical_vehicle_kind(tag_data.get("passenger_preferred_vehicle"))
+        if pref is None and tag_data.get("passenger_id"):
+            try:
+                pr = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", tag_data["passenger_id"])
+                    .limit(1)
+                    .execute()
+                )
+                if pr.data:
+                    pref = _passenger_preferred_vehicle_from_row(pr.data[0])
+            except Exception as ex:
+                logger.warning(f"Yolcu araç tercihi okunamadı: {ex}")
+        pref = pref or "car"
+        
+        # Yolcunun kendisi sürücü listesine girmesin (aynı hesap / test)
+        excl = []
+        if tag_data.get("passenger_id"):
+            excl.append(tag_data["passenger_id"])
         
         # Uygun sürücüleri bul
         drivers = await find_eligible_drivers(
             tag_data.get("pickup_lat", 0),
-            tag_data.get("pickup_lng", 0)
+            tag_data.get("pickup_lng", 0),
+            exclude_ids=excl,
+            passenger_vehicle_kind=pref,
         )
         
         if not drivers:
@@ -553,12 +756,17 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
             }
             queue_entries.append(entry)
         
-        # Supabase'e kaydet (dispatch_queue tablosu varsa)
+        # Supabase'e kaydet — yalnızca tabloda gerçekten olan kolonlar (şemada driver_name/distance_km yok;
+        # eski kod bilinmeyen kolonlarla insert atınca tüm kayıt düşer; socket çoklu worker'da kaçarsa polling de kurtarmazdı.)
         try:
             for entry in queue_entries:
-                supabase.table("dispatch_queue").insert(entry).execute()
+                db_row = {k: entry[k] for k in DISPATCH_QUEUE_DB_KEYS if k in entry}
+                supabase.table("dispatch_queue").insert(db_row).execute()
         except Exception as db_err:
-            logger.warning(f"Dispatch queue DB kayıt hatası (tablo olmayabilir): {db_err}")
+            logger.error(
+                f"Dispatch queue DB kayıt hatası — teklif socket ile gidebilir ama "
+                f"dispatch-pending-offer (polling) çalışmaz; tablo/FK kontrol edin: {db_err}"
+            )
         
         # In-memory'de tut
         dispatch_queues[tag_id] = queue_entries
@@ -570,6 +778,80 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
         logger.error(f"❌ Create dispatch queue error: {e}")
         return False
 
+
+async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> None:
+    """
+    Teklif socket event'i: önce doğrudan sid (connected_users), yoksa user room.
+    UUID büyük/küçük harf ve register anahtarı uyumsuzluğunu azaltır.
+    """
+    try:
+        raw = str(driver_id).strip().lower() if driver_id is not None else ""
+        if not raw:
+            logger.warning("emit_new_passenger_offer_to_driver: boş driver_id")
+            return
+        try:
+            resolved = await resolve_user_id(raw)
+            if resolved:
+                raw = str(resolved).strip().lower()
+        except Exception:
+            pass
+        room = _normalize_user_room(raw)
+        sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip())
+        if sid:
+            await sio.emit("new_passenger_offer", offer_data, to=sid)
+            logger.info(
+                f"📤 new_passenger_offer to=sid driver={raw[:13]}… tag={offer_data.get('tag_id')}"
+            )
+        else:
+            await sio.emit("new_passenger_offer", offer_data, room=room)
+            logger.warning(
+                f"📤 new_passenger_offer room-only (bu sürücü socket register yok?) "
+                f"driver={raw[:13]}… room={room} tag={offer_data.get('tag_id')}"
+            )
+    except Exception as e:
+        logger.error(f"new_passenger_offer emit hatası: {e}")
+
+
+async def emit_passenger_offer_revoked(driver_id: str, tag_id: str):
+    """Önceki sürücü teklifi artık göremesin (sıralı dispatch)."""
+    try:
+        raw = str(driver_id).strip().lower() if driver_id else ""
+        sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip()) if driver_id else None
+        payload = {"tag_id": tag_id}
+        if sid:
+            await sio.emit("passenger_offer_revoked", payload, to=sid)
+        else:
+            await sio.emit("passenger_offer_revoked", payload, room=_normalize_user_room(raw or str(driver_id)))
+    except Exception as e:
+        logger.warning(f"passenger_offer_revoked emit hatası: {e}")
+
+
+async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> None:
+    """Tek kullanıcıya socket event: önce connected_users sid, yoksa user_<uuid> room."""
+    try:
+        if user_id is None:
+            return
+        raw = str(user_id).strip().lower()
+        if not raw:
+            return
+        try:
+            resolved = await resolve_user_id(raw)
+            if resolved:
+                raw = str(resolved).strip().lower()
+        except Exception:
+            pass
+        room = _normalize_user_room(raw)
+        sid = connected_users.get(raw) or connected_users.get(str(user_id).strip())
+        if sid:
+            await sio.emit(event_name, payload, to=sid)
+            logger.info(f"📤 {event_name} to=sid user={raw[:13]}…")
+        else:
+            await sio.emit(event_name, payload, room=room)
+            logger.info(f"📤 {event_name} room={room} (sid yok)")
+    except Exception as e:
+        logger.warning(f"{event_name} emit hatası: {e}")
+
+
 async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     """
     Sıradaki sürücüye teklif gönder
@@ -577,8 +859,10 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     """
     try:
         config = await get_dispatch_config()
-        timeout = config.get("driver_offer_timeout", 20)
-        
+        timeout = config.get("driver_offer_timeout", 10)
+        merged = {**(dispatch_tag_context.get(tag_id) or {}), **(tag_data or {})}
+        dispatch_tag_context[tag_id] = merged
+
         queue = dispatch_queues.get(tag_id, [])
         
         # Bekleyen sürücü bul
@@ -589,9 +873,19 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
                 break
         
         if not next_entry:
-            logger.info(f"📭 Dispatch: Tag {tag_id} - Tüm sürücüler denendi, broadcast'a geç")
-            # Tüm sürücüler denendi, broadcast yap (fallback)
-            await broadcast_offer_to_all(tag_id, tag_data)
+            logger.info(f"📭 Dispatch: Tag {tag_id} - Kuyruk bitti, yayın yok (sıralı mod)")
+            dispatch_tag_context.pop(tag_id, None)
+            dispatch_queues.pop(tag_id, None)
+            passenger_id = merged.get("passenger_id")
+            if passenger_id:
+                try:
+                    await sio.emit(
+                        "dispatch_exhausted",
+                        {"tag_id": tag_id, "message": "Yakında uygun sürücü bulunamadı"},
+                        room=_normalize_user_room(passenger_id),
+                    )
+                except Exception as emit_err:
+                    logger.warning(f"dispatch_exhausted emit: {emit_err}")
             return
         
         driver_id = next_entry["driver_id"]
@@ -613,27 +907,53 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         # Socket ile sürücüye teklif gönder
         offer_data = {
             "tag_id": tag_id,
-            "passenger_id": tag_data.get("passenger_id"),
-            "passenger_name": tag_data.get("passenger_name", "Yolcu"),
-            "pickup_location": tag_data.get("pickup_location"),
-            "pickup_lat": tag_data.get("pickup_lat"),
-            "pickup_lng": tag_data.get("pickup_lng"),
-            "dropoff_location": tag_data.get("dropoff_location"),
-            "dropoff_lat": tag_data.get("dropoff_lat"),
-            "dropoff_lng": tag_data.get("dropoff_lng"),
-            "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
-            "distance_km": tag_data.get("distance_km", 0),
-            "estimated_minutes": tag_data.get("estimated_minutes", 0),
+            "passenger_id": merged.get("passenger_id"),
+            "passenger_name": merged.get("passenger_name", "Yolcu"),
+            "pickup_location": merged.get("pickup_location"),
+            "pickup_lat": merged.get("pickup_lat"),
+            "pickup_lng": merged.get("pickup_lng"),
+            "dropoff_location": merged.get("dropoff_location"),
+            "dropoff_lat": merged.get("dropoff_lat"),
+            "dropoff_lng": merged.get("dropoff_lng"),
+            "offered_price": merged.get("final_price") or merged.get("offered_price"),
+            "distance_km": merged.get("distance_km", 0),
+            "estimated_minutes": merged.get("estimated_minutes", 0),
             "distance_to_pickup": next_entry.get("distance_km", 0),
             "dispatch_timeout": timeout,
             "is_dispatch": True,  # Bu bir dispatch teklifi
+            "passenger_vehicle_kind": merged.get("passenger_preferred_vehicle") or "car",
         }
         
-        await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
+        await emit_new_passenger_offer_to_driver(driver_id, offer_data)
         logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
-        # Push tüm kuyruktakilere create_ride_offer içinde gönderildi; burada tekrar göndermiyoruz.
+        # Sadece aktif sıradaki sürücüye push
+        price = merged.get("final_price") or merged.get("offered_price", 0)
+        distance_km = merged.get("distance_km") or merged.get("trip_distance_km") or 0
+        price_int = int(price) if price else 0
+        distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
+        body = f"{price_int} TL • {distance_str} - {timeout} sn içinde kabul et"
+        try:
+            await send_trip_push_and_log(
+                driver_id,
+                "new_ride_request",
+                "Yeni yolculuk teklifi",
+                body,
+                {
+                    "type": "new_offer",
+                    "tag_id": tag_id,
+                    "price": price,
+                    "distance_km": distance_km,
+                    "timeout": timeout,
+                    "action": "accept",
+                    "is_dispatch": True,
+                },
+            )
+        except Exception as push_err:
+            logger.warning(f"⚠️ Dispatch push gönderilemedi: {driver_id} - {push_err}")
         
         # Timeout task başlat
+        expired_driver_id = driver_id
+
         async def timeout_handler():
             await asyncio.sleep(timeout)
             
@@ -644,13 +964,15 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
                 next_entry["status"] = "expired"
                 try:
                     supabase.table("dispatch_queue").update({"status": "expired"}).eq("id", next_entry["id"]).execute()
-                except:
+                except Exception:
                     pass
                 
                 logger.info(f"⏱️ Dispatch timeout: tag={tag_id}, sürücü={driver_name}")
+                await emit_passenger_offer_revoked(expired_driver_id, tag_id)
                 
                 # Sonraki sürücüye geç
-                await dispatch_offer_to_next_driver(tag_id, tag_data)
+                fresh = dispatch_tag_context.get(tag_id, merged)
+                await dispatch_offer_to_next_driver(tag_id, fresh)
         
         # Task'ı kaydet
         task = asyncio.create_task(timeout_handler())
@@ -659,40 +981,77 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     except Exception as e:
         logger.error(f"❌ Dispatch offer error: {e}")
 
-async def broadcast_offer_to_all(tag_id: str, tag_data: dict):
-    """Fallback: 20 km içindeki online sürücülere broadcast (herkes değil)"""
+async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
+    """
+    20 km içinde uygun online sürücülere (araç filtresi DISPATCH_VEHICLE_FILTER_DISABLED ile kapalı olabilir)
+    mesafeye göre en yakın N kişiye aynı anda socket (`new_passenger_offer`) + push.
+    İlk kabul eden kazanır (accept_ride atomik).
+    Dönüş: bildirilen sürücü sayısı (0 = kimse yok / hata).
+    """
     try:
-        # 20 km içindeki sürücüleri bul
         pickup_lat = tag_data.get("pickup_lat")
         pickup_lng = tag_data.get("pickup_lng")
         
         if not pickup_lat or not pickup_lng:
             logger.warning(f"📢 Broadcast atlandı: konum bilgisi yok")
-            return
+            return 0
         
-        # 20 km içindeki online sürücüleri bul
+        if DISPATCH_VEHICLE_FILTER_DISABLED:
+            logger.info("Dispatch debug: vehicle filter disabled")
+
+        pref = _canonical_vehicle_kind(tag_data.get("passenger_preferred_vehicle"))
+        if pref is None and tag_data.get("passenger_id"):
+            try:
+                pr = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", tag_data["passenger_id"])
+                    .limit(1)
+                    .execute()
+                )
+                if pr.data:
+                    pref = _passenger_preferred_vehicle_from_row(pr.data[0])
+            except Exception:
+                pass
+        pref = pref or "car"
+        
         now = datetime.utcnow().isoformat()
-        drivers_result = supabase.table("users").select(
-            "id, latitude, longitude"
-        ).eq("driver_online", True).gt("driver_active_until", now).execute()
+        q = supabase.table("users").select(
+            "id, latitude, longitude, driver_details"
+        ).eq("driver_online", True)
+        drivers_result = _apply_driver_active_until_filter(q, now).execute()
         
         if not drivers_result.data:
             logger.info(f"📢 Broadcast: Uygun sürücü yok")
-            return
+            return 0
         
-        # Mesafe filtresi uygula
-        eligible_drivers = []
+        passenger_pid = tag_data.get("passenger_id")
+        # (driver_id, distance_km) — yarıçap + araç tipi
+        with_distance: list = []
         for driver in drivers_result.data:
             d_lat = driver.get("latitude")
             d_lng = driver.get("longitude")
-            if d_lat and d_lng:
-                distance = haversine_distance(pickup_lat, pickup_lng, d_lat, d_lng)
-                if distance <= 20:  # 20 km içinde
-                    eligible_drivers.append(driver["id"])
+            if not d_lat or not d_lng:
+                continue
+            if passenger_pid and str(driver["id"]) == str(passenger_pid):
+                continue
+            if not DISPATCH_VEHICLE_FILTER_DISABLED:
+                eff = _effective_driver_vehicle_kind(driver)
+                if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                    continue
+            dist_km = haversine_distance(pickup_lat, pickup_lng, d_lat, d_lng)
+            if dist_km <= BROADCAST_RADIUS_KM:
+                with_distance.append((driver["id"], dist_km))
         
-        if not eligible_drivers:
-            logger.info(f"📢 Broadcast: 20 km içinde sürücü yok")
-            return
+        if not with_distance:
+            logger.info(f"📢 Broadcast: {BROADCAST_RADIUS_KM} km içinde sürücü yok")
+            return 0
+        
+        with_distance.sort(key=lambda x: x[1])
+        top = with_distance[:BROADCAST_MAX_RECIPIENTS]
+        eligible_drivers = [d[0] for d in top]
+        
+        timeout_sec = BROADCAST_ACCEPT_WINDOW_SECONDS
         
         offer_data = {
             "tag_id": tag_id,
@@ -705,32 +1064,286 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict):
             "dropoff_lat": tag_data.get("dropoff_lat"),
             "dropoff_lng": tag_data.get("dropoff_lng"),
             "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
+            "distance_km": tag_data.get("distance_km", 0),
+            "estimated_minutes": tag_data.get("estimated_minutes", 0),
+            "dispatch_timeout": timeout_sec,
             "is_broadcast": True,
+            "passenger_vehicle_kind": pref,
         }
         
-        # Sadece 20 km içindeki sürücülere socket + push (fiyat, mesafe, 10 sn içinde kabul et)
         price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
-        distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
-        timeout_sec = 10
+        trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
         price_int = int(price) if price else 0
-        distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
+        distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
         body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
         for driver_id in eligible_drivers:
-            await sio.emit("new_passenger_offer", offer_data, room=f"user_{driver_id}")
+            await emit_new_passenger_offer_to_driver(str(driver_id).strip().lower(), offer_data)
             try:
                 await send_trip_push_and_log(
                     driver_id,
                     "new_ride_request",
                     "Yeni yolculuk teklifi",
                     body,
-                    {"type": "new_offer", "tag_id": tag_id, "price": price, "distance_km": distance_km, "timeout": timeout_sec, "action": "accept", "is_broadcast": True}
+                    {"type": "new_offer", "tag_id": tag_id, "price": price, "distance_km": trip_distance_km, "timeout": timeout_sec, "action": "accept", "is_broadcast": True}
                 )
             except Exception as push_err:
                 logger.warning(f"⚠️ Broadcast push sürücüye gönderilemedi: {driver_id} - {push_err}")
         
-        logger.info(f"📢 Broadcast teklif + push gönderildi: tag={tag_id}, {len(eligible_drivers)} sürücüye")
+        logger.info(
+            f"📢 Broadcast: tag={tag_id}, en yakın {len(eligible_drivers)}/{BROADCAST_MAX_RECIPIENTS} sürücü "
+            f"({BROADCAST_RADIUS_KM} km, {timeout_sec}s pencere, yolcu_araç_tipi={pref})"
+        )
+        return len(eligible_drivers)
     except Exception as e:
         logger.error(f"Broadcast error: {e}")
+        return 0
+
+
+# ==================== ROLLING BATCH DISPATCH (in-memory; no DB dispatch_queue) ====================
+
+
+async def rolling_dispatch_stop(
+    tag_id: str,
+    *,
+    revoke_offers: bool = True,
+    except_driver_id: Optional[str] = None,
+) -> None:
+    """Zamanlayıcıyı durdur, rolling state'i sil; isteğe bağlı batch'e remove_offer."""
+    old = rolling_dispatch_tasks.pop(tag_id, None)
+    if old is not None and not old.done():
+        try:
+            old.cancel()
+        except Exception:
+            pass
+    st = rolling_dispatch_index.pop(tag_id, None)
+    if revoke_offers and st:
+        ex = str(except_driver_id).strip().lower() if except_driver_id else None
+        for did in st.get("current_batch") or []:
+            if ex and str(did).strip().lower() == ex:
+                continue
+            try:
+                await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
+            except Exception:
+                pass
+
+
+async def rolling_dispatch_batch(tag_id: str) -> None:
+    """Önceki batch'e remove_offer; sonraki 5'e new_passenger_offer; 20s sonra waiting ise tekrar."""
+    state = rolling_dispatch_index.get(tag_id)
+    if not state:
+        return
+
+    old = rolling_dispatch_tasks.pop(tag_id, None)
+    if old is not None and not old.done():
+        try:
+            old.cancel()
+        except Exception:
+            pass
+
+    for did in state.get("current_batch") or []:
+        try:
+            await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
+        except Exception:
+            pass
+    state["current_batch"] = []
+
+    drivers = state.get("drivers") or []
+    tag_data = state.get("full_tag") or {}
+    n = len(drivers)
+    if n == 0:
+        await rolling_dispatch_stop(tag_id, revoke_offers=False)
+        return
+
+    start = int(state.get("cursor", 0))
+    if start >= n:
+        start = 0
+    end = min(start + BATCH_SIZE, n)
+    batch_entries = drivers[start:end]
+    next_idx = end
+    if next_idx >= n:
+        next_idx = 0
+    state["cursor"] = next_idx
+
+    if not batch_entries:
+        return
+
+    state["current_batch"] = [e["driver_id"] for e in batch_entries]
+
+    pref = _canonical_vehicle_kind(tag_data.get("passenger_preferred_vehicle")) or "car"
+    if tag_data.get("passenger_id"):
+        try:
+            pr = (
+                supabase.table("users")
+                .select("driver_details")
+                .eq("id", tag_data["passenger_id"])
+                .limit(1)
+                .execute()
+            )
+            if pr.data:
+                pref = _passenger_preferred_vehicle_from_row(pr.data[0]) or pref
+        except Exception:
+            pass
+    pref = pref or "car"
+
+    price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
+    trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
+    price_int = int(price) if price else 0
+    distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
+    body = f"{price_int} TL • {distance_str} - {DISPATCH_TIMEOUT} sn içinde kabul et"
+
+    offer_base = {
+        "tag_id": tag_id,
+        "passenger_id": tag_data.get("passenger_id"),
+        "passenger_name": tag_data.get("passenger_name", "Yolcu"),
+        "pickup_location": tag_data.get("pickup_location"),
+        "pickup_lat": tag_data.get("pickup_lat"),
+        "pickup_lng": tag_data.get("pickup_lng"),
+        "dropoff_location": tag_data.get("dropoff_location"),
+        "dropoff_lat": tag_data.get("dropoff_lat"),
+        "dropoff_lng": tag_data.get("dropoff_lng"),
+        "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
+        "distance_km": tag_data.get("distance_km", 0),
+        "estimated_minutes": tag_data.get("estimated_minutes", 0),
+        "dispatch_timeout": DISPATCH_TIMEOUT,
+        "is_rolling_batch": True,
+        "passenger_vehicle_kind": pref,
+    }
+
+    for entry in batch_entries:
+        d_id = entry["driver_id"]
+        offer_data = {**offer_base, "distance_to_pickup": entry.get("distance_km", 0)}
+        await emit_new_passenger_offer_to_driver(d_id, offer_data)
+        try:
+            await send_trip_push_and_log(
+                d_id,
+                "new_ride_request",
+                "Yeni yolculuk teklifi",
+                body,
+                {
+                    "type": "new_offer",
+                    "tag_id": tag_id,
+                    "price": price,
+                    "distance_km": trip_distance_km,
+                    "timeout": DISPATCH_TIMEOUT,
+                    "action": "accept",
+                    "is_rolling_batch": True,
+                },
+            )
+        except Exception as push_err:
+            logger.warning(f"⚠️ Rolling batch push: {d_id} - {push_err}")
+
+    logger.info(
+        f"📦 rolling_dispatch_batch tag={tag_id} batch={len(batch_entries)} "
+        f"idx {start}-{end - 1}/{n} next_cursor={next_idx}"
+    )
+
+    async def _timeout_tick():
+        try:
+            await asyncio.sleep(DISPATCH_TIMEOUT)
+            if tag_id not in rolling_dispatch_index:
+                return
+            tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
+            if not tr.data or tr.data[0].get("status") != "waiting":
+                await rolling_dispatch_stop(tag_id, revoke_offers=False)
+                return
+            await rolling_dispatch_batch(tag_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as ex:
+            logger.warning(f"rolling_dispatch_batch timer tag={tag_id}: {ex}")
+
+    rolling_dispatch_tasks[tag_id] = asyncio.create_task(_timeout_tick())
+
+
+async def rolling_dispatch_start(tag_id: str) -> int:
+    """DB'den tag; 20 km + vehicle_kind + mesafe sırası; ilk batch + timer. Dönüş: eligible sayısı."""
+    await rolling_dispatch_stop(tag_id, revoke_offers=False)
+    tr = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
+    if not tr.data:
+        logger.warning(f"rolling_dispatch_start: tag yok veya okunamadı tag_id={tag_id}")
+        return 0
+    row = tr.data[0]
+    if row.get("status") != "waiting":
+        logger.warning(
+            f"rolling_dispatch_start: tag status≠waiting (status={row.get('status')!r}) tag_id={tag_id}"
+        )
+        return 0
+    passenger_id = row.get("passenger_id") or row.get("user_id")
+    if passenger_id:
+        passenger_id = await resolve_user_id(passenger_id)
+    passenger_name = row.get("passenger_name") or "Yolcu"
+    passenger_pref = "car"
+    if passenger_id:
+        try:
+            prow = (
+                supabase.table("users")
+                .select("name, driver_details")
+                .eq("id", passenger_id)
+                .limit(1)
+                .execute()
+            )
+            if prow.data:
+                passenger_name = prow.data[0].get("name") or passenger_name
+                passenger_pref = (
+                    _passenger_preferred_vehicle_from_row(prow.data[0]) or passenger_pref
+                )
+        except Exception:
+            pass
+
+    pickup_lat = row.get("pickup_lat")
+    pickup_lng = row.get("pickup_lng")
+    if pickup_lat is None or pickup_lng is None:
+        logger.warning(
+            f"rolling_dispatch_start: pickup koordinat eksik tag_id={tag_id} lat={pickup_lat} lng={pickup_lng}"
+        )
+        return 0
+
+    full_tag_data = {
+        "passenger_id": passenger_id,
+        "passenger_name": passenger_name,
+        "pickup_lat": pickup_lat,
+        "pickup_lng": pickup_lng,
+        "pickup_location": row.get("pickup_location"),
+        "dropoff_lat": row.get("dropoff_lat"),
+        "dropoff_lng": row.get("dropoff_lng"),
+        "dropoff_location": row.get("dropoff_location"),
+        "final_price": row.get("final_price"),
+        "offered_price": row.get("final_price"),
+        "distance_km": row.get("distance_km", 0),
+        "estimated_minutes": row.get("estimated_minutes", 0),
+        "passenger_preferred_vehicle": passenger_pref,
+    }
+
+    eligible = await find_eligible_drivers(
+        float(pickup_lat),
+        float(pickup_lng),
+        exclude_ids=[passenger_id] if passenger_id else [],
+        passenger_vehicle_kind=passenger_pref,
+        radius_km=DISPATCH_RADIUS_KM,
+    )
+    if not eligible:
+        logger.warning(
+            f"rolling_dispatch_start: 0 uygun sürücü tag_id={tag_id} "
+            f"radius={DISPATCH_RADIUS_KM}km pref={passenger_pref!r} pickup=({pickup_lat},{pickup_lng}). "
+            f"Kontrol: users.driver_online=true, lat/lng dolu, mesafe≤{DISPATCH_RADIUS_KM}km, "
+            f"araç tipi eşleşmesi (yolcu {passenger_pref!r}), "
+            f"backend tek worker (socket_app + --workers 1)."
+        )
+        return 0
+
+    rolling_dispatch_index[tag_id] = {
+        "cursor": 0,
+        "drivers": eligible,
+        "full_tag": full_tag_data,
+        "current_batch": [],
+    }
+    logger.info(
+        f"rolling_dispatch_start tag={tag_id} eligible={len(eligible)} "
+        f"batch={BATCH_SIZE} timeout={DISPATCH_TIMEOUT}s radius={DISPATCH_RADIUS_KM}km"
+    )
+    await rolling_dispatch_batch(tag_id)
+    return len(eligible)
+
 
 async def handle_dispatch_accept(tag_id: str, driver_id: str):
     """
@@ -739,9 +1352,10 @@ async def handle_dispatch_accept(tag_id: str, driver_id: str):
     """
     try:
         queue = dispatch_queues.get(tag_id, [])
-        
+        did_norm = str(driver_id).strip().lower()
+
         for entry in queue:
-            if entry["driver_id"] == driver_id:
+            if str(entry.get("driver_id", "")).strip().lower() == did_norm:
                 entry["status"] = "accepted"
                 entry["responded_at"] = datetime.utcnow().isoformat()
             elif entry["status"] in ["waiting", "sent"]:
@@ -763,6 +1377,7 @@ async def handle_dispatch_accept(tag_id: str, driver_id: str):
         
         # Queue'yu temizle
         dispatch_queues.pop(tag_id, None)
+        dispatch_tag_context.pop(tag_id, None)
         
         logger.info(f"✅ Dispatch accept: tag={tag_id}, sürücü={driver_id}")
         
@@ -800,8 +1415,9 @@ async def handle_dispatch_reject(tag_id: str, driver_id: str):
         
         if tag_result.data and tag_result.data[0].get("status") == "waiting":
             # Sonraki sürücüye teklif gönder
-            tag_data = tag_result.data[0]
-            await dispatch_offer_to_next_driver(tag_id, tag_data)
+            tag_row = tag_result.data[0]
+            merged = {**(dispatch_tag_context.get(tag_id) or {}), **tag_row}
+            await dispatch_offer_to_next_driver(tag_id, merged)
         
         logger.info(f"❌ Dispatch reject: tag={tag_id}, sürücü={driver_id}")
         
@@ -861,21 +1477,21 @@ def validate_turkish_phone(phone: str) -> tuple[bool, str]:
     
     return True, cleaned
 
-# Supabase Config
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
-
-# Initialize Supabase
+# Initialize Supabase (global `supabase` = _supabase_core.get_supabase(), service role only)
 supabase: Client = None
+
 
 def init_supabase():
     global supabase
-    if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        logger.info("✅ Supabase bağlantısı başarılı")
+    _supabase_core.init_supabase()
+    supabase = _supabase_core.get_supabase()
+    if supabase:
+        logger.info("✅ Supabase bağlantısı başarılı (tek client, SERVICE_ROLE_KEY)")
     else:
-        logger.error("❌ Supabase credentials eksik!")
+        logger.error(
+            "❌ Supabase başlatılamadı: SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY "
+            "(veya SUPABASE_SERVICE_KEY) .env içinde olmalı; anon key kullanılmaz."
+        )
 
 # Şehirler
 TURKEY_CITIES = [
@@ -910,6 +1526,7 @@ last_cleanup_time = None
 @app.on_event("startup")
 async def startup():
     global last_cleanup_time
+    clear_dispatch_in_memory_state()
     init_supabase()
     last_cleanup_time = datetime.utcnow()
     print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
@@ -986,14 +1603,14 @@ async def resolve_user_id(user_id: str) -> str:
     uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
     
     if uuid_pattern.match(user_id):
-        # Zaten UUID formatında
-        return user_id
+        # UUID tek biçimde (socket room / dispatch_queue ile uyum)
+        return str(user_id).strip().lower()
     
     # MongoDB ID olabilir, mongo_id ile ara
     try:
         result = supabase.table("users").select("id").eq("mongo_id", user_id).execute()
         if result.data:
-            return result.data[0]["id"]
+            return str(result.data[0]["id"]).strip().lower()
     except Exception as e:
         logger.warning(f"User ID resolve error: {e}")
     
@@ -1090,31 +1707,39 @@ async def get_cities_alias():
     """Türkiye şehirlerini getir (alias)"""
     return {"success": True, "cities": sorted(TURKEY_CITIES)}
 
-# Yardımcı fonksiyon
+# Yardımcı fonksiyon - Bir numara bir cihaz: aynı cihazda OTP yok, farklı cihazda OTP gerekir
 async def _check_user_logic(phone: str, device_id: str = None):
-    """Kullanıcı var mı kontrol et - iç mantık"""
+    """Kullanıcı var mı kontrol et - device_id eşleşirse doğrulama kodu gönderilmez"""
     try:
-        result = supabase.table("users").select("*").eq("phone", phone).execute()
+        result = None
+        for candidate in _phone_lookup_candidates(phone):
+            result = supabase.table("users").select("*").eq("phone", candidate).execute()
+            if result.data:
+                break
         
-        if result.data:
+        if result and result.data:
             user = result.data[0]
             has_pin = bool(user.get("pin_hash"))
-            
-            # Cihaz kontrolü
-            is_verified = False
-            if device_id and user.get("driver_details"):
-                verified_devices = user.get("driver_details", {}).get("verified_devices", [])
-                is_verified = device_id in verified_devices
+            # Bir numara–bir cihaz: last_device_id (veya bound_device_id) ile eşleşirse aynı cihaz
+            bound = user.get("bound_device_id") or user.get("last_device_id")
+            is_same_device = bool(device_id and bound and str(bound).strip() == str(device_id).strip())
+            is_valid_adm, res_adm = validate_turkish_phone(phone)
+            is_admin = (
+                _phone_10_for_admin_check(normalize_turkish_phone(res_adm)) in ADMIN_PHONE_NUMBERS
+                if is_valid_adm
+                else False
+            )
             
             return {
                 "success": True,
-                "user_exists": True,  # Frontend bunu bekliyor
+                "user_exists": True,
                 "exists": True,
                 "has_pin": has_pin,
-                "device_verified": is_verified,  # Frontend bunu bekliyor
-                "is_device_verified": is_verified,
+                "device_verified": is_same_device,
+                "is_device_verified": is_same_device,
                 "user_id": user["id"],
-                "is_admin": phone in ADMIN_PHONE_NUMBERS
+                "user_name": user.get("name"),
+                "is_admin": is_admin
             }
         
         return {"success": True, "user_exists": False, "exists": False, "has_pin": False}
@@ -1145,11 +1770,15 @@ import random
 import time
 
 # OTP storage with rate limiting
-# Format: {phone: {"code": "123456", "expires": timestamp, "last_sent": timestamp}}
+# code/expires: son *başarılı* SMS ile set edilir (SMS hata verirse eski geçerli kod korunur)
+# last_api_attempt: her /send-otp çağrısında (çift tıklama / flood önleme)
+# last_sms_ok: son başarılı NetGSM yanıtı (NetGSM 85 / maliyet için soğuma)
 otp_storage: dict = {}
 
-# Rate limit: 60 seconds between OTP requests
-OTP_RATE_LIMIT_SECONDS = 60
+# Başarılı OTP gönderimleri arası minimum süre (NetGSM aynı numara limiti + maliyet)
+OTP_SUCCESS_COOLDOWN_SECONDS = 60
+# İki deneme arası (başarısız SMS sonrası tekrar için kısa; sadece çift isteği keser)
+OTP_MIN_ATTEMPT_INTERVAL = 12
 # OTP TTL: 3 minutes
 OTP_TTL_SECONDS = 180
 
@@ -1180,6 +1809,60 @@ def normalize_turkish_phone(phone: str) -> str:
         phone = "90" + phone
     
     return phone
+
+
+def _phone_lookup_candidates(phone: str):
+    """DB'de telefon bazen 905XX bazen 5XX kayıtlı; ikisini de dene."""
+    if not phone:
+        return []
+    raw = "".join(c for c in str(phone) if c.isdigit())
+    if not raw:
+        return []
+    candidates = []
+    # 05XXXXXXXXX (11 hane) — yalnızca "541..." dijitle aranırsa bulunamıyordu
+    if len(raw) == 11 and raw.startswith("05") and raw[1:].startswith("5"):
+        ten = raw[1:]
+        candidates.append(ten)
+        candidates.append("90" + ten)
+        return list(dict.fromkeys(candidates))
+    if len(raw) == 12 and raw.startswith("90"):
+        candidates.append(raw)
+        candidates.append(raw[2:])  # 5XX
+    elif len(raw) == 10 and raw.startswith("5"):
+        candidates.append(raw)
+        candidates.append("90" + raw)
+    else:
+        candidates.append(raw)
+        if raw.startswith("90") and len(raw) == 12:
+            candidates.append(raw[2:])
+        elif len(raw) == 10 and raw.startswith("5"):
+            candidates.append("90" + raw)
+    return list(dict.fromkeys(candidates))  # sırayı koru, tekrarsız
+
+
+def _auth_normalize_or_raise(phone: Optional[str]) -> str:
+    """Tüm auth uçlarında tek tip: 905XXXXXXXXX (geçersizse 400/422)."""
+    if not phone or not str(phone).strip():
+        raise HTTPException(status_code=422, detail="Telefon numarası gerekli")
+    is_valid, result = validate_turkish_phone(phone)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=result)
+    return normalize_turkish_phone(result)
+
+
+def _users_get_by_phone_flexible(canonical_905: str):
+    """users.phone alanı 905... veya 5... olabilir; her iki formatta ara."""
+    for cand in _phone_lookup_candidates(canonical_905):
+        r = supabase.table("users").select("*").eq("phone", cand).limit(1).execute()
+        if r.data:
+            return r.data[0]
+    return None
+
+
+def _phone_10_for_admin_check(canonical_905: str) -> str:
+    if len(canonical_905) == 12 and canonical_905.startswith("90"):
+        return canonical_905[2:]
+    return canonical_905
 
 
 def normalize_phone_e164(phone: str, default_country_code: str = "90") -> str:
@@ -1214,32 +1897,114 @@ def normalize_phone_e164(phone: str, default_country_code: str = "90") -> str:
     return "+" + digits
 
 
+def netgsm_gsmno_param(phone: str) -> str:
+    """
+    Netgsm HTTP GET çoğu entegrasyonda gsmno = 5XXXXXXXXX (10 hane) bekler.
+    905XXXXXXXXX gönderimi bazı hesaplarda 70/param hatası veya iletim sorunu çıkarır.
+    """
+    p = normalize_turkish_phone(phone)
+    if len(p) == 12 and p.startswith("905"):
+        return p[2:]
+    if len(p) == 10 and p.startswith("5"):
+        return p
+    return p
+
+
+def _netgsm_sync_http_get(url: str) -> str:
+    """
+    NetGSM GET API — senkron, yalnızca HTTP/1.1 (stdlib urllib).
+    Bazı sunucularda httpx/TLS veya HTTP/2 ALPN 'ConnectError' / reset üretir; urllib stabil çalışır.
+    """
+    import ssl
+    import urllib.error
+    import urllib.request
+
+    ctx = ssl.create_default_context()
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "LeylekTAG/1.0 (NetGSM)",
+            "Accept": "*/*",
+            "Connection": "close",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45, context=ctx) as resp:
+            return resp.read().decode("utf-8", errors="replace").strip()
+    except urllib.error.HTTPError as e:
+        # Bazı hatalarda gövde yine NetGSM kod metni olabilir
+        try:
+            body = e.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            body = ""
+        if body:
+            return body
+        raise
+
+
+def _netgsm_sync_http_get_with_retries(url: str) -> str:
+    """Geçici TLS/bağlantı hatalarında birkaç kez dene (stdlib urllib)."""
+    import time as time_mod
+    import urllib.error
+
+    max_attempts = max(1, int(os.getenv("NETGSM_MAX_RETRIES", "3")))
+    delay = 0.9
+    last_err: Optional[Exception] = None
+    for attempt in range(max_attempts):
+        try:
+            return _netgsm_sync_http_get(url)
+        except urllib.error.HTTPError:
+            raise
+        except Exception as e:
+            last_err = e
+            if attempt < max_attempts - 1:
+                logger.warning(
+                    f"⚠️ NETGSM istek denemesi {attempt + 1}/{max_attempts} başarısız: {type(e).__name__}: {e!r}"
+                )
+                time_mod.sleep(delay * (attempt + 1))
+    assert last_err is not None
+    raise last_err
+
+
 async def send_sms_via_netgsm(phone: str, message: str) -> dict:
     """
-    NETGSM API ile SMS gönder - HTTP GET API (daha güvenilir)
+    NETGSM API ile SMS gönder - HTTP GET API
+    Env: NETGSM_USERCODE (veya NETGSM_USERNAME), NETGSM_PASSWORD, NETGSM_MSGHEADER
+    NETGSM_FILTER: ticari olmayan bilgilendirme/OTP için genelde "0" (varsayılan 0).
+                 Boş string verilirse filter parametresi eklenmez (eski hesap uyumu).
     Returns: {"success": bool, "response": dict, "error": str}
     """
     result = {"success": False, "response": None, "error": None}
     
     try:
-        usercode = os.getenv("NETGSM_USERCODE", "")
-        password = os.getenv("NETGSM_PASSWORD", "")
-        msgheader = os.getenv("NETGSM_MSGHEADER", "")
+        usercode = (os.getenv("NETGSM_USERCODE") or os.getenv("NETGSM_USERNAME") or "").strip()
+        password = (os.getenv("NETGSM_PASSWORD") or "").strip()
+        # Yaygın yazım hatası: MNGHEADER
+        msgheader = (
+            os.getenv("NETGSM_MSGHEADER")
+            or os.getenv("NETGSM_MNGHEADER")
+            or ""
+        ).strip()
+        # Ticari içerik yok: İYS şartı için çoğu OTP akışında filter=0 gerekir
+        filter_raw = os.getenv("NETGSM_FILTER", "0")
+        filter_param = filter_raw.strip() if filter_raw is not None else ""
+        if filter_param.lower() in ("-", "none", "skip"):
+            filter_param = ""
         
         if not usercode or not password:
             logger.error("❌ NETGSM credentials eksik!")
             result["error"] = "NETGSM credentials missing"
             return result
         
-        # Normalize phone number to 905XXXXXXXXX format
         normalized_phone = normalize_turkish_phone(phone)
-        logger.info(f"📱 Phone normalized: {phone} -> {normalized_phone}")
+        gsmno = netgsm_gsmno_param(phone)
+        logger.info(f"📱 Phone internal: {phone} -> {normalized_phone}, Netgsm gsmno: {gsmno}")
         
         # Use msgheader or usercode as sender
         sender = msgheader if msgheader else usercode
         
-        # NETGSM HTTP GET API - daha basit ve güvenilir
-        # Docs: https://www.netgsm.com.tr/dokuman/
+        # NETGSM HTTP GET API - https://www.netgsm.com.tr/dokuman/
         import urllib.parse
         
         # URL encode the message
@@ -1248,57 +2013,71 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         # Build API URL
         url = (
             f"https://api.netgsm.com.tr/sms/send/get?"
-            f"usercode={usercode}"
+            f"usercode={urllib.parse.quote(usercode)}"
             f"&password={urllib.parse.quote(password)}"
-            f"&gsmno={normalized_phone}"
+            f"&gsmno={urllib.parse.quote(gsmno)}"
             f"&message={encoded_message}"
             f"&msgheader={urllib.parse.quote(sender)}"
             f"&dil=TR"
         )
+        if filter_param:
+            url += f"&filter={urllib.parse.quote(filter_param)}"
         
-        logger.info(f"📱 NETGSM Request - Phone: {normalized_phone}, Sender: {sender}")
+        logger.info(f"📱 NETGSM Request - gsmno: {gsmno}, Sender: {sender}, filter: {filter_param or '(yok)'}")
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url)
-            response_text = response.text.strip()
-            
-            # Log response
-            logger.info(f"📱 NETGSM Response: {response_text}")
-            result["response"] = {"raw": response_text}
-            
-            # Parse response - NETGSM returns codes like:
-            # 00 XXXXXXXX = Success (with job ID)
-            # 20 = Post error
-            # 30 = Credential error
-            # 40 = Sender not defined
-            # 50 = Incorrect IYS brand code
-            # 51 = IYS brand code required
-            # 70 = Incorrect query parameter
-            
-            parts = response_text.split()
-            code = parts[0] if parts else response_text
-            
-            if code in ["00", "01", "02"]:
-                job_id = parts[1] if len(parts) > 1 else "N/A"
-                logger.info(f"✅ SMS gönderildi: {normalized_phone}, JobID: {job_id}")
-                result["success"] = True
-                result["response"]["job_id"] = job_id
-            else:
-                error_desc = {
-                    "20": "POST hatası",
-                    "30": "Kimlik doğrulama hatası (usercode/password yanlış)",
-                    "40": "Mesaj başlığı (sender) tanımlı değil",
-                    "50": "IYS marka kodu hatalı",
-                    "51": "IYS marka kodu zorunlu",
-                    "70": "Parametre hatası"
-                }.get(code, f"Bilinmeyen hata: {code}")
-                
-                logger.error(f"❌ SMS gönderilemedi: {normalized_phone} - Code: {code}, Desc: {error_desc}")
-                result["error"] = f"Code: {code}, Desc: {error_desc}"
-                
+        # Önce urllib (HTTP/1.1) — VPS'te httpx ConnectError / TLS reset sorunlarını aşar.
+        response_text = None
+        try:
+            import asyncio
+            response_text = await asyncio.to_thread(_netgsm_sync_http_get_with_retries, url)
+        except Exception as urllib_err:
+            logger.warning(f"⚠️ NETGSM urllib isteği başarısız: {urllib_err!r}, httpx (http2=False) deneniyor")
+            try:
+                async with httpx.AsyncClient(timeout=45.0, http2=False) as client:
+                    response = await client.get(
+                        url,
+                        headers={"Connection": "close", "Accept": "*/*"},
+                    )
+                    response_text = response.text.strip()
+            except Exception as httpx_err:
+                logger.exception(f"❌ NETGSM httpx de başarısız: {httpx_err!r}")
+                raise httpx_err from urllib_err
+        
+        if response_text is None:
+            response_text = ""
+
+        # Log response
+        logger.info(f"📱 NETGSM Response: {response_text}")
+        result["response"] = {"raw": response_text}
+
+        # Parse response - NETGSM returns codes like:
+        # 00 XXXXXXXX = Success (with job ID)
+        parts = response_text.split()
+        code = parts[0] if parts else response_text
+
+        if code in ["00", "01", "02"]:
+            job_id = parts[1] if len(parts) > 1 else "N/A"
+            logger.info(f"✅ SMS gönderildi: gsmno={gsmno}, JobID: {job_id}")
+            result["success"] = True
+            result["response"]["job_id"] = job_id
+        else:
+            error_desc = {
+                "20": "Mesaj metni / karakter sınırı hatası",
+                "30": "Kimlik doğrulama veya API izni / IP kısıtı",
+                "40": "Mesaj başlığı (msgheader) tanımlı veya onaylı değil",
+                "50": "IYS kontrollü gönderim hesabı uyumsuz",
+                "51": "IYS marka bilgisi eksik",
+                "70": "Parametre hatası (gsmno formatı, filter, vb.)",
+                "80": "Gönderim limiti aşıldı",
+                "85": "Aynı numaraya 1 dk içinde çok fazla istek",
+            }.get(code, f"Bilinmeyen hata: {code}")
+
+            logger.error(f"❌ SMS gönderilemedi: gsmno={gsmno} - Code: {code}, Desc: {error_desc}")
+            result["error"] = f"Code: {code}, Desc: {error_desc}"
+
     except Exception as e:
-        logger.error(f"❌ NETGSM exception: {e}")
-        result["error"] = str(e)
+        logger.exception(f"❌ NETGSM exception: {type(e).__name__}: {e!r}")
+        result["error"] = str(e) or type(e).__name__
     
     return result
 
@@ -1306,12 +2085,10 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
 async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     """
     OTP gönder - NETGSM ile gerçek SMS
-    
-    Features:
-    - Rate limit: 60 seconds between requests
-    - Single active OTP per phone
-    - TTL: 3 minutes
-    - Phone normalization to 905XXXXXXXXX
+
+    - Kod yalnızca NetGSM başarılı yanıtından sonra kaydedilir (SMS hata verirse eski geçerli kod silinmez).
+    - Başarılı gönderimler arası 60 sn (NetGSM 85 / kota); istekler arası min 12 sn (çift tıklama).
+    - TTL: 3 dk. Telefon: 905XXXXXXXXX normalize.
     """
     # Get phone from body or query param
     phone_number = None
@@ -1332,51 +2109,80 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     cleaned_phone = normalize_turkish_phone(result)
     logger.info(f"📱 OTP request for: {cleaned_phone}")
     
-    # Rate limit check
     current_time = time.time()
-    stored = otp_storage.get(cleaned_phone)
-    
-    if stored and stored.get("last_sent"):
-        time_since_last = current_time - stored["last_sent"]
-        if time_since_last < OTP_RATE_LIMIT_SECONDS:
-            remaining = int(OTP_RATE_LIMIT_SECONDS - time_since_last)
-            logger.warning(f"⚠️ Rate limit: {cleaned_phone}, wait {remaining}s")
-            raise HTTPException(
-                status_code=429, 
-                detail=f"Lütfen {remaining} saniye bekleyin"
-            )
-    
-    # Generate 6-digit OTP
+    entry = dict(otp_storage.get(cleaned_phone) or {})
+
+    # Süresi dolmuş kodu sil (diğer alanlar: last_sms_ok, last_api_attempt kalabilir)
+    if entry.get("code") and entry.get("expires") and current_time > entry["expires"]:
+        entry.pop("code", None)
+        entry.pop("expires", None)
+
+    # Çok sık API çağrısı (çift tıklama)
+    last_attempt = entry.get("last_api_attempt")
+    if last_attempt is not None and (current_time - last_attempt) < OTP_MIN_ATTEMPT_INTERVAL:
+        remaining = int(OTP_MIN_ATTEMPT_INTERVAL - (current_time - last_attempt)) + 1
+        logger.warning(f"⚠️ OTP attempt throttle: {cleaned_phone}, wait {remaining}s")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Çok hızlı tekrar denendi. {remaining} saniye sonra tekrar deneyin.",
+        )
+
+    # Son *başarılı* SMS'ten beri kısa süre (NetGSM 85 / kota)
+    last_ok = entry.get("last_sms_ok")
+    if last_ok is not None and (current_time - last_ok) < OTP_SUCCESS_COOLDOWN_SECONDS:
+        remaining = int(OTP_SUCCESS_COOLDOWN_SECONDS - (current_time - last_ok)) + 1
+        logger.warning(f"⚠️ OTP success cooldown: {cleaned_phone}, wait {remaining}s")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Yeni kod için {remaining} saniye bekleyin (son SMS gönderiminden sonra).",
+        )
+
+    # Deneme zamanı — kodu henüz yazma; SMS başarısız olursa eski geçerli kod korunur
+    entry["last_api_attempt"] = current_time
+    otp_storage[cleaned_phone] = entry
+
     otp_code = str(random.randint(100000, 999999))
-    
-    # Store OTP with TTL and rate limit timestamp
-    otp_storage[cleaned_phone] = {
-        "code": otp_code,
-        "expires": current_time + OTP_TTL_SECONDS,
-        "last_sent": current_time
-    }
-    
-    # Send SMS via NETGSM
     message = f"Leylek TAG dogrulama kodunuz: {otp_code}"
     sms_result = await send_sms_via_netgsm(cleaned_phone, message)
-    
+
     if sms_result["success"]:
+        otp_storage[cleaned_phone] = {
+            "code": otp_code,
+            "expires": current_time + OTP_TTL_SECONDS,
+            "last_sms_ok": current_time,
+            "last_api_attempt": current_time,
+        }
         logger.info(f"✅ OTP gönderildi: {cleaned_phone}")
         return {"success": True, "message": "OTP gönderildi"}
     else:
-        # Log failure but still return success (code is stored)
         logger.error(f"❌ SMS failed for {cleaned_phone}: {sms_result['error']}")
-        
-        # In production, you might want to fail here
-        # For now, fallback to test mode
-        logger.warning(f"⚠️ Fallback test mode: {cleaned_phone} -> 123456")
-        otp_storage[cleaned_phone]["code"] = "123456"
-        
-        return {
-            "success": True, 
-            "message": "OTP gönderildi",
-            "warning": "SMS delivery issue, using test code"
-        }
+        fallback = os.getenv("OTP_SMS_FALLBACK_TEST", "").strip().lower() in ("1", "true", "yes")
+        if fallback:
+            logger.warning(f"⚠️ OTP_SMS_FALLBACK_TEST: {cleaned_phone} -> 123456")
+            otp_storage[cleaned_phone] = {
+                "code": "123456",
+                "expires": current_time + OTP_TTL_SECONDS,
+                "last_sms_ok": current_time,
+                "last_api_attempt": current_time,
+            }
+            return {
+                "success": True,
+                "message": "OTP gönderildi (test fallback)",
+                "warning": "SMS delivery issue, using test code 123456",
+            }
+        err_txt = sms_result.get("error") or "Bilinmeyen hata"
+        hint = ""
+        if "Connect" in err_txt or "Connection" in err_txt or "timed out" in err_txt.lower():
+            hint = " Ağ geçici olarak yanıt vermedi; birkaç saniye sonra tekrar deneyin."
+        elif err_txt.startswith("Code: 85"):
+            hint = " Aynı numaraya çok sık istek gitti; bir süre bekleyip tekrar deneyin."
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"SMS gönderilemedi (NetGSM). {err_txt}.{hint} "
+                f"Sunucu NETGSM_USERCODE/NETGSM_PASSWORD/NETGSM_MSGHEADER ve gerekirse NETGSM_FILTER kontrol edin."
+            ),
+        )
 
 class VerifyOtpRequest(BaseModel):
     phone: str
@@ -1393,19 +2199,16 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
     if not phone_number or not otp_code:
         raise HTTPException(status_code=422, detail="Phone ve OTP gerekli")
     
-    # TR numara doğrulama ve normalize et
-    is_valid, result = validate_turkish_phone(phone_number)
-    if is_valid:
-        phone_number = normalize_turkish_phone(result)
-    
+    # send-otp ile aynı anahtar: mutlaka 905XXXXXXXXX (aksi halde OTP deposu eşleşmez)
+    phone_number = _auth_normalize_or_raise(phone_number)
     logger.info(f"📱 OTP verify for: {phone_number}")
     
-    # OTP kontrolü
+    # OTP kontrolü (sadece başarılı SMS sonrası yazılan "code" ile)
     stored_otp = otp_storage.get(phone_number)
     
-    if stored_otp:
+    if stored_otp and stored_otp.get("code"):
         # Süre kontrolü
-        if time.time() > stored_otp["expires"]:
+        if time.time() > stored_otp.get("expires", 0):
             del otp_storage[phone_number]
             raise HTTPException(status_code=400, detail="OTP süresi doldu, yeni kod isteyin")
         
@@ -1419,23 +2222,34 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
     else:
         # Fallback: Test modu için 123456 kabul et
         if otp_code != "123456":
-            raise HTTPException(status_code=400, detail="Geçersiz OTP")
+            raise HTTPException(
+                status_code=400,
+                detail="Geçersiz OTP veya önce doğrulama kodu istenmedi. Kod gelmediyse tekrar 'Kod gönder' deneyin.",
+            )
         logger.warning(f"⚠️ Test OTP used for: {phone_number}")
     
-    # Kullanıcı var mı kontrol et
-    result = supabase.table("users").select("*").eq("phone", phone_number).execute()
+    # Cihaz ID (bir numara–bir cihaz için)
+    dev_id = (request.device_id if request else device_id) or None
     
-    if result.data:
+    # Kullanıcı var mı kontrol et (DB'de 905XX veya 5XX kayıtlı olabilir)
+    result = None
+    for candidate in _phone_lookup_candidates(phone_number):
+        result = supabase.table("users").select("*").eq("phone", candidate).execute()
+        if result.data:
+            break
+    
+    if result and result.data:
         user = result.data[0]
         has_pin = bool(user.get("pin_hash"))
         
-        # Last login güncelle
+        # Bu cihazı numaraya bağla (bir numara–bir cihaz)
         try:
-            supabase.table("users").update({
-                "last_login": datetime.utcnow().isoformat()
-            }).eq("id", user["id"]).execute()
-        except:
-            pass
+            upd = {"last_login": datetime.utcnow().isoformat()}
+            if dev_id:
+                upd["last_device_id"] = dev_id
+            supabase.table("users").update(upd).eq("id", user["id"]).execute()
+        except Exception as upd_err:
+            logger.warning(f"verify_otp device update (ignored): {upd_err}")
         
         return {
             "success": True,
@@ -1468,9 +2282,10 @@ class SetPinRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     city: Optional[str] = None
+    device_id: Optional[str] = None
 
 @api_router.post("/auth/set-pin")
-async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = None, first_name: str = None, last_name: str = None, city: str = None):
+async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = None, first_name: str = None, last_name: str = None, city: str = None, device_id: str = None):
     """PIN oluştur veya güncelle"""
     try:
         # Body veya query param'dan al
@@ -1479,29 +2294,35 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         first_name_val = request.first_name if request else first_name
         last_name_val = request.last_name if request else last_name
         city_val = request.city if request else city
+        dev_id = (request.device_id if request else device_id) or None
         
         if not phone_val or not pin_val:
             raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
         
+        canonical = _auth_normalize_or_raise(phone_val)
         pin_hash = hash_pin(pin_val)
         
-        # Kullanıcı var mı?
-        result = supabase.table("users").select("id").eq("phone", phone_val).execute()
+        user_row = _users_get_by_phone_flexible(canonical)
         
-        if result.data:
-            # Güncelle
-            supabase.table("users").update({
+        if user_row:
+            # Güncelle + cihaz bağla; DB'de 5XX kaldıysa 905'e çek
+            upd = {
                 "pin_hash": pin_hash,
                 "first_name": first_name_val,
                 "last_name": last_name_val,
                 "city": city_val,
                 "name": f"{first_name_val or ''} {last_name_val or ''}".strip(),
                 "updated_at": datetime.utcnow().isoformat()
-            }).eq("phone", phone_val).execute()
+            }
+            if dev_id:
+                upd["last_device_id"] = dev_id
+            if user_row.get("phone") != canonical:
+                upd["phone"] = canonical
+            supabase.table("users").update(upd).eq("id", user_row["id"]).execute()
         else:
-            # Yeni kullanıcı oluştur
-            supabase.table("users").insert({
-                "phone": phone_val,
+            # Yeni kullanıcı — tek canonical format
+            insert_data = {
+                "phone": canonical,
                 "pin_hash": pin_hash,
                 "first_name": first_name_val,
                 "last_name": last_name_val,
@@ -1511,9 +2332,12 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
                 "total_ratings": 0,
                 "total_trips": 0,
                 "is_active": True
-            }).execute()
+            }
+            if dev_id:
+                insert_data["last_device_id"] = dev_id
+            supabase.table("users").insert(insert_data).execute()
         
-        logger.info(f"✅ PIN ayarlandı: {phone_val}")
+        logger.info(f"✅ PIN ayarlandı: {canonical}")
         return {"success": True, "message": "PIN ayarlandı"}
     except Exception as e:
         logger.error(f"Set PIN error: {e}")
@@ -1527,6 +2351,8 @@ async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = No
         if not phone or not pin:
             raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
         
+        canonical = _auth_normalize_or_raise(phone)
+        
         # IP adresi al
         client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         if not client_ip:
@@ -1534,14 +2360,14 @@ async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = No
         if not client_ip and request.client:
             client_ip = request.client.host
         
-        result = supabase.table("users").select("*").eq("phone", phone).execute()
+        user = _users_get_by_phone_flexible(canonical)
         
-        if not result.data:
+        if not user:
             # Login log - başarısız
             try:
                 supabase.table("login_logs").insert({
                     "id": str(uuid.uuid4()),
-                    "phone": phone,
+                    "phone": canonical,
                     "ip_address": client_ip,
                     "device_id": device_id,
                     "success": False,
@@ -1552,15 +2378,13 @@ async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = No
             except: pass
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
-        user = result.data[0]
-        
         if not verify_pin(pin, user.get("pin_hash", "")):
             # Login log - başarısız PIN
             try:
                 supabase.table("login_logs").insert({
                     "id": str(uuid.uuid4()),
                     "user_id": user["id"],
-                    "phone": phone,
+                    "phone": canonical,
                     "ip_address": client_ip,
                     "device_id": device_id,
                     "success": False,
@@ -1587,7 +2411,7 @@ async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = No
             supabase.table("login_logs").insert({
                 "id": str(uuid.uuid4()),
                 "user_id": user["id"],
-                "phone": phone,
+                "phone": canonical,
                 "ip_address": client_ip,
                 "device_id": device_id,
                 "success": True,
@@ -1596,9 +2420,9 @@ async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = No
             }).execute()
         except: pass
         
-        is_admin = phone in ADMIN_PHONE_NUMBERS
+        is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
         
-        logger.info(f"✅ PIN doğrulandı: {phone}, Admin: {is_admin}, IP: {client_ip}")
+        logger.info(f"✅ PIN doğrulandı: {canonical}, Admin: {is_admin}, IP: {client_ip}")
         
         return {
             "success": True,
@@ -1639,12 +2463,11 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         if not phone_val or not pin_val:
             raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
         
-        result = supabase.table("users").select("*").eq("phone", phone_val).execute()
+        canonical = _auth_normalize_or_raise(phone_val)
+        user = _users_get_by_phone_flexible(canonical)
         
-        if not result.data:
+        if not user:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-        
-        user = result.data[0]
         
         if not verify_pin(pin_val, user.get("pin_hash", "")):
             raise HTTPException(status_code=401, detail="Yanlış PIN")
@@ -1668,7 +2491,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         except Exception as notif_err:
             logger.warning(f"⚠️ Giriş bildirimi gönderilemedi: {notif_err}")
         
-        is_admin = phone_val in ADMIN_PHONE_NUMBERS
+        is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
         
         return {
             "success": True,
@@ -1722,32 +2545,29 @@ class ResetPinRequest(BaseModel):
 async def reset_pin(request: ResetPinRequest):
     """Şifremi unuttum - Yeni PIN belirle (OTP doğrulandıktan sonra çağrılır)"""
     try:
-        # TR numara doğrulama
-        is_valid, result = validate_turkish_phone(request.phone)
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=result)
-        
-        cleaned_phone = result
+        canonical = _auth_normalize_or_raise(request.phone)
         
         # PIN uzunluk kontrolü
         if len(request.new_pin) != 6 or not request.new_pin.isdigit():
             raise HTTPException(status_code=400, detail="PIN 6 haneli rakamlardan oluşmalı")
         
-        # Kullanıcı var mı?
-        user_result = supabase.table("users").select("id, name").eq("phone", cleaned_phone).execute()
-        if not user_result.data:
+        user_row = _users_get_by_phone_flexible(canonical)
+        if not user_row:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
-        user = user_result.data[0]
+        user = user_row
         pin_hash = hash_pin(request.new_pin)
         
-        # PIN'i güncelle
-        supabase.table("users").update({
+        # PIN'i güncelle (+ telefonu canonical yap)
+        upd = {
             "pin_hash": pin_hash,
             "updated_at": datetime.utcnow().isoformat()
-        }).eq("id", user["id"]).execute()
+        }
+        if user.get("phone") != canonical:
+            upd["phone"] = canonical
+        supabase.table("users").update(upd).eq("id", user["id"]).execute()
         
-        logger.info(f"🔑 PIN sıfırlandı: {cleaned_phone}")
+        logger.info(f"🔑 PIN sıfırlandı: {canonical}")
         return {"success": True, "message": "Şifreniz başarıyla güncellendi"}
     except HTTPException:
         raise
@@ -1768,19 +2588,11 @@ async def add_admin(request: AddAdminRequest):
         if request.admin_phone not in ADMIN_PHONE_NUMBERS:
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
-        # TR numara doğrulama
-        is_valid, result = validate_turkish_phone(request.new_admin_phone)
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=result)
+        canonical_new = _auth_normalize_or_raise(request.new_admin_phone)
         
-        cleaned_phone = result
-        
-        # Kullanıcı var mı?
-        user_result = supabase.table("users").select("id, name, phone").eq("phone", cleaned_phone).execute()
-        if not user_result.data:
+        user = _users_get_by_phone_flexible(canonical_new)
+        if not user:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı. Önce kayıt olmalı.")
-        
-        user = user_result.data[0]
         
         # is_admin true yap
         supabase.table("users").update({
@@ -1788,8 +2600,8 @@ async def add_admin(request: AddAdminRequest):
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user["id"]).execute()
         
-        logger.info(f"👑 Yeni admin eklendi: {cleaned_phone} by {request.admin_phone}")
-        return {"success": True, "message": f"{user.get('name', cleaned_phone)} admin olarak eklendi"}
+        logger.info(f"👑 Yeni admin eklendi: {canonical_new} by {request.admin_phone}")
+        return {"success": True, "message": f"{user.get('name', canonical_new)} admin olarak eklendi"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1833,11 +2645,17 @@ class RegisterRequest(BaseModel):
 
 @api_router.post("/auth/register")
 async def register_user(request: RegisterRequest):
-    """Yeni kullanıcı kaydı - KİŞİYE ÖZEL QR KOD İLE"""
+    """Yeni kullanıcı kaydı - KİŞİYE ÖZEL QR KOD İLE - Telefon normalize, cihaz bağlama"""
     try:
-        # Kullanıcı var mı kontrol et
-        existing = supabase.table("users").select("id").eq("phone", request.phone).execute()
-        if existing.data:
+        phone_normalized = _auth_normalize_or_raise(request.phone)
+        
+        # Kullanıcı var mı (905... veya 5XX kayıt)
+        existing = None
+        for cand in _phone_lookup_candidates(phone_normalized):
+            existing = supabase.table("users").select("id").eq("phone", cand).limit(1).execute()
+            if existing.data:
+                break
+        if existing and existing.data:
             raise HTTPException(status_code=400, detail="Bu telefon numarası zaten kayıtlı")
         
         # İsmi oluştur
@@ -1863,27 +2681,29 @@ async def register_user(request: RegisterRequest):
         import uuid
         unique_qr_code = f"LEYLEK-{uuid.uuid4().hex[:12].upper()}"
         
-        # Yeni kullanıcı oluştur
+        # Yeni kullanıcı oluştur (bir numara–bir cihaz: device_id kaydet)
         user_data = {
-            "phone": request.phone,
+            "phone": phone_normalized,
             "name": name,
             "first_name": first_name,
             "last_name": last_name,
             "city": request.city,
             "pin_hash": pin_hash,
-            "points": 100,  # Herkes 100 puanla başlar
-            "rating": 5.0,  # 100 puan = 5 yıldız
+            "points": 100,
+            "rating": 5.0,
             "total_ratings": 0,
             "total_trips": 0,
             "is_active": True,
-            "personal_qr_code": unique_qr_code  # 🆕 Kişiye özel QR
+            "personal_qr_code": unique_qr_code
         }
+        if request.device_id:
+            user_data["last_device_id"] = request.device_id
         
         result = supabase.table("users").insert(user_data).execute()
         
         if result.data:
             user = result.data[0]
-            logger.info(f"✅ Yeni kullanıcı kaydedildi: {request.phone}, QR: {unique_qr_code}")
+            logger.info(f"✅ Yeni kullanıcı kaydedildi: {phone_normalized}, QR: {unique_qr_code}")
             
             return {
                 "success": True,
@@ -1897,7 +2717,7 @@ async def register_user(request: RegisterRequest):
                     "rating": 5.0,
                     "total_trips": 0,
                     "personal_qr_code": unique_qr_code,
-                    "is_admin": request.phone in ADMIN_PHONE_NUMBERS
+                    "is_admin": _phone_10_for_admin_check(phone_normalized) in ADMIN_PHONE_NUMBERS
                 }
             }
         
@@ -1993,13 +2813,16 @@ async def register_driver(
 
 class DriverKYCSubmit(BaseModel):
     user_id: str
-    vehicle_photo_base64: str  # Araç ön fotoğrafı (plaka görünür)
+    vehicle_photo_base64: Optional[str] = None  # Araç fotoğrafı (otomobil)
     license_photo_base64: str  # Ehliyet fotoğrafı
-    plate_number: str          # Plaka numarası
-    vehicle_brand: Optional[str] = None  # Araç markası (örn: Toyota)
-    vehicle_model: Optional[str] = None  # Araç modeli (örn: Corolla)
-    vehicle_year: Optional[str] = None   # Araç yılı (örn: 2020)
-    vehicle_color: Optional[str] = None  # Araç rengi (örn: Beyaz)
+    selfie_photo_base64: Optional[str] = None  # Selfie (yüz görünür) — motor için zorunlu (API validasyonu)
+    plate_number: Optional[str] = None
+    vehicle_brand: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_year: Optional[str] = None
+    vehicle_color: Optional[str] = None
+    vehicle_kind: Optional[str] = "car"  # car | motorcycle | motor
+    motorcycle_photo_base64: Optional[str] = None  # Motor fotoğrafı
 
 @api_router.post("/driver/kyc/submit")
 async def submit_driver_kyc(data: DriverKYCSubmit):
@@ -2009,6 +2832,24 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
         import uuid
         
         user_id = data.user_id
+        vk_raw = (data.vehicle_kind or "car").strip().lower()
+        is_motorcycle = vk_raw in ("motorcycle", "motor")
+        
+        # Motor KYC: marka, model, ehliyet, motor foto, selfie zorunlu; plaka opsiyonel
+        if is_motorcycle:
+            if not (data.vehicle_brand and str(data.vehicle_brand).strip()):
+                raise HTTPException(status_code=422, detail="Motor markası gerekli")
+            if not (data.vehicle_model and str(data.vehicle_model).strip()):
+                raise HTTPException(status_code=422, detail="Motor modeli gerekli")
+            if not data.motorcycle_photo_base64:
+                raise HTTPException(status_code=422, detail="Motor fotoğrafı gerekli")
+            if not data.selfie_photo_base64:
+                raise HTTPException(status_code=422, detail="Selfie (yüz fotoğrafı) gerekli")
+        else:
+            if not (data.plate_number and str(data.plate_number).strip()):
+                raise HTTPException(status_code=422, detail="Plaka numarası gerekli")
+            if not data.vehicle_photo_base64:
+                raise HTTPException(status_code=422, detail="Araç fotoğrafı gerekli")
         
         # Kullanıcıyı kontrol et
         user_result = supabase.table("users").select("*").eq("id", user_id).execute()
@@ -2029,35 +2870,57 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             return {"success": False, "message": "Başvurunuz inceleniyor", "kyc_status": "pending"}
         
         # Fotoğrafları Supabase Storage'a yükle
-        vehicle_photo_data = base64.b64decode(data.vehicle_photo_base64.split(",")[-1] if "," in data.vehicle_photo_base64 else data.vehicle_photo_base64)
         license_photo_data = base64.b64decode(data.license_photo_base64.split(",")[-1] if "," in data.license_photo_base64 else data.license_photo_base64)
         
-        vehicle_filename = f"kyc/{user_id}/vehicle_{uuid.uuid4().hex[:8]}.jpg"
         license_filename = f"kyc/{user_id}/license_{uuid.uuid4().hex[:8]}.jpg"
         
-        # Storage'a yükle
-        try:
-            supabase.storage.from_("vehicle-photos").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
-            supabase.storage.from_("vehicle-photos").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
-        except Exception as storage_error:
-            # Bucket yoksa oluştur ve tekrar dene
-            logger.warning(f"Storage upload error, trying to create bucket: {storage_error}")
+        def _upload(bucket: str, path: str, raw: bytes) -> None:
             try:
-                supabase.storage.create_bucket("vehicle-photos", {"public": True})
-            except:
-                pass
-            supabase.storage.from_("vehicle-photos").upload(vehicle_filename, vehicle_photo_data, {"content-type": "image/jpeg"})
-            supabase.storage.from_("vehicle-photos").upload(license_filename, license_photo_data, {"content-type": "image/jpeg"})
+                supabase.storage.from_(bucket).upload(path, raw, {"content-type": "image/jpeg"})
+            except Exception as e:
+                logger.warning(f"Storage upload error: {e}")
+                try:
+                    supabase.storage.create_bucket(bucket, {"public": True})
+                except Exception:
+                    pass
+                supabase.storage.from_(bucket).upload(path, raw, {"content-type": "image/jpeg"})
         
-        # Public URL'leri al
-        vehicle_url = supabase.storage.from_("vehicle-photos").get_public_url(vehicle_filename)
+        _upload("vehicle-photos", license_filename, license_photo_data)
         license_url = supabase.storage.from_("vehicle-photos").get_public_url(license_filename)
         
-        # Driver details güncelle
+        vehicle_url = None
+        motorcycle_url = None
+        if is_motorcycle:
+            motor_data = base64.b64decode(
+                data.motorcycle_photo_base64.split(",")[-1]
+                if "," in data.motorcycle_photo_base64
+                else data.motorcycle_photo_base64
+            )
+            motor_filename = f"kyc/{user_id}/motorcycle_{uuid.uuid4().hex[:8]}.jpg"
+            _upload("vehicle-photos", motor_filename, motor_data)
+            motorcycle_url = supabase.storage.from_("vehicle-photos").get_public_url(motor_filename)
+        else:
+            vehicle_photo_data = base64.b64decode(
+                data.vehicle_photo_base64.split(",")[-1]
+                if "," in data.vehicle_photo_base64
+                else data.vehicle_photo_base64
+            )
+            vehicle_filename = f"kyc/{user_id}/vehicle_{uuid.uuid4().hex[:8]}.jpg"
+            _upload("vehicle-photos", vehicle_filename, vehicle_photo_data)
+            vehicle_url = supabase.storage.from_("vehicle-photos").get_public_url(vehicle_filename)
+        
+        selfie_url = None
+        if data.selfie_photo_base64:
+            selfie_data = base64.b64decode(data.selfie_photo_base64.split(",")[-1] if "," in data.selfie_photo_base64 else data.selfie_photo_base64)
+            selfie_filename = f"kyc/{user_id}/selfie_{uuid.uuid4().hex[:8]}.jpg"
+            _upload("vehicle-photos", selfie_filename, selfie_data)
+            selfie_url = supabase.storage.from_("vehicle-photos").get_public_url(selfie_filename)
+        
         driver_details = user.get("driver_details") or {}
         driver_details.update({
-            "plate_number": data.plate_number,
-            "vehicle_photo_url": vehicle_url,
+            "vehicle_kind": "motorcycle" if is_motorcycle else "car",
+            "kyc_vehicle_kind": "motorcycle" if is_motorcycle else "car",
+            "plate_number": (data.plate_number or "").strip().upper() if data.plate_number else None,
             "license_photo_url": license_url,
             "vehicle_brand": data.vehicle_brand,
             "vehicle_model": data.vehicle_model,
@@ -2065,15 +2928,22 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             "vehicle_color": data.vehicle_color,
             "kyc_status": "pending",
             "kyc_submitted_at": datetime.utcnow().isoformat(),
-            "is_verified": False
+            "is_verified": False,
         })
+        if vehicle_url:
+            driver_details["vehicle_photo_url"] = vehicle_url
+        if motorcycle_url:
+            driver_details["motorcycle_photo_url"] = motorcycle_url
+            driver_details.pop("vehicle_photo_url", None)
+        if selfie_url:
+            driver_details["selfie_url"] = selfie_url
         
         supabase.table("users").update({
             "driver_details": driver_details,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
         
-        logger.info(f"🚗 KYC başvurusu: {user_id} - Plaka: {data.plate_number}")
+        logger.info(f"🚗 KYC başvurusu: {user_id} - kind={'motor' if is_motorcycle else 'car'} plaka={data.plate_number!r}")
         return {
             "success": True, 
             "message": "Başvurunuz alındı. İnceleme sonrası bilgilendirileceksiniz.",
@@ -2090,13 +2960,25 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
 
 @api_router.get("/driver/kyc/status")
 async def get_driver_kyc_status(user_id: str):
-    """Sürücü KYC durumunu kontrol et"""
+    """Sürücü KYC durumunu kontrol et. Admin numaraları KYC olmadan sürücü sayılır."""
     try:
-        result = supabase.table("users").select("driver_details").eq("id", user_id).execute()
+        result = supabase.table("users").select("phone, driver_details").eq("id", user_id).execute()
         if not result.data:
             return {"kyc_status": "none", "is_driver": False}
         
-        driver_details = result.data[0].get("driver_details") or {}
+        user = result.data[0]
+        phone = (user.get("phone") or "").replace("+90", "").replace(" ", "").replace("-", "")
+        # Admin numaraları KYC olmadan sürücü olarak girebilir
+        if phone in ADMIN_PHONE_NUMBERS:
+            return {
+                "kyc_status": "approved",
+                "is_driver": True,
+                "is_verified": True,
+                "rejection_reason": None,
+                "submitted_at": None
+            }
+        
+        driver_details = user.get("driver_details") or {}
         kyc_status = driver_details.get("kyc_status", "none")
         is_verified = driver_details.get("is_verified", False)
         
@@ -2135,8 +3017,11 @@ async def get_pending_kyc_requests(admin_phone: str):
                     "vehicle_model": driver_details.get("vehicle_model"),
                     "vehicle_year": driver_details.get("vehicle_year"),
                     "vehicle_color": driver_details.get("vehicle_color"),
+                    "vehicle_kind": driver_details.get("vehicle_kind"),
                     "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
+                    "motorcycle_photo_url": driver_details.get("motorcycle_photo_url"),
                     "license_photo_url": driver_details.get("license_photo_url"),
+                    "selfie_url": driver_details.get("selfie_url"),
                     "submitted_at": driver_details.get("kyc_submitted_at")
                 })
         
@@ -2147,8 +3032,8 @@ async def get_pending_kyc_requests(admin_phone: str):
 
 @api_router.post("/admin/kyc/approve")
 async def approve_driver_kyc(admin_phone: str, user_id: str):
-    """Admin: Sürücü KYC'yi onayla"""
-    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412"]:
+    """Admin: Sürücü KYC'yi onayla. Tüm yeni kayıtlara 2 ay ücretsiz driver_active_until atanır."""
+    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412", "5354169632"]:
         raise HTTPException(status_code=403, detail="Yetkisiz erişim")
     
     try:
@@ -2164,9 +3049,14 @@ async def approve_driver_kyc(admin_phone: str, user_id: str):
             "kyc_approved_at": datetime.utcnow().isoformat()
         })
         
+        # Yeni kayıtlar: 2 ay ücretsiz (tüm onaylanan sürücülere)
+        now = datetime.utcnow()
+        active_until = (now + timedelta(days=60)).isoformat()
+        
         supabase.table("users").update({
             "driver_details": driver_details,
-            "updated_at": datetime.utcnow().isoformat()
+            "driver_active_until": active_until,
+            "updated_at": now.isoformat()
         }).eq("id", user_id).execute()
         
         # Push bildirim gönder
@@ -2265,6 +3155,7 @@ async def get_all_kyc_requests(admin_phone: str):
                     "vehicle_color": driver_details.get("vehicle_color"),
                     "vehicle_photo_url": driver_details.get("vehicle_photo_url"),
                     "license_photo_url": driver_details.get("license_photo_url"),
+                    "selfie_url": driver_details.get("selfie_url"),
                     "submitted_at": driver_details.get("kyc_submitted_at"),
                     "kyc_status": kyc_status
                 }
@@ -2566,6 +3457,43 @@ async def update_user_profile(request: UpdateProfileRequest):
         logger.error(f"Update profile error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@api_router.post("/user/set-ride-vehicle-kind")
+async def set_ride_vehicle_kind(user_id: str, role: str, vehicle_kind: str):
+    """
+    Rol ekranı: yolcu tercihi (araç/motor) veya sürücü kullandığı araç tipi.
+    driver_details JSON içinde saklanır (yolcu için passenger_preferred_vehicle, sürücü için vehicle_kind).
+    """
+    try:
+        if vehicle_kind not in ("car", "motorcycle"):
+            raise HTTPException(status_code=422, detail="vehicle_kind: car veya motorcycle olmalı")
+        if role not in ("passenger", "driver"):
+            raise HTTPException(status_code=422, detail="role: passenger veya driver olmalı")
+        resolved_id = await resolve_user_id(user_id)
+        res = supabase.table("users").select("driver_details").eq("id", resolved_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        row = res.data[0]
+        dd = row.get("driver_details")
+        if not isinstance(dd, dict):
+            dd = {}
+        if role == "driver":
+            dd["vehicle_kind"] = vehicle_kind
+        else:
+            dd["passenger_preferred_vehicle"] = vehicle_kind
+        supabase.table("users").update({
+            "driver_details": dd,
+            "updated_at": datetime.utcnow().isoformat(),
+        }).eq("id", resolved_id).execute()
+        logger.info(f"✅ ride vehicle kind: user={resolved_id} role={role} kind={vehicle_kind}")
+        return {"success": True, "driver_details": dd}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"set_ride_vehicle_kind error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Frontend uyumluluğu için alias
 @api_router.post("/passenger/create-request")
 async def create_request_alias(request: CreateTagRequest, user_id: str = None):
@@ -2799,11 +3727,22 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             "status": "matched",
         }
 
+        # Eşleşme bildirimini her iki tarafa da socket ile anında gönder (sid veya normalized room)
         try:
-            await sio.emit("offer_accepted", match_payload, room=f"user_{driver_id_final}")
-            await sio.emit("tag_matched", match_payload, room=f"user_{driver_id_final}")
+            driver_room = _normalize_user_room(driver_id_final)
+            driver_sid = connected_users.get(str(driver_id_final).strip().lower()) or connected_users.get(driver_id_final)
+            driver_target = driver_sid if driver_sid else driver_room
+            passenger_target = None
+            if driver_target:
+                await sio.emit("offer_accepted", match_payload, room=driver_target)
+                await sio.emit("tag_matched", match_payload, room=driver_target)
             if passenger_id_final:
-                await sio.emit("tag_matched", match_payload, room=f"user_{passenger_id_final}")
+                passenger_room = _normalize_user_room(passenger_id_final)
+                passenger_sid = connected_users.get(str(passenger_id_final).strip().lower()) or connected_users.get(passenger_id_final)
+                passenger_target = passenger_sid if passenger_sid else passenger_room
+                if passenger_target:
+                    await sio.emit("tag_matched", match_payload, room=passenger_target)
+            logger.info(f"✅ Eşleşme socket: driver={driver_target or 'yok'}, passenger={passenger_target or 'yok'}")
         except Exception as socket_err:
             logger.warning(f"⚠️ Eşleşme socket emit hatası: {socket_err}")
 
@@ -2840,6 +3779,26 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
             update_query = update_query.eq("passenger_id", resolved_id)
         
         update_query.execute()
+
+        try:
+            q_mem = dispatch_queues.get(tag_id, [])
+            for e in q_mem:
+                if e.get("status") == "sent":
+                    await emit_passenger_offer_revoked(e["driver_id"], tag_id)
+            for key in list(active_dispatch_tasks.keys()):
+                if key.startswith(f"{tag_id}_"):
+                    tsk = active_dispatch_tasks.pop(key, None)
+                    if tsk and not tsk.done():
+                        tsk.cancel()
+            dispatch_queues.pop(tag_id, None)
+            dispatch_tag_context.pop(tag_id, None)
+            supabase.table("dispatch_queue").delete().eq("tag_id", tag_id).execute()
+        except Exception:
+            pass
+        try:
+            await rolling_dispatch_stop(tag_id, revoke_offers=True)
+        except Exception:
+            pass
         
         return {"success": True, "message": "TAG iptal edildi"}
     except Exception as e:
@@ -2876,10 +3835,25 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
         
         # 3. 🔥 Dispatch queue'dan sil - SÜRÜCÜLERDEN HEMEN KALDIR
         try:
+            q_mem = dispatch_queues.get(tid, [])
+            for e in q_mem:
+                if e.get("status") == "sent":
+                    await emit_passenger_offer_revoked(e["driver_id"], tid)
+            for key in list(active_dispatch_tasks.keys()):
+                if key.startswith(f"{tid}_"):
+                    tsk = active_dispatch_tasks.pop(key, None)
+                    if tsk and not tsk.done():
+                        tsk.cancel()
+            dispatch_queues.pop(tid, None)
+            dispatch_tag_context.pop(tid, None)
             supabase.table("dispatch_queue").delete().eq("tag_id", tid).execute()
             logger.info(f"🗑️ Dispatch queue temizlendi: {tid}")
         except Exception as dq_err:
             logger.warning(f"Dispatch queue temizleme hatası: {dq_err}")
+        try:
+            await rolling_dispatch_stop(tid, revoke_offers=True)
+        except Exception:
+            pass
         
         # 4. 🔔 Socket ile tüm sürücülere bildir - TAG iptal edildi
         try:
@@ -3109,7 +4083,7 @@ async def send_offer(
                 "status": "pending"
             }
             try:
-                await sio.emit("new_offer", offer_event_payload, room=f"user_{passenger_id}")
+                await sio.emit("new_offer", offer_event_payload, room=_normalize_user_room(passenger_id))
             except Exception as socket_err:
                 logger.warning(f"⚠️ new_offer socket emit hatası: {socket_err}")
         
@@ -3269,6 +4243,85 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
 async def get_driver_active_tag(driver_id: str = None, user_id: str = None):
     """Şoförün aktif TAG'i (alias)"""
     return await get_driver_active_trip(driver_id, user_id)
+
+
+@api_router.get("/driver/dispatch-pending-offer")
+async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str = None):
+    """
+    Sıralı dispatch: Bu sürücüye 'sent' durumunda bekleyen Martı teklifi (uygulama resume).
+    """
+    try:
+        did = driver_id or user_id
+        if not did:
+            return {"success": False, "offer": None, "detail": "user_id gerekli"}
+        resolved_id = await resolve_user_id(did)
+        dq = (
+            supabase.table("dispatch_queue")
+            .select("*")
+            .eq("driver_id", resolved_id)
+            .eq("status", "sent")
+            .execute()
+        )
+        if not dq.data:
+            return {"success": True, "offer": None}
+        cfg = await get_dispatch_config()
+        timeout = int(cfg.get("driver_offer_timeout", 10))
+        for row in dq.data:
+            tid = row.get("tag_id")
+            if not tid:
+                continue
+            tr = (
+                supabase.table("tags")
+                .select("*")
+                .eq("id", tid)
+                .eq("status", "waiting")
+                .limit(1)
+                .execute()
+            )
+            if not tr.data:
+                continue
+            tag = tr.data[0]
+            fp = tag.get("final_price")
+            pvk = "car"
+            pid = tag.get("passenger_id")
+            if pid:
+                try:
+                    pid_r = await resolve_user_id(pid)
+                    pu = (
+                        supabase.table("users")
+                        .select("driver_details")
+                        .eq("id", pid_r)
+                        .limit(1)
+                        .execute()
+                    )
+                    if pu.data:
+                        pvk = _passenger_preferred_vehicle_from_row(pu.data[0]) or "car"
+                except Exception:
+                    pass
+            offer_payload = {
+                "tag_id": tid,
+                "passenger_id": tag.get("passenger_id"),
+                "passenger_name": tag.get("passenger_name") or "Yolcu",
+                "pickup_location": tag.get("pickup_location"),
+                "pickup_lat": tag.get("pickup_lat"),
+                "pickup_lng": tag.get("pickup_lng"),
+                "dropoff_location": tag.get("dropoff_location"),
+                "dropoff_lat": tag.get("dropoff_lat"),
+                "dropoff_lng": tag.get("dropoff_lng"),
+                "offered_price": fp,
+                "distance_km": tag.get("distance_km") or 0,
+                "estimated_minutes": tag.get("estimated_minutes") or 0,
+                "distance_to_pickup": row.get("distance_km") or 0,
+                "dispatch_timeout": timeout,
+                "is_dispatch": True,
+                "passenger_vehicle_kind": pvk,
+            }
+            return {"success": True, "offer": offer_payload}
+        return {"success": True, "offer": None}
+    except Exception as e:
+        logger.error(f"dispatch-pending-offer error: {e}")
+        return {"success": False, "offer": None, "detail": str(e)}
+
 
 @api_router.post("/driver/start-trip")
 async def start_trip(driver_id: str = None, user_id: str = None, tag_id: str = None):
@@ -4211,7 +5264,7 @@ async def admin_push_test_by_phone(admin_phone: str, phone: str):
         token = (user.get("push_token") or "").strip()
         now_iso = datetime.utcnow().isoformat()
         driver_active_until = user.get("driver_active_until")
-        has_active_package = driver_active_until and driver_active_until > now_iso
+        has_active_package = _has_active_package_for_dispatch(driver_active_until, now_iso)
         driver_online = user.get("driver_online") is True
         has_location = user.get("latitude") is not None and user.get("longitude") is not None
         # Dispatch'e girebilmesi için: driver_online, aktif paket, konum
@@ -4282,10 +5335,13 @@ async def admin_driver_status(admin_phone: str, phone: str):
         user = user_result.data[0]
         now_iso = datetime.utcnow().isoformat()
         driver_active_until = user.get("driver_active_until")
-        has_active_package = driver_active_until and driver_active_until > now_iso
+        has_active_package = _has_active_package_for_dispatch(driver_active_until, now_iso)
         driver_online = user.get("driver_online") is True
         has_location = user.get("latitude") is not None and user.get("longitude") is not None
         dispatch_eligible = driver_online and has_active_package and has_location
+        raw_vk = _driver_details_as_dict(user).get("vehicle_kind")
+        effective_vk = _effective_driver_vehicle_kind(user)
+        passenger_pref = _passenger_preferred_vehicle_from_row(user)
         return {
             "success": True,
             "phone_masked": ("*" * 6 + (user.get("phone") or "")[-4:]),
@@ -4303,6 +5359,11 @@ async def admin_driver_status(admin_phone: str, phone: str):
                 "Aktif paket yok veya süresi dolmuş" if not has_active_package else
                 "Konum yok"
             ),
+            # Dispatch araç filtresi: users.driver_details.vehicle_kind (yoksa car)
+            "driver_details_vehicle_kind_raw": raw_vk,
+            "dispatch_vehicle_kind_effective": effective_vk,
+            "passenger_preferred_vehicle": passenger_pref,
+            "dispatch_filter_note": "Katı: yolcu car → sadece car sürücü; motorcycle → sadece motorcycle. Eksik vehicle_kind -> car.",
         }
     except Exception as e:
         logger.error(f"driver-status error: {e}")
@@ -4944,7 +6005,7 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
     
     return {
         "success": True,
-        "supabase_url": SUPABASE_URL,
+        "supabase_url": _supabase_core.SUPABASE_URL,
         "channels": channels
     }
 
@@ -5562,7 +6623,6 @@ import math
 # ==================== HIZLI QR SİSTEMİ ====================
 # In-memory cache for QR verifications (1000+ concurrent users support)
 from typing import Dict, Tuple
-import asyncio
 
 # Simple in-memory cache with TTL
 _qr_cache: Dict[str, Tuple[dict, float]] = {}
@@ -5829,7 +6889,7 @@ async def verify_trip_qr(
                 "rate_user_id": driver_id,
                 "rate_user_name": driver_name,
                 "message": "Yolculuk tamamlandı! Sürücüyü puanlayın."
-            }, room=f"user_{passenger_id}")
+            }, room=_normalize_user_room(passenger_id))
             
             # Şoföre: Yolcuyu puanla
             await sio.emit("show_rating_modal", {
@@ -5837,7 +6897,7 @@ async def verify_trip_qr(
                 "rate_user_id": passenger_id,
                 "rate_user_name": passenger_name,
                 "message": "Yolculuk tamamlandı! Yolcuyu puanlayın."
-            }, room=f"user_{driver_id}")
+            }, room=_normalize_user_room(driver_id))
             
             logger.info(f"✅ Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
         except Exception as socket_err:
@@ -5974,7 +7034,7 @@ async def complete_trip_with_qr(request: Request):
                 "rate_user_id": driver_id,
                 "rate_user_name": driver_name,
                 "message": "Yolculuk tamamlandı!"
-            }, room=f"user_{passenger_id}")
+            }, room=_normalize_user_room(passenger_id))
             
             # Şoföre: Yolcuyu puanla
             await sio.emit("show_rating_modal", {
@@ -5982,7 +7042,7 @@ async def complete_trip_with_qr(request: Request):
                 "rate_user_id": passenger_id,
                 "rate_user_name": passenger_name,
                 "message": "Yolculuk tamamlandı!"
-            }, room=f"user_{driver_id}")
+            }, room=_normalize_user_room(driver_id))
             
             logger.info(f"✅ QR Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
         except Exception as socket_err:
@@ -6113,7 +7173,7 @@ async def scan_qr_for_trip_end(
                 "rate_user_id": driver_id,
                 "rate_user_name": scanned_name if scanner_user_id == passenger_id else scanner_name,
                 "message": "Yolculuk tamamlandı! Şoförü puanlayın."
-            }, room=f"user_{passenger_id}")
+            }, room=_normalize_user_room(passenger_id))
             
             # Şoföre: Yolcuyu puanla
             await sio.emit("show_rating_modal", {
@@ -6121,7 +7181,7 @@ async def scan_qr_for_trip_end(
                 "rate_user_id": passenger_id,
                 "rate_user_name": scanner_name if scanner_user_id == passenger_id else scanned_name,
                 "message": "Yolculuk tamamlandı! Yolcuyu puanlayın."
-            }, room=f"user_{driver_id}")
+            }, room=_normalize_user_room(driver_id))
             
             logger.info(f"✅ Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
         except Exception as socket_err:
@@ -6357,7 +7417,7 @@ async def verify_payment(
                 "amount": amount,
                 "payer_name": payer_name,
                 "message": f"{payer_name} size {amount}₺ ödeme yaptı!"
-            }, room=f"user_{driver_id}")
+            }, room=_normalize_user_room(driver_id))
         except Exception as socket_err:
             logger.warning(f"Payment socket hatası: {socket_err}")
         
@@ -7012,82 +8072,162 @@ async def end_daily_call(sid, data):
 @sio.on("driver_accept_offer")
 async def handle_driver_accept_offer(sid, data):
     """
-    Deterministic match flow when driver accepts:
-    1. TRIP LOCK (atomic DB update, only one driver wins via WHERE status = 'waiting')
-    2. PUSH to driver, then PUSH to passenger (always before socket)
-    3. SOCKET EMIT to driver (offer_accepted_success) and passenger (driver_matched)
+    Eşleşme: tags satırı id=tag_id için status='matched', driver_id, matched_at güncellenir.
+    WHERE yalnızca id (status='waiting' şartı yok — istemci/debug ile uyum).
+    passenger_vehicle_kind / driver_details bu handler'da kullanılmaz.
+
+    DB: modül geneli `supabase` = supabase_client.get_supabase() (create_client(URL, SERVICE_ROLE_KEY)).
+
+    Push / socket / rolling_dispatch_stop hata verse bile offer_accepted_error üretilmez (eşleşme sonrası blok).
     """
-    print("🔥 SOCKET driver_accept_offer RECEIVED:", data)
     data = data or {}
+    print("ACCEPT PAYLOAD:", data)
     tag_id = data.get("tag_id")
     driver_id = data.get("driver_id")
-    driver_name = data.get("driver_name") or "Sürücü"
-    print(f"tag_id={tag_id}, driver_id={driver_id}")
+    driver_name = (data.get("driver_name") or "Sürücü").strip() or "Sürücü"
+    print("TAG:", tag_id, "DRIVER:", driver_id)
     logger.info(f"driver_accept_offer RECEIVED tag_id={tag_id} driver_id={str(driver_id)[:20] if driver_id else '?'}")
     if not tag_id or not driver_id:
         logger.warning("driver_accept_offer: tag_id veya driver_id eksik")
         await sio.emit("offer_accepted_error", {"error": "Eksik bilgi"}, room=sid)
         return
-    driver_id = str(driver_id).strip()
-    trip_id = tag_id
+
+    resolved_driver_id = await resolve_user_id(str(driver_id).strip())
+    if not resolved_driver_id:
+        await sio.emit("offer_accepted_error", {"error": "Geçersiz sürücü"}, room=sid)
+        return
+
+    if not supabase:
+        logger.error("driver_accept_offer: supabase client yok — SERVICE_ROLE_KEY kontrol edin")
+        await sio.emit(
+            "offer_accepted_error",
+            {"error": "Sunucu veritabanı yapılandırması eksik"},
+            room=sid,
+        )
+        return
+
+    tid = str(tag_id).strip()
+    if len(tid) == 36 and tid.count("-") == 4:
+        tid = tid.lower()
+
+    trip_id = tid
+    tag = None
+    driver_phone = None
+
+    # --- Sadece tag oku + atomik eşleşme (araç filtresi yok; driver_details çekilmez) ---
     try:
         print("🚀 MATCH FLOW START")
         logger.info("MATCH FLOW START")
-        # Resolve driver name and get phone for fallback
-        driver_row = supabase.table("users").select("name, phone, push_token").eq("id", driver_id).limit(1).execute()
-        if not driver_row.data and "-" in driver_id:
-            driver_row = supabase.table("users").select("name, phone, push_token").eq("id", driver_id.lower()).limit(1).execute()
-        if driver_row.data and driver_row.data[0].get("name"):
-            driver_name = driver_row.data[0]["name"]
-        driver_phone = (driver_row.data[0].get("phone") or "").strip() if driver_row.data else None
-        driver_has_token = bool(driver_row.data and driver_row.data[0].get("push_token"))
-        logger.info(f"MATCH: driver found={bool(driver_row.data)} has_token={driver_has_token} phone={driver_phone[:6] if driver_phone else '?'}...")
-
-        # Read tag for passenger_id and to validate
-        tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        tag_result = (
+            supabase.table("tags")
+            .select(
+                "id, status, passenger_id, user_id, pickup_location, pickup_lat, pickup_lng, "
+                "dropoff_location, dropoff_lat, dropoff_lng, final_price, distance_km, estimated_minutes"
+            )
+            .eq("id", tid)
+            .limit(1)
+            .execute()
+        )
         if not tag_result.data:
             await sio.emit("offer_accepted_error", {"error": "Teklif bulunamadı"}, room=sid)
             return
         tag = tag_result.data[0]
-        if tag.get("status") != "waiting":
-            logger.info(f"driver_accept_offer: tag {tag_id} zaten alınmış, status={tag.get('status')}")
-            await sio.emit("offer_already_taken", {"tag_id": tag_id}, room=sid)
+        # status='waiting' şartı kaldırıldı — doğrudan id ile UPDATE
+
+        dr = (
+            supabase.table("users")
+            .select("name, phone, push_token")
+            .eq("id", resolved_driver_id)
+            .limit(1)
+            .execute()
+        )
+        if not dr.data and "-" in str(resolved_driver_id):
+            dr = (
+                supabase.table("users")
+                .select("name, phone, push_token")
+                .eq("id", str(resolved_driver_id).lower())
+                .limit(1)
+                .execute()
+            )
+        if dr.data and dr.data[0].get("name"):
+            driver_name = dr.data[0]["name"]
+        driver_phone = (dr.data[0].get("phone") or "").strip() if dr.data else None
+
+        _upd_body = {
+            "status": "matched",
+            "driver_id": resolved_driver_id,
+            "driver_name": driver_name,
+            "matched_at": datetime.utcnow().isoformat(),
+        }
+        update_result = (
+            supabase.table("tags").update(_upd_body).eq("id", tid).select("id").execute()
+        )
+        _rows = update_result.data or []
+        _n = len(_rows)
+        # Orijinal tag_id farklı biçimdeyse (UUID büyük/küçük harf) bir kez daha dene
+        if _n == 0 and str(tag_id).strip() != tid:
+            alt = str(tag_id).strip()
+            print("RETRY UPDATE with alt id:", alt)
+            update_result = (
+                supabase.table("tags").update(_upd_body).eq("id", alt).select("id").execute()
+            )
+            _rows = update_result.data or []
+            _n = len(_rows)
+        # postgrest-py: güncellenen satırlar .data içinde; SQL rowcount yok
+        print("UPDATED ROWS:", _n, "| rowcount attr:", getattr(update_result, "count", None))
+        logger.info(
+            f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id} updated_rows={_n}"
+        )
+        if _n == 0:
+            await sio.emit(
+                "offer_accepted_error",
+                {"error": "Tag güncellenemedi (id eşleşmedi veya RLS/policy)", "tag_id": tid},
+                room=sid,
+            )
             return
+        logger.info(f"TRIP LOCK SUCCESS driver_accept_offer tag={tid} driver={resolved_driver_id}")
+    except Exception as e:
+        logger.exception(f"driver_accept_offer match (DB) error: {e}")
+        await sio.emit("offer_accepted_error", {"error": str(e)}, room=sid)
+        return
+
+    # --- Eşleşme sonrası: best-effort; hata offer_accepted_error üretmez ---
+    try:
+        try:
+            await rolling_dispatch_stop(
+                tid, revoke_offers=True, except_driver_id=resolved_driver_id
+            )
+        except Exception as _rds:
+            logger.warning(f"rolling_dispatch_stop after driver_accept_offer (non-fatal): {_rds}")
+        try:
+            await handle_dispatch_accept(tid, resolved_driver_id)
+        except Exception as _hda:
+            logger.warning(f"handle_dispatch_accept after driver_accept_offer (non-fatal): {_hda}")
+
         passenger_id = tag.get("passenger_id") or tag.get("user_id")
-        if not passenger_id:
-            passenger_id = tag_result.data[0].get("passenger_id")
         passenger_id = str(passenger_id).strip() if passenger_id else None
-        if not passenger_id:
-            logger.warning(f"driver_accept_offer: tag {tag_id} için passenger_id yok")
+        if passenger_id:
+            passenger_id = await resolve_user_id(passenger_id)
         passenger_name = "Yolcu"
         passenger_phone = None
-        passenger_has_token = False
         pr = None
         if passenger_id:
             pr = supabase.table("users").select("name, phone, push_token").eq("id", passenger_id).limit(1).execute()
             if not pr.data and "-" in passenger_id:
-                pr = supabase.table("users").select("name, phone, push_token").eq("id", passenger_id.lower()).limit(1).execute()
+                pr = (
+                    supabase.table("users")
+                    .select("name, phone, push_token")
+                    .eq("id", passenger_id.lower())
+                    .limit(1)
+                    .execute()
+                )
             if pr and pr.data:
                 if pr.data[0].get("name"):
                     passenger_name = pr.data[0]["name"]
                 passenger_phone = (pr.data[0].get("phone") or "").strip()
-                passenger_has_token = bool(pr.data[0].get("push_token"))
-        logger.info(f"MATCH: passenger_id={passenger_id[:8] if passenger_id else '?'}... found={bool(pr and pr.data)} has_token={passenger_has_token}")
+        if not passenger_id:
+            logger.warning(f"driver_accept_offer: tag {tid} için passenger_id yok (push/socket kısıtlı)")
 
-        # --- 2. TRIP LOCK ---
-        update_result = supabase.table("tags").update({
-            "status": "matched",
-            "driver_id": driver_id,
-            "driver_name": driver_name,
-            "matched_at": datetime.utcnow().isoformat(),
-        }).eq("id", tag_id).eq("status", "waiting").execute()
-        if not update_result.data:
-            await sio.emit("offer_already_taken", {"tag_id": tag_id}, room=sid)
-            return
-        logger.info("TRIP LOCK SUCCESS")
-        await handle_dispatch_accept(tag_id, driver_id)
-
-        # --- 3. PUSH NOTIFICATIONS (before any socket emit) ---
         def _id_hint(uid):
             if not uid:
                 return "?"
@@ -7097,42 +8237,52 @@ async def handle_driver_accept_offer(sid, data):
             if s.isdigit() and len(s) >= 10:
                 return f"phone:{s[:4]}***"
             return f"id:{s[:8]}"
-        logger.info(f"MATCH PUSH: driver_id={_id_hint(driver_id)} passenger_id={_id_hint(passenger_id)}")
-        match_data = {"event": "match", "trip_id": trip_id, "type": "matched", "tag_id": tag_id}
+
+        logger.info(f"MATCH PUSH: driver_id={_id_hint(resolved_driver_id)} passenger_id={_id_hint(passenger_id)}")
+        match_data = {"event": "match", "trip_id": trip_id, "type": "matched", "tag_id": tid}
 
         print("📲 SENDING PUSH DRIVER")
         push_driver_ok = await send_push_notification(
-            driver_id, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
+            resolved_driver_id,
+            "Eşleşme sağlandı",
+            "Yolcuya gitmek için tıklayın.",
+            match_data,
         )
         if not push_driver_ok and driver_phone and _looks_like_phone(driver_phone):
             push_driver_ok = await send_push_notification(
-                driver_phone, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
+                driver_phone,
+                "Eşleşme sağlandı",
+                "Yolcuya gitmek için tıklayın.",
+                match_data,
             )
             if push_driver_ok:
                 logger.info("PUSH DRIVER SENT (retry by phone)")
-        print("✅ PUSH DRIVER SENT" if push_driver_ok else "❌ PUSH DRIVER FAILED")
         logger.info("PUSH DRIVER SENT" if push_driver_ok else "PUSH DRIVER FAILED")
 
-        push_passenger_ok = False
         if passenger_id:
             print("📲 SENDING PUSH PASSENGER")
-            push_passenger_ok = await send_push_notification(
-                passenger_id, "Sürücü bulundu", "Sürücünüz yola çıktı.", match_data,
+            push_p_ok = await send_push_notification(
+                passenger_id,
+                "Sürücü bulundu",
+                "Sürücünüz yola çıktı.",
+                match_data,
             )
-            if not push_passenger_ok and passenger_phone and _looks_like_phone(passenger_phone):
-                push_passenger_ok = await send_push_notification(
-                    passenger_phone, "Sürücü bulundu", "Sürücünüz yola çıktı.", match_data,
+            if not push_p_ok and passenger_phone and _looks_like_phone(passenger_phone):
+                push_p_ok = await send_push_notification(
+                    passenger_phone,
+                    "Sürücü bulundu",
+                    "Sürücünüz yola çıktı.",
+                    match_data,
                 )
-                if push_passenger_ok:
+                if push_p_ok:
                     logger.info("PUSH PASSENGER SENT (retry by phone)")
-        print("✅ PUSH PASSENGER SENT" if push_passenger_ok else "❌ PUSH PASSENGER FAILED")
-        logger.info("PUSH PASSENGER SENT" if push_passenger_ok else "PUSH PASSENGER FAILED")
+            logger.info("PUSH PASSENGER SENT" if push_p_ok else "PUSH PASSENGER FAILED")
 
-        # --- 4. SOCKET EVENTS (after push) ---
+        matched_at = datetime.utcnow().isoformat()
         payload = {
             "trip_id": trip_id,
-            "tag_id": tag_id,
-            "driver_id": driver_id,
+            "tag_id": tid,
+            "driver_id": resolved_driver_id,
             "driver_name": driver_name,
             "passenger_id": passenger_id,
             "passenger_name": passenger_name,
@@ -7143,21 +8293,36 @@ async def handle_driver_accept_offer(sid, data):
             "dropoff_lat": tag.get("dropoff_lat"),
             "dropoff_lng": tag.get("dropoff_lng"),
             "offered_price": tag.get("offered_price") or tag.get("final_price"),
+            "final_price": tag.get("final_price"),
             "distance_km": tag.get("distance_km"),
             "estimated_minutes": tag.get("estimated_minutes"),
+            "status": "matched",
+            "matched_at": matched_at,
         }
-        driver_sid = connected_users.get(driver_id)
-        if driver_sid:
-            await sio.emit("offer_accepted_success", payload, room=driver_sid)
+        driver_sid = connected_users.get(str(resolved_driver_id).strip().lower()) or connected_users.get(
+            resolved_driver_id
+        )
+        driver_room = _normalize_user_room(resolved_driver_id)
+        driver_target = driver_sid or driver_room
+        if driver_target:
+            await sio.emit("offer_accepted_success", payload, room=driver_target)
+            await sio.emit("tag_matched", payload, room=driver_target)
+        try:
+            await emit_socket_event_to_user(resolved_driver_id, "ride_matched", payload)
+        except Exception:
+            pass
         if passenger_id:
-            passenger_sid = connected_users.get(passenger_id)
-            if passenger_sid:
-                await sio.emit("driver_matched", payload, room=passenger_sid)
-        logger.info("SOCKET EMIT DONE")
-        logger.info("MATCH FLOW END")
+            passenger_sid = connected_users.get(str(passenger_id).strip().lower()) or connected_users.get(passenger_id)
+            passenger_room = _normalize_user_room(passenger_id)
+            passenger_target = passenger_sid or passenger_room
+            if passenger_target:
+                await sio.emit("driver_matched", payload, room=passenger_target)
+                await sio.emit("tag_matched", payload, room=passenger_target)
+        logger.info("SOCKET EMIT DONE driver_accept_offer")
     except Exception as e:
-        logger.exception(f"driver_accept_offer error: {e}")
-        await sio.emit("offer_accepted_error", {"error": str(e)}, room=sid)
+        logger.warning(f"driver_accept_offer post-match (non-fatal): {e}")
+
+    logger.info("MATCH FLOW END driver_accept_offer")
 
 
 # ==================== CHAT MESSAGING SYSTEM (HYBRID) ====================
@@ -7216,7 +8381,7 @@ async def send_chat_message(msg: ChatMessageCreate):
                 "tag_id": msg.tag_id,
                 "message": saved_message,
                 "sender_name": sender_name
-            }, room=f"user_{msg.receiver_id}")
+            }, room=_normalize_user_room(msg.receiver_id))
         except Exception as socket_err:
             logger.warning(f"⚠️ Socket notification failed (non-blocking): {socket_err}")
         
@@ -7458,6 +8623,10 @@ class CreateRideOfferRequest(BaseModel):
     offered_price: int
     distance_km: float
     estimated_minutes: int
+    # car | motorcycle | motor — yoksa profil veya varsayılan car
+    passenger_preferred_vehicle: Optional[str] = None
+    # Frontend alias (ride/create); passenger_preferred_vehicle ile aynı anlam
+    passenger_vehicle_kind: Optional[str] = None
 
 @api_router.post("/ride/create-offer")
 async def create_ride_offer(request: CreateRideOfferRequest):
@@ -7466,17 +8635,40 @@ async def create_ride_offer(request: CreateRideOfferRequest):
     Bu teklif tüm yakındaki sürücülere gönderilir
     """
     try:
+        # Her zaman canonical UUID ile ilerle (eski id/telefon kaynaklı eşleşme kaçaklarını önler)
+        passenger_id = await resolve_user_id(request.passenger_id)
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = request.tag_id or str(uuid.uuid4())
         
-        # Yolcu bilgisini al
-        passenger_result = supabase.table("users").select("name").eq("id", request.passenger_id).execute()
-        passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
+        # Yolcu bilgisi + araç tercihi (driver_details.passenger_preferred_vehicle)
+        passenger_result = (
+            supabase.table("users")
+            .select("name, driver_details")
+            .eq("id", passenger_id)
+            .execute()
+        )
+        pref_from_request = _canonical_vehicle_kind(
+            request.passenger_preferred_vehicle
+        ) or _canonical_vehicle_kind(request.passenger_vehicle_kind)
+        passenger_name = "Yolcu"
+        passenger_pref_vehicle = pref_from_request or "car"
+        if passenger_result.data:
+            prow = passenger_result.data[0]
+            passenger_name = prow.get("name") or "Yolcu"
+            from_profile = _passenger_preferred_vehicle_from_row(prow)
+            passenger_pref_vehicle = pref_from_request or from_profile or "car"
+            # Profilde son tercihi sakla (bir sonraki teklif için)
+            try:
+                dd = _driver_details_as_dict(prow)
+                dd["passenger_preferred_vehicle"] = passenger_pref_vehicle
+                supabase.table("users").update({"driver_details": dd}).eq("id", passenger_id).execute()
+            except Exception as sync_ve:
+                logger.warning(f"passenger_preferred_vehicle profil senkronu: {sync_ve}")
         
         # Tag oluştur - Mevcut tablo kolonlarını kullan
         tag_data = {
             "id": tag_id,
-            "passenger_id": request.passenger_id,
+            "passenger_id": passenger_id,
             "passenger_name": passenger_name,
             "pickup_lat": request.pickup_lat,
             "pickup_lng": request.pickup_lng,
@@ -7497,60 +8689,30 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             tag["offered_price"] = request.offered_price  # Frontend için
             tag["distance_km"] = request.distance_km
             tag["estimated_minutes"] = request.estimated_minutes
-            logger.info(f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL")
-            
-            # 🆕 DISPATCH QUEUE - Sıralı teklif gönderimi
-            config = await get_dispatch_config()
-            if config.get("enabled", True):
-                # Tag verilerini hazırla
-                full_tag_data = {
-                    **tag_data,
-                    "offered_price": request.offered_price,
-                    "distance_km": request.distance_km,
-                    "estimated_minutes": request.estimated_minutes,
-                }
-                
-                # Dispatch queue oluştur ve ilk sürücüye teklif gönder
-                queue_created = await create_dispatch_queue(tag_id, full_tag_data)
-                if queue_created:
-                    # Tüm kuyruktaki sürücülere hemen push: fiyat, mesafe, "10 sn içinde kabul et"
-                    queue = dispatch_queues.get(tag_id, [])
-                    price = full_tag_data.get("final_price") or full_tag_data.get("offered_price", 0)
-                    distance_km = full_tag_data.get("distance_km") or full_tag_data.get("trip_distance_km") or 0
-                    timeout_sec = config.get("driver_offer_timeout", 10)
-                    price_int = int(price) if price else 0
-                    distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
-                    body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
-                    for entry in queue:
-                        try:
-                            await send_trip_push_and_log(
-                                entry["driver_id"],
-                                "new_ride_request",
-                                "Yeni yolculuk teklifi",
-                                body,
-                                {
-                                    "type": "new_offer",
-                                    "tag_id": tag_id,
-                                    "price": price,
-                                    "distance_km": distance_km,
-                                    "timeout": timeout_sec,
-                                    "action": "accept",
-                                }
-                            )
-                        except Exception as push_err:
-                            logger.warning(f"⚠️ Teklif push sürücüye gönderilemedi: {entry.get('driver_id')} - {push_err}")
-                    if queue:
-                        logger.info(f"🔔 Teklif bildirimi {len(queue)} sürücüye gönderildi: {tag_id}")
-                    # İlk sürücüye socket + sıralı teklif akışı
-                    asyncio.create_task(dispatch_offer_to_next_driver(tag_id, full_tag_data))
-                    logger.info(f"📤 Dispatch başlatıldı: {tag_id}")
-                else:
-                    # Uygun sürücü yok, fallback: tüm sürücülere broadcast
-                    await broadcast_offer_to_all(tag_id, full_tag_data)
-            
+            logger.info(
+                f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL "
+                f"(yolcu araç tercihi={passenger_pref_vehicle})"
+            )
+            logger.info(f"PASSENGER CREATED TAG {tag_id}")
+            # Teklif dağıtımı: bellek içi rolling batch (tag DB'den okunur; dispatch_queue kullanılmaz)
+            logger.info(f"CALL rolling_dispatch_start tag={tag_id}")
+            notified = await rolling_dispatch_start(tag_id)
+            if notified == 0:
+                logger.warning(f"⚠️ Rolling batch: tag={tag_id} için {DISPATCH_RADIUS_KM} km içinde uygun sürücü yok")
+                try:
+                    await sio.emit(
+                        "dispatch_exhausted",
+                        {"tag_id": tag_id, "message": "20 km içinde uygun sürücü bulunamadı"},
+                        room=_normalize_user_room(passenger_id),
+                    )
+                except Exception:
+                    pass
+
             return {
                 "success": True,
                 "tag": tag,
+                "dispatch_mode": "rolling_batch",
+                "eligible_driver_count": notified,
                 "message": "Teklifiniz sürücülere gönderildi"
             }
         
@@ -7559,13 +8721,25 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         logger.error(f"❌ Create ride offer error: {e}")
         return {"success": False, "error": str(e)}
 
+
+@api_router.post("/ride/create")
+async def create_ride(request: CreateRideOfferRequest):
+    """
+    Yolcu teklif oluşturma — POST /api/ride/create
+    create-offer ile aynı: tag insert + rolling_dispatch_start.
+    """
+    return await create_ride_offer(request)
+
+
 @api_router.post("/ride/accept")
 async def accept_ride(tag_id: str, driver_id: str):
     """
     Martı TAG - Sürücü teklifi kabul eder
     İLK KABUL EDEN KAZANIR - Atomik işlem
+    Araç/motor filtresi yok; filtre yalnızca rolling dispatch listesinde uygulanır.
     """
     try:
+        resolved_driver_id = await resolve_user_id(driver_id)
         # Önce tag'in durumunu kontrol et (race condition önleme)
         tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
         
@@ -7577,9 +8751,11 @@ async def accept_ride(tag_id: str, driver_id: str):
         # Zaten kabul edilmiş mi?
         if tag.get("status") != "waiting":
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
+
+        logger.info("Accept: direct match mode")
         
         # Sürücü bilgisini al
-        driver_result = supabase.table("users").select("name, phone").eq("id", driver_id).execute()
+        driver_result = supabase.table("users").select("name, phone, driver_details").eq("id", resolved_driver_id).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
         
         # Yolcu bilgisini al - passenger_id kullan (tag'da bazen user_id olarak da saklanabilir)
@@ -7589,30 +8765,59 @@ async def accept_ride(tag_id: str, driver_id: str):
             if refetch.data and refetch.data[0].get("passenger_id"):
                 passenger_id = refetch.data[0]["passenger_id"]
         if passenger_id:
+            passenger_id = await resolve_user_id(passenger_id)
+
+        if passenger_id:
             passenger_result = supabase.table("users").select("name, phone").eq("id", passenger_id).execute()
             passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
         else:
             passenger_name = "Yolcu"
         
         # Atomik güncelleme - sadece status='waiting' ise güncelle
+        # .select("*") zorunlu: aksi halde update_result.data boş kalır (PostgREST)
         update_result = supabase.table("tags").update({
             "status": "matched",
-            "driver_id": driver_id,
+            "driver_id": resolved_driver_id,
             "driver_name": driver_name,
             "matched_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("status", "waiting").execute()
+        }).eq("id", tag_id).eq("status", "waiting").select("*").execute()
         
         if not update_result.data:
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
         
         updated_tag = update_result.data[0]
         updated_tag["passenger_name"] = passenger_name
+
+        try:
+            await rolling_dispatch_stop(
+                tag_id, revoke_offers=True, except_driver_id=resolved_driver_id
+            )
+        except Exception as _rds:
+            logger.warning(f"rolling_dispatch_stop after accept_ride (non-fatal): {_rds}")
+
+        # Socket: yolcu / sürücü (DB dispatch_queue kullanılmıyor)
+        match_socket_payload = {
+            "tag_id": tag_id,
+            "status": "matched",
+            "driver_id": resolved_driver_id,
+            "driver_name": driver_name,
+            "passenger_id": passenger_id,
+            "passenger_name": passenger_name,
+            "pickup_location": updated_tag.get("pickup_location"),
+            "pickup_lat": updated_tag.get("pickup_lat"),
+            "pickup_lng": updated_tag.get("pickup_lng"),
+            "dropoff_location": updated_tag.get("dropoff_location"),
+            "dropoff_lat": updated_tag.get("dropoff_lat"),
+            "dropoff_lng": updated_tag.get("dropoff_lng"),
+            "final_price": updated_tag.get("final_price"),
+            "matched_at": updated_tag.get("matched_at"),
+        }
+        if passenger_id:
+            await emit_socket_event_to_user(passenger_id, "ride_accepted", match_socket_payload)
+        await emit_socket_event_to_user(resolved_driver_id, "ride_matched", match_socket_payload)
         
-        # 🆕 DISPATCH QUEUE - Kabul edildi, diğer sürücülerin tekliflerini expire et
-        await handle_dispatch_accept(tag_id, driver_id)
-        
-        # Eşleşme tam bu anda – güncel tag'den sürücü/yolcu id'leri ile ikisine bildirim (teklif bildirimiyle aynı yol)
-        await send_match_notification_to_both(tag_id, driver_id, passenger_id)
+        # Push (Expo) — teklif kanalıyla aynı
+        await send_match_notification_to_both(tag_id, resolved_driver_id, passenger_id)
         
         logger.info(f"✅ Eşleşme: {tag_id} - Sürücü: {driver_name}")
         
@@ -7715,6 +8920,80 @@ async def deactivate_promo(admin_phone: str, code: str):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
+@api_router.post("/admin/driver/grant-package-by-phone")
+async def admin_grant_driver_package_by_phone(admin_phone: str, phone: str, package_id: str = "1_month"):
+    """Admin: telefona göre sürücü paketi yükle (satın alınmış gibi)."""
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+
+    try:
+        clean_phone = (phone or "").replace("+90", "").replace(" ", "").replace("-", "")
+        # Paketi kontrol et
+        if package_id not in DRIVER_PACKAGES:
+            raise HTTPException(status_code=400, detail="Geçersiz paket")
+
+        # Kullanıcıyı bul (905xx / 5xx varyantları için mevcut helper)
+        user_row = None
+        for candidate in _phone_lookup_candidates(clean_phone):
+            res = supabase.table("users").select("id, phone, driver_active_until").eq("phone", candidate).limit(1).execute()
+            if res.data:
+                user_row = res.data[0]
+                break
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+
+        hours = DRIVER_PACKAGES[package_id]["hours"]
+        now = datetime.utcnow()
+
+        current_until = user_row.get("driver_active_until")
+        if current_until:
+            try:
+                active_until = datetime.fromisoformat(current_until.replace("Z", "+00:00"))
+                if active_until.tzinfo:
+                    active_until = active_until.replace(tzinfo=None)
+                base = active_until if active_until > now else now
+            except Exception:
+                base = now
+        else:
+            base = now
+
+        new_until = base + timedelta(hours=hours)
+
+        supabase.table("users").update({
+            "driver_active_until": new_until.isoformat(),
+            "updated_at": now.isoformat(),
+        }).eq("id", user_row["id"]).execute()
+
+        # Log (tablo yoksa sorun etmeyelim)
+        try:
+            supabase.table("driver_package_purchases").insert({
+                "user_id": user_row["id"],
+                "package_id": package_id,
+                "package_name": DRIVER_PACKAGES[package_id]["name"],
+                "hours": hours,
+                "price_tl": DRIVER_PACKAGES[package_id]["price_tl"],
+                "purchased_at": now.isoformat(),
+                "expires_at": new_until.isoformat(),
+                "notes": f"admin_grant:{admin_phone}",
+            }).execute()
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "user_id": user_row["id"],
+            "phone": user_row.get("phone"),
+            "package_id": package_id,
+            "active_until": new_until.isoformat(),
+            "hours_added": hours,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"admin_grant_driver_package_by_phone error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.post("/driver/promo/redeem")
 async def redeem_promo_code(user_id: str, code: str):
     """Sürücü - Promosyon kodunu kullan"""
@@ -7790,9 +9069,9 @@ async def toggle_driver_online(user_id: str, is_online: bool):
     try:
         now = datetime.utcnow()
         
-        # Mevcut durumu al
+        # Mevcut durumu al (admin için phone da lazım)
         user_result = supabase.table("users").select(
-            "driver_online, driver_active_until, driver_activated_at"
+            "phone, driver_online, driver_active_until, driver_activated_at"
         ).eq("id", user_id).execute()
         
         if not user_result.data:
@@ -7802,18 +9081,36 @@ async def toggle_driver_online(user_id: str, is_online: bool):
         current_online = user.get("driver_online", False)
         active_until = user.get("driver_active_until")
         activated_at = user.get("driver_activated_at")
+        phone = (user.get("phone") or "").replace("+90", "").replace(" ", "").replace("-", "")
+        is_admin_user = phone in ADMIN_PHONE_NUMBERS
         
-        # Aktif paketi kontrol et
+        # Aktif paketi kontrol et (ücretsiz dönemde atlanır; admin ise yoksa/bitmişse 1 yıl ver)
         if is_online:
-            if not active_until:
-                return {"success": False, "error": "Aktif paketiniz yok. Lütfen paket satın alın veya promosyon kodu kullanın."}
-            
-            active_until_dt = datetime.fromisoformat(active_until.replace("Z", ""))
-            if active_until_dt < now:
-                return {"success": False, "error": "Paket süreniz dolmuş. Lütfen yeni paket alın."}
+            need_activate = False
+            if DRIVER_UNLIMITED_FREE_PERIOD:
+                pass
+            elif not active_until:
+                if is_admin_user:
+                    need_activate = True
+                else:
+                    return {"success": False, "error": "Aktif paketiniz yok. Lütfen paket satın alın veya promosyon kodu kullanın."}
+            else:
+                active_until_dt = datetime.fromisoformat(active_until.replace("Z", ""))
+                if active_until_dt < now:
+                    if is_admin_user:
+                        need_activate = True
+                    else:
+                        return {"success": False, "error": "Paket süreniz dolmuş. Lütfen yeni paket alın."}
+            if need_activate:
+                # Admin: ücretsiz 1 yıl aktif
+                active_until = (now + timedelta(days=365)).isoformat()
+                supabase.table("users").update({
+                    "driver_active_until": active_until,
+                    "updated_at": now.isoformat()
+                }).eq("id", user_id).execute()
         
-        # KAPAMA İSTEĞİ - 3 saat kuralını kontrol et
-        if not is_online and current_online:
+        # KAPAMA İSTEĞİ - 3 saat kuralı (admin hariç)
+        if not is_online and current_online and not is_admin_user:
             if activated_at:
                 activated_at_dt = datetime.fromisoformat(activated_at.replace("Z", ""))
                 hours_active = (now - activated_at_dt).total_seconds() / 3600
@@ -7941,7 +9238,7 @@ async def admin_full_dashboard(admin_phone: str):
                 # driver_online VE driver_active_until geçerli mi?
                 if u.get("driver_online"):
                     active_until = u.get("driver_active_until")
-                    if active_until and active_until > now_iso:
+                    if DRIVER_UNLIMITED_FREE_PERIOD or (active_until and active_until > now_iso):
                         online_drivers += 1
             
             # Bugün kayıt olan
@@ -8637,19 +9934,67 @@ async def update_dispatch_config_api(request: Request):
 
 @api_router.get("/dispatch/queue/{tag_id}")
 async def get_dispatch_queue(tag_id: str):
-    """Belirli bir tag için dispatch queue durumunu getir"""
+    """Belirli bir tag için dispatch queue durumunu getir (yolcu bekleme ekranı için özet alanlar)."""
     try:
-        queue = dispatch_queues.get(tag_id, [])
-        
-        # DB'den de kontrol et
+        queue = list(dispatch_queues.get(tag_id, []) or [])
         if not queue:
             try:
-                result = supabase.table("dispatch_queue").select("*").eq("tag_id", tag_id).order("priority").execute()
-                queue = result.data if result.data else []
-            except:
-                pass
-        
-        return {"success": True, "queue": queue}
+                result = (
+                    supabase.table("dispatch_queue")
+                    .select("*")
+                    .eq("tag_id", tag_id)
+                    .order("priority")
+                    .execute()
+                )
+                queue = list(result.data) if result.data else []
+            except Exception:
+                queue = []
+
+        cfg = await get_dispatch_config()
+        timeout_default = int(cfg.get("driver_offer_timeout", 10) or 10)
+        total_drivers = len(queue)
+        current_index = 0
+        timeout_remaining = timeout_default
+        status = "searching"
+
+        if total_drivers == 0:
+            return {
+                "success": True,
+                "queue": queue,
+                "current_index": 0,
+                "total_drivers": 0,
+                "timeout_remaining": timeout_remaining,
+                "status": "no_drivers",
+            }
+
+        def _st(e):
+            return str(e.get("status") or "").lower()
+
+        sent = [e for e in queue if _st(e) == "sent"]
+        expired = [e for e in queue if _st(e) == "expired"]
+        accepted = [e for e in queue if _st(e) == "accepted"]
+
+        if accepted:
+            status = "matched"
+            current_index = int(accepted[0].get("priority") or total_drivers)
+        elif sent:
+            status = "offering"
+            current_index = int(sent[0].get("priority") or 1)
+        elif len(expired) >= total_drivers:
+            status = "no_drivers"
+            current_index = total_drivers
+        elif expired:
+            status = "searching"
+            current_index = len(expired)
+
+        return {
+            "success": True,
+            "queue": queue,
+            "current_index": current_index,
+            "total_drivers": total_drivers,
+            "timeout_remaining": timeout_remaining,
+            "status": status,
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -9188,16 +10533,27 @@ async def get_driver_packages():
     return {"success": True, "packages": packages}
 
 @api_router.get("/drivers/nearby")
-async def get_nearby_drivers(lat: float, lng: float, radius_km: float = 20):
-    """Yakındaki online sürücülerin konum ve bilgilerini al"""
+async def get_nearby_drivers(
+    lat: float,
+    lng: float,
+    radius_km: float = 20,
+    passenger_vehicle_kind: Optional[str] = None,
+):
+    """Yakındaki online sürücülerin konum ve bilgilerini al.
+    passenger_vehicle_kind=car|motorcycle verilirse yalnızca o tipteki sürücüler (dispatch ile uyumlu)."""
     try:
+        pref = _canonical_vehicle_kind(passenger_vehicle_kind)
         now = datetime.utcnow().isoformat()
-        drivers_result = supabase.table("users").select(
+        q = supabase.table("users").select(
             "id, name, latitude, longitude, rating, driver_details"
-        ).eq("driver_online", True).gt("driver_active_until", now).execute()
+        ).eq("driver_online", True)
+        drivers_result = _apply_driver_active_until_filter(q, now).execute()
         
         nearby_drivers = []
         for driver in (drivers_result.data or []):
+            if pref is not None:
+                if _effective_driver_vehicle_kind(driver) != pref:
+                    continue
             d_lat = driver.get("latitude")
             d_lng = driver.get("longitude")
             if d_lat and d_lng:
@@ -9232,9 +10588,16 @@ async def get_nearby_drivers(lat: float, lng: float, radius_km: float = 20):
         return {"success": False, "drivers": [], "count": 0}
 
 @api_router.get("/driver/nearby-activity")
-async def get_nearby_activity(lat: float, lng: float, radius_km: float = 20):
-    """Sürücü için yakındaki aktif yolculuklar ve yoğunluk bilgisi"""
+async def get_nearby_activity(
+    lat: float,
+    lng: float,
+    radius_km: float = 20,
+    passenger_vehicle_kind: Optional[str] = None,
+):
+    """Sürücü için yakındaki aktif yolculuklar ve yoğunluk bilgisi.
+    passenger_vehicle_kind ile nearby_driver_count yalnız uygun tipteki sürücüleri sayar (yolcu ekranı)."""
     try:
+        pref = _canonical_vehicle_kind(passenger_vehicle_kind)
         # 1. Yakındaki aktif (bekleyen) yolculukları al
         active_tags = supabase.table("tags").select(
             "id, pickup_lat, pickup_lng, pickup_location, status, final_price"
@@ -9271,12 +10634,16 @@ async def get_nearby_activity(lat: float, lng: float, radius_km: float = 20):
             for region, count in region_counts.items() if count >= 2
         ]
         
-        # 3. Yakındaki online sürücü sayısı
+        # 3. Yakındaki online sürücü sayısı (isteğe bağlı araç tipi filtresi)
         now = datetime.utcnow().isoformat()
-        drivers_result = supabase.table("users").select("id, latitude, longitude").eq("driver_online", True).gt("driver_active_until", now).execute()
+        q = supabase.table("users").select("id, latitude, longitude, driver_details").eq("driver_online", True)
+        drivers_result = _apply_driver_active_until_filter(q, now).execute()
         
         nearby_drivers = 0
         for d in (drivers_result.data or []):
+            if pref is not None:
+                if _effective_driver_vehicle_kind(d) != pref:
+                    continue
             d_lat, d_lng = d.get("latitude"), d.get("longitude")
             if d_lat and d_lng:
                 if haversine_distance(lat, lng, d_lat, d_lng) <= radius_km:
@@ -9319,6 +10686,17 @@ async def get_driver_status(user_id: str):
                 "remaining_seconds": 0,
                 "remaining_text": "KYC onayı gerekli",
                 "driver_online": False
+            }
+        
+        if DRIVER_UNLIMITED_FREE_PERIOD:
+            return {
+                "success": True,
+                "is_active": True,
+                "is_verified_driver": True,
+                "remaining_seconds": 86400 * 365 * 10,
+                "remaining_text": "Ücretsizdir",
+                "driver_online": driver_online,
+                "active_until": driver_active_until,
             }
         
         # Süre kontrolü
@@ -9385,6 +10763,10 @@ async def activate_driver_package(user_id: str, package_id: str):
         
         package = DRIVER_PACKAGES[package_id]
         hours = package["hours"]
+        
+        # Minimum satın alma: 24 saat
+        if hours < 24:
+            return {"success": False, "detail": "En az 24 saatlik paket satın alabilirsiniz"}
         
         # Kullanıcı kontrolü
         result = supabase.table("users").select("driver_details, driver_active_until").eq("id", user_id).execute()
@@ -9470,32 +10852,46 @@ async def driver_go_offline(user_id: str):
 
 @api_router.post("/driver/go-online")
 async def driver_go_online(user_id: str):
-    """Sürücüyü online yap (aktif paketi varsa)"""
+    """Sürücüyü online yap (aktif paketi varsa). Admin numaraları otomatik 1 yıl paket alır."""
     try:
-        result = supabase.table("users").select("driver_active_until, driver_details").eq("id", user_id).execute()
+        result = supabase.table("users").select("phone, driver_active_until, driver_details").eq("id", user_id).execute()
         if not result.data:
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
         
         user = result.data[0]
         driver_details = user.get("driver_details") or {}
         driver_active_until = user.get("driver_active_until")
+        phone_normalized = _normalize_phone(user.get("phone") or "")
+        is_admin = phone_normalized in ADMIN_PHONE_NUMBERS
         
-        # KYC kontrolü
-        if driver_details.get("kyc_status") != "approved":
-            return {"success": False, "detail": "Sürücü kaydınız henüz onaylanmamış"}
+        # Admin: KYC olmadan sürücü sayılıyor; paket yoksa 1 yıl ver
+        if is_admin:
+            if not driver_active_until:
+                now_admin = datetime.utcnow()
+                admin_until = (now_admin + timedelta(days=365)).isoformat()
+                supabase.table("users").update({
+                    "driver_active_until": admin_until,
+                    "updated_at": now_admin.isoformat()
+                }).eq("id", user_id).execute()
+                driver_active_until = admin_until
+        else:
+            # KYC kontrolü (admin değilse)
+            if driver_details.get("kyc_status") != "approved":
+                return {"success": False, "detail": "Sürücü kaydınız henüz onaylanmamış"}
         
-        # Süre kontrolü
-        if not driver_active_until:
-            return {"success": False, "detail": "Aktif paketiniz yok. Lütfen bir paket satın alın."}
-        
-        try:
-            active_until = datetime.fromisoformat(driver_active_until.replace("Z", "+00:00"))
-            now = datetime.now(active_until.tzinfo) if active_until.tzinfo else datetime.utcnow()
+        # Süre kontrolü (ücretsiz dönemde yok)
+        if not DRIVER_UNLIMITED_FREE_PERIOD:
+            if not driver_active_until:
+                return {"success": False, "detail": "Aktif paketiniz yok. Lütfen bir paket satın alın."}
             
-            if active_until <= now:
-                return {"success": False, "detail": "Paket süreniz dolmuş. Lütfen yeni bir paket satın alın."}
-        except:
-            return {"success": False, "detail": "Paket süresi kontrol edilemedi"}
+            try:
+                active_until = datetime.fromisoformat(driver_active_until.replace("Z", "+00:00"))
+                now_check = datetime.now(active_until.tzinfo) if active_until.tzinfo else datetime.utcnow()
+                
+                if active_until <= now_check:
+                    return {"success": False, "detail": "Paket süreniz dolmuş. Lütfen yeni bir paket satın alın."}
+            except Exception:
+                return {"success": False, "detail": "Paket süresi kontrol edilemedi"}
         
         supabase.table("users").update({
             "driver_online": True,
@@ -9508,6 +10904,13 @@ async def driver_go_online(user_id: str):
         logger.error(f"Driver online error: {e}")
         return {"success": False, "detail": str(e)}
 
+def _normalize_phone(phone: str) -> str:
+    """+90 532... -> 5326497412"""
+    if not phone:
+        return ""
+    return (phone or "").replace("+90", "").replace(" ", "").replace("-", "").strip()
+
+
 @api_router.get("/driver/dashboard")
 async def get_driver_dashboard(user_id: str):
     """Sürücü dashboard bilgilerini getir - Kazanç paneli için"""
@@ -9519,6 +10922,20 @@ async def get_driver_dashboard(user_id: str):
         
         user = user_result.data[0]
         driver_details = user.get("driver_details") or {}
+        phone_normalized = _normalize_phone(user.get("phone") or "")
+        is_admin = phone_normalized in ADMIN_PHONE_NUMBERS
+        
+        # Admin: driver_active_until yoksa 1 yıl ver (sürücü ekranı açılsın)
+        driver_active_until = user.get("driver_active_until")
+        if is_admin and not driver_active_until:
+            now_temp = datetime.utcnow()
+            admin_until = (now_temp + timedelta(days=365)).isoformat()
+            supabase.table("users").update({
+                "driver_active_until": admin_until,
+                "updated_at": now_temp.isoformat()
+            }).eq("id", user_id).execute()
+            driver_active_until = admin_until
+            user["driver_active_until"] = admin_until
         
         # 2. Bugünün başlangıcı ve haftanın başlangıcı
         now = datetime.utcnow()
@@ -9548,7 +10965,11 @@ async def get_driver_dashboard(user_id: str):
         remaining_text = "Paket yok"
         is_active = False
         
-        if driver_active_until:
+        if DRIVER_UNLIMITED_FREE_PERIOD:
+            is_active = True
+            remaining_seconds = 86400 * 365 * 10
+            remaining_text = "Ücretsizdir"
+        elif driver_active_until:
             try:
                 active_until = datetime.fromisoformat(driver_active_until.replace("Z", "+00:00"))
                 if active_until.tzinfo:
@@ -9564,7 +10985,7 @@ async def get_driver_dashboard(user_id: str):
                     remaining_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
                 else:
                     remaining_text = "Süre doldu"
-            except:
+            except Exception:
                 pass
         
         # 6. Günlük hedef (varsayılan 10 yolculuk veya 500 TL)
@@ -9577,9 +10998,17 @@ async def get_driver_dashboard(user_id: str):
         # Ortalama ilerleme
         daily_progress = (trips_progress + earnings_progress) // 2
         
-        # 7. Rating bilgisi
-        rating = float(user.get("rating", 5.0))
-        total_trips = user.get("total_trips", 0)
+        # 7. Rating bilgisi (null-safe: DB'de null olabilir)
+        try:
+            r = user.get("rating")
+            rating = float(r) if r is not None and r != "" else 5.0
+        except (TypeError, ValueError):
+            rating = 5.0
+        try:
+            t = user.get("total_trips")
+            total_trips = int(t) if t is not None and t != "" else 0
+        except (TypeError, ValueError):
+            total_trips = 0
         
         return {
             "success": True,
@@ -9698,37 +11127,36 @@ async def log_login_attempt(user_id: str, phone: str, ip_address: str, device_id
 async def secure_login(request: Request, phone: str, pin: str, device_id: str = None, device_info: str = None):
     """Güvenli giriş - Türkiye IP kontrolü ile"""
     try:
+        canonical = _auth_normalize_or_raise(phone)
         client_ip = get_client_ip(request)
         
         # Türkiye IP kontrolü
         if not is_turkey_ip(client_ip):
-            await log_login_attempt(None, phone, client_ip, device_id, device_info, False, "FOREIGN_IP")
+            await log_login_attempt(None, canonical, client_ip, device_id, device_info, False, "FOREIGN_IP")
             raise HTTPException(
                 status_code=403, 
                 detail="Bu uygulama sadece Türkiye'den erişilebilir. VPN kullanıyorsanız lütfen kapatın."
             )
         
-        # Kullanıcıyı bul
-        result = supabase.table("users").select("*").eq("phone", phone).execute()
+        # Kullanıcıyı bul (905 / 5XX kayıt uyumu)
+        user = _users_get_by_phone_flexible(canonical)
         
-        if not result.data:
-            await log_login_attempt(None, phone, client_ip, device_id, device_info, False, "USER_NOT_FOUND")
+        if not user:
+            await log_login_attempt(None, canonical, client_ip, device_id, device_info, False, "USER_NOT_FOUND")
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
-        
-        user = result.data[0]
         
         # Kullanıcı aktif mi?
         if user.get("is_deleted", False):
-            await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, False, "USER_DELETED")
+            await log_login_attempt(user["id"], canonical, client_ip, device_id, device_info, False, "USER_DELETED")
             raise HTTPException(status_code=403, detail="Bu hesap silinmiş")
         
         if not user.get("is_active", True):
-            await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, False, "USER_BANNED")
+            await log_login_attempt(user["id"], canonical, client_ip, device_id, device_info, False, "USER_BANNED")
             raise HTTPException(status_code=403, detail="Bu hesap askıya alınmış")
         
         # PIN kontrolü
         if not verify_pin(pin, user.get("pin_hash", "")):
-            await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, False, "WRONG_PIN")
+            await log_login_attempt(user["id"], canonical, client_ip, device_id, device_info, False, "WRONG_PIN")
             raise HTTPException(status_code=401, detail="Yanlış PIN")
         
         # Başarılı giriş - güncelle
@@ -9741,9 +11169,9 @@ async def secure_login(request: Request, phone: str, pin: str, device_id: str = 
         }).eq("id", user["id"]).execute()
         
         # Başarılı log
-        await log_login_attempt(user["id"], phone, client_ip, device_id, device_info, True, None)
+        await log_login_attempt(user["id"], canonical, client_ip, device_id, device_info, True, None)
         
-        is_admin = phone in ADMIN_PHONE_NUMBERS
+        is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
         
         return {
             "success": True,

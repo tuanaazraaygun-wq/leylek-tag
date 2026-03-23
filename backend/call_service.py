@@ -2,20 +2,23 @@
 Supabase Realtime ile senkronize, WhatsApp/Facebook mantığında
 """
 
-import os
 import time
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
-from supabase import create_client
 
 logger = logging.getLogger(__name__)
 
-# Supabase client - Güncel key
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ujvploftywsxprlzejgc.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqdnBsb2Z0eXdzeHBybHplamdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTgwNzYsImV4cCI6MjA4MTk5NDA3Nn0.c3I-1K7Guc5OmOxHdc_mhw-pSEsobVE6DN7m-Z9Re8k"))
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def _sb():
+    """Arama modülü de ana backend ile aynı service role client'ı kullanır (anon yok)."""
+    from supabase_client import get_supabase, init_supabase
+
+    client = get_supabase()
+    if client is None:
+        init_supabase()
+        client = get_supabase()
+    return client
 
 # Agora credentials
 AGORA_APP_ID = os.getenv("AGORA_APP_ID", "43c07f0cef814fd4a5ae3283c8bd77de")
@@ -54,7 +57,7 @@ async def start_call(
     """
     try:
         # Meşgul kontrolü - aktif arama var mı?
-        active = supabase.table("calls").select("id").or_(
+        active = _sb().table("calls").select("id").or_(
             f"caller_id.eq.{callee_id},callee_id.eq.{callee_id}"
         ).in_("status", ["ringing", "connected"]).execute()
         
@@ -79,7 +82,7 @@ async def start_call(
             "started_at": datetime.utcnow().isoformat()
         }
         
-        result = supabase.table("calls").insert(call_data).execute()
+        result = _sb().table("calls").insert(call_data).execute()
         call_id = result.data[0]["id"]
         
         # Caller için token
@@ -107,7 +110,7 @@ async def answer_call(call_id: str, callee_id: str) -> dict:
     """
     try:
         # Call'ı bul
-        call = supabase.table("calls").select("*").eq("id", call_id).eq("callee_id", callee_id).eq("status", "ringing").execute()
+        call = _sb().table("calls").select("*").eq("id", call_id).eq("callee_id", callee_id).eq("status", "ringing").execute()
         
         if not call.data:
             return {"success": False, "error": "Arama bulunamadı"}
@@ -115,7 +118,7 @@ async def answer_call(call_id: str, callee_id: str) -> dict:
         call_data = call.data[0]
         
         # Status güncelle - Realtime ile caller'a gider
-        supabase.table("calls").update({
+        _sb().table("calls").update({
             "status": "connected",
             "answered_at": datetime.utcnow().isoformat()
         }).eq("id", call_id).execute()
@@ -149,7 +152,7 @@ async def end_call(call_id: str, user_id: str, reason: str = "user_ended") -> di
     """
     try:
         # Call var mı ve bu user dahil mi?
-        call = supabase.table("calls").select("*").eq("id", call_id).or_(
+        call = _sb().table("calls").select("*").eq("id", call_id).or_(
             f"caller_id.eq.{user_id},callee_id.eq.{user_id}"
         ).execute()
         
@@ -161,7 +164,7 @@ async def end_call(call_id: str, user_id: str, reason: str = "user_ended") -> di
             return {"success": True, "message": "Zaten sonlandırılmış"}
         
         # Status güncelle - Realtime ile diğer tarafa ANINDA gider
-        supabase.table("calls").update({
+        _sb().table("calls").update({
             "status": "ended",
             "ended_at": datetime.utcnow().isoformat(),
             "ended_by": user_id,
@@ -184,7 +187,7 @@ async def reject_call(call_id: str, user_id: str) -> dict:
 async def get_incoming_call(user_id: str) -> dict:
     """Gelen aramayı kontrol et"""
     try:
-        result = supabase.table("calls").select(
+        result = _sb().table("calls").select(
             "*, caller:users!calls_caller_id_fkey(name, profile_photo)"
         ).eq("callee_id", user_id).eq("status", "ringing").order(
             "created_at", desc=True
@@ -213,7 +216,7 @@ async def cleanup_stale_calls():
     """60 saniyeden uzun ringing olanları ended yap"""
     try:
         stale = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
-        supabase.table("calls").update({
+        _sb().table("calls").update({
             "status": "ended",
             "end_reason": "timeout",
             "ended_at": datetime.utcnow().isoformat()
