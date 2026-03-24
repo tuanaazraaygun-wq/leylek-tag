@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -54,6 +54,21 @@ import { useCall } from '../hooks/useCall';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/** Hedef seçim modalı — yalnız native (web’de metro stub) */
+let DestinationPickerMapView: any = null;
+let DestinationPickerMarker: any = null;
+let DestinationPickerMapProvider: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    const Maps = require('react-native-maps');
+    DestinationPickerMapView = Maps.default;
+    DestinationPickerMarker = Maps.Marker;
+    DestinationPickerMapProvider = Maps.PROVIDER_GOOGLE;
+  } catch (e) {
+    console.log('⚠️ react-native-maps (hedef modal) yüklenemedi:', e);
+  }
+}
 
 // Backend URL — lib/backendConfig ile SocketContext aynı kaynağı kullanır
 const BACKEND_URL = BACKEND_BASE_URL;
@@ -2388,36 +2403,43 @@ export default function App() {
                 </View>
               </View>
             )}
+          </View>
 
-            {/* Devam Et Butonu */}
+          {/* Devam Et + Leylek Muhabbeti — altta, arka plandaki görsel daha görünür kalsın */}
+          <View style={styles.roleBottomFooterColumn}>
             <TouchableOpacity
               style={[
-                styles.roleContinueBtnCompact,
+                styles.roleContinueBtnLarge,
                 (!selectedRole || !rideVehicleKind) && styles.roleContinueBtnDisabled,
               ]}
               onPress={handleContinue}
               disabled={!selectedRole || !rideVehicleKind}
+              activeOpacity={0.9}
             >
-              <Text style={styles.roleContinueText}>Devam Et</Text>
-              <Ionicons name="arrow-forward" size={22} color="#FFF" />
+              <Text style={styles.roleContinueTextLarge}>Devam Et</Text>
+              <Ionicons name="arrow-forward" size={28} color="#FFF" />
             </TouchableOpacity>
-          </View>
 
-          {/* Leylek Muhabbeti - En Alta Sabitlenmiş */}
-          <View style={styles.communityBottomContainer}>
-            <View style={styles.roleSeparator}>
+            <View style={styles.roleSeparatorCompact}>
               <View style={styles.roleSeparatorLine} />
               <Text style={styles.roleSeparatorText}>veya</Text>
               <View style={styles.roleSeparatorLine} />
             </View>
 
-            <TouchableOpacity style={styles.communityBtnCompact} onPress={async () => { roleScreenHaptic(); setScreen('community'); }}>
+            <TouchableOpacity
+              style={styles.communityBtnCompact}
+              onPress={async () => {
+                roleScreenHaptic();
+                setScreen('community');
+              }}
+              activeOpacity={0.88}
+            >
               <View style={styles.communityLogoBox}>
                 <Ionicons name="chatbubbles" size={28} color="#FFF" />
               </View>
               <View style={styles.communityTextBox}>
-                <Text style={styles.communityBtnTitle}>Leylek Muhabbeti</Text>
-                <Text style={styles.communityBtnSub}>Şehir Topluluğuna Katıl</Text>
+                <Text style={styles.communityBtnTitleProminent}>Leylek Muhabbeti</Text>
+                <Text style={styles.communityBtnSubProminent}>Şehir topluluğuna katıl</Text>
               </View>
               <View style={styles.communityArrow}>
                 <Ionicons name="chevron-forward" size={20} color="#FFF" />
@@ -5165,6 +5187,13 @@ function PassengerDashboard({
   const soundRef = useRef<Audio.Sound | null>(null);
   const tapSoundRef = useRef<Audio.Sound | null>(null);
 
+  /** Hedef seçim modalı — haritada dokunulan nokta + ters geokod */
+  const [destinationPickerPin, setDestinationPickerPin] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
+
   // 🔊 Tek tip tuş sesi (1109) - Harita ve eşleşme ekranındaki her tuşa basıldığında
   const playTapSound = async () => {};
   
@@ -6353,27 +6382,35 @@ function PassengerDashboard({
     }
   };
 
-  const runQuickPoiSearch = async (term: string) => {
+  useEffect(() => {
+    if (showDestinationPicker) {
+      setDestinationPickerPin(null);
+      setDestinationPickerGeocoding(false);
+    }
+  }, [showDestinationPicker]);
+
+  const handleDestinationMapPress = async (e: {
+    nativeEvent: { coordinate: { latitude: number; longitude: number } };
+  }) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    setDestinationPickerPin({ latitude, longitude });
+    setDestinationPickerGeocoding(true);
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (_) {}
-    const city = user?.city || '';
     try {
-      const q = city ? `${term}, ${city}, Türkiye` : `${term}, Türkiye`;
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=tr&limit=1&accept-language=tr`;
-      const response = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=tr`;
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
+      });
       const data = await response.json();
-      if (data?.[0]) {
-        await handleDestinationSelect(
-          data[0].display_name,
-          parseFloat(data[0].lat),
-          parseFloat(data[0].lon)
-        );
-      } else {
-        Alert.alert('Sonuç yok', 'Adresi yukarıdaki arama kutusuna yazın.');
-      }
+      const address =
+        data?.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      await handleDestinationSelect(address, latitude, longitude);
     } catch {
-      Alert.alert('Hata', 'Arama yapılamadı');
+      Alert.alert('Hata', 'Adres okunamadı. Haritaya tekrar dokunun.');
+    } finally {
+      setDestinationPickerGeocoding(false);
     }
   };
 
@@ -7113,97 +7150,120 @@ function PassengerDashboard({
             ) : null}
       </ScrollView>
 
-      {/* Hedef Seçme - TAM EKRAN MODAL */}
+      {/* Hedef Seçme — Google haritası + üstte arama paneli (akış: handleDestinationSelect aynı) */}
       <Modal
         visible={showDestinationPicker}
         animationType="slide"
         onRequestClose={() => setShowDestinationPicker(false)}
       >
-        <LinearGradient
-          colors={['#0c4a6e', '#075985', '#0369a1', '#0284c7']}
-          start={{ x: 0.2, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
-          style={styles.destinationModalGradient}
-        >
-          <SafeAreaView style={styles.destinationModalSafe}>
-            <View style={styles.destinationRoadDecor}>
-              <View style={styles.destinationRoadLine} />
-              <View style={styles.destinationRoadLineMid} />
-              <View style={styles.destinationRoadLine} />
-            </View>
-            <View style={styles.destinationModalHeaderBlue}>
-              <TouchableOpacity
-                onPress={async () => {
-                  try {
-                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  } catch (_) {}
-                  setShowDestinationPicker(false);
-                }}
-                style={styles.destinationModalBackBtn}
-              >
-                <Ionicons name="arrow-back" size={24} color="#FFF" />
-              </TouchableOpacity>
-              <Text style={styles.destinationModalTitleBlue}>Hedef</Text>
-              <View style={{ width: 40 }} />
-            </View>
-
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.destinationModalScrollContent}
+        <View style={styles.destinationModalRoot}>
+          {DestinationPickerMapView ? (
+            <DestinationPickerMapView
+              style={StyleSheet.absoluteFillObject}
+              provider={DestinationPickerMapProvider}
+              mapType="standard"
+              showsUserLocation={!!userLocation}
+              showsMyLocationButton={false}
+              initialRegion={{
+                latitude: userLocation?.latitude ?? destination?.latitude ?? 41.0082,
+                longitude: userLocation?.longitude ?? destination?.longitude ?? 28.9784,
+                latitudeDelta: 0.07,
+                longitudeDelta: 0.07,
+              }}
+              onPress={handleDestinationMapPress}
             >
-              <Text style={styles.destinationHeroTitle}>Nereye gitmek{'\n'}istiyorsunuz?</Text>
-              <Text style={styles.destinationHeroSub}>
-                Mahalle, sokak veya mekan adını yazın — harita üzerinden doğru noktayı seçin.
-              </Text>
+              {destinationPickerPin && DestinationPickerMarker ? (
+                <DestinationPickerMarker coordinate={destinationPickerPin} pinColor="#0EA5E9" />
+              ) : null}
+            </DestinationPickerMapView>
+          ) : (
+            <LinearGradient
+              colors={['#0c4a6e', '#075985', '#0369a1', '#0284c7']}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+          )}
 
-              {destination && (
-                <View style={styles.selectedDestinationBoxBlue}>
-                  <Ionicons name="checkmark-circle" size={22} color="#A7F3D0" />
-                  <Text style={styles.selectedDestinationTextBlue} numberOfLines={2}>
-                    {destination.address}
-                  </Text>
-                </View>
-              )}
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(6, 32, 58, 0.94)', 'rgba(6, 32, 58, 0.55)', 'transparent']}
+            locations={[0, 0.42, 1]}
+            style={styles.destinationModalTopFade}
+          />
 
-              <View style={styles.destinationSearchContainerBlue}>
-                <PlacesAutocomplete
-                  placeholder="Örn: mahalle adı, okul, cami, sokak..."
-                  city={user?.city || ''}
-                  hidePopularChips
-                  onPlaceSelected={async (place) => {
+          <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
+            <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
+              <View style={styles.destinationModalHeaderBlue} pointerEvents="auto">
+                <TouchableOpacity
+                  onPress={async () => {
                     try {
-                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     } catch (_) {}
-                    handleDestinationSelect(place.address, place.latitude, place.longitude);
+                    setShowDestinationPicker(false);
                   }}
-                />
+                  style={styles.destinationModalBackBtn}
+                >
+                  <Ionicons name="arrow-back" size={24} color="#FFF" />
+                </TouchableOpacity>
+                <Text style={styles.destinationModalTitleBlue}>Hedef</Text>
+                <View style={{ width: 40 }} />
               </View>
 
-              <Text style={styles.destinationPoiSectionTitle}>Hızlı arama</Text>
-              <View style={styles.destinationPoiWrap}>
-                {[
-                  { label: 'Mahalle', term: 'mahalle merkezi' },
-                  { label: 'Sokak', term: 'sokak' },
-                  { label: 'Köy', term: 'köy merkezi' },
-                  { label: 'Okul', term: 'okul' },
-                  { label: 'Cami', term: 'cami' },
-                  { label: 'Karakol', term: 'polis merkezi' },
-                  { label: 'Hastane', term: 'hastane' },
-                ].map((p) => (
-                  <TouchableOpacity
-                    key={p.label}
-                    style={styles.destinationPoiChip}
-                    onPress={() => runQuickPoiSearch(p.term)}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.destinationPoiChipText}>{p.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </SafeAreaView>
-        </LinearGradient>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={styles.destinationKeyboardAvoid}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+              >
+                <View style={styles.destinationFloatingPanel} pointerEvents="auto">
+                  <Text style={styles.destinationHeroTitle}>Nereye gitmek{'\n'}istiyorsunuz?</Text>
+                  <Text style={styles.destinationHeroSub}>
+                    Adres yazın veya haritaya dokunun — tam konumu Google haritada seçin.
+                  </Text>
+
+                  {destination && (
+                    <View style={styles.selectedDestinationBoxBlue}>
+                      <Ionicons name="checkmark-circle" size={22} color="#A7F3D0" />
+                      <Text style={styles.selectedDestinationTextBlue} numberOfLines={2}>
+                        {destination.address}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.destinationMapHintRow}>
+                    <Ionicons name="navigate-circle" size={18} color="#38BDF8" />
+                    <Text style={styles.destinationMapHintText}>
+                      Haritada istediğiniz noktaya dokunun; adres otomatik seçilir.
+                    </Text>
+                  </View>
+
+                  <View style={styles.destinationSearchShellTech}>
+                    <PlacesAutocomplete
+                      placeholder="Mahalle, sokak, mekan ara…"
+                      city={user?.city || ''}
+                      hidePopularChips
+                      visualVariant="tech"
+                      onPlaceSelected={async (place) => {
+                        try {
+                          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        } catch (_) {}
+                        handleDestinationSelect(place.address, place.latitude, place.longitude);
+                      }}
+                    />
+                  </View>
+                </View>
+                <View style={styles.destinationModalMapTouchPassthrough} pointerEvents="none" />
+              </KeyboardAvoidingView>
+            </SafeAreaView>
+          </View>
+
+          {destinationPickerGeocoding ? (
+            <View style={styles.destinationGeocodeOverlay}>
+              <ActivityIndicator size="large" color="#E0F2FE" />
+              <Text style={styles.destinationGeocodeText}>Adres alınıyor…</Text>
+            </View>
+          ) : null}
+        </View>
       </Modal>
 
       {/* ✅ CallScreenV2 - Socket.IO Arama Ekranı - YOLCU */}
@@ -7454,14 +7514,31 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       const json = await res.json();
       if (!json.success || !json.tag || json.tag.status !== 'waiting') return;
       const tag = json.tag;
+      const tagPvk = tag.passenger_preferred_vehicle;
+      if (tagPvk !== undefined && tagPvk !== null && String(tagPvk).trim() !== '') {
+        const ts = String(tagPvk).trim().toLowerCase();
+        const tripVk: 'car' | 'motorcycle' =
+          ts === 'motorcycle' || ts === 'motor' ? 'motorcycle' : 'car';
+        if (tripVk !== driverVehicleKind) return;
+      }
       setRequests(prev => {
         if (prev.some(r => r.id === tag.id)) return prev;
+        const pvkNorm: 'car' | 'motorcycle' =
+          String(tagPvk || '')
+            .trim()
+            .toLowerCase() === 'motorcycle' ||
+          String(tagPvk || '')
+            .trim()
+            .toLowerCase() === 'motor'
+            ? 'motorcycle'
+            : 'car';
         return [...prev, {
           id: tag.id,
           tag_id: tag.id,
           request_id: tag.id,
           passenger_id: tag.passenger_id,
           passenger_name: tag.passenger_name || 'Yolcu',
+          passenger_vehicle_kind: pvkNorm,
           pickup_lat: tag.pickup_lat,
           pickup_lng: tag.pickup_lng,
           pickup_address: tag.pickup_location,
@@ -7485,7 +7562,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     } catch (e) {
       console.warn('Teklif trip yüklenemedi:', e);
     }
-  }, []);
+  }, [driverVehicleKind]);
   
   // Giden Arama State (Araniyor...) - SOFOR
   const [outgoingCall, setOutgoingCall] = useState(false);
@@ -7686,7 +7763,22 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         console.log('⚠️ ŞOFÖR: Kendi yolcu teklifim — listeye eklenmedi');
         return;
       }
-      
+
+      const pvkSocket = data?.passenger_vehicle_kind ?? data?.passenger_preferred_vehicle;
+      if (pvkSocket !== undefined && pvkSocket !== null && String(pvkSocket).trim() !== '') {
+        const pvkS = String(pvkSocket).trim().toLowerCase();
+        const tripVk: 'car' | 'motorcycle' =
+          pvkS === 'motorcycle' || pvkS === 'motor' ? 'motorcycle' : 'car';
+        if (tripVk !== driverVehicleKind) {
+          console.log(
+            '⚠️ ŞOFÖR: Yolcu araç tercihi bu sürücü tipiyle eşleşmiyor — listeye eklenmedi',
+            tripVk,
+            driverVehicleKind
+          );
+          return;
+        }
+      }
+
       // Mesafe hesaplama fonksiyonu
       const calculateRouteForTag = async (tagData: any) => {
         try {
@@ -8251,6 +8343,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       const dj = await res.json();
       if (!dj.success || !dj.offer?.tag_id) return;
       const data = dj.offer;
+      const pendingPvk = data.passenger_vehicle_kind;
+      if (pendingPvk !== undefined && pendingPvk !== null && String(pendingPvk).trim() !== '') {
+        const ps = String(pendingPvk).trim().toLowerCase();
+        const tripVk: 'car' | 'motorcycle' =
+          ps === 'motorcycle' || ps === 'motor' ? 'motorcycle' : 'car';
+        if (tripVk !== driverVehicleKind) return;
+      }
       setRequests((prev) => {
         if (prev.some((r) => r.id === data.tag_id)) return prev;
         return [
@@ -12457,17 +12556,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   roleMainContent: {
-    flex: 0,
+    flex: 1,
     justifyContent: 'flex-start',
     paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 20,
+    paddingTop: 28,
+    paddingBottom: 8,
+    minHeight: 0,
   },
-  communityBottomContainer: {
-    position: 'absolute',
-    bottom: 30,
-    left: 24,
-    right: 24,
+  roleBottomFooterColumn: {
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: Platform.OS === 'ios' ? 26 : 20,
   },
   roleCardsRow: {
     flexDirection: 'row',
@@ -12581,21 +12680,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  roleContinueBtnCompact: {
+  /** Rol ekranı — ~%30 daha büyük, yatayda biraz daha geniş (footer padding) */
+  roleContinueBtnLarge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0EA5E9',
-    borderRadius: 16,
-    paddingVertical: 16,
-    gap: 10,
+    borderRadius: 18,
+    paddingVertical: 21,
+    paddingHorizontal: 20,
+    minHeight: 58,
+    gap: 12,
+    marginBottom: 2,
     shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  roleContinueTextLarge: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  roleSeparatorCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 12,
   },
   roleContinueBtnDisabled: {
     backgroundColor: '#94A3B8',
@@ -12620,11 +12734,16 @@ const styles = StyleSheet.create({
   communityBtnCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E3A5F',
+    backgroundColor: 'rgba(30, 58, 95, 0.94)',
     borderRadius: 16,
     padding: 14,
     borderWidth: 2,
-    borderColor: '#3FA9F5',
+    borderColor: '#5BC0F8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
   },
   communityLogoBox: {
     width: 50,
@@ -12649,10 +12768,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  communityBtnTitleProminent: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
   communityBtnSub: {
     fontSize: 13,
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
+  },
+  communityBtnSubProminent: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.95)',
+    marginTop: 3,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   communityArrow: {
     width: 36,
@@ -13953,6 +14090,76 @@ const styles = StyleSheet.create({
   destinationModalGradient: {
     flex: 1,
   },
+  destinationModalRoot: {
+    flex: 1,
+    backgroundColor: '#041e33',
+  },
+  destinationModalTopFade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 280,
+  },
+  destinationModalTouchLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  destinationModalSafeOverlay: {
+    flex: 1,
+  },
+  destinationKeyboardAvoid: {
+    flex: 1,
+  },
+  destinationFloatingPanel: {
+    marginHorizontal: 14,
+    marginTop: 2,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderRadius: 22,
+    backgroundColor: 'rgba(8, 47, 73, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.45)',
+    maxHeight: '52%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  destinationMapHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 2,
+    gap: 8,
+  },
+  destinationMapHintText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(224, 242, 254, 0.96)',
+    lineHeight: 18,
+  },
+  destinationSearchShellTech: {
+    marginTop: 10,
+  },
+  destinationModalMapTouchPassthrough: {
+    flex: 1,
+    minHeight: 56,
+  },
+  destinationGeocodeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  destinationGeocodeText: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#E0F2FE',
+  },
   destinationModalSafe: {
     flex: 1,
   },
@@ -13998,31 +14205,31 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   destinationHeroTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '800',
     color: '#FFF',
     textAlign: 'center',
-    lineHeight: 34,
-    marginTop: 8,
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0,0,0,0.25)',
+    lineHeight: 40,
+    marginTop: 0,
+    letterSpacing: -0.6,
+    textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowRadius: 10,
   },
   destinationHeroSub: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.88)',
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
     textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 20,
-    paddingHorizontal: 8,
+    marginTop: 10,
+    lineHeight: 22,
+    paddingHorizontal: 4,
   },
   selectedDestinationBoxBlue: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(15, 23, 42, 0.35)',
-    marginTop: 20,
+    marginTop: 14,
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,

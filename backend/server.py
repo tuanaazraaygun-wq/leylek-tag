@@ -570,11 +570,12 @@ def clear_dispatch_in_memory_state():
 # Sıralı eşleşme yarıçapı — şimdilik sabit 20 km (config override edilmez)
 SEQUENTIAL_DISPATCH_RADIUS_KM = 20
 
-# Araç tipi eşleşmesi: false = yolcu car|motor tercihine göre sürücü filtrelenir (üretim varsayılanı).
-# true yapmak için: ortam değişkeni DISPATCH_VEHICLE_FILTER_DISABLED=1
-DISPATCH_VEHICLE_FILTER_DISABLED = os.getenv(
-    "DISPATCH_VEHICLE_FILTER_DISABLED", ""
-).strip().lower() in ("1", "true", "yes", "on")
+# Araç tipi eşleşmesi her zaman açık: yolcu car → yalnız car sürücü; yolcu motorcycle → yalnız motorcycle.
+# Eski DISPATCH_VEHICLE_FILTER_DISABLED prod'da yanlışlıkla açılınca motor talepleri araç sürücüsüne gidiyordu; artık yok sayılır.
+if os.getenv("DISPATCH_VEHICLE_FILTER_DISABLED", "").strip().lower() in ("1", "true", "yes", "on"):
+    logger.warning(
+        "DISPATCH_VEHICLE_FILTER_DISABLED ortamda ayarlı; artık kullanılmıyor — araç tipi eşleşmesi zorunlu."
+    )
 
 # Rolling batch dispatch (yalnızca bellek; DB dispatch_queue / Supabase kuyruk yok)
 BATCH_SIZE = 5
@@ -630,13 +631,11 @@ async def find_eligible_drivers(
     """
     Uygun sürücüleri bul ve öncelik sırasına göre sırala
     Kriterler: online, aktif paket, mesafe içinde
-    DISPATCH_VEHICLE_FILTER_DISABLED=True iken araç tipi filtrelenmez.
-    Aksi halde: araç talebi (car) / motorcycle eşleşmesi; sürücüde vehicle_kind yoksa eff=car.
+    Araç talebi (car) / motorcycle katı eşleşmesi; sürücüde vehicle_kind yoksa eff=car.
     Sıralama: mesafe (yakın), rating (yüksek)
     """
     try:
         r_km = float(radius_km) if radius_km is not None else float(SEQUENTIAL_DISPATCH_RADIUS_KM)
-        # Yolcu tercihi (log / payload için); filtre kapalıyken eşleştirmede kullanılmaz
         pref = _canonical_vehicle_kind(passenger_vehicle_kind) or "car"
         
         # Online ve aktif paketi olan sürücüleri getir
@@ -663,12 +662,11 @@ async def find_eligible_drivers(
             if not driver.get("latitude") or not driver.get("longitude"):
                 continue
 
-            if not DISPATCH_VEHICLE_FILTER_DISABLED:
-                eff = _driver_vehicle_kind_from_row(driver)
-                if eff is None:
-                    eff = "car"
-                if not _driver_matches_passenger_vehicle_pref(eff, pref):
-                    continue
+            eff = _driver_vehicle_kind_from_row(driver)
+            if eff is None:
+                eff = "car"
+            if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                continue
             
             # Mesafe hesapla
             from math import radians, sin, cos, sqrt, atan2
@@ -696,12 +694,7 @@ async def find_eligible_drivers(
         # Sırala: önce mesafe (yakın), sonra rating (yüksek)
         eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
         
-        if DISPATCH_VEHICLE_FILTER_DISABLED:
-            logger.info(
-                f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü (araç filtresi kapalı, tercih={pref} yalnızca bilgi)"
-            )
-        else:
-            logger.info(f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü (yolcu tercihi={pref})")
+        logger.info(f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü (yolcu tercihi={pref})")
         return eligible_drivers
         
     except Exception as e:
@@ -714,9 +707,6 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
     Uygun sürücüleri bul, sırala ve queue'ya ekle
     """
     try:
-        if DISPATCH_VEHICLE_FILTER_DISABLED:
-            logger.info("Dispatch debug: vehicle filter disabled")
-
         config = await get_dispatch_config()
         max_drivers = config.get("max_driver_dispatch", 5)
         
@@ -1000,7 +990,7 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
 
 async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
     """
-    20 km içinde uygun online sürücülere (araç filtresi DISPATCH_VEHICLE_FILTER_DISABLED ile kapalı olabilir)
+    20 km içinde uygun online sürücülere (yolcu araç tercihi ile aynı tipteki sürücüler)
     mesafeye göre en yakın N kişiye aynı anda socket (`new_passenger_offer`) + push.
     İlk kabul eden kazanır (accept_ride atomik).
     Dönüş: bildirilen sürücü sayısı (0 = kimse yok / hata).
@@ -1012,9 +1002,6 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
         if not pickup_lat or not pickup_lng:
             logger.warning(f"📢 Broadcast atlandı: konum bilgisi yok")
             return 0
-        
-        if DISPATCH_VEHICLE_FILTER_DISABLED:
-            logger.info("Dispatch debug: vehicle filter disabled")
 
         pref = _canonical_vehicle_kind(tag_data.get("passenger_preferred_vehicle"))
         if pref is None and tag_data.get("passenger_id"):
@@ -1052,10 +1039,9 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
                 continue
             if passenger_pid and str(driver["id"]) == str(passenger_pid):
                 continue
-            if not DISPATCH_VEHICLE_FILTER_DISABLED:
-                eff = _effective_driver_vehicle_kind(driver)
-                if not _driver_matches_passenger_vehicle_pref(eff, pref):
-                    continue
+            eff = _effective_driver_vehicle_kind(driver)
+            if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                continue
             dist_km = haversine_distance(pickup_lat, pickup_lng, d_lat, d_lng)
             if dist_km <= BROADCAST_RADIUS_KM:
                 with_distance.append((driver["id"], dist_km))
@@ -4103,9 +4089,7 @@ async def send_offer(
                 pass
         trip_pref = trip_pref or "car"
         driver_eff = _effective_driver_vehicle_kind(driver)
-        if not DISPATCH_VEHICLE_FILTER_DISABLED and not _driver_matches_passenger_vehicle_pref(
-            driver_eff, trip_pref
-        ):
+        if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
             raise HTTPException(
                 status_code=403,
                 detail="Bu talep için araç tipiniz uygun değil",
@@ -4271,16 +4255,40 @@ async def driver_accept_offer_http(
         if not tag_result.data:
             raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-        dr = (
+        tag_row_pre = tag_result.data[0]
+        drv_chk = (
             supabase.table("users")
-            .select("name")
+            .select("name, driver_details")
             .eq("id", resolved_driver_id)
             .limit(1)
             .execute()
         )
+        driver_eff_acc = _effective_driver_vehicle_kind(drv_chk.data[0] if drv_chk.data else {})
+        pu_row_acc = None
+        pid_acc = tag_row_pre.get("passenger_id")
+        if pid_acc:
+            try:
+                pid_r_acc = await resolve_user_id(str(pid_acc).strip())
+                pu_acc = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", pid_r_acc)
+                    .limit(1)
+                    .execute()
+                )
+                if pu_acc.data:
+                    pu_row_acc = pu_acc.data[0]
+            except Exception:
+                pass
+        trip_pref_acc = _trip_passenger_vehicle_pref(tag_row_pre, pu_row_acc)
+        if not _driver_matches_passenger_vehicle_pref(driver_eff_acc, trip_pref_acc):
+            raise HTTPException(
+                status_code=403, detail="Bu talep için araç tipiniz uygun değil"
+            )
+
         driver_name = (
-            dr.data[0]["name"]
-            if dr and dr.data and dr.data[0].get("name")
+            drv_chk.data[0]["name"]
+            if drv_chk and drv_chk.data and drv_chk.data[0].get("name")
             else "Sürücü"
         )
 
@@ -4539,9 +4547,7 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
                 .execute()
             )
             driver_eff = _effective_driver_vehicle_kind(drv.data[0] if drv.data else {})
-            if not DISPATCH_VEHICLE_FILTER_DISABLED and not _driver_matches_passenger_vehicle_pref(
-                driver_eff, pvk
-            ):
+            if not _driver_matches_passenger_vehicle_pref(driver_eff, pvk):
                 continue
             offer_payload = {
                 "tag_id": tid,
@@ -5540,15 +5546,29 @@ async def admin_push_test_by_phone(admin_phone: str, phone: str):
         if not ExpoPushService.is_valid_token(token):
             debug["reason_not_eligible"].append("push_token formatı geçersiz")
         if not token or not ExpoPushService.is_valid_token(token):
-            return {"success": False, "debug": debug, "message": "Push gönderilemedi: token yok veya geçersiz", "expo_response": None}
-        # Test push gönder – "Yeni yolculuk teklifi" (trip lifecycle metni)
-        success = await send_trip_push_and_log(
-            user_id, "new_ride_request",
-            "Yeni yolculuk teklifi",
-            "Yakınınızda yeni bir yolculuk isteği var.",
-            {"type": "new_offer", "tag_id": "test", "test": True}
+            return {"success": False, "debug": debug, "message": "Push gönderilemedi: token yok veya geçersiz", "expo_receipt": None}
+        test_title = "Yeni yolculuk teklifi"
+        test_body = "Yakınınızda yeni bir yolculuk isteği var."
+        test_data = {"type": "new_offer", "tag_id": "test", "test": "true"}
+        try:
+            supabase.table("notifications_log").insert({
+                "type": "new_ride_request",
+                "user_id": user_id,
+                "title": test_title,
+                "body": test_body,
+                "created_at": datetime.utcnow().isoformat(),
+            }).execute()
+        except Exception as log_err:
+            logger.warning(f"push-test notifications_log: {log_err}")
+        success, receipt = await _send_expo_and_get_receipt(
+            token, test_title, test_body, test_data
         )
-        return {"success": success, "debug": debug, "message": "Test bildirimi gönderildi" if success else "Gönderim başarısız", "expo_response": None}
+        return {
+            "success": success,
+            "debug": debug,
+            "message": "Test bildirimi gönderildi" if success else "Gönderim başarısız",
+            "expo_receipt": receipt,
+        }
     except Exception as e:
         logger.error(f"push-test-by-phone hatası: {e}")
         import traceback
@@ -8319,7 +8339,7 @@ async def handle_driver_accept_offer(sid, data):
     """
     Eşleşme: tags satırı id=tag_id için status='matched', driver_id, matched_at güncellenir.
     WHERE yalnızca id (status='waiting' şartı yok — istemci/debug ile uyum).
-    passenger_vehicle_kind / driver_details bu handler'da kullanılmaz.
+    Yolcu araç tercihi (tag + yolcu profili) ile sürücü vehicle_kind eşleşmezse kabul reddedilir.
 
     DB: modül geneli `supabase` = supabase_client.get_supabase() (create_client(URL, SERVICE_ROLE_KEY)).
 
@@ -8359,14 +8379,14 @@ async def handle_driver_accept_offer(sid, data):
     tag = None
     driver_phone = None
 
-    # --- Sadece tag oku + atomik eşleşme (araç filtresi yok; driver_details çekilmez) ---
+    # --- Tag + sürücü araç tipi; eşleşmezse reddet ---
     try:
         print("🚀 MATCH FLOW START")
         logger.info("MATCH FLOW START")
         tag_result = (
             supabase.table("tags")
             .select(
-                "id, status, passenger_id, pickup_location, pickup_lat, pickup_lng, "
+                "id, status, passenger_id, passenger_preferred_vehicle, pickup_location, pickup_lat, pickup_lng, "
                 "dropoff_location, dropoff_lat, dropoff_lng, final_price, distance_km, estimated_minutes"
             )
             .eq("id", tid)
@@ -8381,7 +8401,7 @@ async def handle_driver_accept_offer(sid, data):
 
         dr = (
             supabase.table("users")
-            .select("name, phone, push_token")
+            .select("name, phone, push_token, driver_details")
             .eq("id", resolved_driver_id)
             .limit(1)
             .execute()
@@ -8397,6 +8417,31 @@ async def handle_driver_accept_offer(sid, data):
         if dr.data and dr.data[0].get("name"):
             driver_name = dr.data[0]["name"]
         driver_phone = (dr.data[0].get("phone") or "").strip() if dr.data else None
+
+        driver_eff_sock = _effective_driver_vehicle_kind(dr.data[0] if dr.data else {})
+        pu_row_sock = None
+        if tag.get("passenger_id"):
+            try:
+                pids = await resolve_user_id(str(tag["passenger_id"]).strip())
+                pus = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", pids)
+                    .limit(1)
+                    .execute()
+                )
+                if pus.data:
+                    pu_row_sock = pus.data[0]
+            except Exception:
+                pass
+        trip_pref_sock = _trip_passenger_vehicle_pref(tag, pu_row_sock)
+        if not _driver_matches_passenger_vehicle_pref(driver_eff_sock, trip_pref_sock):
+            await sio.emit(
+                "offer_accepted_error",
+                {"error": "Bu talep için araç tipiniz uygun değil"},
+                room=sid,
+            )
+            return
 
         _upd_body = {
             "status": "matched",
@@ -8965,7 +9010,7 @@ async def accept_ride(tag_id: str, driver_id: str):
     """
     Martı TAG - Sürücü teklifi kabul eder
     İLK KABUL EDEN KAZANIR - Atomik işlem
-    Araç/motor filtresi yok; filtre yalnızca rolling dispatch listesinde uygulanır.
+    Yolcu araç tercihi ile sürücü vehicle_kind eşleşmezse kabul edilmez.
     """
     try:
         resolved_driver_id = await resolve_user_id(driver_id)
@@ -8982,9 +9027,31 @@ async def accept_ride(tag_id: str, driver_id: str):
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
 
         logger.info("Accept: direct match mode")
-        
-        # Sürücü bilgisini al
+
+        # Sürücü bilgisini al (araç tipi doğrulaması)
         driver_result = supabase.table("users").select("name, phone, driver_details").eq("id", resolved_driver_id).execute()
+        if not driver_result.data:
+            return {"success": False, "error": "Şoför bulunamadı"}
+        driver_eff_ar = _effective_driver_vehicle_kind(driver_result.data[0])
+        pu_row_ar = None
+        pida = tag.get("passenger_id")
+        if pida:
+            try:
+                pida_r = await resolve_user_id(str(pida).strip())
+                pu_ar = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", pida_r)
+                    .limit(1)
+                    .execute()
+                )
+                if pu_ar.data:
+                    pu_row_ar = pu_ar.data[0]
+            except Exception:
+                pass
+        trip_pref_ar = _trip_passenger_vehicle_pref(tag, pu_row_ar)
+        if not _driver_matches_passenger_vehicle_pref(driver_eff_ar, trip_pref_ar):
+            return {"success": False, "error": "Bu talep için araç tipiniz uygun değil"}
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
         
         # Yolcu bilgisini al - passenger_id kullan (tag'da bazen user_id olarak da saklanabilir)
@@ -9086,9 +9153,7 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
         offers = []
         for tag in result.data or []:
             trip_pref = _trip_passenger_vehicle_pref(tag, None)
-            if not DISPATCH_VEHICLE_FILTER_DISABLED and not _driver_matches_passenger_vehicle_pref(
-                driver_eff, trip_pref
-            ):
+            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
                 continue
             # Mesafe hesapla
             distance = haversine_distance(lat, lng, tag["pickup_lat"], tag["pickup_lng"])
@@ -9901,11 +9966,32 @@ async def send_push_notifications_to_users(user_ids: list, title: str, body: str
 
     return {"sent": sent, "failed": failed, "total": len(user_ids or [])}
 
+def _expo_push_data_stringify(data: Optional[dict]) -> dict:
+    """
+    Expo Push HTTP API: data içindeki tüm değerler string olmalı.
+    int/bool/float gönderildiğinde bildirim reddedilebilir veya cihaza hiç düşmez.
+    """
+    if not data:
+        return {}
+    out = {}
+    for k, v in data.items():
+        if v is None:
+            continue
+        key = str(k)
+        if isinstance(v, (dict, list)):
+            out[key] = json.dumps(v, ensure_ascii=False)
+        elif isinstance(v, bool):
+            out[key] = "true" if v else "false"
+        else:
+            out[key] = str(v)
+    return out
+
+
 async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: dict = None):
     """Expo Push API'ye istek atar; (success, receipt_dict) döner. receipt Expo'nun data[0] objesidir."""
     try:
         import httpx
-        payload = data or {}
+        payload = _expo_push_data_stringify(data or {})
         notification_type = payload.get("type")
         channel_id = "default"
         if notification_type == "new_offer":
@@ -10875,7 +10961,7 @@ async def get_nearby_activity(
             if tag_lat and tag_lng:
                 distance = haversine_distance(lat, lng, tag_lat, tag_lng)
                 if distance <= radius_km:
-                    if driver_eff_map is not None and not DISPATCH_VEHICLE_FILTER_DISABLED:
+                    if driver_eff_map is not None:
                         pref_tag = _trip_passenger_vehicle_pref(tag, None)
                         if not _driver_matches_passenger_vehicle_pref(driver_eff_map, pref_tag):
                             continue

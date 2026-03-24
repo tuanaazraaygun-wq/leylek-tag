@@ -8,7 +8,7 @@
  * - Hızlı teklif gönderme
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -284,11 +284,21 @@ export default function DriverOfferScreen({
     ? Math.min(SCREEN_HEIGHT * 0.24, 200)
     : SCREEN_HEIGHT * 0.32;
 
-  /**
-   * Dispatch sadece eşleşen sürücü room'una `new_passenger_offer` gönderir.
-   * İstemci tarafı tür filtresi, eksik `passenger_vehicle_kind` alanında tüm kartları gizleyebiliyordu.
-   */
-  const visibleRequests = requests;
+  /** Yolcu talebi car|motorcycle ile sürücü vehicleKind birebir eşleşmeli (sunucu + ek savunma). */
+  const visibleRequests = useMemo(() => {
+    return requests.filter((req) => {
+      const raw =
+        (req as { passenger_vehicle_kind?: unknown }).passenger_vehicle_kind ??
+        (req as { passenger_preferred_vehicle?: unknown }).passenger_preferred_vehicle;
+      if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return true;
+      }
+      const s = String(raw).trim().toLowerCase();
+      const tripVk: 'car' | 'motorcycle' =
+        s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
+      return tripVk === vehicleKind;
+    });
+  }, [requests, vehicleKind]);
 
   // Harita sınırlarını ayarla
   useEffect(() => {

@@ -8,9 +8,10 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import { API_BASE_URL } from '../lib/backendConfig';
 
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 'https://api.leylektag.com';
-const API_URL = `${BACKEND_URL.replace(/\/$/, '')}/api`;
+/** Socket/REST ile aynı kök — APK’da extra boş kalsa bile EXPO_PUBLIC_BACKEND_URL devreye girer */
+const API_URL = API_BASE_URL;
 
 // Bildirim handler
 Notifications.setNotificationHandler({

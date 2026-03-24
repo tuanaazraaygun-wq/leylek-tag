@@ -94,6 +94,8 @@ interface PlacesAutocompleteProps {
   city?: string;
   /** true: ilçe/mahalle popüler çipleri gösterme (hedef seçim modalı) */
   hidePopularChips?: boolean;
+  /** Hedef modalı: koyu cam / neon çerçeve */
+  visualVariant?: 'default' | 'tech';
 }
 
 export default function PlacesAutocomplete({
@@ -102,6 +104,7 @@ export default function PlacesAutocomplete({
   initialValue = '',
   city = '',
   hidePopularChips = false,
+  visualVariant = 'default',
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
   const predictionsMaxHeight = Math.round(
@@ -275,24 +278,37 @@ export default function PlacesAutocomplete({
   const popularPlaces =
     hidePopularChips || !city || !POPULAR_PLACES[city] ? [] : POPULAR_PLACES[city];
 
+  const tech = visualVariant === 'tech';
+
   return (
     <View style={styles.container}>
       {/* Arama Kutusu */}
-      <View style={styles.inputContainer}>
-        <Ionicons name="search" size={20} color="#3FA9F5" style={styles.searchIcon} />
+      <View style={[styles.inputContainer, tech && styles.inputContainerTech]}>
+        <Ionicons
+          name="search"
+          size={20}
+          color={tech ? '#38BDF8' : '#3FA9F5'}
+          style={styles.searchIcon}
+        />
         <TextInput
-          style={styles.input}
+          style={[styles.input, tech && styles.inputTech]}
           placeholder={placeholder}
-          placeholderTextColor="#999"
+          placeholderTextColor={tech ? 'rgba(148, 163, 184, 0.95)' : '#999'}
           value={query}
           onChangeText={setQuery}
           autoFocus={true}
           returnKeyType="search"
         />
-        {loading && <ActivityIndicator size="small" color="#3FA9F5" style={styles.loader} />}
+        {loading && (
+          <ActivityIndicator
+            size="small"
+            color={tech ? '#38BDF8' : '#3FA9F5'}
+            style={styles.loader}
+          />
+        )}
         {query.length > 0 && !loading && (
           <TouchableOpacity onPress={clearInput} style={styles.clearButton}>
-            <Ionicons name="close-circle" size={20} color="#999" />
+            <Ionicons name="close-circle" size={20} color={tech ? '#94A3B8' : '#999'} />
           </TouchableOpacity>
         )}
       </View>
@@ -317,7 +333,13 @@ export default function PlacesAutocomplete({
 
       {/* Öneriler Listesi */}
       {showPredictions && predictions.length > 0 && (
-        <View style={[styles.predictionsContainer, { maxHeight: predictionsMaxHeight }]}>
+        <View
+          style={[
+            styles.predictionsContainer,
+            tech && styles.predictionsContainerTech,
+            { maxHeight: predictionsMaxHeight },
+          ]}
+        >
           <FlatList
             data={predictions}
             keyExtractor={(item) => item.place_id}
@@ -327,35 +349,47 @@ export default function PlacesAutocomplete({
               const formatted = formatAddress(item);
               return (
                 <TouchableOpacity
-                  style={styles.predictionItem}
+                  style={[styles.predictionItem, tech && styles.predictionItemTech]}
                   onPress={() => handleSelectPrediction(item)}
                 >
-                  <View style={styles.iconContainer}>
-                    <Ionicons name="location" size={22} color="#3FA9F5" />
+                  <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
+                    <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
                   </View>
                   <View style={styles.predictionTextContainer}>
-                    <Text style={styles.predictionMainText} numberOfLines={2}>
+                    <Text
+                      style={[styles.predictionMainText, tech && styles.predictionMainTextTech]}
+                      numberOfLines={2}
+                    >
                       {formatted.main}
                     </Text>
-                    <Text style={styles.predictionSecondaryText} numberOfLines={2}>
+                    <Text
+                      style={[styles.predictionSecondaryText, tech && styles.predictionSecondaryTextTech]}
+                      numberOfLines={2}
+                    >
                       {formatted.secondary}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#CCC" />
+                  <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
                 </TouchableOpacity>
               );
             }}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            ItemSeparatorComponent={() => (
+              <View style={[styles.separator, tech && styles.separatorTech]} />
+            )}
           />
         </View>
       )}
 
       {/* Sonuç Bulunamadı */}
       {showPredictions && predictions.length === 0 && query.length >= 2 && !loading && (
-        <View style={styles.noResultsContainer}>
-          <Ionicons name="location-outline" size={48} color="#DDD" />
-          <Text style={styles.noResultsText}>"{query}" için sonuç bulunamadı</Text>
-          <Text style={styles.noResultsHint}>Farklı bir arama deneyin</Text>
+        <View style={[styles.noResultsContainer, tech && styles.noResultsContainerTech]}>
+          <Ionicons name="location-outline" size={48} color={tech ? '#475569' : '#DDD'} />
+          <Text style={[styles.noResultsText, tech && styles.noResultsTextTech]}>
+            {`"${query}" için sonuç bulunamadı`}
+          </Text>
+          <Text style={[styles.noResultsHint, tech && styles.noResultsHintTech]}>
+            Farklı bir arama deneyin
+          </Text>
         </View>
       )}
     </View>
@@ -377,6 +411,18 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
   },
+  inputContainerTech: {
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderColor: 'rgba(56, 189, 248, 0.55)',
+    borderWidth: 1,
+    borderRadius: 16,
+    minHeight: 56,
+    shadowColor: '#38BDF8',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
   searchIcon: {
     marginRight: 10,
   },
@@ -385,6 +431,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1F2937',
     paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+  },
+  inputTech: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#F1F5F9',
+    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
   },
   loader: {
     marginLeft: 8,
@@ -443,12 +495,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  predictionsContainerTech: {
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    borderRadius: 16,
+    marginTop: 12,
+  },
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 14,
     minHeight: 56,
+  },
+  predictionItemTech: {
+    backgroundColor: 'transparent',
   },
   iconContainer: {
     width: 40,
@@ -458,6 +519,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  iconContainerTech: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
   },
   predictionTextContainer: {
     flex: 1,
@@ -469,14 +533,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1F2937',
   },
+  predictionMainTextTech: {
+    color: '#F8FAFC',
+  },
   predictionSecondaryText: {
     fontSize: 13,
     color: '#6B7280',
     marginTop: 2,
   },
+  predictionSecondaryTextTech: {
+    color: '#94A3B8',
+  },
   separator: {
     height: 1,
     backgroundColor: '#F3F4F6',
+    marginLeft: 66,
+  },
+  separatorTech: {
+    backgroundColor: 'rgba(51, 65, 85, 0.9)',
     marginLeft: 66,
   },
   
@@ -490,15 +564,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
+  noResultsContainerTech: {
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    marginTop: 12,
+  },
   noResultsText: {
     marginTop: 12,
     fontSize: 15,
     fontWeight: '500',
     color: '#6B7280',
   },
+  noResultsTextTech: {
+    color: '#CBD5E1',
+  },
   noResultsHint: {
     marginTop: 4,
     fontSize: 13,
     color: '#9CA3AF',
+  },
+  noResultsHintTech: {
+    color: '#64748B',
   },
 });
