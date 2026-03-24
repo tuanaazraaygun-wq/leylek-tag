@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import { roleScreenHaptic } from '../utils/roleHaptics';
+import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import QRTripEndModal from '../components/QRTripEndModal';
@@ -41,23 +45,31 @@ import { LegalConsentModal, LegalPage, LocationWarningModal } from '../component
 import SplashScreen from '../components/SplashScreen';
 import { KVKKConsentModal, SupportModal } from '../components/KVKKComponents';
 import CommunityScreen from '../components/CommunityScreen';
-import DriverActivityMap from '../components/DriverActivityMap';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
 import { useCall } from '../hooks/useCall';
-
-import Constants from 'expo-constants';
+import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Backend URL - önce extra'dan, sonra env'den, en son hardcoded
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://leylektag-debug.preview.emergentagent.com';
-const API_URL = `${BACKEND_URL}/api`;
+// Backend URL — lib/backendConfig ile SocketContext aynı kaynağı kullanır
+const BACKEND_URL = BACKEND_BASE_URL;
+const API_URL = API_BASE_URL;
+
+/** FastAPI { detail: "..." } veya { message } */
+function apiErrMsg(data: { message?: string; detail?: unknown } | null | undefined, fallback: string): string {
+  if (!data) return fallback;
+  if (data.message) return String(data.message);
+  const d = data.detail;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
+    return String((d[0] as { msg: string }).msg);
+  }
+  return fallback;
+}
 
 console.log('🌐 BACKEND_URL:', BACKEND_URL);
 console.log('🌐 API_URL:', API_URL);
@@ -283,6 +295,36 @@ interface Offer {
   created_at: string;
 }
 
+class RuntimeBoundary extends React.Component<
+  { children: React.ReactNode; name: string },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; name: string }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error(`RuntimeBoundary(${this.props.name})`, error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center', padding: 16 }}>
+          <Text style={{ color: '#EF4444', fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Sürücü ekranı hata verdi</Text>
+          <Text style={{ color: '#CBD5E1', textAlign: 'center' }}>{this.state.error.message || 'Bilinmeyen hata'}</Text>
+        </View>
+      );
+    }
+    return this.props.children as React.ReactElement;
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -325,6 +367,8 @@ export default function App() {
   
   // Role Selection (Dinamik - Her girişte seçilir)
   const [selectedRole, setSelectedRole] = useState<'passenger' | 'driver' | null>(null);
+  /** Araç veya motor — yolcu tercihi / sürücü kullandığı tip */
+  const [rideVehicleKind, setRideVehicleKind] = useState<'car' | 'motorcycle' | null>(null);
   
   // KYC Status (Sürücü başvuru durumu)
   const [kycStatus, setKycStatus] = useState<{status: string; submitted_at: string | null} | null>(null);
@@ -396,9 +440,13 @@ export default function App() {
       const now = Date.now();
       if (now - lastPushRegisterTimeRef.current < PUSH_REREGISTER_INTERVAL_MS) return;
       lastPushRegisterTimeRef.current = now;
-      registerPushToken(user.id).then(success => {
-        if (success) console.log('🔔 [AppState] Push token yeniden kaydedildi');
-      });
+      registerPushToken(user.id)
+        .then(success => {
+          if (success) console.log('🔔 [AppState] Push token yeniden kaydedildi');
+        })
+        .catch(err => {
+          console.log('🔔 [AppState] Push token yeniden kaydedilemedi:', err);
+        });
     });
     return () => subscription.remove();
   }, [user?.id, registerPushToken]);
@@ -544,20 +592,29 @@ export default function App() {
 
   useEffect(() => {
     if (user && screen === 'dashboard') {
-      requestLocationPermission().then(granted => {
-        if (granted) {
-          updateUserLocation();
-          // Her 0.5 saniyede bir konum güncelle - CANLI TAKİP
-          const interval = setInterval(updateUserLocation, 500);
-          return () => clearInterval(interval);
-        }
-      });
-      
       // 🔔 Dashboard'a her girişte push token'ı kaydet
       console.log('🔔 Dashboard açıldı, push token kaydediliyor...');
-      registerPushToken(user.id).then(success => {
-        console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
-      });
+      registerPushToken(user.id)
+        .then(success => {
+          console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
+        })
+        .catch(err => {
+          console.log('🔔 Push token kayıt hatası:', err);
+        });
+
+      // Konum güncellemesini sadece yolcu dashboard'ında yap.
+      // Sürücü tarafında DriverDashboard zaten kendi konum/polling sistemini çalıştırıyor.
+      // Android 16 gibi cihazlarda bu iki sistemin üst üste binmesi ANR/çökme riskini artırıyor.
+      if (user.role !== 'driver') {
+        requestLocationPermission().then(granted => {
+          if (granted) {
+            updateUserLocation();
+            // Daha düşük frekans: performans ve stabilite
+            const interval = setInterval(updateUserLocation, 5000);
+            return () => clearInterval(interval);
+          }
+        });
+      }
     }
   }, [user, screen]);
 
@@ -597,6 +654,53 @@ export default function App() {
           setShowLegalConsent(true);
         } else {
           setLegalAccepted(true);
+          // Aktif yolculuk / bekleyen teklif — uygulama yeniden açılınca doğru ekran
+          if (!isMainAdmin) {
+            (async () => {
+              try {
+                const role = parsedUser.role;
+                if (role === 'passenger') {
+                  const r = await fetch(
+                    `${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(parsedUser.id)}`
+                  );
+                  const j = await r.json();
+                  const st = j.tag?.status;
+                  if (
+                    j.success &&
+                    j.tag &&
+                    st &&
+                    ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
+                  ) {
+                    setScreen('dashboard');
+                  }
+                } else if (role === 'driver') {
+                  const r = await fetch(
+                    `${API_URL}/driver/active-tag?user_id=${encodeURIComponent(parsedUser.id)}`
+                  );
+                  const j = await r.json();
+                  const st = j.tag?.status;
+                  if (
+                    j.success &&
+                    j.tag &&
+                    st &&
+                    ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
+                  ) {
+                    setScreen('dashboard');
+                    return;
+                  }
+                  const pd = await fetch(
+                    `${API_URL}/driver/dispatch-pending-offer?user_id=${encodeURIComponent(parsedUser.id)}`
+                  );
+                  const pj = await pd.json();
+                  if (pj.success && pj.offer?.tag_id) {
+                    setScreen('dashboard');
+                  }
+                }
+              } catch (e) {
+                console.warn('Active session restore:', e);
+              }
+            })();
+          }
         }
       }
     } catch (error) {
@@ -611,6 +715,47 @@ export default function App() {
     await AsyncStorage.setItem('legal_accepted', 'true');
     setLegalAccepted(true);
     setShowLegalConsent(false);
+    // İlk açılışta legal sonrası aktif trip / dispatch teklifi varsa dashboard
+    if (user?.id && user.role) {
+      try {
+        const cleanPhone = user.phone?.replace(/\D/g, '');
+        const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
+        if (isMainAdmin) return;
+        if (user.role === 'passenger') {
+          const r = await fetch(`${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(user.id)}`);
+          const j = await r.json();
+          const st = j.tag?.status;
+          if (
+            j.success &&
+            j.tag &&
+            st &&
+            ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
+          ) {
+            setScreen('dashboard');
+          }
+        } else if (user.role === 'driver') {
+          const r = await fetch(`${API_URL}/driver/active-tag?user_id=${encodeURIComponent(user.id)}`);
+          const j = await r.json();
+          const st = j.tag?.status;
+          if (
+            j.success &&
+            j.tag &&
+            st &&
+            ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
+          ) {
+            setScreen('dashboard');
+            return;
+          }
+          const pd = await fetch(
+            `${API_URL}/driver/dispatch-pending-offer?user_id=${encodeURIComponent(user.id)}`
+          );
+          const pj = await pd.json();
+          if (pj.success && pj.offer?.tag_id) setScreen('dashboard');
+        }
+      } catch (e) {
+        console.warn('Legal accept restore:', e);
+      }
+    }
   };
   
   // Legal consent red
@@ -658,10 +803,7 @@ export default function App() {
     }
 
     try {
-      // Cihaz ID'yi al
       const currentDeviceId = deviceId || await getOrCreateDeviceId();
-      
-      // Kullanıcı kontrolü yap
       const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -672,12 +814,26 @@ export default function App() {
       console.log('🔍 Check user response:', checkData);
       
       if (checkData.success && checkData.user_exists && checkData.has_pin) {
-        // ✅ KAYITLI KULLANICI VE PIN'İ VAR - DİREKT PIN EKRANINA GİT (OTP YOK!)
         setHasPin(true);
         setUserExists(true);
-        setIsDeviceVerified(true);
-        Alert.alert('Hoş Geldiniz! 👋', `${checkData.user_name || 'Kullanıcı'}, 6 haneli şifrenizi girin`);
-        setScreen('enter-pin');
+        setIsDeviceVerified(!!checkData.device_verified);
+        // Aynı cihaz: doğrulama kodu gönderilmez, direkt PIN ekranına git
+        if (checkData.device_verified) {
+          setScreen('enter-pin');
+          return;
+        }
+        // Farklı cihaz: önce OTP ile doğrula, sonra PIN
+        const response = await fetch(`${API_URL}/auth/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanPhone })
+        });
+        const data = await response.json();
+        if (data.success) {
+          setScreen('otp');
+        } else {
+          Alert.alert('Hata', apiErrMsg(data, 'Doğrulama kodu gönderilemedi'));
+        }
       } else if (checkData.success && checkData.user_exists && !checkData.has_pin) {
         // Kayıtlı ama PIN yok - OTP gönder ve PIN oluştur
         setUserExists(true);
@@ -689,10 +845,10 @@ export default function App() {
         });
         const data = await response.json();
         if (data.success) {
-          Alert.alert('Şifre Oluşturma 🔐', 'Hesabınız için 6 haneli şifre belirlemeniz gerekiyor. SMS kodunu girin.\n\nTest: 123456');
+          Alert.alert('Şifre Oluşturma 🔐', 'Hesabınız için 6 haneli şifre belirlemeniz gerekiyor. SMS ile gelen kodu girin.');
           setScreen('otp');
         } else {
-          Alert.alert('Hata', data.message || 'SMS gönderilemedi');
+          Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
         }
       } else {
         // 🆕 YENİ KULLANICI - Kayıt sayfasına yönlendir
@@ -713,10 +869,10 @@ export default function App() {
                 });
                 const data = await response.json();
                 if (data.success) {
-                  Alert.alert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.\n\nTest: 123456');
+                  Alert.alert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.');
                   setScreen('otp');
                 } else {
-                  Alert.alert('Hata', data.message || 'SMS gönderilemedi');
+                  Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
                 }
               }
             }
@@ -735,7 +891,6 @@ export default function App() {
       Alert.alert('Hata', 'OTP kodunu girin');
       return;
     }
-
     try {
       const currentDeviceId = deviceId || await getOrCreateDeviceId();
       
@@ -750,21 +905,19 @@ export default function App() {
       
       if (data.success) {
         if (data.user_exists && data.user) {
-          // Kayıtlı kullanıcı
+          // Kayıtlı kullanıcı - giriş yapıyor, kayıt sayfasına atma
           await saveUser(data.user);
-          
+          setUser(data.user);
           if (data.has_pin) {
-            // PIN var - PIN girişi
             setScreen('enter-pin');
           } else {
-            // PIN yok - PIN oluşturması lazım
             setScreen('set-pin');
           }
         } else {
           // Yeni kullanıcı - Eğer isim ve şehir zaten girilmişse kayıt yap
           if (name && selectedCity) {
-            // Kayıt yap
             try {
+              const currentDeviceId = deviceId || await getOrCreateDeviceId();
               const registerResponse = await fetch(`${API_URL}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -772,7 +925,8 @@ export default function App() {
                   phone, 
                   name, 
                   city: selectedCity,
-                  role: 'passenger' // Varsayılan olarak yolcu
+                  role: 'passenger',
+                  device_id: currentDeviceId
                 })
               });
               
@@ -782,11 +936,10 @@ export default function App() {
               if (registerData.success && registerData.user) {
                 await saveUser(registerData.user);
                 setUser(registerData.user);
-                
-                // Push token kaydet
-                registerPushToken(registerData.user.id);
-                
-                Alert.alert('Başarılı', 'Kayıt tamamlandı! Şimdi PIN oluşturun.', [
+                registerPushToken(registerData.user.id).catch(err => {
+                  console.log('🔔 Push token kayıt hatası (register):', err);
+                });
+                Alert.alert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
                 ]);
               } else {
@@ -1024,7 +1177,11 @@ export default function App() {
                   placeholderTextColor="#A0A0A0"
                   keyboardType="phone-pad"
                   value={phone}
-                  onChangeText={(text) => setPhone(text.replace(/\D/g, ''))}
+                  onChangeText={(text) => {
+                    const cleaned = text.replace(/\D/g, '');
+                    if (cleaned.length > phone.length) void keyCharHaptic();
+                    setPhone(cleaned);
+                  }}
                   maxLength={10}
                 />
               </View>
@@ -1032,7 +1189,10 @@ export default function App() {
               {/* KVKK Checkbox - Tıklanabilir Metin */}
               <TouchableOpacity 
                 style={styles.kvkkContainer} 
-                onPress={() => setKvkkAccepted(!kvkkAccepted)}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setKvkkAccepted(!kvkkAccepted);
+                }}
                 activeOpacity={0.7}
               >
                 <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
@@ -1045,13 +1205,14 @@ export default function App() {
                   >
                     Aydınlatma Metni ve Gizlilik Politikası
                   </Text>
-                  <Text>'nı okudum, anladım ve kabul ediyorum.</Text>
+                  <Text>&apos;nı okudum, anladım ve kabul ediyorum.</Text>
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
                 style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
-                onPress={() => {
+                onPress={async () => {
+                  void tapButtonHaptic();
                   if (!kvkkAccepted) {
                     Alert.alert(
                       '⚠️ Onay Gerekli', 
@@ -1070,7 +1231,10 @@ export default function App() {
               {/* Kayıt Ol Butonu */}
               <TouchableOpacity 
                 style={styles.registerButton}
-                onPress={() => setScreen('register')}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setScreen('register');
+                }}
               >
                 <Ionicons name="person-add-outline" size={20} color="#3FA9F5" />
                 <Text style={styles.registerButtonText}>Kayıt Ol</Text>
@@ -1079,7 +1243,10 @@ export default function App() {
               {/* Şifremi Unuttum */}
               <TouchableOpacity 
                 style={styles.forgotPasswordButton}
-                onPress={() => setScreen('forgot-password')}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setScreen('forgot-password');
+                }}
               >
                 <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
               </TouchableOpacity>
@@ -1087,7 +1254,10 @@ export default function App() {
               {/* Destek Butonu */}
               <TouchableOpacity 
                 style={styles.supportButton}
-                onPress={() => setShowSupportModal(true)}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setShowSupportModal(true);
+                }}
               >
                 <Ionicons name="headset-outline" size={20} color="#3FA9F5" />
                 <Text style={styles.supportButtonText}>Destek</Text>
@@ -1141,7 +1311,10 @@ export default function App() {
                 placeholderTextColor="#A0A0A0"
                 keyboardType="number-pad"
                 value={otp}
-                onChangeText={setOtp}
+                onChangeText={(t) => {
+                  if (t.length > otp.length) void keyCharHaptic();
+                  setOtp(t);
+                }}
                 maxLength={6}
               />
             </View>
@@ -1157,18 +1330,32 @@ export default function App() {
                 const data = await response.json();
                 if (data.success) {
                   Alert.alert('Başarılı', 'Yeni kod gönderildi');
+                } else {
+                  Alert.alert('Hata', apiErrMsg(data, 'Kod gönderilemedi'));
                 }
               } catch (error) {
                 Alert.alert('Hata', 'Kod gönderilemedi');
               }
             }} />
 
-            <TouchableOpacity style={styles.modernPrimaryButton} onPress={handleVerifyOTP}>
+            <TouchableOpacity
+              style={styles.modernPrimaryButton}
+              onPress={() => {
+                void tapButtonHaptic();
+                handleVerifyOTP();
+              }}
+            >
               <Text style={styles.modernPrimaryButtonText}>DOĞRULA</Text>
               <Ionicons name="checkmark-circle" size={20} color="#FFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('login')}>
+            <TouchableOpacity
+              style={styles.modernSecondaryButton}
+              onPress={() => {
+                void tapButtonHaptic();
+                setScreen('login');
+              }}
+            >
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
@@ -1206,7 +1393,10 @@ export default function App() {
                 placeholder="Adınızı girin"
                 placeholderTextColor="#A0A0A0"
                 value={firstName}
-                onChangeText={setFirstName}
+                onChangeText={(t) => {
+                  if (t.length > firstName.length) void keyCharHaptic();
+                  setFirstName(t);
+                }}
               />
             </View>
 
@@ -1219,7 +1409,10 @@ export default function App() {
                 placeholder="Soyadınızı girin"
                 placeholderTextColor="#A0A0A0"
                 value={lastName}
-                onChangeText={setLastName}
+                onChangeText={(t) => {
+                  if (t.length > lastName.length) void keyCharHaptic();
+                  setLastName(t);
+                }}
               />
             </View>
 
@@ -1227,7 +1420,10 @@ export default function App() {
             <Text style={styles.modernLabel}>Şehir</Text>
             <TouchableOpacity
               style={styles.modernInputContainer}
-              onPress={() => setShowCityPicker(true)}
+              onPress={() => {
+                void tapButtonHaptic();
+                setShowCityPicker(true);
+              }}
             >
               <Ionicons name="location-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
               <Text style={selectedCity ? styles.modernInputText : styles.modernPlaceholder}>
@@ -1254,6 +1450,7 @@ export default function App() {
                   }
                   // Maksimum 10 karakter
                   if (cleaned.length <= 10) {
+                    if (cleaned.length > phone.length) void keyCharHaptic();
                     setPhone(cleaned);
                   }
                 }}
@@ -1266,9 +1463,9 @@ export default function App() {
             <TouchableOpacity 
               style={[styles.modernPrimaryButton, (!firstName || !lastName || !selectedCity || phone.length < 10) && styles.buttonDisabled]} 
               onPress={async () => {
+                void tapButtonHaptic();
                 if (firstName && lastName && selectedCity && phone.length >= 10) {
                   setName(`${firstName} ${lastName}`);
-                  // Telefon doğrulama için OTP gönder
                   setLoading(true);
                   try {
                     const response = await fetch(`${API_URL}/auth/send-otp`, {
@@ -1280,10 +1477,11 @@ export default function App() {
                     if (data.success) {
                       setScreen('otp');
                     } else {
+                      const em = apiErrMsg(data, 'OTP gönderilemedi');
                       if (Platform.OS === 'web') {
-                        window.alert('Hata: ' + (data.message || 'OTP gönderilemedi'));
+                        window.alert('Hata: ' + em);
                       } else {
-                        Alert.alert('Hata', data.message || 'OTP gönderilemedi');
+                        Alert.alert('Hata', em);
                       }
                     }
                   } catch (error: any) {
@@ -1309,7 +1507,13 @@ export default function App() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('login')}>
+            <TouchableOpacity
+              style={styles.modernSecondaryButton}
+              onPress={() => {
+                void tapButtonHaptic();
+                setScreen('login');
+              }}
+            >
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
@@ -1432,48 +1636,71 @@ export default function App() {
   if (screen === 'set-pin') {
     const handleSetPin = async () => {
       if (pin.length !== 6) {
-        Alert.alert('Hata', 'Şifre 6 haneli olmalıdır');
+        Alert.alert('Hata', 'PIN 6 haneli olmalıdır');
         return;
       }
       if (pin !== confirmPin) {
-        Alert.alert('Hata', 'Şifreler eşleşmiyor');
+        Alert.alert('Hata', 'PIN kodları eşleşmiyor');
         return;
       }
 
       try {
         const currentDeviceId = deviceId || await getOrCreateDeviceId();
         
-        // Önce kullanıcıyı kaydet
+        if (user?.id) {
+          // Kullanıcı zaten var (kayıt sonrası PIN belirleme) -> set-pin API (backend ile aynı format için user.phone kullan)
+          const setPinResponse = await fetch(`${API_URL}/auth/set-pin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone: user.phone || phone,
+              pin,
+              first_name: firstName,
+              last_name: lastName,
+              city: selectedCity,
+              device_id: currentDeviceId
+            })
+          });
+          const setPinData = await setPinResponse.json();
+          if (setPinData.success) {
+            Alert.alert(
+              'Kayıt Başarılı',
+              'Hesabınız hazır. PIN kodunuzu kimseyle paylaşmayın.',
+              [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
+            );
+          } else {
+            Alert.alert('Hata', setPinData.detail || 'PIN ayarlanamadı');
+          }
+          return;
+        }
+        
+        // Yeni kullanıcı (doğrudan set-pin ile kayıt) -> register API
         const registerResponse = await fetch(`${API_URL}/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phone: phone,
+            phone,
             first_name: firstName,
             last_name: lastName,
             city: selectedCity,
-            pin: pin,
-            device_id: currentDeviceId  // Cihaz ID ekle
+            pin,
+            device_id: currentDeviceId
           })
         });
         const registerData = await registerResponse.json();
-        
-        if (registerData.success) {
-          // Kullanıcıyı kaydet ve rol seçimine git
+        if (registerData.success && registerData.user) {
           setUser(registerData.user);
           await saveUser(registerData.user);
           Alert.alert(
-            '✅ Kayıt Başarılı',
-            'Şifrenizi kimseyle paylaşmayın, göstermeyin, söylemeyin!',
-            [{ text: 'Tamam', onPress: () => {
-              setScreen('role-select');
-            }}]
+            'Kayıt Başarılı',
+            'Hesabınız oluşturuldu. PIN kodunuzu kimseyle paylaşmayın.',
+            [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
           );
         } else {
           Alert.alert('Hata', registerData.detail || 'Kayıt yapılamadı');
         }
       } catch (error) {
-        console.error('Register error:', error);
+        console.error('Set PIN / Register error:', error);
         Alert.alert('Hata', 'Bir sorun oluştu');
       }
     };
@@ -1502,10 +1729,18 @@ export default function App() {
                 keyboardType="number-pad"
                 secureTextEntry={!showPin}
                 value={pin}
-                onChangeText={setPin}
+                onChangeText={(t) => {
+                  if (t.length > pin.length) void keyCharHaptic();
+                  setPin(t);
+                }}
                 maxLength={6}
               />
-              <TouchableOpacity onPress={() => setShowPin(!showPin)}>
+              <TouchableOpacity
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setShowPin(!showPin);
+                }}
+              >
                 <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
               </TouchableOpacity>
             </View>
@@ -1521,7 +1756,10 @@ export default function App() {
                 keyboardType="number-pad"
                 secureTextEntry={!showPin}
                 value={confirmPin}
-                onChangeText={setConfirmPin}
+                onChangeText={(t) => {
+                  if (t.length > confirmPin.length) void keyCharHaptic();
+                  setConfirmPin(t);
+                }}
                 maxLength={6}
               />
             </View>
@@ -1536,14 +1774,23 @@ export default function App() {
 
             <TouchableOpacity 
               style={[styles.modernPrimaryButton, (pin.length !== 6 || confirmPin.length !== 6) && styles.buttonDisabled]} 
-              onPress={handleSetPin}
+              onPress={() => {
+                void tapButtonHaptic();
+                handleSetPin();
+              }}
               disabled={pin.length !== 6 || confirmPin.length !== 6}
             >
               <Text style={styles.modernPrimaryButtonText}>KAYDI TAMAMLA</Text>
               <Ionicons name="checkmark-circle" size={20} color="#FFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => setScreen('register')}>
+            <TouchableOpacity
+              style={styles.modernSecondaryButton}
+              onPress={() => {
+                void tapButtonHaptic();
+                setScreen('register');
+              }}
+            >
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
@@ -1557,7 +1804,7 @@ export default function App() {
   if (screen === 'enter-pin') {
     const handleEnterPin = async () => {
       if (pin.length !== 6) {
-        Alert.alert('Hata', 'Şifre 6 haneli olmalıdır');
+        Alert.alert('Hata', 'PIN 6 haneli olmalıdır');
         return;
       }
 
@@ -1606,8 +1853,8 @@ export default function App() {
             <View style={styles.pinIconContainer}>
               <Ionicons name="lock-closed" size={45} color="#3FA9F5" />
             </View>
-            <Text style={styles.pinTitle}>Şifre Giriş</Text>
-            <Text style={styles.heroSubtitle}>6 haneli güvenlik şifrenizi girin</Text>
+            <Text style={styles.pinTitle}>Güvenlik Kodu</Text>
+            <Text style={styles.heroSubtitle}>6 haneli PIN kodunuzu girin</Text>
           </View>
 
           <View style={styles.modernFormContainer}>
@@ -1621,27 +1868,42 @@ export default function App() {
                 keyboardType="number-pad"
                 secureTextEntry={!showPin}
                 value={pin}
-                onChangeText={setPin}
+                onChangeText={(t) => {
+                  if (t.length > pin.length) void keyCharHaptic();
+                  setPin(t);
+                }}
                 maxLength={6}
               />
-              <TouchableOpacity onPress={() => setShowPin(!showPin)}>
+              <TouchableOpacity
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setShowPin(!showPin);
+                }}
+              >
                 <Ionicons name={showPin ? "eye-off" : "eye"} size={22} color="#A0A0A0" />
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity 
               style={[styles.modernPrimaryButton, pin.length !== 6 && styles.buttonDisabled]} 
-              onPress={handleEnterPin}
+              onPress={() => {
+                void tapButtonHaptic();
+                handleEnterPin();
+              }}
               disabled={pin.length !== 6}
             >
               <Text style={styles.modernPrimaryButtonText}>GİRİŞ YAP</Text>
               <Ionicons name="log-in" size={20} color="#FFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
-              setPin('');
-              setScreen('login');
-            }}>
+            <TouchableOpacity
+              style={styles.modernSecondaryButton}
+              onPress={async () => {
+                void tapButtonHaptic();
+                setPin('');
+                setScreen('login');
+              }}
+            >
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
@@ -1672,7 +1934,11 @@ export default function App() {
               <TextInput
                 style={styles.modernPhoneInput}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(text) => {
+                  const cleaned = text.replace(/\D/g, '');
+                  if (cleaned.length > phone.length) void keyCharHaptic();
+                  setPhone(cleaned);
+                }}
                 placeholder="5XX XXX XX XX"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="phone-pad"
@@ -1683,6 +1949,7 @@ export default function App() {
             <TouchableOpacity 
               style={[styles.modernPrimaryButton, loading && styles.disabledButton]}
               onPress={async () => {
+                void tapButtonHaptic();
                 if (!phone || phone.length < 10) {
                   Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
                   return;
@@ -1715,7 +1982,7 @@ export default function App() {
                   if (data.success) {
                     setScreen('reset-pin');
                   } else {
-                    Alert.alert('Hata', data.detail || 'OTP gönderilemedi');
+                    Alert.alert('Hata', apiErrMsg(data, 'OTP gönderilemedi'));
                   }
                 } catch (error) {
                   Alert.alert('Hata', 'Bir hata oluştu');
@@ -1732,10 +1999,14 @@ export default function App() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
-              setPhone('');
-              setScreen('login');
-            }}>
+            <TouchableOpacity
+              style={styles.modernSecondaryButton}
+              onPress={() => {
+                void tapButtonHaptic();
+                setPhone('');
+                setScreen('login');
+              }}
+            >
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
@@ -1766,7 +2037,10 @@ export default function App() {
               <TextInput
                 style={styles.modernInput}
                 value={otp}
-                onChangeText={setOtp}
+                onChangeText={(t) => {
+                  if (t.length > otp.length) void keyCharHaptic();
+                  setOtp(t);
+                }}
                 placeholder="6 haneli kod"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="number-pad"
@@ -1780,7 +2054,10 @@ export default function App() {
               <TextInput
                 style={styles.modernInput}
                 value={pin}
-                onChangeText={setPin}
+                onChangeText={(t) => {
+                  if (t.length > pin.length) void keyCharHaptic();
+                  setPin(t);
+                }}
                 placeholder="6 haneli yeni şifre"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="number-pad"
@@ -1792,6 +2069,7 @@ export default function App() {
             <TouchableOpacity 
               style={[styles.modernPrimaryButton, loading && styles.disabledButton]}
               onPress={async () => {
+                void tapButtonHaptic();
                 if (!otp || otp.length !== 6) {
                   Alert.alert('Hata', 'Geçerli bir doğrulama kodu girin');
                   return;
@@ -1851,11 +2129,15 @@ export default function App() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modernSecondaryButton} onPress={() => {
-              setOtp('');
-              setPin('');
-              setScreen('forgot-password');
-            }}>
+            <TouchableOpacity
+              style={styles.modernSecondaryButton}
+              onPress={async () => {
+                void tapButtonHaptic();
+                setOtp('');
+                setPin('');
+                setScreen('forgot-password');
+              }}
+            >
               <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
@@ -1866,8 +2148,19 @@ export default function App() {
   }
 
   if (screen === 'role-select') {
+    const mergeVehicleIntoUser = (u: NonNullable<typeof user>) => {
+      if (!rideVehicleKind || !selectedRole) return { ...u, role: selectedRole || u.role };
+      const prev =
+        u.driver_details && typeof u.driver_details === 'object' ? { ...u.driver_details } : {};
+      if (selectedRole === 'driver') (prev as Record<string, unknown>).vehicle_kind = rideVehicleKind;
+      else (prev as Record<string, unknown>).passenger_preferred_vehicle = rideVehicleKind;
+      return { ...u, role: selectedRole, driver_details: prev };
+    };
+
     const handleRoleSelect = (role: 'passenger' | 'driver') => {
+      roleScreenHaptic();
       setSelectedRole(role);
+      setRideVehicleKind(null);
       
       // Animasyon
       Animated.sequence([
@@ -1885,16 +2178,22 @@ export default function App() {
     };
 
     const handleContinue = async () => {
-      if (!selectedRole) return;
-      
+      if (!selectedRole || !rideVehicleKind) return;
+      roleScreenHaptic();
       try {
+        if (user?.id) {
+          await fetch(
+            `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(user.id)}&role=${selectedRole}&vehicle_kind=${rideVehicleKind}`,
+            { method: 'POST' }
+          ).catch(() => {});
+        }
         // Sürücü seçildiyse KYC kontrolü yap
         if (selectedRole === 'driver') {
           const kycResponse = await fetch(`${API_URL}/driver/kyc/status?user_id=${user?.id}`);
           const kycData = await kycResponse.json();
           
           if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
-            // KYC kaydı yok veya reddedilmiş - KYC ekranına yönlendir
+            if (user) setUser(mergeVehicleIntoUser(user));
             setScreen('driver-kyc');
             return;
           } else if (kycData.kyc_status === 'pending') {
@@ -1904,8 +2203,7 @@ export default function App() {
               submitted_at: kycData.submitted_at
             });
             await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
-            const updatedUser = { ...user, role: selectedRole };
-            setUser(updatedUser);
+            if (user) setUser(mergeVehicleIntoUser(user));
             setScreen('dashboard');
             return;
           }
@@ -1915,8 +2213,7 @@ export default function App() {
         
         await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
         if (selectedRole && user) {
-          // Kullanıcının rolünü güncelle
-          const updatedUser = { ...user, role: selectedRole };
+          const updatedUser = mergeVehicleIntoUser(user);
           setUser(updatedUser);
           
           // 📍 Hemen konum izni iste
@@ -1925,23 +2222,29 @@ export default function App() {
           
           // 🔔 Push token'ı backend'e kaydet
           console.log('🔔 Push token kaydediliyor...');
-          registerPushToken(user.id).then(success => {
-            console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
-          });
+          registerPushToken(user.id)
+            .then((success) => {
+              console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
+            })
+            .catch((err) => {
+              console.log('🔔 Push token hata:', err);
+            });
           
           setScreen('dashboard');
         }
       } catch (error) {
         console.error('Role kaydedilemedi:', error);
         if (selectedRole && user) {
-          const updatedUser = { ...user, role: selectedRole };
+          const updatedUser = mergeVehicleIntoUser(user);
           setUser(updatedUser);
           
           // 📍 Konum izni iste
           requestLocationPermission();
           
           // 🔔 Push token kaydet
-          registerPushToken(user.id);
+          registerPushToken(user.id).catch((err) => {
+            console.log('🔔 Push token hata:', err);
+          });
           
           setScreen('dashboard');
         }
@@ -1960,6 +2263,7 @@ export default function App() {
             <TouchableOpacity 
               style={styles.roleExitBtn}
               onPress={() => {
+                roleScreenHaptic();
                 Alert.alert('Çıkış', 'Oturumu kapatmak istiyor musunuz?', [
                   { text: 'İptal', style: 'cancel' },
                   { text: 'Çıkış', style: 'destructive', onPress: async () => {
@@ -1973,10 +2277,13 @@ export default function App() {
               <Ionicons name="log-out-outline" size={22} color="#EF4444" />
             </TouchableOpacity>
             
-            <Text style={styles.roleTopTitle}>Bugün nasıl kullanmak istiyorsunuz?</Text>
+            <View style={{ flex: 1, marginHorizontal: 6 }}>
+              <Text style={styles.roleTopTitle}>Bugün nasıl ilerlemek{'\n'}istersiniz?</Text>
+              <Text style={styles.roleTopSubtitle}>Yolcu veya sürücü — araç ya da motor</Text>
+            </View>
             
             {isAdmin ? (
-              <TouchableOpacity style={styles.roleAdminBtn} onPress={() => setShowAdminPanel(true)}>
+              <TouchableOpacity style={styles.roleAdminBtn} onPress={async () => { roleScreenHaptic(); setShowAdminPanel(true); }}>
                 <Ionicons name="settings-outline" size={22} color="#3FA9F5" />
               </TouchableOpacity>
             ) : <View style={{ width: 40 }} />}
@@ -1989,10 +2296,11 @@ export default function App() {
               {/* Yolcu */}
               <TouchableOpacity
                 style={[styles.roleCardCompact, selectedRole === 'passenger' && styles.roleCardSelected]}
-                onPress={() => handleRoleSelect('passenger')}
+                onPress={async () => { handleRoleSelect('passenger'); }}
+                activeOpacity={0.88}
               >
                 <View style={[styles.roleIconCircle, selectedRole === 'passenger' && styles.roleIconCircleActive]}>
-                  <Ionicons name="person" size={32} color={selectedRole === 'passenger' ? '#FFF' : '#3FA9F5'} />
+                  <MaterialCommunityIcons name="account-supervisor-circle" size={40} color={selectedRole === 'passenger' ? '#FFF' : '#0EA5E9'} />
                 </View>
                 <Text style={[styles.roleCardLabel, selectedRole === 'passenger' && styles.roleCardLabelActive]}>Yolcu</Text>
                 <Text style={styles.roleCardDesc}>Teklif gönder</Text>
@@ -2006,13 +2314,17 @@ export default function App() {
               {/* Sürücü */}
               <TouchableOpacity
                 style={[styles.roleCardCompact, selectedRole === 'driver' && styles.roleCardSelected]}
-                onPress={() => handleRoleSelect('driver')}
+                onPress={async () => { handleRoleSelect('driver'); }}
+                activeOpacity={0.88}
               >
                 <View style={[styles.roleIconCircle, selectedRole === 'driver' && styles.roleIconCircleActive]}>
-                  <Ionicons name="car" size={32} color={selectedRole === 'driver' ? '#FFF' : '#3FA9F5'} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <MaterialCommunityIcons name="car-side" size={34} color={selectedRole === 'driver' ? '#FFF' : '#2563EB'} />
+                    <MaterialCommunityIcons name="motorbike" size={30} color={selectedRole === 'driver' ? '#E9D5FF' : '#7C3AED'} />
+                  </View>
                 </View>
                 <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>Sürücü</Text>
-                <Text style={styles.roleCardDesc}>Teklif al</Text>
+                <Text style={styles.roleCardDesc}>Araç veya motor</Text>
                 {selectedRole === 'driver' && (
                   <View style={styles.roleCheckBadge}>
                     <Ionicons name="checkmark" size={16} color="#FFF" />
@@ -2021,11 +2333,70 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
+            {selectedRole && (
+              <View style={styles.roleVehicleSection}>
+                <Text style={styles.roleVehiclePrompt}>
+                  {selectedRole === 'passenger'
+                    ? 'Nasıl bir araç çağırmak istersiniz?'
+                    : 'Ne ile yolculuk yapıyorsunuz?'}
+                </Text>
+                <View style={styles.roleVehicleRow}>
+                  <TouchableOpacity
+                    style={[styles.roleVehicleChip, rideVehicleKind === 'car' && styles.roleVehicleChipActive]}
+                    onPress={() => {
+                      roleScreenHaptic();
+                      setRideVehicleKind('car');
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons
+                      name="car-side"
+                      size={26}
+                      color={rideVehicleKind === 'car' ? '#FFF' : '#1D4ED8'}
+                    />
+                    <Text
+                      style={[
+                        styles.roleVehicleChipText,
+                        rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
+                      ]}
+                    >
+                      Araç
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.roleVehicleChip, rideVehicleKind === 'motorcycle' && styles.roleVehicleChipActiveMotor]}
+                    onPress={() => {
+                      roleScreenHaptic();
+                      setRideVehicleKind('motorcycle');
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons
+                      name="motorbike"
+                      size={26}
+                      color={rideVehicleKind === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                    />
+                    <Text
+                      style={[
+                        styles.roleVehicleChipText,
+                        rideVehicleKind === 'motorcycle' && styles.roleVehicleChipTextActive,
+                      ]}
+                    >
+                      Motor
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {/* Devam Et Butonu */}
             <TouchableOpacity
-              style={[styles.roleContinueBtnCompact, !selectedRole && styles.roleContinueBtnDisabled]}
+              style={[
+                styles.roleContinueBtnCompact,
+                (!selectedRole || !rideVehicleKind) && styles.roleContinueBtnDisabled,
+              ]}
               onPress={handleContinue}
-              disabled={!selectedRole}
+              disabled={!selectedRole || !rideVehicleKind}
             >
               <Text style={styles.roleContinueText}>Devam Et</Text>
               <Ionicons name="arrow-forward" size={22} color="#FFF" />
@@ -2040,7 +2411,7 @@ export default function App() {
               <View style={styles.roleSeparatorLine} />
             </View>
 
-            <TouchableOpacity style={styles.communityBtnCompact} onPress={() => setScreen('community')}>
+            <TouchableOpacity style={styles.communityBtnCompact} onPress={async () => { roleScreenHaptic(); setScreen('community'); }}>
               <View style={styles.communityLogoBox}>
                 <Ionicons name="chatbubbles" size={28} color="#FFF" />
               </View>
@@ -2087,13 +2458,15 @@ export default function App() {
         setScreen={setScreen}
       />
     ) : (
-      <DriverDashboard 
-        user={user} 
-        logout={logout} 
-        setScreen={setScreen} 
-        kycStatusProp={kycStatus}
-        setKycStatusProp={setKycStatus}
-      />
+      <RuntimeBoundary name="DriverDashboard">
+        <DriverDashboard 
+          user={user} 
+          logout={logout} 
+          setScreen={setScreen} 
+          kycStatusProp={kycStatus}
+          setKycStatusProp={setKycStatus}
+        />
+      </RuntimeBoundary>
     );
   }
 
@@ -2118,6 +2491,11 @@ export default function App() {
       <DriverKYCScreen
         userId={user.id}
         userName={user.name || 'Kullanıcı'}
+        vehicleKind={
+          (user.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind === 'motorcycle'
+            ? 'motorcycle'
+            : 'car'
+        }
         onBack={() => setScreen('role-select')}
         onSuccess={() => {
           Alert.alert(
@@ -4668,17 +5046,6 @@ function PassengerDashboard({
   setShowDestinationPicker: (show: boolean) => void;
   setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
 }) {
-  // 🔒 NULL SAFETY - User yoksa early return
-  if (!user || !user.id) {
-    console.log('⚠️ PassengerDashboard: User is null or invalid');
-    return (
-      <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#3FA9F5" />
-        <Text style={{ color: '#fff', marginTop: 12 }}>Yükleniyor...</Text>
-      </View>
-    );
-  }
-  
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -4710,8 +5077,9 @@ function PassengerDashboard({
       if (!userLocation) return;
       
       try {
+        const vk = encodeURIComponent(rideVehiclePreference);
         const response = await fetch(
-          `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20`
+          `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20&passenger_vehicle_kind=${vk}`
         );
         const data = await response.json();
         if (data.success && typeof data.nearby_driver_count === 'number') {
@@ -4726,7 +5094,7 @@ function PassengerDashboard({
     const interval = setInterval(fetchNearbyDrivers, 10000); // Her 10 saniyede güncelle
     
     return () => clearInterval(interval);
-  }, [activeTag, userLocation]);
+  }, [activeTag, userLocation, rideVehiclePreference]);
   
   // 🆕 Eşleşme sağlanıyor state'i
   const [matchingInProgress, setMatchingInProgress] = useState(false);
@@ -4766,6 +5134,8 @@ function PassengerDashboard({
   } | null>(null);
   const [selectedPrice, setSelectedPrice] = useState<number>(0);
   const [priceLoading, setPriceLoading] = useState(false);
+  /** Yolcu teklifi: araç mı motor mu — dispatch yalnız eşleşen sürücülere gider */
+  const [rideVehiclePreference, setRideVehiclePreference] = useState<'car' | 'motorcycle'>('car');
   
   // 🆕 Karşı taraf (Sürücü) detay bilgileri - Harita Bilgi Kartı için
   const [otherUserDetails, setOtherUserDetails] = useState<{
@@ -4794,93 +5164,14 @@ function PassengerDashboard({
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   const tapSoundRef = useRef<Audio.Sound | null>(null);
-  
-  // 🔊 TUŞ SESİ - Nazik tıklama sesi
-  const playTapSound = async () => {
-    try {
-      // Her tıklamada yeni ses objesi oluştur (hızlı ardışık tıklamalar için)
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3' }, // Soft click
-        { shouldPlay: true, volume: 0.3 }
-      );
-      // Ses bitince temizle
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (error) {
-      // Sessiz hata - kullanıcı deneyimini bozma
-    }
-  };
-  
-  // 🔊 EŞLEŞME SESİ - Modern ding-dong
-  const playMatchSound = async () => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' }, // Ding-dong notification
-        { shouldPlay: true, volume: 0.8 }
-      );
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (error) {
-      console.log('Eşleşme sesi hatası:', error);
-    }
-  };
 
-  // 🔊 HARİTA AÇILMA SESİ - Başlama düdüğü
-  const playStartSound = async () => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3' }, // Start chime
-        { shouldPlay: true, volume: 0.7 }
-      );
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (error) {
-      console.log('Başlama sesi hatası:', error);
-    }
-  };
+  // 🔊 Tek tip tuş sesi (1109) - Harita ve eşleşme ekranındaki her tuşa basıldığında
+  const playTapSound = async () => {};
   
-  // Teklif geldiğinde ses çal
-  const playOfferSound = async () => {
-    try {
-      // Önceki sesi durdur
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-      
-      // Yeni ses yükle ve çal - casino/slot machine tarzı ses
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3' },
-        { shouldPlay: true, volume: 1.0 }
-      );
-      soundRef.current = sound;
-      
-      // Ses bitince temizle
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (error) {
-      console.log('Ses çalma hatası:', error);
-    }
-  };
+  // Sesler yalnızca rol seçim ekranında — eşleşme/teklif/harita sessiz
+  const playMatchSound = async () => {};
+  const playStartSound = async () => {};
+  const playOfferSound = async () => {};
   
   // 🆕 Sürücü detaylarını çek (Harita Bilgi Kartı için)
   useEffect(() => {
@@ -5200,6 +5491,37 @@ function PassengerDashboard({
       // Backend'den de çek (ekstra bilgiler için)
       setTimeout(() => loadActiveTag(), 1000);
     },
+    // Backend accept_ride: doğrudan eşleşme socket’i (yolcu)
+    onRideAccepted: (data) => {
+      console.log('✅ YOLCU - ride_accepted (Socket):', data);
+      playMatchSound();
+      clearOffers();
+      if (data?.tag_id) {
+        const matchedTag = {
+          id: data.tag_id,
+          tag_id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name,
+          driver_id: data.driver_id,
+          driver_name: data.driver_name,
+          pickup_location: data.pickup_location,
+          dropoff_location: data.dropoff_location,
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          offered_price: data.final_price,
+          final_price: data.final_price,
+          distance_km: (data as { distance_km?: number }).distance_km,
+          estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
+          status: 'matched',
+          matched_at: data.matched_at || new Date().toISOString(),
+        };
+        setActiveTag(matchedTag as Tag);
+      }
+      setScreen('dashboard');
+      setTimeout(() => loadActiveTag(), 1000);
+    },
     // 🆕 TEKLİF KABUL EDİLDİ - Ack (backend confirmation)
     onOfferAccepted: (data) => {
       console.log('✅ YOLCU - TEKLİF KABUL EDILDI (Socket Ack):', data);
@@ -5489,6 +5811,7 @@ function PassengerDashboard({
 
   // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
   const handleCallButton = async () => {
+    playTapSound();
     console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
     
     // Hedef kontrolü
@@ -5549,29 +5872,28 @@ function PassengerDashboard({
     }
   };
   
-  // MARTI TAG: Fiyat teklifi gönder
+  // MARTI TAG: Fiyat teklifi gönder — önce backend tag oluşturur, rolling dispatch tetiklenir; sonra bekleme UI
   const handleSendPriceOffer = async () => {
-    if (!destination || !priceInfo || !selectedPrice) return;
-    
+    playTapSound();
+    if (!destination || !priceInfo || !selectedPrice || !user?.id) return;
+
     setShowPriceModal(false);
     setLoading(true);
-    
-    // GPS konumu yoksa hata ver
+
     if (!userLocation) {
       Alert.alert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
       setLoading(false);
       return;
     }
-    
+
     const pickupLat = userLocation.latitude;
     const pickupLng = userLocation.longitude;
-    
-    // Reverse geocoding ile adres al
+
     let pickupAddress = 'Mevcut Konumunuz';
     try {
       const geocodeResult = await Location.reverseGeocodeAsync({
         latitude: pickupLat,
-        longitude: pickupLng
+        longitude: pickupLng,
       });
       if (geocodeResult && geocodeResult.length > 0) {
         const addr = geocodeResult[0];
@@ -5584,90 +5906,94 @@ function PassengerDashboard({
     } catch (err) {
       console.log('Reverse geocoding hatası:', err);
     }
-    
-    // UUID oluştur
-    const generateUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-    
+
+    const generateUUID = () =>
+      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+
     const tagId = generateUUID();
     const requestId = generateUUID();
-    
-    // Geçici TAG oluştur
-    const tempTag = {
-      id: tagId,
-      user_id: user.id,
-      pickup_location: pickupAddress,
-      dropoff_location: destination.address,
-      pickup_lat: pickupLat,
-      pickup_lng: pickupLng,
-      dropoff_lat: destination.latitude,
-      dropoff_lng: destination.longitude,
-      offered_price: selectedPrice,
-      distance_km: priceInfo.distance_km,
-      estimated_minutes: priceInfo.estimated_minutes,
-      status: 'waiting',
-      created_at: new Date().toISOString()
-    };
-    
-    // UI'ı güncelle
-    setActiveTag(tempTag as any);
-    setCurrentRequestId(requestId);
-    setLoading(false);
-    
-    // Socket ile sürücülere gönder
-    if (emitCreateTagRequest) {
-      emitCreateTagRequest({
-        request_id: requestId,
-        tag_id: tagId,
-        passenger_id: user.id,
-        passenger_name: user.name || user.phone,
-        pickup_location: pickupAddress,
-        pickup_lat: pickupLat,
-        pickup_lng: pickupLng,
-        dropoff_location: destination.address,
-        dropoff_lat: destination.latitude,
-        dropoff_lng: destination.longitude,
-        offered_price: selectedPrice,
-        distance_km: priceInfo.distance_km,
-        estimated_minutes: priceInfo.estimated_minutes
-      });
-      console.log('🚀 MARTI TAG: Fiyat teklifi sürücülere gönderildi!', selectedPrice, 'TL');
-    }
-    
-    // Backend'e de kaydet - AYNI TAG_ID İLE
+
     try {
-      const response = await fetch(`${API_URL}/ride/create-offer`, {
+      console.log('CREATE RIDE REQUEST SENT');
+      // API_URL = {BACKEND}/api → yol /api/ride/create (çift /api olmaması için /ride/create)
+      const res = await fetch(`${API_URL}/ride/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tag_id: tagId,  // 🔥 AYNI TAG ID
+          tag_id: tagId,
           passenger_id: user.id,
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
           pickup_location: pickupAddress,
+          passenger_vehicle_kind: rideVehiclePreference,
           dropoff_lat: destination.latitude,
           dropoff_lng: destination.longitude,
           dropoff_location: destination.address,
           offered_price: selectedPrice,
           distance_km: priceInfo.distance_km,
-          estimated_minutes: priceInfo.estimated_minutes
-        })
+          estimated_minutes: priceInfo.estimated_minutes,
+          passenger_preferred_vehicle: rideVehiclePreference,
+        }),
       });
-      const data = await response.json();
-      if (data.success && data.tag) {
-        // Backend'den gelen gerçek tag ile güncelle
-        setActiveTag(data.tag);
+      const data = await res.json();
+      console.log('CREATE RIDE RESPONSE', data);
+
+      if (!res.ok || !data?.tag) {
+        throw new Error('Tag create failed');
       }
+
+      const serverTag = data.tag as any;
+      const mergedTag = {
+        ...serverTag,
+        offered_price: selectedPrice,
+        distance_km: priceInfo.distance_km,
+        estimated_minutes: priceInfo.estimated_minutes,
+        status: serverTag.status || 'waiting',
+      };
+      setActiveTag(mergedTag);
+      setCurrentRequestId(requestId);
+
+      if (emitCreateTagRequest) {
+        emitCreateTagRequest({
+          request_id: requestId,
+          tag_id: mergedTag.id,
+          passenger_id: user.id,
+          passenger_name: user.name || user.phone,
+          pickup_location: pickupAddress,
+          pickup_lat: pickupLat,
+          pickup_lng: pickupLng,
+          dropoff_location: destination.address,
+          dropoff_lat: destination.latitude,
+          dropoff_lng: destination.longitude,
+          offered_price: selectedPrice,
+          distance_km: priceInfo.distance_km,
+          estimated_minutes: priceInfo.estimated_minutes,
+          passenger_preferred_vehicle: rideVehiclePreference,
+          passenger_vehicle_kind: rideVehiclePreference,
+        });
+      }
+      console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', mergedTag.id);
     } catch (err) {
       console.log('Backend kayıt hatası:', err);
+      const message =
+        err instanceof Error && err.message === 'Tag create failed'
+          ? 'Teklif oluşturulamadı'
+          : err instanceof Error
+            ? err.message
+            : 'Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.';
+      Alert.alert('Hata', message);
+    } finally {
+      setLoading(false);
     }
   };
 
   // 📤 TEKLİF PAYLAŞMA - Cross-platform (Web, Android, iOS)
   const handleShareRideRequest = async () => {
+    playTapSound();
     if (!activeTag) return;
     
     const message = `🚗 Leylek TAG - Yolculuk Teklifi\n\n📍 Nereden: ${activeTag.pickup_location || 'Mevcut konum'}\n📍 Nereye: ${activeTag.dropoff_location}\n💰 Teklif: ${activeTag.offered_price} TL\n⏱️ Tahmini süre: ${activeTag.estimated_minutes || '?'} dk\n\n👉 Sürücü olarak kabul etmek için uygulamayı açın!`;
@@ -5874,6 +6200,7 @@ function PassengerDashboard({
 
   // Teklifi 10 dakikalığına gizle (çarpı butonu)
   const handleDismissOffer = async (offerId: string) => {
+    playTapSound();
     try {
       // Teklifin driver_id'sini bul
       const offer = offers.find(o => o.id === offerId || o.offer_id === offerId);
@@ -5901,6 +6228,7 @@ function PassengerDashboard({
   };
 
   const handleAcceptOffer = async (offerId: string) => {
+    playTapSound();
     if (!activeTag) return;
 
     const selectedOffer = offers.find(o => o.id === offerId);
@@ -5957,6 +6285,8 @@ function PassengerDashboard({
   };
 
   const handleCancelTag = async () => {
+    console.log("MANUAL_CANCEL_CLICK");
+    playTapSound();
     if (!activeTag) return;
 
     Alert.alert(
@@ -6023,6 +6353,30 @@ function PassengerDashboard({
     }
   };
 
+  const runQuickPoiSearch = async (term: string) => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (_) {}
+    const city = user?.city || '';
+    try {
+      const q = city ? `${term}, ${city}, Türkiye` : `${term}, Türkiye`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=tr&limit=1&accept-language=tr`;
+      const response = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
+      const data = await response.json();
+      if (data?.[0]) {
+        await handleDestinationSelect(
+          data[0].display_name,
+          parseFloat(data[0].lat),
+          parseFloat(data[0].lon)
+        );
+      } else {
+        Alert.alert('Sonuç yok', 'Adresi yukarıdaki arama kutusuna yazın.');
+      }
+    } catch {
+      Alert.alert('Hata', 'Arama yapılamadı');
+    }
+  };
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 🆕 SEARCHING PHASE - HARİTA + TEKLİF LİSTESİ (YENİ UI)
   // Üstte harita (tüm sürücüler) + Altta scrollable teklif listesi
@@ -6040,6 +6394,7 @@ function PassengerDashboard({
           dropoffAddress={activeTag.dropoff_location || ''}
           tagId={activeTag.id}
           offeredPrice={activeTag.final_price || activeTag.offered_price || 0}
+          passengerVehicleKind={rideVehiclePreference}
           onCancel={handleCancelTag}
           onMatch={(driverData) => {
             // Eşleşme olduğunda
@@ -6054,7 +6409,7 @@ function PassengerDashboard({
       <SafeAreaView style={searchingStyles.container}>
         {/* Üst Bar - Geri + Durum + İptal */}
         <View style={searchingStyles.topBar}>
-          <TouchableOpacity onPress={() => setScreen('role-select')} style={searchingStyles.backBtn}>
+          <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={searchingStyles.backBtn}>
             <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
           </TouchableOpacity>
           <View style={searchingStyles.statusCenter}>
@@ -6179,10 +6534,10 @@ function PassengerDashboard({
           <View style={styles.emptyStateContainerFull}>
             {/* Geri ve Çıkış Butonları */}
             <View style={styles.fullScreenTopBar}>
-              <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.fullScreenBackBtn}>
+              <TouchableOpacity onPress={() => { playTapSound(); setScreen('role-select'); }} style={styles.fullScreenBackBtn}>
                 <Ionicons name="chevron-back" size={26} color="#3FA9F5" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={logout} style={styles.fullScreenLogoutBtn}>
+              <TouchableOpacity onPress={() => { playTapSound(); logout(); }} style={styles.fullScreenLogoutBtn}>
                 <Ionicons name="log-out-outline" size={24} color="#EF4444" />
               </TouchableOpacity>
             </View>
@@ -6197,6 +6552,7 @@ function PassengerDashboard({
             <TouchableOpacity
               style={styles.destinationBoxBig}
               onPress={() => {
+                playTapSound();
                 setShowDestinationPicker(true);
                 setShowArrowHint(false);
               }}
@@ -6258,6 +6614,34 @@ function PassengerDashboard({
                           <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
                         </View>
                       )}
+
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8 }}>Araç türü</Text>
+                      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                        <TouchableOpacity
+                          onPress={() => { playTapSound(); setRideVehiclePreference('car'); }}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 12,
+                            borderRadius: 12,
+                            alignItems: 'center',
+                            backgroundColor: rideVehiclePreference === 'car' ? '#3FA9F5' : '#E2E8F0',
+                          }}
+                        >
+                          <Text style={{ fontWeight: '700', color: rideVehiclePreference === 'car' ? '#FFF' : '#475569' }}>🚗 Araç</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => { playTapSound(); setRideVehiclePreference('motorcycle'); }}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 12,
+                            borderRadius: 12,
+                            alignItems: 'center',
+                            backgroundColor: rideVehiclePreference === 'motorcycle' ? '#16A34A' : '#E2E8F0',
+                          }}
+                        >
+                          <Text style={{ fontWeight: '700', color: rideVehiclePreference === 'motorcycle' ? '#FFF' : '#475569' }}>🏍️ Motor</Text>
+                        </TouchableOpacity>
+                      </View>
                       
                       <View style={styles.priceRangeContainer}>
                         <Text style={styles.priceRangeLabel}>Fiyat Aralığı:</Text>
@@ -6273,7 +6657,7 @@ function PassengerDashboard({
                       <View style={styles.sliderContainer}>
                         <TouchableOpacity 
                           style={styles.sliderButton}
-                          onPress={() => setSelectedPrice(Math.max(priceInfo.min_price, selectedPrice - 5))}
+                          onPress={() => { playTapSound(); setSelectedPrice(Math.max(priceInfo.min_price, selectedPrice - 5)); }}
                         >
                           <Text style={styles.sliderButtonText}>-5</Text>
                         </TouchableOpacity>
@@ -6289,7 +6673,7 @@ function PassengerDashboard({
                         
                         <TouchableOpacity 
                           style={styles.sliderButton}
-                          onPress={() => setSelectedPrice(Math.min(priceInfo.max_price, selectedPrice + 5))}
+                          onPress={() => { playTapSound(); setSelectedPrice(Math.min(priceInfo.max_price, selectedPrice + 5)); }}
                         >
                           <Text style={styles.sliderButtonText}>+5</Text>
                         </TouchableOpacity>
@@ -6298,14 +6682,14 @@ function PassengerDashboard({
                       <View style={styles.priceModalButtons}>
                         <TouchableOpacity 
                           style={styles.priceModalCancelButton}
-                          onPress={() => setShowPriceModal(false)}
+                          onPress={() => { playTapSound(); setShowPriceModal(false); }}
                         >
                           <Text style={styles.priceModalCancelText}>İptal</Text>
                         </TouchableOpacity>
                         
                         <TouchableOpacity 
                           style={styles.priceModalSendButton}
-                          onPress={handleSendPriceOffer}
+                          onPress={() => { playTapSound(); handleSendPriceOffer(); }}
                         >
                           <Text style={styles.priceModalSendText}>🚀 Teklif Gönder</Text>
                         </TouchableOpacity>
@@ -6735,97 +7119,91 @@ function PassengerDashboard({
         animationType="slide"
         onRequestClose={() => setShowDestinationPicker(false)}
       >
-        <SafeAreaView style={styles.destinationModalContainer}>
-          {/* Üst Bar */}
-          <View style={styles.destinationModalHeader}>
-            <TouchableOpacity 
-              onPress={() => setShowDestinationPicker(false)}
-              style={styles.destinationModalBackBtn}
-            >
-              <Ionicons name="arrow-back" size={24} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.destinationModalTitle}>Nereye Gidiyorsunuz?</Text>
-            <View style={{ width: 40 }} />
-          </View>
-          
-          {/* Seçilen Hedef Gösterimi */}
-          {destination && (
-            <View style={styles.selectedDestinationBox}>
-              <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-              <Text style={styles.selectedDestinationText} numberOfLines={2}>
-                {destination.address}
-              </Text>
+        <LinearGradient
+          colors={['#0c4a6e', '#075985', '#0369a1', '#0284c7']}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={styles.destinationModalGradient}
+        >
+          <SafeAreaView style={styles.destinationModalSafe}>
+            <View style={styles.destinationRoadDecor}>
+              <View style={styles.destinationRoadLine} />
+              <View style={styles.destinationRoadLineMid} />
+              <View style={styles.destinationRoadLine} />
             </View>
-          )}
-          
-          {/* Arama Bileşeni */}
-          <View style={styles.destinationSearchContainer}>
-            <PlacesAutocomplete
-              placeholder="Mahalle, sokak veya mekan ara..."
-              city={user?.city || ''}
-              onPlaceSelected={(place) => {
-                handleDestinationSelect(place.address, place.latitude, place.longitude);
-              }}
-            />
-          </View>
-          
-          {/* Hızlı Seçim - Popüler Yerler */}
-          <View style={styles.quickSelectContainer}>
-            <Text style={styles.quickSelectTitle}>
-              📍 {user?.city || 'Türkiye'} - Hızlı Seçim
-            </Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Şehre göre popüler yerler */}
-              {(user?.city === 'Ankara' ? [
-                { name: 'Kızılay Meydanı', lat: 39.9208, lng: 32.8541 },
-                { name: 'Ulus', lat: 39.9420, lng: 32.8647 },
-                { name: 'Çankaya', lat: 39.9032, lng: 32.8644 },
-                { name: 'Keçiören', lat: 39.9981, lng: 32.8619 },
-                { name: 'Yenimahalle', lat: 39.9647, lng: 32.8097 },
-                { name: 'Mamak', lat: 39.9303, lng: 32.9122 },
-                { name: 'Etimesgut', lat: 39.9456, lng: 32.6786 },
-                { name: 'Batıkent', lat: 39.9684, lng: 32.7268 },
-                { name: 'Eryaman', lat: 39.9647, lng: 32.6497 },
-                { name: 'Dikmen', lat: 39.8889, lng: 32.8467 },
-              ] : user?.city === 'İstanbul' ? [
-                { name: 'Taksim Meydanı', lat: 41.0370, lng: 28.9850 },
-                { name: 'Kadıköy', lat: 40.9927, lng: 29.0230 },
-                { name: 'Beşiktaş', lat: 41.0422, lng: 29.0047 },
-                { name: 'Şişli', lat: 41.0602, lng: 28.9877 },
-                { name: 'Bakırköy', lat: 40.9819, lng: 28.8772 },
-                { name: 'Ümraniye', lat: 41.0167, lng: 29.1167 },
-                { name: 'Üsküdar', lat: 41.0250, lng: 29.0156 },
-                { name: 'Fatih', lat: 41.0186, lng: 28.9397 },
-                { name: 'Ataşehir', lat: 40.9833, lng: 29.1167 },
-                { name: 'Maltepe', lat: 40.9333, lng: 29.1500 },
-              ] : user?.city === 'İzmir' ? [
-                { name: 'Konak', lat: 38.4189, lng: 27.1287 },
-                { name: 'Alsancak', lat: 38.4361, lng: 27.1428 },
-                { name: 'Karşıyaka', lat: 38.4561, lng: 27.1103 },
-                { name: 'Bornova', lat: 38.4697, lng: 27.2172 },
-                { name: 'Buca', lat: 38.3883, lng: 27.1756 },
-                { name: 'Bayraklı', lat: 38.4639, lng: 27.1644 },
-              ] : [
-                { name: 'Merkez', lat: 39.9334, lng: 32.8597 },
-              ]).map((place, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.quickSelectItem}
-                  onPress={() => {
-                    const fullAddress = `${place.name}, ${user?.city || 'Türkiye'}`;
-                    handleDestinationSelect(fullAddress, place.lat, place.lng);
+            <View style={styles.destinationModalHeaderBlue}>
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  } catch (_) {}
+                  setShowDestinationPicker(false);
+                }}
+                style={styles.destinationModalBackBtn}
+              >
+                <Ionicons name="arrow-back" size={24} color="#FFF" />
+              </TouchableOpacity>
+              <Text style={styles.destinationModalTitleBlue}>Hedef</Text>
+              <View style={{ width: 40 }} />
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.destinationModalScrollContent}
+            >
+              <Text style={styles.destinationHeroTitle}>Nereye gitmek{'\n'}istiyorsunuz?</Text>
+              <Text style={styles.destinationHeroSub}>
+                Mahalle, sokak veya mekan adını yazın — harita üzerinden doğru noktayı seçin.
+              </Text>
+
+              {destination && (
+                <View style={styles.selectedDestinationBoxBlue}>
+                  <Ionicons name="checkmark-circle" size={22} color="#A7F3D0" />
+                  <Text style={styles.selectedDestinationTextBlue} numberOfLines={2}>
+                    {destination.address}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.destinationSearchContainerBlue}>
+                <PlacesAutocomplete
+                  placeholder="Örn: mahalle adı, okul, cami, sokak..."
+                  city={user?.city || ''}
+                  hidePopularChips
+                  onPlaceSelected={async (place) => {
+                    try {
+                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    } catch (_) {}
+                    handleDestinationSelect(place.address, place.latitude, place.longitude);
                   }}
-                >
-                  <View style={styles.quickSelectIcon}>
-                    <Ionicons name="location" size={20} color="#3FA9F5" />
-                  </View>
-                  <Text style={styles.quickSelectText}>{place.name}</Text>
-                  <Ionicons name="chevron-forward" size={18} color="#CCC" />
-                </TouchableOpacity>
-              ))}
+                />
+              </View>
+
+              <Text style={styles.destinationPoiSectionTitle}>Hızlı arama</Text>
+              <View style={styles.destinationPoiWrap}>
+                {[
+                  { label: 'Mahalle', term: 'mahalle merkezi' },
+                  { label: 'Sokak', term: 'sokak' },
+                  { label: 'Köy', term: 'köy merkezi' },
+                  { label: 'Okul', term: 'okul' },
+                  { label: 'Cami', term: 'cami' },
+                  { label: 'Karakol', term: 'polis merkezi' },
+                  { label: 'Hastane', term: 'hastane' },
+                ].map((p) => (
+                  <TouchableOpacity
+                    key={p.label}
+                    style={styles.destinationPoiChip}
+                    onPress={() => runQuickPoiSearch(p.term)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.destinationPoiChipText}>{p.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </ScrollView>
-          </View>
-        </SafeAreaView>
+          </SafeAreaView>
+        </LinearGradient>
       </Modal>
 
       {/* ✅ CallScreenV2 - Socket.IO Arama Ekranı - YOLCU */}
@@ -7010,17 +7388,11 @@ interface DriverDashboardProps {
 }
 
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp }: DriverDashboardProps) {
-  // 🔒 NULL SAFETY - User yoksa early return
-  if (!user || !user.id) {
-    console.log('⚠️ DriverDashboard: User is null or invalid');
-    return (
-      <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#3FA9F5" />
-        <Text style={{ color: '#fff', marginTop: 12 }}>Yükleniyor...</Text>
-      </View>
-    );
-  }
-  
+  const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
+  const driverVehicleKind: 'car' | 'motorcycle' =
+    rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
+  const isMotorDriverUi = driverVehicleKind === 'motorcycle';
+
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -7050,7 +7422,69 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
   
   // 🔥 MERKEZİ GELEN ARAMA STATE + GLOBAL SOCKET (backend aynı bağlantıyı dinler)
-  const { socket, emitWithLog, incomingCallData: driverIncomingCallData, clearIncomingCall: driverClearIncomingCall, getIncomingCallData: driverGetIncomingCallData } = useSocketContext();
+  const {
+    socket,
+    connect: socketConnect,
+    emitWithLog,
+    incomingCallData: driverIncomingCallData,
+    clearIncomingCall: driverClearIncomingCall,
+    getIncomingCallData: driverGetIncomingCallData,
+  } = useSocketContext();
+
+  // Sürücü ekranına girince socket room'a tekrar yazılır (teklif kaçmasın)
+  useEffect(() => {
+    if (!user?.id) return;
+    const t = setTimeout(() => {
+      socketConnect(user.id, 'driver');
+    }, 400);
+    return () => clearTimeout(t);
+  }, [user?.id, socketConnect]);
+
+  // Bildirim: tıklanınca veya ön planda gelince teklif listesine (new_offer)
+  const {
+    lastTappedNotificationData,
+    clearLastTappedNotification,
+    notification: driverForegroundOfferNotification,
+  } = useNotifications();
+  const lastOfferPushNotificationIdRef = useRef<string | null>(null);
+
+  const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/trip/${tagId}`);
+      const json = await res.json();
+      if (!json.success || !json.tag || json.tag.status !== 'waiting') return;
+      const tag = json.tag;
+      setRequests(prev => {
+        if (prev.some(r => r.id === tag.id)) return prev;
+        return [...prev, {
+          id: tag.id,
+          request_id: tag.id,
+          passenger_id: tag.passenger_id,
+          passenger_name: tag.passenger_name || 'Yolcu',
+          pickup_lat: tag.pickup_lat,
+          pickup_lng: tag.pickup_lng,
+          pickup_address: tag.pickup_location,
+          pickup_location: tag.pickup_location,
+          dropoff_lat: tag.dropoff_lat,
+          dropoff_lng: tag.dropoff_lng,
+          dropoff_address: tag.dropoff_location,
+          dropoff_location: tag.dropoff_location,
+          offered_price: tag.final_price ?? tag.offered_price ?? 0,
+          distance_km: tag.distance_km ?? 0,
+          estimated_minutes: tag.estimated_minutes ?? 0,
+          distance_to_pickup: null,
+          status: 'pending',
+          created_at: tag.created_at || new Date().toISOString(),
+          distance_to_passenger_km: null,
+          time_to_passenger_min: null,
+          trip_distance_km: tag.distance_km ?? null,
+          trip_duration_min: tag.estimated_minutes ?? null,
+        }];
+      });
+    } catch (e) {
+      console.warn('Teklif trip yüklenemedi:', e);
+    }
+  }, []);
   
   // Giden Arama State (Araniyor...) - SOFOR
   const [outgoingCall, setOutgoingCall] = useState(false);
@@ -7062,28 +7496,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     receiverId: string;
   } | null>(null);
   
-  // 🔊 SES EFEKTLERI - SOFOR
-  const soundRef = useRef<any>(null);
-  
-  const playMatchSound = async () => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' },
-        { shouldPlay: true, volume: 0.8 }
-      );
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (error) {
-      console.log('Eslesme sesi hatasi:', error);
-    }
-  };
+  const playMatchSound = async () => {};
+  const playTapSound = async () => {};
   
   // 🆕 Chat State'leri (Sürücü)
   const [driverChatVisible, setDriverChatVisible] = useState(false);
@@ -7125,6 +7539,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [showDriverPackagesModal, setShowDriverPackagesModal] = useState(false);
   const [driverDashboardExpanded, setDriverDashboardExpanded] = useState(false);
   
+  // Harita: index.tsx ile aynı backend kullanıldığında panel + teklif + harita birlikte çalışır.
+  // Bilinen native crash yaşayan çok yeni API seviyesinde istenirse true yapılabilir.
+  const shouldDisableActivityMap = false;
+  
   // Eski Agora state'leri (artik kullanilmiyor ama kaldirilmadi)
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callScreenData, setCallScreenData] = useState<{
@@ -7156,7 +7574,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitSendOffer: socketSendOffer,
-    emitDriverAcceptOffer,  // 🆕 MARTI TAG
     emitDriverLocationUpdate,  // 🆕 YENİ: Şoför konum güncelleme (RAM)
     // 🆕 Daily.co Call Signaling
     emitCallInvite,
@@ -7262,6 +7679,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     // Yeni TAG eventi - Yolcudan gelen TAG'ler
     onTagCreated: async (data) => {
       console.log('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
+      const pid = String(data?.passenger_id ?? '').toLowerCase();
+      const uid = String(user?.id ?? '').toLowerCase();
+      if (pid && uid && pid === uid) {
+        console.log('⚠️ ŞOFÖR: Kendi yolcu teklifim — listeye eklenmedi');
+        return;
+      }
       
       // Mesafe hesaplama fonksiyonu
       const calculateRouteForTag = async (tagData: any) => {
@@ -7334,11 +7757,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           return false;
         });
         
+        const pvkRaw = data.passenger_vehicle_kind ?? data.passenger_preferred_vehicle;
+        const pvkStr = String(pvkRaw || '').trim().toLowerCase();
+        const pvkNorm = pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
         return [...filtered, {
           id: data.tag_id,
           request_id: data.request_id,  // 🔥 KRİTİK - ZORUNLU
           passenger_id: data.passenger_id,
           passenger_name: data.passenger_name,
+          passenger_vehicle_kind: pvkNorm,
           pickup_lat: data.pickup_lat,
           pickup_lng: data.pickup_lng,
           pickup_address: data.pickup_address || data.pickup_location,
@@ -7419,6 +7846,37 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       // Backend'den de çek (ekstra bilgiler için)
       setTimeout(() => loadData(), 1000);
     },
+    // Backend accept_ride: doğrudan eşleşme socket’i (sürücü)
+    onRideMatched: (data) => {
+      console.log('✅ ŞOFÖR - ride_matched (Socket):', data);
+      playMatchSound();
+      setRequests([]);
+      if (data?.tag_id) {
+        const matchedTag = {
+          id: data.tag_id,
+          tag_id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name,
+          driver_id: data.driver_id,
+          driver_name: data.driver_name,
+          pickup_location: data.pickup_location,
+          dropoff_location: data.dropoff_location,
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          offered_price: data.final_price,
+          final_price: data.final_price,
+          distance_km: (data as { distance_km?: number }).distance_km,
+          estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
+          status: 'matched',
+          matched_at: data.matched_at || new Date().toISOString(),
+        };
+        setActiveTag(matchedTag as Tag);
+      }
+      setScreen('dashboard');
+      setTimeout(() => loadData(), 1000);
+    },
     // Teklif kabul/red
     onOfferAccepted: (data) => {
       console.log('✅ ŞOFÖR - TEKLİF KABUL EDİLDİ (Socket):', data);
@@ -7428,6 +7886,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     onOfferRejected: (data) => {
       console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
       loadData();
+    },
+    onOfferAlreadyTaken: () => {
+      loadData();
+      Alert.alert(
+        'Teklif müsait değil',
+        'Bu çağrı başka bir sürücü tarafından alındı veya süresi doldu. Liste güncellendi.',
+      );
     },
     // 🆕 Mesajlaşma - PURE SOCKET (ANLIK)
     onNewMessage: (data) => {
@@ -7517,49 +7982,25 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
   });
 
-  // 🔔 Bildirime tıklandığında (Yeni yolculuk teklifi) – teklifi listeye ekle, "Kabul et" göster
+  // 🔔 Bildirime tıklanınca (Yeni yolculuk teklifi)
   useEffect(() => {
     const data = lastTappedNotificationData;
     if (!data || data.type !== 'new_offer' || !data.tag_id) return;
     clearLastTappedNotification();
-    (async () => {
-      try {
-        const res = await fetch(`${API_URL}/trip/${data.tag_id}`);
-        const json = await res.json();
-        if (!json.success || !json.tag || json.tag.status !== 'waiting') return;
-        const tag = json.tag;
-        setRequests(prev => {
-          if (prev.some(r => r.id === tag.id)) return prev;
-          return [...prev, {
-            id: tag.id,
-            request_id: tag.id,
-            passenger_id: tag.passenger_id,
-            passenger_name: tag.passenger_name || 'Yolcu',
-            pickup_lat: tag.pickup_lat,
-            pickup_lng: tag.pickup_lng,
-            pickup_address: tag.pickup_location,
-            pickup_location: tag.pickup_location,
-            dropoff_lat: tag.dropoff_lat,
-            dropoff_lng: tag.dropoff_lng,
-            dropoff_address: tag.dropoff_location,
-            dropoff_location: tag.dropoff_location,
-            offered_price: tag.final_price ?? tag.offered_price ?? 0,
-            distance_km: tag.distance_km ?? 0,
-            estimated_minutes: tag.estimated_minutes ?? 0,
-            distance_to_pickup: null,
-            status: 'pending',
-            created_at: tag.created_at || new Date().toISOString(),
-            distance_to_passenger_km: null,
-            time_to_passenger_min: null,
-            trip_distance_km: tag.distance_km ?? null,
-            trip_duration_min: tag.estimated_minutes ?? null,
-          }];
-        });
-      } catch (e) {
-        console.warn('Bildirimden teklif yüklenemedi:', e);
-      }
-    })();
-  }, [lastTappedNotificationData]);
+    fetchAndAppendOfferFromTagId(String(data.tag_id));
+  }, [lastTappedNotificationData, clearLastTappedNotification, fetchAndAppendOfferFromTagId]);
+
+  // 🔔 Ön planda push geldiğinde (tıklamadan) aynı teklifi listeye ekle
+  useEffect(() => {
+    const n = driverForegroundOfferNotification;
+    if (!n?.request) return;
+    const raw = n.request.content?.data as Record<string, unknown> | undefined;
+    if (!raw || raw.type !== 'new_offer' || !raw.tag_id) return;
+    const nid = n.request.identifier;
+    if (lastOfferPushNotificationIdRef.current === nid) return;
+    lastOfferPushNotificationIdRef.current = nid;
+    fetchAndAppendOfferFromTagId(String(raw.tag_id));
+  }, [driverForegroundOfferNotification, fetchAndAppendOfferFromTagId]);
 
   // Karşılıklı iptal sistemi state'leri - ŞOFÖR
   const [showTripEndModal, setShowTripEndModal] = useState(false);
@@ -7570,10 +8011,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   useEffect(() => {
     console.log('🔄 Sürücü polling başlatıldı');
-    loadData();
+    // Android 16 gibi cihazlarda aşırı istek ANR/çökme yaratabileceği için polling frekansını düşürüyoruz.
+    loadData().catch((e) => console.log('loadData polling error:', e));
     const interval = setInterval(() => {
-      loadData();
-    }, 1000); // Her 1 saniyede bir kontrol et - ANINDA
+      loadData().catch((e) => console.log('loadData polling error:', e));
+    }, 2500); // Socket kaçırırsa dispatch-pending-offer ile yakala
     return () => {
       console.log('🔄 Sürücü polling durduruldu');
       clearInterval(interval);
@@ -7717,6 +8159,38 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     fetchPassengerDetails();
   }, [activeTag?.passenger_id, activeTag?.status]);
 
+  // Sürücü ekranına girer girmez konum izni (beklemede sessiz kalmasın)
+  const driverLocationAlertShown = useRef(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cur = await Location.getForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (cur.status === 'granted') return;
+        const req = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (req.status !== 'granted' && !driverLocationAlertShown.current) {
+          driverLocationAlertShown.current = true;
+          Alert.alert(
+            'Konum izni gerekli',
+            'Haritayı görmek, teklif almak ve çevrimiçi olmak için konum izni vermelisiniz.',
+            [
+              { text: 'Ayarlar', onPress: () => Linking.openSettings() },
+              { text: 'Tamam', style: 'cancel' },
+            ]
+          );
+        }
+      } catch (e) {
+        console.warn('Sürücü konum izni:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   // GPS konum güncellemesi + Socket.IO location update
   useEffect(() => {
     const updateLocation = async () => {
@@ -7757,10 +8231,65 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   }, [user.id, emitDriverLocationUpdate]);
 
   const loadData = async () => {
-    await Promise.all([loadActiveTag(), loadRequests()]);
+    const trip = await loadActiveTag();
+    const busy = trip && ['matched', 'in_progress'].includes(String(trip.status || ''));
+    if (!busy) {
+      await loadDispatchPendingOffer();
+    }
+    await loadRequests();
   };
 
-  const loadActiveTag = async () => {
+  /** Sıralı dispatch: uygulama resume / polling ile DB'deki aktif teklifi listeye ekle */
+  const loadDispatchPendingOffer = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(
+        `${API_URL}/driver/dispatch-pending-offer?user_id=${encodeURIComponent(user.id)}`
+      );
+      const dj = await res.json();
+      if (!dj.success || !dj.offer?.tag_id) return;
+      const data = dj.offer;
+      setRequests((prev) => {
+        if (prev.some((r) => r.id === data.tag_id)) return prev;
+        return [
+          ...prev,
+          {
+            id: data.tag_id,
+            request_id: data.tag_id,
+            passenger_id: data.passenger_id,
+            passenger_name: data.passenger_name || 'Yolcu',
+            pickup_lat: data.pickup_lat,
+            pickup_lng: data.pickup_lng,
+            pickup_address: data.pickup_location,
+            pickup_location: data.pickup_location,
+            dropoff_lat: data.dropoff_lat,
+            dropoff_lng: data.dropoff_lng,
+            dropoff_address: data.dropoff_location,
+            dropoff_location: data.dropoff_location,
+            offered_price: data.offered_price ?? 0,
+            distance_km: data.distance_km ?? 0,
+            estimated_minutes: data.estimated_minutes ?? 0,
+            distance_to_pickup: data.distance_to_pickup,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            distance_to_passenger_km: data.distance_to_pickup ?? null,
+            time_to_passenger_min: null,
+            trip_distance_km: data.distance_km ?? null,
+            trip_duration_min: data.estimated_minutes ?? null,
+            passenger_vehicle_kind: (() => {
+              const v = data.passenger_vehicle_kind;
+              const s = String(v || '').toLowerCase();
+              return s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
+            })(),
+          },
+        ];
+      });
+    } catch (e) {
+      console.warn('dispatch-pending-offer:', e);
+    }
+  };
+
+  const loadActiveTag = async (): Promise<Record<string, unknown> | null> => {
     try {
       const response = await fetch(`${API_URL}/driver/active-tag?user_id=${user.id}`);
       const data = await response.json();
@@ -7789,18 +8318,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           if (shouldShowAlert) {
             Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
           }
-          return;
+          return null;
         }
         
         // Aktif tag varsa, cancelled flag'i sıfırla
         setCancelledAlertShown(false);
         setActiveTag(data.tag);
+        return data.tag;
       } else {
         // API'den tag gelmedi - artık cancelled tag dönüyor, bu kısım çok çalışmaz
         setActiveTag(null);
+        return null;
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
+      return null;
     }
   };
 
@@ -7873,6 +8405,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   };
 
   const handleSendOffer = (tagId: string) => {
+    playTapSound();
     setSelectedTagForOffer(tagId);
     setOfferPrice('');
     setOfferSent(false); // Reset
@@ -7882,6 +8415,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   // Şoför için talebi 10 dakikalığına gizle (çarpı butonu)
   const handleDismissRequest = async (tagId: string) => {
+    playTapSound();
     try {
       const response = await fetch(`${API_URL}/driver/dismiss-request?user_id=${user.id}&tag_id=${tagId}`, {
         method: 'POST',
@@ -7896,51 +8430,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     } catch (error) {
       console.log('Dismiss error:', error);
     }
-  };
-
-  // 🆕 MARTI TAG: Sürücü teklifi kabul eder — global socket.emit (singleton, backend: driver_accept_offer)
-  const handleDriverAcceptOffer = (tagId: string) => {
-    console.log('ACCEPT BUTTON PRESSED');
-
-    const tag = requests.find(r => r.id === tagId);
-    if (!tag) return;
-
-    const tripId = tagId;
-    const userId = user?.id ?? null;
-
-    if (!tripId) {
-      console.error('tripId is missing!');
-      return;
-    }
-    if (!userId) {
-      console.error('userId is missing!');
-      return;
-    }
-
-    console.log('SOCKET INSTANCE:', socket);
-    console.log('SOCKET CONNECTED:', socket?.connected);
-
-    if (!socket) {
-      console.error('Socket not initialized!');
-      return;
-    }
-
-    if (!socket.connected) {
-      console.log('Reconnecting socket...');
-      socket.connect();
-    }
-
-    const payload = {
-      tag_id: tripId,
-      trip_id: tripId,
-      driver_id: userId,
-    };
-
-    emitWithLog('driver_accept_offer', payload, (ack: unknown) => {
-      console.log('ACK FROM SERVER:', ack);
-    });
-
-    setRequests(prev => prev.filter(r => r.id !== tagId));
   };
 
   const submitOffer = async () => {
@@ -8160,40 +8649,79 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     );
   }
 
-  // 🆕 YENİ SÜRÜCÜ TEKLİF EKRANI - Tam sayfa bileşen, kendi SafeAreaView'ı var
-  if (requests.length > 0 && !(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress'))) {
+  /** Yolculuk yokken: teklif gelse de gelmese de aynı düzen (panel + harita + puan) */
+  const driverInActiveTrip =
+    !!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress'));
+
+  if (!driverInActiveTrip) {
     return (
-      <DriverOfferScreen
-        driverLocation={userLocation}
-        requests={requests.map(req => ({
-          id: req.id,
-          request_id: req.request_id || req.id,
-          tag_id: req.tag_id,
-          passenger_id: req.passenger_id,
-          passenger_name: req.passenger_name || 'Yolcu',
-          pickup_location: req.pickup_location || req.passenger_address || 'Bilinmiyor',
-          pickup_lat: req.pickup_lat || req.passenger_lat,
-          pickup_lng: req.pickup_lng || req.passenger_lng,
-          dropoff_location: req.dropoff_location || req.destination || 'Belirtilmedi',
-          dropoff_lat: req.dropoff_lat,
-          dropoff_lng: req.dropoff_lng,
-          distance_to_passenger_km: req.distance_to_passenger_km || req.distance_to_pickup,
-          trip_distance_km: req.trip_distance_km || req.distance_km,
-          time_to_passenger_min: req.time_to_passenger_min,
-          trip_duration_min: req.trip_duration_min || req.estimated_minutes,
-          // 🆕 MARTI TAG - Yolcu fiyat teklifi
-          offered_price: req.offered_price || 0,
-          notes: req.notes,
-          created_at: req.created_at,
-        }))}
-        driverName={user.name}
-        driverRating={user.rating || 5.0}
-        onSendOffer={sendOfferInstant}
-        onAcceptOffer={handleDriverAcceptOffer}
-        onDismissRequest={handleDismissRequest}
-        onBack={() => setScreen('role-select')}
-        onLogout={logout}
-      />
+      <>
+        <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+          <SafeAreaView edges={['top']} style={{ backgroundColor: '#0f172a' }}>
+            <View style={{ paddingHorizontal: 4, paddingTop: 4, paddingBottom: 6 }}>
+              <DriverDashboardPanel
+                userId={user.id}
+                onPackagePress={() => setShowDriverPackagesModal(true)}
+                onToggleOnline={(isOnline) => {
+                  console.log('Sürücü online durumu değişti:', isOnline);
+                }}
+                expanded={driverDashboardExpanded}
+                onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
+              />
+            </View>
+          </SafeAreaView>
+          <View style={{ flex: 1, minHeight: 0 }}>
+            <DriverOfferScreen
+              embedded
+              vehicleKind={driverVehicleKind}
+              driverId={user.id}
+              playTapSound={playTapSound}
+              driverLocation={userLocation}
+              requests={requests.map((req) => ({
+                id: req.id,
+                request_id: req.request_id || req.id,
+                tag_id: req.tag_id,
+                passenger_id: req.passenger_id,
+                passenger_name: req.passenger_name || 'Yolcu',
+                pickup_location: req.pickup_location || req.passenger_address || 'Bilinmiyor',
+                pickup_lat: req.pickup_lat || req.passenger_lat,
+                pickup_lng: req.pickup_lng || req.passenger_lng,
+                dropoff_location: req.dropoff_location || req.destination || 'Belirtilmedi',
+                dropoff_lat: req.dropoff_lat,
+                dropoff_lng: req.dropoff_lng,
+                distance_to_passenger_km: req.distance_to_passenger_km || req.distance_to_pickup,
+                trip_distance_km: req.trip_distance_km || req.distance_km,
+                time_to_passenger_min: req.time_to_passenger_min,
+                trip_duration_min: req.trip_duration_min || req.estimated_minutes,
+                offered_price: req.offered_price || 0,
+                passenger_vehicle_kind: (req as any).passenger_vehicle_kind || 'car',
+                notes: req.notes,
+                created_at: req.created_at,
+              }))}
+              driverName={user.name}
+              driverRating={user.rating || 5.0}
+              onSendOffer={sendOfferInstant}
+              onDismissRequest={handleDismissRequest}
+              onBack={() => {
+                playTapSound();
+                setScreen('role-select');
+              }}
+              onLogout={() => {
+                playTapSound();
+                logout();
+              }}
+            />
+          </View>
+        </View>
+        <DriverPackagesModal
+          visible={showDriverPackagesModal}
+          onClose={() => setShowDriverPackagesModal(false)}
+          userId={user.id}
+          onPackagePurchased={() => {
+            setShowDriverPackagesModal(false);
+          }}
+        />
+      </>
     );
   }
 
@@ -8203,49 +8731,18 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       style={styles.driverBackgroundContainer}
       imageStyle={styles.driverBackgroundImage}
     >
+    {isMotorDriverUi ? (
+      <LinearGradient
+        colors={['rgba(21, 128, 61, 0.45)', 'rgba(15, 23, 42, 0.72)']}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+    ) : null}
     <SafeAreaView style={styles.containerTransparent}>
-      
-      {/* Üst Header - Modern Mavi (Sadece Teklif Listesi Boşsa VE Eşleşme Yoksa Göster) */}
-      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && requests.length === 0 && (
-        <View style={styles.modernHeader}>
-          <TouchableOpacity onPress={() => setScreen('role-select')} style={styles.backButtonHeader}>
-            <Ionicons name="chevron-back" size={24} color="#3FA9F5" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.modernHeaderTitle}>{user.name?.split(' ')[0] || 'Sürücü'}</Text>
-            <Text style={styles.modernHeaderSubtitle}>⭐ {user.rating || '5.0'}</Text>
-          </View>
-          <TouchableOpacity onPress={logout} style={styles.logoutButtonHeader}>
-            <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-          </TouchableOpacity>
-        </View>
-      )}
-      
-      {/* 🆕 Sürücü Dashboard Paneli - Kazanç ve Aktif Süre (Aktif yolculuk YOKKEN) */}
-      {!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) && (
-        <View style={styles.driverTopSection}>
-          <DriverDashboardPanel
-            userId={user.id}
-            onPackagePress={() => setShowDriverPackagesModal(true)}
-            onToggleOnline={(isOnline) => {
-              console.log('Sürücü online durumu değişti:', isOnline);
-            }}
-            expanded={driverDashboardExpanded}
-            onExpandToggle={() => setDriverDashboardExpanded(!driverDashboardExpanded)}
-          />
-          
-          {/* 🆕 Aktivite Haritası - Yakındaki yolcular ve yoğunluk */}
-          <View style={styles.activityMapContainer}>
-            <DriverActivityMap 
-              userLocation={userLocation}
-              city={user.city || 'Ankara'}
-            />
-          </View>
-        </View>
-      )}
 
-      {/* CANLI HARİTA - Tam Ekran (Şoför) */}
-      {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
+      {/* CANLI HARİTA - Tam Ekran (Şoför)
+          Android'de (stabilite için) haritayı kapatıyoruz. */}
+      {activeTag && !shouldDisableActivityMap && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
         <View style={styles.fullScreenMapContainer}>
           <LiveMapView
             userLocation={userLocation}
@@ -8644,14 +9141,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             }}
           />
         </View>
-      ) : requests.length === 0 ? (
-        <ScrollView style={styles.content}>
-          <View style={styles.emptyState}>
-            <Ionicons name="car-sport" size={80} color={COLORS.primary} />
-            <Text style={styles.emptyStateText}>Henüz teklif yok</Text>
-            <Text style={styles.emptyStateSubtext}>Yeni teklifler burada görünecek</Text>
-          </View>
-        </ScrollView>
       ) : null}
 
       {/* Modern Teklif Modal */}
@@ -11943,12 +12432,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   roleTopTitle: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1F2937',
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
     textAlign: 'center',
-    marginHorizontal: 8,
+    lineHeight: 22,
+    letterSpacing: -0.3,
+  },
+  roleTopSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    letterSpacing: 0.2,
   },
   roleAdminBtn: {
     width: 40,
@@ -11976,29 +12473,86 @@ const styles = StyleSheet.create({
   },
   roleCardCompact: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    borderRadius: 16,
-    paddingVertical: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.97)',
+    borderRadius: 20,
+    paddingVertical: 22,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     position: 'relative',
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 10,
   },
   roleCardSelected: {
-    borderColor: '#3FA9F5',
-    backgroundColor: 'rgba(240, 249, 255, 0.95)',
+    borderColor: '#0EA5E9',
+    backgroundColor: 'rgba(224, 242, 254, 0.98)',
+    shadowOpacity: 0.28,
   },
   roleIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: '#F0F9FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   roleIconCircleActive: {
-    backgroundColor: '#3FA9F5',
+    backgroundColor: '#0284C7',
+  },
+  roleVehicleSection: {
+    width: '100%',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  roleVehiclePrompt: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  roleVehicleRow: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  roleVehicleChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  roleVehicleChipActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#1D4ED8',
+  },
+  roleVehicleChipActiveMotor: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#6D28D9',
+  },
+  roleVehicleChipText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  roleVehicleChipTextActive: {
+    color: '#FFF',
   },
   roleCardLabel: {
     fontSize: 18,
@@ -12028,13 +12582,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3FA9F5',
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: 8,
+    backgroundColor: '#0EA5E9',
+    borderRadius: 16,
+    paddingVertical: 16,
+    gap: 10,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   roleContinueBtnDisabled: {
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0,
+    borderColor: 'transparent',
   },
   roleSeparator: {
     flexDirection: 'row',
@@ -13384,84 +13947,126 @@ const styles = StyleSheet.create({
   },
   
   // Hedef Seçme Modal Stilleri
-  destinationModalContainer: {
+  destinationModalGradient: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
   },
-  destinationModalHeader: {
+  destinationModalSafe: {
+    flex: 1,
+  },
+  destinationRoadDecor: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    opacity: 0.07,
+    paddingTop: 120,
+  },
+  destinationRoadLine: {
+    width: 8,
+    flex: 1,
+    marginHorizontal: 18,
+    backgroundColor: '#FFF',
+    borderRadius: 4,
+  },
+  destinationRoadLineMid: {
+    width: 6,
+    flex: 0.6,
+    marginHorizontal: 8,
+    backgroundColor: '#E0F2FE',
+    borderRadius: 3,
+  },
+  destinationModalHeaderBlue: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   destinationModalBackBtn: {
     padding: 8,
   },
-  destinationModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  selectedDestinationBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  selectedDestinationText: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 15,
-    color: '#065F46',
-    fontWeight: '500',
-  },
-  destinationSearchContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
-  quickSelectContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 24,
-  },
-  quickSelectTitle: {
+  destinationModalTitleBlue: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: 0.5,
   },
-  quickSelectItem: {
+  destinationModalScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+  },
+  destinationHeroTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFF',
+    textAlign: 'center',
+    lineHeight: 34,
+    marginTop: 8,
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.25)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  destinationHeroSub: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.88)',
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 20,
+    paddingHorizontal: 8,
+  },
+  selectedDestinationBoxBlue: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    marginTop: 20,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  selectedDestinationTextBlue: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#ECFEFF',
+    fontWeight: '600',
+  },
+  destinationSearchContainerBlue: {
+    marginTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderRadius: 16,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  destinationPoiSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 22,
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    letterSpacing: 0.3,
   },
-  quickSelectIcon: {
-    width: 40,
-    height: 40,
+  destinationPoiWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  destinationPoiChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 20,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
-  quickSelectText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1F2937',
-    fontWeight: '500',
+  destinationPoiChipText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

@@ -23,8 +23,10 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSocketContext } from '../contexts/SocketContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -76,6 +78,8 @@ export interface PassengerRequest {
   offered_price?: number;
   notes?: string;
   created_at?: string;
+  /** Yolcu talebi: car | motorcycle (socket / dispatch) */
+  passenger_vehicle_kind?: 'car' | 'motorcycle';
 }
 
 interface DriverOfferScreenProps {
@@ -84,26 +88,34 @@ interface DriverOfferScreenProps {
   driverName: string;
   driverRating: number;
   onSendOffer: (requestId: string, price: number) => Promise<boolean>;
-  onAcceptOffer?: (requestId: string) => void;  // 🆕 MARTI TAG
+  /** Sürücü ID — Kabul butonunda driver_accept_offer emit için zorunlu */
+  driverId: string;
+  playTapSound?: () => void;
   onDismissRequest: (requestId: string) => void;
   onBack: () => void;
   onLogout: () => void;
+  vehicleKind?: 'car' | 'motorcycle';
+  /** true: üstte panel var; SafeArea üst padding yok, flex ile sığdır */
+  embedded?: boolean;
 }
 
 // Yolcu Request Kartı Bileşeni - MARTI TAG MODELİ
 function RequestCard({ 
   request, 
   driverLocation,
-  onAccept, 
+  driverId,
+  playTapSound,
   onDismiss,
   index
 }: { 
   request: PassengerRequest; 
   driverLocation: { latitude: number; longitude: number } | null;
-  onAccept: () => void;
+  driverId: string;
+  playTapSound?: () => void;
   onDismiss: () => void;
   index: number;
 }) {
+  const { socket } = useSocketContext();
   const [accepting, setAccepting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -121,13 +133,6 @@ function RequestCard({
   const timeToPassenger = request.time_to_passenger_min || Math.round((request.distance_to_passenger_km || 5) / 40 * 60);
   const tripDuration = request.trip_duration_min || Math.round((request.trip_distance_km || 10) / 50 * 60);
 
-  // Kabul Et
-  const handleAccept = async () => {
-    if (accepting) return;
-    setAccepting(true);
-    onAccept();
-  };
-
   return (
     <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
       {/* Üst Kısım - Yolcu Bilgisi */}
@@ -139,6 +144,11 @@ function RequestCard({
           <View style={styles.passengerDetails}>
             <Text style={styles.passengerName}>{request.passenger_name?.split(' ')[0] || 'Yolcu'}</Text>
             <Text style={styles.timeAgo}>Yeni teklif</Text>
+            {request.passenger_vehicle_kind === 'motorcycle' ? (
+              <Text style={{ fontSize: 11, color: '#15803d', fontWeight: '700', marginTop: 2 }}>🏍️ Motor talebi</Text>
+            ) : (
+              <Text style={{ fontSize: 11, color: '#0369a1', fontWeight: '700', marginTop: 2 }}>🚗 Araç talebi</Text>
+            )}
           </View>
         </View>
         {/* 🆕 MARTI TAG - Yolcunun Teklif Ettiği Fiyat */}
@@ -214,7 +224,32 @@ function RequestCard({
         
         <TouchableOpacity
           style={[styles.acceptButton, accepting && styles.acceptButtonDisabled]}
-          onPress={handleAccept}
+          onPress={() => {
+            if (accepting) return;
+
+            const offer = {
+              tag_id: String(request.tag_id || '').trim(),
+            };
+            const userId = String(driverId || '').trim();
+
+            if (!offer.tag_id || !userId) {
+              Alert.alert('Hata', 'Eksik bilgi');
+              return;
+            }
+
+            setAccepting(true);
+            try {
+              playTapSound?.();
+              console.log('EMIT driver_accept_offer', offer.tag_id, userId);
+              // Driver accept için tek event ve düz payload
+              socket.emit('driver_accept_offer', {
+                tag_id: offer.tag_id,
+                driver_id: userId,
+              });
+            } finally {
+              setTimeout(() => setAccepting(false), 4000);
+            }
+          }}
           disabled={accepting}
         >
           {accepting ? (
@@ -234,13 +269,26 @@ export default function DriverOfferScreen({
   driverName,
   driverRating,
   onSendOffer,
-  onAcceptOffer,
+  driverId,
+  playTapSound,
   onDismissRequest,
   onBack,
   onLogout,
+  vehicleKind = 'car',
+  embedded = false,
 }: DriverOfferScreenProps) {
+  const isMotor = vehicleKind === 'motorcycle';
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+  const mapSectionHeight = embedded
+    ? Math.min(SCREEN_HEIGHT * 0.24, 200)
+    : SCREEN_HEIGHT * 0.32;
+
+  /**
+   * Dispatch sadece eşleşen sürücü room'una `new_passenger_offer` gönderir.
+   * İstemci tarafı tür filtresi, eksik `passenger_vehicle_kind` alanında tüm kartları gizleyebiliyordu.
+   */
+  const visibleRequests = requests;
 
   // Harita sınırlarını ayarla
   useEffect(() => {
@@ -248,7 +296,7 @@ export default function DriverOfferScreen({
 
     const coordinates: { latitude: number; longitude: number }[] = [driverLocation];
     
-    requests.forEach(req => {
+    visibleRequests.forEach(req => {
       if (req.pickup_lat && req.pickup_lng) {
         coordinates.push({ latitude: req.pickup_lat, longitude: req.pickup_lng });
       }
@@ -262,7 +310,7 @@ export default function DriverOfferScreen({
         });
       }, 300);
     }
-  }, [mapReady, driverLocation, requests.length]);
+  }, [mapReady, driverLocation, visibleRequests.length]);
 
   // Web fallback veya harita yoksa
   const renderMap = () => {
@@ -271,7 +319,7 @@ export default function DriverOfferScreen({
         <View style={styles.mapFallback}>
           <Ionicons name="map" size={40} color={COLORS.primary} />
           <Text style={styles.mapFallbackText}>
-            {requests.length} yolcu 20km içinde
+            {visibleRequests.length} yolcu 20km içinde
           </Text>
         </View>
       );
@@ -299,13 +347,17 @@ export default function DriverOfferScreen({
             title="Konumunuz"
           >
             <View style={styles.driverMarker}>
-              <Ionicons name="car" size={24} color="#FFF" />
+              {isMotor ? (
+                <MaterialCommunityIcons name="motorbike" size={24} color="#FFF" />
+              ) : (
+                <Ionicons name="car" size={24} color="#FFF" />
+              )}
             </View>
           </Marker>
         )}
 
         {/* Yolcular */}
-        {requests.map((req, index) => (
+        {visibleRequests.map((req, index) => (
           req.pickup_lat && req.pickup_lng && (
             <Marker
               key={req.id || index}
@@ -323,8 +375,8 @@ export default function DriverOfferScreen({
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+  const body = (
+    <>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
@@ -342,18 +394,41 @@ export default function DriverOfferScreen({
       {/* Harita - Üst %35 - Arka Planlı */}
       <ImageBackground 
         source={require('../assets/images/offer-background.png')} 
-        style={styles.mapContainer}
+        style={[styles.mapContainer, { height: mapSectionHeight }]}
         imageStyle={styles.mapBackgroundImage}
       >
-        {/* Harita üzerinde bilgi */}
-        <View style={styles.mapOverlayCenter}>
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+          {renderMap()}
+        </View>
+        {isMotor ? (
+          <LinearGradient
+            colors={['rgba(22, 101, 52, 0.35)', 'rgba(15, 23, 42, 0.5)']}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
+        ) : (
+          <LinearGradient
+            colors={['rgba(15, 23, 42, 0.15)', 'rgba(15, 23, 42, 0.35)']}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
+        )}
+        <View style={styles.mapOverlayCenter} pointerEvents="box-none">
           <View style={styles.requestCountBadgeBig}>
             <Ionicons name="people" size={28} color="#3FA9F5" />
-            <Text style={styles.requestCountTextBig}>{requests.length} yolcu bekliyor</Text>
+            <Text style={styles.requestCountTextBig}>
+              {visibleRequests.length > 0
+                ? `${visibleRequests.length} aktif talep`
+                : 'Konumunuz haritada'}
+            </Text>
           </View>
           <View style={styles.radiusInfoBox}>
             <Ionicons name="location" size={24} color="#FFFFFF" />
-            <Text style={styles.radiusInfoText}>{requests.length} yolcu 20km içinde</Text>
+            <Text style={styles.radiusInfoText}>
+              {visibleRequests.length > 0
+                ? `${visibleRequests.length} yolcu 20 km içinde`
+                : 'Teklif gelince işaretlenir'}
+            </Text>
           </View>
         </View>
       </ImageBackground>
@@ -364,28 +439,40 @@ export default function DriverOfferScreen({
         style={styles.listContainer}
         imageStyle={styles.listBackgroundImage}
       >
+        {isMotor ? (
+          <LinearGradient
+            colors={['rgba(22, 101, 52, 0.35)', 'rgba(15, 23, 42, 0.55)']}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
+        ) : null}
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>Yakındaki İstekler</Text>
           <Text style={styles.listSubtitle}>20 km çevrenizdeki yolcular</Text>
         </View>
 
-        {requests.length === 0 ? (
+        {visibleRequests.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="car-outline" size={60} color="#CBD5E1" />
-            <Text style={styles.emptyTitle}>Henüz istek yok</Text>
+            {isMotor ? (
+              <MaterialCommunityIcons name="motorbike" size={64} color="#86EFAC" />
+            ) : (
+              <Ionicons name="car-outline" size={60} color="#CBD5E1" />
+            )}
+            <Text style={styles.emptyTitle}>Teklif bekleniyor</Text>
             <Text style={styles.emptySubtitle}>
-              20 km çevrenizde yolcu bekleniyor...
+              Haritada konumunuz görünür; uygun yolcu talebi gelince kartlar burada açılır. Çevrimiçi (ON) olduğunuzdan emin olun.
             </Text>
           </View>
         ) : (
           <FlatList
-            data={requests}
+            data={visibleRequests}
             keyExtractor={(item, index) => item.id || item.request_id || index.toString()}
             renderItem={({ item, index }) => (
               <RequestCard
                 request={item}
                 driverLocation={driverLocation}
-                onAccept={() => onAcceptOffer && onAcceptOffer(item.id)}
+                driverId={driverId}
+                playTapSound={playTapSound}
                 onDismiss={() => onDismissRequest(item.id)}
                 index={index}
               />
@@ -395,6 +482,16 @@ export default function DriverOfferScreen({
           />
         )}
       </ImageBackground>
+    </>
+  );
+
+  if (embedded) {
+    return <View style={[styles.container, styles.containerEmbedded]}>{body}</View>;
+  }
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {body}
     </SafeAreaView>
   );
 }
@@ -403,6 +500,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  containerEmbedded: {
+    minHeight: 0,
   },
   
   // Header
@@ -436,9 +536,8 @@ const styles = StyleSheet.create({
     padding: 8,
   },
 
-  // Map
+  // Map (yükseklik runtime'da mapSectionHeight ile verilir)
   mapContainer: {
-    height: SCREEN_HEIGHT * 0.32,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -446,7 +545,7 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   map: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
   mapFallback: {
     flex: 1,

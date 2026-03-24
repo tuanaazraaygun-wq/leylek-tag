@@ -72,9 +72,21 @@ interface DriverKYCScreenProps {
   onBack: () => void;
   onSuccess: () => void;
   apiUrl: string;
+  /** Rol ekranından: araç veya motor KYC akışı (ayrılmış) */
+  vehicleKind?: 'car' | 'motorcycle';
 }
 
-export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, apiUrl }: DriverKYCScreenProps) {
+type PhotoPickKind = 'vehicle' | 'license' | 'motorcycle' | 'selfie';
+
+export default function DriverKYCScreen({
+  userId,
+  userName,
+  onBack,
+  onSuccess,
+  apiUrl,
+  vehicleKind = 'car',
+}: DriverKYCScreenProps) {
+  const isMotorKyc = vehicleKind === 'motorcycle';
   const [plateNumber, setPlateNumber] = useState('');
   const [vehicleBrand, setVehicleBrand] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
@@ -82,6 +94,8 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
   const [licensePhoto, setLicensePhoto] = useState<string | null>(null);
+  const [motorcyclePhoto, setMotorcyclePhoto] = useState<string | null>(null);
+  const [selfiePhoto, setSelfiePhoto] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitStatus, setSubmitStatus] = useState('');
   
@@ -103,7 +117,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
   }, [vehicleBrand]);
 
   // Web'de dosya seçimi
-  const handleWebFileSelect = (type: 'vehicle' | 'license') => {
+  const handleWebFileSelect = (type: PhotoPickKind) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -120,11 +134,10 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         reader.onload = (event) => {
           const base64 = event.target?.result as string;
           console.log(`${type} photo loaded, size: ${Math.round(base64.length / 1024)} KB`);
-          if (type === 'vehicle') {
-            setVehiclePhoto(base64);
-          } else {
-            setLicensePhoto(base64);
-          }
+          if (type === 'vehicle') setVehiclePhoto(base64);
+          else if (type === 'license') setLicensePhoto(base64);
+          else if (type === 'motorcycle') setMotorcyclePhoto(base64);
+          else if (type === 'selfie') setSelfiePhoto(base64);
         };
         reader.onerror = () => {
           alert('Dosya okunamadı');
@@ -136,7 +149,7 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
   };
 
   // Mobile'da fotoğraf çek veya seç
-  const pickImageMobile = async (type: 'vehicle' | 'license', source: 'camera' | 'gallery') => {
+  const pickImageMobile = async (type: PhotoPickKind, source: 'camera' | 'gallery') => {
     try {
       let result;
       
@@ -170,11 +183,10 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
 
       if (!result.canceled && result.assets[0].base64) {
         const base64Data = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        if (type === 'vehicle') {
-          setVehiclePhoto(base64Data);
-        } else {
-          setLicensePhoto(base64Data);
-        }
+        if (type === 'vehicle') setVehiclePhoto(base64Data);
+        else if (type === 'license') setLicensePhoto(base64Data);
+        else if (type === 'motorcycle') setMotorcyclePhoto(base64Data);
+        else if (type === 'selfie') setSelfiePhoto(base64Data);
       }
     } catch (error) {
       console.error('Image pick error:', error);
@@ -184,53 +196,84 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
 
   // Validasyon kontrolü
   const isFormValid = () => {
+    if (isMotorKyc) {
+      return (
+        vehicleBrand.trim() &&
+        vehicleModel.trim() &&
+        licensePhoto &&
+        motorcyclePhoto &&
+        selfiePhoto
+      );
+    }
     return plateNumber.trim() && vehicleBrand && vehicleModel && vehiclePhoto && licensePhoto;
   };
 
   // KYC gönder
   const submitKYC = async () => {
     console.log('========== KYC SUBMIT BAŞLADI ==========');
-    
-    // Validasyon
-    if (!plateNumber.trim()) {
-      if (Platform.OS === 'web') {
-        alert('Lütfen plaka numarası girin');
-      } else {
-        Alert.alert('Hata', 'Lütfen plaka numarası girin');
+
+    if (isMotorKyc) {
+      if (!vehicleBrand.trim()) {
+        Platform.OS === 'web' ? alert('Motor markası girin') : Alert.alert('Hata', 'Motor markası girin');
+        return;
       }
-      return;
-    }
-    if (!vehicleBrand) {
-      if (Platform.OS === 'web') {
-        alert('Lütfen araç markası seçin');
-      } else {
-        Alert.alert('Hata', 'Lütfen araç markası seçin');
+      if (!vehicleModel.trim()) {
+        Platform.OS === 'web' ? alert('Motor modeli girin') : Alert.alert('Hata', 'Motor modeli girin');
+        return;
       }
-      return;
-    }
-    if (!vehicleModel) {
-      if (Platform.OS === 'web') {
-        alert('Lütfen araç modeli seçin');
-      } else {
-        Alert.alert('Hata', 'Lütfen araç modeli seçin');
+      if (!licensePhoto) {
+        Platform.OS === 'web' ? alert('Ehliyet fotoğrafı gerekli') : Alert.alert('Hata', 'Ehliyet fotoğrafı gerekli');
+        return;
       }
-      return;
-    }
-    if (!vehiclePhoto) {
-      if (Platform.OS === 'web') {
-        alert('Lütfen araç fotoğrafı yükleyin');
-      } else {
-        Alert.alert('Hata', 'Lütfen araç fotoğrafı yükleyin');
+      if (!motorcyclePhoto) {
+        Platform.OS === 'web' ? alert('Motor fotoğrafı gerekli') : Alert.alert('Hata', 'Motor fotoğrafı gerekli');
+        return;
       }
-      return;
-    }
-    if (!licensePhoto) {
-      if (Platform.OS === 'web') {
-        alert('Lütfen ehliyet fotoğrafı yükleyin');
-      } else {
-        Alert.alert('Hata', 'Lütfen ehliyet fotoğrafı yükleyin');
+      if (!selfiePhoto) {
+        Platform.OS === 'web' ? alert('Selfie (yüz) gerekli') : Alert.alert('Hata', 'Selfie (yüz) gerekli');
+        return;
       }
-      return;
+    } else {
+      if (!plateNumber.trim()) {
+        if (Platform.OS === 'web') {
+          alert('Lütfen plaka numarası girin');
+        } else {
+          Alert.alert('Hata', 'Lütfen plaka numarası girin');
+        }
+        return;
+      }
+      if (!vehicleBrand) {
+        if (Platform.OS === 'web') {
+          alert('Lütfen araç markası seçin');
+        } else {
+          Alert.alert('Hata', 'Lütfen araç markası seçin');
+        }
+        return;
+      }
+      if (!vehicleModel) {
+        if (Platform.OS === 'web') {
+          alert('Lütfen araç modeli seçin');
+        } else {
+          Alert.alert('Hata', 'Lütfen araç modeli seçin');
+        }
+        return;
+      }
+      if (!vehiclePhoto) {
+        if (Platform.OS === 'web') {
+          alert('Lütfen araç fotoğrafı yükleyin');
+        } else {
+          Alert.alert('Hata', 'Lütfen araç fotoğrafı yükleyin');
+        }
+        return;
+      }
+      if (!licensePhoto) {
+        if (Platform.OS === 'web') {
+          alert('Lütfen ehliyet fotoğrafı yükleyin');
+        } else {
+          Alert.alert('Hata', 'Lütfen ehliyet fotoğrafı yükleyin');
+        }
+        return;
+      }
     }
 
     setLoading(true);
@@ -243,16 +286,28 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
       console.log('Vehicle Photo Size:', Math.round((vehiclePhoto?.length || 0) / 1024), 'KB');
       console.log('License Photo Size:', Math.round((licensePhoto?.length || 0) / 1024), 'KB');
 
-      const bodyData = {
-        user_id: userId,
-        plate_number: plateNumber.toUpperCase().trim(),
-        vehicle_brand: vehicleBrand,
-        vehicle_model: vehicleModel,
-        vehicle_year: vehicleYear || null,
-        vehicle_color: vehicleColor || null,
-        vehicle_photo_base64: vehiclePhoto,
-        license_photo_base64: licensePhoto,
-      };
+      const bodyData: Record<string, unknown> = isMotorKyc
+        ? {
+            user_id: userId,
+            vehicle_kind: 'motorcycle',
+            plate_number: plateNumber.trim() ? plateNumber.toUpperCase().trim() : null,
+            vehicle_brand: vehicleBrand.trim(),
+            vehicle_model: vehicleModel.trim(),
+            license_photo_base64: licensePhoto,
+            motorcycle_photo_base64: motorcyclePhoto,
+            selfie_photo_base64: selfiePhoto,
+          }
+        : {
+            user_id: userId,
+            vehicle_kind: 'car',
+            plate_number: plateNumber.toUpperCase().trim(),
+            vehicle_brand: vehicleBrand,
+            vehicle_model: vehicleModel,
+            vehicle_year: vehicleYear || null,
+            vehicle_color: vehicleColor || null,
+            vehicle_photo_base64: vehiclePhoto,
+            license_photo_base64: licensePhoto,
+          };
 
       setSubmitStatus('Sunucuya bağlanılıyor...');
 
@@ -321,7 +376,9 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#3FA9F5" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Sürücü Kaydı</Text>
+        <Text style={styles.headerTitle}>
+          {isMotorKyc ? 'Motor Sürücü Kaydı' : 'Sürücü Kaydı'}
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -338,104 +395,126 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={24} color="#3FA9F5" />
             <Text style={styles.infoText}>
-              Sürücü olarak kayıt olmak için araç ve ehliyet bilgilerinizi girin.
-              Başvurunuz admin tarafından incelenecektir.
+              {isMotorKyc
+                ? 'Motor sürücüsü olarak marka, model, ehliyet, motor ve yüz fotoğrafı gerekir. Başvurunuz admin tarafından incelenir.'
+                : 'Sürücü olarak kayıt olmak için araç ve ehliyet bilgilerinizi girin. Başvurunuz admin tarafından incelenecektir.'}
             </Text>
           </View>
 
-          {/* Plaka */}
-          <Text style={styles.label}>Plaka Numarası *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Örn: 34 ABC 123"
-            placeholderTextColor="#999"
-            value={plateNumber}
-            onChangeText={setPlateNumber}
-            autoCapitalize="characters"
-          />
-
-          {/* Marka Seçimi */}
-          <Text style={styles.label}>Araç Markası *</Text>
-          <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
-            <Ionicons name="car" size={20} color={vehicleBrand ? '#3FA9F5' : '#999'} />
-            <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
-              {vehicleBrand || 'Marka seçin...'}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color="#999" />
-          </TouchableOpacity>
-
-          {/* Model Seçimi */}
-          <Text style={styles.label}>Araç Modeli *</Text>
-          <TouchableOpacity 
-            style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
-            onPress={() => vehicleBrand && setShowModelModal(true)}
-            disabled={!vehicleBrand}
-          >
-            <Ionicons name="construct" size={20} color={vehicleModel ? '#3FA9F5' : '#999'} />
-            <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
-              {vehicleModel || 'Model seçin...'}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color="#999" />
-          </TouchableOpacity>
-
-          {/* Yıl */}
-          <Text style={styles.label}>Araç Yılı</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Örn: 2020"
-            placeholderTextColor="#999"
-            value={vehicleYear}
-            onChangeText={setVehicleYear}
-            keyboardType="numeric"
-            maxLength={4}
-          />
-
-          {/* Renk Seçimi */}
-          <Text style={styles.label}>Araç Rengi</Text>
-          <View style={styles.colorGrid}>
-            {CAR_COLORS.map(color => (
-              <TouchableOpacity
-                key={color.name}
-                style={[styles.colorItem, vehicleColor === color.name && styles.colorItemActive]}
-                onPress={() => setVehicleColor(color.name)}
-              >
-                <View style={[styles.colorCircle, { backgroundColor: color.code, borderColor: color.border }]} />
-                <Text style={[styles.colorName, vehicleColor === color.name && styles.colorNameActive]}>
-                  {color.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Araç Fotoğrafı */}
-          <Text style={styles.label}>Araç Fotoğrafı * (Plaka görünmeli)</Text>
-          {vehiclePhoto ? (
-            <View style={styles.photoPreview}>
-              <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
-              <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setVehiclePhoto(null)}>
-                <Ionicons name="close-circle" size={28} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
+          {isMotorKyc ? (
+            <>
+              <Text style={styles.label}>Motor Markası *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Örn: Honda"
+                placeholderTextColor="#999"
+                value={vehicleBrand}
+                onChangeText={setVehicleBrand}
+              />
+              <Text style={styles.label}>Motor Modeli *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Örn: PCX 125"
+                placeholderTextColor="#999"
+                value={vehicleModel}
+                onChangeText={setVehicleModel}
+              />
+              <Text style={styles.label}>Plaka (isteğe bağlı)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Varsa yazın"
+                placeholderTextColor="#999"
+                value={plateNumber}
+                onChangeText={setPlateNumber}
+                autoCapitalize="characters"
+              />
+            </>
           ) : (
-            <View style={styles.photoButtons}>
-              {Platform.OS === 'web' ? (
-                <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('vehicle')}>
-                  <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
-                  <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
-                </TouchableOpacity>
+            <>
+              <Text style={styles.label}>Plaka Numarası *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Örn: 34 ABC 123"
+                placeholderTextColor="#999"
+                value={plateNumber}
+                onChangeText={setPlateNumber}
+                autoCapitalize="characters"
+              />
+              <Text style={styles.label}>Araç Markası *</Text>
+              <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
+                <Ionicons name="car" size={20} color={vehicleBrand ? '#3FA9F5' : '#999'} />
+                <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
+                  {vehicleBrand || 'Marka seçin...'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#999" />
+              </TouchableOpacity>
+              <Text style={styles.label}>Araç Modeli *</Text>
+              <TouchableOpacity
+                style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
+                onPress={() => vehicleBrand && setShowModelModal(true)}
+                disabled={!vehicleBrand}
+              >
+                <Ionicons name="construct" size={20} color={vehicleModel ? '#3FA9F5' : '#999'} />
+                <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
+                  {vehicleModel || 'Model seçin...'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#999" />
+              </TouchableOpacity>
+              <Text style={styles.label}>Araç Yılı</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Örn: 2020"
+                placeholderTextColor="#999"
+                value={vehicleYear}
+                onChangeText={setVehicleYear}
+                keyboardType="numeric"
+                maxLength={4}
+              />
+              <Text style={styles.label}>Araç Rengi</Text>
+              <View style={styles.colorGrid}>
+                {CAR_COLORS.map((color) => (
+                  <TouchableOpacity
+                    key={color.name}
+                    style={[styles.colorItem, vehicleColor === color.name && styles.colorItemActive]}
+                    onPress={() => setVehicleColor(color.name)}
+                  >
+                    <View style={[styles.colorCircle, { backgroundColor: color.code, borderColor: color.border }]} />
+                    <Text style={[styles.colorName, vehicleColor === color.name && styles.colorNameActive]}>
+                      {color.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.label}>Araç Fotoğrafı * (Plaka görünmeli)</Text>
+              {vehiclePhoto ? (
+                <View style={styles.photoPreview}>
+                  <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
+                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setVehiclePhoto(null)}>
+                    <Ionicons name="close-circle" size={28} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
               ) : (
-                <>
-                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'camera')}>
-                    <Ionicons name="camera" size={28} color="#3FA9F5" />
-                    <Text style={styles.photoBtnText}>Çek</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'gallery')}>
-                    <Ionicons name="images" size={28} color="#3FA9F5" />
-                    <Text style={styles.photoBtnText}>Galeri</Text>
-                  </TouchableOpacity>
-                </>
+                <View style={styles.photoButtons}>
+                  {Platform.OS === 'web' ? (
+                    <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('vehicle')}>
+                      <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                      <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'camera')}>
+                        <Ionicons name="camera" size={28} color="#3FA9F5" />
+                        <Text style={styles.photoBtnText}>Çek</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'gallery')}>
+                        <Ionicons name="images" size={28} color="#3FA9F5" />
+                        <Text style={styles.photoBtnText}>Galeri</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               )}
-            </View>
+            </>
           )}
 
           {/* Ehliyet Fotoğrafı */}
@@ -468,6 +547,69 @@ export default function DriverKYCScreen({ userId, userName, onBack, onSuccess, a
               )}
             </View>
           )}
+
+          {isMotorKyc ? (
+            <>
+              <Text style={styles.label}>Motor Fotoğrafı *</Text>
+              {motorcyclePhoto ? (
+                <View style={styles.photoPreview}>
+                  <Image source={{ uri: motorcyclePhoto }} style={styles.previewImage} />
+                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setMotorcyclePhoto(null)}>
+                    <Ionicons name="close-circle" size={28} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.photoButtons}>
+                  {Platform.OS === 'web' ? (
+                    <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('motorcycle')}>
+                      <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                      <Text style={styles.uploadText}>Motor Fotoğrafı</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('motorcycle', 'camera')}>
+                        <Ionicons name="camera" size={28} color="#3FA9F5" />
+                        <Text style={styles.photoBtnText}>Çek</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('motorcycle', 'gallery')}>
+                        <Ionicons name="images" size={28} color="#3FA9F5" />
+                        <Text style={styles.photoBtnText}>Galeri</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              )}
+              <Text style={styles.label}>Selfie (yüzünüz görünsün) *</Text>
+              {selfiePhoto ? (
+                <View style={styles.photoPreview}>
+                  <Image source={{ uri: selfiePhoto }} style={styles.previewImage} />
+                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setSelfiePhoto(null)}>
+                    <Ionicons name="close-circle" size={28} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.photoButtons}>
+                  {Platform.OS === 'web' ? (
+                    <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('selfie')}>
+                      <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                      <Text style={styles.uploadText}>Selfie Yükle</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('selfie', 'camera')}>
+                        <Ionicons name="camera" size={28} color="#3FA9F5" />
+                        <Text style={styles.photoBtnText}>Çek</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('selfie', 'gallery')}>
+                        <Ionicons name="images" size={28} color="#3FA9F5" />
+                        <Text style={styles.photoBtnText}>Galeri</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              )}
+            </>
+          ) : null}
 
           {/* Submit Status */}
           {submitStatus ? (

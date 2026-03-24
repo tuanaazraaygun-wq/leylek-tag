@@ -8,6 +8,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Keyboard,
+  useWindowDimensions,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -75,11 +77,23 @@ interface PlaceDetails {
   longitude: number;
 }
 
+/** Liste ve çipler için tek yerden layout — küçük ekranda sıkışmayı azaltır */
+const LAYOUT = {
+  inputMinHeight: 52,
+  predictionListMin: 200,
+  predictionListMax: 380,
+  /** Ekran yüksekliğinin oranı (öneri listesi tavanı) */
+  predictionMaxHeightRatio: 0.42,
+  popularChipMinHeight: 40,
+} as const;
+
 interface PlacesAutocompleteProps {
   placeholder?: string;
   onPlaceSelected: (place: PlaceDetails) => void;
   initialValue?: string;
   city?: string;
+  /** true: ilçe/mahalle popüler çipleri gösterme (hedef seçim modalı) */
+  hidePopularChips?: boolean;
 }
 
 export default function PlacesAutocomplete({
@@ -87,7 +101,16 @@ export default function PlacesAutocomplete({
   onPlaceSelected,
   initialValue = '',
   city = '',
+  hidePopularChips = false,
 }: PlacesAutocompleteProps) {
+  const { height: windowHeight } = useWindowDimensions();
+  const predictionsMaxHeight = Math.round(
+    Math.max(
+      LAYOUT.predictionListMin,
+      Math.min(LAYOUT.predictionListMax, windowHeight * LAYOUT.predictionMaxHeightRatio),
+    ),
+  );
+
   const [query, setQuery] = useState(initialValue);
   const [predictions, setPredictions] = useState<PlaceResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -249,7 +272,8 @@ export default function PlacesAutocomplete({
   };
 
   // Popüler yerler listesi
-  const popularPlaces = city && POPULAR_PLACES[city] ? POPULAR_PLACES[city] : [];
+  const popularPlaces =
+    hidePopularChips || !city || !POPULAR_PLACES[city] ? [] : POPULAR_PLACES[city];
 
   return (
     <View style={styles.container}>
@@ -274,7 +298,7 @@ export default function PlacesAutocomplete({
       </View>
 
       {/* Popüler Mahalleler */}
-      {showPopular && popularPlaces.length > 0 && (
+      {showPopular && popularPlaces.length > 0 && !hidePopularChips && (
         <View style={styles.popularContainer}>
           <Text style={styles.popularTitle}>📍 {city} Popüler Yerler</Text>
           <View style={styles.popularGrid}>
@@ -293,11 +317,12 @@ export default function PlacesAutocomplete({
 
       {/* Öneriler Listesi */}
       {showPredictions && predictions.length > 0 && (
-        <View style={styles.predictionsContainer}>
+        <View style={[styles.predictionsContainer, { maxHeight: predictionsMaxHeight }]}>
           <FlatList
             data={predictions}
             keyExtractor={(item) => item.place_id}
             keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
             renderItem={({ item }) => {
               const formatted = formatAddress(item);
               return (
@@ -309,7 +334,7 @@ export default function PlacesAutocomplete({
                     <Ionicons name="location" size={22} color="#3FA9F5" />
                   </View>
                   <View style={styles.predictionTextContainer}>
-                    <Text style={styles.predictionMainText} numberOfLines={1}>
+                    <Text style={styles.predictionMainText} numberOfLines={2}>
                       {formatted.main}
                     </Text>
                     <Text style={styles.predictionSecondaryText} numberOfLines={2}>
@@ -347,7 +372,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     borderRadius: 14,
     paddingHorizontal: 14,
-    height: 52,
+    minHeight: LAYOUT.inputMinHeight,
+    paddingVertical: Platform.OS === 'android' ? 4 : 0,
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
   },
@@ -358,6 +384,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#1F2937',
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
   },
   loader: {
     marginLeft: 8,
@@ -372,6 +399,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 14,
     padding: 16,
+    paddingBottom: 18,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
@@ -379,17 +407,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   popularGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   popularChip: {
     backgroundColor: '#EEF2FF',
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    minHeight: LAYOUT.popularChipMinHeight,
+    justifyContent: 'center',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#C7D2FE',
@@ -404,8 +434,7 @@ const styles = StyleSheet.create({
   predictionsContainer: {
     backgroundColor: '#FFF',
     borderRadius: 14,
-    marginTop: 8,
-    maxHeight: 350,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#000',
@@ -417,7 +446,9 @@ const styles = StyleSheet.create({
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    minHeight: 56,
   },
   iconContainer: {
     width: 40,
@@ -430,6 +461,8 @@ const styles = StyleSheet.create({
   },
   predictionTextContainer: {
     flex: 1,
+    flexShrink: 1,
+    marginRight: 6,
   },
   predictionMainText: {
     fontSize: 15,

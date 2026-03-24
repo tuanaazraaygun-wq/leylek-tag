@@ -357,6 +357,19 @@ Google Play ve Apple Store için içerik rating anketi doldurulmalı.
 
 ---
 
+# 🔧 ÜRETİM: Sürücü teklifi görmüyor (yolcu gönderiyor)
+
+APK öncesi sunucuda şunları doğrula:
+
+1. **Uvicorn `socket_app`** — Tek süreçte hem REST hem `/socket.io` aynı process’te olmalı (`backend/docs/SOCKET_IO_DEPLOYMENT.md`).
+2. **`--workers 1`** — Birden fazla worker’da socket emit ile `connected_users` farklı bellekte kalır; teklif düşmez.
+3. **Sunucu logu** — Teklif anında `📤 new_passenger_offer to=sid` mü, yoksa sürekli `room-only` mü? `room-only` → sürücü `register` olmamış veya yanlış worker.
+4. **`dispatch_queue` + polling** — Uygulama `GET /api/driver/dispatch-pending-offer` ile DB’den yedekler; tabloda `status=sent` satırı yoksa (insert/FK hatası) socket kaçırılınca ekran boş kalır. Logda `Dispatch queue DB kayıt hatası` aranmalı.
+5. **İş kuralları** — Sürücü çevrimiçi, konum güncel, paket süresi dolmamış, yolcu araç tercihi (araba/motor) ile sürücü kartı uyumlu, 20 km içinde; sıralı dispatch’te ilk sıradaki sürücü sensin.
+6. **Aynı hesap** — Yolcu ve sürücü aynı `user_id` ile test ediliyorsa istemci kendi teklifini listeye almaz.
+
+---
+
 # 📞 DESTEK
 
 **NETGSM Destek:** 444 0 885

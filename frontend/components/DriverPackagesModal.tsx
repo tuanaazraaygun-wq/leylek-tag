@@ -11,9 +11,9 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
 
 interface Package {
   id: string;
@@ -49,13 +49,25 @@ export default function DriverPackagesModal({
   const fetchPackages = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/driver/packages`);
+      const response = await fetch(`${API_BASE_URL}/driver/packages`);
       const data = await response.json();
-      if (data.success) {
-        setPackages(data.packages);
+      if (data.success && Array.isArray(data.packages)) {
+        // Sadece geçerli kayıtlar; tercihen 24 saatlik günlük paket
+        const cleaned = data.packages.filter(
+          (p: unknown) =>
+            p &&
+            typeof p === 'object' &&
+            typeof (p as Package).id === 'string' &&
+            typeof (p as Package).hours === 'number'
+        ) as Package[];
+        const daily = cleaned.filter((p) => p.hours === 24);
+        setPackages(daily.length > 0 ? daily : cleaned);
+      } else {
+        setPackages([]);
       }
     } catch (error) {
       console.error('Paket yükleme hatası:', error);
+      setPackages([]);
     } finally {
       setLoading(false);
     }
@@ -76,7 +88,7 @@ export default function DriverPackagesModal({
             setPurchasing(packageId);
             try {
               const response = await fetch(
-                `${API_URL}/api/driver/activate-package?user_id=${userId}&package_id=${packageId}`,
+                `${API_BASE_URL}/driver/activate-package?user_id=${userId}&package_id=${packageId}`,
                 { method: 'POST' }
               );
               const data = await response.json();

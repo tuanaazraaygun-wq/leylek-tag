@@ -55,8 +55,16 @@ android/build/
 android/app/build/
 android/.cxx/
 android/app/.cxx/
+android/captures/
+android/**/*.hprof
+android/**/intermediates/
+android/**/.cxx/
 ios/build/
 ios/Pods/
+ios/DerivedData/
+**/*.apk
+**/*.aab
+**/*.keystore
 
 # TypeScript
 *.tsbuildinfo

@@ -45,8 +45,9 @@ if (Platform.OS !== 'web') {
   }
 }
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://api.leylektag.com';
-const API_URL = `${BACKEND_URL}/api`;
+import { API_BASE_URL } from '../lib/backendConfig';
+
+const API_URL = API_BASE_URL;
 
 export interface NearbyDriver {
   id: string;
@@ -74,6 +75,8 @@ interface Props {
   offeredPrice: number;
   onCancel: () => void;
   onMatch: (driverData: any) => void;
+  /** Yolcu araç/motor tercihi — yakındaki sürücü sayısı dispatch ile aynı filtreyi kullanır */
+  passengerVehicleKind?: 'car' | 'motorcycle';
 }
 
 // Koyu harita stili
@@ -98,6 +101,7 @@ export default function PassengerWaitingScreen({
   offeredPrice,
   onCancel,
   onMatch,
+  passengerVehicleKind = 'car',
 }: Props) {
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
   const [nearbyDriverCount, setNearbyDriverCount] = useState(0);
@@ -176,8 +180,9 @@ export default function PassengerWaitingScreen({
     
     const loadNearbyDrivers = async () => {
       try {
+        const vk = encodeURIComponent(passengerVehicleKind);
         const response = await fetch(
-          `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20`
+          `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20&passenger_vehicle_kind=${vk}`
         );
         const data = await response.json();
         
@@ -186,7 +191,7 @@ export default function PassengerWaitingScreen({
           
           // Sürücü konumlarını al
           const driversResponse = await fetch(
-            `${API_URL}/drivers/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20`
+            `${API_URL}/drivers/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20&passenger_vehicle_kind=${vk}`
           );
           const driversData = await driversResponse.json();
           
@@ -202,7 +207,7 @@ export default function PassengerWaitingScreen({
     loadNearbyDrivers();
     const interval = setInterval(loadNearbyDrivers, 5000);
     return () => clearInterval(interval);
-  }, [userLocation]);
+  }, [userLocation, passengerVehicleKind]);
   
   // Dispatch durumunu kontrol et
   useEffect(() => {
@@ -285,6 +290,12 @@ export default function PassengerWaitingScreen({
     if (dispatchStatus.current_driver_index > 0 && countdown === 0) {
       return 'Sonraki sürücüye geçiliyor...';
     }
+    if (dispatchStatus.total_drivers === 0 && nearbyDriverCount > 0) {
+      return `${nearbyDriverCount} sürücü yakında; talep türünüze uygun sıra oluşunca teklif gidecek`;
+    }
+    if (dispatchStatus.total_drivers > 0) {
+      return `Kuyrukta ${dispatchStatus.total_drivers} uygun sürücü`;
+    }
     return `${nearbyDriverCount} sürücü 20 km içinde`;
   };
 
@@ -298,12 +309,13 @@ export default function PassengerWaitingScreen({
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onCancel} style={styles.backButton}>
+        <TouchableOpacity onPress={() => {}} style={styles.backButton}>
           <Ionicons name="chevron-back" size={28} color="#60a5fa" />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Eşleşme Aranıyor</Text>
+          <Text style={styles.headerSubtitle}>Teklif bekleniyor</Text>
           <View style={styles.priceTag}>
             <Text style={styles.priceText}>₺{offeredPrice}</Text>
           </View>
@@ -563,6 +575,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.75)',
+    marginTop: 2,
   },
   priceTag: {
     backgroundColor: '#10b981',

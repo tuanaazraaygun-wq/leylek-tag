@@ -12,7 +12,7 @@ import os
 import logging
 import uuid
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 import base64
 import hashlib
@@ -3769,6 +3769,16 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
         pid = passenger_id or user_id
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(pid) if pid else None
+
+        tag_check = supabase.table("tags").select("created_at").eq("id", tag_id).limit(1).execute()
+        tag = tag_check.data[0] if tag_check.data else {}
+        created_at = tag.get("created_at")
+        if created_at:
+            created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if (now - created).total_seconds() < 20:
+                logger.info("AUTO_CANCEL_BLOCKED (<20s)")
+                return {"success": False, "message": "Too early cancel blocked"}
         
         update_query = supabase.table("tags").update({
             "status": "cancelled",
@@ -3818,6 +3828,16 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(pid) if pid else None
+
+        tag_check = supabase.table("tags").select("created_at").eq("id", tid).limit(1).execute()
+        tag = tag_check.data[0] if tag_check.data else {}
+        created_at = tag.get("created_at")
+        if created_at:
+            created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if (now - created).total_seconds() < 20:
+                logger.info("AUTO_CANCEL_BLOCKED (<20s)")
+                return {"success": False, "message": "Too early cancel blocked"}
         
         # 1. TAG'i iptal et
         update_query = supabase.table("tags").update({
@@ -4160,6 +4180,168 @@ async def send_offer(
     except Exception as e:
         logger.error(f"Send offer error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class DriverAcceptOfferRequest(BaseModel):
+    tag_id: str
+    driver_id: Optional[str] = None
+
+
+@api_router.post("/driver/accept-offer")
+async def driver_accept_offer_http(
+    request: DriverAcceptOfferRequest = None,
+    tag_id: str = None,
+    driver_id: str = None,
+    user_id: str = None,
+):
+    """
+    Sürücü teklifi HTTP ile kabul: tag matched + dispatch temizlik + tag_matched socket.
+    """
+    try:
+        tid = (request.tag_id if request else None) or tag_id
+        did = (
+            (request.driver_id if request and request.driver_id else None)
+            or driver_id
+            or user_id
+        )
+        if not tid or not did:
+            raise HTTPException(status_code=422, detail="tag_id ve user_id/driver_id gerekli")
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Veritabanı yapılandırması eksik")
+
+        resolved_driver_id = await resolve_user_id(str(did).strip())
+        if not resolved_driver_id:
+            raise HTTPException(status_code=400, detail="Geçersiz sürücü")
+
+        tid = str(tid).strip()
+        if len(tid) == 36 and tid.count("-") == 4:
+            tid = tid.lower()
+
+        tag_result = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+        if not tag_result.data:
+            raise HTTPException(status_code=404, detail="Teklif bulunamadı")
+
+        dr = (
+            supabase.table("users")
+            .select("name")
+            .eq("id", resolved_driver_id)
+            .limit(1)
+            .execute()
+        )
+        driver_name = (
+            dr.data[0]["name"]
+            if dr and dr.data and dr.data[0].get("name")
+            else "Sürücü"
+        )
+
+        matched_at = datetime.now(timezone.utc).isoformat()
+        update_data = {
+            "status": "matched",
+            "driver_id": resolved_driver_id,
+            "driver_name": driver_name,
+            "matched_at": matched_at,
+        }
+
+        matchable_statuses = ["waiting", "offers_received", "pending"]
+        ur = (
+            supabase.table("tags")
+            .update(update_data)
+            .eq("id", tid)
+            .in_("status", matchable_statuses)
+            .select("*")
+            .execute()
+        )
+        updated_tag = ur.data[0] if ur.data else None
+
+        if not updated_tag:
+            ref = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+            row = ref.data[0] if ref.data else {}
+            st = (row.get("status") or "").lower()
+            did_row = str(row.get("driver_id") or "").strip().lower()
+            if st == "matched" and did_row == str(resolved_driver_id).strip().lower():
+                updated_tag = row
+            else:
+                raise HTTPException(
+                    status_code=409, detail="Bu teklif artık mevcut değil veya eşleştirilemez"
+                )
+
+        try:
+            await rolling_dispatch_stop(
+                tid, revoke_offers=True, except_driver_id=resolved_driver_id
+            )
+        except Exception as _rds:
+            logger.warning(
+                f"rolling_dispatch_stop after driver/accept-offer HTTP (non-fatal): {_rds}"
+            )
+        try:
+            await handle_dispatch_accept(tid, resolved_driver_id)
+        except Exception as _hda:
+            logger.warning(
+                f"handle_dispatch_accept after driver/accept-offer HTTP (non-fatal): {_hda}"
+            )
+
+        passenger_id = updated_tag.get("passenger_id")
+        if passenger_id:
+            passenger_id = await resolve_user_id(str(passenger_id).strip())
+        passenger_name = "Yolcu"
+        if passenger_id:
+            pr = (
+                supabase.table("users")
+                .select("name")
+                .eq("id", passenger_id)
+                .limit(1)
+                .execute()
+            )
+            if pr.data and pr.data[0].get("name"):
+                passenger_name = pr.data[0]["name"]
+
+        payload = {
+            "trip_id": tid,
+            "tag_id": tid,
+            "driver_id": resolved_driver_id,
+            "driver_name": driver_name,
+            "passenger_id": passenger_id,
+            "passenger_name": passenger_name,
+            "pickup_location": updated_tag.get("pickup_location"),
+            "dropoff_location": updated_tag.get("dropoff_location"),
+            "pickup_lat": updated_tag.get("pickup_lat"),
+            "pickup_lng": updated_tag.get("pickup_lng"),
+            "dropoff_lat": updated_tag.get("dropoff_lat"),
+            "dropoff_lng": updated_tag.get("dropoff_lng"),
+            "offered_price": updated_tag.get("offered_price")
+            or updated_tag.get("final_price"),
+            "final_price": updated_tag.get("final_price"),
+            "distance_km": updated_tag.get("distance_km"),
+            "estimated_minutes": updated_tag.get("estimated_minutes"),
+            "status": "matched",
+            "matched_at": updated_tag.get("matched_at") or matched_at,
+        }
+        try:
+            driver_sid = connected_users.get(
+                str(resolved_driver_id).strip().lower()
+            ) or connected_users.get(resolved_driver_id)
+            driver_room = _normalize_user_room(resolved_driver_id)
+            driver_target = driver_sid or driver_room
+            if driver_target:
+                await sio.emit("tag_matched", payload, room=driver_target)
+            if passenger_id:
+                passenger_sid = connected_users.get(
+                    str(passenger_id).strip().lower()
+                ) or connected_users.get(passenger_id)
+                passenger_room = _normalize_user_room(passenger_id)
+                passenger_target = passenger_sid or passenger_room
+                if passenger_target:
+                    await sio.emit("tag_matched", payload, room=passenger_target)
+        except Exception as sock_e:
+            logger.warning(f"driver/accept-offer HTTP tag_matched emit: {sock_e}")
+
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"driver/accept-offer HTTP error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @api_router.get("/driver/active-trip")
 async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
@@ -8157,34 +8339,17 @@ async def handle_driver_accept_offer(sid, data):
             "status": "matched",
             "driver_id": resolved_driver_id,
             "driver_name": driver_name,
-            "matched_at": datetime.utcnow().isoformat(),
+            "matched_at": datetime.now(timezone.utc).isoformat(),
         }
-        update_result = (
-            supabase.table("tags").update(_upd_body).eq("id", tid).select("id").execute()
-        )
-        _rows = update_result.data or []
-        _n = len(_rows)
+        supabase.table("tags").update(_upd_body).eq("id", tid).execute()
         # Orijinal tag_id farklı biçimdeyse (UUID büyük/küçük harf) bir kez daha dene
-        if _n == 0 and str(tag_id).strip() != tid:
+        if str(tag_id).strip() != tid:
             alt = str(tag_id).strip()
             print("RETRY UPDATE with alt id:", alt)
-            update_result = (
-                supabase.table("tags").update(_upd_body).eq("id", alt).select("id").execute()
-            )
-            _rows = update_result.data or []
-            _n = len(_rows)
-        # postgrest-py: güncellenen satırlar .data içinde; SQL rowcount yok
-        print("UPDATED ROWS:", _n, "| rowcount attr:", getattr(update_result, "count", None))
+            supabase.table("tags").update(_upd_body).eq("id", alt).execute()
         logger.info(
-            f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id} updated_rows={_n}"
+            f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id}"
         )
-        if _n == 0:
-            await sio.emit(
-                "offer_accepted_error",
-                {"error": "Tag güncellenemedi (id eşleşmedi veya RLS/policy)", "tag_id": tid},
-                room=sid,
-            )
-            return
         logger.info(f"TRIP LOCK SUCCESS driver_accept_offer tag={tid} driver={resolved_driver_id}")
     except Exception as e:
         logger.exception(f"driver_accept_offer match (DB) error: {e}")

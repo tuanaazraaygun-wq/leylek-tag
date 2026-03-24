@@ -10,9 +10,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width } = Dimensions.get('window');
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
 
 interface DriverDashboardPanelProps {
   userId: string;
@@ -107,18 +107,73 @@ export default function DriverDashboardPanel({
     };
   }, [remainingSeconds, data?.active_time?.is_active]);
 
-  const fetchDashboard = async () => {
+  const normalizeDashboard = (raw: any): DashboardData | null => {
+    if (!raw || raw.success !== true || !raw.active_time || typeof raw.active_time !== 'object') {
+      return null;
+    }
+    let rating = 5;
     try {
-      const response = await fetch(`${API_URL}/api/driver/dashboard?user_id=${userId}`);
+      const r = raw.stats?.rating;
+      if (r != null && r !== '') rating = Number(r);
+      if (!Number.isFinite(rating)) rating = 5;
+    } catch {
+      rating = 5;
+    }
+    let totalTrips = 0;
+    try {
+      const t = raw.stats?.total_trips;
+      if (t != null && t !== '') totalTrips = Math.max(0, Math.floor(Number(t)));
+      if (!Number.isFinite(totalTrips)) totalTrips = 0;
+    } catch {
+      totalTrips = 0;
+    }
+    const dg = raw.daily_goal || {};
+    const overall = Math.min(100, Math.max(0, Math.floor(Number(dg.overall_progress) || 0)));
+    return {
+      today: {
+        trips_count: Math.max(0, Math.floor(Number(raw.today?.trips_count) || 0)),
+        earnings: Math.max(0, Number(raw.today?.earnings) || 0),
+      },
+      weekly: {
+        trips_count: Math.max(0, Math.floor(Number(raw.weekly?.trips_count) || 0)),
+        earnings: Math.max(0, Number(raw.weekly?.earnings) || 0),
+      },
+      active_time: {
+        is_active: !!raw.active_time.is_active,
+        remaining_seconds: Math.max(0, Math.floor(Number(raw.active_time.remaining_seconds) || 0)),
+        remaining_text: String(raw.active_time.remaining_text || '00:00:00'),
+        is_online: !!raw.active_time.is_online,
+      },
+      daily_goal: {
+        target_trips: Math.max(1, Math.floor(Number(dg.target_trips) || 10)),
+        target_earnings: Math.max(1, Math.floor(Number(dg.target_earnings) || 500)),
+        trips_progress: Math.min(100, Math.max(0, Math.floor(Number(dg.trips_progress) || 0))),
+        earnings_progress: Math.min(100, Math.max(0, Math.floor(Number(dg.earnings_progress) || 0))),
+        overall_progress: overall,
+      },
+      stats: { rating, total_trips: totalTrips },
+    };
+  };
+
+  const fetchDashboard = async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE_URL}/driver/dashboard?user_id=${userId}`);
       const result = await response.json();
-      
-      if (result.success) {
-        setData(result);
-        setRemainingSeconds(result.active_time?.remaining_seconds || 0);
-        setRemainingText(result.active_time?.remaining_text || '00:00:00');
+      const safe = normalizeDashboard(result);
+      if (safe) {
+        setData(safe);
+        setRemainingSeconds(safe.active_time.remaining_seconds);
+        setRemainingText(safe.active_time.remaining_text || '00:00:00');
+      } else {
+        setData(null);
       }
     } catch (error) {
       console.error('Dashboard fetch error:', error);
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -130,7 +185,7 @@ export default function DriverDashboardPanel({
     setToggling(true);
     try {
       const endpoint = data.active_time.is_online ? 'go-offline' : 'go-online';
-      const response = await fetch(`${API_URL}/api/driver/${endpoint}?user_id=${userId}`, { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/driver/${endpoint}?user_id=${userId}`, { method: 'POST' });
       const result = await response.json();
       
       if (result.success) {
@@ -139,7 +194,7 @@ export default function DriverDashboardPanel({
           active_time: { ...prev.active_time, is_online: !prev.active_time.is_online }
         } : null);
         onToggleOnline?.(!data.active_time.is_online);
-      } else if (result.detail?.includes('paket')) {
+      } else if (String(result.detail ?? '').toLowerCase().includes('paket')) {
         onPackagePress();
       }
     } catch (error) {
@@ -161,7 +216,7 @@ export default function DriverDashboardPanel({
 
   const panelHeight = expandAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [80, 220],
+    outputRange: [80, 150],
   });
 
   return (
@@ -176,7 +231,11 @@ export default function DriverDashboardPanel({
           <View style={styles.timeBox}>
             <Ionicons name="time-outline" size={16} color={data.active_time.is_active ? '#10B981' : '#9CA3AF'} />
             <Text style={[styles.timeText, !data.active_time.is_active && styles.timeTextInactive]}>
-              {data.active_time.is_active ? remainingText : 'Paket yok'}
+              {data.active_time.is_active
+                ? /ücret/i.test(remainingText)
+                  ? 'Ücretsizdir'
+                  : remainingText
+                : 'Ücretsizdir'}
             </Text>
           </View>
 
@@ -234,32 +293,10 @@ export default function DriverDashboardPanel({
               
               <View style={styles.statItem}>
                 <Ionicons name="star" size={18} color="#F59E0B" />
-                <Text style={styles.statValue}>{data.stats.rating.toFixed(1)}</Text>
+                <Text style={styles.statValue}>{(Number.isFinite(data.stats.rating) ? data.stats.rating : 5).toFixed(1)}</Text>
                 <Text style={styles.statLabel}>Puan</Text>
               </View>
             </View>
-
-            {/* Günlük Hedef */}
-            <View style={styles.goalSection}>
-              <View style={styles.goalHeader}>
-                <Text style={styles.goalTitle}>Günlük Hedef</Text>
-                <Text style={styles.goalPercent}>{data.daily_goal.overall_progress}%</Text>
-              </View>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: `${data.daily_goal.overall_progress}%` }]} />
-              </View>
-              <Text style={styles.goalSubtext}>
-                {data.today.trips_count}/{data.daily_goal.target_trips} yolculuk • {data.today.earnings}/{data.daily_goal.target_earnings} ₺
-              </Text>
-            </View>
-
-            {/* Paket Satın Al Butonu */}
-            {!data.active_time.is_active && (
-              <TouchableOpacity style={styles.buyPackageBtn} onPress={onPackagePress}>
-                <Ionicons name="flash" size={18} color="#F59E0B" />
-                <Text style={styles.buyPackageText}>Paket Satın Al</Text>
-              </TouchableOpacity>
-            )}
           </View>
         )}
       </LinearGradient>
@@ -355,7 +392,7 @@ const styles = StyleSheet.create({
   },
   expandedContent: {
     paddingHorizontal: 14,
-    paddingBottom: 14,
+    paddingBottom: 10,
   },
   statsRow: {
     flexDirection: 'row',
@@ -385,55 +422,5 @@ const styles = StyleSheet.create({
     width: 1,
     height: 30,
     backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  goalSection: {
-    marginBottom: 12,
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  goalTitle: {
-    fontSize: 13,
-    color: '#9CA3AF',
-  },
-  goalPercent: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  progressBar: {
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#10B981',
-    borderRadius: 3,
-  },
-  goalSubtext: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  buyPackageBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  buyPackageText: {
-    color: '#F59E0B',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
   },
 });

@@ -62,6 +62,24 @@ interface LocationData {
   target_id?: string;
 }
 
+/** Backend `accept_ride`: `ride_accepted` (yolcu) / `ride_matched` (sürücü) */
+export interface RideMatchSocketData {
+  tag_id: string;
+  status?: string;
+  driver_id?: string;
+  driver_name?: string;
+  passenger_id?: string;
+  passenger_name?: string;
+  pickup_location?: string;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_location?: string;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
+  final_price?: number;
+  matched_at?: string;
+}
+
 interface UseSocketProps {
   userId: string | null;
   userRole?: 'passenger' | 'driver' | null;
@@ -76,10 +94,16 @@ interface UseSocketProps {
   onTagCancelled?: (data: { tag_id: string }) => void;
   onTagUpdated?: (data: TagData) => void;
   onTagMatched?: (data: { tag_id: string; driver_id: string }) => void;
+  /** Backend doğrudan eşleşme: yolcuya */
+  onRideAccepted?: (data: RideMatchSocketData) => void;
+  /** Backend doğrudan eşleşme: sürücüye */
+  onRideMatched?: (data: RideMatchSocketData) => void;
   // Teklif eventleri
   onNewOffer?: (data: OfferData) => void;
   onOfferAccepted?: (data: OfferData) => void;
   onOfferRejected?: (data: OfferData) => void;
+  /** Başka sürücü aldı veya atomik kilit kaybedildi (driver_accept_offer) */
+  onOfferAlreadyTaken?: (data: { tag_id?: string }) => void;
   onOfferSentAck?: (data: { success: boolean; passenger_online: boolean }) => void;
   // Konum eventleri
   onLocationUpdated?: (data: LocationData) => void;
@@ -149,9 +173,12 @@ export default function useSocket({
   onTagCancelled,
   onTagUpdated,
   onTagMatched,
+  onRideAccepted,
+  onRideMatched,
   onNewOffer,
   onOfferAccepted,
   onOfferRejected,
+  onOfferAlreadyTaken,
   onOfferSentAck,
   onLocationUpdated,
   onTripStarted,
@@ -185,6 +212,7 @@ export default function useSocket({
     disconnect,
     emit,
     emitSendOffer: contextEmitSendOffer,
+    emitDriverAcceptOffer: contextEmitDriverAcceptOffer,
     emitAcceptOffer: contextEmitAcceptOffer,
     emitRejectOffer: contextEmitRejectOffer,
     emitCreateTagRequest: contextEmitCreateTagRequest,
@@ -205,8 +233,8 @@ export default function useSocket({
   // Callback refs - dependency array'i küçültmek için
   const callbackRefs = useRef({
     onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-    onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer,
-    onOfferAccepted, onOfferRejected, onOfferSentAck, onLocationUpdated,
+    onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
+    onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
     onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
@@ -217,8 +245,8 @@ export default function useSocket({
   useEffect(() => {
     callbackRefs.current = {
       onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-      onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onNewOffer,
-      onOfferAccepted, onOfferRejected, onOfferSentAck, onLocationUpdated,
+      onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
+      onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
       onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
@@ -296,6 +324,16 @@ export default function useSocket({
       callbackRefs.current.onTagMatched?.(data);
     };
 
+    const handleRideAccepted = (data: any) => {
+      console.log('✅ [useSocket] ride_accepted:', data);
+      callbackRefs.current.onRideAccepted?.(data as RideMatchSocketData);
+    };
+
+    const handleRideMatched = (data: any) => {
+      console.log('✅ [useSocket] ride_matched:', data);
+      callbackRefs.current.onRideMatched?.(data as RideMatchSocketData);
+    };
+
     // ══════════ TEKLİF EVENTLERİ ══════════
 
     const handleNewOffer = (data: any) => {
@@ -311,6 +349,15 @@ export default function useSocket({
     const handleOfferRejected = (data: any) => {
       console.log('❌ [useSocket] TEKLİF RED:', data);
       callbackRefs.current.onOfferRejected?.(data);
+    };
+
+    const handleOfferAlreadyTaken = (data: any) => {
+      console.log('❌ [useSocket] TEKLİF ZATEN ALINMIŞ / KİLİT KAYBI:', data);
+      if (callbackRefs.current.onOfferAlreadyTaken) {
+        callbackRefs.current.onOfferAlreadyTaken(data);
+      } else {
+        callbackRefs.current.onOfferRejected?.(data);
+      }
     };
 
     const handleOfferSentAck = (data: any) => {
@@ -393,10 +440,13 @@ export default function useSocket({
     
     socket.on('new_tag', handleNewTag);
     socket.on('tag_created', handleNewTag); // Alias
-    socket.on('new_passenger_offer', handleNewTag); // 🆕 MARTI TAG
+    // Sürücü room'una giden teklif; yolcu room'una gitmez. Rol yanlış yazılsa bile kaçırmamak için her zaman dinle.
+    socket.on('new_passenger_offer', handleNewTag);
     socket.on('tag_cancelled', handleTagCancelled);
     socket.on('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
     socket.on('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG - Başka sürücü aldı
+    socket.on('passenger_offer_revoked', handleTagCancelled); // Sıralı dispatch: süre doldu / sıra geçti
+    socket.on('remove_offer', handleTagCancelled); // Rolling batch: batch dışı / kabul sonrası teklifi kaldır
     socket.on('tag_updated', handleTagUpdated);
     socket.on('tag_matched', handleTagMatched);
     socket.on('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG - Sürücü kabul etti
@@ -406,10 +456,9 @@ export default function useSocket({
     socket.on('offer_rejected', handleOfferRejected);
     socket.on('offer_sent_ack', handleOfferSentAck);
     socket.on('driver_matched', handleTagMatched); // 🆕 MARTI TAG - Yolcuya sürücü eşleşti
-    socket.on('offer_already_taken', (data: any) => {
-      console.log('❌ Teklif başkası tarafından alındı:', data);
-      callbackRefs.current.onOfferRejected?.(data);
-    }); // 🆕 MARTI TAG
+    socket.on('ride_accepted', handleRideAccepted);
+    socket.on('ride_matched', handleRideMatched);
+    socket.on('offer_already_taken', handleOfferAlreadyTaken);
     
     socket.on('location_updated', handleLocationUpdated);
     
@@ -448,13 +497,19 @@ export default function useSocket({
       
       socket.off('new_tag', handleNewTag);
       socket.off('tag_created', handleNewTag);
-      socket.off('new_passenger_offer', handleNewTag); // 🆕 MARTI TAG
+      socket.off('new_passenger_offer', handleNewTag);
       socket.off('tag_cancelled', handleTagCancelled);
       socket.off('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
       socket.off('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG
+      socket.off('passenger_offer_revoked', handleTagCancelled);
+      socket.off('remove_offer', handleTagCancelled);
       socket.off('tag_updated', handleTagUpdated);
       socket.off('tag_matched', handleTagMatched);
       socket.off('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG
+      socket.off('driver_matched', handleTagMatched);
+      socket.off('ride_accepted', handleRideAccepted);
+      socket.off('ride_matched', handleRideMatched);
+      socket.off('offer_already_taken', handleOfferAlreadyTaken);
       
       socket.off('new_offer', handleNewOffer);
       socket.off('offer_accepted', handleOfferAccepted);
@@ -628,24 +683,17 @@ export default function useSocket({
     contextEmitRejectOffer(data);
   }, [contextEmitRejectOffer]);
 
-  // 🆕 MARTI TAG: Sürücü teklifi kabul eder — socket emit with debug log
-  const emitDriverAcceptOffer = useCallback((data: {
-    tag_id: string;
-    trip_id?: string;
-    driver_id: string;
-    driver_name: string;
-  }) => {
-    if (!socket?.connected) {
-      console.error('Socket not connected!');
-    }
-    const payload = {
-      tag_id: data.tag_id,
-      trip_id: data.trip_id ?? data.tag_id,
-      driver_id: data.driver_id,
-      driver_name: data.driver_name,
-    };
-    emitWithLog('driver_accept_offer', payload);
-  }, [socket, emitWithLog]);
+  // 🆕 MARTI TAG: Sürücü teklifi kabul — backend driver_accept_offer (connect-safe emit)
+  const emitDriverAcceptOffer = useCallback(
+    (data: { tag_id: string; driver_id: string; driver_name?: string; trip_id?: string }) => {
+      contextEmitDriverAcceptOffer({
+        tag_id: data.tag_id,
+        driver_id: data.driver_id,
+        driver_name: data.driver_name,
+      });
+    },
+    [contextEmitDriverAcceptOffer]
+  );
 
   // ══════════ KONUM FONKSİYONLARI ══════════
 

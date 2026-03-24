@@ -17,9 +17,10 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
+import { BACKEND_BASE_URL } from '../lib/backendConfig';
 
-// Socket.IO backend server (NOT localhost/127.0.0.1) — backend uvicorn port 8001
-const SOCKET_URL = 'http://157.173.113.156:8001';
+// REST ile aynı origin (lib/backendConfig) — ayrı sunucu = teklif görünmez
+const SOCKET_URL = BACKEND_BASE_URL;
 
 // ═══════════════════════════════════════════════════════════════════
 // EMIT WITH LOG - Debug için tüm emit'lerde kullanılabilir
@@ -37,10 +38,14 @@ let pingInterval: NodeJS.Timeout | null = null;
 
 function getOrCreateSocket(): Socket {
   if (!singletonSocket) {
-    console.log('🔌 [SocketContext] Singleton socket oluşturuluyor:', SOCKET_URL);
+    console.log(
+      '🔌 [SocketContext] Socket URL =',
+      SOCKET_URL,
+      '(app.json extra.backendUrl / EXPO_PUBLIC_BACKEND_URL — API ile aynı olmalı)'
+    );
     singletonSocket = io(SOCKET_URL, {
       path: '/socket.io',
-      transports: ['polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       timeout: 20000,
     });
@@ -120,6 +125,8 @@ interface SocketContextType {
   emitSendOffer: (data: any) => void;
   emitAcceptOffer: (data: any) => void;
   emitRejectOffer: (data: any) => void;
+  /** Sürücü yolcu teklifini kabul — backend driver_accept_offer */
+  emitDriverAcceptOffer: (data: { tag_id: string; driver_id: string; driver_name?: string }) => void;
   
   // TAG sistemi
   emitCreateTagRequest: (data: any) => void;
@@ -221,10 +228,18 @@ export function SocketProvider({ children }: SocketProviderProps) {
       console.log('✅ [SocketProvider] Socket bağlandı:', socket.id);
       setIsConnected(true);
       
-      // Otomatik register
+      // Otomatik register (+1s sonra tekrar: race / ilk bağlantı kaçırılmasın)
       if (userIdRef.current && userRoleRef.current) {
-        console.log('📱 [SocketProvider] Auto-register:', userIdRef.current, userRoleRef.current);
-        socket.emit('register', { user_id: userIdRef.current, role: userRoleRef.current });
+        const uid = userIdRef.current;
+        const role = userRoleRef.current;
+        console.log('📱 [SocketProvider] Auto-register:', uid, role);
+        socket.emit('register', { user_id: uid, role });
+        setTimeout(() => {
+          if (socket.connected && userIdRef.current === uid && userRoleRef.current === role) {
+            console.log('📱 [SocketProvider] Re-register (1s):', uid, role);
+            socket.emit('register', { user_id: uid, role });
+          }
+        }, 1000);
       }
     };
 
@@ -425,18 +440,36 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
   const emitWithLogFromContext = useCallback((event: string, payload: any, ack?: (response: any) => void) => {
     const socket = getOrCreateSocket();
-    if (typeof ack === 'function') {
+    const run = () => {
       console.log('📤 EMIT:', event, payload);
-      socket.emit(event, payload, ack);
-    } else {
-      emitWithLog(socket, event, payload);
+      if (typeof ack === 'function') {
+        socket.emit(event, payload, ack);
+      } else {
+        socket.emit(event, payload);
+      }
+    };
+    if (socket.connected) {
+      run();
+      return;
     }
+    console.warn(`⚠️ [SocketProvider] Socket bağlı değil; connect sonrası emit: ${event}`);
+    socket.connect();
+    socket.once('connect', run);
   }, []);
 
   const emitSendOffer = useCallback((data: any) => {
     console.log('💰 [SocketProvider] emitSendOffer:', JSON.stringify(data));
     emit('send_offer', data);
   }, [emit]);
+
+  /** Backend: @sio.on("driver_accept_offer") — bağlantı yoksa connect sonrası gönderilir */
+  const emitDriverAcceptOffer = useCallback(
+    (data: { tag_id: string; driver_id: string; driver_name?: string }) => {
+      console.log('✅ [SocketProvider] driver_accept_offer:', data);
+      emit('driver_accept_offer', data);
+    },
+    [emit]
+  );
 
   const emitAcceptOffer = useCallback((data: any) => {
     console.log('✅ [SocketProvider] emitAcceptOffer:', data);
@@ -550,6 +583,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emit,
     emitWithLog: emitWithLogFromContext,
     emitSendOffer,
+    emitDriverAcceptOffer,
     emitAcceptOffer,
     emitRejectOffer,
     emitCreateTagRequest,
