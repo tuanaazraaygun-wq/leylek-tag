@@ -1268,7 +1268,7 @@ async def rolling_dispatch_start(tag_id: str) -> int:
             f"rolling_dispatch_start: tag status≠waiting (status={row.get('status')!r}) tag_id={tag_id}"
         )
         return 0
-    passenger_id = row.get("passenger_id") or row.get("user_id")
+    passenger_id = row.get("passenger_id")
     if passenger_id:
         passenger_id = await resolve_user_id(passenger_id)
     passenger_name = row.get("passenger_name") or "Yolcu"
@@ -3687,7 +3687,7 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         # Şoför bilgisi
         driver_result = supabase.table("users").select("name").eq("id", driver_id_final).execute()
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Şoför"
-        passenger_id_final = tag.get("passenger_id") or tag.get("user_id")
+        passenger_id_final = tag.get("passenger_id")
         passenger_name = "Yolcu"
         if passenger_id_final:
             passenger_result = supabase.table("users").select("name").eq("id", passenger_id_final).execute()
@@ -4072,7 +4072,7 @@ async def send_offer(
         
         logger.info(f"📤 Teklif ANINDA gönderildi: {resolved_id} -> {tid}")
 
-        passenger_id = tag.get("passenger_id") or tag.get("user_id")
+        passenger_id = tag.get("passenger_id")
         if passenger_id:
             offer_event_payload = {
                 "offer_id": offer_id,
@@ -8121,7 +8121,7 @@ async def handle_driver_accept_offer(sid, data):
         tag_result = (
             supabase.table("tags")
             .select(
-                "id, status, passenger_id, user_id, pickup_location, pickup_lat, pickup_lng, "
+                "id, status, passenger_id, pickup_location, pickup_lat, pickup_lng, "
                 "dropoff_location, dropoff_lat, dropoff_lng, final_price, distance_km, estimated_minutes"
             )
             .eq("id", tid)
@@ -8204,7 +8204,7 @@ async def handle_driver_accept_offer(sid, data):
         except Exception as _hda:
             logger.warning(f"handle_dispatch_accept after driver_accept_offer (non-fatal): {_hda}")
 
-        passenger_id = tag.get("passenger_id") or tag.get("user_id")
+        passenger_id = tag.get("passenger_id")
         passenger_id = str(passenger_id).strip() if passenger_id else None
         if passenger_id:
             passenger_id = await resolve_user_id(passenger_id)
@@ -8307,10 +8307,8 @@ async def handle_driver_accept_offer(sid, data):
         if driver_target:
             await sio.emit("offer_accepted_success", payload, room=driver_target)
             await sio.emit("tag_matched", payload, room=driver_target)
-        try:
-            await emit_socket_event_to_user(resolved_driver_id, "ride_matched", payload)
-        except Exception:
-            pass
+        # İstenen net match event: sürücü room'una ride_matched
+        await sio.emit("ride_matched", payload, room=f"user_{str(resolved_driver_id).strip().lower()}")
         if passenger_id:
             passenger_sid = connected_users.get(str(passenger_id).strip().lower()) or connected_users.get(passenger_id)
             passenger_room = _normalize_user_room(passenger_id)
@@ -8318,6 +8316,8 @@ async def handle_driver_accept_offer(sid, data):
             if passenger_target:
                 await sio.emit("driver_matched", payload, room=passenger_target)
                 await sio.emit("tag_matched", payload, room=passenger_target)
+            # İstenen net match event: yolcu room'una ride_matched
+            await sio.emit("ride_matched", payload, room=f"user_{str(passenger_id).strip().lower()}")
         logger.info("SOCKET EMIT DONE driver_accept_offer")
     except Exception as e:
         logger.warning(f"driver_accept_offer post-match (non-fatal): {e}")
@@ -8759,7 +8759,7 @@ async def accept_ride(tag_id: str, driver_id: str):
         driver_name = driver_result.data[0]["name"] if driver_result.data else "Sürücü"
         
         # Yolcu bilgisini al - passenger_id kullan (tag'da bazen user_id olarak da saklanabilir)
-        passenger_id = tag.get("passenger_id") or tag.get("user_id")
+        passenger_id = tag.get("passenger_id")
         if not passenger_id:
             refetch = supabase.table("tags").select("passenger_id").eq("id", tag_id).limit(1).execute()
             if refetch.data and refetch.data[0].get("passenger_id"):
@@ -8838,7 +8838,7 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
     """
     try:
         # Tüm bekleyen teklifleri al
-        result = supabase.table("tags").select("*, users!tags_user_id_fkey(name, phone)")\
+        result = supabase.table("tags").select("*")\
             .eq("status", "waiting")\
             .order("created_at", desc=True)\
             .limit(50)\
@@ -8852,7 +8852,7 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
             # Sadece belirli yarıçap içindekiler
             if distance <= radius_km:
                 tag["distance_to_pickup"] = round(distance, 1)
-                tag["passenger_name"] = tag.get("users", {}).get("name", "Yolcu") if tag.get("users") else "Yolcu"
+                tag["passenger_name"] = tag.get("passenger_name") or "Yolcu"
                 offers.append(tag)
         
         # Mesafeye göre sırala (en yakın önce)
@@ -11282,8 +11282,8 @@ async def admin_get_active_trips(admin_phone: str):
             driver_name = "-"
             
             try:
-                if tag.get("user_id"):
-                    p_result = supabase.table("users").select("name, phone").eq("id", tag["user_id"]).execute()
+                if tag.get("passenger_id"):
+                    p_result = supabase.table("users").select("name, phone").eq("id", tag["passenger_id"]).execute()
                     if p_result.data:
                         passenger_name = f"{p_result.data[0].get('name', '-')} ({p_result.data[0].get('phone', '')})"
                 
