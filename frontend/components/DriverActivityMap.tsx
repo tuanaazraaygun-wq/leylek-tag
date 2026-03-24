@@ -47,9 +47,11 @@ interface ActivityData {
 interface Props {
   userLocation: { latitude: number; longitude: number } | null;
   city: string;
+  /** Verilirse yakındaki talepler yalnız bu sürücünün araç tipiyle eşleşenler (backend filtre) */
+  driverUserId?: string | null;
 }
 
-export default function DriverActivityMap({ userLocation, city }: Props) {
+export default function DriverActivityMap({ userLocation, city, driverUserId }: Props) {
   const [activityData, setActivityData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(false);
   const mapRef = useRef<MapView>(null);
@@ -60,8 +62,12 @@ export default function DriverActivityMap({ userLocation, city }: Props) {
     
     setLoading(true);
     try {
+      const uidQ =
+        driverUserId && String(driverUserId).trim()
+          ? `&user_id=${encodeURIComponent(String(driverUserId).trim())}`
+          : '';
       const response = await fetch(
-        `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20`
+        `${API_URL}/driver/nearby-activity?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius_km=20${uidQ}`
       );
       const data = await response.json();
       
@@ -80,7 +86,7 @@ export default function DriverActivityMap({ userLocation, city }: Props) {
     // Her 15 saniyede bir güncelle
     const interval = setInterval(loadActivity, 15000);
     return () => clearInterval(interval);
-  }, [userLocation]);
+  }, [userLocation, driverUserId]);
 
   if (!userLocation) {
     return (

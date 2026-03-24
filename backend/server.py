@@ -496,6 +496,22 @@ def _driver_matches_passenger_vehicle_pref(driver_eff: str, passenger_pref: str)
     return pp == de
 
 
+def _trip_passenger_vehicle_pref(
+    tag_row: dict, passenger_join_row: Optional[dict] = None
+) -> str:
+    """
+    Tek sefer tercihi: tags.passenger_preferred_vehicle (tercih), yoksa join/users satırındaki profil.
+    """
+    pref = _canonical_vehicle_kind(tag_row.get("passenger_preferred_vehicle"))
+    if pref is not None:
+        return pref
+    if passenger_join_row:
+        p2 = _passenger_preferred_vehicle_from_row(passenger_join_row)
+        if p2 is not None:
+            return p2
+    return "car"
+
+
 # ==================== DISPATCH QUEUE CONFIG ====================
 DISPATCH_CONFIG = {
     "matching_radius_km": 20,        # Sürücü arama yarıçapı (km) - 20 km
@@ -554,8 +570,11 @@ def clear_dispatch_in_memory_state():
 # Sıralı eşleşme yarıçapı — şimdilik sabit 20 km (config override edilmez)
 SEQUENTIAL_DISPATCH_RADIUS_KM = 20
 
-# Geçici: sıralı dispatch + broadcast'ta araç tipi eşleşmesi yapma (true = tüm uygun sürücülere gönder)
-DISPATCH_VEHICLE_FILTER_DISABLED = True  # DEBUG: araç filtresi kapalı; teklif gelirse sorun filtrede
+# Araç tipi eşleşmesi: false = yolcu car|motor tercihine göre sürücü filtrelenir (üretim varsayılanı).
+# true yapmak için: ortam değişkeni DISPATCH_VEHICLE_FILTER_DISABLED=1
+DISPATCH_VEHICLE_FILTER_DISABLED = os.getenv(
+    "DISPATCH_VEHICLE_FILTER_DISABLED", ""
+).strip().lower() in ("1", "true", "yes", "on")
 
 # Rolling batch dispatch (yalnızca bellek; DB dispatch_queue / Supabase kuyruk yok)
 BATCH_SIZE = 5
@@ -648,8 +667,6 @@ async def find_eligible_drivers(
                 eff = _driver_vehicle_kind_from_row(driver)
                 if eff is None:
                     eff = "car"
-                driver_id = str(driver["id"]).strip().lower()
-                logger.info(f"FILTER check driver={driver_id} pref={pref} eff={eff}")
                 if not _driver_matches_passenger_vehicle_pref(eff, pref):
                     continue
             
@@ -1272,7 +1289,8 @@ async def rolling_dispatch_start(tag_id: str) -> int:
     if passenger_id:
         passenger_id = await resolve_user_id(passenger_id)
     passenger_name = row.get("passenger_name") or "Yolcu"
-    passenger_pref = "car"
+    passenger_pref = _canonical_vehicle_kind(row.get("passenger_preferred_vehicle"))
+    prow_row = None
     if passenger_id:
         try:
             prow = (
@@ -1283,12 +1301,13 @@ async def rolling_dispatch_start(tag_id: str) -> int:
                 .execute()
             )
             if prow.data:
-                passenger_name = prow.data[0].get("name") or passenger_name
-                passenger_pref = (
-                    _passenger_preferred_vehicle_from_row(prow.data[0]) or passenger_pref
-                )
+                prow_row = prow.data[0]
+                passenger_name = prow_row.get("name") or passenger_name
+                if passenger_pref is None:
+                    passenger_pref = _passenger_preferred_vehicle_from_row(prow_row)
         except Exception:
             pass
+    passenger_pref = passenger_pref or "car"
 
     pickup_lat = row.get("pickup_lat")
     pickup_lng = row.get("pickup_lng")
@@ -3912,7 +3931,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
             pass  # Hata olursa devam et
         
         # Sürücünün şehrini al
-        driver_result = supabase.table("users").select("city, latitude, longitude").eq("id", resolved_id).execute()
+        driver_result = supabase.table("users").select("city, latitude, longitude, driver_details").eq("id", resolved_id).execute()
         driver_city = None
         driver_lat = latitude
         driver_lng = longitude
@@ -3932,8 +3951,11 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
         # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city)").in_("status", ["pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(100).execute()
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)").in_("status", ["pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(100).execute()
         
+        driver_eff = _effective_driver_vehicle_kind(
+            driver_result.data[0] if driver_result.data else {}
+        )
         requests = []
         for tag in result.data:
             # Engelli kontrolü
@@ -3941,6 +3963,9 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 continue
             
             passenger_info = tag.get("users", {}) or {}
+            trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
+            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+                continue
             passenger_city = passenger_info.get("city")
             
             # ŞEHİR KONTROLÜ - Sadece aynı şehirdeki teklifleri göster
@@ -4060,6 +4085,31 @@ async def send_offer(
             raise HTTPException(status_code=404, detail="TAG bulunamadı")
         
         tag = tag_result.data[0]
+
+        trip_pref = _canonical_vehicle_kind(tag.get("passenger_preferred_vehicle"))
+        if trip_pref is None and tag.get("passenger_id"):
+            try:
+                pid = await resolve_user_id(tag["passenger_id"])
+                pu = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", pid)
+                    .limit(1)
+                    .execute()
+                )
+                if pu.data:
+                    trip_pref = _passenger_preferred_vehicle_from_row(pu.data[0])
+            except Exception:
+                pass
+        trip_pref = trip_pref or "car"
+        driver_eff = _effective_driver_vehicle_kind(driver)
+        if not DISPATCH_VEHICLE_FILTER_DISABLED and not _driver_matches_passenger_vehicle_pref(
+            driver_eff, trip_pref
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Bu talep için araç tipiniz uygun değil",
+            )
         
         # ⚡ ÖNCE TEKLİFİ KAYDET - MESAFE SONRA HESAPLANACAK (ANINDA YANIT)
         offer_data = {
@@ -4464,7 +4514,7 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
                 continue
             tag = tr.data[0]
             fp = tag.get("final_price")
-            pvk = "car"
+            pu_row = None
             pid = tag.get("passenger_id")
             if pid:
                 try:
@@ -4477,9 +4527,22 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
                         .execute()
                     )
                     if pu.data:
-                        pvk = _passenger_preferred_vehicle_from_row(pu.data[0]) or "car"
+                        pu_row = pu.data[0]
                 except Exception:
                     pass
+            pvk = _trip_passenger_vehicle_pref(tag, pu_row)
+            drv = (
+                supabase.table("users")
+                .select("driver_details")
+                .eq("id", resolved_id)
+                .limit(1)
+                .execute()
+            )
+            driver_eff = _effective_driver_vehicle_kind(drv.data[0] if drv.data else {})
+            if not DISPATCH_VEHICLE_FILTER_DISABLED and not _driver_matches_passenger_vehicle_pref(
+                driver_eff, pvk
+            ):
+                continue
             offer_payload = {
                 "tag_id": tid,
                 "passenger_id": tag.get("passenger_id"),
@@ -8843,7 +8906,8 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             "dropoff_location": request.dropoff_location,
             "final_price": request.offered_price,  # offered_price yerine final_price kullan
             "status": "waiting",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.utcnow().isoformat(),
+            "passenger_preferred_vehicle": passenger_pref_vehicle,
         }
         
         result = supabase.table("tags").insert(tag_data).execute()
@@ -9002,6 +9066,16 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
     Sadece 'waiting' durumundaki ve yakındaki teklifler
     """
     try:
+        resolved_driver_id = await resolve_user_id(driver_id)
+        dr_row = (
+            supabase.table("users")
+            .select("driver_details")
+            .eq("id", resolved_driver_id)
+            .limit(1)
+            .execute()
+        )
+        driver_eff = _effective_driver_vehicle_kind(dr_row.data[0] if dr_row.data else {})
+
         # Tüm bekleyen teklifleri al
         result = supabase.table("tags").select("*")\
             .eq("status", "waiting")\
@@ -9011,6 +9085,11 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
         
         offers = []
         for tag in result.data or []:
+            trip_pref = _trip_passenger_vehicle_pref(tag, None)
+            if not DISPATCH_VEHICLE_FILTER_DISABLED and not _driver_matches_passenger_vehicle_pref(
+                driver_eff, trip_pref
+            ):
+                continue
             # Mesafe hesapla
             distance = haversine_distance(lat, lng, tag["pickup_lat"], tag["pickup_lng"])
             
@@ -10758,14 +10837,33 @@ async def get_nearby_activity(
     lng: float,
     radius_km: float = 20,
     passenger_vehicle_kind: Optional[str] = None,
+    user_id: Optional[str] = None,
+    driver_id: Optional[str] = None,
 ):
     """Sürücü için yakındaki aktif yolculuklar ve yoğunluk bilgisi.
-    passenger_vehicle_kind ile nearby_driver_count yalnız uygun tipteki sürücüleri sayar (yolcu ekranı)."""
+    passenger_vehicle_kind ile nearby_driver_count yalnız uygun tipteki sürücüleri sayar (yolcu ekranı).
+    user_id/driver_id verilirse nearby_tags yalnız bu sürücünün araç tipiyle eşleşen talepleri listeler."""
     try:
         pref = _canonical_vehicle_kind(passenger_vehicle_kind)
+        driver_eff_map = None
+        did = driver_id or user_id
+        if did:
+            try:
+                rid = await resolve_user_id(did)
+                du = (
+                    supabase.table("users")
+                    .select("driver_details")
+                    .eq("id", rid)
+                    .limit(1)
+                    .execute()
+                )
+                if du.data:
+                    driver_eff_map = _effective_driver_vehicle_kind(du.data[0])
+            except Exception:
+                pass
         # 1. Yakındaki aktif (bekleyen) yolculukları al
         active_tags = supabase.table("tags").select(
-            "id, pickup_lat, pickup_lng, pickup_location, status, final_price"
+            "id, pickup_lat, pickup_lng, pickup_location, status, final_price, passenger_preferred_vehicle"
         ).eq("status", "waiting").execute()
         
         nearby_tags = []
@@ -10777,6 +10875,10 @@ async def get_nearby_activity(
             if tag_lat and tag_lng:
                 distance = haversine_distance(lat, lng, tag_lat, tag_lng)
                 if distance <= radius_km:
+                    if driver_eff_map is not None and not DISPATCH_VEHICLE_FILTER_DISABLED:
+                        pref_tag = _trip_passenger_vehicle_pref(tag, None)
+                        if not _driver_matches_passenger_vehicle_pref(driver_eff_map, pref_tag):
+                            continue
                     nearby_tags.append({
                         "id": tag["id"],
                         "lat": tag_lat,
