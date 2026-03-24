@@ -7458,6 +7458,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         if (prev.some(r => r.id === tag.id)) return prev;
         return [...prev, {
           id: tag.id,
+          tag_id: tag.id,
           request_id: tag.id,
           passenger_id: tag.passenger_id,
           passenger_name: tag.passenger_name || 'Yolcu',
@@ -7762,6 +7763,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const pvkNorm = pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
         return [...filtered, {
           id: data.tag_id,
+          tag_id: data.tag_id,
           request_id: data.request_id,  // 🔥 KRİTİK - ZORUNLU
           passenger_id: data.passenger_id,
           passenger_name: data.passenger_name,
@@ -8255,6 +8257,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           ...prev,
           {
             id: data.tag_id,
+            tag_id: data.tag_id,
             request_id: data.tag_id,
             passenger_id: data.passenger_id,
             passenger_name: data.passenger_name || 'Yolcu',

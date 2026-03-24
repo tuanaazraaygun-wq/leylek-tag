@@ -227,9 +227,9 @@ function RequestCard({
           onPress={() => {
             if (accepting) return;
 
-            const offer = {
-              tag_id: String(request.tag_id || '').trim(),
-            };
+            // Socket/API bazen yalnızca `id` doldurur; `tag_id` ayrı gelmeyebilir
+            const tagIdForAccept = String(request.tag_id || request.id || '').trim();
+            const offer = { tag_id: tagIdForAccept };
             const userId = String(driverId || '').trim();
 
             if (!offer.tag_id || !userId) {
