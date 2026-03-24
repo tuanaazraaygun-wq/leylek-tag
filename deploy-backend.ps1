@@ -1,30 +1,27 @@
-# Backend deploy: SSH -> find server.py under /root -> git pull -> restart leylektag.service
-# No hardcoded backend folder name; works if the directory is renamed.
+# Backend deploy: SSH -> /opt/leylektag -> git fetch/merge origin/main -> restart leylektag.service
+# Canli systemd WorkingDirectory=/opt/leylektag/backend — repo kokunu guncellemek gerekir.
 # Prerequisite: push commits to the remote the server uses before running.
-# Run: .\deploy-backend.ps1  (SSH password when prompted)
+# Run: .\deploy-backend.ps1  (SSH key or password)
 
 $Server = "157.173.113.156"
 
-# Bash runs on the server only; PowerShell single-quoted here-string — do not use "@" double-quote form or $( ) expands locally.
 $RemoteBash = @'
 set -e
-echo "=== find /root -name server.py ==="
-find /root -name server.py 2>/dev/null || true
-PY=$(find /root -name server.py 2>/dev/null | head -n1)
-if [ -z "$PY" ]; then
-  echo "ERROR: No server.py found under /root"
+PROD=/opt/leylektag
+if [ ! -d "$PROD/.git" ]; then
+  echo "ERROR: $PROD is not a git clone"
   exit 1
 fi
-DIR=$(dirname "$PY")
-echo "Backend directory: $DIR"
-cd "$DIR"
-git pull
+echo "=== Deploy: $PROD ==="
+cd "$PROD"
+git fetch origin
+git merge origin/main --no-edit
 sudo systemctl restart leylektag.service
 sleep 2
 sudo systemctl status leylektag.service --no-pager
 '@
 
-Write-Host "Deploy: find /root -> server.py -> dirname -> cd -> git pull -> restart leylektag.service" -ForegroundColor Cyan
+Write-Host "Deploy: /opt/leylektag -> git merge origin/main -> systemctl restart leylektag" -ForegroundColor Cyan
 Write-Host "Server: root@$Server" -ForegroundColor Gray
 
 $RemoteBash | ssh -o StrictHostKeyChecking=no "root@$Server" "bash -s"
