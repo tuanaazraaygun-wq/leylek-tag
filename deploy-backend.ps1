@@ -18,7 +18,7 @@ git fetch origin
 git merge origin/main --no-edit
 sudo systemctl restart leylektag.service
 sleep 2
-sudo systemctl status leylektag.service --no-pager
+sudo systemctl status leylektag.service 2>&1 | cat
 '@
 
 Write-Host "Deploy: /opt/leylektag -> git merge origin/main -> systemctl restart leylektag" -ForegroundColor Cyan
