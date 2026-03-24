@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing, Modal, Image, ImageBackground } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { tapButtonHaptic } from '../utils/touchHaptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
 
@@ -60,6 +61,44 @@ interface LiveMapViewProps {
   onAutoComplete?: () => void;
   onShowEndTripModal?: () => void;
   onShowQRModal?: () => void;  // 🆕 QR Modal aç
+  /** Sürücü haritasında: yolcu araç/motor tercihi (marker ve uyarı metinleri) */
+  otherTripVehicleKind?: 'car' | 'motorcycle';
+}
+
+/** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
+function buildPassengerDriverHint(
+  meters: number,
+  meetingDurationMin: number | null,
+  meetingDistanceKm: number | null,
+  otherUserName: string,
+  reminderCycle: number,
+): string {
+  const name = (otherUserName || 'Sürücünüz').trim();
+  if (meters <= 80) {
+    return 'Sürücü yanınızda';
+  }
+  if (meters <= 220) {
+    return 'Sürücü geldi — buluşabilirsiniz';
+  }
+  const dur = meetingDurationMin;
+  if (dur != null && dur <= 1) {
+    return `${name} yaklaşık 1 dk içinde yanınızda`;
+  }
+  if (dur != null && dur === 2) {
+    return `${name} yaklaşık 2 dk içinde yanınızda`;
+  }
+  if (dur != null && dur > 2) {
+    return `${name} yaklaşık ${dur} dk sonra yanınızda`;
+  }
+  const km = meetingDistanceKm;
+  if (km != null && km < 8) {
+    return `${name} yaklaşık ${km.toFixed(1)} km uzağınızda — yolda`;
+  }
+  const alt = [
+    `${name} size doğru geliyor`,
+    'Konumunuz açık kalsın — sürücü sizi görsün',
+  ];
+  return alt[reminderCycle % alt.length];
 }
 
 // Haversine mesafe hesaplama (km)
@@ -224,6 +263,7 @@ export default function LiveMapView({
   onAutoComplete,
   onShowEndTripModal,
   onShowQRModal,  // 🆕
+  otherTripVehicleKind = 'car',
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   
@@ -259,6 +299,16 @@ export default function LiveMapView({
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  /** Sürücü "Yolcuya Git" — daha belirgin nefes alan ölçek */
+  const navBreathAnim = useRef(new Animated.Value(1)).current;
+  const driverCueOpacity = useRef(new Animated.Value(1)).current;
+  const canliBlink = useRef(new Animated.Value(1)).current;
+
+  const [passengerEtaTick, setPassengerEtaTick] = useState(0);
+  const [passengerReminderCycle, setPassengerReminderCycle] = useState(0);
+
+  const passMotor = otherTripVehicleKind === 'motorcycle';
+  const riderNoun = passMotor ? 'Motor yolcusu' : 'Yolcu';
   
   useEffect(() => {
     // Sürekli yanıp sönen animasyon
@@ -280,6 +330,114 @@ export default function LiveMapView({
     
     return () => pulseAnimation.stop();
   }, []);
+
+  useEffect(() => {
+    if (!isDriver) return;
+    const breath = Animated.loop(
+      Animated.sequence([
+        Animated.timing(navBreathAnim, {
+          toValue: 1.06,
+          duration: 1100,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(navBreathAnim, {
+          toValue: 0.98,
+          duration: 1100,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    breath.start();
+    return () => breath.stop();
+  }, [isDriver, navBreathAnim]);
+
+  useEffect(() => {
+    if (!isDriver) return;
+    const cue = Animated.loop(
+      Animated.sequence([
+        Animated.timing(driverCueOpacity, {
+          toValue: 0.72,
+          duration: 1400,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(driverCueOpacity, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    cue.start();
+    return () => cue.stop();
+  }, [isDriver, driverCueOpacity]);
+
+  useEffect(() => {
+    if (isDriver) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(canliBlink, {
+          toValue: 0.38,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(canliBlink, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [isDriver, canliBlink]);
+
+  useEffect(() => {
+    if (isDriver) return;
+    const id = setInterval(() => setPassengerEtaTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [isDriver]);
+
+  useEffect(() => {
+    if (isDriver) return;
+    const id = setInterval(() => setPassengerReminderCycle((c) => c + 1), 120_000);
+    return () => clearInterval(id);
+  }, [isDriver]);
+
+  const passengerDriverHint = useMemo(() => {
+    if (isDriver || !userLocation || !otherLocation) {
+      return '';
+    }
+    const dKm = calculateDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      otherLocation.latitude,
+      otherLocation.longitude,
+    );
+    const meters = dKm * 1000;
+    const kmForHint = meetingDistance ?? dKm;
+    return buildPassengerDriverHint(
+      meters,
+      meetingDuration,
+      kmForHint,
+      otherUserName,
+      passengerReminderCycle,
+    );
+  }, [
+    isDriver,
+    userLocation,
+    otherLocation,
+    meetingDuration,
+    meetingDistance,
+    otherUserName,
+    passengerEtaTick,
+    passengerReminderCycle,
+  ]);
   
   // 🆕 Matrix Durum Yazıları - Mesafeye göre güncelle
   useEffect(() => {
@@ -317,7 +475,7 @@ export default function LiveMapView({
         setMatrixStatus('> IYI YOLCULUKLAR');
       }
     }
-  }, [userLocation, otherLocation, isDriver, destinationLocation]);
+  }, [userLocation, otherLocation, isDriver, destinationLocation, passMotor]);
   
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
@@ -611,7 +769,7 @@ export default function LiveMapView({
           <Text style={styles.matrixTextPassenger}>{matrixStatus.replace('SURUCU', 'SÜRÜCÜ').replace('SIZIN', 'SİZİN').replace('ICIN', 'İÇİN')}</Text>
         </View>
       )}
-      
+
       {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF */}
       {MapView ? (
         <MapView
@@ -635,6 +793,16 @@ export default function LiveMapView({
           maxZoomLevel={18}
           customMapStyle={mapStyle}
         >
+          {/* Sürücü: yolcuya giden rota — dış uyarı hattı */}
+          {isDriver && meetingRoute.length > 1 && (
+            <Polyline
+              coordinates={meetingRoute}
+              strokeColor="rgba(34, 211, 238, 0.42)"
+              strokeWidth={14}
+              lineJoin="round"
+              lineCap="round"
+            />
+          )}
           {/* YEŞİL ROTA: Şoför → Yolcu (Buluşma) - KALIN VE PROFESYONel */}
           {meetingRoute.length > 1 && (
             <Polyline
@@ -681,7 +849,15 @@ export default function LiveMapView({
             >
               <View style={styles.proMarkerContainer}>
                 <View style={[styles.proMarkerHead, { backgroundColor: isDriver ? '#8B5CF6' : '#059669' }]}>
-                  <Ionicons name={isDriver ? "person" : "car"} size={20} color="#FFF" />
+                  {isDriver ? (
+                    passMotor ? (
+                      <MaterialCommunityIcons name="motorbike" size={20} color="#FFF" />
+                    ) : (
+                      <Ionicons name="person" size={20} color="#FFF" />
+                    )
+                  ) : (
+                    <Ionicons name="car" size={20} color="#FFF" />
+                  )}
                 </View>
                 <View style={[styles.proMarkerTail, { borderTopColor: isDriver ? '#8B5CF6' : '#059669' }]} />
                 <View style={styles.proMarkerShadow} />
@@ -758,33 +934,68 @@ export default function LiveMapView({
           )}
         </LinearGradient>
         </View>
+
+        {!isDriver && userLocation && otherLocation ? (
+          <View style={styles.passengerLiveBlock} pointerEvents="none">
+            <Animated.Text style={[styles.passengerLiveLabel, { opacity: canliBlink }]}>
+              CANLI
+            </Animated.Text>
+            {passengerDriverHint ? (
+              <Text style={styles.passengerLiveHint}>{passengerDriverHint}</Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
         <LinearGradient 
           colors={isDriver 
-            ? ['rgba(254,243,199,0.95)', 'rgba(251,191,36,0.98)'] 
+            ? ['rgba(237,233,254,0.97)', 'rgba(196,181,253,0.95)'] 
             : ['rgba(219,234,254,0.95)', 'rgba(147,197,253,0.98)']
           } 
           style={styles.bottomGradient}
         >
-          
+          {isDriver && otherLocation ? (
+            <Animated.View
+              style={[styles.driverPassengerCueAboveNav, { opacity: driverCueOpacity }]}
+            >
+              <View style={styles.driverPassengerCueAccent} />
+              <Ionicons name="location" size={18} color="#7C3AED" style={{ marginRight: 8 }} />
+              <Text style={styles.driverPassengerCueTextAboveNav}>
+                {passMotor
+                  ? 'Motor yolcusu burada — pine dokun, profili aç'
+                  : 'Yolcu burada — pine dokun, profili aç'}
+              </Text>
+            </Animated.View>
+          ) : null}
+
           {/* 🆕 SÜRÜCÜ İÇİN - YOLCUYA GİT BUTONU (Ortalı, Yaz butonunun üstünde) */}
           {isDriver && (
-            <Animated.View style={[styles.centeredNavButton, { 
-              opacity: pulseAnim,
-              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0.6, 1], outputRange: [0.97, 1.03] }) }]
-            }]}>
-              <TouchableOpacity onPress={openNavigation} activeOpacity={0.7}>
+            <Animated.View
+              style={[
+                styles.centeredNavButton,
+                {
+                  opacity: pulseAnim,
+                  transform: [{ scale: navBreathAnim }],
+                },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  void tapButtonHaptic();
+                  openNavigation();
+                }}
+                activeOpacity={0.7}
+              >
                 <LinearGradient 
-                  colors={['#FF6B00', '#FF8C00', '#FF6B00']} 
-                  style={styles.centeredNavBtn}
+                  colors={['#7C3AED', '#9333EA', '#6D28D9']} 
+                  style={styles.centeredNavBtnPurple}
                   start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
-                  <Ionicons name="navigate" size={24} color="white" />
-                  <Text style={styles.centeredNavBtnText}>🚗 Yolcuya Git</Text>
+                  <Ionicons name="navigate" size={26} color="white" />
+                  <Text style={styles.centeredNavBtnText}>Yolcuya Git</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
@@ -793,7 +1004,10 @@ export default function LiveMapView({
           {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
           <TouchableOpacity 
             style={[styles.mainChatButton]} 
-            onPress={() => onChat?.()}
+            onPress={() => {
+              void tapButtonHaptic();
+              onChat?.();
+            }}
             activeOpacity={0.8}
           >
             <LinearGradient 
@@ -860,8 +1074,8 @@ export default function LiveMapView({
                     if (distanceMeters > 1000) {
                       // Yolcu 1km'den uzakta - QR gösterme
                       Alert.alert(
-                        '📍 Yolcu Yakın Değil',
-                        `Yolcu sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : (distance).toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için yolcunun yakınınızda olması gerekiyor.`,
+                        '📍 Yakın değil',
+                        `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : (distance).toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
                         [{ text: 'Tamam', style: 'default' }]
                       );
                       return;
@@ -1296,6 +1510,29 @@ const styles = StyleSheet.create({
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
   priceLabel: { fontSize: 14, color: '#666' },
   priceValue: { fontSize: 22, fontWeight: 'bold', color: '#22C55E' },
+
+  passengerLiveBlock: {
+    alignSelf: 'flex-end',
+    alignItems: 'flex-end',
+    marginRight: 18,
+    marginTop: 4,
+    marginBottom: 2,
+    maxWidth: SCREEN_WIDTH * 0.62,
+  },
+  passengerLiveLabel: {
+    color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 4,
+  },
+  passengerLiveHint: {
+    marginTop: 6,
+    color: '#B91C1C',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+    lineHeight: 17,
+  },
   
   // Bottom Panel
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
@@ -1696,6 +1933,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FF3B30',
     letterSpacing: 1.5,
+  },
+  driverPassengerCueAboveNav: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(124, 58, 237, 0.45)',
+  },
+  driverPassengerCueAccent: {
+    width: 4,
+    alignSelf: 'stretch',
+    minHeight: 24,
+    borderRadius: 2,
+    backgroundColor: '#7C3AED',
+    marginRight: 10,
+  },
+  driverPassengerCueTextAboveNav: {
+    flex: 1,
+    color: '#4C1D95',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    lineHeight: 17,
   },
   // 🆕 Google Maps Modal Stilleri
   googleMapsModalContainer: {
