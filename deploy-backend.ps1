@@ -18,12 +18,14 @@ git fetch origin
 git merge origin/main --no-edit
 sudo systemctl restart leylektag.service
 sleep 2
-sudo systemctl status leylektag.service 2>&1 | cat
+sudo systemctl status leylektag.service 2>&1 || true
 '@
 
 Write-Host "Deploy: /opt/leylektag -> git merge origin/main -> systemctl restart leylektag" -ForegroundColor Cyan
 Write-Host "Server: root@$Server" -ForegroundColor Gray
 
+# Windows CRLF -> LF (aksi halde uzak bash'te `| cat\r` gibi hatalar)
+$RemoteBash = $RemoteBash -replace "`r`n", "`n"
 $RemoteBash | ssh -o StrictHostKeyChecking=no "root@$Server" "bash -s"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Deploy failed." -ForegroundColor Red
