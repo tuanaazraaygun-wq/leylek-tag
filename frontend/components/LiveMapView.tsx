@@ -101,6 +101,14 @@ function buildPassengerDriverHint(
   return alt[reminderCycle % alt.length];
 }
 
+function formatRouteKmMin(distanceKm: number | null, durationMin: number | null): string {
+  const km =
+    distanceKm != null && Number.isFinite(distanceKm) ? distanceKm.toFixed(1) : '—';
+  const min =
+    durationMin != null && Number.isFinite(durationMin) ? String(durationMin) : '—';
+  return `${km} km • ${min} dk`;
+}
+
 // Haversine mesafe hesaplama (km)
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371;
@@ -294,8 +302,16 @@ export default function LiveMapView({
   const [showGoogleMapsModal, setShowGoogleMapsModal] = useState(false);
   const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   
-  // API çağrı sayacı (rate limiting için)
-  const lastRouteCall = useRef<number>(0);
+  /** OSRM: buluşma ve hedef rotaları ayrı throttle — aynı anda birbirini iptal etmesin */
+  const routeThrottleRef = useRef<{ meeting: number; destination: number }>({
+    meeting: 0,
+    destination: 0,
+  });
+  /** Haritayı sürekli fit etmek pinch-zoom'u bozar; sadece ilk yüklemede ve hedef ilk geldiğinde */
+  const mapFitRef = useRef<{ initialDone: boolean; hadDestination: boolean }>({
+    initialDone: false,
+    hadDestination: false,
+  });
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -499,29 +515,30 @@ export default function LiveMapView({
     }
   };
 
-  // OSRM API ile rota al (TAMAMEN ÜCRETSİZ - Limitsiz)
+  // OSRM API — buluşma / hedef için ayrı throttle (km·dk her zaman dolabilsin)
   const fetchRoute = async (
     start: { latitude: number; longitude: number },
-    end: { latitude: number; longitude: number }
+    end: { latitude: number; longitude: number },
+    slot: 'meeting' | 'destination',
   ): Promise<{ coordinates: {latitude: number, longitude: number}[], distance: number, duration: number } | null> => {
     try {
       const now = Date.now();
-      if (now - lastRouteCall.current < 2000) {
+      if (now - routeThrottleRef.current[slot] < 900) {
         return null;
       }
-      lastRouteCall.current = now;
-      
+      routeThrottleRef.current[slot] = now;
+
       const url = `https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=polyline`;
-      
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
         const route = data.routes[0];
         const points = decodePolyline(route.geometry);
         const distKm = route.distance / 1000;
-        const durMin = Math.round(route.duration / 60);
-        
+        const durMin = Math.max(0, Math.round(route.duration / 60));
+
         return { coordinates: points, distance: distKm, duration: durMin };
       }
     } catch (error) {
@@ -565,12 +582,14 @@ export default function LiveMapView({
     if (!passengerLocation) return;
     
     const updateDestinationRoute = async () => {
-      const result = await fetchRoute(passengerLocation, destinationLocation);
-      if (result && result.coordinates.length > 2) {
-        setDestinationRoute(result.coordinates);
+      const result = await fetchRoute(passengerLocation, destinationLocation, 'destination');
+      if (result) {
+        if (result.coordinates.length >= 2) {
+          setDestinationRoute(result.coordinates);
+        }
         setDestinationDistance(result.distance);
         setDestinationDuration(result.duration);
-        
+
         // 1 km kontrolü - Otomatik tamamlama
         if (result.distance <= 1 && !autoCompleteTriggered.current) {
           setNearDestination(true);
@@ -593,20 +612,30 @@ export default function LiveMapView({
     return () => clearInterval(interval);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
 
-  // Harita sınırlarını ayarla
+  // Harita: yalnızca ilk uygun an + hedef ilk kez geldiğinde fit (kullanıcı zoom yapabilsin)
   useEffect(() => {
-    if (mapRef.current && userLocation && otherLocation) {
-      setTimeout(() => {
-        const coordinates = [userLocation, otherLocation];
-        if (destinationLocation) {
-          coordinates.push(destinationLocation);
-        }
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 180, right: 50, bottom: 280, left: 50 },
-          animated: true,
-        });
-      }, 500);
+    if (!mapRef.current || !userLocation || !otherLocation) return;
+
+    const hasDest = !!destinationLocation;
+    const destJustAdded = hasDest && !mapFitRef.current.hadDestination;
+    mapFitRef.current.hadDestination = hasDest;
+
+    if (mapFitRef.current.initialDone && !destJustAdded) {
+      return;
     }
+
+    const t = setTimeout(() => {
+      const coordinates = [userLocation, otherLocation];
+      if (destinationLocation) {
+        coordinates.push(destinationLocation);
+      }
+      mapRef.current?.fitToCoordinates(coordinates, {
+        edgePadding: { top: 210, right: 48, bottom: 300, left: 48 },
+        animated: true,
+      });
+      mapFitRef.current.initialDone = true;
+    }, 650);
+    return () => clearTimeout(t);
   }, [userLocation, otherLocation, destinationLocation]);
 
   // Google/Apple Maps navigasyon aç
@@ -789,8 +818,8 @@ export default function LiveMapView({
           zoomEnabled={true}
           rotateEnabled={false}
           pitchEnabled={false}
-          minZoomLevel={10}
-          maxZoomLevel={18}
+          minZoomLevel={4}
+          maxZoomLevel={22}
           customMapStyle={mapStyle}
         >
           {/* Sürücü: yolcuya giden rota — dış uyarı hattı */}
@@ -886,53 +915,62 @@ export default function LiveMapView({
         </View>
       )}
 
-      {/* ÜST BİLGİ PANELİ - MAVİ ÇERÇEVE */}
+      {/* ÜST BİLGİ PANELİ — gök mavisi, desenli, profesyonel tipografi */}
       <View style={styles.topInfoPanel}>
         <View style={styles.topInfoBorder}>
-          <LinearGradient colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,0.95)']} style={styles.infoGradient}>
-          {/* Buluşma Bilgisi - Yeşil - MODERN */}
-          <View style={styles.routeInfoRow}>
-            <View style={[styles.routeIndicator, { backgroundColor: '#22C55E' }]} />
-            <View style={styles.routeDetails}>
-              <Text style={styles.routeLabelModern}>BULUŞMA</Text>
-              <Text style={styles.routeValueModern}>
-                {meetingDistance ? `${meetingDistance.toFixed(1)} km` : '...'} • {meetingDuration ? `${meetingDuration} dk` : '...'}
-              </Text>
+          <LinearGradient
+            colors={['#F0F9FF', '#E0F2FE', '#DBEAFE', '#F8FAFC']}
+            locations={[0, 0.35, 0.7, 1]}
+            style={styles.infoGradient}
+          >
+            <View style={styles.topCardPatternRoot} pointerEvents="none">
+              {[
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+              ].map((i) => (
+                <View key={i} style={[styles.topCardStripe, { left: -72 + i * 26 }]} />
+              ))}
             </View>
-          </View>
-          
-          {/* Hedef Bilgisi - Turuncu - MODERN */}
-          {destinationLocation && (
-            <View style={styles.routeInfoRow}>
-              <View style={[styles.routeIndicator, { backgroundColor: '#F97316' }]} />
-              <View style={styles.routeDetails}>
-                <Text style={styles.routeLabelModern}>HEDEF</Text>
-                <Text style={styles.routeValueModern}>
-                  {destinationDistance ? `${destinationDistance.toFixed(1)} km` : '...'} • {destinationDuration ? `${destinationDuration} dk` : '...'}
-                </Text>
+            <View style={styles.topCardContent}>
+              <View style={styles.routeInfoRow}>
+                <View style={[styles.routeIndicator, { backgroundColor: '#059669' }]} />
+                <View style={styles.routeDetails}>
+                  <Text style={styles.routeLabelModern}>BULUŞMA</Text>
+                  <Text style={styles.routeValueModern}>
+                    {formatRouteKmMin(meetingDistance, meetingDuration)}
+                  </Text>
+                </View>
               </View>
-              {nearDestination && (
-                <View style={styles.nearBadge}>
-                  <Text style={styles.nearBadgeText}>YAKIN!</Text>
+
+              {destinationLocation ? (
+                <View style={styles.routeInfoRow}>
+                  <View style={[styles.routeIndicator, { backgroundColor: '#EA580C' }]} />
+                  <View style={styles.routeDetails}>
+                    <Text style={styles.routeLabelModern}>HEDEF</Text>
+                    <Text style={styles.routeValueModern}>
+                      {formatRouteKmMin(destinationDistance, destinationDuration)}
+                    </Text>
+                  </View>
+                  {nearDestination ? (
+                    <View style={styles.nearBadge}>
+                      <Text style={styles.nearBadgeText}>YAKIN!</Text>
+                    </View>
+                  ) : null}
+                  {offeredPrice ? (
+                    <View style={styles.offeredPriceBadge}>
+                      <Text style={styles.offeredPriceText}>₺{offeredPrice}</Text>
+                    </View>
+                  ) : null}
                 </View>
-              )}
-              {/* 💰 TEKLİF FİYATI - SAĞ ÜSTTE BELİRGİN */}
-              {offeredPrice && (
-                <View style={styles.offeredPriceBadge}>
-                  <Text style={styles.offeredPriceText}>₺{offeredPrice}</Text>
+              ) : null}
+
+              {price && !offeredPrice ? (
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>Ücret</Text>
+                  <Text style={styles.priceValue}>₺{price}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
-          )}
-          
-          {/* Fiyat - Eğer offeredPrice yoksa eski fiyatı göster */}
-          {price && !offeredPrice && (
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Ücret:</Text>
-              <Text style={styles.priceValue}>₺{price}</Text>
-            </View>
-          )}
-        </LinearGradient>
+          </LinearGradient>
         </View>
 
         {!isDriver && userLocation && otherLocation ? (
@@ -1454,62 +1492,90 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   
-  // Top Info Panel
+  // Top Info Panel — gök mavisi / desen
   topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0 },
-  topInfoBorder: { 
-    borderWidth: 2, 
-    borderColor: '#3B82F6', 
-    borderRadius: 26, 
+  topInfoBorder: {
+    borderWidth: 2,
+    borderColor: '#0EA5E9',
+    borderRadius: 26,
     margin: 8,
     marginTop: 40,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    overflow: 'hidden',
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  infoGradient: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 24 },
-  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  routeIndicator: { width: 14, height: 14, borderRadius: 7, marginRight: 12 },
+  infoGradient: { paddingVertical: 0, paddingHorizontal: 0, borderRadius: 24, overflow: 'hidden' },
+  topCardPatternRoot: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  topCardStripe: {
+    position: 'absolute',
+    top: -80,
+    width: 1,
+    height: 320,
+    backgroundColor: 'rgba(14, 165, 233, 0.09)',
+    transform: [{ rotate: '32deg' }],
+  },
+  topCardContent: {
+    position: 'relative',
+    zIndex: 2,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+  },
+  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  routeIndicator: { width: 16, height: 16, borderRadius: 8, marginRight: 12 },
   routeDetails: { flex: 1 },
   routeLabel: { fontSize: 13, color: '#666', fontWeight: '500' },
   routeValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
-  // 🆕 MODERN Yazı Stilleri
-  routeLabelModern: { 
-    fontSize: 11, 
-    color: '#374151', 
+  routeLabelModern: {
+    fontSize: 12,
+    color: '#0369A1',
     fontWeight: '800',
-    letterSpacing: 2,
+    letterSpacing: 2.8,
+    marginBottom: 4,
   },
-  routeValueModern: { 
-    fontSize: 20, 
-    fontWeight: '900', 
-    color: '#111827',
-    letterSpacing: 0.5,
+  routeValueModern: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0C4A6E',
+    letterSpacing: 0.2,
   },
-  nearBadge: { backgroundColor: '#F97316', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  nearBadge: { backgroundColor: '#EA580C', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   nearBadgeText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
-  offeredPriceBadge: { 
-    backgroundColor: '#22C55E', 
-    paddingHorizontal: 14, 
-    paddingVertical: 6, 
+  offeredPriceBadge: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 14,
     marginLeft: 'auto',
-    shadowColor: '#22C55E',
+    shadowColor: '#0369A1',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
   },
-  offeredPriceText: { 
-    color: '#FFF', 
-    fontSize: 18, 
-    fontWeight: 'bold',
+  offeredPriceText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '800',
     letterSpacing: 0.5,
   },
-  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  priceLabel: { fontSize: 14, color: '#666' },
-  priceValue: { fontSize: 22, fontWeight: 'bold', color: '#22C55E' },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(14, 165, 233, 0.22)',
+  },
+  priceLabel: { fontSize: 13, fontWeight: '700', color: '#0369A1', letterSpacing: 1 },
+  priceValue: { fontSize: 24, fontWeight: '800', color: '#0EA5E9' },
 
   passengerLiveBlock: {
     alignSelf: 'flex-end',

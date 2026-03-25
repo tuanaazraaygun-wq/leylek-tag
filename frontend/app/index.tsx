@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -296,6 +296,8 @@ interface Tag {
   driver_location?: { latitude: number; longitude: number };
   passenger_location?: { latitude: number; longitude: number };
   route_info?: any;
+  passenger_preferred_vehicle?: 'car' | 'motorcycle';
+  passenger_vehicle_kind?: 'car' | 'motorcycle';
 }
 
 interface Offer {
@@ -5089,6 +5091,20 @@ function PassengerDashboard({
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+  /** Rol ekranındaki kayıtlı tercih — teklif kartı açılınca buna çekilir, kartta değiştirilebilir */
+  const passengerVehicleFromRole = useMemo((): 'car' | 'motorcycle' => {
+    const d = user?.driver_details as { passenger_preferred_vehicle?: string } | undefined;
+    return d?.passenger_preferred_vehicle === 'motorcycle' ? 'motorcycle' : 'car';
+  }, [user?.driver_details]);
+
+  const [rideVehiclePreference, setRideVehiclePreference] = useState<'car' | 'motorcycle'>(() =>
+    passengerVehicleFromRole,
+  );
+
+  useEffect(() => {
+    setRideVehiclePreference(passengerVehicleFromRole);
+  }, [passengerVehicleFromRole]);
+
   // 🆕 Yolcu için yakındaki sürücü sayısını çek (SEARCHING phase)
   useEffect(() => {
     if (!activeTag || activeTag.status === 'matched' || activeTag.status === 'in_progress') {
@@ -5156,8 +5172,12 @@ function PassengerDashboard({
   } | null>(null);
   const [selectedPrice, setSelectedPrice] = useState<number>(0);
   const [priceLoading, setPriceLoading] = useState(false);
-  /** Yolcu teklifi: araç mı motor mu — dispatch yalnız eşleşen sürücülere gider */
-  const [rideVehiclePreference, setRideVehiclePreference] = useState<'car' | 'motorcycle'>('car');
+
+  useEffect(() => {
+    if (showPriceModal) {
+      setRideVehiclePreference(passengerVehicleFromRole);
+    }
+  }, [showPriceModal, passengerVehicleFromRole]);
   
   // 🆕 Karşı taraf (Sürücü) detay bilgileri - Harita Bilgi Kartı için
   const [otherUserDetails, setOtherUserDetails] = useState<{
@@ -5186,6 +5206,7 @@ function PassengerDashboard({
   // Ses efekti için
   const soundRef = useRef<Audio.Sound | null>(null);
   const tapSoundRef = useRef<Audio.Sound | null>(null);
+  const priceSendPulse = useRef(new Animated.Value(1)).current;
 
   /** Hedef seçim modalı — haritada dokunulan nokta + ters geokod */
   const [destinationPickerPin, setDestinationPickerPin] = useState<{
@@ -5193,6 +5214,7 @@ function PassengerDashboard({
     longitude: number;
   } | null>(null);
   const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
+  const destinationCrosshairPulse = useRef(new Animated.Value(1)).current;
 
   // 🔊 Tek tip tuş sesi (1109) - Harita ve eşleşme ekranındaki her tuşa basıldığında
   const playTapSound = async () => {};
@@ -5201,6 +5223,46 @@ function PassengerDashboard({
   const playMatchSound = async () => {};
   const playStartSound = async () => {};
   const playOfferSound = async () => {};
+
+  useEffect(() => {
+    if (!destinationPickerPin) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(destinationCrosshairPulse, {
+          toValue: 1.12,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(destinationCrosshairPulse, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [destinationPickerPin, destinationCrosshairPulse]);
+
+  useEffect(() => {
+    if (!showPriceModal) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(priceSendPulse, {
+          toValue: 1.04,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(priceSendPulse, {
+          toValue: 1,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [showPriceModal, priceSendPulse]);
   
   // 🆕 Sürücü detaylarını çek (Harita Bilgi Kartı için)
   useEffect(() => {
@@ -6384,19 +6446,25 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (showDestinationPicker) {
-      setDestinationPickerPin(null);
       setDestinationPickerGeocoding(false);
+      const lat =
+        userLocation?.latitude ?? destination?.latitude ?? 41.0082;
+      const lng =
+        userLocation?.longitude ?? destination?.longitude ?? 28.9784;
+      setDestinationPickerPin({ latitude: lat, longitude: lng });
+    } else {
+      setDestinationPickerPin(null);
     }
   }, [showDestinationPicker]);
 
-  const handleDestinationMapPress = async (e: {
-    nativeEvent: { coordinate: { latitude: number; longitude: number } };
-  }) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
+  const applyDestinationFromCoordinate = async (
+    latitude: number,
+    longitude: number,
+  ) => {
     setDestinationPickerPin({ latitude, longitude });
     setDestinationPickerGeocoding(true);
     try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await tapButtonHaptic();
     } catch (_) {}
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=tr`;
@@ -6408,10 +6476,24 @@ function PassengerDashboard({
         data?.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
       await handleDestinationSelect(address, latitude, longitude);
     } catch {
-      Alert.alert('Hata', 'Adres okunamadı. Haritaya tekrar dokunun.');
+      Alert.alert('Hata', 'Adres okunamadı. İşareti sürükleyip tekrar deneyin.');
     } finally {
       setDestinationPickerGeocoding(false);
     }
+  };
+
+  const handleDestinationMapPress = async (e: {
+    nativeEvent: { coordinate: { latitude: number; longitude: number } };
+  }) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    await applyDestinationFromCoordinate(latitude, longitude);
+  };
+
+  const handleDestinationMarkerDragEnd = async (e: {
+    nativeEvent: { coordinate: { latitude: number; longitude: number } };
+  }) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    await applyDestinationFromCoordinate(latitude, longitude);
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -6634,10 +6716,67 @@ function PassengerDashboard({
             >
               <View style={styles.priceModalOverlay}>
                 <View style={styles.priceModalContent}>
-                  <Text style={styles.priceModalTitle}>💰 Fiyat Teklifiniz</Text>
+                  <Text style={styles.priceModalTitle}>Fiyat teklifiniz</Text>
                   
                   {priceInfo && (
                     <>
+                      <Text style={styles.priceModalVehicleSectionTitle}>Bu teklif için araç türü</Text>
+                      <Text style={styles.priceModalVehicleHint}>
+                        Rol ekranındaki seçiminiz burada seçili gelir; göndermeden önce isteğe göre değiştirebilirsiniz.
+                      </Text>
+                      <View style={styles.priceModalVehicleChipsRow}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            void tapButtonHaptic();
+                            setRideVehiclePreference('car');
+                          }}
+                          style={[
+                            styles.priceModalVehicleChip,
+                            rideVehiclePreference === 'car' && styles.priceModalVehicleChipCarActive,
+                          ]}
+                          activeOpacity={0.88}
+                        >
+                          <MaterialCommunityIcons
+                            name="car-side"
+                            size={22}
+                            color={rideVehiclePreference === 'car' ? '#FFF' : '#1D4ED8'}
+                          />
+                          <Text
+                            style={[
+                              styles.priceModalVehicleChipText,
+                              rideVehiclePreference === 'car' && styles.priceModalVehicleChipTextActive,
+                            ]}
+                          >
+                            Araç
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            void tapButtonHaptic();
+                            setRideVehiclePreference('motorcycle');
+                          }}
+                          style={[
+                            styles.priceModalVehicleChip,
+                            rideVehiclePreference === 'motorcycle' && styles.priceModalVehicleChipMotorActive,
+                          ]}
+                          activeOpacity={0.88}
+                        >
+                          <MaterialCommunityIcons
+                            name="motorbike"
+                            size={22}
+                            color={rideVehiclePreference === 'motorcycle' ? '#FFF' : '#6D28D9'}
+                          />
+                          <Text
+                            style={[
+                              styles.priceModalVehicleChipText,
+                              rideVehiclePreference === 'motorcycle' && styles.priceModalVehicleChipTextActive,
+                            ]}
+                          >
+                            Motor
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
                       <View style={styles.priceInfoRow}>
                         <Text style={styles.priceInfoLabel}>Mesafe:</Text>
                         <Text style={styles.priceInfoValue}>{priceInfo.distance_km} km</Text>
@@ -6651,34 +6790,6 @@ function PassengerDashboard({
                           <Text style={styles.peakHourText}>🔥 Yoğun Saat</Text>
                         </View>
                       )}
-
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8 }}>Araç türü</Text>
-                      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                        <TouchableOpacity
-                          onPress={() => { playTapSound(); setRideVehiclePreference('car'); }}
-                          style={{
-                            flex: 1,
-                            paddingVertical: 12,
-                            borderRadius: 12,
-                            alignItems: 'center',
-                            backgroundColor: rideVehiclePreference === 'car' ? '#3FA9F5' : '#E2E8F0',
-                          }}
-                        >
-                          <Text style={{ fontWeight: '700', color: rideVehiclePreference === 'car' ? '#FFF' : '#475569' }}>🚗 Araç</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => { playTapSound(); setRideVehiclePreference('motorcycle'); }}
-                          style={{
-                            flex: 1,
-                            paddingVertical: 12,
-                            borderRadius: 12,
-                            alignItems: 'center',
-                            backgroundColor: rideVehiclePreference === 'motorcycle' ? '#16A34A' : '#E2E8F0',
-                          }}
-                        >
-                          <Text style={{ fontWeight: '700', color: rideVehiclePreference === 'motorcycle' ? '#FFF' : '#475569' }}>🏍️ Motor</Text>
-                        </TouchableOpacity>
-                      </View>
                       
                       <View style={styles.priceRangeContainer}>
                         <Text style={styles.priceRangeLabel}>Fiyat Aralığı:</Text>
@@ -6694,7 +6805,7 @@ function PassengerDashboard({
                       <View style={styles.sliderContainer}>
                         <TouchableOpacity 
                           style={styles.sliderButton}
-                          onPress={() => { playTapSound(); setSelectedPrice(Math.max(priceInfo.min_price, selectedPrice - 5)); }}
+                          onPress={() => { void tapButtonHaptic(); setSelectedPrice(Math.max(priceInfo.min_price, selectedPrice - 5)); }}
                         >
                           <Text style={styles.sliderButtonText}>-5</Text>
                         </TouchableOpacity>
@@ -6710,7 +6821,7 @@ function PassengerDashboard({
                         
                         <TouchableOpacity 
                           style={styles.sliderButton}
-                          onPress={() => { playTapSound(); setSelectedPrice(Math.min(priceInfo.max_price, selectedPrice + 5)); }}
+                          onPress={() => { void tapButtonHaptic(); setSelectedPrice(Math.min(priceInfo.max_price, selectedPrice + 5)); }}
                         >
                           <Text style={styles.sliderButtonText}>+5</Text>
                         </TouchableOpacity>
@@ -6719,16 +6830,27 @@ function PassengerDashboard({
                       <View style={styles.priceModalButtons}>
                         <TouchableOpacity 
                           style={styles.priceModalCancelButton}
-                          onPress={() => { playTapSound(); setShowPriceModal(false); }}
+                          onPress={() => { void tapButtonHaptic(); setShowPriceModal(false); }}
                         >
                           <Text style={styles.priceModalCancelText}>İptal</Text>
                         </TouchableOpacity>
                         
-                        <TouchableOpacity 
-                          style={styles.priceModalSendButton}
-                          onPress={() => { playTapSound(); handleSendPriceOffer(); }}
+                        <TouchableOpacity
+                          style={styles.priceModalSendWrap}
+                          activeOpacity={0.88}
+                          onPress={() => { void tapButtonHaptic(); handleSendPriceOffer(); }}
                         >
-                          <Text style={styles.priceModalSendText}>🚀 Teklif Gönder</Text>
+                          <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
+                            <LinearGradient
+                              colors={['#0EA5E9', '#2563EB', '#1D4ED8']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={styles.priceModalSendGradient}
+                            >
+                              <MaterialCommunityIcons name="rocket-launch-outline" size={28} color="#FFF" />
+                              <Text style={styles.priceModalSendTextLarge}>Teklif Gönder</Text>
+                            </LinearGradient>
+                          </Animated.View>
                         </TouchableOpacity>
                       </View>
                     </>
@@ -7054,6 +7176,7 @@ function PassengerDashboard({
                   onClose={() => setPassengerChatVisible(false)}
                   isDriver={false}
                   otherUserName={activeTag?.driver_name || 'Sürücü'}
+                  currentUserName={user?.name || ''}
                   userId={user?.id || ''}
                   otherUserId={activeTag?.driver_id || ''}
                   tagId={activeTag?.id || ''}
@@ -7165,15 +7288,39 @@ function PassengerDashboard({
               showsUserLocation={!!userLocation}
               showsMyLocationButton={false}
               initialRegion={{
-                latitude: userLocation?.latitude ?? destination?.latitude ?? 41.0082,
-                longitude: userLocation?.longitude ?? destination?.longitude ?? 28.9784,
-                latitudeDelta: 0.07,
-                longitudeDelta: 0.07,
+                latitude:
+                  destinationPickerPin?.latitude ??
+                  userLocation?.latitude ??
+                  destination?.latitude ??
+                  41.0082,
+                longitude:
+                  destinationPickerPin?.longitude ??
+                  userLocation?.longitude ??
+                  destination?.longitude ??
+                  28.9784,
+                latitudeDelta: 0.004,
+                longitudeDelta: 0.004,
               }}
               onPress={handleDestinationMapPress}
             >
               {destinationPickerPin && DestinationPickerMarker ? (
-                <DestinationPickerMarker coordinate={destinationPickerPin} pinColor="#0EA5E9" />
+                <DestinationPickerMarker
+                  coordinate={destinationPickerPin}
+                  draggable
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges={false}
+                  onDragEnd={handleDestinationMarkerDragEnd}
+                >
+                  <View style={styles.destinationCrosshairMarker} pointerEvents="none">
+                    <Animated.View
+                      style={[
+                        styles.destinationCrosshairRing,
+                        { transform: [{ scale: destinationCrosshairPulse }] },
+                      ]}
+                    />
+                    <View style={styles.destinationCrosshairDot} />
+                  </View>
+                </DestinationPickerMarker>
               ) : null}
             </DestinationPickerMapView>
           ) : (
@@ -7211,14 +7358,14 @@ function PassengerDashboard({
               </View>
 
               <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.destinationKeyboardAvoid}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
               >
                 <View style={styles.destinationFloatingPanel} pointerEvents="auto">
                   <Text style={styles.destinationHeroTitle}>Nereye gitmek{'\n'}istiyorsunuz?</Text>
                   <Text style={styles.destinationHeroSub}>
-                    Adres yazın veya haritaya dokunun — tam konumu Google haritada seçin.
+                    Adres yazın veya yeşil nişangâhı haritada sürükleyin — sokak köşesine kadar seçebilirsiniz.
                   </Text>
 
                   {destination && (
@@ -7233,7 +7380,7 @@ function PassengerDashboard({
                   <View style={styles.destinationMapHintRow}>
                     <Ionicons name="navigate-circle" size={18} color="#38BDF8" />
                     <Text style={styles.destinationMapHintText}>
-                      Haritada istediğiniz noktaya dokunun; adres otomatik seçilir.
+                      Haritaya dokunun veya nişangâhı sürükleyin; adres onaylanır.
                     </Text>
                   </View>
 
@@ -7243,6 +7390,8 @@ function PassengerDashboard({
                       city={user?.city || ''}
                       hidePopularChips
                       visualVariant="tech"
+                      suggestionsFirst
+                      widerSearch
                       onPlaceSelected={async (place) => {
                         try {
                           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -8850,6 +8999,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             userLocation={userLocation}
             otherLocation={passengerLocation || activeTag?.passenger_location || null}
             destinationLocation={activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null}
+            otherTripVehicleKind={
+              activeTag?.passenger_vehicle_kind === 'motorcycle' ||
+              activeTag?.passenger_preferred_vehicle === 'motorcycle'
+                ? 'motorcycle'
+                : 'car'
+            }
             isDriver={true}
             userName={user.name}
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
@@ -9152,6 +9307,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             onClose={() => setDriverChatVisible(false)}
             isDriver={true}
             otherUserName={activeTag?.passenger_name || 'Yolcu'}
+            currentUserName={user?.name || ''}
             userId={user?.id || ''}
             otherUserId={activeTag?.passenger_id || ''}
             tagId={activeTag?.id || ''}
@@ -9800,11 +9956,58 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   priceModalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 20,
-    color: '#1B1B1E',
+    marginBottom: 16,
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  priceModalVehicleSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  priceModalVehicleChipsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  priceModalVehicleChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#E2E8F0',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  priceModalVehicleChipCarActive: {
+    backgroundColor: '#3FA9F5',
+    borderColor: '#0EA5E9',
+  },
+  priceModalVehicleChipMotorActive: {
+    backgroundColor: '#16A34A',
+    borderColor: '#15803D',
+  },
+  priceModalVehicleChipText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  priceModalVehicleChipTextActive: {
+    color: '#FFF',
+  },
+  priceModalVehicleHint: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 12,
+    lineHeight: 17,
   },
   priceInfoRow: {
     flexDirection: 'row',
@@ -9900,6 +10103,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginTop: 20,
     gap: 12,
+    alignItems: 'center',
   },
   priceModalCancelButton: {
     flex: 1,
@@ -9913,17 +10117,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666',
   },
-  priceModalSendButton: {
+  priceModalSendWrap: {
     flex: 2,
-    backgroundColor: '#87CEEB',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
   },
-  priceModalSendText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  priceModalSendGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    gap: 10,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  priceModalSendTextLarge: {
+    fontSize: 17,
+    fontWeight: '800',
     color: '#FFF',
+    letterSpacing: 0.2,
   },
   // 🆕 Eşleşme Sağlanıyor Stili
   matchingOverlay: {
@@ -14140,6 +14355,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(224, 242, 254, 0.96)',
     lineHeight: 18,
+  },
+  destinationCrosshairMarker: {
+    width: 88,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  destinationCrosshairRing: {
+    position: 'absolute',
+    width: 76,
+    height: 76,
+    borderRadius: 12,
+    borderWidth: 4,
+    borderColor: 'rgba(34, 197, 94, 0.95)',
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+  },
+  destinationCrosshairDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#22C55E',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 10,
+    elevation: 10,
   },
   destinationSearchShellTech: {
     marginTop: 10,

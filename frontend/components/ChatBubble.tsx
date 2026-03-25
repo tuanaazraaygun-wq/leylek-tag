@@ -49,11 +49,19 @@ interface ChatBubbleProps {
   onClose: () => void;
   isDriver: boolean;
   otherUserName: string;
+  /** Eşleşme sırasında gösterilecek kendi adınız (yalnızca ilk isim kullanılır) */
+  currentUserName?: string;
   userId: string;
   otherUserId: string;
   tagId: string;
   onSendMessage?: (text: string, receiverId: string) => void;
   incomingMessage?: { text: string; senderId: string; timestamp: number } | null;
+}
+
+function firstNameOnly(full: string | undefined, fallback: string): string {
+  const t = (full || '').trim();
+  if (!t) return fallback;
+  return t.split(/\s+/)[0];
 }
 
 // Öneri mesajları
@@ -91,10 +99,19 @@ export default function ChatBubble({
   onClose,
   isDriver,
   otherUserName,
+  currentUserName = '',
   userId,
   otherUserId,
   tagId,
 }: ChatBubbleProps) {
+  const otherFirst = useMemo(
+    () => firstNameOnly(otherUserName, isDriver ? 'Yolcu' : 'Sürücü'),
+    [otherUserName, isDriver],
+  );
+  const myFirst = useMemo(
+    () => firstNameOnly(currentUserName, isDriver ? 'Sürücü' : 'Yolcu'),
+    [currentUserName, isDriver],
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
@@ -147,7 +164,7 @@ export default function ChatBubble({
           text: msg.text,
           sender: 'other',
           timestamp: new Date(msg.timestamp),
-          senderName: msg.senderName,
+          senderName: firstNameOnly(msg.senderName, otherFirst),
         };
         
         setMessages(prev => [...prev, newMessage]);
@@ -179,7 +196,7 @@ export default function ChatBubble({
         channelRef.current = null;
       }
     };
-  }, [tagId, userId, isMinimized, visible]);
+  }, [tagId, userId, isMinimized, visible, otherFirst]);
 
   // ═══════════════════════════════════════════════════════════════
   // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
@@ -221,6 +238,7 @@ export default function ChatBubble({
       text: trimmedText,
       sender: 'me',
       timestamp: new Date(),
+      senderName: myFirst,
     };
     setMessages(prev => [...prev, newMessage]);
     setInputText('');
@@ -238,7 +256,7 @@ export default function ChatBubble({
         payload: {
           text: trimmedText,
           senderId: userId,
-          senderName: isDriver ? 'Sürücü' : 'Yolcu',
+          senderName: myFirst,
           receiverId: otherUserId,
           timestamp: new Date().toISOString(),
         },
@@ -249,7 +267,7 @@ export default function ChatBubble({
     }
     
     Keyboard.dismiss();
-  }, [tagId, userId, otherUserId, isDriver, lastMessageTime]);
+  }, [tagId, userId, otherUserId, isDriver, lastMessageTime, myFirst]);
 
   // ═══════════════════════════════════════════════════════════════
   // ANİMASYONLAR
@@ -357,7 +375,7 @@ export default function ChatBubble({
           <View style={styles.headerLeft}>
             <Ionicons name="person-circle" size={32} color="#4CAF50" />
             <View style={styles.headerInfo}>
-              <Text style={styles.headerName}>{otherUserName}</Text>
+              <Text style={styles.headerName}>{otherFirst}</Text>
               <View style={styles.onlineStatus}>
                 <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#4CAF50' : '#999' }]} />
                 <Text style={[styles.onlineText, { color: isConnected ? '#4CAF50' : '#999' }]}>
@@ -388,6 +406,16 @@ export default function ChatBubble({
               styles.messageBubble,
               item.sender === 'me' ? styles.myMessage : styles.otherMessage
             ]}>
+              <Text
+                style={[
+                  styles.senderLabel,
+                  item.sender === 'me' ? styles.mySenderLabel : styles.otherSenderLabel,
+                ]}
+              >
+                {item.sender === 'me'
+                  ? myFirst
+                  : firstNameOnly(item.senderName, otherFirst)}
+              </Text>
               <Text style={[
                 styles.messageText,
                 item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
@@ -530,6 +558,18 @@ const styles = StyleSheet.create({
   messageListContent: {
     padding: 16,
     paddingBottom: 8,
+  },
+  senderLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 4,
+    letterSpacing: 0.2,
+  },
+  mySenderLabel: {
+    color: 'rgba(255,255,255,0.92)',
+  },
+  otherSenderLabel: {
+    color: '#0369A1',
   },
   messageBubble: {
     maxWidth: '80%',
