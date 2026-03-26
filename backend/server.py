@@ -856,6 +856,56 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Non
                 f"📤 new_passenger_offer room-only (bu sürücü socket register yok?) "
                 f"driver={raw[:13]}… room={room} tag={offer_data.get('tag_id')}"
             )
+
+        # Push'i socket emit'ten sonra, paralel olarak gönder.
+        # Dispatch/vehicle filtrelerine dokunmuyoruz; offer alan sürücüye push ekliyoruz.
+        offer_tag_id = offer_data.get("tag_id")
+        resolved_driver_id = raw
+
+        async def _push_driver_offer():
+            try:
+                if not supabase:
+                    return
+                # Supabase client sync çalışabildiği için event-loop'u bloke etmemek adına thread'e al.
+                def _fetch_user_push_token():
+                    return (
+                        supabase.table("users")
+                        .select("push_token")
+                        .eq("id", resolved_driver_id)
+                        .limit(1)
+                        .execute()
+                    )
+
+                ures = await asyncio.to_thread(_fetch_user_push_token)
+                token = (ures.data or [None])[0].get("push_token") if ures.data else None
+                if not token:
+                    logger.warning(
+                        f"Push failed: no push_token driver={resolved_driver_id[:13]} tag={offer_tag_id}"
+                    )
+                    return
+
+                ok = await send_expo_push(
+                    token=token,
+                    title="Yeni Yolculuk",
+                    body="Yakınınızda yeni bir yolculuk var",
+                )
+                if ok:
+                    logger.info(
+                        f"Push sent to driver={resolved_driver_id[:13]} tag={offer_tag_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"Push failed driver={resolved_driver_id[:13]} tag={offer_tag_id}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Push failed driver={resolved_driver_id[:13]} tag={offer_tag_id}: {e}"
+                )
+
+        try:
+            asyncio.create_task(_push_driver_offer())
+        except Exception as e:
+            logger.warning(f"Push create_task failed: {e}")
     except Exception as e:
         logger.error(f"new_passenger_offer emit hatası: {e}")
 
@@ -10284,13 +10334,15 @@ async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: di
         messages_payload = [message]
 
         logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId={channel_id}, token={token[:50]}...")
+        logger.info(f"🚀 Sending Expo push to {token}")
 
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        if EXPO_ACCESS_TOKEN:
-            headers["Authorization"] = f"Bearer {EXPO_ACCESS_TOKEN}"
+        expo_access_token = os.getenv("EXPO_ACCESS_TOKEN", "")
+        if expo_access_token:
+            headers["Authorization"] = f"Bearer {expo_access_token}"
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -10300,6 +10352,7 @@ async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: di
             )
 
             logger.info(f"🔔 Expo API yanıtı: status={response.status_code}")
+            logger.info(f"📨 Expo response: {response.status_code} {response.text[:1000]}")
 
             if response.status_code != 200:
                 return False, {"http_status": response.status_code, "body": response.text[:500]}
@@ -10325,6 +10378,35 @@ async def send_expo_notification(token: str, title: str, body: str, data: dict =
     """Expo Push API ile bildirim gönder"""
     success, _ = await _send_expo_and_get_receipt(token, title, body, data)
     return success
+
+
+async def send_expo_push(token: str, title: str, body: str) -> bool:
+    """
+    Basit helper: token -> Expo Push API'ye gönder.
+    Sadece push gönderimi ekler; dispatch/vehicle filtrelerine dokunmaz.
+    """
+    try:
+        if not token:
+            logger.warning("send_expo_push: token None/boş")
+            return False
+
+        # 5 saniyelik hard timeout: expo tarafı takılırsa event-loop bloke olmasın.
+        ok, _ = await asyncio.wait_for(
+            _send_expo_and_get_receipt(
+                token=token,
+                title=title,
+                body=body,
+                data={"type": "new_offer"},
+            ),
+            timeout=5.0,
+        )
+        return ok
+    except asyncio.TimeoutError:
+        logger.warning("send_expo_push: timeout (5s)")
+        return False
+    except Exception as e:
+        logger.warning(f"send_expo_push failed: {e}")
+        return False
 
 async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):
     """Toplu push bildirim gönder - users.push_token kaynağını kullanır."""
@@ -11720,6 +11802,61 @@ async def admin_toggle_promotion(admin_phone: str, promo_id: str, is_active: boo
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== ADMIN - PUSH NOTIFICATION ====================
+class AdminTestPushRequest(BaseModel):
+    user_id: str
+    title: str
+    body: str
+
+
+@api_router.post("/admin/test-push")
+async def admin_test_push(payload: AdminTestPushRequest):
+    """
+    Tek kullanıcıya test push gönderir.
+    Body:
+    {
+      "user_id": "...",
+      "title": "Test",
+      "body": "Test message"
+    }
+    """
+    try:
+        user_result = (
+            supabase
+            .table("users")
+            .select("id, name, push_token")
+            .eq("id", payload.user_id)
+            .limit(1)
+            .execute()
+        )
+        user = (user_result.data or [None])[0]
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+
+        token = (user.get("push_token") or "").strip()
+        if not token:
+            raise HTTPException(status_code=400, detail="Kullanıcıda push_token yok")
+
+        success, expo_receipt = await _send_expo_and_get_receipt(
+            token=token,
+            title=payload.title,
+            body=payload.body,
+            data={"type": "admin_push_test"},
+        )
+
+        return {
+            "success": success,
+            "user_id": user.get("id"),
+            "user_name": user.get("name"),
+            "push_token_preview": token[:30] + "...",
+            "expo_response": expo_receipt,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"admin test push error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.post("/admin/push/send")
 async def admin_send_push_notification(admin_phone: str, title: str, message: str, target: str = "all", user_ids: str = None):
     """Admin - Push bildirim gönder (all, drivers, passengers, specific)"""
