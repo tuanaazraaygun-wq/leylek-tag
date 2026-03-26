@@ -17,8 +17,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE = 'https://api.leylektag.com/api';
+import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
 
 // Error Boundary Class Component
 class ErrorBoundary extends Component {
@@ -76,6 +75,7 @@ function AdminContent() {
     trips: [],
     search: '',
     refreshing: false,
+    apiWarnings: '',
   });
 
   useEffect(() => {
@@ -84,7 +84,8 @@ function AdminContent() {
 
   const init = async () => {
     try {
-      const userData = await AsyncStorage.getItem('leylek_user');
+      // Uygulama genelinde ana oturum anahtarı `user`; eski kurulumlar için `leylek_user` fallback.
+      const userData = (await AsyncStorage.getItem('user')) || (await AsyncStorage.getItem('leylek_user'));
       
       if (!userData) {
         setState(s => ({ ...s, loading: false, error: 'Giriş yapmalısınız' }));
@@ -99,9 +100,9 @@ function AdminContent() {
         return;
       }
       
-      const userPhone = String(user.phone || '').replace(/\D/g, '');
+      const userPhone = normalizeTrPhone10(String(user.phone || ''));
       
-      const checkRes = await fetch(`${API_BASE}/admin/check?phone=${userPhone}`);
+      const checkRes = await fetch(`${ADMIN_API_BASE}/admin/check?phone=${encodeURIComponent(userPhone)}`);
       const checkData = await checkRes.json();
       
       if (checkData.is_admin !== true) {
@@ -118,34 +119,59 @@ function AdminContent() {
   };
 
   const loadData = async (adminPhone) => {
+    const errs = [];
     try {
-      // Dashboard
+      const ap = normalizeTrPhone10(adminPhone);
+      if (!ap || ap.length < 10) {
+        setState(s => ({
+          ...s,
+          loading: false,
+          refreshing: false,
+          error: 'Geçerli telefon bulunamadı',
+        }));
+        return;
+      }
+
+      const [dashRes, usersRes, tripsRes] = await Promise.all([
+        fetch(`${ADMIN_API_BASE}/admin/dashboard/full?admin_phone=${encodeURIComponent(ap)}`),
+        fetch(`${ADMIN_API_BASE}/admin/users/full?admin_phone=${encodeURIComponent(ap)}&page=1&limit=50`),
+        fetch(`${ADMIN_API_BASE}/admin/trips?admin_phone=${encodeURIComponent(ap)}&page=1&limit=50`),
+      ]);
+
       let stats = null;
-      try {
-        const dashRes = await fetch(`${API_BASE}/admin/dashboard/full?admin_phone=${adminPhone}`);
-        const dashData = await dashRes.json();
-        if (dashData.success) stats = dashData.stats;
-      } catch (e) {}
-      
-      // Users
+      const dashData = await dashRes.json().catch(() => ({}));
+      if (!dashRes.ok) errs.push(`Panel ${dashRes.status}`);
+      else if (!dashData.success) errs.push('Panel verisi alınamadı');
+      else stats = dashData.stats;
+
       let users = [];
-      try {
-        const usersRes = await fetch(`${API_BASE}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=50`);
-        const usersData = await usersRes.json();
-        if (usersData.success && Array.isArray(usersData.users)) users = usersData.users;
-      } catch (e) {}
-      
-      // Trips
+      const usersData = await usersRes.json().catch(() => ({}));
+      if (!usersRes.ok) errs.push(`Kullanıcılar ${usersRes.status}`);
+      else if (!usersData.success) errs.push('Kullanıcı listesi yok');
+      else if (Array.isArray(usersData.users)) users = usersData.users;
+
       let trips = [];
-      try {
-        const tripsRes = await fetch(`${API_BASE}/admin/trips?admin_phone=${adminPhone}&page=1&limit=50`);
-        const tripsData = await tripsRes.json();
-        if (tripsData.success && Array.isArray(tripsData.trips)) trips = tripsData.trips;
-      } catch (e) {}
-      
-      setState(s => ({ ...s, loading: false, refreshing: false, stats, users, trips }));
+      const tripsData = await tripsRes.json().catch(() => ({}));
+      if (!tripsRes.ok) errs.push(`Yolculuklar ${tripsRes.status}`);
+      else if (!tripsData.success) errs.push('Yolculuk listesi yok');
+      else if (Array.isArray(tripsData.trips)) trips = tripsData.trips;
+
+      setState(s => ({
+        ...s,
+        loading: false,
+        refreshing: false,
+        stats,
+        users,
+        trips,
+        apiWarnings: errs.length ? errs.join(' · ') : '',
+      }));
     } catch (err) {
-      setState(s => ({ ...s, loading: false, refreshing: false }));
+      setState(s => ({
+        ...s,
+        loading: false,
+        refreshing: false,
+        apiWarnings: String(err?.message || err),
+      }));
     }
   };
 
@@ -224,6 +250,12 @@ function AdminContent() {
         </TouchableOpacity>
       </View>
 
+      {state.apiWarnings ? (
+        <View style={styles.warnBanner}>
+          <Text style={styles.warnText}>{state.apiWarnings}</Text>
+        </View>
+      ) : null}
+
       {/* Tabs */}
       <View style={styles.tabs}>
         {['dashboard', 'users', 'trips'].map(t => (
@@ -259,12 +291,32 @@ function AdminContent() {
             </View>
             <View style={styles.row}>
               <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.users?.passengers ?? 0}</Text>
+                <Text style={styles.statLabel}>Yolcu</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.trips?.completed_week ?? 0}</Text>
+                <Text style={styles.statLabel}>Yolculuk (7 gün)</Text>
+              </View>
+            </View>
+            <View style={styles.row}>
+              <View style={styles.statCard}>
                 <Text style={styles.statNum}>{state.stats?.users?.online_drivers || 0}</Text>
                 <Text style={styles.statLabel}>Online</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statNum}>{state.stats?.trips?.completed_today || 0}</Text>
-                <Text style={styles.statLabel}>Bugün</Text>
+                <Text style={styles.statLabel}>Bugün tamamlanan</Text>
+              </View>
+            </View>
+            <View style={styles.row}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.trips?.active ?? 0}</Text>
+                <Text style={styles.statLabel}>Aktif</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{state.stats?.trips?.waiting ?? 0}</Text>
+                <Text style={styles.statLabel}>Bekleyen</Text>
               </View>
             </View>
           </View>
@@ -293,11 +345,12 @@ function AdminContent() {
         {/* Trips */}
         {state.tab === 'trips' && (
           <View style={styles.section}>
-            <Text style={styles.countText}>{state.trips.length} yolculuk</Text>
             {state.trips.slice(0, 30).map((t, i) => (
               <View key={t.id || i} style={styles.card}>
                 <Text style={styles.cardTitle}>{t.pickup_location || 'Bilinmiyor'}</Text>
-                <Text style={styles.cardSub}>{t.final_price || t.offered_price || 0} TL</Text>
+                <Text style={styles.cardSub}>
+                  {(t.final_price || t.offered_price || 0) + ' TL · ' + String(t.status || '')}
+                </Text>
               </View>
             ))}
           </View>
@@ -463,5 +516,14 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: 50,
+  },
+  warnBanner: {
+    backgroundColor: '#450A0A',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  warnText: {
+    color: '#FCA5A5',
+    fontSize: 12,
   },
 });

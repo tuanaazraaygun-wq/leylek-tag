@@ -38,6 +38,38 @@ load_dotenv(ROOT_DIR / '.env')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
+def _check_netgsm_env_on_startup() -> None:
+    """
+    NetGSM SMS gönderimi için gerekli env değişkenlerini kontrol eder.
+    Değerleri loglamaz (şifre sızmasın); sadece eksik anahtarları uyarır.
+    """
+    # Not: Geriye dönük uyumluluk için USERCODE yerine NETGSM_USERNAME,
+    # MSGHEADER yerine NETGSM_MNGHEADER da destekleniyor.
+    usercode = (os.getenv("NETGSM_USERCODE") or os.getenv("NETGSM_USERNAME") or "").strip()
+    password = (os.getenv("NETGSM_PASSWORD") or "").strip()
+    msgheader = (os.getenv("NETGSM_MSGHEADER") or os.getenv("NETGSM_MNGHEADER") or "").strip()
+    filter_raw = os.getenv("NETGSM_FILTER")
+
+    missing: list[str] = []
+    if not usercode:
+        missing.append("NETGSM_USERCODE")
+    if not password:
+        missing.append("NETGSM_PASSWORD")
+    if not msgheader:
+        missing.append("NETGSM_MSGHEADER")
+    if filter_raw is None:
+        missing.append("NETGSM_FILTER")
+
+    if missing:
+        # NETGSM_FILTER koddaki varsayılan ile çalışabilir (default "0"); yine de görünür olsun.
+        logger.warning(
+            "⚠️ NetGSM env eksik/boş: %s. SMS gönderimi 'credentials missing' hatası verebilir. "
+            "Sunucuda .env / environment variables kontrol edin.",
+            ", ".join(missing),
+        )
+
+_check_netgsm_env_on_startup()
+
 # ==================== SOCKET.IO SERVER ====================
 sio = socketio.AsyncServer(
     async_mode="asgi",
@@ -79,6 +111,7 @@ async def register(sid, data):
     """Kullanıcı kaydı - user_id ile socket_id eşleştir VE ROOM'A JOIN ET"""
     user_id = data.get('user_id')
     if user_id:
+        role = data.get('role')
         connected_users[user_id] = sid
         # Aynı kullanıcı normalized id ile de bulunabilsin (emit'te kullanılıyor)
         connected_users[str(user_id).strip().lower()] = sid
@@ -89,6 +122,14 @@ async def register(sid, data):
         
         logger.info(f"📱 Kullanıcı kayıtlı: {user_id} -> {sid} (room: {room_name})")
         await sio.emit('registered', {'success': True, 'user_id': user_id, 'room': room_name}, room=sid)
+
+        # 🆕 Kritik: Yeni sürücü bağlandıktan sonra, daha önce oluşmuş waiting teklifleri de yeniden göster
+        # (client listesi socket ile dolduğu için sadece "yeni" event kaçırılırsa bu bug olur)
+        if role == 'driver':
+            try:
+                asyncio.create_task(emit_existing_waiting_offers_to_driver(user_id))
+            except Exception:
+                pass
 
 @sio.event
 async def call_user(sid, data):
@@ -817,6 +858,91 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Non
             )
     except Exception as e:
         logger.error(f"new_passenger_offer emit hatası: {e}")
+
+
+async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
+    """
+    Bekleyen (status='waiting') yolcu tekliflerini, bu an sisteme/ekrana giren sürücüye yeniden gönder.
+    Amaç: Sürücü teklif oluştuktan sonra girerse eski teklifleri de görsün.
+    """
+    try:
+        if not driver_id:
+            return
+        if not supabase:
+            return
+
+        cfg = await get_dispatch_config()
+        matching_radius_km = float(cfg.get("matching_radius_km", DISPATCH_CONFIG.get("matching_radius_km", 20)))
+        timeout_sec = int(cfg.get("driver_offer_timeout", DISPATCH_CONFIG.get("driver_offer_timeout", 10)))
+
+        resolved_driver_id = await resolve_user_id(driver_id)
+        drv_res = (
+            supabase.table("users")
+            .select("id, latitude, longitude, driver_details")
+            .eq("id", resolved_driver_id)
+            .limit(1)
+            .execute()
+        )
+        if not drv_res.data:
+            return
+        drv = drv_res.data[0]
+        driver_lat = drv.get("latitude")
+        driver_lng = drv.get("longitude")
+        if driver_lat is None or driver_lng is None:
+            return
+
+        driver_eff = _effective_driver_vehicle_kind(drv) or "car"
+
+        waiting_tags = (
+            supabase.table("tags")
+            .select(
+                "id, passenger_id, passenger_name, pickup_lat, pickup_lng, pickup_location, "
+                "dropoff_lat, dropoff_lng, dropoff_location, final_price, distance_km, estimated_minutes, "
+                "passenger_preferred_vehicle"
+            )
+            .eq("status", "waiting")
+            .execute()
+        )
+        if not waiting_tags.data:
+            return
+
+        for tag in waiting_tags.data:
+            tag_lat = tag.get("pickup_lat")
+            tag_lng = tag.get("pickup_lng")
+            if tag_lat is None or tag_lng is None:
+                continue
+
+            passenger_pref = _canonical_vehicle_kind(tag.get("passenger_preferred_vehicle")) or "car"
+            if not _driver_matches_passenger_vehicle_pref(driver_eff, passenger_pref):
+                continue
+
+            # Sürücü-kalkış mesafesi (pickup'a)
+            dist_to_pickup_km = haversine_distance(float(driver_lat), float(driver_lng), float(tag_lat), float(tag_lng))
+            if dist_to_pickup_km > matching_radius_km:
+                continue
+
+            offer_data = {
+                "tag_id": str(tag.get("id")).strip(),
+                "passenger_id": tag.get("passenger_id"),
+                "passenger_name": tag.get("passenger_name") or "Yolcu",
+                "pickup_location": tag.get("pickup_location"),
+                "pickup_lat": tag.get("pickup_lat"),
+                "pickup_lng": tag.get("pickup_lng"),
+                "dropoff_location": tag.get("dropoff_location"),
+                "dropoff_lat": tag.get("dropoff_lat"),
+                "dropoff_lng": tag.get("dropoff_lng"),
+                "offered_price": tag.get("final_price") or tag.get("offered_price") or 0,
+                "distance_km": tag.get("distance_km") or 0,
+                "estimated_minutes": tag.get("estimated_minutes") or 0,
+                "dispatch_timeout": timeout_sec,
+                "is_dispatch": True,
+                "passenger_vehicle_kind": passenger_pref,
+                "distance_to_pickup": round(dist_to_pickup_km, 2),
+            }
+
+            await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+    except Exception as e:
+        logger.warning(f"emit_existing_waiting_offers_to_driver error: {e}")
 
 
 async def emit_passenger_offer_revoked(driver_id: str, tag_id: str):
@@ -1869,6 +1995,23 @@ def _phone_10_for_admin_check(canonical_905: str) -> str:
         return canonical_905[2:]
     return canonical_905
 
+def _normalize_admin_phone_10(phone: str) -> str:
+    """Admin kontrolleri için telefonu 10 hane TR formatına normalize et."""
+    if not phone:
+        return ""
+    digits = "".join(c for c in str(phone) if c.isdigit())
+    if digits.startswith("90") and len(digits) >= 12:
+        digits = digits[2:]
+    elif digits.startswith("0") and len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) > 10:
+        digits = digits[-10:]
+    return digits
+
+def _is_admin_phone(phone: str) -> bool:
+    normalized = _normalize_admin_phone_10(phone)
+    return normalized in ADMIN_PHONE_NUMBERS
+
 
 def normalize_phone_e164(phone: str, default_country_code: str = "90") -> str:
     """
@@ -1997,8 +2140,15 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         if filter_param.lower() in ("-", "none", "skip"):
             filter_param = ""
         
-        if not usercode or not password:
-            logger.error("❌ NETGSM credentials eksik!")
+        if not usercode or not password or not msgheader:
+            missing = []
+            if not usercode:
+                missing.append("NETGSM_USERCODE")
+            if not password:
+                missing.append("NETGSM_PASSWORD")
+            if not msgheader:
+                missing.append("NETGSM_MSGHEADER")
+            logger.error(f"❌ NETGSM credentials eksik! Missing: {', '.join(missing)}")
             result["error"] = "NETGSM credentials missing"
             return result
         
@@ -2528,11 +2678,7 @@ async def check_admin(phone: str = None):
         if not phone:
             return {"success": False, "is_admin": False}
         
-        # TR numara temizle
-        cleaned_phone = phone.replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
-        if cleaned_phone.startswith("0"):
-            cleaned_phone = cleaned_phone[1:]
-        
+        cleaned_phone = _normalize_admin_phone_10(phone)
         is_admin = cleaned_phone in ADMIN_PHONE_NUMBERS
         logger.info(f"🔍 Admin check: {cleaned_phone} -> {is_admin}")
         
@@ -3002,7 +3148,7 @@ async def get_driver_kyc_status(user_id: str):
 async def get_pending_kyc_requests(admin_phone: str):
     """Admin: Bekleyen KYC başvurularını getir"""
     # Admin kontrolü
-    if admin_phone.replace("+90", "").replace(" ", "") not in ["5326497412"]:
+    if not _is_admin_phone(admin_phone):
         raise HTTPException(status_code=403, detail="Yetkisiz erişim")
     
     try:
@@ -3491,6 +3637,14 @@ async def set_ride_vehicle_kind(user_id: str, role: str, vehicle_kind: str):
             "updated_at": datetime.utcnow().isoformat(),
         }).eq("id", resolved_id).execute()
         logger.info(f"✅ ride vehicle kind: user={resolved_id} role={role} kind={vehicle_kind}")
+
+        # 🆕 Kritik: Sürücü araç tipini seçtikten sonra, mevcut waiting tekliflerini de tekrar göster.
+        if role == "driver":
+            try:
+                asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_id))
+            except Exception:
+                pass
+
         return {"success": True, "driver_details": dd}
     except HTTPException:
         raise
@@ -5002,13 +5156,59 @@ async def register_push_token_endpoint(
         if not ExpoPushService.is_valid_token(_push_token):
             return {"success": False, "detail": "Sadece Expo push token desteklenir"}
         
-        # Kullanıcı var mı kontrol et
-        user_check = supabase.table("users").select("id, name").eq("id", _user_id).execute()
+        # Kullanıcıyı esnek şekilde bul:
+        # 1) UUID (case-insensitive) / 2) legacy mongo_id / 3) telefon formatları
+        resolved_user_id = None
+        user_name = "Unknown"
+        user_row = None
+        raw_uid = str(_user_id).strip()
+
+        # 1) ID ile doğrudan
+        user_check = supabase.table("users").select("id, name, phone").eq("id", raw_uid).limit(1).execute()
+        if not user_check.data and "-" in raw_uid:
+            user_check = supabase.table("users").select("id, name, phone").eq("id", raw_uid.lower()).limit(1).execute()
+
+        # 2) legacy mongo_id -> UUID
         if not user_check.data:
-            logger.warning(f"❌ Kullanıcı bulunamadı: {_user_id}")
+            try:
+                rid = await resolve_user_id(raw_uid)
+                if rid and rid != raw_uid:
+                    user_check = supabase.table("users").select("id, name, phone").eq("id", str(rid).strip().lower()).limit(1).execute()
+            except Exception as rid_err:
+                logger.warning(f"⚠️ Push token resolve_user_id uyarısı: {rid_err}")
+
+        # 3) Telefon fallback (id yerine telefon gönderildiyse)
+        if not user_check.data:
+            try:
+                phone_e164 = normalize_phone_e164(raw_uid)
+                if phone_e164:
+                    digits_only = "".join(c for c in phone_e164 if c.isdigit())
+                    ten_digit = digits_only[-10:] if len(digits_only) >= 10 else digits_only
+                    candidates = [
+                        phone_e164,                                  # +905...
+                        digits_only,                                 # 905...
+                        ten_digit,                                   # 5...
+                        ("0" + ten_digit) if len(ten_digit) == 10 else None,  # 05...
+                    ]
+                    seen = set()
+                    for candidate in candidates:
+                        if not candidate or candidate in seen:
+                            continue
+                        seen.add(candidate)
+                        user_check = supabase.table("users").select("id, name, phone").eq("phone", candidate).limit(1).execute()
+                        if user_check.data:
+                            break
+            except Exception as phone_err:
+                logger.warning(f"⚠️ Push token phone fallback uyarısı: {phone_err}")
+
+        if user_check.data:
+            user_row = user_check.data[0]
+            resolved_user_id = str(user_row.get("id") or "").strip().lower()
+            user_name = user_row.get("name", "Unknown")
+
+        if not resolved_user_id:
+            logger.warning(f"❌ Kullanıcı bulunamadı (push token register): {_user_id}")
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
-        
-        user_name = user_check.data[0].get("name", "Unknown")
         
         # Users tablosuna kaydet (push_token_type kolonu yoksa sadece token kaydet)
         try:
@@ -5016,17 +5216,23 @@ async def register_push_token_endpoint(
                 "push_token": _push_token,
                 "push_token_type": "expo",
                 "push_token_updated_at": datetime.utcnow().isoformat()
-            }).eq("id", _user_id).execute()
+            }).eq("id", resolved_user_id).execute()
         except Exception as col_err:
             # push_token_type kolonu yoksa sadece token'ı kaydet
             logger.warning(f"⚠️ push_token_type kolonu yok, sadece token kaydediliyor: {col_err}")
             supabase.table("users").update({
                 "push_token": _push_token,
                 "push_token_updated_at": datetime.utcnow().isoformat()
-            }).eq("id", _user_id).execute()
+            }).eq("id", resolved_user_id).execute()
         
-        logger.info(f"✅ Push token kaydedildi: {user_name} ({_user_id}) - {_platform} - expo")
-        return {"success": True, "message": f"Token kaydedildi: {user_name}", "platform": _platform, "token_type": "expo"}
+        logger.info(f"✅ Push token kaydedildi: {user_name} ({resolved_user_id}) - {_platform} - expo")
+        return {
+            "success": True,
+            "message": f"Token kaydedildi: {user_name}",
+            "platform": _platform,
+            "token_type": "expo",
+            "resolved_user_id": resolved_user_id,
+        }
     except Exception as e:
         logger.error(f"❌ Push token kayıt hatası: {e}")
         import traceback
@@ -5695,7 +5901,8 @@ async def cleanup_invalid_tokens(admin_phone: str):
         for user in result.data or []:
             token = user.get("push_token", "")
             # Test token'ları veya geçersiz formatları temizle
-            if "TEST" in token or "test" in token or not token.startswith("ExponentPushToken["):
+            # Not: Expo iki format üretebilir: ExponentPushToken[...] ve ExpoPushToken[...]
+            if "TEST" in token or "test" in token or not ExpoPushService.is_valid_token(token):
                 supabase.table("users").update({"push_token": None}).eq("id", user["id"]).execute()
                 cleaned += 1
                 logger.info(f"🧹 Geçersiz token temizlendi: {user['name']} - {token[:30]}...")
@@ -8809,6 +9016,7 @@ class CalculatePriceRequest(BaseModel):
     dropoff_lng: float
     driver_lat: Optional[float] = None  # Sürücü konumu (opsiyonel)
     driver_lng: Optional[float] = None
+    passenger_vehicle_kind: Optional[str] = None  # car | motorcycle
 
 
 @api_router.post("/price/calculate")
@@ -8844,26 +9052,32 @@ async def calculate_price(request: CalculatePriceRequest):
         
         # Yoğun saat kontrolü
         peak = is_peak_hour()
-        
-        # 2. DİNAMİK FİYATLANDIRMA - Admin ayarlarını kullan
-        if peak:
-            min_price_per_km = PRICING_SETTINGS["min_price_per_km_peak"]
-            max_price_per_km = PRICING_SETTINGS["max_price_per_km_peak"]
+
+        # Yeni: Araç/Motor fiyat parametreleri
+        vk = _canonical_vehicle_kind(request.passenger_vehicle_kind) or "car"
+        if vk == "motorcycle":
+            base = 25
+            per_km = 12
+            minimum = 80
         else:
-            min_price_per_km = PRICING_SETTINGS["min_price_per_km_normal"]
-            max_price_per_km = PRICING_SETTINGS["max_price_per_km_normal"]
-        
-        # Yolculuk ücreti hesapla
-        trip_min_price = round(trip_distance_km * min_price_per_km)
-        trip_max_price = round(trip_distance_km * max_price_per_km)
-        
-        # 3. Minimum fiyat kuralı (Admin ayarlarından)
-        minimum = PRICING_SETTINGS["minimum_price"]
-        min_price = max(minimum, trip_min_price)
-        max_price = max(min_price + 20, trip_max_price)
-        
-        # Önerilen fiyat (ortası)
-        suggested_price = round((min_price + max_price) / 2)
+            base = 40
+            per_km = 20
+            minimum = 120
+
+        multiplier = 1.15 if peak else 1.0
+
+        price = base + (float(trip_distance_km) * per_km)
+        if price < minimum:
+            price = float(minimum)
+        price = price * multiplier
+
+        # Tam sayıya yuvarla (TL)
+        price_int = int(round(price))
+
+        # Range: +/- %10
+        min_price = int(round(price_int * 0.9))
+        max_price = int(round(price_int * 1.1))
+        suggested_price = price_int
         
         logger.info(f"💰 Fiyat hesaplama: Yolculuk {trip_distance_km:.1f}km, {estimated_minutes}dk, {min_price}-{max_price}TL (peak={peak})")
         
@@ -8877,8 +9091,11 @@ async def calculate_price(request: CalculatePriceRequest):
             "suggested_price": suggested_price,
             "is_peak_hour": peak,
             "currency": "TL",
-            "price_per_km_range": f"{min_price_per_km}-{max_price_per_km} TL/km",
-            "driver_pickup_price_per_km": PRICING_SETTINGS["driver_pickup_per_km"]
+            "vehicle_kind": vk,
+            "base_price": base,
+            "per_km": per_km,
+            "minimum_price": minimum,
+            "multiplier": multiplier,
         }
     except Exception as e:
         logger.error(f"❌ Price calculation error: {e}")
@@ -9516,7 +9733,7 @@ async def get_driver_activation_status(user_id: str):
 async def admin_full_dashboard(admin_phone: str):
     """Admin - Tam dashboard istatistikleri"""
     try:
-        if admin_phone not in ADMIN_PHONE_NUMBERS:
+        if not _is_admin_phone(admin_phone):
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         now = datetime.utcnow()
@@ -9533,7 +9750,6 @@ async def admin_full_dashboard(admin_phone: str):
         
         drivers = []
         online_drivers = 0
-        new_users_today = 0
         push_token_count = 0
         
         for u in users_result.data or []:
@@ -9549,10 +9765,18 @@ async def admin_full_dashboard(admin_phone: str):
                     active_until = u.get("driver_active_until")
                     if DRIVER_UNLIMITED_FREE_PERIOD or (active_until and active_until > now_iso):
                         online_drivers += 1
-            
-            # Bugün kayıt olan
-            if u.get("created_at", "") >= today_start:
-                new_users_today += 1
+
+        new_users_today = 0
+        try:
+            nur = (
+                supabase.table("users")
+                .select("id", count="exact")
+                .gte("created_at", today_start)
+                .execute()
+            )
+            new_users_today = nur.count or 0
+        except Exception as _nud:
+            logger.warning(f"new_users_today count: {_nud}")
         
         # Trip istatistikleri
         completed_today = supabase.table("tags").select("id", count="exact").eq("status", "completed").gte("completed_at", today_start).execute()
@@ -9611,7 +9835,7 @@ async def admin_full_dashboard(admin_phone: str):
 async def admin_get_users_full(admin_phone: str, page: int = 1, limit: int = 20, search: str = None, filter_type: str = None):
     """Admin - Detaylı kullanıcı listesi"""
     try:
-        if admin_phone not in ADMIN_PHONE_NUMBERS:
+        if not _is_admin_phone(admin_phone):
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         offset = (page - 1) * limit
@@ -9663,7 +9887,7 @@ async def admin_get_users_full(admin_phone: str, page: int = 1, limit: int = 20,
 async def admin_get_trips(admin_phone: str, page: int = 1, limit: int = 20, status: str = None):
     """Admin - Trip listesi"""
     try:
-        if admin_phone not in ADMIN_PHONE_NUMBERS:
+        if not _is_admin_phone(admin_phone):
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         offset = (page - 1) * limit
@@ -9686,6 +9910,47 @@ async def admin_get_trips(admin_phone: str, page: int = 1, limit: int = 20, stat
         raise
     except Exception as e:
         logger.error(f"Admin get trips error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/stats")
+async def admin_stats_period(admin_phone: str, days: int = 7):
+    """Son X günlük özet (tamamlanan / iptal / yeni kullanıcı / ciro)."""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        start_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        completed = (
+            supabase.table("tags")
+            .select("completed_at, final_price")
+            .eq("status", "completed")
+            .gte("completed_at", start_date)
+            .execute()
+        )
+        cancelled = (
+            supabase.table("tags")
+            .select("cancelled_at")
+            .eq("status", "cancelled")
+            .gte("cancelled_at", start_date)
+            .execute()
+        )
+        new_users = (
+            supabase.table("users")
+            .select("created_at", count="exact")
+            .gte("created_at", start_date)
+            .execute()
+        )
+        return {
+            "success": True,
+            "period_days": days,
+            "completed_trips": len(completed.data) if completed.data else 0,
+            "cancelled_trips": len(cancelled.data) if cancelled.data else 0,
+            "new_users": new_users.count if new_users.count else 0,
+            "total_revenue": sum([t.get("final_price", 0) or 0 for t in (completed.data or [])]),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin stats error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/admin/login-logs")
@@ -9713,7 +9978,7 @@ async def admin_get_login_logs(admin_phone: str, page: int = 1, limit: int = 50)
         return {"success": True, "logs": [], "total": 0, "page": page, "limit": limit}
 
 @api_router.post("/admin/user/ban")
-async def admin_ban_user(admin_phone: str, user_id: str, is_banned: bool):
+async def admin_ban_user(admin_phone: str, user_id: str, is_banned: bool = True):
     """Admin - Kullanıcı banla/ban kaldır"""
     try:
         if admin_phone not in ADMIN_PHONE_NUMBERS:
@@ -10555,299 +10820,6 @@ async def delete_user_account(request: DeleteAccountRequest):
         logger.error(f"❌ Delete account error: {e}")
         return {"success": False, "error": str(e)}
 
-# ==================== ADMIN PANELİ ====================
-# Admin telefon numarası
-ADMIN_PHONES = ["5326497412"]
-
-# Dinamik fiyatlandırma ayarları (bellekte, restart olunca sıfırlanır)
-# Kalıcı olması için DB'ye taşınabilir
-PRICING_SETTINGS = {
-    "min_price_per_km_normal": 20,
-    "max_price_per_km_normal": 30,
-    "min_price_per_km_peak": 25,
-    "max_price_per_km_peak": 35,
-    "minimum_price": 100,
-    "driver_pickup_per_km": 10,
-}
-
-def is_admin(phone: str) -> bool:
-    """Telefon numarasının admin olup olmadığını kontrol et"""
-    if not phone:
-        return False
-    # Numarayı temizle
-    clean_phone = phone.replace("+90", "").replace("+", "").replace(" ", "").strip()
-    if clean_phone.startswith("90"):
-        clean_phone = clean_phone[2:]
-    return clean_phone in ADMIN_PHONES
-
-@api_router.get("/admin/check")
-async def check_admin(phone: str):
-    """Kullanıcının admin olup olmadığını kontrol et"""
-    return {"is_admin": is_admin(phone)}
-
-@api_router.get("/admin/dashboard")
-async def admin_dashboard(phone: str):
-    """Admin dashboard - tüm veriler"""
-    if not is_admin(phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        # 1. Aktif kullanıcılar (son 24 saat giriş yapanlar)
-        yesterday = (datetime.utcnow() - timedelta(days=1)).isoformat()
-        users_result = supabase.table("users").select("id, name, phone, role, rating, is_verified, created_at, last_login").gte("last_login", yesterday).execute()
-        active_users = users_result.data if users_result.data else []
-        
-        # 2. Tüm kullanıcı sayısı
-        all_users_result = supabase.table("users").select("id", count="exact").execute()
-        total_users = all_users_result.count if all_users_result.count else 0
-        
-        # 3. Aktif TAG'ler (waiting, matched, in_progress)
-        tags_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone)").in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(50).execute()
-        active_tags = tags_result.data if tags_result.data else []
-        
-        # 4. Bugünkü tamamlanan yolculuklar
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        completed_result = supabase.table("tags").select("*", count="exact").eq("status", "completed").gte("completed_at", today_start).execute()
-        today_completed = completed_result.count if completed_result.count else 0
-        
-        # 5. Bugünkü toplam ciro
-        completed_with_price = supabase.table("tags").select("final_price").eq("status", "completed").gte("completed_at", today_start).execute()
-        today_revenue = sum([t.get("final_price", 0) or 0 for t in (completed_with_price.data or [])])
-        
-        # 6. Son 10 eşleşme
-        recent_matches = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone)").eq("status", "matched").order("matched_at", desc=True).limit(10).execute()
-        
-        # 7. Son 10 iptal
-        recent_cancels = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone)").eq("status", "cancelled").order("cancelled_at", desc=True).limit(10).execute()
-        
-        return {
-            "success": True,
-            "stats": {
-                "total_users": total_users,
-                "active_users_24h": len(active_users),
-                "active_tags": len(active_tags),
-                "today_completed": today_completed,
-                "today_revenue": today_revenue,
-            },
-            "active_users": active_users,
-            "active_tags": active_tags,
-            "recent_matches": recent_matches.data if recent_matches.data else [],
-            "recent_cancels": recent_cancels.data if recent_cancels.data else [],
-            "pricing_settings": PRICING_SETTINGS,
-        }
-    except Exception as e:
-        logger.error(f"❌ Admin dashboard error: {e}")
-        return {"success": False, "error": str(e)}
-
-@api_router.get("/admin/pricing")
-async def get_pricing_settings(phone: str):
-    """Fiyatlandırma ayarlarını getir"""
-    if not is_admin(phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    return {"success": True, "settings": PRICING_SETTINGS}
-
-class UpdatePricingRequest(BaseModel):
-    phone: str
-    min_price_per_km_normal: int = None
-    max_price_per_km_normal: int = None
-    min_price_per_km_peak: int = None
-    max_price_per_km_peak: int = None
-    minimum_price: int = None
-    driver_pickup_per_km: int = None
-
-@api_router.post("/admin/pricing/update")
-async def update_pricing_settings(request: UpdatePricingRequest):
-    """Fiyatlandırma ayarlarını güncelle"""
-    if not is_admin(request.phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        if request.min_price_per_km_normal is not None:
-            PRICING_SETTINGS["min_price_per_km_normal"] = request.min_price_per_km_normal
-        if request.max_price_per_km_normal is not None:
-            PRICING_SETTINGS["max_price_per_km_normal"] = request.max_price_per_km_normal
-        if request.min_price_per_km_peak is not None:
-            PRICING_SETTINGS["min_price_per_km_peak"] = request.min_price_per_km_peak
-        if request.max_price_per_km_peak is not None:
-            PRICING_SETTINGS["max_price_per_km_peak"] = request.max_price_per_km_peak
-        if request.minimum_price is not None:
-            PRICING_SETTINGS["minimum_price"] = request.minimum_price
-        if request.driver_pickup_per_km is not None:
-            PRICING_SETTINGS["driver_pickup_per_km"] = request.driver_pickup_per_km
-        
-        logger.info(f"💰 Admin fiyat güncelleme: {PRICING_SETTINGS}")
-        return {"success": True, "settings": PRICING_SETTINGS}
-    except Exception as e:
-        logger.error(f"❌ Pricing update error: {e}")
-        return {"success": False, "error": str(e)}
-
-@api_router.get("/admin/users")
-async def admin_get_users(phone: str, page: int = 1, limit: int = 50):
-    """Tüm kullanıcıları listele"""
-    if not is_admin(phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        offset = (page - 1) * limit
-        result = supabase.table("users").select("*", count="exact").order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-        
-        return {
-            "success": True,
-            "users": result.data if result.data else [],
-            "total": result.count if result.count else 0,
-            "page": page,
-            "limit": limit
-        }
-    except Exception as e:
-        logger.error(f"❌ Admin users error: {e}")
-        return {"success": False, "error": str(e)}
-
-@api_router.get("/admin/tags")
-async def admin_get_tags(phone: str, status: str = None, page: int = 1, limit: int = 50):
-    """Tüm TAG'leri listele"""
-    if not is_admin(phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        offset = (page - 1) * limit
-        query = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone)", count="exact")
-        
-        if status:
-            query = query.eq("status", status)
-        
-        result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-        
-        return {
-            "success": True,
-            "tags": result.data if result.data else [],
-            "total": result.count if result.count else 0,
-            "page": page,
-            "limit": limit
-        }
-    except Exception as e:
-        logger.error(f"❌ Admin tags error: {e}")
-        return {"success": False, "error": str(e)}
-
-class AdminUserActionRequest(BaseModel):
-    phone: str  # Admin phone
-    user_id: str
-    action: str  # "ban", "unban", "set_rating", "delete"
-    value: float = None  # Rating için
-
-@api_router.post("/admin/user/action")
-async def admin_user_action(request: AdminUserActionRequest):
-    """Kullanıcı üzerinde admin işlemi"""
-    if not is_admin(request.phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        if request.action == "ban":
-            supabase.table("users").update({"is_banned": True}).eq("id", request.user_id).execute()
-            logger.warning(f"🚫 Admin: User {request.user_id} BANNED")
-            return {"success": True, "message": "Kullanıcı yasaklandı"}
-        
-        elif request.action == "unban":
-            supabase.table("users").update({"is_banned": False}).eq("id", request.user_id).execute()
-            logger.info(f"✅ Admin: User {request.user_id} UNBANNED")
-            return {"success": True, "message": "Kullanıcı yasağı kaldırıldı"}
-        
-        elif request.action == "set_rating":
-            if request.value is None:
-                raise HTTPException(status_code=400, detail="Rating değeri gerekli")
-            supabase.table("users").update({"rating": request.value}).eq("id", request.user_id).execute()
-            logger.info(f"⭐ Admin: User {request.user_id} rating -> {request.value}")
-            return {"success": True, "message": f"Puan {request.value} olarak ayarlandı"}
-        
-        elif request.action == "delete":
-            # Soft delete - sadece deaktive et
-            supabase.table("users").update({"is_active": False, "is_banned": True}).eq("id", request.user_id).execute()
-            logger.warning(f"🗑️ Admin: User {request.user_id} DELETED (soft)")
-            return {"success": True, "message": "Kullanıcı silindi"}
-        
-        else:
-            raise HTTPException(status_code=400, detail="Geçersiz işlem")
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Admin user action error: {e}")
-        return {"success": False, "error": str(e)}
-
-class AdminTagActionRequest(BaseModel):
-    phone: str  # Admin phone
-    tag_id: str
-    action: str  # "cancel", "complete", "delete"
-
-@api_router.post("/admin/tag/action")
-async def admin_tag_action(request: AdminTagActionRequest):
-    """TAG üzerinde admin işlemi"""
-    if not is_admin(request.phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        if request.action == "cancel":
-            supabase.table("tags").update({
-                "status": "cancelled",
-                "cancelled_at": datetime.utcnow().isoformat(),
-                "cancel_reason": "Admin tarafından iptal edildi"
-            }).eq("id", request.tag_id).execute()
-            logger.warning(f"🚫 Admin: Tag {request.tag_id} CANCELLED")
-            return {"success": True, "message": "Yolculuk iptal edildi"}
-        
-        elif request.action == "complete":
-            supabase.table("tags").update({
-                "status": "completed",
-                "completed_at": datetime.utcnow().isoformat()
-            }).eq("id", request.tag_id).execute()
-            logger.info(f"✅ Admin: Tag {request.tag_id} COMPLETED")
-            return {"success": True, "message": "Yolculuk tamamlandı olarak işaretlendi"}
-        
-        elif request.action == "delete":
-            supabase.table("tags").delete().eq("id", request.tag_id).execute()
-            logger.warning(f"🗑️ Admin: Tag {request.tag_id} DELETED")
-            return {"success": True, "message": "TAG silindi"}
-        
-        else:
-            raise HTTPException(status_code=400, detail="Geçersiz işlem")
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Admin tag action error: {e}")
-        return {"success": False, "error": str(e)}
-
-@api_router.get("/admin/stats")
-async def admin_stats(phone: str, days: int = 7):
-    """Son X günlük istatistikler"""
-    if not is_admin(phone):
-        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
-    
-    try:
-        start_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
-        
-        # Günlük tamamlanan yolculuklar
-        completed = supabase.table("tags").select("completed_at, final_price").eq("status", "completed").gte("completed_at", start_date).execute()
-        
-        # Günlük iptal edilen yolculuklar
-        cancelled = supabase.table("tags").select("cancelled_at").eq("status", "cancelled").gte("cancelled_at", start_date).execute()
-        
-        # Yeni kayıtlar
-        new_users = supabase.table("users").select("created_at", count="exact").gte("created_at", start_date).execute()
-        
-        return {
-            "success": True,
-            "period_days": days,
-            "completed_trips": len(completed.data) if completed.data else 0,
-            "cancelled_trips": len(cancelled.data) if cancelled.data else 0,
-            "new_users": new_users.count if new_users.count else 0,
-            "total_revenue": sum([t.get("final_price", 0) or 0 for t in (completed.data or [])]),
-        }
-    except Exception as e:
-        logger.error(f"❌ Admin stats error: {e}")
-        return {"success": False, "error": str(e)}
-
-# ==================== SÜRÜCÜ AÇILIŞ PAKETLERİ API ====================
 
 @api_router.get("/driver/packages")
 async def get_driver_packages():
