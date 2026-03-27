@@ -67,7 +67,7 @@ async def get_route_info(origin_lat: float, origin_lng: float, dest_lat: float, 
             "traffic_model": "best_guess"  # En iyi tahmin
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.get(url, params=params, timeout=10.0)
             data = response.json()
         
@@ -3636,7 +3636,7 @@ class ExpoPushService:
         failed_count = 0
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 for i in range(0, len(messages), 100):
                     batch = messages[i:i+100]
                     

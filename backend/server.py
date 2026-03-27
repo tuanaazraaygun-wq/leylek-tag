@@ -1611,7 +1611,16 @@ logger.info("✅ Dispatch Queue sistemi yapılandırıldı")
 MAX_DISTANCE_KM = 50
 ADMIN_PHONE_NUMBERS = ["5326497412", "5354169632"]  # Ana admin numaraları
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
-EXPO_ACCESS_TOKEN = os.getenv("EXPO_ACCESS_TOKEN", "")  # Expo Push API 403 önlemek için: Authorization Bearer
+
+
+def _expo_push_request_headers() -> dict:
+    """Expo Push API istekleri; EXPO_ACCESS_TOKEN set ise Bearer eklenir (Push Security açıksa gerekli)."""
+    h = {"Content-Type": "application/json", "Accept": "application/json"}
+    tok = (os.getenv("EXPO_ACCESS_TOKEN") or "").strip()
+    if tok:
+        h["Authorization"] = f"Bearer {tok}"
+    return h
+
 
 # Sahte/geçersiz numara kalıpları
 FAKE_NUMBER_PATTERNS = [
@@ -1821,7 +1830,7 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
         # Google başarısız olursa OSRM dene
         url = f"https://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
         
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
             response = await client.get(url)
             data = response.json()
             
@@ -5041,7 +5050,7 @@ async def force_end_trip(tag_id: str, user_id: str):
         # 🆕 Socket ile karşı tarafa bildir
         try:
             import httpx
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 await client.post(
                     "https://socket.leylektag.com/emit",
                     json={
@@ -5166,8 +5175,13 @@ class ExpoPushService:
         messages = [{"to": t, "sound": "default", "title": title, "body": body, "data": data or {}} for t in valid_tokens]
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(ExpoPushService.EXPO_PUSH_URL, json=messages, timeout=30)
+            async with httpx.AsyncClient(http2=False, timeout=30) as client:
+                response = await client.post(
+                    ExpoPushService.EXPO_PUSH_URL,
+                    json=messages,
+                    headers=_expo_push_request_headers(),
+                    timeout=30,
+                )
                 result = response.json()
                 
                 sent = sum(1 for t in result.get("data", []) if t.get("status") == "ok")
@@ -5716,11 +5730,9 @@ async def admin_push_test(admin_phone: str):
             "priority": "high",
             "channelId": "default",
         }
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        if EXPO_ACCESS_TOKEN:
-            headers["Authorization"] = f"Bearer {EXPO_ACCESS_TOKEN}"
+        headers = _expo_push_request_headers()
         logger.info(f"push_test: Expo'ya gönderiliyor – user_id={user.get('id')}, token={token[:30]}...")
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.post(
                 "https://exp.host/--/api/v2/push/send",
                 json=[message],
@@ -8265,7 +8277,7 @@ async def create_daily_room(request: dict):
             }
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.post(
                 f"{DAILY_API_URL}/rooms",
                 json=payload,
@@ -8372,7 +8384,7 @@ async def start_call(request: dict):
             }
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.post(
                 f"{DAILY_API_URL}/rooms",
                 json=payload,
@@ -8472,7 +8484,7 @@ async def end_call(request: dict):
                 "Content-Type": "application/json"
             }
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 try:
                     await client.delete(
                         f"{DAILY_API_URL}/rooms/{room_name}",
@@ -8509,7 +8521,7 @@ async def delete_daily_room(room_name: str):
             "Content-Type": "application/json"
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.delete(
                 f"{DAILY_API_URL}/rooms/{room_name}",
                 headers=headers,
@@ -8580,7 +8592,7 @@ async def end_daily_call(sid, data):
             "Authorization": f"Bearer {DAILY_API_KEY}",
             "Content-Type": "application/json"
         }
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             await client.delete(
                 f"{DAILY_API_URL}/rooms/{room_name}",
                 headers=headers,
@@ -9021,7 +9033,7 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
             "key": api_key
         }
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(http2=False, timeout=10.0) as client:
             response = await client.get(url, params=params)
             data = response.json()
         
@@ -10336,15 +10348,9 @@ async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: di
         logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId={channel_id}, token={token[:50]}...")
         logger.info(f"🚀 Sending Expo push to {token}")
 
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        expo_access_token = os.getenv("EXPO_ACCESS_TOKEN", "")
-        if expo_access_token:
-            headers["Authorization"] = f"Bearer {expo_access_token}"
+        headers = _expo_push_request_headers()
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.post(
                 "https://exp.host/--/api/v2/push/send",
                 json=messages_payload,
@@ -11938,7 +11944,7 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
             "key": GOOGLE_MAPS_API_KEY
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.get(url, params=params, timeout=10.0)
             data = response.json()
         

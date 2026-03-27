@@ -33,7 +33,7 @@ class TurkeyIPService:
             return True, "TR"
         
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
                 # İlk servis: ipapi.co
                 try:
                     response = await client.get(f"https://ipapi.co/{ip}/country/")

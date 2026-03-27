@@ -40,7 +40,7 @@ class PushNotificationService:
             if data:
                 payload["data"] = data
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 response = await client.post(
                     EXPO_PUSH_URL,
                     json=payload,
@@ -93,7 +93,7 @@ class PushNotificationService:
             ]
             
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(http2=False, timeout=30) as client:
                     response = await client.post(
                         EXPO_PUSH_URL,
                         json=messages,

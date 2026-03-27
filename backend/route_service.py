@@ -97,7 +97,7 @@ async def get_route_cached(
     try:
         url = f"https://router.project-osrm.org/route/v1/driving/{start_lng},{start_lat};{end_lng},{end_lat}?overview=full&geometries=polyline"
         
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
             response = await client.get(url)
             data = response.json()
         

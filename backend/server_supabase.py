@@ -99,7 +99,7 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
             "key": GOOGLE_MAPS_API_KEY
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
             response = await client.get(url, params=params, timeout=10)
             data = response.json()
             
@@ -814,7 +814,7 @@ class ExpoPushService:
         messages = [{"to": t, "sound": "default", "title": title, "body": body, "data": data or {}} for t in valid_tokens]
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 response = await client.post(ExpoPushService.EXPO_PUSH_URL, json=messages, timeout=30)
                 result = response.json()
                 
