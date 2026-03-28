@@ -4,60 +4,84 @@
  * Bu dosya, Expo Router'ın root layout dosyasıdır.
  * SocketProvider'ı uygulama kökünde sararak tüm ekranlarda
  * tek, kalıcı socket bağlantısı sağlar.
- * NotificationProvider bildirim sistemini yönetir.
- * 
+ * NotificationProvider bildirim dinleyicilerini yönetir.
+ * PushNotificationsProvider Expo token + kanalları kökte mount eder (route’tan bağımsız).
+ *
  * KRİTİK: Socket bağlantısı artık component lifecycle'dan BAĞIMSIZ.
- * Bildirim handler ve Android "default" kanalı uygulama açılışında oluşturulur.
+ * Global push: handler + Android default/offers kanalları (Expo Router’da App.tsx yok, kök burası).
  */
 
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
+import * as ExpoSplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { SocketProvider } from '../contexts/SocketContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { PushNotificationsProvider } from '../hooks/usePushNotifications';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-// Bildirimler önde/arkada görünsün, ses çalsın
+// Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
 export default function RootLayout() {
-  // Android: "default" bildirim kanalını uygulama açılışında oluştur (token kaydından önce)
+  // Native splash’i hemen kapat — aksi halde APK’da Leylek görseli üstte kalıp JS ekranı hiç görünmeyebilir
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      }).then(() => {
-        console.log('[PUSH] Android "default" notification channel created on app startup');
-      }).catch((err) => {
-        console.warn('[PUSH] Android default channel creation failed:', err);
-      });
-    }
+    void ExpoSplashScreen.hideAsync().catch(() => {});
+  }, []);
+
+  // Android: default + offers (MAX) — push token kaydından önce; usePushNotifications içinde tekrar yok
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Default',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+        });
+        await Notifications.setNotificationChannelAsync('offers', {
+          name: 'Offers',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+        });
+        if (!cancelled) {
+          console.log('[PUSH] Android channels: default, offers (MAX)');
+        }
+      } catch (err) {
+        if (!cancelled) console.warn('[PUSH] Android channel setup failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
     <SafeAreaProvider>
-      <NotificationProvider>
-        <SocketProvider>
-          <StatusBar style="dark" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              animation: 'fade',
-            }}
-          />
-        </SocketProvider>
-      </NotificationProvider>
+      <PushNotificationsProvider>
+        <NotificationProvider>
+          <SocketProvider>
+            <StatusBar style="dark" />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: 'fade',
+              }}
+            />
+          </SocketProvider>
+        </NotificationProvider>
+      </PushNotificationsProvider>
     </SafeAreaProvider>
   );
 }

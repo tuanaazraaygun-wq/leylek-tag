@@ -1,10 +1,17 @@
 /**
- * LeylekTag Push Notifications Hook
- * Tek bir Expo push akışı kullanır.
+ * LeylekTag Push Notifications
+ * Tek Expo push akışı; state `PushNotificationsProvider` ile kökte mount edilir (tüm route’lar).
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Platform } from 'react-native';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  createContext,
+  useContext,
+} from 'react';
+import { Platform, PermissionsAndroid } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
@@ -13,14 +20,7 @@ import { API_BASE_URL } from '../lib/backendConfig';
 /** Socket/REST ile aynı kök — APK’da extra boş kalsa bile EXPO_PUBLIC_BACKEND_URL devreye girer */
 const API_URL = API_BASE_URL;
 
-// Bildirim handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+/** Foreground/background sunumu: tek tanım `app/_layout.tsx` içinde (index yüklenmeden önce de geçerli olsun). */
 
 export interface PushNotificationHook {
   pushToken: string | null;
@@ -31,33 +31,40 @@ export interface PushNotificationHook {
   removePushToken: (userId: string) => Promise<void>;
 }
 
+const PushNotificationsContext = createContext<PushNotificationHook | null>(null);
+
+/** Kök layout’ta bir kez sarın; böylece `/` dışı açılışlarda da token alınır. */
+export function PushNotificationsProvider({ children }: { children: React.ReactNode }) {
+  const value = usePushNotificationsState();
+  return React.createElement(
+    PushNotificationsContext.Provider,
+    { value },
+    children
+  );
+}
+
+/** Provider dışında kullanılırsa hata verir (yanlışlıkla çift mount önlenir). */
 export function usePushNotifications(): PushNotificationHook {
+  const ctx = useContext(PushNotificationsContext);
+  if (!ctx) {
+    throw new Error(
+      'usePushNotifications: PushNotificationsProvider eksik — app/_layout.tsx içine ekleyin.'
+    );
+  }
+  return ctx;
+}
+
+function usePushNotificationsState(): PushNotificationHook {
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [tokenType, setTokenType] = useState<'expo' | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
   
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<Notifications.Subscription | undefined>(undefined);
+  const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
 
-  // Android bildirim kanalları
+  // Android: default + offers app/_layout.tsx içinde oluşturulur (duplicate yok)
   const setupNotificationChannels = async () => {
     if (Platform.OS !== 'android') return;
-
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'Genel Bildirimler',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#3FA9F5',
-      sound: 'default',
-    });
-
-    await Notifications.setNotificationChannelAsync('offers', {
-      name: 'Yolculuk Teklifleri',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 500, 200, 500],
-      lightColor: '#00FF00',
-      sound: 'default',
-    });
 
     await Notifications.setNotificationChannelAsync('match', {
       name: 'Eslesme Bildirimleri',
@@ -78,14 +85,14 @@ export function usePushNotifications(): PushNotificationHook {
 
     await Notifications.setNotificationChannelAsync('admin', {
       name: 'Duyurular',
-      importance: Notifications.AndroidImportance.HIGH,
+      importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 150, 250],
       lightColor: '#3FA9F5',
       sound: 'default',
     });
   };
 
-  // Tek bir Expo push token akisi kullan. Kanal önce oluşturulur, sonra token alınır.
+  // Her çağrıda yeni Expo push token al (eski token kullanılmasın).
   const registerForPushNotifications = useCallback(async (): Promise<string | null> => {
     if (!Device.isDevice) {
       console.log('[PUSH] Simülatör - token alınamaz');
@@ -93,10 +100,26 @@ export function usePushNotifications(): PushNotificationHook {
     }
 
     try {
-      // Android: "default" ve diğer kanallar token kaydından ÖNCE oluşturulur (uygulama açılışında _layout'ta da oluşturuluyor)
+      // Android: default/offers _layout’ta; burada match, calls, admin
       await setupNotificationChannels();
 
-      // İzin kontrolü
+      // Android 13+ (API 33): POST_NOTIFICATIONS — bazı cihazlarda yalnızca expo izin akışı yetmeyebilir.
+      if (Platform.OS === 'android') {
+        const api =
+          typeof Platform.Version === 'number'
+            ? Platform.Version
+            : parseInt(String(Platform.Version), 10);
+        if (!Number.isNaN(api) && api >= 33) {
+          const postResult = await PermissionsAndroid.request(
+            'android.permission.POST_NOTIFICATIONS'
+          );
+          if (postResult !== PermissionsAndroid.RESULTS.GRANTED) {
+            console.log('[PUSH] POST_NOTIFICATIONS reddedildi:', postResult);
+            return null;
+          }
+        }
+      }
+
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
 
@@ -123,8 +146,7 @@ export function usePushNotifications(): PushNotificationHook {
         const expoToken = await Notifications.getExpoPushTokenAsync({ projectId });
         if (expoToken && expoToken.data) {
           const token = expoToken.data;
-          console.log('EXPO TOKEN:', token);
-          console.log('[PUSH] Expo Token alındı:', token.substring(0, 30) + '...');
+          console.log('PUSH TOKEN DEVICE:', token);
           setPushToken(token);
           setTokenType('expo');
           return token;
@@ -148,17 +170,15 @@ export function usePushNotifications(): PushNotificationHook {
     }
 
     try {
-      let token = pushToken;
-      if (!token) {
-        token = await registerForPushNotifications();
-      }
+      // Login sonrası her seferinde yeni token alıp backend'e overwrite et.
+      const token = await registerForPushNotifications();
 
       if (!token) {
         console.log('[PUSH] Token alınamadı');
         return false;
       }
 
-      console.log('[PUSH] Backend\'e kaydediliyor: expo', token.substring(0, 30) + '...');
+      console.log('PUSH TOKEN BACKEND:', token);
 
       const response = await fetch(`${API_URL}/user/register-push-token`, {
         method: 'POST',
@@ -183,7 +203,7 @@ export function usePushNotifications(): PushNotificationHook {
       console.log('[PUSH] Kayıt hatası:', error);
       return false;
     }
-  }, [pushToken, registerForPushNotifications]);
+  }, [registerForPushNotifications]);
 
   // Token sil
   const removePushToken = useCallback(async (userId: string): Promise<void> => {
@@ -220,10 +240,9 @@ export function usePushNotifications(): PushNotificationHook {
     };
   }, []);
 
-  // Başlangıçta token al
-  useEffect(() => {
-    registerForPushNotifications();
-  }, [registerForPushNotifications]);
+  // ÖNEMLİ: Açılışta registerForPushNotifications ÇAĞRILMAZ.
+  // Android 13+ POST_NOTIFICATIONS + Expo izin diyaloğu splash/login öncesinde
+  // kullanıcıyı kilitleyebilir. Token yalnızca giriş sonrası registerPushToken(userId) ile alınır.
 
   return {
     pushToken,

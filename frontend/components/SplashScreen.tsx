@@ -70,16 +70,14 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       console.log('⚠️ Animasyon hatası:', error);
     }
 
-    // 3 saniye sonra çık
     const finishTimer = setTimeout(() => {
       callFinish();
-    }, 3000);
+    }, 2000);
 
-    // Güvenlik: 5 saniye sonra zorla çık
     const safetyTimer = setTimeout(() => {
       console.log('⚠️ Safety timeout - zorla çıkılıyor');
       callFinish();
-    }, 5000);
+    }, 3500);
 
     return () => {
       clearTimeout(finishTimer);

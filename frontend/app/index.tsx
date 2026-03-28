@@ -52,6 +52,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useOffers } from '../hooks/useOffers';
 import { useCall } from '../hooks/useCall';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -424,6 +425,9 @@ export default function App() {
   const lastRegisteredPushUserIdRef = useRef<string | null>(null);
   const lastPushRegisterTimeRef = useRef<number>(0);
   const PUSH_REREGISTER_INTERVAL_MS = 15000; // Uygulama her ön plana geldiğinde en fazla 15 sn'de bir tekrar dene
+  /** Splash çıkışında user'a bakılır; user deps ile effect sıfırlanıp timer iptal edilmesin diye ref */
+  const splashUserRef = useRef<User | null>(null);
+  splashUserRef.current = user;
 
   // Giriş yapıldığında token kaydet
   useEffect(() => {
@@ -536,16 +540,14 @@ export default function App() {
     }
   };
 
-  // Uygulama başlangıcında izinleri iste - HEMEN
+  // İzinleri splash bittikten sonra iste — açılışta Leylek ekranı + sistem diyaloğu çakışmasını önler
   useEffect(() => {
-    const checkPermissions = async () => {
-      console.log('🔐 Uygulama başladı - İzin kontrolü başlıyor...');
+    if (showSplash) return;
+    void (async () => {
+      console.log('🔐 Splash sonrası izin kontrolü...');
       await requestAllPermissions();
-    };
-    
-    // Splash screen beklemeden hemen izin iste
-    checkPermissions();
-  }, []);
+    })();
+  }, [showSplash]);
 
   // Device ID oluştur veya al
   const getOrCreateDeviceId = async (): Promise<string> => {
@@ -635,90 +637,119 @@ export default function App() {
     }
   }, [user, screen]);
 
+  /** Ağ: UI’yı bloklamaz — admin kontrolü + aktif seans (timeout’lı). */
+  const runDeferredSessionBootstrap = useCallback(
+    async (parsedUser: User, isMainAdmin: boolean, legalWasAccepted: boolean) => {
+      const cleanPhone = parsedUser.phone?.replace(/\D/g, '') || '';
+
+      if (!isMainAdmin) {
+        try {
+          const res = await fetchWithTimeout(
+            `${API_URL}/admin/check?phone=${encodeURIComponent(cleanPhone)}`,
+            { timeoutMs: 5000 }
+          );
+          if (res?.ok) {
+            const data = await res.json().catch(() => null);
+            if (data?.success && data?.is_admin) {
+              setIsAdmin(true);
+              setShowAdminPanel(true);
+            }
+          }
+        } catch (e) {
+          console.warn('Admin check (deferred):', e);
+        }
+      }
+
+      if (!legalWasAccepted || isMainAdmin) return;
+
+      const activeStatuses = ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'];
+      const uid = encodeURIComponent(parsedUser.id);
+      const t = 6000;
+
+      try {
+        const role = parsedUser.role;
+        if (role === 'passenger') {
+          const r = await fetchWithTimeout(
+            `${API_URL}/passenger/active-tag?user_id=${uid}`,
+            { timeoutMs: t }
+          );
+          if (!r?.ok) return;
+          const j = await r.json().catch(() => null);
+          const st = j?.tag?.status;
+          if (j?.success && j?.tag && st && activeStatuses.includes(st)) {
+            setScreen('dashboard');
+          }
+        } else if (role === 'driver') {
+          const r = await fetchWithTimeout(
+            `${API_URL}/driver/active-tag?user_id=${uid}`,
+            { timeoutMs: t }
+          );
+          if (r?.ok) {
+            const j = await r.json().catch(() => null);
+            const st = j?.tag?.status;
+            if (j?.success && j?.tag && st && activeStatuses.includes(st)) {
+              setScreen('dashboard');
+              return;
+            }
+          }
+          const pd = await fetchWithTimeout(
+            `${API_URL}/driver/dispatch-pending-offer?user_id=${uid}`,
+            { timeoutMs: t }
+          );
+          if (!pd?.ok) return;
+          const pj = await pd.json().catch(() => null);
+          if (pj?.success && pj?.offer?.tag_id) {
+            setScreen('dashboard');
+          }
+        }
+      } catch (e) {
+        console.warn('Active session restore (deferred):', e);
+      }
+    },
+    []
+  );
+
   const loadUser = async () => {
     try {
       const userData = await AsyncStorage.getItem('user');
       const legalAcceptedStorage = await AsyncStorage.getItem('legal_accepted');
-      
+      const legalWasAccepted = legalAcceptedStorage === 'true';
+
       if (userData) {
-        const parsedUser = JSON.parse(userData);
+        let parsedUser: User;
+        try {
+          parsedUser = JSON.parse(userData) as User;
+        } catch {
+          console.error('Geçersiz kullanıcı önbelleği, temizleniyor');
+          await AsyncStorage.removeItem('user');
+          return;
+        }
+
         setUser(parsedUser);
-        
-        // Admin kontrolü - 5326497412 ana admin
-        const cleanPhone = parsedUser.phone?.replace(/\D/g, '');
-        const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
-        
+
+        const cleanPhone = parsedUser.phone?.replace(/\D/g, '') || '';
+        const isMainAdmin =
+          cleanPhone === '5326497412' ||
+          cleanPhone === '05326497412' ||
+          cleanPhone.endsWith('5326497412');
+
         if (isMainAdmin) {
           setIsAdmin(true);
-          // Admin direkt admin paneline gitsin
           setShowAdminPanel(true);
           setScreen('role-select');
         } else {
-          // API'den admin kontrolü
-          try {
-            const res = await fetch(`${API_URL}/admin/check?phone=${cleanPhone}`);
-            const data = await res.json();
-            if (data.success && data.is_admin) {
-              setIsAdmin(true);
-              setShowAdminPanel(true); // Diğer adminler de direkt panele
-            }
-          } catch (e) {}
           setScreen('role-select');
         }
-        
-        // Legal consent kontrolü
-        if (legalAcceptedStorage !== 'true') {
+
+        if (!legalWasAccepted) {
           setShowLegalConsent(true);
         } else {
           setLegalAccepted(true);
-          // Aktif yolculuk / bekleyen teklif — uygulama yeniden açılınca doğru ekran
-          if (!isMainAdmin) {
-            (async () => {
-              try {
-                const role = parsedUser.role;
-                if (role === 'passenger') {
-                  const r = await fetch(
-                    `${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(parsedUser.id)}`
-                  );
-                  const j = await r.json();
-                  const st = j.tag?.status;
-                  if (
-                    j.success &&
-                    j.tag &&
-                    st &&
-                    ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
-                  ) {
-                    setScreen('dashboard');
-                  }
-                } else if (role === 'driver') {
-                  const r = await fetch(
-                    `${API_URL}/driver/active-tag?user_id=${encodeURIComponent(parsedUser.id)}`
-                  );
-                  const j = await r.json();
-                  const st = j.tag?.status;
-                  if (
-                    j.success &&
-                    j.tag &&
-                    st &&
-                    ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'].includes(st)
-                  ) {
-                    setScreen('dashboard');
-                    return;
-                  }
-                  const pd = await fetch(
-                    `${API_URL}/driver/dispatch-pending-offer?user_id=${encodeURIComponent(parsedUser.id)}`
-                  );
-                  const pj = await pd.json();
-                  if (pj.success && pj.offer?.tag_id) {
-                    setScreen('dashboard');
-                  }
-                }
-              } catch (e) {
-                console.warn('Active session restore:', e);
-              }
-            })();
-          }
         }
+
+        setTimeout(() => {
+          void runDeferredSessionBootstrap(parsedUser, isMainAdmin, legalWasAccepted);
+        }, 0);
       }
     } catch (error) {
       console.error('Kullanıcı yüklenemedi:', error);
@@ -1098,20 +1129,18 @@ export default function App() {
 
   // ==================== RENDER SCREENS ====================
   
-  // SPLASH SCREEN - 3 saniye göster - daha güvenilir timeout ile
+  // SPLASH: sadece showSplash — user her güncellendiğinde timer iptal edilmez (sonsuz Leylek önlenir)
   useEffect(() => {
-    if (showSplash) {
-      const splashTimer = setTimeout(() => {
-        console.log('🎬 Splash timeout - login ekranına geçiliyor');
-        setShowSplash(false);
-        if (!user) {
-          setScreen('login');
-        }
-      }, 3000);
-      
-      return () => clearTimeout(splashTimer);
-    }
-  }, [showSplash, user]);
+    if (!showSplash) return;
+    const splashTimer = setTimeout(() => {
+      console.log('🎬 Splash timeout - devam');
+      setShowSplash(false);
+      if (!splashUserRef.current) {
+        setScreen('login');
+      }
+    }, 2000);
+    return () => clearTimeout(splashTimer);
+  }, [showSplash]);
   
   if (showSplash) {
     return (
@@ -5900,6 +5929,58 @@ function PassengerDashboard({
     }
   };
 
+  const buildLocalPriceEstimate = (
+    pickupLat: number,
+    pickupLng: number,
+    dropoffLat: number,
+    dropoffLng: number,
+    vehicleKind: 'car' | 'motorcycle'
+  ) => {
+    // Backend geçici hata verirse kullanıcı akışını kırmamak için istemci fallback'i
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const R = 6371;
+    const dLat = toRad(dropoffLat - pickupLat);
+    const dLng = toRad(dropoffLng - pickupLng);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(pickupLat)) * Math.cos(toRad(dropoffLat)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const crowKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const tripDistanceKm = Math.max(1, Number((crowKm * 1.3).toFixed(1)));
+    const estimatedMinutes = Math.max(5, Math.round((tripDistanceKm / 30) * 60));
+
+    const hour = (new Date().getUTCHours() + 3) % 24; // TR UTC+3
+    const isPeak = (hour >= 8 && hour < 10) || (hour >= 17 && hour < 20);
+    const multiplier = isPeak ? 1.15 : 1.0;
+
+    const base = vehicleKind === 'motorcycle' ? 25 : 40;
+    const perKm = vehicleKind === 'motorcycle' ? 12 : 20;
+    const minimum = vehicleKind === 'motorcycle' ? 80 : 120;
+
+    let price = base + tripDistanceKm * perKm;
+    if (price < minimum) price = minimum;
+    price *= multiplier;
+
+    const suggested = Math.round(price);
+    return {
+      success: true,
+      distance_km: tripDistanceKm,
+      trip_distance_km: tripDistanceKm,
+      estimated_minutes: estimatedMinutes,
+      min_price: Math.round(suggested * 0.9),
+      max_price: Math.round(suggested * 1.1),
+      suggested_price: suggested,
+      is_peak_hour: isPeak,
+      currency: 'TL',
+      vehicle_kind: vehicleKind,
+      base_price: base,
+      per_km: perKm,
+      minimum_price: minimum,
+      multiplier,
+      source: 'local_fallback',
+    };
+  };
+
   // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
   const handleCallButton = async () => {
     playTapSound();
@@ -5942,10 +6023,14 @@ function PassengerDashboard({
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
           dropoff_lat: destination.latitude,
-          dropoff_lng: destination.longitude
+          dropoff_lng: destination.longitude,
+          passenger_vehicle_kind: rideVehiclePreference,
         })
       });
       
+      if (!response.ok) {
+        throw new Error(`Price API HTTP ${response.status}`);
+      }
       const data = await response.json();
       
       if (data.success) {
@@ -5953,11 +6038,63 @@ function PassengerDashboard({
         setSelectedPrice(data.suggested_price);
         setShowPriceModal(true);
       } else {
-        Alert.alert('Hata', 'Fiyat hesaplanamadı');
+        throw new Error(data?.error || 'Price API success=false');
       }
     } catch (error) {
       console.error('Fiyat hesaplama hatası:', error);
-      Alert.alert('Hata', 'Fiyat hesaplanamadı');
+      const fallback = buildLocalPriceEstimate(
+        pickupLat,
+        pickupLng,
+        destination.latitude,
+        destination.longitude,
+        rideVehiclePreference
+      );
+      setPriceInfo(fallback as any);
+      setSelectedPrice(fallback.suggested_price);
+      setShowPriceModal(true);
+      Alert.alert('Bilgi', 'Sunucuya ulaşılamadı, yaklaşık fiyat gösteriliyor.');
+    } finally {
+      setPriceLoading(false);
+    }
+  };
+
+  // 🆕 Araç/Motor seçimi değişince fiyatı tekrar hesapla
+  const recalcPrice = async (nextVehicleKind: 'car' | 'motorcycle') => {
+    if (!destination || !userLocation) return;
+    try {
+      setPriceLoading(true);
+      const response = await fetch(`${API_URL}/price/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pickup_lat: userLocation.latitude,
+          pickup_lng: userLocation.longitude,
+          dropoff_lat: destination.latitude,
+          dropoff_lng: destination.longitude,
+          passenger_vehicle_kind: nextVehicleKind,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Price API HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      if (data?.success) {
+        setPriceInfo(data);
+        setSelectedPrice(data.suggested_price);
+      } else {
+        throw new Error(data?.error || 'Price API success=false');
+      }
+    } catch (e) {
+      console.log('Price recalc error:', e);
+      const fallback = buildLocalPriceEstimate(
+        userLocation.latitude,
+        userLocation.longitude,
+        destination.latitude,
+        destination.longitude,
+        nextVehicleKind
+      );
+      setPriceInfo(fallback as any);
+      setSelectedPrice(fallback.suggested_price);
     } finally {
       setPriceLoading(false);
     }
@@ -6729,6 +6866,7 @@ function PassengerDashboard({
                           onPress={() => {
                             void tapButtonHaptic();
                             setRideVehiclePreference('car');
+                            void recalcPrice('car');
                           }}
                           style={[
                             styles.priceModalVehicleChip,
@@ -6754,6 +6892,7 @@ function PassengerDashboard({
                           onPress={() => {
                             void tapButtonHaptic();
                             setRideVehiclePreference('motorcycle');
+                            void recalcPrice('motorcycle');
                           }}
                           style={[
                             styles.priceModalVehicleChip,
