@@ -25,18 +25,21 @@ class PushNotificationService:
     ) -> bool:
         """Tek bir kullanıcıya bildirim gönder"""
         try:
-            if not push_token or not push_token.startswith("ExponentPushToken"):
+            if not push_token or not (
+                push_token.startswith("ExponentPushToken[") or push_token.startswith("ExpoPushToken[")
+            ):
                 logger.warning(f"Invalid push token: {push_token}")
                 return False
-            
+
             payload = {
                 "to": push_token,
                 "title": title,
                 "body": body,
                 "sound": sound,
                 "priority": priority,
+                "channelId": "default",
             }
-            
+
             if data:
                 payload["data"] = data
             
@@ -76,10 +79,18 @@ class PushNotificationService:
         failed = 0
         
         # Expo max 100 notification per request
-        valid_tokens = [t for t in push_tokens if t and t.startswith("ExponentPushToken")]
-        
+        valid_tokens = [
+            t
+            for t in push_tokens
+            if t
+            and (
+                t.startswith("ExponentPushToken[")
+                or t.startswith("ExpoPushToken[")
+            )
+        ]
+
         for i in range(0, len(valid_tokens), 100):
-            batch = valid_tokens[i:i+100]
+            batch = valid_tokens[i : i + 100]
             messages = [
                 {
                     "to": token,
@@ -87,7 +98,8 @@ class PushNotificationService:
                     "body": body,
                     "sound": "default",
                     "priority": "high",
-                    "data": data or {}
+                    "channelId": "default",
+                    "data": data or {},
                 }
                 for token in batch
             ]

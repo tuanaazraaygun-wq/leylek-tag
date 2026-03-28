@@ -5172,7 +5172,18 @@ class ExpoPushService:
         if not valid_tokens:
             return {"sent": 0, "failed": len(tokens)}
         
-        messages = [{"to": t, "sound": "default", "title": title, "body": body, "data": data or {}} for t in valid_tokens]
+        messages = [
+            {
+                "to": t,
+                "title": title,
+                "body": body,
+                "sound": "default",
+                "priority": "high",
+                "channelId": "default",
+                "data": data or {},
+            }
+            for t in valid_tokens
+        ]
         
         try:
             async with httpx.AsyncClient(http2=False, timeout=30) as client:
@@ -5436,11 +5447,14 @@ async def test_push_notification_by_phone(
         success, receipt = await _send_expo_and_get_receipt(
             token, title, body, {"type": "test", "timestamp": datetime.utcnow().isoformat()}
         )
+        ticket_id = receipt.get("id") if isinstance(receipt, dict) else None
+        expo_delivery = await _expo_get_push_receipts([ticket_id]) if ticket_id else {}
         return {
             "success": success,
             "message": "Test bildirimi gönderildi" if success else "Bildirim gönderilemedi",
             "user_id": user_id,
             "expo_receipt": receipt,
+            "expo_delivery_receipts": expo_delivery,
         }
     except Exception as e:
         logger.error(f"Test push by phone error: {e}")
@@ -5654,26 +5668,84 @@ async def admin_push_stats(phone: str):
 
 
 @api_router.get("/admin/push-debug")
-async def admin_push_debug(admin_phone: str, limit: int = 50):
-    """Bildirim testi: Hangi kullanıcıların push token'ı var, format geçerli mi listele."""
+async def admin_push_debug(admin_phone: str, limit: int = 50, phone: str = None):
+    """
+    Bildirim testi: push_token durumu.
+    - phone verilmezse: token'ı dolu ilk N kullanıcı.
+    - phone verilirse: o numaraya eşleşen TÜM users satırları (token boş olsa da) — mükerrer kayıt kontrolü için.
+    Not: Uygulama token'ı yalnızca giriş yanıtındaki user.id satırına yazar; Supabase'de gördüğünüz token başka satırdaysa push yanlış hesaba gider.
+    """
     if admin_phone not in ADMIN_PHONE_NUMBERS:
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     try:
-        result = supabase.table("users").select("id, phone, name, push_token, push_token_updated_at").not_.is_("push_token", "null").limit(limit).execute()
-        users = result.data or []
+        users = []
+        filter_note = None
+        if phone and str(phone).strip():
+            raw = str(phone).strip()
+            phone_e164 = normalize_phone_e164(raw)
+            if not phone_e164:
+                return {"success": False, "error": "Geçersiz phone filtresi"}
+            digits_only = "".join(c for c in phone_e164 if c.isdigit())
+            ten_digit = digits_only[-10:] if len(digits_only) >= 10 else digits_only
+            candidates = [
+                phone_e164,
+                digits_only,
+                ten_digit,
+                ("0" + ten_digit) if len(ten_digit) == 10 else None,
+            ]
+            cand = list({c for c in candidates if c})
+            result = (
+                supabase.table("users")
+                .select("id, phone, name, push_token, push_token_updated_at")
+                .in_("phone", cand)
+                .limit(limit)
+                .execute()
+            )
+            users = result.data or []
+            if not users and len(ten_digit) >= 10:
+                like_r = (
+                    supabase.table("users")
+                    .select("id, phone, name, push_token, push_token_updated_at")
+                    .like("phone", f"%{ten_digit}%")
+                    .limit(20)
+                    .execute()
+                )
+                users = like_r.data or []
+                filter_note = f"phone IN {cand} sonuç vermedi; phone LIKE %{ten_digit}% ile arandı."
+            else:
+                filter_note = f"phone eşleşmesi: {cand}"
+        else:
+            result = (
+                supabase.table("users")
+                .select("id, phone, name, push_token, push_token_updated_at")
+                .not_.is_("push_token", "null")
+                .limit(limit)
+                .execute()
+            )
+            users = result.data or []
+            filter_note = "push_token dolu kullanıcılar (phone filtresi yok)"
+
         list_ = []
         for u in users:
             token = u.get("push_token") or ""
             list_.append({
                 "id": u.get("id"),
+                "phone": u.get("phone"),
                 "phone_masked": ("*" * max(0, len((u.get("phone") or "")) - 4) + (u.get("phone") or "")[-4:]) if (u.get("phone") or "") else "",
                 "name": u.get("name"),
                 "has_push_token": bool(token),
                 "token_valid_format": ExpoPushService.is_valid_token(token),
-                "token_preview": token[:50] + "..." if len(token) > 50 else token,
+                "token_preview": (token[:56] + "…") if len(token) > 56 else token,
+                "token_length": len(token),
                 "push_token_updated_at": u.get("push_token_updated_at"),
             })
-        return {"success": True, "users": list_, "total": len(list_)}
+        return {
+            "success": True,
+            "filter": filter_note,
+            "hint": "Uygulama token'ı POST /user/register-push-token ile girişte dönen user.id satırına yazar. Cihazdaki log: PUSH TOKEN DEVICE / PUSH TOKEN BACKEND — token_preview ile karşılaştırın.",
+            "users": list_,
+            "total": len(list_),
+        }
     except Exception as e:
         logger.error(f"Push debug error: {e}")
         return {"success": False, "error": str(e)}
@@ -5723,12 +5795,12 @@ async def admin_push_test(admin_phone: str):
         # Expo Push API'ye istek at, tam yanıtı döndür
         message = {
             "to": token,
-            "sound": "default",
             "title": "Leylek TAG Test",
             "body": "Push test bildirimi – endpoint /api/admin/push-test",
-            "data": {"type": "admin_push_test", "ts": datetime.utcnow().isoformat()},
+            "sound": "default",
             "priority": "high",
             "channelId": "default",
+            "data": {"type": "admin_push_test", "ts": datetime.utcnow().isoformat()},
         }
         headers = _expo_push_request_headers()
         logger.info(f"push_test: Expo'ya gönderiliyor – user_id={user.get('id')}, token={token[:30]}...")
@@ -5740,12 +5812,18 @@ async def admin_push_test(admin_phone: str):
             )
         response_body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {"raw_text": response.text[:1000]}
         logger.info(f"push_test: Expo yanıtı status={response.status_code}, body={response_body}")
+        ticket0 = (response_body.get("data") or [{}])[0]
+        ticket_id = ticket0.get("id")
+        expo_delivery = await _expo_get_push_receipts([ticket_id]) if ticket_id else {}
+        if expo_delivery:
+            logger.info(f"push_test: Expo getReceipts (FCM/APNs katmanı): {expo_delivery}")
         return {
             "success": response.status_code == 200 and (response_body.get("data") or [{}])[0].get("status") != "error",
             "user_id": user.get("id"),
             "phone_masked": ("*" * max(0, len((user.get("phone") or "")) - 4) + (user.get("phone") or "")[-4:]) if (user.get("phone") or "") else "",
             "expo_response": response_body,
             "expo_http_status": response.status_code,
+            "expo_delivery_receipts": expo_delivery,
         }
     except Exception as e:
         logger.error(f"push_test hatası: {e}")
@@ -5766,19 +5844,82 @@ async def admin_push_test_by_phone(admin_phone: str, phone: str):
     if not phone or not phone.strip():
         raise HTTPException(status_code=422, detail="phone parametresi gerekli")
     try:
-        clean = phone.strip().replace("+90", "").replace("90", "", 1).replace(" ", "").replace("-", "")
+        raw_in = phone.strip().replace(" ", "").replace("-", "")
+        clean = raw_in.replace("+90", "").replace("90", "", 1) if raw_in.startswith("+") or "90" in raw_in else raw_in
+        clean = clean.lstrip("+")
+        if clean.startswith("90") and len(clean) > 10:
+            clean = clean[2:]
         if not clean.isdigit():
             return {"success": False, "error": "Geçersiz telefon numarası", "phone": phone}
-        # Önce 5 ile başlayan, sonra 0 ile başlayan dene
-        for candidate in [clean, "0" + clean if not clean.startswith("0") else clean]:
-            user_result = supabase.table("users").select(
-                "id, name, phone, push_token, driver_online, driver_active_until, latitude, longitude, driver_details"
-            ).eq("phone", candidate).limit(1).execute()
-            if user_result.data:
-                break
+
+        candidates = []
+        pe = normalize_phone_e164(raw_in)
+        if pe:
+            d = "".join(c for c in pe if c.isdigit())
+            ten = d[-10:] if len(d) >= 10 else d
+            candidates = list(
+                {
+                    x
+                    for x in (
+                        pe,
+                        d,
+                        ten,
+                        ("0" + ten) if len(ten) == 10 else None,
+                        clean,
+                        ("0" + clean) if len(clean) == 10 and not clean.startswith("0") else None,
+                    )
+                    if x
+                }
+            )
         else:
-            return {"success": False, "error": "Bu numaraya kayıtlı kullanıcı bulunamadı", "phone": clean}
-        user = user_result.data[0]
+            candidates = list(
+                {clean, ("0" + clean) if len(clean) == 10 and not clean.startswith("0") else None}
+                - {None}
+            )
+
+        user_result = (
+            supabase.table("users")
+            .select(
+                "id, name, phone, push_token, push_token_updated_at, driver_online, driver_active_until, latitude, longitude, driver_details"
+            )
+            .in_("phone", candidates)
+            .limit(25)
+            .execute()
+        )
+        rows = list(user_result.data or [])
+        ten_core = "".join(c for c in clean if c.isdigit())[-10:] if len(clean) >= 10 else clean
+        if not rows and len(ten_core) >= 10:
+            like_r = (
+                supabase.table("users")
+                .select(
+                    "id, name, phone, push_token, push_token_updated_at, driver_online, driver_active_until, latitude, longitude, driver_details"
+                )
+                .like("phone", f"%{ten_core}%")
+                .limit(15)
+                .execute()
+            )
+            for r in like_r.data or []:
+                digits = "".join(c for c in (r.get("phone") or "") if c.isdigit())
+                if ten_core in digits or digits.endswith(ten_core):
+                    rows.append(r)
+            seen = set()
+            uniq = []
+            for r in rows:
+                rid = r.get("id")
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    uniq.append(r)
+            rows = uniq
+
+        if not rows:
+            return {"success": False, "error": "Bu numaraya kayıtlı kullanıcı bulunamadı", "phone": clean, "tried_phones": candidates}
+
+        valid_rows = [r for r in rows if ExpoPushService.is_valid_token((r.get("push_token") or "").strip())]
+        if valid_rows:
+            valid_rows.sort(key=lambda r: (r.get("push_token_updated_at") or ""), reverse=True)
+            user = valid_rows[0]
+        else:
+            user = rows[0]
         user_id = user.get("id")
         token = (user.get("push_token") or "").strip()
         now_iso = datetime.utcnow().isoformat()
@@ -5791,7 +5932,10 @@ async def admin_push_test_by_phone(admin_phone: str, phone: str):
         debug = {
             "user_id": user_id,
             "name": user.get("name"),
+            "phone_stored": user.get("phone"),
             "phone_masked": ("*" * 6 + (user.get("phone") or "")[-4:]),
+            "matched_rows_for_number": len(rows),
+            "picked_rule": "Geçerli Expo tokenı olan satırlardan push_token_updated_at en yenisi; yoksa ilk eşleşen.",
             "has_push_token": bool(token),
             "token_valid_format": ExpoPushService.is_valid_token(token),
             "driver_online": driver_online,
@@ -5831,11 +5975,16 @@ async def admin_push_test_by_phone(admin_phone: str, phone: str):
         success, receipt = await _send_expo_and_get_receipt(
             token, test_title, test_body, test_data
         )
+        ticket_id = receipt.get("id") if isinstance(receipt, dict) else None
+        expo_delivery = await _expo_get_push_receipts([ticket_id]) if ticket_id else {}
+        if expo_delivery:
+            logger.info(f"push-test-by-phone: Expo getReceipts: {expo_delivery}")
         return {
             "success": success,
             "debug": debug,
             "message": "Test bildirimi gönderildi" if success else "Gönderim başarısız",
             "expo_receipt": receipt,
+            "expo_delivery_receipts": expo_delivery,
         }
     except Exception as e:
         logger.error(f"push-test-by-phone hatası: {e}")
@@ -10314,38 +10463,55 @@ def _expo_push_data_stringify(data: Optional[dict]) -> dict:
     return out
 
 
+async def _expo_get_push_receipts(ticket_ids: list) -> dict:
+    """
+    Expo Push getReceipts — gönderim cevabındaki bilet 'ok' olsa bile FCM/APNs teslim katmanında
+    hata olabilir (DeviceNotRegistered, InvalidCredentials vb.). ~2 sn sonra sorgulanır.
+    """
+    import asyncio
+
+    ids = [str(x).strip() for x in (ticket_ids or []) if x]
+    if not ids:
+        return {}
+    await asyncio.sleep(1.8)
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(http2=False, timeout=30) as client:
+            r = await client.post(
+                "https://exp.host/--/api/v2/push/getReceipts",
+                json={"ids": ids},
+                headers=_expo_push_request_headers(),
+            )
+        if r.status_code != 200:
+            logger.warning(f"Expo getReceipts HTTP {r.status_code}: {r.text[:500]}")
+            return {"http_status": r.status_code, "body": r.text[:800]}
+        return r.json()
+    except Exception as e:
+        logger.warning(f"Expo getReceipts: {e}")
+        return {"exception": str(e)}
+
+
 async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: dict = None):
     """Expo Push API'ye istek atar; (success, receipt_dict) döner. receipt Expo'nun data[0] objesidir."""
     try:
         import httpx
         payload = _expo_push_data_stringify(data or {})
         notification_type = payload.get("type")
-        channel_id = "default"
-        if notification_type == "new_offer":
-            channel_id = "offers"
-        elif notification_type in ["match_found", "match_confirmed", "kyc_approved", "kyc_rejected"]:
-            # Eşleşme: teklif bildirimi geldiği için "offers" kanalı kullan (aynı kanal = aynı davranış)
-            channel_id = "offers"
-        elif notification_type in ["incoming_call", "incoming_daily_call"]:
-            channel_id = "calls"
-        elif notification_type == "admin_notification":
-            channel_id = "admin"
-        elif notification_type in ("driver_on_the_way", "driver_arrived", "trip_started", "trip_completed", "new_ride_request", "matched"):
-            channel_id = "offers"
-
+        # Android: tek kanal (uygulama açılışında `default` oluşturulur; channelId eksikse bildirim düşmeyebilir)
         message = {
             "to": token,
-            "sound": "default",
             "title": title,
             "body": body,
-            "data": payload,
+            "sound": "default",
             "priority": "high",
-            "channelId": channel_id,
-            "_displayInForeground": True
+            "channelId": "default",
         }
+        if payload:
+            message["data"] = payload
         messages_payload = [message]
 
-        logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId={channel_id}, token={token[:50]}...")
+        logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId=default, token={token[:50]}...")
         logger.info(f"🚀 Sending Expo push to {token}")
 
         headers = _expo_push_request_headers()
@@ -10373,7 +10539,11 @@ async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: di
                 err_details = first.get("details") or first
                 logger.error(f"❌ Expo API hatası: {err_msg} | details={err_details}")
                 return False, first
-            logger.info(f"✅ Expo push başarılı (receipt status={first.get('status', 'ok')})")
+            tid = first.get("id")
+            if tid:
+                logger.info(f"✅ Expo push bilet id={tid} (FCM gerçek sonuç için getReceipts kullanın)")
+            else:
+                logger.info(f"✅ Expo push başarılı (receipt status={first.get('status', 'ok')})")
             return True, first
     except Exception as e:
         logger.error(f"❌ Expo API exception: {e}")

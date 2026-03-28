@@ -811,7 +811,18 @@ class ExpoPushService:
         if not valid_tokens:
             return {"sent": 0, "failed": len(tokens)}
         
-        messages = [{"to": t, "sound": "default", "title": title, "body": body, "data": data or {}} for t in valid_tokens]
+        messages = [
+            {
+                "to": t,
+                "title": title,
+                "body": body,
+                "sound": "default",
+                "priority": "high",
+                "channelId": "default",
+                "data": data or {},
+            }
+            for t in valid_tokens
+        ]
         
         try:
             async with httpx.AsyncClient(http2=False, timeout=30) as client:
