@@ -7,6 +7,8 @@ import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from expo_push_channels import expo_android_channel_id_for_data
+
 logger = logging.getLogger(__name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
@@ -37,7 +39,7 @@ class PushNotificationService:
                 "body": body,
                 "sound": sound,
                 "priority": priority,
-                "channelId": "default",
+                "channelId": expo_android_channel_id_for_data(data),
             }
 
             if data:
@@ -89,6 +91,7 @@ class PushNotificationService:
             )
         ]
 
+        ch = expo_android_channel_id_for_data(data)
         for i in range(0, len(valid_tokens), 100):
             batch = valid_tokens[i : i + 100]
             messages = [
@@ -98,7 +101,7 @@ class PushNotificationService:
                     "body": body,
                     "sound": "default",
                     "priority": "high",
-                    "channelId": "default",
+                    "channelId": ch,
                     "data": data or {},
                 }
                 for token in batch

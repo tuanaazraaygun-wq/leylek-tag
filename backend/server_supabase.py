@@ -16,6 +16,8 @@ import hashlib
 import httpx
 import json
 
+from expo_push_channels import expo_android_channel_id_for_data
+
 # Supabase
 from supabase import create_client, Client
 
@@ -811,6 +813,7 @@ class ExpoPushService:
         if not valid_tokens:
             return {"sent": 0, "failed": len(tokens)}
         
+        ch = expo_android_channel_id_for_data(data)
         messages = [
             {
                 "to": t,
@@ -818,7 +821,7 @@ class ExpoPushService:
                 "body": body,
                 "sound": "default",
                 "priority": "high",
-                "channelId": "default",
+                "channelId": ch,
                 "data": data or {},
             }
             for t in valid_tokens

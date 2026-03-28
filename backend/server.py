@@ -30,6 +30,7 @@ import supabase_client as _supabase_core
 
 # Agora Token Builder
 from agora_token_builder import RtcTokenBuilder
+from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1035,6 +1036,70 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         logger.warning(f"{event_name} emit hatası: {e}")
 
 
+async def _expo_push_dispatch_new_offer(
+    driver_id: str,
+    tag_id: str,
+    title: str,
+    body: str,
+    *,
+    notifications_log_type: str = "new_offer",
+) -> dict:
+    """
+    Dispatch (sıralı kuyruk) ve rolling batch: sürücüye Expo push.
+    data.type=new_offer → Android channelId=offers (ExpoPushService).
+    """
+    uid = str(driver_id).strip() if driver_id else ""
+    if not uid:
+        logger.warning("⚠️ dispatch offer push: boş driver_id")
+        return {"sent": 0, "failed": 1}
+    try:
+        resolved = await resolve_user_id(uid)
+        if resolved:
+            uid = str(resolved).strip()
+    except Exception:
+        pass
+    try:
+        supabase.table("notifications_log").insert({
+            "type": notifications_log_type,
+            "user_id": uid,
+            "title": title,
+            "body": body,
+            "created_at": datetime.utcnow().isoformat(),
+        }).execute()
+    except Exception:
+        pass
+
+    push_data = {"type": "new_offer", "tag_id": str(tag_id)}
+    try:
+        ur = supabase.table("users").select("push_token").eq("id", uid).limit(1).execute()
+        if not ur.data and "-" in uid:
+            ur = supabase.table("users").select("push_token").eq("id", uid.lower()).limit(1).execute()
+        token = (ur.data[0].get("push_token") if ur.data else None) or ""
+        if not token:
+            logger.warning(f"⚠️ Dispatch offer push: push_token yok user={uid[:8]}...")
+            return {"sent": 0, "failed": 1}
+        if not ExpoPushService.is_valid_token(token):
+            logger.warning(f"⚠️ Dispatch offer push: geçersiz token user={uid[:8]}...")
+            return {"sent": 0, "failed": 1}
+    except Exception as e:
+        logger.warning(f"⚠️ Dispatch offer push_token okunamadı: {e}")
+        return {"sent": 0, "failed": 1}
+
+    try:
+        result = await ExpoPushService.send(
+            [token],
+            title,
+            body,
+            push_data,
+        )
+        if result.get("sent", 0) < 1:
+            logger.warning(f"⚠️ Expo dispatch new_offer başarısız: user={uid[:8]}... result={result}")
+        return result
+    except Exception as e:
+        logger.warning(f"⚠️ Dispatch offer Expo push hatası: {e}")
+        return {"sent": 0, "failed": 1}
+
+
 async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     """
     Sıradaki sürücüye teklif gönder
@@ -1106,30 +1171,22 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
             "is_dispatch": True,  # Bu bir dispatch teklifi
             "passenger_vehicle_kind": merged.get("passenger_preferred_vehicle") or "car",
         }
-        
-        await emit_new_passenger_offer_to_driver(driver_id, offer_data)
-        logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
-        # Sadece aktif sıradaki sürücüye push
+
         price = merged.get("final_price") or merged.get("offered_price", 0)
         distance_km = merged.get("distance_km") or merged.get("trip_distance_km") or 0
         price_int = int(price) if price else 0
         distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
         body = f"{price_int} TL • {distance_str} - {timeout} sn içinde kabul et"
+
+        await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+        logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
+        logger.info(f"🚀 DISPATCH PUSH driver={driver_id} tag={tag_id}")
         try:
-            await send_trip_push_and_log(
+            await _expo_push_dispatch_new_offer(
                 driver_id,
-                "new_ride_request",
-                "Yeni yolculuk teklifi",
+                tag_id,
+                "Yeni Teklif",
                 body,
-                {
-                    "type": "new_offer",
-                    "tag_id": tag_id,
-                    "price": price,
-                    "distance_km": distance_km,
-                    "timeout": timeout,
-                    "action": "accept",
-                    "is_dispatch": True,
-                },
             )
         except Exception as push_err:
             logger.warning(f"⚠️ Dispatch push gönderilemedi: {driver_id} - {push_err}")
@@ -1392,21 +1449,13 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         d_id = entry["driver_id"]
         offer_data = {**offer_base, "distance_to_pickup": entry.get("distance_km", 0)}
         await emit_new_passenger_offer_to_driver(d_id, offer_data)
+        logger.info(f"🚀 DISPATCH PUSH driver={d_id} tag={tag_id}")
         try:
-            await send_trip_push_and_log(
+            await _expo_push_dispatch_new_offer(
                 d_id,
-                "new_ride_request",
-                "Yeni yolculuk teklifi",
+                tag_id,
+                "Yeni Teklif",
                 body,
-                {
-                    "type": "new_offer",
-                    "tag_id": tag_id,
-                    "price": price,
-                    "distance_km": trip_distance_km,
-                    "timeout": DISPATCH_TIMEOUT,
-                    "action": "accept",
-                    "is_rolling_batch": True,
-                },
             )
         except Exception as push_err:
             logger.warning(f"⚠️ Rolling batch push: {d_id} - {push_err}")
@@ -5172,6 +5221,7 @@ class ExpoPushService:
         if not valid_tokens:
             return {"sent": 0, "failed": len(tokens)}
         
+        ch = expo_android_channel_id_for_data(data)
         messages = [
             {
                 "to": t,
@@ -5179,12 +5229,14 @@ class ExpoPushService:
                 "body": body,
                 "sound": "default",
                 "priority": "high",
-                "channelId": "default",
+                "channelId": ch,
                 "data": data or {},
             }
             for t in valid_tokens
         ]
-        
+        for t in valid_tokens:
+            logger.info(f"🚀 Sending Expo push to {t}")
+
         try:
             async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 response = await client.post(
@@ -5793,14 +5845,15 @@ async def admin_push_test(admin_phone: str):
                 "expo_response": None,
             }
         # Expo Push API'ye istek at, tam yanıtı döndür
+        _push_test_data = {"type": "admin_push_test", "ts": datetime.utcnow().isoformat()}
         message = {
             "to": token,
             "title": "Leylek TAG Test",
             "body": "Push test bildirimi – endpoint /api/admin/push-test",
             "sound": "default",
             "priority": "high",
-            "channelId": "default",
-            "data": {"type": "admin_push_test", "ts": datetime.utcnow().isoformat()},
+            "channelId": expo_android_channel_id_for_data(_push_test_data),
+            "data": _push_test_data,
         }
         headers = _expo_push_request_headers()
         logger.info(f"push_test: Expo'ya gönderiliyor – user_id={user.get('id')}, token={token[:30]}...")
@@ -10498,20 +10551,20 @@ async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: di
         import httpx
         payload = _expo_push_data_stringify(data or {})
         notification_type = payload.get("type")
-        # Android: tek kanal (uygulama açılışında `default` oluşturulur; channelId eksikse bildirim düşmeyebilir)
+        channel_id = expo_android_channel_id_for_type(notification_type)
         message = {
             "to": token,
             "title": title,
             "body": body,
             "sound": "default",
             "priority": "high",
-            "channelId": "default",
+            "channelId": channel_id,
         }
         if payload:
             message["data"] = payload
         messages_payload = [message]
 
-        logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId=default, token={token[:50]}...")
+        logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId={channel_id}, token={token[:50]}...")
         logger.info(f"🚀 Sending Expo push to {token}")
 
         headers = _expo_push_request_headers()

@@ -22,6 +22,7 @@ from supabase_client import (
     init_supabase, get_supabase_admin, 
     upload_file_to_storage, delete_file_from_storage
 )
+from expo_push_channels import expo_android_channel_id_for_data
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -3617,7 +3618,7 @@ class ExpoPushService:
             logger.warning(f"⚠️ Geçerli Expo Push Token bulunamadı ({len(tokens)} token kontrol edildi)")
             return {"sent": 0, "failed": len(tokens), "tickets": []}
         
-        # Mesajları oluştur
+        ch = expo_android_channel_id_for_data(data)
         messages = []
         for token in valid_tokens:
             message = {
@@ -3627,7 +3628,7 @@ class ExpoPushService:
                 "body": body,
                 "data": data or {},
                 "priority": "high",
-                "channelId": "default"
+                "channelId": ch,
             }
             messages.append(message)
         
