@@ -4,7 +4,7 @@
  * Tüm Android cihazlarla uyumlu
  */
 
-import React, { useState, useEffect, Component } from 'react';
+import React, { useState, useEffect, useMemo, Component } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,29 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 
-const API_URL = 'https://api.leylektag.com/api';
+import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
+
+function tripStatusLabel(status: string | undefined) {
+  const s = String(status || '');
+  const map: Record<string, string> = {
+    completed: 'Tamamlandı',
+    cancelled: 'İptal',
+    matched: 'Eşleşti',
+    in_progress: 'Yolda',
+    waiting: 'Bekliyor',
+    pending: 'Hazırlanıyor',
+    offers_received: 'Teklifler',
+  };
+  return map[s] || (s ? s : '—');
+}
+
+function formatApiDetail(d: unknown): string {
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
+    return (d[0] as { msg: string }).msg;
+  }
+  return '';
+}
 
 // Error Boundary
 class ErrorBoundary extends Component<{children: React.ReactNode}, {hasError: boolean, error: string}> {
@@ -57,12 +79,17 @@ interface Props {
 }
 
 function AdminContent({ adminPhone, onClose }: Props) {
+  const adminPhoneNorm = useMemo(() => normalizeTrPhone10(adminPhone), [adminPhone]);
+
   const [tab, setTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [trips, setTrips] = useState<any[]>([]);
+  const [userTotal, setUserTotal] = useState<number | null>(null);
+  const [tripTotal, setTripTotal] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   
   // Notification states
@@ -77,11 +104,11 @@ function AdminContent({ adminPhone, onClose }: Props) {
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [adminPhoneNorm]);
   
   const loadKYC = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/kyc/pending?admin_phone=${adminPhone}`);
+      const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/pending?admin_phone=${encodeURIComponent(adminPhoneNorm)}`);
       const data = await res.json();
       if (data.success) {
         setPendingKYC(data.requests || []);
@@ -94,7 +121,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const approveKYC = async (userId: string) => {
     setApprovingKYC(userId);
     try {
-      const res = await fetch(`${API_URL}/admin/kyc/approve?admin_phone=${adminPhone}&user_id=${userId}`, {
+      const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/approve?admin_phone=${encodeURIComponent(adminPhoneNorm)}&user_id=${encodeURIComponent(userId)}`, {
         method: 'POST'
       });
       const data = await res.json();
@@ -112,7 +139,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
   
   const rejectKYC = async (userId: string, reason: string) => {
     try {
-      const res = await fetch(`${API_URL}/admin/kyc/reject?admin_phone=${adminPhone}&user_id=${userId}&reason=${encodeURIComponent(reason)}`, {
+      const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/reject?admin_phone=${encodeURIComponent(adminPhoneNorm)}&user_id=${encodeURIComponent(userId)}&reason=${encodeURIComponent(reason)}`, {
         method: 'POST'
       });
       const data = await res.json();
@@ -130,9 +157,10 @@ function AdminContent({ adminPhone, onClose }: Props) {
   // 🆕 Kullanıcı Engelle
   const banUser = async (userId: string) => {
     try {
-      const res = await fetch(`${API_URL}/admin/user/ban?admin_phone=${adminPhone}&user_id=${userId}`, {
-        method: 'POST'
-      });
+      const res = await fetch(
+        `${ADMIN_API_BASE}/admin/user/ban?admin_phone=${encodeURIComponent(adminPhoneNorm)}&user_id=${encodeURIComponent(userId)}&is_banned=true`,
+        { method: 'POST' }
+      );
       const data = await res.json();
       if (data.success) {
         Alert.alert('Başarılı', 'Kullanıcı engellendi');
@@ -148,9 +176,10 @@ function AdminContent({ adminPhone, onClose }: Props) {
   // 🆕 Kullanıcı Sil
   const deleteUser = async (userId: string) => {
     try {
-      const res = await fetch(`${API_URL}/admin/user/delete?admin_phone=${adminPhone}&user_id=${userId}`, {
-        method: 'DELETE'
-      });
+      const res = await fetch(
+        `${ADMIN_API_BASE}/admin/delete-user?admin_phone=${encodeURIComponent(adminPhoneNorm)}&user_id=${encodeURIComponent(userId)}`,
+        { method: 'DELETE' }
+      );
       const data = await res.json();
       if (data.success) {
         Alert.alert('Başarılı', 'Kullanıcı silindi');
@@ -165,27 +194,49 @@ function AdminContent({ adminPhone, onClose }: Props) {
 
   const loadAll = async () => {
     setLoading(true);
-    try {
-      // Dashboard
-      const dashRes = await fetch(`${API_URL}/admin/dashboard/full?admin_phone=${adminPhone}`);
-      const dashData = await dashRes.json();
-      if (dashData.success) setStats(dashData.stats);
-      
-      // Users
-      const usersRes = await fetch(`${API_URL}/admin/users/full?admin_phone=${adminPhone}&page=1&limit=50`);
-      const usersData = await usersRes.json();
-      if (usersData.success && usersData.users) setUsers(usersData.users);
-      
-      // Trips
-      const tripsRes = await fetch(`${API_URL}/admin/trips?admin_phone=${adminPhone}&page=1&limit=50`);
-      const tripsData = await tripsRes.json();
-      if (tripsData.success && tripsData.trips) setTrips(tripsData.trips);
-      
-      // KYC
-      await loadKYC();
-    } catch (e) {
-      console.log('Load error:', e);
+    setLoadError('');
+    if (!adminPhoneNorm || adminPhoneNorm.length < 10) {
+      setLoadError('Geçerli admin telefonu bulunamadı (10 hane).');
+      setLoading(false);
+      setRefreshing(false);
+      return;
     }
+    const errs: string[] = [];
+    try {
+      const [dashRes, usersRes, tripsRes] = await Promise.all([
+        fetch(`${ADMIN_API_BASE}/admin/dashboard/full?admin_phone=${encodeURIComponent(adminPhoneNorm)}`),
+        fetch(`${ADMIN_API_BASE}/admin/users/full?admin_phone=${encodeURIComponent(adminPhoneNorm)}&page=1&limit=50`),
+        fetch(`${ADMIN_API_BASE}/admin/trips?admin_phone=${encodeURIComponent(adminPhoneNorm)}&page=1&limit=50`),
+      ]);
+
+      const dashData = await dashRes.json().catch(() => ({}));
+      if (!dashRes.ok) errs.push(`Panel HTTP ${dashRes.status}`);
+      else if (!dashData.success) {
+        errs.push(formatApiDetail(dashData.detail) || 'Panel verisi alınamadı');
+      }
+      else setStats(dashData.stats);
+
+      const usersData = await usersRes.json().catch(() => ({}));
+      if (!usersRes.ok) errs.push(`Kullanıcılar HTTP ${usersRes.status}`);
+      else if (!usersData.success) errs.push('Kullanıcı listesi alınamadı');
+      else {
+        setUsers(usersData.users || []);
+        setUserTotal(typeof usersData.total === 'number' ? usersData.total : null);
+      }
+
+      const tripsData = await tripsRes.json().catch(() => ({}));
+      if (!tripsRes.ok) errs.push(`Yolculuklar HTTP ${tripsRes.status}`);
+      else if (!tripsData.success) errs.push('Yolculuk listesi alınamadı');
+      else {
+        setTrips(tripsData.trips || []);
+        setTripTotal(typeof tripsData.total === 'number' ? tripsData.total : null);
+      }
+
+      await loadKYC();
+    } catch (e: any) {
+      errs.push(e?.message || 'Yükleme hatası');
+    }
+    setLoadError(errs.filter(Boolean).join(' · '));
     setLoading(false);
     setRefreshing(false);
   };
@@ -205,13 +256,26 @@ function AdminContent({ adminPhone, onClose }: Props) {
     setSendingNotif(true);
     try {
       const response = await fetch(
-        `${API_URL}/admin/notifications/send?admin_phone=${adminPhone}&title=${encodeURIComponent(notifTitle)}&body=${encodeURIComponent(notifBody)}&target=${notifTarget}`,
+        `${ADMIN_API_BASE}/admin/notifications/send?admin_phone=${encodeURIComponent(adminPhoneNorm)}&title=${encodeURIComponent(notifTitle)}&body=${encodeURIComponent(notifBody)}&target=${encodeURIComponent(notifTarget)}`,
         { method: 'POST' }
       );
       const data = await response.json();
       
       if (data.success) {
-        Alert.alert('Başarılı', `Bildirim ${data.sent_count || 0} kişiye gönderildi`);
+        let msg =
+          typeof data.message === 'string' && data.message.trim()
+            ? data.message.trim()
+            : `Bildirim ${data.sent_count ?? 0} kişiye gönderildi.`;
+        if (
+          typeof data.total_users === 'number' &&
+          data.total_users > 0 &&
+          typeof data.users_with_token === 'number'
+        ) {
+          msg += `\n\nHedefte ${data.total_users} kullanıcı; ${data.users_with_token} tanesinde geçerli push token var.`;
+          msg +=
+            '\nKendi telefonunuza gelmediyse admin hesabınız bu tokenlı kullanıcılar arasında olmayabilir — uygulamada bildirim iznini açıp giriş yapın (token kaydı yenilensin).';
+        }
+        Alert.alert('Başarılı', msg);
         setNotifTitle('');
         setNotifBody('');
       } else {
@@ -252,33 +316,50 @@ function AdminContent({ adminPhone, onClose }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity 
+      {loadError ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{loadError}</Text>
+        </View>
+      ) : null}
+
+      {/* Tabs — yatay kaydırma (5 sekme) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabScroll}
+        contentContainerStyle={styles.tabRowInner}
+      >
+        <TouchableOpacity
           style={[styles.tabBtn, tab === 'dashboard' && styles.tabActive]}
           onPress={() => setTab('dashboard')}
         >
           <Text style={[styles.tabText, tab === 'dashboard' && styles.tabTextActive]}>Panel</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tabBtn, tab === 'users' && styles.tabActive]}
           onPress={() => setTab('users')}
         >
           <Text style={[styles.tabText, tab === 'users' && styles.tabTextActive]}>Kullanıcılar</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'trips' && styles.tabActive]}
+          onPress={() => setTab('trips')}
+        >
+          <Text style={[styles.tabText, tab === 'trips' && styles.tabTextActive]}>Yolculuklar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.tabBtn, tab === 'kyc' && styles.tabActive]}
           onPress={() => setTab('kyc')}
         >
           <Text style={[styles.tabText, tab === 'kyc' && styles.tabTextActive]}>Sürücü Onay</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.tabBtn, tab === 'notif' && styles.tabActive]}
           onPress={() => setTab('notif')}
         >
           <Text style={[styles.tabText, tab === 'notif' && styles.tabTextActive]}>Bildirim</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {/* Content */}
       <ScrollView 
@@ -301,12 +382,32 @@ function AdminContent({ adminPhone, onClose }: Props) {
             </View>
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
+                <Text style={styles.statNum}>{stats?.users?.passengers ?? 0}</Text>
+                <Text style={styles.statLabel}>Yolcu</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{stats?.trips?.completed_week ?? 0}</Text>
+                <Text style={styles.statLabel}>Yolculuk (7 gün)</Text>
+              </View>
+            </View>
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
                 <Text style={styles.statNum}>{stats?.users?.online_drivers || 0}</Text>
-                <Text style={styles.statLabel}>Online</Text>
+                <Text style={styles.statLabel}>Online sürücü</Text>
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statNum}>{stats?.trips?.completed_today || 0}</Text>
-                <Text style={styles.statLabel}>Bugün</Text>
+                <Text style={styles.statLabel}>Bugün tamamlanan</Text>
+              </View>
+            </View>
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{stats?.trips?.active ?? 0}</Text>
+                <Text style={styles.statLabel}>Aktif yolculuk</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statNum}>{stats?.users?.new_today ?? 0}</Text>
+                <Text style={styles.statLabel}>Yeni kayıt (bugün)</Text>
               </View>
             </View>
             <View style={styles.statsRow}>
@@ -316,9 +417,21 @@ function AdminContent({ adminPhone, onClose }: Props) {
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statNum}>{stats?.trips?.waiting || 0}</Text>
-                <Text style={styles.statLabel}>Bekleyen</Text>
+                <Text style={styles.statLabel}>Bekleyen talep</Text>
               </View>
             </View>
+            {typeof stats?.kyc?.pending === 'number' ? (
+              <View style={styles.statsRow}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statNum}>{stats.kyc.pending}</Text>
+                  <Text style={styles.statLabel}>KYC bekleyen</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statNum}>{stats?.promos?.active ?? 0}</Text>
+                  <Text style={styles.statLabel}>Aktif promosyon</Text>
+                </View>
+              </View>
+            ) : null}
             
             <Text style={styles.sectionTitle}>Son Yolculuklar</Text>
             {trips.slice(0, 5).map((t, i) => (
@@ -340,7 +453,10 @@ function AdminContent({ adminPhone, onClose }: Props) {
               value={search}
               onChangeText={setSearch}
             />
-            <Text style={styles.countText}>{filteredUsers.length} kullanıcı</Text>
+            <Text style={styles.countText}>
+              {filteredUsers.length} listeleniyor
+              {userTotal != null ? ` · ${userTotal} toplam` : ''}
+            </Text>
             {filteredUsers.slice(0, 50).map((u, i) => (
               <View key={u.id || i} style={styles.card}>
                 <View style={styles.cardRow}>
@@ -398,7 +514,10 @@ function AdminContent({ adminPhone, onClose }: Props) {
         {/* Trips */}
         {tab === 'trips' && (
           <View style={styles.section}>
-            <Text style={styles.countText}>{trips.length} yolculuk</Text>
+            <Text style={styles.countText}>
+              {trips.length} listeleniyor
+              {tripTotal != null ? ` · ${tripTotal} toplam` : ''}
+            </Text>
             {trips.slice(0, 50).map((t, i) => (
               <View key={t.id || i} style={styles.card}>
                 <View style={styles.cardRow}>
@@ -413,9 +532,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
                       t.status === 'completed' ? styles.statusGreen : 
                       t.status === 'cancelled' ? styles.statusRed : styles.statusOrange
                     ]}>
-                      {t.status === 'completed' ? 'Tamamlandı' : 
-                       t.status === 'cancelled' ? 'İptal' : 
-                       t.status === 'matched' ? 'Eşleşti' : 'Bekliyor'}
+                      {tripStatusLabel(t.status)}
                     </Text>
                   </View>
                 </View>
@@ -659,19 +776,35 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  tabRow: {
-    flexDirection: 'row',
+  tabScroll: {
+    maxHeight: 52,
     backgroundColor: '#1E293B',
+  },
+  tabRowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingBottom: 10,
   },
   tabBtn: {
-    flex: 1,
+    minWidth: 92,
     backgroundColor: '#334155',
     marginHorizontal: 3,
     paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  errorBanner: {
+    backgroundColor: '#450A0A',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#7F1D1D',
+  },
+  errorBannerText: {
+    color: '#FCA5A5',
+    fontSize: 13,
   },
   tabActive: {
     backgroundColor: '#3B82F6',

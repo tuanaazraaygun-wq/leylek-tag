@@ -96,6 +96,10 @@ interface PlacesAutocompleteProps {
   hidePopularChips?: boolean;
   /** Hedef modalı: koyu cam / neon çerçeve */
   visualVariant?: 'default' | 'tech';
+  /** Öneri listesi arama kutusunun üstünde (yukarı doğru açılır) */
+  suggestionsFirst?: boolean;
+  /** Daha fazla sonuç; şehir viewbox sınırı gevşetilir */
+  widerSearch?: boolean;
 }
 
 export default function PlacesAutocomplete({
@@ -105,12 +109,16 @@ export default function PlacesAutocomplete({
   city = '',
   hidePopularChips = false,
   visualVariant = 'default',
+  suggestionsFirst = false,
+  widerSearch = false,
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
+  const tech = visualVariant === 'tech';
+  const ratio = tech ? Math.min(0.52, LAYOUT.predictionMaxHeightRatio + 0.12) : LAYOUT.predictionMaxHeightRatio;
   const predictionsMaxHeight = Math.round(
     Math.max(
       LAYOUT.predictionListMin,
-      Math.min(LAYOUT.predictionListMax, windowHeight * LAYOUT.predictionMaxHeightRatio),
+      Math.min(LAYOUT.predictionListMax + (tech ? 80 : 0), windowHeight * ratio),
     ),
   );
 
@@ -144,7 +152,7 @@ export default function PlacesAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query]);
+  }, [query, widerSearch, city]);
 
   // Nominatim API ile arama (ÜCRETSİZ)
   const searchPlaces = async (input: string) => {
@@ -160,10 +168,10 @@ export default function PlacesAutocomplete({
       }
       
       // Nominatim API - OpenStreetMap ücretsiz servisi
-      let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=tr&addressdetails=1&limit=10&accept-language=tr`;
+      const limit = widerSearch ? 20 : 10;
+      let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=tr&addressdetails=1&limit=${limit}&accept-language=tr`;
       
-      // Şehir sınırları varsa ekle
-      if (cityData) {
+      if (cityData && !widerSearch) {
         url += `&viewbox=${cityData.bbox}&bounded=1`;
       }
       
@@ -215,7 +223,9 @@ export default function PlacesAutocomplete({
 
   // Seçim işlemi
   const handleSelectPrediction = (item: PlaceResult) => {
-    Keyboard.dismiss();
+    if (!tech) {
+      Keyboard.dismiss();
+    }
     
     const formatted = formatAddress(item);
     
@@ -278,10 +288,64 @@ export default function PlacesAutocomplete({
   const popularPlaces =
     hidePopularChips || !city || !POPULAR_PLACES[city] ? [] : POPULAR_PLACES[city];
 
-  const tech = visualVariant === 'tech';
-
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, tech && suggestionsFirst && styles.containerTechSuggestionsFirst]}>
+      {/* Öneriler — hedef modalında üstte */}
+      {tech && suggestionsFirst
+        ? showPredictions &&
+          predictions.length > 0 && (
+            <View
+              style={[
+                styles.predictionsContainer,
+                tech && styles.predictionsContainerTech,
+                tech && styles.predictionsAboveInput,
+                { maxHeight: predictionsMaxHeight },
+              ]}
+            >
+              <FlatList
+                data={predictions}
+                keyExtractor={(item) => item.place_id}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                renderItem={({ item }) => {
+                  const formatted = formatAddress(item);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.predictionItem, tech && styles.predictionItemTech]}
+                      onPress={() => handleSelectPrediction(item)}
+                    >
+                      <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
+                        <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
+                      </View>
+                      <View style={styles.predictionTextContainer}>
+                        <Text
+                          style={[styles.predictionMainText, tech && styles.predictionMainTextTech]}
+                          numberOfLines={2}
+                        >
+                          {formatted.main}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.predictionSecondaryText,
+                            tech && styles.predictionSecondaryTextTech,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {formatted.secondary}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={tech ? '#64748B' : '#CCC'} />
+                    </TouchableOpacity>
+                  );
+                }}
+                ItemSeparatorComponent={() => (
+                  <View style={[styles.separator, tech && styles.separatorTech]} />
+                )}
+              />
+            </View>
+          )
+        : null}
+
       {/* Arama Kutusu */}
       <View style={[styles.inputContainer, tech && styles.inputContainerTech]}>
         <Ionicons
@@ -331,8 +395,8 @@ export default function PlacesAutocomplete({
         </View>
       )}
 
-      {/* Öneriler Listesi */}
-      {showPredictions && predictions.length > 0 && (
+      {/* Öneriler — varsayılan: input altında */}
+      {showPredictions && predictions.length > 0 && !(tech && suggestionsFirst) && (
         <View
           style={[
             styles.predictionsContainer,
@@ -399,6 +463,11 @@ export default function PlacesAutocomplete({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
+  },
+  containerTechSuggestionsFirst: {
+    flexGrow: 1,
+    minHeight: 120,
+    justifyContent: 'flex-end',
   },
   inputContainer: {
     flexDirection: 'row',
@@ -500,6 +569,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(56, 189, 248, 0.35)',
     borderRadius: 16,
     marginTop: 12,
+  },
+  predictionsAboveInput: {
+    marginTop: 0,
+    marginBottom: 10,
+    flexGrow: 1,
+    minHeight: 120,
   },
   predictionItem: {
     flexDirection: 'row',

@@ -1,0 +1,1 @@
+sdk.dir=C:\\Users\\BlackHatTools\\AppData\\Local\\Android\\Sdk                                                             

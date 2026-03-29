@@ -747,6 +747,14 @@ export default function LiveMapView({
         style={styles.cloudBackground}
         resizeMode="cover"
       />
+      {/* 🆕 Bulut renk tint'i (silince arkaplan + buton uyumu) */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.cloudTintOverlay,
+          { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
+        ]}
+      />
       
       {/* 🆕 GOOGLE MAPS NAVİGASYON MODAL - WebView ile */}
       <Modal
@@ -785,19 +793,7 @@ export default function LiveMapView({
         </View>
       </Modal>
       
-      {/* 🆕 MATRIX DURUM YAZISI - SÜRÜCÜ - Çerçeve altına sabit (SOL) */}
-      {matrixStatus && isDriver && (
-        <View style={styles.matrixContainerDriver}>
-          <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
-        </View>
-      )}
-      
-      {/* 🆕 MATRIX DURUM YAZISI - YOLCU - Çerçeve altına sabit (SOL) - KIRMIZI */}
-      {matrixStatus && !isDriver && (
-        <View style={styles.matrixContainerPassenger}>
-          <Text style={styles.matrixTextPassenger}>{matrixStatus.replace('SURUCU', 'SÜRÜCÜ').replace('SIZIN', 'SİZİN').replace('ICIN', 'İÇİN')}</Text>
-        </View>
-      )}
+      {/* Uyarı yazısı (matrixStatus) artık üst bilgi panelinin altına sabitleniyor */}
 
       {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF */}
       {MapView ? (
@@ -915,6 +911,8 @@ export default function LiveMapView({
         </View>
       )}
 
+      {/* Sürücü ekranında "Yolcu burada..." yazısı kaldırıldı */}
+
       {/* ÜST BİLGİ PANELİ — gök mavisi, desenli, profesyonel tipografi */}
       <View style={styles.topInfoPanel}>
         <View style={styles.topInfoBorder}>
@@ -973,6 +971,24 @@ export default function LiveMapView({
           </LinearGradient>
         </View>
 
+        {/* 🆕 MATRIX DURUM YAZISI - kutuların hemen altına */}
+        {matrixStatus && isDriver && (
+          <View style={styles.matrixContainerDriver} pointerEvents="none">
+            <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
+          </View>
+        )}
+
+        {matrixStatus && !isDriver && (
+          <View style={styles.matrixContainerPassenger} pointerEvents="none">
+            <Text style={styles.matrixTextPassenger}>
+              {matrixStatus
+                .replace('SURUCU', 'SÜRÜCÜ')
+                .replace('SIZIN', 'SİZİN')
+                .replace('ICIN', 'İÇİN')}
+            </Text>
+          </View>
+        )}
+
         {!isDriver && userLocation && otherLocation ? (
           <View style={styles.passengerLiveBlock} pointerEvents="none">
             <Animated.Text style={[styles.passengerLiveLabel, { opacity: canliBlink }]}>
@@ -994,19 +1010,7 @@ export default function LiveMapView({
           } 
           style={styles.bottomGradient}
         >
-          {isDriver && otherLocation ? (
-            <Animated.View
-              style={[styles.driverPassengerCueAboveNav, { opacity: driverCueOpacity }]}
-            >
-              <View style={styles.driverPassengerCueAccent} />
-              <Ionicons name="location" size={18} color="#7C3AED" style={{ marginRight: 8 }} />
-              <Text style={styles.driverPassengerCueTextAboveNav}>
-                {passMotor
-                  ? 'Motor yolcusu burada — pine dokun, profili aç'
-                  : 'Yolcu burada — pine dokun, profili aç'}
-              </Text>
-            </Animated.View>
-          ) : null}
+          {/* 🆕 Cue artık harita üzerinde tıklanabilir olarak gösteriliyor */}
 
           {/* 🆕 SÜRÜCÜ İÇİN - YOLCUYA GİT BUTONU (Ortalı, Yaz butonunun üstünde) */}
           {isDriver && (
@@ -1027,12 +1031,21 @@ export default function LiveMapView({
                 activeOpacity={0.7}
               >
                 <LinearGradient 
-                  colors={['#7C3AED', '#9333EA', '#6D28D9']} 
+                  colors={['#10B981', '#22C55E', '#34D399']} 
                   style={styles.centeredNavBtnPurple}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <Ionicons name="navigate" size={26} color="white" />
+                  <View style={styles.nav3dIconWrap}>
+                    {/* 3D hissi için arka gölge katmanı */}
+                    <Ionicons
+                      name="navigate"
+                      size={22}
+                      color="rgba(4, 120, 87, 0.35)"
+                      style={{ position: 'absolute', left: 2, top: 4 }}
+                    />
+                    <Ionicons name="navigate" size={22} color="#FFFFFF" />
+                  </View>
                   <Text style={styles.centeredNavBtnText}>Yolcuya Git</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -1338,6 +1351,15 @@ const styles = StyleSheet.create({
     right: 0,
     height: 200,
     zIndex: 0,
+    opacity: 0.14, // bulutlar daha silik
+  },
+  cloudTintOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    zIndex: 0,
   },
   
   map: { flex: 1 },
@@ -1602,12 +1624,13 @@ const styles = StyleSheet.create({
   
   // Bottom Panel
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  bottomGradient: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  bottomGradient: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 18, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
   
   // 🆕 Ortalı Navigasyon Butonu (Alt Panelde)
   centeredNavButton: {
     alignItems: 'center',
     marginBottom: 12,
+    zIndex: 2000,
   },
   centeredNavBtn: {
     flexDirection: 'row',
@@ -1622,17 +1645,39 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  // 🆕 "Yolcuya Git" purple buton (keskin köşeli)
+  centeredNavBtnPurple: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    overflow: 'hidden',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  },
   centeredNavBtnText: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
     color: '#FFF',
-    marginLeft: 10,
+    marginLeft: 8,
+  },
+  nav3dIconWrap: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   mainChatButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
+    paddingVertical: 14,
     borderRadius: 16,
   },
   
@@ -1700,7 +1745,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 8,
-    marginBottom: 14,
+    marginBottom: 10,
     alignSelf: 'center',
     overflow: 'hidden',
   },
@@ -1964,9 +2009,9 @@ const styles = StyleSheet.create({
   },
   // 🆕 Matrix Durum Yazısı Stilleri - SÜRÜCÜ (YEŞİL) - Üst çerçevenin altında
   matrixContainerDriver: {
-    position: 'absolute',
-    top: 155, // Üst info panelin hemen altında
-    left: 12,
+    alignSelf: 'flex-start',
+    marginLeft: 12,
+    marginTop: 6,
     zIndex: 1000,
     backgroundColor: 'rgba(0, 20, 0, 0.9)',
     paddingHorizontal: 12,
@@ -1983,9 +2028,9 @@ const styles = StyleSheet.create({
   },
   // 🆕 Matrix Durum Yazısı Stilleri - YOLCU (KIRMIZI) - Üst çerçevenin altında
   matrixContainerPassenger: {
-    position: 'absolute',
-    top: 155, // Üst info panelin hemen altında
-    left: 12,
+    alignSelf: 'flex-start',
+    marginLeft: 12,
+    marginTop: 6,
     zIndex: 1000,
     backgroundColor: 'rgba(30, 0, 0, 0.9)',
     paddingHorizontal: 12,
@@ -2028,6 +2073,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     lineHeight: 17,
   },
+
   // 🆕 Google Maps Modal Stilleri
   googleMapsModalContainer: {
     flex: 1,

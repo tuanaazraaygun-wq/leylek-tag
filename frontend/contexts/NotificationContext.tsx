@@ -2,14 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { Platform, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
-// Bildirim ayarları
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+/** Bildirim handler: yalnızca `app/_layout.tsx` (çift tanım sıcak yenilemede son import’un kazanması riskini kaldırır). */
 
 export type TappedNotificationData = { type?: string; tag_id?: string; action?: string; [key: string]: any } | null;
 
@@ -59,7 +52,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
 
     // Bu provider sadece dinleyicileri yönetir.
-    // Token alma ve izin isteme akışı usePushNotifications içinde tekilleştirildi.
+    // Token alma: PushNotificationsProvider (app/_layout) — burada yalnızca dinleyiciler.
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('🔔 Bildirim alındı:', notification);
       setNotification(notification);

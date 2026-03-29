@@ -78,4 +78,7 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# @end expo-cli
+# @end expo-clifirebase-service-account.json 
+../backend/firebase-service-account.json 
+firebase-service-account.json 
+../backend/firebase-service-account.json 

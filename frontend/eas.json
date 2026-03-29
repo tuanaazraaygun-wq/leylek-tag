@@ -31,7 +31,10 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
+      }
     }
   },
   "submit": {
