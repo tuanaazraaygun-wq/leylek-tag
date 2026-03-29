@@ -2606,14 +2606,24 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         logger.error(f"Set PIN error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class VerifyPinBody(BaseModel):
+    """POST /auth/verify-pin — JSON body (query yerine; CDN/proxy ve mobil istemci uyumu)."""
+    phone: str
+    pin: str
+    device_id: Optional[str] = None
+
+
 # verify-pin endpoint - Frontend uyumluluğu için
 @api_router.post("/auth/verify-pin")
-async def verify_pin_endpoint(request: Request, phone: str = None, pin: str = None, device_id: str = None):
-    """PIN doğrulama - login ile aynı işlevi görür"""
+async def verify_pin_endpoint(request: Request, payload: VerifyPinBody):
+    """PIN doğrulama - login ile aynı işlevi görür (body: phone, pin, device_id)."""
     try:
+        phone = (payload.phone or "").strip()
+        pin = (payload.pin or "").strip()
+        device_id = payload.device_id
         if not phone or not pin:
             raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
-        
+
         canonical = _auth_normalize_or_raise(phone)
         
         # IP adresi al

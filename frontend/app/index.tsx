@@ -87,6 +87,17 @@ function apiErrMsg(data: { message?: string; detail?: unknown } | null | undefin
   return fallback;
 }
 
+/** HTML/502 gövdelerinde response.json() çökmesini önler */
+async function parseApiJson(response: Response): Promise<{ data: Record<string, unknown> }> {
+  const text = await response.text();
+  if (!text) return { data: {} };
+  try {
+    return { data: JSON.parse(text) as Record<string, unknown> };
+  } catch {
+    return { data: { detail: text.length > 180 ? `${text.slice(0, 180)}…` : text } };
+  }
+}
+
 console.log('🌐 BACKEND_URL:', BACKEND_URL);
 console.log('🌐 API_URL:', API_URL);
 
@@ -858,9 +869,13 @@ export default function App() {
         body: JSON.stringify({ phone: cleanPhone, device_id: currentDeviceId })
       });
 
-      const checkData = await checkResponse.json();
-      console.log('🔍 Check user response:', checkData);
-      
+      const { data: checkData } = await parseApiJson(checkResponse);
+      console.log('🔍 Check user response:', checkData, 'status', checkResponse.status);
+      if (!checkResponse.ok) {
+        Alert.alert('Hata', apiErrMsg(checkData, `Sunucu hatası (${checkResponse.status})`));
+        return;
+      }
+
       if (checkData.success && checkData.user_exists && checkData.has_pin) {
         setHasPin(true);
         setUserExists(true);
@@ -876,7 +891,11 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: cleanPhone })
         });
-        const data = await response.json();
+        const { data } = await parseApiJson(response);
+        if (!response.ok) {
+          Alert.alert('Hata', apiErrMsg(data, 'Doğrulama kodu gönderilemedi'));
+          return;
+        }
         if (data.success) {
           setScreen('otp');
         } else {
@@ -891,7 +910,11 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: cleanPhone })
         });
-        const data = await response.json();
+        const { data } = await parseApiJson(response);
+        if (!response.ok) {
+          Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
+          return;
+        }
         if (data.success) {
           Alert.alert('Şifre Oluşturma 🔐', 'Hesabınız için 6 haneli şifre belirlemeniz gerekiyor. SMS ile gelen kodu girin.');
           setScreen('otp');
@@ -915,7 +938,11 @@ export default function App() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ phone: cleanPhone })
                 });
-                const data = await response.json();
+                const { data } = await parseApiJson(response);
+                if (!response.ok) {
+                  Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
+                  return;
+                }
                 if (data.success) {
                   Alert.alert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.');
                   setScreen('otp');
@@ -948,9 +975,13 @@ export default function App() {
         body: JSON.stringify({ phone, otp, device_id: currentDeviceId })
       });
 
-      const data = await response.json();
-      console.log('🔐 Verify OTP response:', data);
-      
+      const { data } = await parseApiJson(response);
+      console.log('🔐 Verify OTP response:', data, 'status', response.status);
+      if (!response.ok) {
+        Alert.alert('Hata', apiErrMsg(data, 'OTP doğrulanamadı'));
+        return;
+      }
+
       if (data.success) {
         if (data.user_exists && data.user) {
           // Kayıtlı kullanıcı - giriş yapıyor, kayıt sayfasına atma
@@ -1856,15 +1887,28 @@ export default function App() {
 
       try {
         const currentDeviceId = deviceId || await getOrCreateDeviceId();
-        
-        const response = await fetch(`${API_URL}/auth/verify-pin?phone=${encodeURIComponent(phone)}&pin=${encodeURIComponent(pin)}&device_id=${encodeURIComponent(currentDeviceId)}`, {
+        const phoneDigits = phone.replace(/\D/g, '');
+
+        const response = await fetch(`${API_URL}/auth/verify-pin`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: phoneDigits,
+            pin,
+            device_id: currentDeviceId,
+          }),
         });
-        const data = await response.json();
-        
+        const { data } = await parseApiJson(response);
+
+        if (!response.ok) {
+          Alert.alert('Hata', apiErrMsg(data, 'Yanlış şifre veya giriş yapılamadı'));
+          setPin('');
+          return;
+        }
+
         if (data.success) {
-          setUser(data.user);
-          saveUser(data.user);
+          setUser(data.user as User);
+          saveUser(data.user as User);
           
           // 🔔 Login başarılı - Push token kaydet
           console.log('🔔 Login başarılı, push token kaydediliyor...');
