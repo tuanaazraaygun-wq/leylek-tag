@@ -101,6 +101,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
   // KYC states
   const [pendingKYC, setPendingKYC] = useState<any[]>([]);
   const [approvingKYC, setApprovingKYC] = useState<string | null>(null);
+  const [communityCityRequests, setCommunityCityRequests] = useState<any[]>([]);
 
   useEffect(() => {
     loadAll();
@@ -233,6 +234,20 @@ function AdminContent({ adminPhone, onClose }: Props) {
       }
 
       await loadKYC();
+
+      try {
+        const ccRes = await fetch(
+          `${ADMIN_API_BASE}/admin/community-city-requests?admin_phone=${encodeURIComponent(adminPhoneNorm)}&limit=100`
+        );
+        const ccData = await ccRes.json().catch(() => ({}));
+        if (ccRes.ok && ccData.success) {
+          setCommunityCityRequests(ccData.requests || []);
+        } else {
+          setCommunityCityRequests([]);
+        }
+      } catch {
+        setCommunityCityRequests([]);
+      }
     } catch (e: any) {
       errs.push(e?.message || 'Yükleme hatası');
     }
@@ -352,6 +367,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
           onPress={() => setTab('kyc')}
         >
           <Text style={[styles.tabText, tab === 'kyc' && styles.tabTextActive]}>Sürücü Onay</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'muhabbet' && styles.tabActive]}
+          onPress={() => setTab('muhabbet')}
+        >
+          <Text style={[styles.tabText, tab === 'muhabbet' && styles.tabTextActive]}>Muhabbet</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabBtn, tab === 'notif' && styles.tabActive]}
@@ -613,6 +634,30 @@ function AdminContent({ adminPhone, onClose }: Props) {
           </View>
         )}
 
+        {/* Leylek Muhabbeti — şehir açma talepleri */}
+        {tab === 'muhabbet' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Muhabbet şehir talepleri</Text>
+            <Text style={styles.subtleHelp}>
+              Kullanıcılar Ankara dışındaki illerde &quot;Leylek Muhabbetine katın&quot; ile gönderdiği istekler.
+            </Text>
+            {communityCityRequests.length === 0 ? (
+              <Text style={styles.emptyListText}>Henüz talep yok.</Text>
+            ) : (
+              communityCityRequests.map((r) => (
+                <View key={String(r.id)} style={styles.muhabbetCard}>
+                  <Text style={styles.muhabbetMeta}>
+                    {r.created_at ? String(r.created_at).slice(0, 19).replace('T', ' ') : '—'}
+                  </Text>
+                  <Text style={styles.muhabbetTitle}>{r.reporter_name || 'Kullanıcı'}</Text>
+                  <Text style={styles.muhabbetPhone}>{r.reporter_phone || ''}</Text>
+                  <Text style={styles.muhabbetDetails}>{r.details || ''}</Text>
+                </View>
+              ))
+            )}
+          </View>
+        )}
+
         {/* Notifications */}
         {tab === 'notif' && (
           <KeyboardAvoidingView 
@@ -829,6 +874,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 15,
     marginTop: 5,
+  },
+  subtleHelp: {
+    color: '#94A3B8',
+    fontSize: 13,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  emptyListText: {
+    color: '#64748B',
+    fontSize: 15,
+    marginTop: 8,
+  },
+  muhabbetCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F97316',
+  },
+  muhabbetMeta: {
+    color: '#64748B',
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  muhabbetTitle: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  muhabbetPhone: {
+    color: '#94A3B8',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  muhabbetDetails: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    lineHeight: 20,
   },
   statsRow: {
     flexDirection: 'row',

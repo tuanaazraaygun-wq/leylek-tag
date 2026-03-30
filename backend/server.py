@@ -19,6 +19,7 @@ import hashlib
 import httpx
 import json
 import time
+import math
 import asyncio
 
 # Socket.IO
@@ -238,8 +239,8 @@ async def end_call(sid, data):
                 }, room=user_sid)
 
 # ==================== PUAN SİSTEMİ ====================
-# 100 puan = 5 yıldız
-# Her kullanıcı 100 puanla başlar
+# 100 puan = 5 yıldız; 75 puan = 4 yıldız
+# Yeni kayıtlar 75 puan / 4.0 yıldız ile başlar
 # Tek taraflı bitirme = -3 puan
 
 def points_to_rating(points: int) -> float:
@@ -258,7 +259,7 @@ async def deduct_points(user_id: str, points: int, reason: str):
         # Mevcut puanı al
         result = supabase.table("users").select("points, rating").eq("id", user_id).execute()
         if result.data:
-            current_points = result.data[0].get("points", 100)
+            current_points = result.data[0].get("points", 75)
             new_points = max(0, current_points - points)
             new_rating = points_to_rating(new_points)
             
@@ -730,7 +731,7 @@ async def find_eligible_drivers(
                     "driver_id": str(driver["id"]).strip().lower(),
                     "driver_name": driver.get("name", "Sürücü"),
                     "distance_km": round(distance_km, 2),
-                    "rating": driver.get("rating", 5.0) or 5.0,
+                    "rating": driver.get("rating", 4.0) or 4.0,
                 })
         
         # Sırala: önce mesafe (yakın), sonra rating (yüksek)
@@ -2524,7 +2525,7 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
                 "phone": user["phone"],
                 "name": user.get("name", ""),
                 "role": user.get("role", "passenger"),
-                "rating": float(user.get("rating", 5.0)),
+                "rating": float(user.get("rating", 4.0)),
                 "total_ratings": user.get("total_ratings", 0),
                 "is_admin": user.get("is_admin", False)
             }
@@ -2591,7 +2592,8 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
                 "last_name": last_name_val,
                 "city": city_val,
                 "name": f"{first_name_val or ''} {last_name_val or ''}".strip(),
-                "rating": 5.0,
+                "points": 75,
+                "rating": 4.0,
                 "total_ratings": 0,
                 "total_trips": 0,
                 "is_active": True
@@ -2706,7 +2708,7 @@ async def verify_pin_endpoint(request: Request, payload: VerifyPinBody):
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
                 "city": user.get("city"),
-                "rating": float(user.get("rating", 5.0)),
+                "rating": float(user.get("rating", 4.0)),
                 "total_trips": user.get("total_trips", 0),
                 "profile_photo": user.get("profile_photo"),
                 "driver_details": user.get("driver_details"),
@@ -2775,7 +2777,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
                 "city": user.get("city"),
-                "rating": float(user.get("rating", 5.0)),
+                "rating": float(user.get("rating", 4.0)),
                 "total_trips": user.get("total_trips", 0),
                 "profile_photo": user.get("profile_photo"),
                 "driver_details": user.get("driver_details"),
@@ -2958,8 +2960,8 @@ async def register_user(request: RegisterRequest):
             "last_name": last_name,
             "city": request.city,
             "pin_hash": pin_hash,
-            "points": 100,
-            "rating": 5.0,
+            "points": 75,
+            "rating": 4.0,
             "total_ratings": 0,
             "total_trips": 0,
             "is_active": True,
@@ -2983,7 +2985,7 @@ async def register_user(request: RegisterRequest):
                     "first_name": user.get("first_name"),
                     "last_name": user.get("last_name"),
                     "city": user.get("city"),
-                    "rating": 5.0,
+                    "rating": float(user.get("rating", 4.0)),
                     "total_trips": 0,
                     "personal_qr_code": unique_qr_code,
                     "is_admin": _phone_10_for_admin_check(phone_normalized) in ADMIN_PHONE_NUMBERS
@@ -3018,7 +3020,7 @@ async def get_user(user_id: str):
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
                 "city": user.get("city"),
-                "rating": float(user.get("rating", 5.0)),
+                "rating": float(user.get("rating", 4.0)),
                 "total_trips": user.get("total_trips", 0),
                 "profile_photo": user.get("profile_photo"),
                 "driver_details": user.get("driver_details")
@@ -3549,6 +3551,30 @@ async def get_all_reports(status: str = None, limit: int = 50):
         logger.error(f"Get reports error: {e}")
         return {"success": True, "reports": []}
 
+
+@api_router.get("/admin/community-city-requests")
+async def admin_community_city_requests(admin_phone: str, limit: int = 80):
+    """Admin: Leylek Muhabbeti şehir açma talepleri (reports.reason = city_muhabbet_talep)."""
+    try:
+        if admin_phone not in ADMIN_PHONE_NUMBERS:
+            raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+        lim = max(1, min(int(limit), 200))
+        result = (
+            supabase.table("reports")
+            .select("*")
+            .eq("reason", "city_muhabbet_talep")
+            .order("created_at", desc=True)
+            .limit(lim)
+            .execute()
+        )
+        return {"success": True, "requests": result.data or []}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"admin_community_city_requests error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.post("/admin/reports/{report_id}/update")
 async def update_report_status(report_id: str, status: str, admin_notes: str = None):
     """Admin: Şikayet durumunu güncelle"""
@@ -3878,7 +3904,7 @@ async def get_offers_for_passenger(passenger_id: str = None, user_id: str = None
                 "id": offer["id"],
                 "driver_id": offer["driver_id"],
                 "driver_name": driver_info.get("name", "Şoför"),
-                "driver_rating": float(driver_info.get("rating", 5.0)),
+                "driver_rating": float(driver_info.get("rating", 4.0)),
                 "driver_photo": driver_info.get("profile_photo"),
                 "price": float(offer["price"]),
                 "status": offer["status"],
@@ -4260,7 +4286,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 "id": tag["id"],
                 "passenger_id": tag["passenger_id"],
                 "passenger_name": passenger_info.get("name", tag.get("passenger_name", "Yolcu")),
-                "passenger_rating": float(passenger_info.get("rating", 5.0)),
+                "passenger_rating": float(passenger_info.get("rating", 4.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
                 "passenger_city": passenger_city,
                 "pickup_location": tag["pickup_location"],
@@ -4284,6 +4310,256 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
     except Exception as e:
         logger.error(f"Get driver requests error: {e}")
         return {"success": False, "requests": []}
+
+
+@api_router.get("/driver/nearby-passengers-map")
+async def get_driver_nearby_passengers_map(
+    driver_id: str = None,
+    user_id: str = None,
+    latitude: float = None,
+    longitude: float = None,
+    radius_km: float = None,
+):
+    """
+    Sürücü bekleme haritası: sürücü konumu etrafında radius_km (varsayılan DISPATCH_RADIUS_KM) içinde
+    - Aktif yolcu talepleri (tag: waiting / pending / offers_received, alış noktası)
+    - Uygulamada konumu güncel olan, talebi olmayan yolcular (hafif işaret; gizlilik: yalnızca kısa etiket)
+    """
+    try:
+        did = driver_id or user_id
+        if not did:
+            return {"success": False, "detail": "driver_id veya user_id gerekli", "seeking": [], "nearby_app_users": []}
+
+        resolved_id = await resolve_user_id(did)
+        rk = float(radius_km) if radius_km is not None else float(DISPATCH_RADIUS_KM)
+
+        driver_result = supabase.table("users").select("city, latitude, longitude, driver_details").eq("id", resolved_id).execute()
+        driver_lat = latitude
+        driver_lng = longitude
+        if driver_result.data:
+            if driver_lat is None:
+                driver_lat = driver_result.data[0].get("latitude")
+            if driver_lng is None:
+                driver_lng = driver_result.data[0].get("longitude")
+
+        if driver_lat is None or driver_lng is None:
+            return {
+                "success": True,
+                "radius_km": rk,
+                "seeking": [],
+                "nearby_app_users": [],
+                "detail": "no_driver_location",
+            }
+
+        driver_lat = float(driver_lat)
+        driver_lng = float(driver_lng)
+
+        blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
+        blocked_ids = {r["blocked_user_id"] for r in (blocked_result.data or [])}
+        blocked_by_result = supabase.table("blocked_users").select("user_id").eq("blocked_user_id", resolved_id).execute()
+        blocked_by_ids = {r["user_id"] for r in (blocked_by_result.data or [])}
+        all_blocked = blocked_ids | blocked_by_ids
+
+        driver_eff = _effective_driver_vehicle_kind(driver_result.data[0] if driver_result.data else {})
+
+        ten_min_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
+        tag_res = (
+            supabase.table("tags")
+            .select(
+                "id, passenger_id, pickup_lat, pickup_lng, pickup_location, status, offered_price, created_at, "
+                "users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)"
+            )
+            .in_("status", ["waiting", "pending", "offers_received"])
+            .gte("created_at", ten_min_ago)
+            .order("created_at", desc=True)
+            .limit(150)
+            .execute()
+        )
+
+        seeking = []
+        active_passenger_ids = set()
+
+        for tag in tag_res.data or []:
+            if tag.get("passenger_id") in all_blocked:
+                continue
+            passenger_info = tag.get("users", {}) or {}
+            trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
+            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+                continue
+
+            plat = tag.get("pickup_lat")
+            plng = tag.get("pickup_lng")
+            if plat is None or plng is None:
+                continue
+            try:
+                plat_f = float(plat)
+                plng_f = float(plng)
+            except (TypeError, ValueError):
+                continue
+
+            dist = haversine_distance(driver_lat, driver_lng, plat_f, plng_f)
+            if dist > rk:
+                continue
+
+            pid = tag.get("passenger_id")
+            if pid:
+                active_passenger_ids.add(str(pid).strip().lower())
+
+            pname = passenger_info.get("name", "Yolcu") or "Yolcu"
+            label = (pname.split() or ["Yolcu"])[0][:20]
+
+            seeking.append(
+                {
+                    "tag_id": tag["id"],
+                    "passenger_id": pid,
+                    "pickup_lat": plat_f,
+                    "pickup_lng": plng_f,
+                    "pickup_location": (tag.get("pickup_location") or "")[:80],
+                    "status": tag.get("status"),
+                    "distance_km": round(dist, 2),
+                    "offered_price": tag.get("offered_price"),
+                    "label": label,
+                }
+            )
+
+        nearby_app_users = []
+        forty_five_min_ago = (datetime.utcnow() - timedelta(minutes=45)).isoformat()
+
+        try:
+            pu = (
+                supabase.table("users")
+                .select("id, name, latitude, longitude, driver_online, updated_at, city")
+                .neq("id", resolved_id)
+                .not_.is_("latitude", "null")
+                .not_.is_("longitude", "null")
+                .or_("driver_online.is.null,driver_online.eq.false")
+                .gte("updated_at", forty_five_min_ago)
+                .limit(280)
+                .execute()
+            )
+        except Exception as ex:
+            logger.warning(f"nearby-passengers-map users query fallback: {ex}")
+            pu = (
+                supabase.table("users")
+                .select("id, name, latitude, longitude, driver_online, city")
+                .neq("id", resolved_id)
+                .not_.is_("latitude", "null")
+                .not_.is_("longitude", "null")
+                .or_("driver_online.is.null,driver_online.eq.false")
+                .limit(280)
+                .execute()
+            )
+
+        driver_city_norm = ""
+        driver_city_label = ""
+        if driver_result.data:
+            driver_city_label = str(driver_result.data[0].get("city") or "").strip()
+            driver_city_norm = driver_city_label.lower()
+
+        # Şehir içi ~20x20 km hücre yoğunluğu (Türkiye enlemi için lat/lng adımı)
+        GRID_STEP_LAT = 0.18
+        GRID_STEP_LNG = 0.26
+        city_grid_counts: dict = {}
+
+        def _grid_add(plat: float, plng: float) -> None:
+            gi = int(math.floor(plat / GRID_STEP_LAT))
+            gj = int(math.floor(plng / GRID_STEP_LNG))
+            k = (gi, gj)
+            city_grid_counts[k] = city_grid_counts.get(k, 0) + 1
+
+        if driver_city_norm:
+            for tag in tag_res.data or []:
+                if tag.get("passenger_id") in all_blocked:
+                    continue
+                passenger_info = tag.get("users", {}) or {}
+                pcity = str(passenger_info.get("city") or "").strip().lower()
+                if pcity != driver_city_norm:
+                    continue
+                try:
+                    plat_f = float(tag.get("pickup_lat"))
+                    plng_f = float(tag.get("pickup_lng"))
+                except (TypeError, ValueError):
+                    continue
+                _grid_add(plat_f, plng_f)
+
+        seen_light = 0
+        max_light = 55
+
+        for row in pu.data or []:
+            if seen_light >= max_light:
+                break
+            uid = str(row.get("id") or "").strip().lower()
+            if uid in all_blocked:
+                continue
+            if uid in active_passenger_ids:
+                continue
+            try:
+                ulat = float(row["latitude"])
+                ulng = float(row["longitude"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if driver_city_norm:
+                uc = str(row.get("city") or "").strip().lower()
+                if uc != driver_city_norm:
+                    continue
+            dist = haversine_distance(driver_lat, driver_lng, ulat, ulng)
+            if dist > rk:
+                continue
+            nm = row.get("name") or "Yolcu"
+            label = (nm.split() or ["Yakında"])[0][:12]
+            nearby_app_users.append(
+                {
+                    "user_id": row["id"],
+                    "latitude": ulat,
+                    "longitude": ulng,
+                    "distance_km": round(dist, 2),
+                    "label": label,
+                }
+            )
+            seen_light += 1
+
+        if driver_city_norm:
+            for row in pu.data or []:
+                uid = str(row.get("id") or "").strip().lower()
+                if uid in all_blocked:
+                    continue
+                uc = str(row.get("city") or "").strip().lower()
+                if uc != driver_city_norm:
+                    continue
+                try:
+                    ulat = float(row["latitude"])
+                    ulng = float(row["longitude"])
+                except (TypeError, ValueError, KeyError):
+                    continue
+                _grid_add(ulat, ulng)
+
+        city_grid = []
+        if city_grid_counts:
+            mx = max(city_grid_counts.values()) or 1
+            for (gi, gj), cnt in sorted(city_grid_counts.items(), key=lambda x: -x[1])[:48]:
+                city_grid.append(
+                    {
+                        "center_lat": (gi + 0.5) * GRID_STEP_LAT,
+                        "center_lng": (gj + 0.5) * GRID_STEP_LNG,
+                        "count": cnt,
+                        "intensity": round(min(1.0, cnt / mx), 3),
+                    }
+                )
+
+        return {
+            "success": True,
+            "radius_km": rk,
+            "seeking": seeking,
+            "nearby_app_users": nearby_app_users,
+            "seeking_count": len(seeking),
+            "nearby_light_count": len(nearby_app_users),
+            "driver_city": driver_city_label,
+            "city_grid": city_grid,
+        }
+    except Exception as e:
+        logger.error(f"nearby-passengers-map error: {e}")
+        return {"success": False, "seeking": [], "nearby_app_users": [], "detail": str(e)}
+
 
 class SendOfferRequest(BaseModel):
     tag_id: str
@@ -4372,7 +4648,7 @@ async def send_offer(
             "tag_id": tid,
             "driver_id": resolved_id,
             "driver_name": driver["name"],
-            "driver_rating": float(driver.get("rating", 5.0)),
+            "driver_rating": float(driver.get("rating", 4.0)),
             "driver_photo": driver.get("profile_photo"),
             "price": p,
             "notes": n or "Teklif gönderildi",
@@ -4705,7 +4981,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "passenger_id": tag["passenger_id"],
                 "passenger_name": passenger_info.get("name"),
                 "passenger_phone": passenger_info.get("phone"),
-                "passenger_rating": float(passenger_info.get("rating", 5.0)),
+                "passenger_rating": float(passenger_info.get("rating", 4.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
                 "passenger_location": passenger_location,
                 "pickup_location": tag["pickup_location"],
@@ -5089,7 +5365,7 @@ async def force_end_trip(tag_id: str, user_id: str):
         # Zorla bitiren kullanıcının puanını -5 düşür (AĞIR CEZA)
         user_result = supabase.table("users").select("rating").eq("id", resolved_id).execute()
         if user_result.data:
-            current_rating = float(user_result.data[0].get("rating", 5.0))
+            current_rating = float(user_result.data[0].get("rating", 4.0))
             new_rating = max(1.0, current_rating - 5.0)  # Min 1.0, -5 puan ceza
             supabase.table("users").update({"rating": new_rating}).eq("id", resolved_id).execute()
         
@@ -5150,17 +5426,20 @@ async def rate_user(rater_id: str, rated_user_id: str, rating: int, tag_id: str 
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
         user = user_result.data[0]
-        current_rating = float(user.get("rating", 5.0))
+        current_rating = float(user.get("rating", 4.0))
         total_ratings = user.get("total_ratings", 0) or 0
         
         # Yeni ortalama hesapla
         new_total = total_ratings + 1
         new_rating = ((current_rating * total_ratings) + rating) / new_total
-        
-        # Güncelle
+        new_rating = round(new_rating, 2)
+        # Puan sütununu yıldız ortalaması ile hizala (1–5 → 0–100)
+        new_points = int(round(max(0, min(100, (new_rating - 1.0) / 4.0 * 100))))
+
         supabase.table("users").update({
-            "rating": round(new_rating, 2),
-            "total_ratings": new_total
+            "rating": new_rating,
+            "total_ratings": new_total,
+            "points": new_points,
         }).eq("id", rated_user_id).execute()
         
         return {"success": True, "new_rating": round(new_rating, 2)}
@@ -5231,7 +5510,8 @@ class ExpoPushService:
         if not valid_tokens:
             return {"sent": 0, "failed": len(tokens)}
         
-        ch = expo_android_channel_id_for_data(data)
+        str_data = _expo_push_data_stringify(data or {})
+        ch = expo_android_channel_id_for_data(str_data)
         messages = [
             {
                 "to": t,
@@ -5240,7 +5520,7 @@ class ExpoPushService:
                 "sound": "default",
                 "priority": "high",
                 "channelId": ch,
-                "data": data or {},
+                "data": str_data,
             }
             for t in valid_tokens
         ]
@@ -5256,9 +5536,14 @@ class ExpoPushService:
                     timeout=30,
                 )
                 result = response.json()
-                
-                sent = sum(1 for t in result.get("data", []) if t.get("status") == "ok")
-                return {"sent": sent, "failed": len(valid_tokens) - sent}
+                tickets = result.get("data") or []
+                sent = sum(1 for t in tickets if t.get("status") == "ok")
+                for t in tickets:
+                    if t.get("status") != "ok":
+                        logger.warning(
+                            f"Expo push ticket hata: status={t.get('status')} message={t.get('message')} details={t.get('details')}"
+                        )
+                return {"sent": sent, "failed": len(valid_tokens) - sent, "tickets": tickets}
         except Exception as e:
             logger.error(f"Push error: {e}")
             return {"sent": 0, "failed": len(valid_tokens)}
@@ -6250,7 +6535,7 @@ async def admin_get_users(admin_phone: str, page: int = 1, limit: int = 20, sear
                 "phone": u["phone"],
                 "name": u["name"],
                 "city": u.get("city"),
-                "rating": float(u.get("rating", 5.0)),
+                "rating": float(u.get("rating", 4.0)),
                 "total_trips": u.get("total_trips", 0),
                 "is_active": u.get("is_active", True),
                 "is_driver": bool(u.get("driver_details")),
@@ -7364,7 +7649,6 @@ async def approve_trip_end(tag_id: str, user_id: str):
 
 import hashlib
 import time
-import math
 
 # ==================== HIZLI QR SİSTEMİ ====================
 # In-memory cache for QR verifications (1000+ concurrent users support)
@@ -7737,10 +8021,15 @@ async def complete_trip_with_qr(request: Request):
         driver_id = tag.get("driver_id")
         passenger_id = tag.get("passenger_id")
         
-        if scanner_user_id != passenger_id:
+        def _uid_eq(a, b) -> bool:
+            if a is None or b is None:
+                return False
+            return str(a).strip().lower() == str(b).strip().lower()
+
+        if not _uid_eq(scanner_user_id, passenger_id):
             return {"success": False, "detail": "Sadece yolcu QR tarayabilir"}
         
-        if scanned_user_id != driver_id:
+        if not _uid_eq(scanned_user_id, driver_id):
             return {"success": False, "detail": "QR kod bu yolculuğun sürücüsüne ait değil"}
         
         # 3. Yolculuğu tamamla
@@ -7998,7 +8287,7 @@ async def rate_user_after_trip(
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
         
         user = user_result.data[0]
-        current_rating = user.get("rating", 5.0) or 5.0
+        current_rating = user.get("rating", 4.0) or 4.0
         total_ratings = user.get("total_ratings", 0) or 0
         
         # Yeni ortalama hesapla
@@ -9092,57 +9381,99 @@ class ChatMessageCreate(BaseModel):
 @api_router.post("/chat/send-message")
 async def send_chat_message(msg: ChatMessageCreate):
     """
-    HYBRID CHAT: 
-    1. FIRST save to Supabase (source of truth)
-    2. THEN emit socket event (best-effort, non-blocking)
-    3. Send push notification to receiver
+    HYBRID CHAT:
+    1. Bu gönderen için bu tag'de ilk mesaj mı kontrol et
+    2. Supabase'e kaydet
+    3. Yalnızca ilk mesajda push + first_chat_message socket (karşı taraf)
     """
     try:
-        # 1. Supabase'e kaydet (SOURCE OF TRUTH)
+        prior = (
+            supabase.table("chat_messages")
+            .select("id")
+            .eq("tag_id", msg.tag_id)
+            .eq("sender_id", msg.sender_id)
+            .limit(1)
+            .execute()
+        )
+        is_first_from_sender = not (prior.data and len(prior.data) > 0)
+
         message_data = {
             "tag_id": msg.tag_id,
             "sender_id": msg.sender_id,
             "receiver_id": msg.receiver_id,
             "message": msg.message,
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.utcnow().isoformat(),
         }
-        
+
         result = supabase.table("chat_messages").insert(message_data).execute()
-        
+
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to save message")
-        
+
         saved_message = result.data[0]
         logger.info(f"💬 Chat message saved to Supabase: {saved_message['id']}")
-        
-        # 2. Gönderenin adını al
+
         sender_result = supabase.table("users").select("name").eq("id", msg.sender_id).execute()
-        sender_name = sender_result.data[0].get("name", "Birisi") if sender_result.data else "Birisi"
-        
-        # 3. 🔔 PUSH NOTIFICATION - Alıcıya mesaj bildirimi
-        asyncio.create_task(send_push_notification(
-            msg.receiver_id,
-            f"💬 {sender_name}",
-            msg.message[:100] + ("..." if len(msg.message) > 100 else ""),
-            {"type": "chat_message", "tag_id": msg.tag_id, "sender_id": msg.sender_id}
-        ))
-        logger.info(f"📤 Chat push notification sent to {msg.receiver_id}")
-        
-        # 4. Socket bildirimi (BEST-EFFORT - başarısız olursa önemli değil)
-        try:
-            # Receiver'a socket emit
-            await sio.emit("new_chat_message", {
-                "tag_id": msg.tag_id,
-                "message": saved_message,
-                "sender_name": sender_name
-            }, room=_normalize_user_room(msg.receiver_id))
-        except Exception as socket_err:
-            logger.warning(f"⚠️ Socket notification failed (non-blocking): {socket_err}")
-        
+        sender_name = (
+            (msg.sender_name or "").strip()
+            or (sender_result.data[0].get("name", "Birisi") if sender_result.data else "Birisi")
+        )
+
+        tag_row = (
+            supabase.table("tags")
+            .select("driver_id, passenger_id")
+            .eq("id", msg.tag_id)
+            .limit(1)
+            .execute()
+        )
+        driver_uid = None
+        if tag_row.data:
+            driver_uid = str(tag_row.data[0].get("driver_id") or "").strip() or None
+        from_driver = bool(driver_uid and str(msg.sender_id).strip().lower() == driver_uid.lower())
+        push_title = "Sürücü size yazdı" if from_driver else "Yolcu size yazdı"
+        preview = (msg.message or "").strip()
+        if len(preview) > 72:
+            preview = preview[:69] + "..."
+        push_body = f"{preview}\nMesajı görmek için tıklayın." if preview else "Mesajı görmek için tıklayın."
+
+        if is_first_from_sender:
+            asyncio.create_task(
+                send_push_notification(
+                    msg.receiver_id,
+                    push_title,
+                    push_body,
+                    {
+                        "type": "first_chat_message",
+                        "tag_id": msg.tag_id,
+                        "sender_id": msg.sender_id,
+                        "from_driver": from_driver,
+                    },
+                )
+            )
+            logger.info(f"📤 İlk sohbet push: receiver={msg.receiver_id} tag={msg.tag_id}")
+
+            try:
+                await sio.emit(
+                    "first_chat_message",
+                    {
+                        "tag_id": msg.tag_id,
+                        "sender_id": msg.sender_id,
+                        "sender_name": sender_name,
+                        "message": msg.message,
+                        "message_preview": preview,
+                        "from_driver": from_driver,
+                        "created_at": saved_message.get("created_at"),
+                    },
+                    room=_normalize_user_room(msg.receiver_id),
+                )
+            except Exception as socket_err:
+                logger.warning(f"⚠️ first_chat_message socket failed: {socket_err}")
+
         return {
             "success": True,
             "message_id": saved_message["id"],
-            "created_at": saved_message["created_at"]
+            "created_at": saved_message["created_at"],
+            "first_from_sender": is_first_from_sender,
         }
         
     except HTTPException:
@@ -10133,7 +10464,7 @@ async def admin_get_users_full(admin_phone: str, page: int = 1, limit: int = 20,
                 "phone": u["phone"],
                 "name": u["name"],
                 "city": u.get("city"),
-                "rating": float(u.get("rating", 5.0)),
+                "rating": float(u.get("rating", 4.0)),
                 "total_trips": u.get("total_trips", 0),
                 "is_active": u.get("is_active", True),
                 "is_driver": bool(u.get("driver_details")),
@@ -10930,6 +11261,53 @@ class CommunityReportRequest(BaseModel):
     message_id: str
     reporter_id: str
     reason: Optional[str] = None
+
+
+@api_router.post("/community/city-join-request")
+async def community_city_join_request(user_id: str, requested_city: str):
+    """Leylek Muhabbeti: Ankara dışı şehir talebi — admin panelinde reports (reason=city_muhabbet_talep) olarak görünür."""
+    try:
+        if not user_id or not (requested_city or "").strip():
+            return {"success": False, "detail": "user_id ve requested_city gerekli"}
+        rid = await resolve_user_id(user_id)
+        city_clean = (requested_city or "").strip()
+        prof = (
+            supabase.table("users")
+            .select("name, phone, city, driver_details")
+            .eq("id", rid)
+            .limit(1)
+            .execute()
+        )
+        row = prof.data[0] if prof.data else {}
+        name = row.get("name") or "Bilinmeyen"
+        phone = row.get("phone") or ""
+        profile_city = row.get("city") or ""
+        reported_role = "driver" if row.get("driver_details") else "passenger"
+        details = (
+            f"Leylek Muhabbeti şehir talebi: {city_clean}. "
+            f"Kullanıcı profil şehri: {profile_city or '—'}. "
+            f"Kullanıcı: {name} ({phone})"
+        )
+        report_data = {
+            "reporter_id": rid,
+            "reporter_name": name,
+            "reporter_phone": phone,
+            "reported_user_id": rid,
+            "reported_user_name": name,
+            "reported_user_phone": phone,
+            "reported_user_role": reported_role,
+            "reason": "city_muhabbet_talep",
+            "details": details,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        supabase.table("reports").insert(report_data).execute()
+        logger.info(f"📬 Muhabbet şehir talebi: {city_clean} — user {rid}")
+        return {"success": True, "message": "Talebiniz yöneticilere iletildi."}
+    except Exception as e:
+        logger.error(f"community_city_join_request error: {e}")
+        return {"success": False, "detail": str(e)}
+
 
 @api_router.get("/community/messages")
 async def get_community_messages(limit: int = 50, offset: int = 0, city: Optional[str] = None):
@@ -11828,7 +12206,7 @@ async def secure_login(request: Request, phone: str, pin: str, device_id: str = 
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
                 "city": user.get("city"),
-                "rating": float(user.get("rating", 5.0)),
+                "rating": float(user.get("rating", 4.0)),
                 "total_trips": user.get("total_trips", 0),
                 "profile_photo": user.get("profile_photo"),
                 "driver_details": user.get("driver_details"),
@@ -11898,7 +12276,7 @@ async def admin_get_online_drivers(admin_phone: str):
                 "name": driver.get("name", "İsimsiz"),
                 "phone": driver.get("phone"),
                 "city": driver.get("city"),
-                "rating": float(driver.get("rating", 5.0)),
+                "rating": float(driver.get("rating", 4.0)),
                 "latitude": driver.get("latitude"),
                 "longitude": driver.get("longitude"),
                 "active_until": driver.get("driver_active_until"),

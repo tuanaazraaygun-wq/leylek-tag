@@ -29,6 +29,9 @@ import * as ImagePicker from 'expo-image-picker';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+/** Şu an yalnızca bu şehrin muhabbet kanalı açık; diğer iller talep ile admin paneline düşer. */
+const COMMUNITY_LIVE_CITY = 'Ankara';
+
 // Şehir temaları
 const CITY_THEMES: { [key: string]: { gradient: string[], icon: string } } = {
   'Ankara': { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -112,8 +115,8 @@ const formatTime = (dateStr: string): string => {
 };
 
 export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScreenProps) {
-  const [selectedCity, setSelectedCity] = useState<string>('');
-  const [showCityPicker, setShowCityPicker] = useState(true);
+  const [selectedCity, setSelectedCity] = useState<string>(COMMUNITY_LIVE_CITY);
+  const [showCityPicker, setShowCityPicker] = useState(false);
   const [citySearch, setCitySearch] = useState('');
   
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
@@ -214,17 +217,18 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     }
     
     const tempId = `temp_${Date.now()}`;
+    const displayName = getFirstName(user.name);
     const tempMessage: CommunityMessage = {
       id: tempId,
       user_id: user.id,
-      name: user.name,
+      name: displayName,
       role: user.role as 'passenger' | 'driver',
       content: newMessage.trim(),
       image_url: selectedImage || undefined,
       likes_count: 0,
       created_at: new Date().toISOString(),
       city: selectedCity,
-      rating: user.rating,
+      rating: user.rating ?? 4,
       _temp: true,
     };
     
@@ -242,12 +246,12 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: user.id,
-          name: user.name,
+          name: displayName,
           role: user.role,
           content: newMessage.trim(),
           image_url: selectedImage,
           city: selectedCity,
-          rating: user.rating,
+          rating: user.rating ?? 4,
         }),
       });
       
@@ -351,7 +355,9 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             <View style={{ width: 40 }} />
           </View>
           
-          <Text style={styles.cityPickerSubtitle}>Şehrini seç, muhabbet başlasın!</Text>
+          <Text style={styles.cityPickerSubtitle}>
+            Şu anda yalnızca {COMMUNITY_LIVE_CITY} topluluğu açıktır. Diğer iller için talep oluşturabilirsiniz.
+          </Text>
           
           {/* Arama */}
           <View style={styles.searchContainer}>
@@ -373,17 +379,55 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             contentContainerStyle={styles.cityList}
             renderItem={({ item }) => {
               const theme = getCityTheme(item);
+              const isLive = item === COMMUNITY_LIVE_CITY;
               return (
                 <TouchableOpacity
-                  style={styles.cityCard}
+                  style={[styles.cityCard, !isLive && styles.cityCardDisabled]}
+                  activeOpacity={isLive ? 0.88 : 1}
                   onPress={() => {
-                    setSelectedCity(item);
-                    setShowCityPicker(false);
+                    if (isLive) {
+                      setSelectedCity(item);
+                      setShowCityPicker(false);
+                      return;
+                    }
+                    const cityLabel = item;
+                    Alert.alert(
+                      'Bilgi',
+                      `Şu anda yalnızca ${COMMUNITY_LIVE_CITY} ili kullanıcıları Leylek Muhabbeti'ne katılabilir. Talep oluşturmak için aşağıdaki butona dokunun.`,
+                      [
+                        { text: 'İptal', style: 'cancel' },
+                        {
+                          text: `${cityLabel}'yi Leylek Muhabbetine katın`,
+                          onPress: async () => {
+                            try {
+                              const q = new URLSearchParams({
+                                user_id: user.id,
+                                requested_city: cityLabel,
+                              });
+                              const res = await fetch(`${apiUrl}/community/city-join-request?${q.toString()}`, {
+                                method: 'POST',
+                              });
+                              const j = await res.json();
+                              if (j.success) {
+                                Alert.alert('Teşekkürler', 'Talebiniz yöneticilere iletildi.');
+                              } else {
+                                Alert.alert('Hata', (j.detail as string) || 'Gönderilemedi');
+                              }
+                            } catch {
+                              Alert.alert('Hata', 'Bağlantı kurulamadı');
+                            }
+                          },
+                        },
+                      ]
+                    );
                   }}
                 >
                   <LinearGradient colors={theme.gradient} style={styles.cityCardGradient}>
-                    <Ionicons name={theme.icon as any} size={28} color="#fff" />
+                    <Ionicons name={(isLive ? theme.icon : 'lock-closed') as any} size={28} color="#fff" />
                     <Text style={styles.cityCardText}>{item}</Text>
+                    {!isLive ? (
+                      <Text style={styles.cityCardHint}>Talep ile açılır</Text>
+                    ) : null}
                   </LinearGradient>
                 </TouchableOpacity>
               );
@@ -686,6 +730,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginTop: 8,
+  },
+  cityCardDisabled: {
+    opacity: 0.5,
+  },
+  cityCardHint: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    marginTop: 6,
+    fontWeight: '600',
   },
   
   // Header

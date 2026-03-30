@@ -8,7 +8,15 @@ import { Audio } from 'expo-av';
 const SOUND_URLS = {
   tap: 'https://assets.mixkit.co/active_storage/sfx/1109/1109-preview.mp3',
   button: 'https://assets.mixkit.co/active_storage/sfx/2574/2574-preview.mp3',
+  /** Yumuşak bildirim (eşleşme); bundle yoksa bu URI kullanılır */
+  matchChime: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
 } as const;
+
+const MATCH_CHIME_VOLUME = 0.46;
+const MATCH_CHIME_DEBOUNCE_MS = 2800;
+
+let matchChimeLoadPromise: Promise<Audio.Sound | null> | null = null;
+let lastMatchChimeAt = 0;
 
 async function playUri(uri: string, volume = 0.7): Promise<void> {
   if (Platform.OS === 'web') return;
@@ -52,4 +60,55 @@ export async function playButtonSound(): Promise<void> {
 /** Sadece rol seçim ekranı — giriş / yolcu paneli / harita tıklamaları sessiz. */
 export async function playRoleScreenSound(): Promise<void> {
   await playUri(SOUND_URLS.button, 0.42);
+}
+
+async function ensureMatchChimeLoaded(): Promise<Audio.Sound | null> {
+  if (Platform.OS === 'web') return null;
+  if (!matchChimeLoadPromise) {
+    matchChimeLoadPromise = (async (): Promise<Audio.Sound | null> => {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require('../assets/sounds/match-chime.mp3'),
+          { shouldPlay: false, volume: MATCH_CHIME_VOLUME, isLooping: false },
+        );
+        return sound;
+      } catch (e) {
+        if (__DEV__) console.warn('utils/sound match-chime bundle', e);
+        try {
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: SOUND_URLS.matchChime },
+            { shouldPlay: false, volume: MATCH_CHIME_VOLUME, isLooping: false },
+          );
+          return sound;
+        } catch (e2) {
+          if (__DEV__) console.warn('utils/sound match-chime uri', e2);
+          matchChimeLoadPromise = null;
+          return null;
+        }
+      }
+    })();
+  }
+  return matchChimeLoadPromise;
+}
+
+/**
+ * Eşleşme anı — yolcu ve sürücü (ding-dong tarzı, düşük ses).
+ * Socket + yerel kabul aynı anda tetiklenirse tek çalma (debounce).
+ */
+export async function playMatchChimeSound(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  const now = Date.now();
+  if (now - lastMatchChimeAt < MATCH_CHIME_DEBOUNCE_MS) return;
+  try {
+    await loadSounds();
+    const sound = await ensureMatchChimeLoaded();
+    if (!sound) return;
+    lastMatchChimeAt = now;
+    await sound.setVolumeAsync(MATCH_CHIME_VOLUME);
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+  } catch (e) {
+    if (__DEV__) console.warn('playMatchChimeSound', e);
+  }
 }

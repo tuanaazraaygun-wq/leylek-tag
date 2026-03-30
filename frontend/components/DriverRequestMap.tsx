@@ -22,6 +22,7 @@ import {
 import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { displayFirstName } from '../lib/displayName';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -139,7 +140,7 @@ export default function DriverRequestMap({
               size={24} 
               color={isSent ? '#22C55E' : '#3B82F6'} 
             />
-            <Text style={styles.cardName}>{item.passenger_name} Yolcu</Text>
+            <Text style={styles.cardName}>{displayFirstName(item.passenger_name, 'Yolcu')} Yolcu</Text>
           </View>
           {isSent && (
             <View style={styles.sentBadge}>

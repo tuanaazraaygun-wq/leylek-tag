@@ -287,7 +287,7 @@ function OfferCard({
             ) : (
               <>
                 <Ionicons name="send" size={16} color="#FFF" />
-                <Text style={styles.sendButtonText}>Teklif Gönder</Text>
+                <Text maxFontSizeMultiplier={1.28} style={styles.sendButtonText}>Teklif Gönder</Text>
               </>
             )}
           </TouchableOpacity>

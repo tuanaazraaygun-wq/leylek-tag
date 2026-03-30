@@ -11,6 +11,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, Dimensions, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { displayFirstName } from '../lib/displayName';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -125,7 +126,7 @@ export default function SearchingMapView({
           <Text style={styles.webFallbackText}>Harita - {driverLocations.length} sürücü</Text>
           {driverLocations.map((driver, i) => (
             <Text key={driver.driver_id} style={styles.driverItem}>
-              🚗 {driver.driver_name} {driver.price ? `- ₺${driver.price}` : ''}
+              🚗 {displayFirstName(driver.driver_name, 'Sürücü')} {driver.price ? `- ₺${driver.price}` : ''}
             </Text>
           ))}
         </View>
@@ -204,7 +205,7 @@ export default function SearchingMapView({
           <Marker
             key={driver.driver_id}
             coordinate={{ latitude: driver.latitude, longitude: driver.longitude }}
-            title={driver.driver_name}
+            title={displayFirstName(driver.driver_name, 'Sürücü')}
             description={driver.vehicle_model || (driver.price ? `₺${driver.price}` : undefined)}
             anchor={{ x: 0.5, y: 0.5 }}
           >

@@ -100,6 +100,10 @@ interface PlacesAutocompleteProps {
   suggestionsFirst?: boolean;
   /** Daha fazla sonuç; şehir viewbox sınırı gevşetilir */
   widerSearch?: boolean;
+  /** Hedef modalı: arama kutusu daha yüksek */
+  inputSize?: 'default' | 'large';
+  /** Öneri listesi tavanına eklenecek piksel */
+  predictionMaxHeightBonus?: number;
 }
 
 export default function PlacesAutocomplete({
@@ -111,17 +115,21 @@ export default function PlacesAutocomplete({
   visualVariant = 'default',
   suggestionsFirst = false,
   widerSearch = false,
+  inputSize = 'default',
+  predictionMaxHeightBonus = 0,
 }: PlacesAutocompleteProps) {
   const { height: windowHeight } = useWindowDimensions();
   const tech = visualVariant === 'tech';
-  const ratio = tech ? Math.min(0.52, LAYOUT.predictionMaxHeightRatio + 0.12) : LAYOUT.predictionMaxHeightRatio;
+  const ratio = tech ? Math.min(0.55, LAYOUT.predictionMaxHeightRatio + 0.14) : LAYOUT.predictionMaxHeightRatio;
   const predictionsMaxHeight = Math.round(
     Math.max(
       LAYOUT.predictionListMin,
-      Math.min(LAYOUT.predictionListMax + (tech ? 80 : 0), windowHeight * ratio),
+      Math.min(
+        LAYOUT.predictionListMax + (tech ? 100 : 0) + predictionMaxHeightBonus,
+        windowHeight * ratio + predictionMaxHeightBonus,
+      ),
     ),
   );
-
   const [query, setQuery] = useState(initialValue);
   const [predictions, setPredictions] = useState<PlaceResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,7 +153,7 @@ export default function PlacesAutocomplete({
     setShowPopular(false);
     debounceRef.current = setTimeout(() => {
       searchPlaces(query);
-    }, 300);
+    }, widerSearch ? 220 : 280);
 
     return () => {
       if (debounceRef.current) {
@@ -347,15 +355,21 @@ export default function PlacesAutocomplete({
         : null}
 
       {/* Arama Kutusu */}
-      <View style={[styles.inputContainer, tech && styles.inputContainerTech]}>
+      <View
+        style={[
+          styles.inputContainer,
+          tech && styles.inputContainerTech,
+          tech && inputSize === 'large' && styles.inputContainerTechLarge,
+        ]}
+      >
         <Ionicons
           name="search"
-          size={20}
+          size={inputSize === 'large' ? 22 : 20}
           color={tech ? '#38BDF8' : '#3FA9F5'}
           style={styles.searchIcon}
         />
         <TextInput
-          style={[styles.input, tech && styles.inputTech]}
+          style={[styles.input, tech && styles.inputTech, tech && inputSize === 'large' && styles.inputTechLarge]}
           placeholder={placeholder}
           placeholderTextColor={tech ? 'rgba(148, 163, 184, 0.95)' : '#999'}
           value={query}
@@ -506,6 +520,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#F1F5F9',
     paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+  },
+  inputContainerTechLarge: {
+    minHeight: 62,
+    borderRadius: 18,
+    paddingVertical: Platform.OS === 'android' ? 6 : 4,
+  },
+  inputTechLarge: {
+    fontSize: 18,
+    fontWeight: '700',
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
   },
   loader: {
     marginLeft: 8,

@@ -158,6 +158,16 @@ interface UseSocketProps {
     tag_id?: string;
     timestamp: string;
   }) => void;
+  /** Karşı taraf bu eşleşmede ilk kez yazdı (push ile aynı mantık) */
+  onFirstChatMessage?: (data: {
+    tag_id: string;
+    sender_id: string;
+    sender_name: string;
+    message: string;
+    message_preview?: string;
+    from_driver: boolean;
+    created_at?: string;
+  }) => void;
   onMessageSent?: (data: { success: boolean; message_id: string }) => void;
 }
 
@@ -195,6 +205,7 @@ export default function useSocket({
   onCallCancelled,
   onCallEndedNew,
   onNewMessage,  // 🆕 Mesajlaşma
+  onFirstChatMessage,
   onMessageSent,  // 🆕 Mesajlaşma
 }: UseSocketProps) {
   
@@ -238,7 +249,7 @@ export default function useSocket({
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
     onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
-    onCallCancelled, onCallEndedNew, onNewMessage, onMessageSent
+    onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
   });
   
   // Callback'leri güncelle
@@ -250,7 +261,7 @@ export default function useSocket({
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
       onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
-      onCallCancelled, onCallEndedNew, onNewMessage, onMessageSent
+      onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
     };
   });
 
@@ -425,6 +436,11 @@ export default function useSocket({
       callbackRefs.current.onNewMessage?.(data);
     };
 
+    const handleFirstChatMessage = (data: any) => {
+      console.log('💬 [useSocket] İLK SOHBET MESAJI:', data);
+      callbackRefs.current.onFirstChatMessage?.(data);
+    };
+
     const handleMessageSent = (data: any) => {
       console.log('✅ [useSocket] MESAJ GÖNDERİLDİ:', data);
       callbackRefs.current.onMessageSent?.(data);
@@ -482,6 +498,7 @@ export default function useSocket({
     
     // 🆕 Mesajlaşma eventleri
     socket.on('new_message', handleNewMessage);
+    socket.on('first_chat_message', handleFirstChatMessage);
     socket.on('message_sent', handleMessageSent);
 
     // Cleanup - listener'ları kaldır
@@ -535,6 +552,7 @@ export default function useSocket({
       
       // 🆕 Mesajlaşma
       socket.off('new_message', handleNewMessage);
+      socket.off('first_chat_message', handleFirstChatMessage);
       socket.off('message_sent', handleMessageSent);
     };
   }, [socket, userRole]);

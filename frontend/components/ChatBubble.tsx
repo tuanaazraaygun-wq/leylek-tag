@@ -1,11 +1,5 @@
 /**
- * ChatBubble.tsx - PURE REALTIME CHAT (NO DATABASE)
- * 
- * ✅ Supabase Realtime Broadcast ile anlık mesajlaşma
- * ✅ Database'e HİÇ kaydetmez
- * ✅ Mesajlar sadece bellekte tutulur
- * ✅ Trip bitince otomatik temizlenir
- * ✅ Mesaj bildirim sesi
+ * ChatBubble.tsx — Anlık: Supabase Broadcast. Kalıcılık + ilk mesaj bildirimi: POST /chat/send-message.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -26,6 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Audio } from 'expo-av';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -265,7 +260,26 @@ export default function ChatBubble({
     } catch (error) {
       console.error('❌ [ChatBubble] Broadcast gönderme hatası:', error);
     }
-    
+
+    // Sunucuya kayıt (ilk mesajda push + socket; tekrarları sessiz)
+    if (tagId && userId && otherUserId) {
+      try {
+        await fetch(`${API_BASE_URL}/chat/send-message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tag_id: tagId,
+            sender_id: userId,
+            receiver_id: otherUserId,
+            message: trimmedText,
+            sender_name: myFirst,
+          }),
+        });
+      } catch (e) {
+        console.warn('[ChatBubble] send-message API (non-fatal):', e);
+      }
+    }
+
     Keyboard.dismiss();
   }, [tagId, userId, otherUserId, isDriver, lastMessageTime, myFirst]);
 

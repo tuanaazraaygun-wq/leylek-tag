@@ -13,10 +13,9 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width } = Dimensions.get('window');
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://leylektag-debug.preview.emergentagent.com';
-const API_URL = `${BACKEND_URL}/api`;
 
 interface QRTripEndModalProps {
   visible: boolean;
@@ -98,10 +97,10 @@ export default function QRTripEndModal({
         return;
       }
 
-      // Backend'e doğrulama isteği
-      const response = await fetch(`${API_URL}/trip/complete-qr`, {
+      // Backend — geri kalan uygulama ile aynı kök (extra.backendUrl + EXPO_PUBLIC_BACKEND_URL)
+      const response = await fetch(`${API_BASE_URL}/trip/complete-qr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
           tag_id: tagId,
           scanner_user_id: userId,
@@ -110,8 +109,22 @@ export default function QRTripEndModal({
           longitude: myLongitude || 0,
         }),
       });
-      
-      const result = await response.json();
+
+      const raw = await response.text();
+      let result: { success?: boolean; detail?: string; driver_name?: string } = {};
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        console.error('QR complete-qr non-JSON:', raw.slice(0, 200));
+        Alert.alert(
+          'Hata',
+          response.ok
+            ? 'Sunucu yanıtı okunamadı'
+            : `Sunucu hatası (${response.status})`
+        );
+        setScanned(false);
+        return;
+      }
 
       if (result.success) {
         // Başarılı - Puanlama modalını aç
@@ -119,12 +132,12 @@ export default function QRTripEndModal({
         onComplete(true, driverUserId, result.driver_name || firstName);
         onClose();
       } else {
-        Alert.alert('Hata', result.detail || 'Yolculuk bitirilemedi');
+        Alert.alert('Hata', result.detail || `Yolculuk bitirilemedi (${response.status})`);
         setScanned(false);
       }
     } catch (error) {
       console.error('QR scan error:', error);
-      Alert.alert('Hata', 'Bağlantı hatası');
+      Alert.alert('Hata', 'Ağ hatası — internet ve API adresini kontrol edin');
       setScanned(false);
     } finally {
       setProcessing(false);

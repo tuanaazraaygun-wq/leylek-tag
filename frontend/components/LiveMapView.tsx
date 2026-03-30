@@ -4,6 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
+import { displayFirstName } from '../lib/displayName';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -73,7 +74,7 @@ function buildPassengerDriverHint(
   otherUserName: string,
   reminderCycle: number,
 ): string {
-  const name = (otherUserName || 'Sürücünüz').trim();
+  const name = displayFirstName(otherUserName, 'Sürücünüz');
   if (meters <= 80) {
     return 'Sürücü yanınızda';
   }
@@ -1212,8 +1213,8 @@ export default function LiveMapView({
                 {/* İsim */}
                 <View style={styles.infoCardRow}>
                   <Ionicons name="person" size={20} color="#6B7280" />
-                  <Text style={styles.infoCardLabel}>İsim:</Text>
-                  <Text style={styles.infoCardValue}>{otherUserName || 'Bilinmiyor'}</Text>
+                  <Text style={styles.infoCardLabel}>İsim</Text>
+                  <Text style={styles.infoCardValue}>{displayFirstName(otherUserName, 'Bilinmiyor')}</Text>
                 </View>
 
                 {/* Sürücü için Araç Bilgileri */}
@@ -1281,18 +1282,18 @@ export default function LiveMapView({
                 {/* Puan */}
                 <View style={styles.infoCardRow}>
                   <Ionicons name="star" size={20} color="#F59E0B" />
-                  <Text style={styles.infoCardLabel}>Puan:</Text>
+                  <Text style={styles.infoCardLabel}>Puan</Text>
                   <View style={styles.infoCardRatingContainer}>
                     {[1, 2, 3, 4, 5].map((star) => (
                       <Ionicons 
                         key={star}
-                        name={star <= Math.round(otherUserDetails?.rating ?? 5) ? "star" : "star-outline"} 
+                        name={star <= Math.round(otherUserDetails?.rating ?? 4) ? "star" : "star-outline"} 
                         size={18} 
                         color="#F59E0B" 
                       />
                     ))}
                     <Text style={styles.infoCardRatingText}>
-                      {(otherUserDetails?.rating ?? 5).toFixed(1)}
+                      {(otherUserDetails?.rating ?? 4).toFixed(1)}
                     </Text>
                   </View>
                 </View>

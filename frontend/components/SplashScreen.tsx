@@ -19,12 +19,14 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const textFadeAnim = useRef(new Animated.Value(0)).current;
   const taglineAnim = useRef(new Animated.Value(0)).current;
   const hasCalledFinish = useRef(false);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   const callFinish = () => {
     if (hasCalledFinish.current) return;
     hasCalledFinish.current = true;
     console.log('🎬 Splash screen bitti, login\'e geçiliyor...');
-    onFinish();
+    onFinishRef.current();
   };
 
   useEffect(() => {
@@ -72,12 +74,12 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
     const finishTimer = setTimeout(() => {
       callFinish();
-    }, 2000);
+    }, 2500);
 
     const safetyTimer = setTimeout(() => {
       console.log('⚠️ Safety timeout - zorla çıkılıyor');
       callFinish();
-    }, 3500);
+    }, 4500);
 
     return () => {
       clearTimeout(finishTimer);

@@ -46,6 +46,7 @@ if (Platform.OS !== 'web') {
 }
 
 import { API_BASE_URL } from '../lib/backendConfig';
+import { displayFirstName } from '../lib/displayName';
 
 const API_URL = API_BASE_URL;
 
@@ -518,14 +519,17 @@ export default function PassengerWaitingScreen({
                 <View style={styles.driverAvatar}>
                   <Ionicons name="person" size={40} color="#fff" />
                 </View>
-                <Text style={styles.driverName}>{selectedDriver.name || 'Sürücü'}</Text>
+                <Text style={styles.driverName}>{displayFirstName(selectedDriver.name, 'Sürücü')}</Text>
                 
-                {selectedDriver.rating && (
-                  <View style={styles.driverRating}>
-                    <Ionicons name="star" size={18} color="#fbbf24" />
-                    <Text style={styles.driverRatingText}>{selectedDriver.rating.toFixed(1)}</Text>
-                  </View>
-                )}
+                <View style={styles.driverRating}>
+                  <Ionicons name="star" size={18} color="#fbbf24" />
+                  <Text style={styles.driverRatingText}>
+                    {(selectedDriver.rating != null && selectedDriver.rating > 0
+                      ? selectedDriver.rating
+                      : 4
+                    ).toFixed(1)}
+                  </Text>
+                </View>
                 
                 {selectedDriver.vehicle && (
                   <Text style={styles.driverVehicle}>{selectedDriver.vehicle}</Text>

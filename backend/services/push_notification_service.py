@@ -2,14 +2,33 @@
 Push Notification Service Module
 Modüler tasarım - Mevcut sisteme dokunmaz
 """
+import json
 import httpx
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any, Mapping
 from datetime import datetime
 
 from expo_push_channels import expo_android_channel_id_for_data
 
 logger = logging.getLogger(__name__)
+
+
+def _stringify_expo_data(data: Optional[Mapping[str, Any]]) -> dict:
+    """Expo Push API: data değerleri string olmalı."""
+    if not data:
+        return {}
+    out: dict = {}
+    for k, v in data.items():
+        if v is None:
+            continue
+        key = str(k)
+        if isinstance(v, (dict, list)):
+            out[key] = json.dumps(v, ensure_ascii=False)
+        elif isinstance(v, bool):
+            out[key] = "true" if v else "false"
+        else:
+            out[key] = str(v)
+    return out
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
@@ -33,23 +52,22 @@ class PushNotificationService:
                 logger.warning(f"Invalid push token: {push_token}")
                 return False
 
-            payload = {
+            str_data = _stringify_expo_data(data)
+            message = {
                 "to": push_token,
                 "title": title,
                 "body": body,
                 "sound": sound,
                 "priority": priority,
-                "channelId": expo_android_channel_id_for_data(data),
+                "channelId": expo_android_channel_id_for_data(str_data),
+                "data": str_data,
             }
 
-            if data:
-                payload["data"] = data
-            
             async with httpx.AsyncClient(http2=False, timeout=30) as client:
                 response = await client.post(
                     EXPO_PUSH_URL,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
+                    json=[message],
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
                     timeout=10.0
                 )
                 
@@ -91,7 +109,8 @@ class PushNotificationService:
             )
         ]
 
-        ch = expo_android_channel_id_for_data(data)
+        str_data = _stringify_expo_data(data)
+        ch = expo_android_channel_id_for_data(str_data)
         for i in range(0, len(valid_tokens), 100):
             batch = valid_tokens[i : i + 100]
             messages = [
@@ -102,7 +121,7 @@ class PushNotificationService:
                     "sound": "default",
                     "priority": "high",
                     "channelId": ch,
-                    "data": data or {},
+                    "data": str_data,
                 }
                 for token in batch
             ]

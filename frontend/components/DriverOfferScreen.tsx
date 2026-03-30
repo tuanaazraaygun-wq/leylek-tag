@@ -27,12 +27,56 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSocketContext } from '../contexts/SocketContext';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const MAP_POLL_INTERVAL_MS = 9000;
+
+/** İki nokta arası km (haritada yakın pin / zoom sınırı için). */
+function haversineKm(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number }
+): number {
+  const R = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
+}
+
+export interface DriverMapSeekingPin {
+  tag_id: string;
+  pickup_lat: number;
+  pickup_lng: number;
+  status?: string;
+  label?: string;
+  distance_km?: number;
+}
+
+export interface DriverMapLightPin {
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  label?: string;
+  distance_km?: number;
+}
+
+export interface DriverMapCityGridCell {
+  center_lat: number;
+  center_lng: number;
+  count: number;
+  intensity: number;
+}
 
 // react-native-maps'i sadece native platformlarda yükle
 let MapView: any = null;
 let Marker: any = null;
+let Circle: any = null;
 let PROVIDER_GOOGLE: any = null;
 
 if (Platform.OS !== 'web') {
@@ -40,6 +84,7 @@ if (Platform.OS !== 'web') {
     const Maps = require('react-native-maps');
     MapView = Maps.default;
     Marker = Maps.Marker;
+    Circle = Maps.Circle;
     PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
   } catch (e) {
     console.log('⚠️ react-native-maps yüklenemedi:', e);
@@ -263,6 +308,83 @@ function RequestCard({
   );
 }
 
+/** Şehir içi talep yoğunluğu — kırmızı dalga (tüm sürücüler aynı API verisini görür) */
+function CityHeatCellMarker({
+  cell,
+  delayMs,
+}: {
+  cell: DriverMapCityGridCell;
+  delayMs: number;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(0.5)).current;
+  const scale2 = useRef(new Animated.Value(1)).current;
+  const opacity2 = useRef(new Animated.Value(0.38)).current;
+
+  useEffect(() => {
+    const boost = 0.35 + cell.intensity * 0.55;
+    const loop1 = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delayMs),
+        Animated.parallel([
+          Animated.timing(scale, {
+            toValue: 1.5 + boost * 0.35,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, { toValue: 0, duration: 1500, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    const loop2 = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delayMs + 480),
+        Animated.parallel([
+          Animated.timing(scale2, {
+            toValue: 1.35 + boost * 0.28,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity2, { toValue: 0, duration: 1500, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(scale2, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(opacity2, { toValue: 0.38, duration: 0, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    loop1.start();
+    loop2.start();
+    return () => {
+      loop1.stop();
+      loop2.stop();
+    };
+  }, [cell.intensity, delayMs, scale, opacity, scale2, opacity2]);
+
+  return (
+    <View style={styles.cityHeatWrap} collapsable={false}>
+      <Animated.View
+        style={[
+          styles.cityHeatRing,
+          { transform: [{ scale }], opacity },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.cityHeatRing,
+          styles.cityHeatRingOuter,
+          { transform: [{ scale: scale2 }], opacity: opacity2 },
+        ]}
+      />
+      <View style={styles.cityHeatCore} />
+    </View>
+  );
+}
+
 export default function DriverOfferScreen({
   driverLocation,
   requests,
@@ -280,9 +402,69 @@ export default function DriverOfferScreen({
   const isMotor = vehicleKind === 'motorcycle';
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [mapSeekingPins, setMapSeekingPins] = useState<DriverMapSeekingPin[]>([]);
+  const [mapLightPins, setMapLightPins] = useState<DriverMapLightPin[]>([]);
+  const [mapCityGrid, setMapCityGrid] = useState<DriverMapCityGridCell[]>([]);
+  const [mapDriverCity, setMapDriverCity] = useState('');
+  const [mapHud, setMapHud] = useState({ seeking: 0, nearby: 0, radius: 20 });
+  const driverPulseScale = useRef(new Animated.Value(1)).current;
+  const driverPulseOpacity = useRef(new Animated.Value(0.55)).current;
+  const driverPulse2Scale = useRef(new Animated.Value(1)).current;
+  const driverPulse2Opacity = useRef(new Animated.Value(0.35)).current;
+
+  useEffect(() => {
+    const ring1 = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(driverPulseScale, {
+            toValue: 2.2,
+            duration: 1800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(driverPulseOpacity, {
+            toValue: 0,
+            duration: 1800,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(driverPulseScale, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(driverPulseOpacity, { toValue: 0.55, duration: 0, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    const ring2 = Animated.loop(
+      Animated.sequence([
+        Animated.delay(650),
+        Animated.parallel([
+          Animated.timing(driverPulse2Scale, {
+            toValue: 2.05,
+            duration: 1800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(driverPulse2Opacity, {
+            toValue: 0,
+            duration: 1800,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(driverPulse2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(driverPulse2Opacity, { toValue: 0.35, duration: 0, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    ring1.start();
+    ring2.start();
+    return () => {
+      ring1.stop();
+      ring2.stop();
+    };
+  }, [driverPulseScale, driverPulseOpacity, driverPulse2Scale, driverPulse2Opacity]);
+
   const mapSectionHeight = embedded
-    ? Math.min(SCREEN_HEIGHT * 0.24, 200)
-    : SCREEN_HEIGHT * 0.32;
+    ? Math.min(SCREEN_HEIGHT * 0.3, 240)
+    : Math.min(SCREEN_HEIGHT * 0.36, 320);
 
   /** Yolcu talebi car|motorcycle ile sürücü vehicleKind birebir eşleşmeli (sunucu + ek savunma). */
   const visibleRequests = useMemo(() => {
@@ -300,27 +482,96 @@ export default function DriverOfferScreen({
     });
   }, [requests, vehicleKind]);
 
-  // Harita sınırlarını ayarla
+  const listedTagIds = useMemo(() => {
+    const s = new Set<string>();
+    visibleRequests.forEach((r) => {
+      const id = r.id || r.tag_id || r.request_id;
+      if (id) s.add(String(id));
+    });
+    return s;
+  }, [visibleRequests]);
+
+  // Sunucudan 20 km harita pinleri (hareket eden sürücüye göre)
+  useEffect(() => {
+    if (!driverId || !driverLocation) {
+      setMapSeekingPins([]);
+      setMapLightPins([]);
+      setMapCityGrid([]);
+      setMapDriverCity('');
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const q = new URLSearchParams({
+          user_id: String(driverId),
+          latitude: String(driverLocation.latitude),
+          longitude: String(driverLocation.longitude),
+        });
+        const res = await fetch(`${API_BASE_URL}/driver/nearby-passengers-map?${q.toString()}`);
+        const j = await res.json();
+        if (cancelled || !j?.success) return;
+        setMapSeekingPins(Array.isArray(j.seeking) ? j.seeking : []);
+        setMapLightPins(Array.isArray(j.nearby_app_users) ? j.nearby_app_users : []);
+        setMapCityGrid(Array.isArray(j.city_grid) ? j.city_grid : []);
+        setMapDriverCity(typeof j.driver_city === 'string' ? j.driver_city.trim() : '');
+        setMapHud({
+          seeking: Number(j.seeking_count) || 0,
+          nearby: Number(j.nearby_light_count) || 0,
+          radius: Math.round(Number(j.radius_km) || 20),
+        });
+      } catch {
+        /* sessiz */
+      }
+    };
+    void load();
+    const id = setInterval(load, MAP_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [driverId, driverLocation?.latitude, driverLocation?.longitude]);
+
+  // Harita sınırları: sürücü + yalnızca tarama yarıçapı içindeki pinler (şehir grid zoom’u şişirmez)
   useEffect(() => {
     if (!mapReady || !mapRef.current || !driverLocation) return;
 
-    const coordinates: { latitude: number; longitude: number }[] = [driverLocation];
-    
-    visibleRequests.forEach(req => {
-      if (req.pickup_lat && req.pickup_lng) {
-        coordinates.push({ latitude: req.pickup_lat, longitude: req.pickup_lng });
-      }
+    const rk = mapHud.radius || 20;
+    const fitKm = Math.min(45, rk * 1.2);
+
+    const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
+
+    mapSeekingPins.forEach((p) => {
+      const d = haversineKm(driverLocation, { latitude: p.pickup_lat, longitude: p.pickup_lng });
+      if (d <= fitKm) coordinates.push({ latitude: p.pickup_lat, longitude: p.pickup_lng });
+    });
+    mapLightPins.forEach((p) => {
+      const d = haversineKm(driverLocation, { latitude: p.latitude, longitude: p.longitude });
+      if (d <= fitKm) coordinates.push({ latitude: p.latitude, longitude: p.longitude });
     });
 
-    if (coordinates.length > 1) {
-      setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: true,
-        });
-      }, 300);
+    if (coordinates.length === 1) {
+      const latDelta = Math.max(0.14, (rk / 111) * 1.1);
+      const lngDelta = Math.max(0.14, (rk / (111 * Math.cos((driverLocation.latitude * Math.PI) / 180))) * 1.1);
+      mapRef.current.animateToRegion(
+        {
+          latitude: driverLocation.latitude,
+          longitude: driverLocation.longitude,
+          latitudeDelta: latDelta,
+          longitudeDelta: lngDelta,
+        },
+        400
+      );
+      return;
     }
-  }, [mapReady, driverLocation, visibleRequests.length]);
+
+    setTimeout(() => {
+      mapRef.current?.fitToCoordinates(coordinates, {
+        edgePadding: { top: 44, right: 36, bottom: 36, left: 36 },
+        animated: true,
+      });
+    }, 350);
+  }, [mapReady, driverLocation, mapSeekingPins, mapLightPins, mapHud.radius]);
 
   // Web fallback veya harita yoksa
   const renderMap = () => {
@@ -329,7 +580,7 @@ export default function DriverOfferScreen({
         <View style={styles.mapFallback}>
           <Ionicons name="map" size={40} color={COLORS.primary} />
           <Text style={styles.mapFallbackText}>
-            {visibleRequests.length} yolcu 20km içinde
+            Talep {mapHud.seeking} · {mapHud.radius} km
           </Text>
         </View>
       );
@@ -340,46 +591,115 @@ export default function DriverOfferScreen({
         ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
-        initialRegion={driverLocation ? {
-          latitude: driverLocation.latitude,
-          longitude: driverLocation.longitude,
-          latitudeDelta: 0.1,
-          longitudeDelta: 0.1,
-        } : undefined}
+        initialRegion={
+          driverLocation
+            ? {
+                latitude: driverLocation.latitude,
+                longitude: driverLocation.longitude,
+                latitudeDelta: 0.12,
+                longitudeDelta: 0.12,
+              }
+            : {
+                latitude: 39.92,
+                longitude: 32.85,
+                latitudeDelta: 0.15,
+                longitudeDelta: 0.15,
+              }
+        }
         onMapReady={() => setMapReady(true)}
         showsUserLocation={false}
         showsMyLocationButton={false}
       >
-        {/* Sürücü konumu */}
-        {driverLocation && (
+        {driverLocation && Circle ? (
+          <>
+            <Circle
+              center={driverLocation}
+              radius={(mapHud.radius || 20) * 1000}
+              strokeColor="rgba(63, 169, 245, 0.5)"
+              fillColor="rgba(63, 169, 245, 0.07)"
+              strokeWidth={2}
+            />
+            <Circle
+              center={driverLocation}
+              radius={(mapHud.radius || 20) * 500}
+              strokeColor="rgba(63, 169, 245, 0.35)"
+              fillColor="rgba(63, 169, 245, 0.05)"
+              strokeWidth={1}
+            />
+          </>
+        ) : null}
+
+        {mapCityGrid.map((cell, idx) => (
           <Marker
-            coordinate={driverLocation}
-            title="Konumunuz"
+            key={`heat-${idx}-${cell.center_lat}-${cell.center_lng}`}
+            coordinate={{ latitude: cell.center_lat, longitude: cell.center_lng }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
           >
-            <View style={styles.driverMarker}>
-              {isMotor ? (
-                <MaterialCommunityIcons name="motorbike" size={24} color="#FFF" />
-              ) : (
-                <Ionicons name="car" size={24} color="#FFF" />
-              )}
+            <CityHeatCellMarker cell={cell} delayMs={(idx % 6) * 180} />
+          </Marker>
+        ))}
+
+        {driverLocation && (
+          <Marker coordinate={driverLocation} title="Siz" anchor={{ x: 0.5, y: 0.5 }}>
+            <View style={styles.driverMarkerPulseWrap} collapsable={false}>
+              <Animated.View
+                style={[
+                  styles.driverPulseRing,
+                  {
+                    transform: [{ scale: driverPulseScale }],
+                    opacity: driverPulseOpacity,
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.driverPulseRing,
+                  styles.driverPulseRingOuter,
+                  {
+                    transform: [{ scale: driverPulse2Scale }],
+                    opacity: driverPulse2Opacity,
+                  },
+                ]}
+              />
+              <View style={styles.driverMarker}>
+                {isMotor ? (
+                  <MaterialCommunityIcons name="motorbike" size={24} color="#FFF" />
+                ) : (
+                  <Ionicons name="car" size={24} color="#FFF" />
+                )}
+              </View>
             </View>
           </Marker>
         )}
 
-        {/* Yolcular */}
-        {visibleRequests.map((req, index) => (
-          req.pickup_lat && req.pickup_lng && (
+        {mapSeekingPins.map((pin) => {
+          const listed = listedTagIds.has(String(pin.tag_id));
+          return (
             <Marker
-              key={req.id || index}
-              coordinate={{ latitude: req.pickup_lat, longitude: req.pickup_lng }}
-              title={req.passenger_name || 'Yolcu'}
-              description={req.pickup_location}
+              key={`seek-${pin.tag_id}`}
+              coordinate={{ latitude: pin.pickup_lat, longitude: pin.pickup_lng }}
+              title={pin.label || 'Talep'}
+              description={listed ? 'Listede — teklif verebilirsiniz' : 'Yolcu talebi'}
             >
-              <View style={styles.passengerMarker}>
-                <Ionicons name="person" size={16} color="#FFF" />
+              <View style={[styles.passengerMarkerSeeking, listed && styles.passengerMarkerSeekingListed]}>
+                <Ionicons name="navigate" size={15} color="#FFF" />
               </View>
             </Marker>
-          )
+          );
+        })}
+
+        {mapLightPins.map((pin) => (
+          <Marker
+            key={`light-${pin.user_id}`}
+            coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
+            title={pin.label || 'Yakında'}
+            description="Konum paylaşan kullanıcı"
+          >
+            <View style={styles.passengerMarkerLight}>
+              <View style={styles.passengerMarkerLightDot} />
+            </View>
+          </Marker>
         ))}
       </MapView>
     );
@@ -394,54 +714,23 @@ export default function DriverOfferScreen({
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
-          <Text style={styles.headerSubtitle}>⭐ {driverRating?.toFixed(1) || '5.0'}</Text>
+          <Text style={styles.headerSubtitle}>⭐ {driverRating != null ? driverRating.toFixed(1) : '4.0'}</Text>
         </View>
         <TouchableOpacity onPress={onLogout} style={styles.logoutBtn}>
           <Ionicons name="log-out-outline" size={24} color="#EF4444" />
         </TouchableOpacity>
       </View>
 
-      {/* Harita - Üst %35 - Arka Planlı */}
-      <ImageBackground 
-        source={require('../assets/images/offer-background.png')} 
-        style={[styles.mapContainer, { height: mapSectionHeight }]}
-        imageStyle={styles.mapBackgroundImage}
-      >
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-          {renderMap()}
+      {/* Harita — gerçek Google Haritalar; üst metinler kaldırıldı */}
+      <View style={[styles.mapContainer, styles.mapContainerSolid, { height: mapSectionHeight }]}>
+        {renderMap()}
+        <View style={styles.mapHud} pointerEvents="none">
+          <Ionicons name="radar" size={14} color="#0F172A" style={{ marginRight: 6 }} />
+          <Text style={styles.mapHudText}>
+            Talep {mapHud.seeking} · {mapHud.radius} km
+          </Text>
         </View>
-        {isMotor ? (
-          <LinearGradient
-            colors={['rgba(22, 101, 52, 0.35)', 'rgba(15, 23, 42, 0.5)']}
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="none"
-          />
-        ) : (
-          <LinearGradient
-            colors={['rgba(15, 23, 42, 0.15)', 'rgba(15, 23, 42, 0.35)']}
-            style={StyleSheet.absoluteFillObject}
-            pointerEvents="none"
-          />
-        )}
-        <View style={styles.mapOverlayCenter} pointerEvents="box-none">
-          <View style={styles.requestCountBadgeBig}>
-            <Ionicons name="people" size={28} color="#3FA9F5" />
-            <Text style={styles.requestCountTextBig}>
-              {visibleRequests.length > 0
-                ? `${visibleRequests.length} aktif talep`
-                : 'Konumunuz haritada'}
-            </Text>
-          </View>
-          <View style={styles.radiusInfoBox}>
-            <Ionicons name="location" size={24} color="#FFFFFF" />
-            <Text style={styles.radiusInfoText}>
-              {visibleRequests.length > 0
-                ? `${visibleRequests.length} yolcu 20 km içinde`
-                : 'Teklif gelince işaretlenir'}
-            </Text>
-          </View>
-        </View>
-      </ImageBackground>
+      </View>
 
       {/* Yolcu İstekleri Listesi - Alt %65 */}
       <ImageBackground 
@@ -458,7 +747,6 @@ export default function DriverOfferScreen({
         ) : null}
         <View style={styles.listHeader}>
           <Text style={styles.listTitle}>Yakındaki İstekler</Text>
-          <Text style={styles.listSubtitle}>20 km çevrenizdeki yolcular</Text>
         </View>
 
         {visibleRequests.length === 0 ? (
@@ -470,7 +758,7 @@ export default function DriverOfferScreen({
             )}
             <Text style={styles.emptyTitle}>Teklif bekleniyor</Text>
             <Text style={styles.emptySubtitle}>
-              Haritada konumunuz görünür; uygun yolcu talebi gelince kartlar burada açılır. Çevrimiçi (ON) olduğunuzdan emin olun.
+              Çevrimiçi kaldığınızda talepler burada belirir. Haritada {mapHud.radius} km içindeki yolcu talepleri ve yakındaki kullanıcılar gösterilir.
             </Text>
           </View>
         ) : (
@@ -551,11 +839,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  mapContainerSolid: {
+    width: '100%',
+    overflow: 'hidden',
+    backgroundColor: '#CBD5E1',
+    position: 'relative',
+  },
   mapBackgroundImage: {
     resizeMode: 'cover',
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  mapHud: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    maxWidth: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  mapHudText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+    flexShrink: 1,
   },
   mapFallback: {
     flex: 1,
@@ -634,11 +951,57 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginLeft: 6,
   },
+  driverMarkerPulseWrap: {
+    width: 96,
+    height: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverPulseRing: {
+    position: 'absolute',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: 'rgba(63, 169, 245, 0.9)',
+    backgroundColor: 'transparent',
+  },
+  driverPulseRingOuter: {
+    borderColor: 'rgba(14, 165, 233, 0.45)',
+    borderWidth: 1.5,
+  },
   driverMarker: {
     backgroundColor: COLORS.primary,
     padding: 8,
     borderRadius: 20,
     borderWidth: 3,
+    borderColor: '#FFF',
+  },
+  cityHeatWrap: {
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cityHeatRing: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: 'rgba(239, 68, 68, 0.95)',
+    backgroundColor: 'transparent',
+  },
+  cityHeatRingOuter: {
+    borderColor: 'rgba(220, 38, 38, 0.5)',
+    borderWidth: 1.5,
+  },
+  cityHeatCore: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#DC2626',
+    borderWidth: 2,
     borderColor: '#FFF',
   },
   passengerMarker: {
@@ -647,6 +1010,40 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#FFF',
+  },
+  passengerMarkerSeeking: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#EA580C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  passengerMarkerSeekingListed: {
+    backgroundColor: '#059669',
+  },
+  passengerMarkerLight: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#94A3B8',
+  },
+  passengerMarkerLightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#64748B',
   },
 
   // List

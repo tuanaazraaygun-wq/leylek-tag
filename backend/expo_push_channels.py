@@ -21,11 +21,23 @@ EXPO_OFFERS_CHANNEL_TYPES = frozenset(
     }
 )
 
+# Gelen arama vb. — uygulama usePushNotifications + _layout ile `calls` kanalını oluşturur
+EXPO_CALLS_CHANNEL_TYPES = frozenset(
+    {
+        "incoming_call",
+        "missed_call",
+        "call_ended",
+        "call_missed",
+    }
+)
+
 
 def expo_android_channel_id_for_type(notification_type: Optional[Any]) -> str:
     if notification_type is None:
         return "default"
     s = str(notification_type).strip()
+    if s in EXPO_CALLS_CHANNEL_TYPES:
+        return "calls"
     if s in EXPO_OFFERS_CHANNEL_TYPES:
         return "offers"
     return "default"

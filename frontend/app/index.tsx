@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -52,7 +51,9 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useOffers } from '../hooks/useOffers';
 import { useCall } from '../hooks/useCall';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
+import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { playMatchChimeSound } from '../utils/sound';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -367,7 +368,7 @@ export default function App() {
   const [microphonePermission, setMicrophonePermission] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(false);
 
-  // Splash Screen
+  // Splash: push/boot’tan bağımsız; süre dolduğunda kapanır
   const [showSplash, setShowSplash] = useState(true);
   
   // KVKK Onayı
@@ -404,6 +405,34 @@ export default function App() {
   
   // Animation for role selection
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  /** Eşleşme sonrası QR’sız çıkışta rol ekranında 3 sn kırmızı şerit */
+  const [roleSelectTripExitBanner, setRoleSelectTripExitBanner] = useState<string | null>(null);
+  const roleSelectBannerShimmer = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!roleSelectTripExitBanner) return undefined;
+    const t = setTimeout(() => setRoleSelectTripExitBanner(null), 3000);
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(roleSelectBannerShimmer, {
+          toValue: 0.88,
+          duration: 380,
+          useNativeDriver: true,
+        }),
+        Animated.timing(roleSelectBannerShimmer, {
+          toValue: 1,
+          duration: 380,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => {
+      clearTimeout(t);
+      anim.stop();
+      roleSelectBannerShimmer.setValue(1);
+    };
+  }, [roleSelectTripExitBanner, roleSelectBannerShimmer]);
   
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
@@ -432,55 +461,43 @@ export default function App() {
 
   // Push Notifications Hook - Expo Push ile (Firebase olmadan)
   const { registerPushToken, removePushToken, notification } = usePushNotifications();
-  const { lastTappedNotificationData, clearLastTappedNotification } = useNotifications();
-  const lastRegisteredPushUserIdRef = useRef<string | null>(null);
   const lastPushRegisterTimeRef = useRef<number>(0);
   const PUSH_REREGISTER_INTERVAL_MS = 15000; // Uygulama her ön plana geldiğinde en fazla 15 sn'de bir tekrar dene
   /** Splash çıkışında user'a bakılır; user deps ile effect sıfırlanıp timer iptal edilmesin diye ref */
   const splashUserRef = useRef<User | null>(null);
   splashUserRef.current = user;
 
-  // Giriş yapıldığında token kaydet
+  // Push: yalnızca splash kapandıktan sonra (loading ile bağlantılı değil)
   useEffect(() => {
-    if (!user?.id) {
-      lastRegisteredPushUserIdRef.current = null;
-      return;
-    }
+    if (!user?.id || showSplash) return;
 
-    if (lastRegisteredPushUserIdRef.current === user.id) {
-      return;
-    }
+    const uid = user.id;
+    const t = setTimeout(() => {
+      registerPushToken(uid, (ok) => {
+        if (ok) lastPushRegisterTimeRef.current = Date.now();
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [user?.id, registerPushToken, showSplash]);
 
-    lastRegisteredPushUserIdRef.current = user.id;
-    registerPushToken(user.id).then(success => {
-      console.log('🔔 Otomatik push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
-      if (!success) {
-        lastRegisteredPushUserIdRef.current = null;
-      } else {
-        lastPushRegisterTimeRef.current = Date.now();
-      }
-    }).catch(err => {
-      console.log('🔔 Otomatik push token kayıt hatası:', err);
-      lastRegisteredPushUserIdRef.current = null;
-    });
-  }, [user?.id, registerPushToken]);
-
-  // Uygulama ön plana geldiğinde token'ı tekrar kaydet (izin sonradan verildiyse token artık hazır olur)
+  // Ön plan: throttle + 500ms gecikme; doğrudan registerPushToken çağrılmaz
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active' || !user?.id) return;
       const now = Date.now();
       if (now - lastPushRegisterTimeRef.current < PUSH_REREGISTER_INTERVAL_MS) return;
-      lastPushRegisterTimeRef.current = now;
-      registerPushToken(user.id)
-        .then(success => {
-          if (success) console.log('🔔 [AppState] Push token yeniden kaydedildi');
-        })
-        .catch(err => {
-          console.log('🔔 [AppState] Push token yeniden kaydedilemedi:', err);
-        });
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined;
+        lastPushRegisterTimeRef.current = Date.now();
+        registerPushToken(user.id, () => {});
+      }, 500);
     });
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, [user?.id, registerPushToken]);
 
   useEffect(() => {
@@ -523,25 +540,20 @@ export default function App() {
         setCameraPermission(cameraGranted);
 
         if (!audioGranted) {
-          console.log('❌ RECORD_AUDIO izni REDDEDİLDİ');
-          Alert.alert(
-            'Mikrofon İzni Gerekli',
-            'Sesli ve görüntülü arama için mikrofon izni gerekli.',
-            [{ text: 'Tamam', onPress: () => Linking.openSettings() }]
-          );
+          // Açılışı kilitleme: arama ekranında tekrar istenebilir
+          console.log('❌ RECORD_AUDIO reddedildi — giriş kullanılabilir');
           setPermissionsGranted(false);
-          setPermissionChecking(false);
-          return false;
+        } else {
+          console.log('✅ Mikrofon izni verildi');
+          setPermissionsGranted(true);
         }
-
-        console.log('✅ Gerekli izinler alındı');
       } else {
-        // iOS
+        // iOS / web
         setMicrophonePermission(true);
         setCameraPermission(true);
+        setPermissionsGranted(true);
       }
 
-      setPermissionsGranted(true);
       setPermissionChecking(false);
       return true;
     } catch (error) {
@@ -551,13 +563,16 @@ export default function App() {
     }
   };
 
-  // İzinleri splash bittikten sonra iste — açılışta Leylek ekranı + sistem diyaloğu çakışmasını önler
+  // Mikrofon/kamera: splash kapandıktan sonra (loading ayrı ekran olsa bile)
   useEffect(() => {
     if (showSplash) return;
-    void (async () => {
-      console.log('🔐 Splash sonrası izin kontrolü...');
-      await requestAllPermissions();
-    })();
+    const delay = setTimeout(() => {
+      void (async () => {
+        console.log('🔐 Giriş hazır — izin kontrolü (erteli)');
+        await requestAllPermissions();
+      })();
+    }, 1500);
+    return () => clearTimeout(delay);
   }, [showSplash]);
 
   // Device ID oluştur veya al
@@ -583,21 +598,31 @@ export default function App() {
     initializeApp();
   }, []);
 
-  const initializeApp = async () => {
-    // Önce cihaz ID'yi al
-    const dId = await getOrCreateDeviceId();
-    setDeviceId(dId);
-    
-    // KVKK onayı kontrolü (telefon numarasına göre)
-    const storedKVKKPhone = await AsyncStorage.getItem('kvkk_accepted_phone');
-    // Onay varsa set et
-    if (storedKVKKPhone) {
-      setKvkkAccepted(true);
-    }
-    
-    // Sonra kullanıcıyı yükle
-    await loadUser();
+  /** Ağ await yok; AsyncStorage + loadUser fire-and-forget — yükleme state’i loadUser.finally + boot watchdog ile kapanır */
+  const initializeApp = () => {
+    void getOrCreateDeviceId()
+      .then((dId) => setDeviceId(dId))
+      .catch(() => {});
+
+    void AsyncStorage.getItem('kvkk_accepted_phone')
+      .then((storedKVKKPhone) => {
+        if (storedKVKKPhone) setKvkkAccepted(true);
+      })
+      .catch(() => {});
+
+    void loadUser();
   };
+
+  // Splash sonsuz döngü koruması: tam 4000ms sonra kapat (setTimeout 2. arg = ms; [] = effect deps)
+  useEffect(() => {
+    const watchdogTimerId = setTimeout(() => {
+      setShowSplash(false);
+      if (!splashUserRef.current) {
+        setScreen('login');
+      }
+    }, 4000);
+    return () => clearTimeout(watchdogTimerId);
+  }, []);
   
   // KVKK onayını kaydet (telefon numarasına göre)
   const saveKVKKConsent = async (phoneNumber: string) => {
@@ -621,31 +646,28 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user && screen === 'dashboard') {
-      // 🔔 Dashboard'a her girişte push token'ı kaydet
-      console.log('🔔 Dashboard açıldı, push token kaydediliyor...');
-      registerPushToken(user.id)
-        .then(success => {
-          console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
-        })
-        .catch(err => {
-          console.log('🔔 Push token kayıt hatası:', err);
-        });
+    if (!user || screen !== 'dashboard') return;
 
-      // Konum güncellemesini sadece yolcu dashboard'ında yap.
-      // Sürücü tarafında DriverDashboard zaten kendi konum/polling sistemini çalıştırıyor.
-      // Android 16 gibi cihazlarda bu iki sistemin üst üste binmesi ANR/çökme riskini artırıyor.
-      if (user.role !== 'driver') {
-        requestLocationPermission().then(granted => {
-          if (granted) {
-            updateUserLocation();
-            // Daha düşük frekans: performans ve stabilite
-            const interval = setInterval(updateUserLocation, 5000);
-            return () => clearInterval(interval);
-          }
-        });
-      }
+    const pushTimer = setTimeout(() => {
+      registerPushToken(user.id, () => {});
+    }, 500);
+
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let cancelled = false;
+
+    if (user.role !== 'driver') {
+      requestLocationPermission().then((granted) => {
+        if (cancelled || !granted) return;
+        updateUserLocation();
+        interval = setInterval(updateUserLocation, 5000);
+      });
     }
+
+    return () => {
+      cancelled = true;
+      clearTimeout(pushTimer);
+      if (interval) clearInterval(interval);
+    };
   }, [user, screen]);
 
   /** Ağ: UI’yı bloklamaz — admin kontrolü + aktif seans (timeout’lı). */
@@ -722,8 +744,16 @@ export default function App() {
 
   const loadUser = async () => {
     try {
-      const userData = await AsyncStorage.getItem('user');
-      const legalAcceptedStorage = await AsyncStorage.getItem('legal_accepted');
+      let userData: string | null;
+      let legalAcceptedStorage: string | null;
+      try {
+        userData = await AsyncStorage.getItem('user');
+        legalAcceptedStorage = await AsyncStorage.getItem('legal_accepted');
+      } catch {
+        setLoading(false);
+        return;
+      }
+
       const legalWasAccepted = legalAcceptedStorage === 'true';
 
       if (userData) {
@@ -731,8 +761,8 @@ export default function App() {
         try {
           parsedUser = JSON.parse(userData) as User;
         } catch {
-          console.error('Geçersiz kullanıcı önbelleği, temizleniyor');
-          await AsyncStorage.removeItem('user');
+          void AsyncStorage.removeItem('user').catch(() => {});
+          setLoading(false);
           return;
         }
 
@@ -764,6 +794,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Kullanıcı yüklenemedi:', error);
+      setLoading(false);
     } finally {
       setLoading(false);
     }
@@ -1015,9 +1046,6 @@ export default function App() {
               if (registerData.success && registerData.user) {
                 await saveUser(registerData.user);
                 setUser(registerData.user);
-                registerPushToken(registerData.user.id).catch(err => {
-                  console.log('🔔 Push token kayıt hatası (register):', err);
-                });
                 Alert.alert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
                 ]);
@@ -1141,15 +1169,7 @@ export default function App() {
       if (data.success) {
         await saveUser(data.user);
         
-        // 🔔 Kayıt başarılı - Push token kaydet
-        console.log('🔔 Kayıt başarılı, push token kaydediliyor...');
-        registerPushToken(data.user.id).then(tokenSuccess => {
-          console.log('🔔 Push token kayıt sonucu:', tokenSuccess ? 'BAŞARILI' : 'BAŞARISIZ');
-        }).catch(err => {
-          console.log('🔔 Push token kayıt hatası:', err);
-        });
-        
-        setScreen('role-select'); // Kayıttan sonra rol seçimi
+        setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
       } else {
         Alert.alert('Hata', data.detail || 'Kayıt oluşturulamadı');
       }
@@ -1159,7 +1179,8 @@ export default function App() {
   };
 
   // ==================== RENDER SCREENS ====================
-  
+  // Sıra: showSplash (yalnızca Leylek) → loading (ayrı spinner) → asıl ekranlar. Birleştirme yok.
+
   // SPLASH: sadece showSplash — user her güncellendiğinde timer iptal edilmez (sonsuz Leylek önlenir)
   useEffect(() => {
     if (!showSplash) return;
@@ -1169,25 +1190,24 @@ export default function App() {
       if (!splashUserRef.current) {
         setScreen('login');
       }
-    }, 2000);
+    }, 2500);
     return () => clearTimeout(splashTimer);
   }, [showSplash]);
-  
+
   if (showSplash) {
     return (
       <SplashScreen onFinish={() => {
-        console.log('🎬 SplashScreen onFinish çağrıldı');
         setShowSplash(false);
-        if (!user) {
+        if (!splashUserRef.current) {
           setScreen('login');
         }
       }} />
     );
   }
-  
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#3FA9F5" />
       </SafeAreaView>
     );
@@ -1910,14 +1930,6 @@ export default function App() {
           setUser(data.user as User);
           saveUser(data.user as User);
           
-          // 🔔 Login başarılı - Push token kaydet
-          console.log('🔔 Login başarılı, push token kaydediliyor...');
-          registerPushToken(data.user.id).then(tokenSuccess => {
-            console.log('🔔 Push token kayıt sonucu:', tokenSuccess ? 'BAŞARILI' : 'BAŞARISIZ');
-          }).catch(err => {
-            console.log('🔔 Push token kayıt hatası:', err);
-          });
-          
           // Admin kontrolü
           const cleanPhone = phone.replace(/\D/g, '');
           if (cleanPhone === '5326497412' || cleanPhone === '05326497412') {
@@ -2310,16 +2322,6 @@ export default function App() {
           console.log('📍 Rol seçildi, konum izni isteniyor...');
           requestLocationPermission();
           
-          // 🔔 Push token'ı backend'e kaydet
-          console.log('🔔 Push token kaydediliyor...');
-          registerPushToken(user.id)
-            .then((success) => {
-              console.log('🔔 Push token kayıt sonucu:', success ? 'BAŞARILI' : 'BAŞARISIZ');
-            })
-            .catch((err) => {
-              console.log('🔔 Push token hata:', err);
-            });
-          
           setScreen('dashboard');
         }
       } catch (error) {
@@ -2330,11 +2332,6 @@ export default function App() {
           
           // 📍 Konum izni iste
           requestLocationPermission();
-          
-          // 🔔 Push token kaydet
-          registerPushToken(user.id).catch((err) => {
-            console.log('🔔 Push token hata:', err);
-          });
           
           setScreen('dashboard');
         }
@@ -2348,6 +2345,34 @@ export default function App() {
         imageStyle={styles.roleBackgroundImage}
       >
         <SafeAreaView style={styles.roleSelectionSafe}>
+          {roleSelectTripExitBanner ? (
+            <Animated.View
+              style={{
+                opacity: roleSelectBannerShimmer,
+                backgroundColor: '#B91C1C',
+                paddingVertical: 14,
+                paddingHorizontal: 14,
+                marginHorizontal: 10,
+                marginBottom: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#FCA5A5',
+              }}
+              pointerEvents="none"
+            >
+              <Text
+                style={{
+                  color: '#FFF',
+                  textAlign: 'center',
+                  fontWeight: '800',
+                  fontSize: 14,
+                  lineHeight: 20,
+                }}
+              >
+                {roleSelectTripExitBanner}
+              </Text>
+            </Animated.View>
+          ) : null}
           {/* Üst Bar */}
           <View style={styles.roleTopBarCompact}>
             <TouchableOpacity 
@@ -2414,7 +2439,7 @@ export default function App() {
                   </View>
                 </View>
                 <Text style={[styles.roleCardLabel, selectedRole === 'driver' && styles.roleCardLabelActive]}>Sürücü</Text>
-                <Text style={styles.roleCardDesc}>Araç veya motor</Text>
+                <Text style={styles.roleCardDesc}>Teklif al</Text>
                 {selectedRole === 'driver' && (
                   <View style={styles.roleCheckBadge}>
                     <Ionicons name="checkmark" size={16} color="#FFF" />
@@ -2450,7 +2475,7 @@ export default function App() {
                         rideVehicleKind === 'car' && styles.roleVehicleChipTextActive,
                       ]}
                     >
-                      Araç
+                      Araba
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -2553,6 +2578,8 @@ export default function App() {
         showDestinationPicker={showDestinationPicker}
         setShowDestinationPicker={setShowDestinationPicker}
         setScreen={setScreen}
+        requestLocationPermission={requestLocationPermission}
+        onShowTripEndedBanner={setRoleSelectTripExitBanner}
       />
     ) : (
       <RuntimeBoundary name="DriverDashboard">
@@ -2562,6 +2589,7 @@ export default function App() {
           setScreen={setScreen} 
           kycStatusProp={kycStatus}
           setKycStatusProp={setKycStatus}
+          onShowTripEndedBanner={setRoleSelectTripExitBanner}
         />
       </RuntimeBoundary>
     );
@@ -2575,6 +2603,8 @@ export default function App() {
           id: user.id,
           name: user.name || 'Kullanıcı',
           role: user.role || 'passenger',
+          city: (user as { city?: string }).city,
+          rating: (user as { rating?: number }).rating,
         }}
         onBack={() => setScreen('role-select')}
         apiUrl={API_URL}
@@ -2626,6 +2656,9 @@ export default function App() {
   );
 }
 
+/** Büyük sistem yazı ölçeğinde teklif UI şişmesini sınırlar (özellikle Android). */
+const OFFER_CARD_MAX_FONT_SCALE = 1.28;
+
 // ==================== YANIP SÖNEN TEKLİF GÖNDER BUTONU ====================
 function AnimatedOfferButton({ onPress }: { onPress: () => void }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -2676,7 +2709,7 @@ function AnimatedOfferButton({ onPress }: { onPress: () => void }) {
         >
           <Animated.View style={[styles.offerButtonGlow, { opacity: glowAnim }]} />
           <Ionicons name="send" size={22} color="#FFF" />
-          <Text style={styles.animatedOfferButtonText}>Teklif Gönder</Text>
+          <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={styles.animatedOfferButtonText}>Teklif Gönder</Text>
         </LinearGradient>
       </Animated.View>
     </TouchableOpacity>
@@ -2791,7 +2824,7 @@ function TikTokOfferCard({
   // Sadece isim göster (soyad yok)
   const fullName = isPassenger ? offer.driver_name : offer.passenger_name;
   const personName = fullName?.split(' ')[0] || 'Kullanıcı';
-  const personRating = isPassenger ? (offer.driver_rating || 5.0) : 5.0;
+  const personRating = isPassenger ? (offer.driver_rating ?? 4.0) : 4.0;
   const tripCount = Math.floor(personRating * 100) + 50;
   const isBest = isBestOffer(offer, index, total);
 
@@ -3013,8 +3046,8 @@ function TikTokOfferCard({
               </View>
             </Animated.View>
             <View style={driverViewStyles.headerContent}>
-              <Text style={driverViewStyles.headerTitle}>🚨 Yeni Yolcu Talebi!</Text>
-              <Text style={driverViewStyles.headerSubtitle}>Hızlı teklif ver, yolcuyu kazan</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.headerTitle}>🚨 Yeni Yolcu Talebi!</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.headerSubtitle}>Hızlı teklif ver, yolcuyu kazan</Text>
             </View>
           </View>
 
@@ -3022,7 +3055,7 @@ function TikTokOfferCard({
           {personName && (
             <View style={driverViewStyles.passengerBadge}>
               <Ionicons name="person" size={16} color={SKY_BLUE.primary} />
-              <Text style={driverViewStyles.passengerName}>{personName}</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.passengerName}>{personName}</Text>
               <View style={driverViewStyles.verifiedBadge}>
                 <Ionicons name="checkmark-circle" size={14} color="#22C55E" />
               </View>
@@ -3035,8 +3068,8 @@ function TikTokOfferCard({
             <View style={driverViewStyles.addressRow}>
               <View style={[driverViewStyles.addressDot, { backgroundColor: SKY_BLUE.primary }]} />
               <View style={driverViewStyles.addressContent}>
-                <Text style={driverViewStyles.addressLabel}>ALIŞ NOKTASI</Text>
-                <Text style={driverViewStyles.addressText} numberOfLines={2}>
+                <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressLabel}>ALIŞ NOKTASI</Text>
+                <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressText} numberOfLines={2}>
                   {offer.pickup_location || offer.pickup_address || 'Konum alınıyor...'}
                 </Text>
               </View>
@@ -3050,8 +3083,8 @@ function TikTokOfferCard({
             <View style={driverViewStyles.addressRow}>
               <View style={[driverViewStyles.addressDot, { backgroundColor: '#22C55E' }]} />
               <View style={driverViewStyles.addressContent}>
-                <Text style={driverViewStyles.addressLabel}>VARIŞ NOKTASI</Text>
-                <Text style={driverViewStyles.addressText} numberOfLines={2}>
+                <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressLabel}>VARIŞ NOKTASI</Text>
+                <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressText} numberOfLines={2}>
                   {offer.dropoff_location || offer.dropoff_address || 'Hedef alınıyor...'}
                 </Text>
               </View>
@@ -3062,24 +3095,24 @@ function TikTokOfferCard({
           <View style={driverViewStyles.statsRow}>
             <View style={driverViewStyles.statBox}>
               <Ionicons name="location" size={22} color={SKY_BLUE.primary} />
-              <Text style={driverViewStyles.statValue}>{distanceToPassengerKm} km</Text>
-              <Text style={driverViewStyles.statLabel}>Yolcuya</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.statValue}>{distanceToPassengerKm} km</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.statLabel}>Yolcuya</Text>
             </View>
             <View style={driverViewStyles.statBox}>
               <Ionicons name="time" size={22} color={SKY_BLUE.primary} />
-              <Text style={driverViewStyles.statValue}>{arrivalTime} dk</Text>
-              <Text style={driverViewStyles.statLabel}>Varış</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.statValue}>{arrivalTime} dk</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.statLabel}>Varış</Text>
             </View>
             <View style={driverViewStyles.statBox}>
               <Ionicons name="navigate" size={22} color="#F59E0B" />
-              <Text style={driverViewStyles.statValue}>{tripDistanceKm} km</Text>
-              <Text style={driverViewStyles.statLabel}>Yolculuk</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.statValue}>{tripDistanceKm} km</Text>
+              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.statLabel}>Yolculuk</Text>
             </View>
           </View>
 
           {/* Fiyat Girişi - +/- Butonları ile */}
           <View style={driverViewStyles.priceSection}>
-            <Text style={driverViewStyles.priceSectionTitle}>💰 Teklif Tutarını Belirle</Text>
+            <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.priceSectionTitle}>💰 Teklif Tutarını Belirle</Text>
             
             <View style={driverViewStyles.priceInputRow}>
               {/* Eksi Butonu */}
@@ -3093,7 +3126,7 @@ function TikTokOfferCard({
               
               {/* Fiyat Input */}
               <View style={driverViewStyles.priceInputContainer}>
-                <Text style={driverViewStyles.priceCurrency}>₺</Text>
+                <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.priceCurrency}>₺</Text>
                 <TextInput
                   style={driverViewStyles.priceInput}
                   placeholder="0"
@@ -3103,6 +3136,7 @@ function TikTokOfferCard({
                   onChangeText={setPriceInput}
                   editable={!sending && !sent}
                   maxLength={5}
+                  maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE}
                 />
               </View>
               
@@ -3127,7 +3161,9 @@ function TikTokOfferCard({
                   ]}
                   onPress={() => setPriceInput(String(price))}
                 >
-                  <Text style={[
+                  <Text
+                    maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE}
+                    style={[
                     driverViewStyles.quickPriceText,
                     priceInput === String(price) && driverViewStyles.quickPriceTextActive
                   ]}>₺{price}</Text>
@@ -3152,7 +3188,7 @@ function TikTokOfferCard({
             ) : (
               <Ionicons name={sent ? "checkmark-done" : "send"} size={24} color="#FFF" />
             )}
-            <Text style={driverViewStyles.sendBtnText}>
+            <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.sendBtnText}>
               {sent ? 'Teklif Gönderildi!' : sending ? 'Gönderiliyor...' : 'Teklif Gönder'}
             </Text>
           </TouchableOpacity>
@@ -3163,7 +3199,7 @@ function TikTokOfferCard({
             onPress={onDismiss}
             activeOpacity={0.7}
           >
-            <Text style={driverViewStyles.cancelBtnText}>Vazgeç</Text>
+            <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.cancelBtnText}>Vazgeç</Text>
           </TouchableOpacity>
         </>
       )}
@@ -3762,8 +3798,8 @@ function PassengerOfferCard({
 }) {
   const [accepting, setAccepting] = useState(false);
   
-  const personName = offer.driver_name || 'Sürücü';
-  const personRating = offer.driver_rating || 5.0;
+  const personName = displayFirstName(offer.driver_name, 'Sürücü');
+  const personRating = offer.driver_rating ?? 4.0;
   const tripCount = Math.floor(personRating * 100) + 50;
   const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || offer.distance_km?.toFixed(1) || '?';
   const arrivalTime = offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
@@ -4914,15 +4950,15 @@ function FullScreenOfferCard({
           <View style={styles.driverProfileRight}>
             <View style={styles.driverAvatarSmall}>
               <Text style={styles.driverAvatarSmallText}>
-                {offer.driver_name?.charAt(0) || '?'}
+                {displayFirstName(offer.driver_name, 'S').charAt(0) || '?'}
               </Text>
             </View>
-            <Text style={styles.driverNameSmall}>{offer.driver_name}</Text>
+            <Text style={styles.driverNameSmall}>{displayFirstName(offer.driver_name, 'Sürücü')}</Text>
             <Text style={styles.ratingLabel}>Puanlama</Text>
             <View style={styles.starsContainer}>
               {[...Array(10)].map((_, i) => (
                 <Text key={i} style={styles.starIcon}>
-                  {i < Math.round(offer.driver_rating * 2) ? '⭐' : '☆'}
+                  {i < Math.round((offer.driver_rating ?? 4) * 2) ? '⭐' : '☆'}
                 </Text>
               ))}
             </View>
@@ -5030,7 +5066,15 @@ function FullScreenOfferCard({
 }
 
 // ==================== SIMPLE PULSE BUTTON ====================
-function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loading: boolean }) {
+function AnimatedPulseButton({
+  onPress,
+  loading,
+  disabled,
+}: {
+  onPress: () => void;
+  loading: boolean;
+  disabled?: boolean;
+}) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.7)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -5078,6 +5122,7 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
   }, []);
 
   const handlePress = () => {
+    if (disabled || loading) return;
     Animated.sequence([
       Animated.timing(scaleAnim, {
         toValue: 0.9,
@@ -5095,9 +5140,9 @@ function AnimatedPulseButton({ onPress, loading }: { onPress: () => void; loadin
   return (
     <TouchableOpacity 
       onPress={handlePress} 
-      disabled={loading}
-      activeOpacity={0.8}
-      style={styles.callButtonContainer}
+      disabled={loading || disabled}
+      activeOpacity={disabled ? 1 : 0.8}
+      style={[styles.callButtonContainer, disabled && { opacity: 0.48 }]}
     >
       <Animated.View style={[{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}>
         <LinearGradient
@@ -5132,7 +5177,9 @@ function PassengerDashboard({
   userLocation,
   showDestinationPicker,
   setShowDestinationPicker,
-  setScreen
+  setScreen,
+  requestLocationPermission,
+  onShowTripEndedBanner,
 }: { 
   user: User; 
   logout: () => void;
@@ -5142,6 +5189,8 @@ function PassengerDashboard({
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
   setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
+  requestLocationPermission: () => Promise<boolean>;
+  onShowTripEndedBanner?: (message: string) => void;
 }) {
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
@@ -5228,6 +5277,11 @@ function PassengerDashboard({
   // 🆕 Chat State'leri (Yolcu)
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
   const [passengerIncomingMessage, setPassengerIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
+  const [firstChatTapBanner, setFirstChatTapBanner] = useState<{ title: string; subtitle: string } | null>(null);
+  const {
+    lastTappedNotificationData: paxChatNotifData,
+    clearLastTappedNotification: paxClearChatNotif,
+  } = useNotifications();
   
   // 🆕 End Trip Modal State'leri (Yolcu)
   const [passengerEndTripModalVisible, setPassengerEndTripModalVisible] = useState(false);
@@ -5287,35 +5341,119 @@ function PassengerDashboard({
     longitude: number;
   } | null>(null);
   const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
-  const destinationCrosshairPulse = useRef(new Animated.Value(1)).current;
+  const destinationPickerMapRef = useRef<any>(null);
+  const destinationSnapshotOnPickerOpenRef = useRef<{
+    address: string;
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  /** Arama ile bölge seçildi; hedef ancak haritada dokununca / işaretçi sürüklenince kesinleşir */
+  const [destinationAwaitingMapTap, setDestinationAwaitingMapTap] = useState(false);
+  /** search: başlık + arama kartı | map: yalnızca harita (mahalle seçilince) */
+  const [destinationPickerPhase, setDestinationPickerPhase] = useState<'search' | 'map'>('search');
+  const destinationHeroPulse = useRef(new Animated.Value(1)).current;
+  const destPinPulse1 = useRef(new Animated.Value(1)).current;
+  const destPinOpacity1 = useRef(new Animated.Value(0.5)).current;
+  const destPinPulse2 = useRef(new Animated.Value(1)).current;
+  const destPinOpacity2 = useRef(new Animated.Value(0.35)).current;
 
   // 🔊 Tek tip tuş sesi (1109) - Harita ve eşleşme ekranındaki her tuşa basıldığında
   const playTapSound = async () => {};
   
-  // Sesler yalnızca rol seçim ekranında — eşleşme/teklif/harita sessiz
-  const playMatchSound = async () => {};
+  // Eşleşme: yumuşak ding-dong (socket onTagMatched / onRideAccepted + yerel kabul; debounce tek çalma)
+  const playMatchSound = () => {
+    void playMatchChimeSound();
+  };
   const playStartSound = async () => {};
   const playOfferSound = async () => {};
 
   useEffect(() => {
-    if (!destinationPickerPin) return;
+    if (!destinationPickerPin || destinationPickerPhase !== 'map') return;
+    const ring1 = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(destPinPulse1, {
+            toValue: 2.15,
+            duration: 1700,
+            useNativeDriver: true,
+          }),
+          Animated.timing(destPinOpacity1, {
+            toValue: 0,
+            duration: 1700,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(destPinPulse1, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(destPinOpacity1, { toValue: 0.5, duration: 0, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    const ring2 = Animated.loop(
+      Animated.sequence([
+        Animated.delay(600),
+        Animated.parallel([
+          Animated.timing(destPinPulse2, {
+            toValue: 1.95,
+            duration: 1700,
+            useNativeDriver: true,
+          }),
+          Animated.timing(destPinOpacity2, {
+            toValue: 0,
+            duration: 1700,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(destPinPulse2, { toValue: 1, duration: 0, useNativeDriver: true }),
+          Animated.timing(destPinOpacity2, { toValue: 0.35, duration: 0, useNativeDriver: true }),
+        ]),
+      ]),
+    );
+    ring1.start();
+    ring2.start();
+    return () => {
+      ring1.stop();
+      ring2.stop();
+    };
+  }, [
+    destinationPickerPin,
+    destinationPickerPhase,
+    destPinPulse1,
+    destPinOpacity1,
+    destPinPulse2,
+    destPinOpacity2,
+  ]);
+
+  useEffect(() => {
+    if (!showDestinationPicker) return;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(destinationCrosshairPulse, {
-          toValue: 1.12,
-          duration: 1000,
+        Animated.timing(destinationHeroPulse, {
+          toValue: 1.05,
+          duration: 900,
           useNativeDriver: true,
         }),
-        Animated.timing(destinationCrosshairPulse, {
+        Animated.timing(destinationHeroPulse, {
           toValue: 1,
-          duration: 1000,
+          duration: 900,
           useNativeDriver: true,
         }),
       ]),
     );
     loop.start();
-    return () => loop.stop();
-  }, [destinationPickerPin, destinationCrosshairPulse]);
+    return () => {
+      loop.stop();
+      destinationHeroPulse.setValue(1);
+    };
+  }, [showDestinationPicker, destinationHeroPulse]);
+
+  useEffect(() => {
+    if (!showDestinationPicker) return;
+    destinationSnapshotOnPickerOpenRef.current = destination;
+    setDestinationAwaitingMapTap(false);
+    setDestinationPickerPhase('search');
+  }, [showDestinationPicker]);
 
   useEffect(() => {
     if (!showPriceModal) return;
@@ -5352,7 +5490,7 @@ function PassengerDashboard({
         if (data.success && data.user) {
           const driverDetails = data.user.driver_details || {};
           setOtherUserDetails({
-            rating: data.user.rating || 5.0,
+            rating: data.user.rating != null ? Number(data.user.rating) : 4.0,
             totalTrips: data.user.total_trips || 0,
             profilePhoto: data.user.profile_photo,
             vehiclePhoto: driverDetails.vehicle_photo_url,
@@ -5497,6 +5635,7 @@ function PassengerDashboard({
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
+    forceEndTrip: passengerForceEndTrip,
     // 🆕 Mesajlaşma
     emitSendMessage: passengerEmitSendMessage,
   } = useSocket({
@@ -5515,7 +5654,11 @@ function PassengerDashboard({
       setPassengerDailyReceiverId(data.receiver_id);
       // Arayan mı aranan mı?
       const isCaller = user?.id === data.caller_id;
-      setDailyCallerName(isCaller ? (activeTag?.driver_name || 'Şoför') : (incomingCallData?.callerName || 'Yolcu'));
+      setDailyCallerName(
+        isCaller
+          ? displayFirstName(activeTag?.driver_name, 'Şoför')
+          : displayFirstName(incomingCallData?.callerName, 'Yolcu')
+      );
       setDailyCallActive(true);
       // Reset states - navigation YOK
       setOutgoingCall(false);
@@ -5615,7 +5758,7 @@ function PassengerDashboard({
       });
       // Ses çal ve toast göster
       playOfferSound();
-      setToastMessage(`${data.driver_name} teklifinize ${data.price}₺ önerdi!`);
+      setToastMessage(`${displayFirstName(data.driver_name, 'Sürücü')} teklifinize ${data.price}₺ önerdi!`);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     },
@@ -5692,22 +5835,16 @@ function PassengerDashboard({
       // Backend'den onay geldi - tag'i yenile
       loadActiveTag();
     },
-    // 🆕 Mesajlaşma - PURE SOCKET (ANLIK)
-    onNewMessage: (data) => {
-      console.log('💬 YOLCU - YENİ MESAJ GELDİ (ANLIK):', data);
-      // Gelen mesajı ChatBubble'a ilet
-      setPassengerIncomingMessage({
-        text: data.message,
-        senderId: data.sender_id,
-        timestamp: data.timestamp || Date.now(),
+    onFirstChatMessage: (data) => {
+      if (!data?.tag_id) return;
+      if (activeTag?.id && data.tag_id !== activeTag.id) return;
+      if (passengerChatVisible) return;
+      setFirstChatTapBanner({
+        title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
+        subtitle:
+          (data.message_preview || data.message || '').trim() ||
+          'Mesajı görmek için tıklayın',
       });
-      // 🔥 Chat kapalıysa otomatik aç + bildirim göster
-      if (!passengerChatVisible) {
-        setPassengerChatVisible(true); // Chat'i otomatik aç
-        setToastMessage(`💬 ${data.sender_name || 'Sürücü'}: ${data.message.substring(0, 30)}...`);
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
-      }
     },
     // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
     onTripForceEnded: (data) => {
@@ -5973,6 +6110,21 @@ function PassengerDashboard({
     }
   };
 
+  useEffect(() => {
+    const d = paxChatNotifData;
+    if (!d || d.type !== 'first_chat_message' || !d.tag_id) return;
+    paxClearChatNotif();
+    if (!activeTag?.id || String(d.tag_id) !== String(activeTag.id)) {
+      void loadActiveTag();
+    }
+    setPassengerChatVisible(true);
+    setFirstChatTapBanner(null);
+  }, [paxChatNotifData, paxClearChatNotif, activeTag?.id]);
+
+  useEffect(() => {
+    if (passengerChatVisible) setFirstChatTapBanner(null);
+  }, [passengerChatVisible]);
+
   const buildLocalPriceEstimate = (
     pickupLat: number,
     pickupLng: number,
@@ -6030,9 +6182,14 @@ function PassengerDashboard({
     playTapSound();
     console.log('🔵 FİYAT TEKLİF BUTONU TIKLANDI!');
     
-    // Hedef kontrolü
+    // Hedef kontrolü (arama tek başına yetmez; haritadan nokta şart)
     if (!destination) {
-      Alert.alert('⚠️ Hedef Gerekli', 'Lütfen önce nereye gitmek istediğinizi seçin');
+      Alert.alert(
+        '⚠️ Hedef gerekli',
+        destinationAwaitingMapTap
+          ? 'Listeden bölgeyi seçtikten sonra haritadan tam durağa dokunun veya yeşil işaretçiyi sürükleyin.'
+          : 'Önce hedef seçin: arama veya harita ile tam konumu belirleyin.',
+      );
       return;
     }
 
@@ -6313,7 +6470,7 @@ function PassengerDashboard({
     console.log('📞 YOLCU - ANINDA çaldırma bildirimi gönderiliyor...');
     emitCallInvite({
       caller_id: user.id,
-      caller_name: user.name || 'Yolcu',
+      caller_name: displayFirstName(user.name, 'Yolcu'),
       receiver_id: activeTag.driver_id,
       room_url: '', // Henüz yok
       room_name: '',
@@ -6325,7 +6482,7 @@ function PassengerDashboard({
     // 2. "Arıyor" ekranını göster
     setOutgoingCall(true);
     setOutgoingCallData({
-      receiverName: activeTag.driver_name || 'Sürücü',
+      receiverName: displayFirstName(activeTag.driver_name, 'Sürücü'),
       callType: callType,
       receiverId: activeTag.driver_id,
       roomUrl: '',
@@ -6354,7 +6511,7 @@ function PassengerDashboard({
         // 4. Room URL ile GERÇEK invite gönder
         emitCallInvite({
           caller_id: user.id,
-          caller_name: user.name || 'Yolcu',
+          caller_name: displayFirstName(user.name, 'Yolcu'),
           receiver_id: activeTag.driver_id,
           room_url: data.room_url,
           room_name: data.room_name,
@@ -6367,11 +6524,11 @@ function PassengerDashboard({
         setDailyRoomUrl(data.room_url);
         setDailyRoomName(data.room_name);
         setDailyCallType(callType);
-        setDailyCallerName(activeTag.driver_name || 'Sürücü');
+        setDailyCallerName(displayFirstName(activeTag.driver_name, 'Sürücü'));
         
         // 6. Outgoing call verilerini güncelle
         setOutgoingCallData({
-          receiverName: activeTag.driver_name || 'Sürücü',
+          receiverName: displayFirstName(activeTag.driver_name, 'Sürücü'),
           callType: callType,
           receiverId: activeTag.driver_id,
           roomUrl: data.room_url,
@@ -6543,6 +6700,8 @@ function PassengerDashboard({
         
         // "Eşleşme sağlanıyor..." kapat
         setMatchingInProgress(false);
+
+        void playMatchChimeSound();
         
         // API'den tam veriyi çek (arka planda)
         loadActiveTag();
@@ -6593,12 +6752,13 @@ function PassengerDashboard({
     );
   };
 
-  const handleDestinationSelect = async (address: string, lat: number, lng: number) => {
+  /** Haritadan kesin nokta — hedef geçerli; modal kapanır */
+  const commitDestinationFromMap = async (address: string, lat: number, lng: number) => {
     const newDestination = { address, latitude: lat, longitude: lng };
     setDestination(newDestination);
+    setDestinationAwaitingMapTap(false);
     setShowDestinationPicker(false);
 
-    // Eğer aktif TAG varsa, hedefi güncelle
     if (activeTag) {
       try {
         const response = await fetch(`${API_URL}/passenger/update-destination?user_id=${user.id}`, {
@@ -6608,14 +6768,13 @@ function PassengerDashboard({
             tag_id: activeTag.id,
             dropoff_location: address,
             dropoff_lat: lat,
-            dropoff_lng: lng
-          })
+            dropoff_lng: lng,
+          }),
         });
 
         const data = await response.json();
         if (data.success) {
-          
-          loadActiveTag(); // TAG'i yeniden yükle
+          loadActiveTag();
         } else {
           Alert.alert('Hata', data.detail || 'Hedef güncellenemedi');
         }
@@ -6623,6 +6782,43 @@ function PassengerDashboard({
         Alert.alert('Hata', 'Hedef güncellenemedi');
       }
     }
+  };
+
+  /** Arama: yalnızca bölge — haritaya odaklanır; hedef geçerli sayılmaz */
+  const handleDestinationAreaFromSearch = (place: {
+    address: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    void tapButtonHaptic();
+    setDestination(null);
+    setDestinationAwaitingMapTap(true);
+    setDestinationPickerPhase('map');
+    const { latitude: lat, longitude: lng } = place;
+    setDestinationPickerPin({ latitude: lat, longitude: lng });
+    requestAnimationFrame(() => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: 0.026,
+            longitudeDelta: 0.026,
+          },
+          420,
+        );
+      } catch (_) {}
+    });
+  };
+
+  const closeDestinationPickerModal = () => {
+    void tapButtonHaptic();
+    if (destinationAwaitingMapTap) {
+      setDestination(destinationSnapshotOnPickerOpenRef.current);
+    }
+    setDestinationAwaitingMapTap(false);
+    setDestinationPickerPhase('search');
+    setShowDestinationPicker(false);
   };
 
   useEffect(() => {
@@ -6655,7 +6851,7 @@ function PassengerDashboard({
       const data = await response.json();
       const address =
         data?.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-      await handleDestinationSelect(address, latitude, longitude);
+      await commitDestinationFromMap(address, latitude, longitude);
     } catch {
       Alert.alert('Hata', 'Adres okunamadı. İşareti sürükleyip tekrar deneyin.');
     } finally {
@@ -6886,6 +7082,7 @@ function PassengerDashboard({
             <AnimatedPulseButton 
               onPress={handleCallButton} 
               loading={loading || priceLoading}
+              disabled={!destination}
             />
             
             {/* 🆕 MARTI TAG - Fiyat Teklif Modal */}
@@ -7031,7 +7228,7 @@ function PassengerDashboard({
                               style={styles.priceModalSendGradient}
                             >
                               <MaterialCommunityIcons name="rocket-launch-outline" size={28} color="#FFF" />
-                              <Text style={styles.priceModalSendTextLarge}>Teklif Gönder</Text>
+                              <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={styles.priceModalSendTextLarge}>Teklif Gönder</Text>
                             </LinearGradient>
                           </Animated.View>
                         </TouchableOpacity>
@@ -7047,13 +7244,43 @@ function PassengerDashboard({
             {/* CANLI HARİTA - Tam Ekran (Yolcu) - SADECE MATCHED/IN_PROGRESS'DE */}
             {activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
               <View style={styles.fullScreenMapContainer}>
+                {firstChatTapBanner ? (
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      setPassengerChatVisible(true);
+                      setFirstChatTapBanner(null);
+                    }}
+                    style={{
+                      backgroundColor: '#B91C1C',
+                      marginHorizontal: 12,
+                      marginTop: 8,
+                      marginBottom: 6,
+                      paddingVertical: 12,
+                      paddingHorizontal: 14,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: '#FCA5A5',
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+                      {firstChatTapBanner.title}
+                    </Text>
+                    <Text style={{ color: '#FEE2E2', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
+                      {firstChatTapBanner.subtitle}
+                    </Text>
+                    <Text style={{ color: '#FECACA', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+                      Mesajı görmek için tıklayın
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
                   destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
                   isDriver={false}
                   userName={user.name}
-                  otherUserName={activeTag?.driver_name || 'Şoför'}
+                  otherUserName={displayFirstName(activeTag?.driver_name, 'Şoför')}
                   otherUserId={activeTag?.driver_id}
                   userId={user.id}
                   tagId={activeTag?.id}
@@ -7074,7 +7301,7 @@ function PassengerDashboard({
                     }
                     
                     const driverId = activeTag?.driver_id || '';
-                    const driverName = activeTag?.driver_name || 'Sofor';
+                    const driverName = displayFirstName(activeTag?.driver_name, 'Sofor');
                     
                     if (!driverId) {
                       Alert.alert('Hata', 'Sofor bilgisi bulunamadi');
@@ -7085,7 +7312,7 @@ function PassengerDashboard({
                     console.log('📞 YOLCU - PRE-RINGING: Anında zil çalıyor...');
                     emitCallInvite({
                       caller_id: user.id,
-                      caller_name: user.name || 'Yolcu',
+                      caller_name: displayFirstName(user.name, 'Yolcu'),
                       receiver_id: driverId,
                       room_url: '',  // Henüz yok!
                       room_name: '',
@@ -7137,7 +7364,7 @@ function PassengerDashboard({
                       // 4️⃣ İKİNCİ INVITE - Room URL ile birlikte
                       emitCallInvite({
                         caller_id: user.id,
-                        caller_name: user.name || 'Yolcu',
+                        caller_name: displayFirstName(user.name, 'Yolcu'),
                         receiver_id: driverId,
                         room_url: data.room_url,
                         room_name: data.room_name,
@@ -7326,7 +7553,7 @@ function PassengerDashboard({
                     
                     // Socket ile de bildir (opsiyonel - bağlıysa)
                     try {
-                      forceEndTrip({
+                      passengerForceEndTrip({
                         tag_id: activeTag.id,
                         ender_id: user.id,
                         ender_type: 'passenger',
@@ -7337,18 +7564,15 @@ function PassengerDashboard({
                       console.log('Socket force end hatası:', socketErr);
                     }
                     
+                    onShowTripEndedBanner?.(
+                      'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
+                    );
                     // Anında local state temizle
                     setActiveTag(null);
                     setDestination(null);
                     setPassengerChatVisible(false);
                     clearIncomingCall();
                     setScreen('role-select');
-                    
-                    // Bilgilendirme
-                    Alert.alert(
-                      '⚠️ Yolculuk Bitirildi', 
-                      'Eşleşme zorla sonlandırıldı.\n-5 puan uygulandı.'
-                    );
                   }}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
@@ -7358,7 +7582,7 @@ function PassengerDashboard({
                   visible={passengerChatVisible}
                   onClose={() => setPassengerChatVisible(false)}
                   isDriver={false}
-                  otherUserName={activeTag?.driver_name || 'Sürücü'}
+                  otherUserName={displayFirstName(activeTag?.driver_name, 'Sürücü')}
                   currentUserName={user?.name || ''}
                   userId={user?.id || ''}
                   otherUserId={activeTag?.driver_id || ''}
@@ -7398,7 +7622,7 @@ function PassengerDashboard({
                   visible={passengerEndTripModalVisible}
                   onClose={() => setPassengerEndTripModalVisible(false)}
                   isDriver={false}
-                  otherUserName={activeTag?.driver_name || 'Sürücü'}
+                  otherUserName={displayFirstName(activeTag?.driver_name, 'Sürücü')}
                   onComplete={async () => {
                     try {
                       const response = await fetch(
@@ -7441,6 +7665,9 @@ function PassengerDashboard({
                       );
                       const data = await response.json();
                       if (data.success) {
+                        onShowTripEndedBanner?.(
+                          'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
+                        );
                         setActiveTag(null);
                         setDestination(null);
                         setScreen('role-select');
@@ -7460,16 +7687,21 @@ function PassengerDashboard({
       <Modal
         visible={showDestinationPicker}
         animationType="slide"
-        onRequestClose={() => setShowDestinationPicker(false)}
+        onRequestClose={closeDestinationPickerModal}
       >
         <View style={styles.destinationModalRoot}>
           {DestinationPickerMapView ? (
             <DestinationPickerMapView
+              ref={destinationPickerMapRef}
               style={StyleSheet.absoluteFillObject}
               provider={DestinationPickerMapProvider}
               mapType="standard"
               showsUserLocation={!!userLocation}
               showsMyLocationButton={false}
+              scrollEnabled
+              zoomEnabled
+              pitchEnabled
+              rotateEnabled
               initialRegion={{
                 latitude:
                   destinationPickerPin?.latitude ??
@@ -7484,108 +7716,149 @@ function PassengerDashboard({
                 latitudeDelta: 0.004,
                 longitudeDelta: 0.004,
               }}
-              onPress={handleDestinationMapPress}
+              onPress={
+                destinationPickerPhase === 'map' ? handleDestinationMapPress : undefined
+              }
             >
-              {destinationPickerPin && DestinationPickerMarker ? (
+              {destinationPickerPin &&
+              DestinationPickerMarker &&
+              destinationPickerPhase === 'map' ? (
                 <DestinationPickerMarker
                   coordinate={destinationPickerPin}
                   draggable
-                  anchor={{ x: 0.5, y: 0.5 }}
+                  anchor={{ x: 0.5, y: 1 }}
                   tracksViewChanges={false}
                   onDragEnd={handleDestinationMarkerDragEnd}
                 >
-                  <View style={styles.destinationCrosshairMarker} pointerEvents="none">
+                  <View style={styles.destinationPinMarkerWrap} pointerEvents="none" collapsable={false}>
                     <Animated.View
                       style={[
-                        styles.destinationCrosshairRing,
-                        { transform: [{ scale: destinationCrosshairPulse }] },
+                        styles.destinationPinRing,
+                        {
+                          transform: [{ scale: destPinPulse1 }],
+                          opacity: destPinOpacity1,
+                        },
                       ]}
                     />
-                    <View style={styles.destinationCrosshairDot} />
+                    <Animated.View
+                      style={[
+                        styles.destinationPinRing,
+                        styles.destinationPinRingOuter,
+                        {
+                          transform: [{ scale: destPinPulse2 }],
+                          opacity: destPinOpacity2,
+                        },
+                      ]}
+                    />
+                    <View style={styles.destinationPinCore}>
+                      <Ionicons name="location" size={28} color="#FFF" />
+                    </View>
                   </View>
                 </DestinationPickerMarker>
               ) : null}
             </DestinationPickerMapView>
-          ) : (
+          ) : null}
+          {DestinationPickerMapView && destinationPickerPhase === 'map' ? (
+            <View style={styles.destinationMapCalloutWrap} pointerEvents="none">
+              <View style={styles.destinationMapCalloutBubble}>
+                <Text style={styles.destinationMapCalloutText}>
+                  Haritayı kaydırın · yakınlaştırın · dokunun veya yeşil işaretçiyi sürükleyin
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          {!DestinationPickerMapView ? (
             <LinearGradient
               colors={['#0c4a6e', '#075985', '#0369a1', '#0284c7']}
               start={{ x: 0.2, y: 0 }}
               end={{ x: 0.9, y: 1 }}
               style={StyleSheet.absoluteFillObject}
             />
-          )}
+          ) : null}
 
-          <LinearGradient
-            pointerEvents="none"
-            colors={['rgba(6, 32, 58, 0.94)', 'rgba(6, 32, 58, 0.55)', 'transparent']}
-            locations={[0, 0.42, 1]}
-            style={styles.destinationModalTopFade}
-          />
+          {destinationPickerPhase === 'search' ? (
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(6, 32, 58, 0.82)', 'rgba(6, 32, 58, 0.38)', 'transparent']}
+              locations={[0, 0.38, 1]}
+              style={styles.destinationModalTopFade}
+            />
+          ) : (
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(15, 23, 42, 0.45)', 'rgba(15, 23, 42, 0.12)', 'transparent']}
+              locations={[0, 0.25, 1]}
+              style={styles.destinationModalTopFadeLight}
+            />
+          )}
 
           <View style={styles.destinationModalTouchLayer} pointerEvents="box-none">
             <SafeAreaView style={styles.destinationModalSafeOverlay} pointerEvents="box-none">
-              <View style={styles.destinationModalHeaderBlue} pointerEvents="auto">
+              <View
+                style={[
+                  styles.destinationModalHeaderBlue,
+                  destinationPickerPhase === 'map' && styles.destinationModalHeaderBlueDim,
+                ]}
+                pointerEvents="auto"
+              >
                 <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    } catch (_) {}
-                    setShowDestinationPicker(false);
-                  }}
+                  onPress={closeDestinationPickerModal}
                   style={styles.destinationModalBackBtn}
                 >
                   <Ionicons name="arrow-back" size={24} color="#FFF" />
                 </TouchableOpacity>
-                <Text style={styles.destinationModalTitleBlue}>Hedef</Text>
+                <View style={styles.destinationModalHeaderCenter}>
+                  {destinationPickerPhase === 'map' ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        setDestinationPickerPhase('search');
+                        setDestinationAwaitingMapTap(false);
+                        setDestination(null);
+                      }}
+                      style={styles.destinationChangeAreaBtn}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.destinationChangeAreaBtnText} numberOfLines={1}>
+                        Mahalle / sokak değiştir
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
                 <View style={{ width: 40 }} />
               </View>
 
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.destinationKeyboardAvoid}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
-              >
-                <View style={styles.destinationFloatingPanel} pointerEvents="auto">
-                  <Text style={styles.destinationHeroTitle}>Nereye gitmek{'\n'}istiyorsunuz?</Text>
-                  <Text style={styles.destinationHeroSub}>
-                    Adres yazın veya yeşil nişangâhı haritada sürükleyin — sokak köşesine kadar seçebilirsiniz.
-                  </Text>
-
-                  {destination && (
-                    <View style={styles.selectedDestinationBoxBlue}>
-                      <Ionicons name="checkmark-circle" size={22} color="#A7F3D0" />
-                      <Text style={styles.selectedDestinationTextBlue} numberOfLines={2}>
-                        {destination.address}
+              {destinationPickerPhase === 'search' ? (
+                <KeyboardAvoidingView
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  style={styles.destinationKeyboardAvoid}
+                  keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+                >
+                  <View style={styles.destinationFloatingPanel} pointerEvents="auto">
+                    <Animated.View
+                      style={{ transform: [{ scale: destinationHeroPulse }], marginBottom: 8 }}
+                    >
+                      <Text style={[styles.destinationHeroTitle, styles.destinationHeroTitleAnimated]}>
+                        Nereye gitmek istiyorsunuz?
                       </Text>
+                    </Animated.View>
+
+                    <View style={styles.destinationSearchShellModern}>
+                      <PlacesAutocomplete
+                        placeholder="Mahalle, sokak, mekan ara…"
+                        city={user?.city || ''}
+                        hidePopularChips
+                        visualVariant="tech"
+                        suggestionsFirst={false}
+                        widerSearch
+                        inputSize="large"
+                        predictionMaxHeightBonus={56}
+                        onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
+                      />
                     </View>
-                  )}
-
-                  <View style={styles.destinationMapHintRow}>
-                    <Ionicons name="navigate-circle" size={18} color="#38BDF8" />
-                    <Text style={styles.destinationMapHintText}>
-                      Haritaya dokunun veya nişangâhı sürükleyin; adres onaylanır.
-                    </Text>
                   </View>
-
-                  <View style={styles.destinationSearchShellTech}>
-                    <PlacesAutocomplete
-                      placeholder="Mahalle, sokak, mekan ara…"
-                      city={user?.city || ''}
-                      hidePopularChips
-                      visualVariant="tech"
-                      suggestionsFirst
-                      widerSearch
-                      onPlaceSelected={async (place) => {
-                        try {
-                          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                        } catch (_) {}
-                        handleDestinationSelect(place.address, place.latitude, place.longitude);
-                      }}
-                    />
-                  </View>
-                </View>
-                <View style={styles.destinationModalMapTouchPassthrough} pointerEvents="none" />
-              </KeyboardAvoidingView>
+                </KeyboardAvoidingView>
+              ) : null}
             </SafeAreaView>
           </View>
 
@@ -7727,7 +8000,7 @@ function PassengerDashboard({
         userId={user.id}
         tagId={activeTag?.id || ''}
         isDriver={false}
-        otherUserName={activeTag?.driver_name || 'Sürücü'}
+        otherUserName={displayFirstName(activeTag?.driver_name, 'Sürücü')}
         myLatitude={userLocation?.latitude}
         myLongitude={userLocation?.longitude}
         otherLatitude={activeTag?.driver_latitude}
@@ -7741,7 +8014,7 @@ function PassengerDashboard({
               visible: true,
               tagId: activeTag?.id || '',
               rateUserId: activeTag?.driver_id || '',
-              rateUserName: rateUserName || activeTag?.driver_name || 'Sürücü'
+              rateUserName: rateUserName || displayFirstName(activeTag?.driver_name, 'Sürücü')
             });
           }
           // Sayfayı yenile
@@ -7777,9 +8050,10 @@ interface DriverDashboardProps {
   setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
   kycStatusProp?: { status: string; submitted_at: string | null } | null;
   setKycStatusProp?: (status: { status: string; submitted_at: string | null } | null) => void;
+  onShowTripEndedBanner?: (message: string) => void;
 }
 
-function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp }: DriverDashboardProps) {
+function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
@@ -7906,12 +8180,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     receiverId: string;
   } | null>(null);
   
-  const playMatchSound = async () => {};
+  const playMatchSound = () => {
+    void playMatchChimeSound();
+  };
   const playTapSound = async () => {};
   
   // 🆕 Chat State'leri (Sürücü)
   const [driverChatVisible, setDriverChatVisible] = useState(false);
   const [driverIncomingMessage, setDriverIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
+  const [driverFirstChatTapBanner, setDriverFirstChatTapBanner] = useState<{ title: string; subtitle: string } | null>(null);
   
   // 🆕 End Trip Modal State'leri (Sürücü)
   const [driverEndTripModalVisible, setDriverEndTripModalVisible] = useState(false);
@@ -7997,6 +8274,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     acceptDailyCall,
     rejectDailyCall,
     endDailyCall,
+    forceEndTrip: driverForceEndTrip,
     // 🆕 Mesajlaşma
     emitSendMessage: driverEmitSendMessage,
   } = useSocket({
@@ -8320,20 +8598,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         'Bu çağrı başka bir sürücü tarafından alındı veya süresi doldu. Liste güncellendi.',
       );
     },
-    // 🆕 Mesajlaşma - PURE SOCKET (ANLIK)
-    onNewMessage: (data) => {
-      console.log('💬 ŞOFÖR - YENİ MESAJ GELDİ (ANLIK):', data);
-      // Gelen mesajı ChatBubble'a ilet
-      setDriverIncomingMessage({
-        text: data.message,
-        senderId: data.sender_id,
-        timestamp: data.timestamp || Date.now(),
+    onFirstChatMessage: (data) => {
+      if (!data?.tag_id) return;
+      if (activeTag?.id && data.tag_id !== activeTag.id) return;
+      if (driverChatVisible) return;
+      setDriverFirstChatTapBanner({
+        title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
+        subtitle:
+          (data.message_preview || data.message || '').trim() ||
+          'Mesajı görmek için tıklayın',
       });
-      // 🔥 Chat kapalıysa otomatik aç + bildirim göster
-      if (!driverChatVisible) {
-        setDriverChatVisible(true); // Chat'i otomatik aç
-        Alert.alert('💬 Yeni Mesaj', `${data.sender_name || 'Yolcu'}: ${data.message}`);
-      }
     },
     // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
     onTripForceEnded: (data) => {
@@ -8408,13 +8682,32 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
   });
 
-  // 🔔 Bildirime tıklanınca (Yeni yolculuk teklifi)
+  // 🔔 Bildirime tıklanınca (teklif / ilk sohbet mesajı)
   useEffect(() => {
     const data = lastTappedNotificationData;
-    if (!data || data.type !== 'new_offer' || !data.tag_id) return;
+    if (!data) return;
+    if (data.type === 'first_chat_message' && data.tag_id) {
+      clearLastTappedNotification();
+      if (!activeTag?.id || String(data.tag_id) !== String(activeTag.id)) {
+        void loadData();
+      }
+      setDriverChatVisible(true);
+      setDriverFirstChatTapBanner(null);
+      return;
+    }
+    if (data.type !== 'new_offer' || !data.tag_id) return;
     clearLastTappedNotification();
     fetchAndAppendOfferFromTagId(String(data.tag_id));
-  }, [lastTappedNotificationData, clearLastTappedNotification, fetchAndAppendOfferFromTagId]);
+  }, [
+    lastTappedNotificationData,
+    clearLastTappedNotification,
+    fetchAndAppendOfferFromTagId,
+    activeTag?.id,
+  ]);
+
+  useEffect(() => {
+    if (driverChatVisible) setDriverFirstChatTapBanner(null);
+  }, [driverChatVisible]);
 
   // 🔔 Ön planda push geldiğinde (tıklamadan) aynı teklifi listeye ekle
   useEffect(() => {
@@ -8479,7 +8772,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             visible: true,
             tagId: activeTag.id,
             rateUserId: activeTag.passenger_id || '',
-            rateUserName: activeTag.passenger_name || 'Yolcu'
+            rateUserName: displayFirstName(activeTag.passenger_name, 'Yolcu')
           });
         } else if (data.tag?.status) {
           lastCheckedStatus.current = data.tag.status;
@@ -8571,7 +8864,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         
         if (data.success && data.user) {
           setOtherUserDetails({
-            rating: data.user.rating || 5.0,
+            rating: data.user.rating != null ? Number(data.user.rating) : 4.0,
             totalTrips: data.user.total_trips || 0,
             profilePhoto: data.user.profile_photo,
           });
@@ -8804,7 +9097,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         tag_id: tagId,
         driver_id: user.id,
         driver_name: user.name || user.phone,
-        driver_rating: user.rating || 5.0,
+        driver_rating: user.rating ?? 4.0,
         passenger_id: passengerId || '',
         price: price,
         vehicle_model: user.vehicle_model,
@@ -9133,7 +9426,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 created_at: req.created_at,
               }))}
               driverName={user.name}
-              driverRating={user.rating || 5.0}
+              driverRating={user.rating ?? 4.0}
               onSendOffer={sendOfferInstant}
               onDismissRequest={handleDismissRequest}
               onBack={() => {
@@ -9178,6 +9471,36 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           Android'de (stabilite için) haritayı kapatıyoruz. */}
       {activeTag && !shouldDisableActivityMap && (activeTag.status === 'matched' || activeTag.status === 'in_progress') ? (
         <View style={styles.fullScreenMapContainer}>
+          {driverFirstChatTapBanner ? (
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => {
+                setDriverChatVisible(true);
+                setDriverFirstChatTapBanner(null);
+              }}
+              style={{
+                backgroundColor: '#B91C1C',
+                marginHorizontal: 12,
+                marginTop: 8,
+                marginBottom: 6,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#FCA5A5',
+              }}
+            >
+              <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+                {driverFirstChatTapBanner.title}
+              </Text>
+              <Text style={{ color: '#FEE2E2', fontWeight: '600', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
+                {driverFirstChatTapBanner.subtitle}
+              </Text>
+              <Text style={{ color: '#FECACA', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+                Mesajı görmek için tıklayın
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <LiveMapView
             userLocation={userLocation}
             otherLocation={passengerLocation || activeTag?.passenger_location || null}
@@ -9190,7 +9513,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             }
             isDriver={true}
             userName={user.name}
-            otherUserName={activeTag?.passenger_name || 'Yolcu'}
+            otherUserName={displayFirstName(activeTag?.passenger_name, 'Yolcu')}
             otherUserId={activeTag?.passenger_id}
             userId={user.id}
             tagId={activeTag?.id}
@@ -9216,13 +9539,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               }
               
               const passengerId = activeTag.passenger_id;
-              const passengerName = activeTag.passenger_name || 'Yolcu';
+              const passengerName = displayFirstName(activeTag.passenger_name, 'Yolcu');
               
               // 1. 🔥 ANINDA "Çalıyor" bildirimi gönder - Room beklemeden!
               console.log('📞 ŞOFÖR - ANINDA çaldırma bildirimi gönderiliyor...');
               emitCallInvite({
                 caller_id: user.id,
-                caller_name: user.name || 'Sofor',
+                caller_name: displayFirstName(user.name, 'Sofor'),
                 receiver_id: passengerId,
                 room_url: '', // Henüz yok
                 room_name: '',
@@ -9274,7 +9597,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 // 4. Room URL ile GERÇEK invite gönder
                 emitCallInvite({
                   caller_id: user.id,
-                  caller_name: user.name || 'Sofor',
+                  caller_name: displayFirstName(user.name, 'Sofor'),
                   receiver_id: passengerId,
                   room_url: data.room_url,
                   room_name: data.room_name,
@@ -9334,7 +9657,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               
               // Socket ile de bildir (opsiyonel - bağlıysa)
               try {
-                forceEndTrip({
+                driverForceEndTrip({
                   tag_id: activeTag.id,
                   ender_id: user.id,
                   ender_type: 'driver',
@@ -9345,18 +9668,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 console.log('Socket force end hatası:', socketErr);
               }
               
+              onShowTripEndedBanner?.(
+                'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
+              );
               // Anında local state temizle
               setActiveTag(null);
               setRequests([]);
               setDriverChatVisible(false);
               driverClearIncomingCall();
               setScreen('role-select');
-              
-              // Bilgilendirme
-              Alert.alert(
-                '⚠️ Yolculuk Bitirildi', 
-                'Eşleşme zorla sonlandırıldı.\n-5 puan uygulandı.'
-              );
             }}
             onRequestTripEnd={async () => {
               // Karşılıklı iptal isteği gönder - ŞOFÖR
@@ -9489,7 +9809,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             visible={driverChatVisible}
             onClose={() => setDriverChatVisible(false)}
             isDriver={true}
-            otherUserName={activeTag?.passenger_name || 'Yolcu'}
+            otherUserName={displayFirstName(activeTag?.passenger_name, 'Yolcu')}
             currentUserName={user?.name || ''}
             userId={user?.id || ''}
             otherUserId={activeTag?.passenger_id || ''}
@@ -9529,7 +9849,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             visible={driverEndTripModalVisible}
             onClose={() => setDriverEndTripModalVisible(false)}
             isDriver={true}
-            otherUserName={activeTag?.passenger_name || 'Yolcu'}
+            otherUserName={displayFirstName(activeTag?.passenger_name, 'Yolcu')}
             onComplete={async () => {
               try {
                 const response = await fetch(
@@ -9571,6 +9891,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 );
                 const data = await response.json();
                 if (data.success) {
+                  onShowTripEndedBanner?.(
+                    'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
+                  );
                   setActiveTag(null);
                   setScreen('role-select');
                 } else {
@@ -9799,7 +10122,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         userId={user.id}
         tagId={activeTag?.id || ''}
         isDriver={true}
-        otherUserName={activeTag?.passenger_name || 'Yolcu'}
+        otherUserName={displayFirstName(activeTag?.passenger_name, 'Yolcu')}
         myLatitude={userLocation?.latitude}
         myLongitude={userLocation?.longitude}
         otherLatitude={activeTag?.passenger_latitude}
@@ -9813,7 +10136,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               visible: true,
               tagId: activeTag?.id || '',
               rateUserId: activeTag?.passenger_id || '',
-              rateUserName: rateUserName || activeTag?.passenger_name || 'Yolcu'
+              rateUserName: rateUserName || displayFirstName(activeTag?.passenger_name, 'Yolcu')
             });
           }
           // Sayfayı yenile
@@ -14499,6 +14822,13 @@ const styles = StyleSheet.create({
     right: 0,
     height: 280,
   },
+  destinationModalTopFadeLight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 130,
+  },
   destinationModalTouchLayer: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -14508,17 +14838,72 @@ const styles = StyleSheet.create({
   destinationKeyboardAvoid: {
     flex: 1,
   },
+  destinationHeroTitleAnimated: {
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.35,
+    marginTop: 0,
+  },
+  destinationMapCalloutWrap: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 112,
+    alignItems: 'center',
+    zIndex: 6,
+  },
+  destinationMapCalloutBubble: {
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.35)',
+    maxWidth: 340,
+  },
+  destinationMapCalloutText: {
+    color: 'rgba(240, 253, 244, 0.95)',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  destinationSearchShellModern: {
+    marginTop: 2,
+  },
+  destinationModalHeaderBlueDim: {
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+  },
+  destinationModalHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  destinationChangeAreaBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  destinationChangeAreaBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.94)',
+  },
   destinationFloatingPanel: {
     marginHorizontal: 14,
     marginTop: 2,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 14,
-    borderRadius: 22,
-    backgroundColor: 'rgba(8, 47, 73, 0.92)',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 16,
+    borderRadius: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.45)',
-    maxHeight: '52%',
+    borderColor: 'rgba(148, 163, 184, 0.32)',
+    maxHeight: '58%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
@@ -14539,33 +14924,41 @@ const styles = StyleSheet.create({
     color: 'rgba(224, 242, 254, 0.96)',
     lineHeight: 18,
   },
-  destinationCrosshairMarker: {
-    width: 88,
-    height: 88,
+  destinationPinMarkerWrap: {
+    width: 96,
+    height: 96,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 4,
+  },
+  destinationPinRing: {
+    position: 'absolute',
+    bottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: 'rgba(34, 197, 94, 0.92)',
+    backgroundColor: 'transparent',
+  },
+  destinationPinRingOuter: {
+    borderColor: 'rgba(74, 222, 128, 0.45)',
+    borderWidth: 1.5,
+  },
+  destinationPinCore: {
+    backgroundColor: '#16A34A',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  destinationCrosshairRing: {
-    position: 'absolute',
-    width: 76,
-    height: 76,
-    borderRadius: 12,
-    borderWidth: 4,
-    borderColor: 'rgba(34, 197, 94, 0.95)',
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-  },
-  destinationCrosshairDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#22C55E',
     borderWidth: 3,
     borderColor: '#FFF',
     shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.85,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    elevation: 8,
   },
   destinationSearchShellTech: {
     marginTop: 10,
