@@ -6299,14 +6299,40 @@ function PassengerDashboard({
           passenger_payment_method: passengerPaymentPreference,
         }),
       });
-      const data = await res.json();
+      let data: Record<string, unknown> = {};
+      try {
+        data = (await res.json()) as Record<string, unknown>;
+      } catch {
+        throw new Error(`Sunucu yanıtı okunamadı (${res.status})`);
+      }
       console.log('CREATE RIDE RESPONSE', data);
 
-      if (!res.ok || !data?.tag) {
-        throw new Error('Tag create failed');
+      const detailRaw = data.detail;
+      const detailStr = Array.isArray(detailRaw)
+        ? (detailRaw as { msg?: string }[])
+            .map((x) => (typeof x?.msg === 'string' ? x.msg : ''))
+            .filter(Boolean)
+            .join('; ')
+        : typeof detailRaw === 'string'
+          ? detailRaw
+          : '';
+
+      if (!res.ok) {
+        const apiErr =
+          (typeof data.error === 'string' && data.error) ||
+          detailStr ||
+          `Sunucu yanıtı ${res.status}`;
+        throw new Error(apiErr);
+      }
+      if (!data.tag) {
+        const apiErr =
+          (typeof data.error === 'string' && data.error) ||
+          detailStr ||
+          'Teklif kaydı oluşturulamadı';
+        throw new Error(apiErr);
       }
 
-      const serverTag = data.tag as any;
+      const serverTag = data.tag as Record<string, unknown>;
       const mergedTag = {
         ...serverTag,
         offered_price: selectedPrice,
@@ -6343,12 +6369,13 @@ function PassengerDashboard({
       console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', mergedTag.id);
     } catch (err) {
       console.log('Backend kayıt hatası:', err);
+      const raw = err instanceof Error ? err.message : String(err);
       const message =
-        err instanceof Error && err.message === 'Tag create failed'
-          ? 'Teklif oluşturulamadı'
-          : err instanceof Error
-            ? err.message
-            : 'Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.';
+        raw === 'Failed to fetch' || raw.includes('Network request failed')
+          ? 'Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.'
+          : raw.length > 0
+            ? raw
+            : 'Teklif oluşturulamadı';
       Alert.alert('Hata', message);
     } finally {
       setLoading(false);

@@ -6,7 +6,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 import os
 import logging
@@ -9416,7 +9416,7 @@ async def calculate_price(request: CalculatePriceRequest):
         return {"success": False, "error": str(e)}
 
 class CreateRideOfferRequest(BaseModel):
-    tag_id: str = None  # 🆕 Frontend'den gelen ID
+    tag_id: Optional[str] = None  # Frontend'den gelen UUID (yoksa sunucu üretir)
     passenger_id: str
     pickup_lat: float
     pickup_lng: float
@@ -9434,6 +9434,27 @@ class CreateRideOfferRequest(BaseModel):
     # Yolcu ödeme tercihi: cash | card (Supabase tags.passenger_payment_method)
     passenger_payment_method: Optional[str] = None
 
+    @field_validator("offered_price", mode="before")
+    @classmethod
+    def _coerce_offered_price(cls, v):
+        if v is None:
+            raise ValueError("offered_price gerekli")
+        return int(round(float(v)))
+
+    @field_validator("distance_km", mode="before")
+    @classmethod
+    def _coerce_distance(cls, v):
+        if v is None:
+            return 0.0
+        return float(v)
+
+    @field_validator("estimated_minutes", mode="before")
+    @classmethod
+    def _coerce_estimated_minutes(cls, v):
+        if v is None:
+            return 0
+        return int(round(float(v)))
+
 @api_router.post("/ride/create-offer")
 async def create_ride_offer(request: CreateRideOfferRequest):
     """
@@ -9442,9 +9463,13 @@ async def create_ride_offer(request: CreateRideOfferRequest):
     """
     try:
         # Her zaman canonical UUID ile ilerle (eski id/telefon kaynaklı eşleşme kaçaklarını önler)
-        passenger_id = await resolve_user_id(request.passenger_id)
+        passenger_id = await resolve_user_id(
+            str(request.passenger_id).strip() if request.passenger_id else ""
+        )
+        if not passenger_id:
+            return {"success": False, "error": "Geçersiz yolcu kimliği"}
         # Tag ID - frontend'den gelen veya yeni oluştur
-        tag_id = request.tag_id or str(uuid.uuid4())
+        tag_id = (request.tag_id and str(request.tag_id).strip()) or str(uuid.uuid4())
         
         # Yolcu bilgisi + araç tercihi (driver_details.passenger_preferred_vehicle)
         passenger_result = (
@@ -9490,9 +9515,16 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         pay_pref = _canonical_passenger_payment_method(request.passenger_payment_method)
         if pay_pref:
             tag_data["passenger_payment_method"] = pay_pref
-        
+
         result = supabase.table("tags").insert(tag_data).execute()
-        
+        # Kolon yoksa (migration atlanmış DB): ödeme alanı olmadan tekrar dene
+        if not result.data and pay_pref:
+            logger.warning(
+                "tags.insert boş döndü — passenger_payment_method kolonu eksik olabilir; tekrar deneniyor"
+            )
+            tag_data.pop("passenger_payment_method", None)
+            result = supabase.table("tags").insert(tag_data).execute()
+
         if result.data:
             tag = result.data[0]
             # Response'a ek bilgiler ekle
@@ -9504,11 +9536,15 @@ async def create_ride_offer(request: CreateRideOfferRequest):
                 f"(yolcu araç tercihi={passenger_pref_vehicle})"
             )
             logger.info(f"PASSENGER CREATED TAG {tag_id}")
-            # Teklif dağıtımı: bellek içi rolling batch (tag DB'den okunur; dispatch_queue kullanılmaz)
-            logger.info(f"CALL rolling_dispatch_start tag={tag_id}")
-            notified = await rolling_dispatch_start(tag_id)
+            # Dağıtım hatası teklif oluşturmayı bozmasın (yolcu ekranında "Teklif oluşturulamadı" önlenir)
+            notified = 0
+            try:
+                logger.info(f"CALL rolling_dispatch_start tag={tag_id}")
+                notified = await rolling_dispatch_start(tag_id)
+            except Exception as dispatch_ex:
+                logger.error(f"❌ rolling_dispatch_start hata (tag kaydı başarılı): {dispatch_ex}")
             if notified == 0:
-                logger.warning(f"⚠️ Rolling batch: tag={tag_id} için {DISPATCH_RADIUS_KM} km içinde uygun sürücü yok")
+                logger.warning(f"⚠️ Rolling batch: tag={tag_id} için {DISPATCH_RADIUS_KM} km içinde uygun sürücü yok veya dispatch atlandı")
                 try:
                     await sio.emit(
                         "dispatch_exhausted",
@@ -9525,8 +9561,8 @@ async def create_ride_offer(request: CreateRideOfferRequest):
                 "eligible_driver_count": notified,
                 "message": "Teklifiniz sürücülere gönderildi"
             }
-        
-        return {"success": False, "error": "Tag oluşturulamadı"}
+
+        return {"success": False, "error": "Tag oluşturulamadı (veritabanı kaydı başarısız)"}
     except Exception as e:
         logger.error(f"❌ Create ride offer error: {e}")
         return {"success": False, "error": str(e)}
