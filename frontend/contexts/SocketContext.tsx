@@ -18,6 +18,7 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 import { BACKEND_BASE_URL } from '../lib/backendConfig';
+import { useNotifications } from './NotificationContext';
 
 // REST ile aynı origin (lib/backendConfig) — ayrı sunucu = teklif görünmez
 const SOCKET_URL = BACKEND_BASE_URL;
@@ -141,35 +142,31 @@ interface SocketContextType {
   emitTripEnded: (data: any) => void;
   forceEndTrip: (data: any) => void;
   
-  // Arama
-  emitCallInvite: (data: any) => void;
-  emitCallAccept: (data: any) => void;
-  emitCallReject: (data: any) => void;
-  emitCallCancel: (data: any) => void;
-  emitCallEnd: (data: any) => void;
-  
   // 🆕 Mesajlaşma
   emitSendMessage: (data: any) => void;
   
-  // 🔥 GELEN ARAMA - MERKEZİ STATE
+  // 🔥 GELEN ARAMA - MERKEZİ STATE (Agora / voice)
   incomingCallData: {
     callerId: string;
     callerName: string;
     callType: 'audio' | 'video';
-    roomUrl: string;
-    roomName: string;
+    callId: string;
+    channelName: string;
+    agoraToken: string;
     tagId: string;
   } | null;
   clearIncomingCall: () => void;
-  // 🔥 REF GETTER - Callback'lerde güncel veri için!
   getIncomingCallData: () => {
     callerId: string;
     callerName: string;
     callType: 'audio' | 'video';
-    roomUrl: string;
-    roomName: string;
+    callId: string;
+    channelName: string;
+    agoraToken: string;
     tagId: string;
   } | null;
+  /** incoming_call / push ile state yazıldığında artar — index’te CallScreen açmak için */
+  incomingCallPresentToken: number;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -193,10 +190,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
     callerId: string;
     callerName: string;
     callType: 'audio' | 'video';
-    roomUrl: string;
-    roomName: string;
+    callId: string;
+    channelName: string;
+    agoraToken: string;
     tagId: string;
   } | null>(null);
+  const [incomingCallPresentToken, setIncomingCallPresentToken] = useState(0);
   
   // 🔥 REF - Callback'lerde güncel veri için!
   const incomingCallDataRef = useRef<typeof incomingCallData>(null);
@@ -214,6 +213,57 @@ export function SocketProvider({ children }: SocketProviderProps) {
     userIdRef.current = userId;
     userRoleRef.current = userRole;
   }, [userId, userRole]);
+
+  /** Push / bildirim / socket: aynı payload şeması; arayan === ben ise yok say */
+  const applyIncomingCallPayload = useCallback((data: any, source: string) => {
+    if (!data || data.type !== 'incoming_call') return;
+    const myId = userIdRef.current;
+    const callerId = data.caller_id != null ? String(data.caller_id) : '';
+    if (!callerId || (myId && callerId === String(myId))) {
+      console.log(`🔕 [SocketProvider] ${source}: incoming_call yok sayıldı (kendi araması)`);
+      return;
+    }
+    const callId = data.call_id != null ? String(data.call_id) : '';
+    const channelName = data.channel_name != null ? String(data.channel_name) : '';
+    if (!callId || !channelName) {
+      console.warn(`⚠️ [SocketProvider] ${source}: call_id / channel_name eksik`);
+      return;
+    }
+    const prev = incomingCallDataRef.current;
+    if (prev?.callId === callId && prev?.callerId === callerId) return;
+
+    const rawType = data.call_type || 'audio';
+    const callType: 'audio' | 'video' = rawType === 'video' ? 'video' : 'audio';
+    const newCallData = {
+      callerId,
+      callerName: data.caller_name != null ? String(data.caller_name) : 'Bilinmeyen',
+      callType,
+      callId,
+      channelName,
+      agoraToken: data.agora_token != null ? String(data.agora_token) : '',
+      tagId: data.tag_id != null ? String(data.tag_id) : '',
+    };
+    console.log(`🔔 [SocketProvider] Gelen arama state güncellendi (${source})`, callId);
+    setIncomingCallData(newCallData);
+    incomingCallDataRef.current = newCallData;
+    setIncomingCallPresentToken((n) => n + 1);
+  }, []);
+
+  const { notification, lastTappedNotificationData } = useNotifications();
+
+  useEffect(() => {
+    const data = notification?.request?.content?.data as Record<string, unknown> | undefined;
+    if (data?.type === 'incoming_call') {
+      applyIncomingCallPayload(data, 'push-foreground');
+    }
+  }, [notification, applyIncomingCallPayload]);
+
+  useEffect(() => {
+    const data = lastTappedNotificationData as Record<string, unknown> | null | undefined;
+    if (data?.type === 'incoming_call') {
+      applyIncomingCallPayload(data, 'push-tap');
+    }
+  }, [lastTappedNotificationData, applyIncomingCallPayload]);
 
   // ══════════════════════════════════════════════════════════════════
   // SOCKET SETUP - Bir kez
@@ -269,37 +319,31 @@ export function SocketProvider({ children }: SocketProviderProps) {
     
     // 🔥 GELEN ARAMA - DİREKT DİNLE!
     const handleIncomingCall = (data: any) => {
-      console.log('🔔🔔🔔 [SocketProvider] GELEN ARAMA!', data);
-      console.log('   room_url:', data.room_url);
-      console.log('   room_name:', data.room_name);
-      console.log('   is_ringing:', data.is_ringing);
-      
-      // 🔥 AKILLI GÜNCELLEME: Mevcut veriyle merge et
+      console.log('🔔 [SocketProvider] GELEN ARAMA (incoming_call)', data);
+      const myId = userIdRef.current;
+      if (myId && data?.caller_id != null && String(data.caller_id) === String(myId)) {
+        console.log('🔕 [SocketProvider] incoming_call yok sayıldı (socket: arayan kendisi)');
+        return;
+      }
       const currentData = incomingCallDataRef.current;
-      
-      // Eğer yeni event daha fazla bilgi içeriyorsa (room_url var) kullan
-      // Aksi halde mevcut veriyi koru ama eksik alanları güncelle
-      const newRoomUrl = data.room_url || currentData?.roomUrl || '';
-      const newRoomName = data.room_name || currentData?.roomName || '';
-      
+      const rawType = data.call_type || currentData?.callType || 'audio';
+      const callType: 'audio' | 'video' = rawType === 'video' ? 'video' : 'audio';
+
       const newCallData = {
         callerId: data.caller_id || currentData?.callerId || '',
         callerName: data.caller_name || currentData?.callerName || 'Bilinmeyen',
-        callType: data.call_type || currentData?.callType || 'audio',
-        roomUrl: newRoomUrl,
-        roomName: newRoomName,
+        callType,
+        callId: data.call_id || currentData?.callId || '',
+        channelName: data.channel_name || currentData?.channelName || '',
+        agoraToken: data.agora_token || currentData?.agoraToken || '',
         tagId: data.tag_id || currentData?.tagId || '',
       };
-      
-      // 🔥 KRITIK: Hem state hem ref'i AYNI ANDA güncelle!
+
       setIncomingCallData(newCallData);
       incomingCallDataRef.current = newCallData;
-      
-      console.log('✅ [SocketProvider] incomingCallData güncellendi:');
-      console.log('   roomUrl:', newCallData.roomUrl);
-      console.log('   roomName:', newCallData.roomName);
+      setIncomingCallPresentToken((n) => n + 1);
     };
-    socket.on('incoming_daily_call', handleIncomingCall);
+    socket.on('incoming_call', handleIncomingCall);
 
     // Cleanup - AMA SOCKET'İ KAPATMA!
     return () => {
@@ -307,7 +351,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       socket.off('disconnect', handleDisconnect);
       socket.off('reconnect', handleReconnect);
       socket.off('registered', handleRegistered);
-      socket.off('incoming_daily_call', handleIncomingCall);
+      socket.off('incoming_call', handleIncomingCall);
       // Socket'i KAPATMIYORUZ - singleton kalıcı
     };
   }, []);
@@ -514,31 +558,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emit('force_end_trip', data);
   }, [emit]);
 
-  const emitCallInvite = useCallback((data: any) => {
-    console.log('📞 [SocketProvider] emitCallInvite:', data);
-    emit('call_invite', data);
-  }, [emit]);
-
-  const emitCallAccept = useCallback((data: any) => {
-    console.log('✅ [SocketProvider] emitCallAccept:', data);
-    emit('call_accept', data);
-  }, [emit]);
-
-  const emitCallReject = useCallback((data: any) => {
-    console.log('❌ [SocketProvider] emitCallReject:', data);
-    emit('call_reject', data);
-  }, [emit]);
-
-  const emitCallCancel = useCallback((data: any) => {
-    console.log('🚫 [SocketProvider] emitCallCancel:', data);
-    emit('call_cancel', data);
-  }, [emit]);
-
-  const emitCallEnd = useCallback((data: any) => {
-    console.log('📴 [SocketProvider] emitCallEnd:', data);
-    emit('call_end', data);
-  }, [emit]);
-
   // 🆕 Mesajlaşma - Socket connected kontrolü OLMADAN direkt emit
   const emitSendMessage = useCallback((data: any) => {
     const socket = getOrCreateSocket();
@@ -593,16 +612,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
     emitTripStarted,
     emitTripEnded,
     forceEndTrip,
-    emitCallInvite,
-    emitCallAccept,
-    emitCallReject,
-    emitCallCancel,
-    emitCallEnd,
     emitSendMessage,  // 🆕 Mesajlaşma
     // 🔥 GELEN ARAMA - MERKEZİ STATE
     incomingCallData,
     clearIncomingCall,
     getIncomingCallData,  // 🔥 REF GETTER
+    incomingCallPresentToken,
   };
 
   return (

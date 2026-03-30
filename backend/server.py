@@ -443,11 +443,6 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ agora_token_builder yüklenemedi: {e}")
 
-# ==================== DAILY.CO CONFIG ====================
-DAILY_API_KEY = os.getenv("DAILY_API_KEY", "")
-DAILY_API_URL = "https://api.daily.co/v1"
-logger.info("✅ Daily.co API yapılandırıldı")
-
 # ==================== SÜRÜCÜ AÇILIŞ PAKETLERİ ====================
 # DRIVER_UNLIMITED_FREE_PERIOD=True: Paket zorunluluğu yok; onaylı tüm sürücüler ücretsiz kullanır.
 # False yapıldığında: driver_active_until ile paket süresi ve aşağıdaki DRIVER_PACKAGES devreye girer.
@@ -7060,8 +7055,26 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 # ==================== VOICE/VIDEO CALL ENDPOINTS ====================
 
 # Agora credentials - HARDCODED (güvenli değil ama çalışır)
-AGORA_APP_ID = "86eb50030f954355bc57696d45b343bd"
-AGORA_APP_CERTIFICATE = "39bbddeb0cd94cd89acf6ed9196b8fcd"
+AGORA_APP_ID = "94d93f08ffb84b90b4231d4988463464"
+AGORA_APP_CERTIFICATE = "62116c6f9b534b7e9765c6659f4c1c73"
+
+def _to_int32(x: int) -> int:
+    x &= 0xFFFFFFFF
+    if x >= 0x80000000:
+        x -= 0x100000000
+    return int(x)
+
+
+def agora_uid_from_user_id(user_id: str) -> int:
+    """Frontend `agoraUidFromUserId` ile aynı (Rtc token uid)."""
+    if not user_id:
+        return 1
+    h = 0
+    for ch in user_id:
+        c = ord(ch)
+        h = _to_int32(_to_int32(h << 5) - h + c)
+    return abs(h % 1000000) + 1
+
 
 def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: int = 86400) -> str:
     """Agora RTC token üret - 24 saat geçerli"""
@@ -7176,8 +7189,11 @@ async def start_call(request: StartCallRequest):
         except:
             pass
         
-        # Agora token üret
-        token = generate_agora_token(channel_name, 0)
+        # Agora: arayan ve alıcı için ayrı uid + token
+        caller_uid = agora_uid_from_user_id(request.caller_id)
+        receiver_uid = agora_uid_from_user_id(receiver_id)
+        caller_token = generate_agora_token(channel_name, caller_uid)
+        receiver_token = generate_agora_token(channel_name, receiver_uid)
         
         # Arayan bilgisi
         caller_name = request.caller_name
@@ -7197,7 +7213,7 @@ async def start_call(request: StartCallRequest):
             "tag_id": request.tag_id,
             "call_type": request.call_type,
             "status": "ringing",
-            "agora_token": token
+            "agora_token": receiver_token
         }
         
         result = supabase.table("calls").insert(call_data).execute()
@@ -7218,19 +7234,38 @@ async def start_call(request: StartCallRequest):
                     request.call_type,
                     call_id=call_id,
                     channel_name=channel_name,
-                    agora_token=token,
+                    agora_token=receiver_token,
                     tag_id=request.tag_id,
                 )
             ))
         except Exception as push_err:
             logger.warning(f"⚠️ Voice call push gönderilemedi: {push_err}")
+
+        # Çevrimiçi alıcıya anında socket (call_user ile aynı payload)
+        try:
+            incoming_payload = {
+                "call_id": call_id,
+                "caller_id": request.caller_id,
+                "caller_name": caller_name,
+                "channel_name": channel_name,
+                "agora_token": receiver_token,
+                "call_type": request.call_type or "voice",
+            }
+            if request.tag_id:
+                incoming_payload["tag_id"] = request.tag_id
+            receiver_sid = connected_users.get(receiver_id)
+            if receiver_sid:
+                await sio.emit("incoming_call", incoming_payload, room=receiver_sid)
+                logger.info(f"📲 incoming_call socket: {receiver_id} sid={receiver_sid}")
+        except Exception as sock_err:
+            logger.warning(f"⚠️ incoming_call socket gönderilemedi: {sock_err}")
         
         return {
             "success": True,
             "call_id": call_id,
             "channel_name": channel_name,
             "agora_app_id": AGORA_APP_ID,
-            "agora_token": token,
+            "agora_token": caller_token,
             "caller_name": caller_name,
             "receiver_id": receiver_id
         }
@@ -7322,11 +7357,13 @@ async def accept_call(user_id: str, call_id: str):
         if result.data:
             call = result.data[0]
             logger.info(f"✅ SUPABASE: Arama kabul edildi: {call_id}")
+            recv_uid = agora_uid_from_user_id(user_id)
+            fresh_token = generate_agora_token(call["channel_name"], recv_uid)
             return {
                 "success": True,
                 "channel_name": call["channel_name"],
                 "agora_app_id": AGORA_APP_ID,
-                "agora_token": call.get("agora_token")
+                "agora_token": fresh_token
             }
         
         return {"success": False, "detail": "Arama bulunamadı veya zaten cevaplanmış"}
@@ -8772,369 +8809,6 @@ async def account_delete_request(request: dict):
         return {"success": True, "message": "Talebiniz alındı"}
     except Exception as e:
         return {"success": False, "detail": str(e)}
-
-# ==================== DAILY.CO VIDEO/AUDIO CALL API ====================
-
-@api_router.post("/daily/create-room")
-async def create_daily_room(request: dict):
-    """
-    Daily.co'da yeni bir arama odası oluştur
-    Socket ile karşı tarafa bildirim gönder
-    """
-    try:
-        caller_id = request.get("caller_id")
-        receiver_id = request.get("receiver_id")
-        call_type = request.get("call_type", "video")  # "video" veya "audio"
-        tag_id = request.get("tag_id", "")
-        caller_name = request.get("caller_name", "Arayan")
-        
-        # Benzersiz oda adı oluştur
-        room_name = f"leylektag_{tag_id}_{int(time.time())}"
-        
-        # Daily.co API'ye istek at
-        headers = {
-            "Authorization": f"Bearer {DAILY_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "name": room_name,
-            "privacy": "public",
-            "properties": {
-                "max_participants": 2,
-                "enable_chat": False,
-                "enable_screenshare": False,
-                "exp": int(time.time()) + 3600,  # 1 saat geçerli
-                "enable_knocking": False,
-                "start_video_off": call_type == "audio",
-                "start_audio_off": False
-            }
-        }
-        
-        async with httpx.AsyncClient(http2=False, timeout=30) as client:
-            response = await client.post(
-                f"{DAILY_API_URL}/rooms",
-                json=payload,
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"Daily.co room creation failed: {response.text}")
-                raise HTTPException(status_code=500, detail="Arama odası oluşturulamadı")
-            
-            room_data = response.json()
-            room_url = room_data.get("url")
-            
-            logger.info(f"📹 Daily.co oda oluşturuldu: {room_url}")
-            
-            # 🔥 HARİCİ SOCKET SUNUCUSUNA BİLDİRİM GÖNDER
-            try:
-                # Socket.IO client ile harici sunucuya bağlan
-                import socketio
-                external_sio = socketio.AsyncClient()
-                await external_sio.connect('https://socket.leylektag.com', transports=['websocket'])
-                
-                # Arama bildirimi gönder
-                await external_sio.emit('call_invite', {
-                    'room_url': room_url,
-                    'room_name': room_name,
-                    'caller_id': caller_id,
-                    'caller_name': caller_name,
-                    'receiver_id': receiver_id,
-                    'call_type': call_type,
-                    'tag_id': tag_id
-                })
-                
-                await external_sio.disconnect()
-                logger.info(f"📲 Daily.co arama bildirimi gönderildi (harici socket): {receiver_id}")
-            except Exception as socket_err:
-                logger.warning(f"⚠️ Socket bildirim hatası: {socket_err}")
-
-            try:
-                asyncio.create_task(send_push_notification(
-                    receiver_id,
-                    f"📞 {caller_name}",
-                    "Size gelen bir arama var.",
-                    build_call_push_payload(
-                        "incoming_daily_call",
-                        caller_id,
-                        caller_name,
-                        call_type,
-                        room_url=room_url,
-                        room_name=room_name,
-                        tag_id=tag_id,
-                    )
-                ))
-            except Exception as push_err:
-                logger.warning(f"⚠️ Daily room push gönderilemedi: {push_err}")
-            
-            return {
-                "success": True,
-                "room_url": room_url,
-                "room_name": room_name,
-                "call_type": call_type,
-                "receiver_online": True
-            }
-            
-    except Exception as e:
-        logger.error(f"Daily.co room creation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== SIMPLE DAILY.CO CALL SYSTEM ====================
-@api_router.post("/calls/start")
-async def start_call(request: dict):
-    """
-    Simple Daily.co call - Sadece room oluştur, socket bildirimi FRONTEND'de
-    """
-    try:
-        caller_id = request.get("caller_id")
-        receiver_id = request.get("receiver_id")
-        call_type = request.get("call_type", "audio")
-        tag_id = request.get("tag_id", "")
-        
-        if not caller_id or not receiver_id:
-            raise HTTPException(status_code=400, detail="caller_id and receiver_id required")
-        
-        room_name = f"leylek_{tag_id}_{int(time.time())}"
-        
-        headers = {
-            "Authorization": f"Bearer {DAILY_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "name": room_name,
-            "privacy": "public",
-            "properties": {
-                "max_participants": 2,
-                "enable_chat": False,
-                "enable_screenshare": False,
-                "exp": int(time.time()) + 600,
-                "enable_knocking": False,
-                "start_video_off": call_type == "audio",
-                "start_audio_off": False,
-                "enable_prejoin_ui": False,
-            }
-        }
-        
-        async with httpx.AsyncClient(http2=False, timeout=30) as client:
-            response = await client.post(
-                f"{DAILY_API_URL}/rooms",
-                json=payload,
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"Daily.co room creation failed: {response.text}")
-                raise HTTPException(status_code=500, detail="Could not create call room")
-            
-            room_data = response.json()
-            room_url = room_data.get("url")
-            
-            logger.info(f"📞 Room oluşturuldu: {room_url}")
-            
-            try:
-                caller_name = "Arayan"
-                caller_result = supabase.table("users").select("name").eq("id", caller_id).limit(1).execute()
-                if caller_result.data:
-                    caller_name = caller_result.data[0].get("name", "Arayan")
-            except Exception:
-                caller_name = "Arayan"
-
-            try:
-                asyncio.create_task(send_push_notification(
-                    receiver_id,
-                    f"📞 {caller_name}",
-                    "Size gelen bir arama var.",
-                    build_call_push_payload(
-                        "incoming_daily_call",
-                        caller_id,
-                        caller_name,
-                        call_type,
-                        room_url=room_url,
-                        room_name=room_name,
-                        tag_id=tag_id,
-                    )
-                ))
-            except Exception as push_err:
-                logger.warning(f"⚠️ Call start push gönderilemedi: {push_err}")
-            
-            return {
-                "success": True,
-                "room_url": room_url,
-                "room_name": room_name,
-                "call_type": call_type,
-                "expires_in": 600
-            }
-            
-    except Exception as e:
-        logger.error(f"Call start error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/calls/end")
-async def end_call(request: dict):
-    """
-    End call - CRITICAL: Must broadcast to other participant before cleanup
-    
-    Flow:
-    1. Receive end request with caller_id, receiver_id, room_name
-    2. Broadcast call_ended to BOTH participants via socket
-    3. Delete Daily.co room
-    4. Return success
-    """
-    try:
-        room_name = request.get("room_name", "")
-        caller_id = request.get("caller_id", "")
-        receiver_id = request.get("receiver_id", "")
-        ended_by = request.get("ended_by", "")
-        
-        logger.info(f"📴 Call end request: room={room_name}, ended_by={ended_by}")
-        
-        # 1. Broadcast call_ended to BOTH participants via socket server
-        # This ensures the other participant knows to close their UI
-        if caller_id or receiver_id:
-            try:
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    # Call socket server to broadcast
-                    socket_data = {
-                        "caller_id": caller_id,
-                        "receiver_id": receiver_id,
-                        "ended_by": ended_by,
-                        "room_name": room_name
-                    }
-                    # Emit via our local socket.io
-                    await sio.emit('call_ended_broadcast', socket_data)
-                    logger.info(f"✅ Call ended broadcast sent")
-            except Exception as e:
-                logger.error(f"Socket broadcast error: {e}")
-        
-        # 2. Delete room from Daily.co
-        if room_name:
-            headers = {
-                "Authorization": f"Bearer {DAILY_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            async with httpx.AsyncClient(http2=False, timeout=30) as client:
-                try:
-                    await client.delete(
-                        f"{DAILY_API_URL}/rooms/{room_name}",
-                        headers=headers,
-                        timeout=10
-                    )
-                    logger.info(f"🗑️ Daily room deleted: {room_name}")
-                except:
-                    pass
-        
-        # 3. Update call log
-        try:
-            supabase.table("call_logs").update({
-                "status": "ended",
-                "ended_at": datetime.utcnow().isoformat()
-            }).eq("room_name", room_name).execute()
-        except:
-            pass
-            
-        return {"success": True, "message": "Call ended"}
-        
-    except Exception as e:
-        logger.error(f"Call end error: {e}")
-        return {"success": True}  # Always return success to not block UI
-
-@api_router.delete("/daily/delete-room/{room_name}")
-async def delete_daily_room(room_name: str):
-    """
-    Daily.co odasını sil (arama bitince)
-    """
-    try:
-        headers = {
-            "Authorization": f"Bearer {DAILY_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        async with httpx.AsyncClient(http2=False, timeout=30) as client:
-            response = await client.delete(
-                f"{DAILY_API_URL}/rooms/{room_name}",
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                logger.info(f"🗑️ Daily.co oda silindi: {room_name}")
-                return {"success": True, "message": "Oda silindi"}
-            else:
-                logger.warning(f"Daily.co room deletion failed: {response.text}")
-                return {"success": False, "message": "Oda silinemedi"}
-                
-    except Exception as e:
-        logger.error(f"Daily.co room deletion error: {e}")
-        return {"success": False, "detail": str(e)}
-
-# Socket event: Daily.co arama kabul
-@sio.event
-async def accept_daily_call(sid, data):
-    """Daily.co araması kabul edildi"""
-    caller_id = data.get('caller_id')
-    room_url = data.get('room_url')
-    
-    logger.info(f"✅ Daily.co arama kabul edildi: {room_url}")
-    
-    caller_sid = connected_users.get(caller_id)
-    if caller_sid:
-        await sio.emit('daily_call_accepted', {
-            'room_url': room_url,
-            'accepted': True
-        }, room=caller_sid)
-
-# Socket event: Daily.co arama reddet
-@sio.event
-async def reject_daily_call(sid, data):
-    """Daily.co araması reddedildi"""
-    caller_id = data.get('caller_id')
-    
-    logger.info(f"❌ Daily.co arama reddedildi")
-    
-    caller_sid = connected_users.get(caller_id)
-    if caller_sid:
-        await sio.emit('daily_call_rejected', {
-            'rejected': True
-        }, room=caller_sid)
-
-# Socket event: Daily.co arama bitti
-@sio.event
-async def end_daily_call(sid, data):
-    """Daily.co araması sonlandırıldı"""
-    other_user_id = data.get('other_user_id')
-    room_name = data.get('room_name')
-    
-    logger.info(f"📴 Daily.co arama sonlandırıldı: {room_name}")
-    
-    # Karşı tarafa bildir
-    other_sid = connected_users.get(other_user_id)
-    if other_sid:
-        await sio.emit('daily_call_ended', {
-            'ended': True,
-            'room_name': room_name
-        }, room=other_sid)
-    
-    # Odayı sil (arka planda)
-    try:
-        headers = {
-            "Authorization": f"Bearer {DAILY_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        async with httpx.AsyncClient(http2=False, timeout=30) as client:
-            await client.delete(
-                f"{DAILY_API_URL}/rooms/{room_name}",
-                headers=headers,
-                timeout=5
-            )
-    except:
-        pass  # Silme başarısız olsa da önemli değil
-
 
 # Socket event: MARTI TAG - Sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
 @sio.on("driver_accept_offer")

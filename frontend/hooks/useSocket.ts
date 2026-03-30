@@ -128,25 +128,6 @@ interface UseSocketProps {
     rate_user_name: string;
     message: string;
   }) => void;
-  // Daily.co Video/Audio Call eventleri
-  onIncomingDailyCall?: (data: {
-    room_url: string;
-    room_name: string;
-    caller_id: string;
-    caller_name: string;
-    call_type: 'video' | 'audio';
-    tag_id: string;
-  }) => void;
-  onCallAcceptedNew?: (data: {
-    room_url: string;
-    room_name: string;
-    call_type: string;
-    caller_id: string;
-    receiver_id: string;
-  }) => void;
-  onDailyCallAccepted?: (data: { room_url: string; accepted: boolean }) => void;
-  onDailyCallRejected?: (data: { rejected: boolean }) => void;
-  onDailyCallEnded?: (data: { ended: boolean; room_name: string }) => void;
   onCallCancelled?: (data: { cancelled: boolean; by: string }) => void;
   onCallEndedNew?: (data: { ended: boolean; by: string; room_name: string }) => void;
   // 🆕 Mesajlaşma eventleri
@@ -198,11 +179,6 @@ export default function useSocket({
   onTripEndResponse,
   onTripForceEnded,
   onShowRatingModal,  // 🆕 QR puanlama modalı
-  onIncomingDailyCall,
-  onCallAcceptedNew,
-  onDailyCallAccepted,
-  onDailyCallRejected,
-  onDailyCallEnded,
   onCallCancelled,
   onCallEndedNew,
   onNewMessage,  // 🆕 Mesajlaşma
@@ -234,11 +210,6 @@ export default function useSocket({
     emitTripStarted: contextEmitTripStarted,
     emitTripEnded: contextEmitTripEnded,
     forceEndTrip: contextForceEndTrip,
-    emitCallInvite: contextEmitCallInvite,
-    emitCallAccept: contextEmitCallAccept,
-    emitCallReject: contextEmitCallReject,
-    emitCallCancel: contextEmitCallCancel,
-    emitCallEnd: contextEmitCallEnd,
     emitSendMessage: contextEmitSendMessage,  // 🆕 Mesajlaşma
   } = socketContext;
 
@@ -248,8 +219,7 @@ export default function useSocket({
     onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
-    onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
-    onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
+    onTripForceEnded, onShowRatingModal,
     onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
   });
   
@@ -260,8 +230,7 @@ export default function useSocket({
       onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
-      onTripForceEnded, onIncomingDailyCall, onCallAcceptedNew,
-      onDailyCallAccepted, onDailyCallRejected, onDailyCallEnded,
+      onTripForceEnded, onShowRatingModal,
       onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
     };
   });
@@ -288,14 +257,11 @@ export default function useSocket({
     const handleCallAccepted = (data: any) => {
       console.log('✅ [useSocket] ARAMA KABUL:', data);
       callbackRefs.current.onCallAccepted?.(data);
-      // YENİ: call_accepted sync event
-      callbackRefs.current.onCallAcceptedNew?.(data);
     };
 
     const handleCallRejected = (data: any) => {
       console.log('❌ [useSocket] ARAMA RED:', data);
       callbackRefs.current.onCallRejected?.(data);
-      callbackRefs.current.onDailyCallRejected?.(data);
     };
 
     const handleCallEnded = (data: any) => {
@@ -410,26 +376,6 @@ export default function useSocket({
       callbackRefs.current.onTripForceEnded?.(data);
     };
 
-    // ══════════ DAILY.CO EVENTLERİ ══════════
-
-    const handleIncomingDailyCall = (data: any) => {
-      console.log('📹 [useSocket] DAILY.CO GELEN ARAMA:', data);
-      // 🔥 DİREKT CALLBACK - REF KULLANMA!
-      if (callbackRefs.current.onIncomingDailyCall) {
-        callbackRefs.current.onIncomingDailyCall(data);
-      }
-    };
-
-    const handleDailyCallAccepted = (data: any) => {
-      console.log('✅ [useSocket] DAILY.CO ARAMA KABUL (ESKİ):', data);
-      callbackRefs.current.onDailyCallAccepted?.(data);
-    };
-
-    const handleDailyCallEnded = (data: any) => {
-      console.log('📴 [useSocket] DAILY.CO ARAMA BİTTİ:', data);
-      callbackRefs.current.onDailyCallEnded?.(data);
-    };
-
     // ══════════ MESAJLAŞMA EVENTLERİ ══════════
 
     const handleNewMessage = (data: any) => {
@@ -492,11 +438,6 @@ export default function useSocket({
       callbackRefs.current.onShowRatingModal?.(data);
     });
     
-    socket.on('incoming_daily_call', handleIncomingDailyCall);
-    socket.on('daily_call_accepted', handleDailyCallAccepted);
-    socket.on('daily_call_rejected', handleCallRejected);
-    socket.on('daily_call_ended', handleDailyCallEnded);
-    
     // 🆕 Mesajlaşma eventleri
     socket.on('new_message', handleNewMessage);
     socket.on('first_chat_message', handleFirstChatMessage);
@@ -545,11 +486,6 @@ export default function useSocket({
       
       // 🆕 QR ile puanlama modalı
       socket.off('show_rating_modal');
-      
-      socket.off('incoming_daily_call', handleIncomingDailyCall);
-      socket.off('daily_call_accepted', handleDailyCallAccepted);
-      socket.off('daily_call_rejected', handleCallRejected);
-      socket.off('daily_call_ended', handleDailyCallEnded);
       
       // 🆕 Mesajlaşma
       socket.off('new_message', handleNewMessage);
@@ -792,127 +728,6 @@ export default function useSocket({
     contextForceEndTrip(data);
   }, [contextForceEndTrip]);
 
-  // ══════════ DAILY.CO CALL FONKSİYONLARI ══════════
-
-  const emitCallInvite = useCallback((data: {
-    caller_id: string;
-    caller_name: string;
-    receiver_id: string;
-    room_url: string;
-    room_name: string;
-    call_type: 'audio' | 'video';
-    tag_id: string;
-  }) => {
-    console.log('📞 [useSocket] CALL INVITE gönderiliyor:', data);
-    contextEmitCallInvite(data);
-  }, [contextEmitCallInvite]);
-
-  const emitCallAccepted = useCallback((data: {
-    caller_id: string;
-    receiver_id: string;
-    room_url: string;
-  }) => {
-    if (socket?.connected) {
-      console.log('✅ [useSocket] CALL ACCEPTED gönderiliyor:', data);
-      socket.emit('call_accepted_signal', data);
-    }
-  }, [socket]);
-
-  const emitCallRejected = useCallback((data: {
-    caller_id: string;
-    receiver_id: string;
-  }) => {
-    if (socket?.connected) {
-      console.log('❌ [useSocket] CALL REJECTED gönderiliyor:', data);
-      socket.emit('call_rejected_signal', data);
-    }
-  }, [socket]);
-
-  const emitCallAccept = useCallback((data: {
-    caller_id: string;
-    receiver_id: string;
-    call_type: 'audio' | 'video';
-    tag_id: string;
-  }) => {
-    console.log('✅ [useSocket] CALL_ACCEPT gönderiliyor:', data);
-    contextEmitCallAccept(data);
-  }, [contextEmitCallAccept]);
-
-  const emitCallReject = useCallback((data: {
-    caller_id: string;
-    receiver_id: string;
-  }) => {
-    console.log('❌ [useSocket] CALL_REJECT gönderiliyor:', data);
-    contextEmitCallReject(data);
-  }, [contextEmitCallReject]);
-
-  const emitCallCancel = useCallback((data: {
-    caller_id: string;
-    receiver_id: string;
-  }) => {
-    console.log('🚫 [useSocket] CALL_CANCEL gönderiliyor:', data);
-    contextEmitCallCancel(data);
-  }, [contextEmitCallCancel]);
-
-  const emitCallEnd = useCallback((data: {
-    caller_id: string;
-    receiver_id: string;
-    ended_by: string;
-    room_name: string;
-  }) => {
-    console.log('📴 [useSocket] CALL_END gönderiliyor:', data);
-    contextEmitCallEnd(data);
-  }, [contextEmitCallEnd]);
-
-  const acceptDailyCall = useCallback((data: {
-    caller_id: string;
-    receiver_id?: string;
-    room_url: string;
-    room_name?: string;
-    call_type?: string;
-  }) => {
-    console.log('✅ [useSocket] Daily.co arama kabul ediliyor:', data);
-    // Socket bağlı değilse bile gönder - bağlan ve emit et
-    if (socket?.connected) {
-      socket.emit('accept_daily_call', data);
-    } else {
-      console.warn('⚠️ Socket bağlı değil, bağlanıp gönderiliyor...');
-      socket?.connect();
-      socket?.once('connect', () => {
-        socket.emit('accept_daily_call', data);
-      });
-    }
-  }, [socket]);
-
-  const rejectDailyCall = useCallback((data: {
-    caller_id: string;
-  }) => {
-    console.log('❌ [useSocket] Daily.co arama reddediliyor:', data);
-    if (socket?.connected) {
-      socket.emit('reject_daily_call', data);
-    } else {
-      socket?.connect();
-      socket?.once('connect', () => {
-        socket?.emit('reject_daily_call', data);
-      });
-    }
-  }, [socket]);
-
-  const endDailyCall = useCallback((data: {
-    other_user_id: string;
-    room_name: string;
-  }) => {
-    console.log('📴 [useSocket] Daily.co arama sonlandırılıyor:', data);
-    if (socket?.connected) {
-      socket.emit('end_daily_call', data);
-    } else {
-      socket?.connect();
-      socket?.once('connect', () => {
-        socket?.emit('end_daily_call', data);
-      });
-    }
-  }, [socket]);
-
   // ══════════ MESAJLAŞMA FONKSİYONLARI ══════════
 
   const emitSendMessage = useCallback((data: {
@@ -966,19 +781,6 @@ export default function useSocket({
     requestTripEnd,
     respondTripEnd,
     forceEndTrip,
-    // Daily.co Call Invite Signaling
-    emitCallInvite,
-    emitCallAccepted,
-    emitCallRejected,
-    // Sync Call Events
-    emitCallAccept,
-    emitCallReject,
-    emitCallCancel,
-    emitCallEnd,
-    // Eski Daily events (geriye uyumluluk)
-    acceptDailyCall,
-    rejectDailyCall,
-    endDailyCall,
     // 🆕 Mesajlaşma
     emitSendMessage,
   };

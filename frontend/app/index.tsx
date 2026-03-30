@@ -15,13 +15,9 @@ import QRTripEndModal from '../components/QRTripEndModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
-import VideoCall from '../components/VideoCall';
-import IncomingCall from '../components/IncomingCall';
 import CallScreenV2 from '../components/CallScreenV2';
-// 🚫 SESLİ ARAMA KALDIRILDI
-// import DailyCallScreen from '../components/DailyCallScreen';
-// import IncomingCallScreen from '../components/IncomingCallScreen';
-// import OutgoingCallScreen from '../components/OutgoingCallScreen';
+import { agoraVoiceService } from '../services/agoraVoiceService';
+import { agoraUidFromUserId } from '../lib/agoraUid';
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
@@ -31,10 +27,6 @@ import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern 
 import DriverDashboardPanel from '../components/DriverDashboardPanel'; // 🆕 Sürücü Kazanç Paneli
 import DriverPackagesModal from '../components/DriverPackagesModal'; // 🆕 Sürücü Paket Satın Alma
 import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
-// 🚫 SESLİ ARAMA KALDIRILDI - Sadece mesajlaşma aktif
-// import DailyCallScreen from '../components/DailyCallScreen';
-// import IncomingCallScreen from '../components/IncomingCallScreen';
-// import OutgoingCallScreen from '../components/OutgoingCallScreen';
 import useSocket from '../hooks/useSocket';
 import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
@@ -49,7 +41,6 @@ import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
-import { useCall } from '../hooks/useCall';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
@@ -75,6 +66,36 @@ if (Platform.OS !== 'web') {
 // Backend URL — lib/backendConfig ile SocketContext aynı kaynağı kullanır
 const BACKEND_URL = BACKEND_BASE_URL;
 const API_URL = API_BASE_URL;
+
+/** start-call sonrası arayan tarafı Agora kanalına alır (receiver ekranı açılmadan önce). */
+async function joinTripCallAgoraAsCaller(
+  channelName: string,
+  agoraToken: string,
+  userId: string
+): Promise<boolean> {
+  if (Platform.OS === 'web') return true;
+  if (Platform.OS === 'android') {
+    const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    if (r !== PermissionsAndroid.RESULTS.GRANTED) {
+      Alert.alert('İzin gerekli', 'Sesli arama için mikrofon izni şart.');
+      return false;
+    }
+  }
+  try {
+    const tok = String(agoraToken || '').trim();
+    if (!tok) {
+      Alert.alert('Hata', 'Arama bileti (token) alınamadı');
+      return false;
+    }
+    await agoraVoiceService.initialize();
+    agoraVoiceService.joinChannel(channelName, tok, agoraUidFromUserId(userId));
+    return true;
+  } catch (e) {
+    console.error('Agora caller join:', e);
+    Alert.alert('Hata', 'Ses kanalına bağlanılamadı');
+    return false;
+  }
+}
 
 /** FastAPI { detail: "..." } veya { message } */
 function apiErrMsg(data: { message?: string; detail?: unknown } | null | undefined, fallback: string): string {
@@ -5274,16 +5295,13 @@ function PassengerDashboard({
   const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
   const lastCancelledTagId = useRef<string | null>(null);
   
-  // 🆕 Daily.co Video/Audio Call State'leri
-  const [dailyCallActive, setDailyCallActive] = useState(false);
-  const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
-  const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('video');
-  const [dailyCallerName, setDailyCallerName] = useState<string>('');
-  // 🔥 incomingDailyCall KALDIRILDI - SocketContext'ten alınıyor!
-  const [dailyRoomName, setDailyRoomName] = useState<string>('');
-  
-  // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext'ten
-  const { incomingCallData, clearIncomingCall, getIncomingCallData } = useSocketContext();
+  // 🔥 MERKEZİ GELEN ARAMA STATE - SocketContext (Agora incoming_call)
+  const {
+    incomingCallData,
+    clearIncomingCall,
+    getIncomingCallData,
+    incomingCallPresentToken,
+  } = useSocketContext();
   
   // 🆕 Chat State'leri (Yolcu)
   const [passengerChatVisible, setPassengerChatVisible] = useState(false);
@@ -5594,32 +5612,6 @@ function PassengerDashboard({
   const [callEnded, setCallEnded] = useState(false);
   const [receiverOffline, setReceiverOffline] = useState(false);
   
-  // 🆕 Daily Call IDs (for proper termination) - PASSENGER
-  const [passengerDailyCallerId, setPassengerDailyCallerId] = useState<string>('');
-  const [passengerDailyReceiverId, setPassengerDailyReceiverId] = useState<string>('');
-  
-  // 🆕 Gelen Arama State'leri
-  const [incomingCall, setIncomingCall] = useState(false);
-  const [localIncomingCallData, setLocalIncomingCallData] = useState<{
-    callerName: string;
-    callType: 'audio' | 'video';
-    roomUrl: string;
-    roomName: string;
-    callerId: string;
-    tagId: string;
-  } | null>(null);
-  
-  // 🆕 Giden Arama State'leri (Aranıyor...)
-  const [outgoingCall, setOutgoingCall] = useState(false);
-  const [outgoingCallData, setOutgoingCallData] = useState<{
-    receiverName: string;
-    callType: 'audio' | 'video';
-    roomUrl: string;
-    roomName: string;
-    receiverId: string;
-  } | null>(null);
-  
-  // Arama kilidi
   const isCallActiveRef = useRef(false);
   
   // ==================== SOCKET.IO HOOK - YOLCU ====================
@@ -5627,7 +5619,6 @@ function PassengerDashboard({
     socket: passengerSocket,
     isConnected: socketConnected,
     isRegistered: socketRegistered,
-    startCall: socketStartCall,
     acceptCall: socketAcceptCall,
     rejectCall: socketRejectCall,
     endCall: socketEndCall,
@@ -5638,108 +5629,22 @@ function PassengerDashboard({
     emitCancelTag,
     emitAcceptOffer: socketAcceptOffer,
     emitRejectOffer: socketRejectOffer,
-    // 🆕 Daily.co Call Signaling
-    emitCallInvite,
-    emitCallAccepted,
-    emitCallRejected,
-    // 🆕 YENİ: Sync Call Events
-    emitCallAccept,
-    emitCallReject,
-    emitCallCancel,
-    emitCallEnd,
-    acceptDailyCall,
-    rejectDailyCall,
-    endDailyCall,
     forceEndTrip: passengerForceEndTrip,
     // 🆕 Mesajlaşma
     emitSendMessage: passengerEmitSendMessage,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'passenger',
-    // 🔥 onIncomingDailyCall KALDIRILDI - SocketContext'te dinleniyor!
-    // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
-    onCallAcceptedNew: (data) => {
-      console.log('✅ YOLCU - CALL_ACCEPTED (SYNC) - Daily odası hazır:', data);
-      // Her iki taraf da bu eventi alıyor - Daily.co'ya gir
-      setDailyRoomUrl(data.room_url);
-      setDailyRoomName(data.room_name);
-      setDailyCallType(data.call_type as 'audio' | 'video');
-      // CRITICAL: Store caller/receiver IDs for proper termination
-      setPassengerDailyCallerId(data.caller_id);
-      setPassengerDailyReceiverId(data.receiver_id);
-      // Arayan mı aranan mı?
-      const isCaller = user?.id === data.caller_id;
-      setDailyCallerName(
-        isCaller
-          ? displayFirstName(activeTag?.driver_name, 'Şoför')
-          : displayFirstName(incomingCallData?.callerName, 'Yolcu')
-      );
-      setDailyCallActive(true);
-      // Reset states - navigation YOK
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
-      setIncomingCall(false);
-      setLocalIncomingCallData(null);
-      // 🔥 MERKEZİ STATE TEMİZLE
-      clearIncomingCall();
-    },
-    onDailyCallAccepted: (data) => {
-      console.log('YOLCU - ARAMA KABUL EDILDI (ESKİ):', data);
-      // Eski event - artık onCallAcceptedNew kullanılıyor
-    },
-    onDailyCallRejected: (data) => {
-      console.log('YOLCU - ARAMA REDDEDILDI:', data);
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
-      setIncomingCall(false);
-      setLocalIncomingCallData(null);
-      // 🔥 MERKEZİ STATE TEMİZLE
-      clearIncomingCall();
-      setDailyCallActive(false);
-      setDailyRoomUrl(null);
-      setPassengerDailyCallerId('');
-      setPassengerDailyReceiverId('');
-      Alert.alert('Bilgi', 'Arama reddedildi');
-    },
-    // 🆕 YENİ: call_cancelled - Arayan iptal etti
     onCallCancelled: (data) => {
       console.log('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
-      setIncomingCall(false);
-      setLocalIncomingCallData(null);
-      // 🔥 MERKEZİ STATE TEMİZLE
       clearIncomingCall();
     },
-    // 🆕 CRITICAL: call_ended - Görüşme bitti (Backend'den)
-    // Bu event karşı taraf aramayı sonlandırdığında gelir
     onCallEndedNew: (data) => {
       console.log('📴 YOLCU - CALL_ENDED (Backend-driven):', data);
-      // Clear ALL call state
-      setDailyCallActive(false);
-      setDailyRoomUrl(null);
-      setDailyRoomName('');
-      setPassengerDailyCallerId('');
-      setPassengerDailyReceiverId('');
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
-      setIncomingCall(false);
-      setLocalIncomingCallData(null);
-      // 🔥 MERKEZİ STATE TEMİZLE
       clearIncomingCall();
     },
     onIncomingCall: (data) => {
-      console.log('📞 YOLCU - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
-      // Artık Daily.co kullanılıyor
-    },
-    onDailyCallEnded: (data) => {
-      console.log('YOLCU - DAILY.CO ARAMA BITTI:', data);
-      // Clear ALL call state
-      setDailyCallActive(false);
-      // 🔥 MERKEZİ STATE TEMİZLE
-      clearIncomingCall();
-      setDailyRoomUrl(null);
-      setDailyRoomName('');
-      setPassengerDailyCallerId('');
-      setPassengerDailyReceiverId('');
+      console.log('📞 YOLCU - GELEN ARAMA (socket):', data);
     },
     onCallAccepted: (data) => {
       console.log('✅ YOLCU - ARAMA KABUL EDİLDİ:', data);
@@ -5874,11 +5779,9 @@ function PassengerDashboard({
       // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE - Her halükarda bitirilecek
       setActiveTag(null);
       setDestination(null);
-      setDailyCallActive(false);
-      setDailyRoomUrl(null);
       clearIncomingCall();
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
+      setShowCallScreen(false);
+      setCallScreenData(null);
       setPassengerChatVisible(false);
       setPassengerEndTripModalVisible(false);
       
@@ -6103,6 +6006,8 @@ function PassengerDashboard({
           setDestination(null);
           setPassengerChatVisible(false);
           clearIncomingCall();
+          setShowCallScreen(false);
+          setCallScreenData(null);
           setCancelledAlertShown(true);
           lastCancelledTagId.current = data.tag.id;
           
@@ -6486,176 +6391,105 @@ function PassengerDashboard({
     }
   };
 
-  // SESLİ ARAMA - Mock fonksiyon
-  // 🆕 Daily.co ile Sesli/Görüntülü Arama Başlat
-  const startDailyCall = async (callType: 'audio' | 'video') => {
-    if (!activeTag?.driver_id || !user?.id) {
+  /** Eşleşmiş yolculukta Agora araması — POST /voice/start-call + CallScreenV2 */
+  const startTripCallAsPassenger = async (callType: 'audio' | 'video') => {
+    if (!user?.id || !activeTag?.id) {
+      Alert.alert('Hata', 'Yolculuk bilgisi bulunamadı');
+      return;
+    }
+    const receiverId = String(activeTag.driver_id ?? '').trim();
+    if (!receiverId) {
       Alert.alert('Hata', 'Sürücü bilgisi bulunamadı');
       return;
     }
-    
+    if (receiverId === String(user.id).trim()) {
+      Alert.alert('Hata', 'Kendinizi arayamazsınız');
+      return;
+    }
+    if (showCallScreen || incomingCallData) {
+      Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+      return;
+    }
+    clearIncomingCall();
     setCalling(true);
-    
-    // 1. 🔥 ANINDA "Çalıyor" bildirimi gönder - Room beklemeden!
-    console.log('📞 YOLCU - ANINDA çaldırma bildirimi gönderiliyor...');
-    emitCallInvite({
-      caller_id: user.id,
-      caller_name: displayFirstName(user.name, 'Yolcu'),
-      receiver_id: activeTag.driver_id,
-      room_url: '', // Henüz yok
-      room_name: '',
-      call_type: callType,
-      tag_id: activeTag.id,
-      is_ringing: true, // Sadece çaldırma
-    });
-    
-    // 2. "Arıyor" ekranını göster
-    setOutgoingCall(true);
-    setOutgoingCallData({
-      receiverName: displayFirstName(activeTag.driver_name, 'Sürücü'),
-      callType: callType,
-      receiverId: activeTag.driver_id,
-      roomUrl: '',
-      roomName: ''
-    });
-    
     try {
-      // 3. Daily.co room oluştur (arka planda)
-      console.log('📞 YOLCU - Daily.co room oluşturuluyor...');
-      const response = await fetch(`${API_URL}/calls/start`, {
+      const response = await fetch(`${API_URL}/voice/start-call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           caller_id: user.id,
-          receiver_id: activeTag.driver_id,
-          call_type: callType,
-          tag_id: activeTag.id
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (data.success && data.room_url) {
-        console.log('📞 YOLCU - Room hazır, gerçek invite gönderiliyor:', data.room_url);
-        
-        // 4. Room URL ile GERÇEK invite gönder
-        emitCallInvite({
-          caller_id: user.id,
-          caller_name: displayFirstName(user.name, 'Yolcu'),
-          receiver_id: activeTag.driver_id,
-          room_url: data.room_url,
-          room_name: data.room_name,
-          call_type: callType,
+          receiver_id: receiverId,
+          call_type: callType === 'video' ? 'video' : 'voice',
           tag_id: activeTag.id,
-          is_ringing: false, // Gerçek davet
-        });
-        
-        // 5. Room bilgilerini kaydet
-        setDailyRoomUrl(data.room_url);
-        setDailyRoomName(data.room_name);
-        setDailyCallType(callType);
-        setDailyCallerName(displayFirstName(activeTag.driver_name, 'Sürücü'));
-        
-        // 6. Outgoing call verilerini güncelle
-        setOutgoingCallData({
-          receiverName: displayFirstName(activeTag.driver_name, 'Sürücü'),
-          callType: callType,
-          receiverId: activeTag.driver_id,
-          roomUrl: data.room_url,
-          roomName: data.room_name
-        });
-        setCalling(false);
-        
-        // NOT: Daily.co'ya giriş onCallAcceptedNew callback'inde yapılacak
-      } else {
-        setCalling(false);
-        setOutgoingCall(false);
-        setOutgoingCallData(null);
-        // İptal bildirimi gönder
-        emitCallCancel({
-          caller_id: user.id,
-          receiver_id: activeTag.driver_id,
-        });
-        Alert.alert('Hata', 'Arama başlatılamadı');
-      }
-    } catch (error) {
-      console.error('Daily.co arama hatası:', error);
-      setCalling(false);
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
-      // İptal bildirimi gönder
-      emitCallCancel({
-        caller_id: user.id,
-        receiver_id: activeTag.driver_id,
+          caller_name: user.name,
+        }),
       });
-      Alert.alert('Hata', 'Arama başlatılırken bir sorun oluştu');
+      const data = await response.json();
+      setCalling(false);
+      if (!data.success) {
+        Alert.alert('Hata', (data.detail as string) || 'Arama başlatılamadı');
+        return;
+      }
+      const agoraOk = await joinTripCallAgoraAsCaller(
+        data.channel_name,
+        data.agora_token || '',
+        String(user.id)
+      );
+      if (!agoraOk) return;
+      setCallAccepted(false);
+      setCallRejected(false);
+      setCallEnded(false);
+      setReceiverOffline(false);
+      setCallScreenData({
+        mode: 'caller',
+        callId: data.call_id,
+        channelName: data.channel_name,
+        agoraToken: data.agora_token || '',
+        remoteUserId: receiverId,
+        remoteName: displayFirstName(activeTag.driver_name, 'Sürücü'),
+        callType,
+      });
+      setShowCallScreen(true);
+    } catch (e) {
+      console.error('Agora arama (yolcu):', e);
+      setCalling(false);
+      Alert.alert('Hata', 'Arama başlatılamadı');
     }
   };
 
   const handleVoiceCall = () => {
-    startDailyCall('audio');
+    void startTripCallAsPassenger('audio');
   };
 
   const handleVideoCall = () => {
-    startDailyCall('video');
+    void startTripCallAsPassenger('video');
   };
 
-  // Daily.co arama bittiğinde
-  const handleDailyCallEnd = () => {
-    if (dailyRoomName && activeTag?.driver_id) {
-      endDailyCall({
-        other_user_id: activeTag.driver_id,
-        room_name: dailyRoomName
-      });
-    }
-    setDailyCallActive(false);
-    // 🔥 MERKEZİ STATE TEMİZLE
-    clearIncomingCall();
-    setDailyRoomUrl(null);
-    setDailyRoomName('');
-  };
-
-  // Daily.co gelen arama kabul
-  const handleAcceptDailyCall = () => {
-    console.log('✅ YOLCU - Arama kabul ediliyor');
-    console.log('   roomUrl:', incomingCallData?.roomUrl);
-    console.log('   callerId:', incomingCallData?.callerId);
-    
-    if (!incomingCallData?.roomUrl) {
-      Alert.alert('Hata', 'Room bilgisi bulunamadı');
+  useEffect(() => {
+    if (!user?.id || !incomingCallData?.callId || !incomingCallData.channelName) return;
+    if (String(incomingCallData.callerId) === String(user.id)) return;
+    if (
+      showCallScreen &&
+      callScreenData?.callId &&
+      String(callScreenData.callId) === String(incomingCallData.callId)
+    ) {
       return;
     }
-    
-    // Arayan'a kabul edildiğini bildir
-    acceptDailyCall({
-      caller_id: incomingCallData.callerId,
-      receiver_id: user?.id || '',
-      room_url: incomingCallData.roomUrl,
-      room_name: incomingCallData.roomName || '',
-      call_type: incomingCallData.callType || 'audio'
+    setCallAccepted(false);
+    setCallRejected(false);
+    setCallEnded(false);
+    setReceiverOffline(false);
+    setCallScreenData({
+      mode: 'receiver',
+      callId: incomingCallData.callId,
+      channelName: incomingCallData.channelName,
+      agoraToken: incomingCallData.agoraToken || '',
+      remoteUserId: incomingCallData.callerId,
+      remoteName: displayFirstName(incomingCallData.callerName, 'Arayan'),
+      callType: incomingCallData.callType,
     });
-    
-    // Local state'leri güncelle
-    setDailyRoomUrl(incomingCallData.roomUrl);
-    setDailyRoomName(incomingCallData.roomName || '');
-    setDailyCallerName(incomingCallData.callerName || 'Şoför');
-    
-    // Gelen arama ekranını kapat, Daily.co'ya gir
-    setIncomingCall(false);
-    clearIncomingCall();
-    setDailyCallActive(true);
-  };
-
-  // Daily.co gelen arama reddet
-  const handleRejectDailyCall = () => {
-    if (incomingCallData?.callerId) {
-      rejectDailyCall({
-        caller_id: incomingCallData.callerId
-      });
-    }
-    clearIncomingCall();
-    setDailyRoomUrl(null);
-  };
+    setShowCallScreen(true);
+  }, [incomingCallData, incomingCallPresentToken, user?.id, showCallScreen, callScreenData?.callId]);
 
   // Teklifi 10 dakikalığına gizle (çarpı butonu)
   const handleDismissOffer = async (offerId: string) => {
@@ -7389,117 +7223,7 @@ function PassengerDashboard({
                   otherUserDetails={otherUserDetails || undefined}
                   onShowQRModal={() => setShowQRModal(true)}
                   onCall={async (type) => {
-                    // ════════════════════════════════════════════════════════════
-                    // 🔥 PRE-RINGING: Önce zil çaldır, sonra room oluştur
-                    // WhatsApp gibi anında çalma deneyimi!
-                    // ════════════════════════════════════════════════════════════
-                    
-                    if (dailyCallActive || incomingCall || outgoingCall || incomingCallData) {
-                      Alert.alert('Uyari', 'Zaten bir arama devam ediyor');
-                      return;
-                    }
-                    
-                    const driverId = activeTag?.driver_id || '';
-                    const driverName = displayFirstName(activeTag?.driver_name, 'Sofor');
-                    
-                    if (!driverId) {
-                      Alert.alert('Hata', 'Sofor bilgisi bulunamadi');
-                      return;
-                    }
-                    
-                    // 1️⃣ ANINDA ZİL ÇALDIR - room_url boş olarak gönder (is_ringing: true)
-                    console.log('📞 YOLCU - PRE-RINGING: Anında zil çalıyor...');
-                    emitCallInvite({
-                      caller_id: user.id,
-                      caller_name: displayFirstName(user.name, 'Yolcu'),
-                      receiver_id: driverId,
-                      room_url: '',  // Henüz yok!
-                      room_name: '',
-                      call_type: type,
-                      tag_id: activeTag?.id || '',
-                      is_ringing: true,  // 🔥 Pre-ringing flag
-                    });
-                    
-                    // 2️⃣ "Aranıyor..." ekranını göster
-                    setOutgoingCallData({
-                      receiverName: driverName,
-                      callType: type,
-                      roomUrl: '',
-                      roomName: '',
-                      receiverId: driverId,
-                    });
-                    setOutgoingCall(true);
-                    
-                    try {
-                      // 3️⃣ Daily.co room oluştur (arka planda)
-                      console.log('📞 YOLCU - Daily.co room oluşturuluyor...');
-                      const response = await fetch(`${API_URL}/calls/start`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          caller_id: user.id,
-                          receiver_id: driverId,
-                          call_type: type,
-                          tag_id: activeTag?.id || ''
-                        })
-                      });
-                      
-                      const data = await response.json();
-                      
-                      if (!data.success || !data.room_url) {
-                        // İptal et
-                        emitCallCancel({
-                          caller_id: user.id,
-                          receiver_id: driverId,
-                        });
-                        setOutgoingCall(false);
-                        setOutgoingCallData(null);
-                        Alert.alert('Hata', 'Arama başlatılamadı');
-                        return;
-                      }
-                      
-                      console.log('📞 YOLCU - Room hazır, ikinci invite gönderiliyor:', data.room_url);
-                      
-                      // 4️⃣ İKİNCİ INVITE - Room URL ile birlikte
-                      emitCallInvite({
-                        caller_id: user.id,
-                        caller_name: displayFirstName(user.name, 'Yolcu'),
-                        receiver_id: driverId,
-                        room_url: data.room_url,
-                        room_name: data.room_name,
-                        call_type: type,
-                        tag_id: activeTag?.id || '',
-                        is_ringing: false,  // 🔥 Room hazır flag
-                      });
-                      
-                      // 5️⃣ Outgoing call verilerini güncelle
-                      setOutgoingCallData({
-                        receiverName: driverName,
-                        callType: type,
-                        roomUrl: data.room_url,
-                        roomName: data.room_name,
-                        receiverId: driverId,
-                      });
-                      
-                      // 6️⃣ Arayan'ın room bilgilerini kaydet (kabul edilince girecek)
-                      setDailyRoomUrl(data.room_url);
-                      setDailyRoomName(data.room_name);
-                      setDailyCallType(type);
-                      setPassengerDailyCallerId(user.id);
-                      setPassengerDailyReceiverId(driverId);
-                      setDailyCallerName(driverName);
-                      
-                    } catch (error) {
-                      console.error('Arama başlatma hatası:', error);
-                      // İptal et
-                      emitCallCancel({
-                        caller_id: user.id,
-                        receiver_id: driverId,
-                      });
-                      setOutgoingCall(false);
-                      setOutgoingCallData(null);
-                      Alert.alert('Hata', 'Arama başlatılamadı');
-                    }
+                    await startTripCallAsPassenger(type);
                   }}
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
@@ -7671,6 +7395,8 @@ function PassengerDashboard({
                     setDestination(null);
                     setPassengerChatVisible(false);
                     clearIncomingCall();
+                    setShowCallScreen(false);
+                    setCallScreenData(null);
                     setScreen('role-select');
                   }}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
@@ -7993,19 +7719,29 @@ function PassengerDashboard({
                 caller_id: callScreenData.remoteUserId,
                 receiver_id: user.id
               });
+              clearIncomingCall();
             }
           }}
           onReject={() => {
             if (callScreenData) {
+              void fetch(
+                `${API_URL}/voice/reject-call?user_id=${encodeURIComponent(user.id)}&call_id=${encodeURIComponent(callScreenData.callId)}`,
+                { method: 'POST' }
+              );
               socketRejectCall({
                 call_id: callScreenData.callId,
                 caller_id: callScreenData.remoteUserId,
                 receiver_id: user.id
               });
             }
+            clearIncomingCall();
           }}
           onEnd={() => {
             if (callScreenData) {
+              void fetch(
+                `${API_URL}/voice/end-call?user_id=${encodeURIComponent(user.id)}&call_id=${encodeURIComponent(callScreenData.callId)}`,
+                { method: 'POST' }
+              );
               socketEndCall({
                 call_id: callScreenData.callId,
                 caller_id: callScreenData.mode === 'caller' ? user.id : callScreenData.remoteUserId,
@@ -8013,6 +7749,7 @@ function PassengerDashboard({
                 ended_by: user.id
               });
             }
+            clearIncomingCall();
           }}
           onClose={() => {
             console.log('📞 YOLCU - Arama ekranı kapandı');
@@ -8023,6 +7760,7 @@ function PassengerDashboard({
             setCallRejected(false);
             setCallEnded(false);
             setReceiverOffline(false);
+            clearIncomingCall();
           }}
         />
       )}
@@ -8176,17 +7914,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [realDistance, setRealDistance] = useState<number>(0);
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
-  // ==================== DAILY.CO ARAMA SISTEMI - SOFOR ====================
-  const [dailyCallActive, setDailyCallActive] = useState(false);
-  const [dailyRoomUrl, setDailyRoomUrl] = useState<string | null>(null);
-  const [dailyCallType, setDailyCallType] = useState<'video' | 'audio'>('audio');
-  const [dailyCallerName, setDailyCallerName] = useState<string>('');
-  const [dailyCallerId, setDailyCallerId] = useState<string>('');
-  const [dailyReceiverId, setDailyReceiverId] = useState<string>('');  // 🆕 Added for proper termination
-  // 🔥 incomingDailyCall KALDIRILDI - SocketContext'ten alınıyor!
-  const [dailyRoomName, setDailyRoomName] = useState<string>('');
-  const [incomingCallTagId, setIncomingCallTagId] = useState<string>('');  // 🆕 Gelen arama tag_id
-  
   // 🔥 MERKEZİ GELEN ARAMA STATE + GLOBAL SOCKET (backend aynı bağlantıyı dinler)
   const {
     socket,
@@ -8195,6 +7922,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     incomingCallData: driverIncomingCallData,
     clearIncomingCall: driverClearIncomingCall,
     getIncomingCallData: driverGetIncomingCallData,
+    incomingCallPresentToken: driverIncomingCallPresentToken,
   } = useSocketContext();
 
   // Sürücü ekranına girince socket room'a tekrar yazılır (teklif kaçmasın)
@@ -8271,16 +7999,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     }
   }, [driverVehicleKind]);
   
-  // Giden Arama State (Araniyor...) - SOFOR
-  const [outgoingCall, setOutgoingCall] = useState(false);
-  const [outgoingCallData, setOutgoingCallData] = useState<{
-    receiverName: string;
-    callType: 'audio' | 'video';
-    roomUrl: string;
-    roomName: string;
-    receiverId: string;
-  } | null>(null);
-  
   const playMatchSound = () => {
     void playMatchChimeSound();
   };
@@ -8356,99 +8074,31 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const {
     isConnected: socketConnected,
     isRegistered: socketRegistered,
-    startCall: socketStartCall,
     acceptCall: socketAcceptCall,
     rejectCall: socketRejectCall,
     endCall: socketEndCall,
     // TAG & Teklif için yeni fonksiyonlar
     emitSendOffer: socketSendOffer,
     emitDriverLocationUpdate,  // 🆕 YENİ: Şoför konum güncelleme (RAM)
-    // 🆕 Daily.co Call Signaling
-    emitCallInvite,
-    emitCallAccepted,
-    emitCallRejected,
-    // 🆕 YENİ: Sync Call Events
-    emitCallAccept,
-    emitCallReject,
-    emitCallCancel,
-    emitCallEnd,
-    acceptDailyCall,
-    rejectDailyCall,
-    endDailyCall,
     forceEndTrip: driverForceEndTrip,
     // 🆕 Mesajlaşma
     emitSendMessage: driverEmitSendMessage,
   } = useSocket({
     userId: user?.id || null,
     userRole: 'driver',
-    // 🔥 onIncomingDailyCall KALDIRILDI - SocketContext'te dinleniyor!
-    // 🆕 YENİ: call_accepted - HER İKİ TARAFA aynı anda geliyor!
-    onCallAcceptedNew: (data) => {
-      console.log('✅ ŞOFÖR - CALL_ACCEPTED (SYNC) - Daily odası hazır:', data);
-      // Her iki taraf da bu eventi alıyor - Daily.co'ya gir
-      setDailyRoomUrl(data.room_url);
-      setDailyRoomName(data.room_name);
-      setDailyCallType(data.call_type as 'audio' | 'video');
-      // CRITICAL: Store caller/receiver IDs for proper termination
-      setDailyCallerId(data.caller_id);
-      setDailyReceiverId(data.receiver_id);
-      // Arayan mı aranan mı?
-      const isCaller = user?.id === data.caller_id;
-      setDailyCallerName(isCaller ? 'Yolcu' : (driverIncomingCallData?.callerName || 'Yolcu'));
-      setDailyCallActive(true);
-      // Reset states - navigation YOK
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
-      // 🔥 MERKEZİ STATE TEMİZLE
-      driverClearIncomingCall();
-    },
-    onDailyCallAccepted: (data) => {
-      console.log('SOFOR - DAILY.CO ARAMA KABUL EDILDI (ESKİ):', data);
-      // Eski event - artık onCallAcceptedNew kullanılıyor
-    },
-    onDailyCallRejected: (data) => {
-      console.log('SOFOR - DAILY.CO ARAMA REDDEDILDI:', data);
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
-      setDailyCallActive(false);
-      // 🔥 MERKEZİ STATE TEMİZLE
-      driverClearIncomingCall();
-      setDailyRoomUrl(null);
-      setDailyCallerId('');
-      setDailyReceiverId('');
-      Alert.alert('Bilgi', 'Arama reddedildi');
-    },
-    // 🆕 YENİ: call_cancelled - Arayan iptal etti
     onCallCancelled: (data) => {
       console.log('🚫 ŞOFÖR - ARAMA İPTAL EDİLDİ:', data);
-      // 🔥 MERKEZİ STATE TEMİZLE
       driverClearIncomingCall();
     },
-    // 🆕 YENİ: call_ended - Görüşme bitti
     onCallEndedNew: (data) => {
       console.log('📴 ŞOFÖR - CALL_ENDED:', data);
-      setDailyCallActive(false);
-      setDailyRoomUrl(null);
-      setDailyRoomName('');
-      setDailyCallerId('');
-      setDailyReceiverId('');
-      // 🔥 MERKEZİ STATE TEMİZLE
       driverClearIncomingCall();
     },
-    onDailyCallEnded: (data) => {
-      console.log('📴 ŞOFÖR - DAILY.CO ARAMA BİTTİ:', data);
-      setDailyCallActive(false);
-      // 🔥 MERKEZİ STATE TEMİZLE
-      driverClearIncomingCall();
-      setDailyRoomUrl(null);
-    },
-    // Eski Agora eventleri - artık kullanılmıyor
     onIncomingCall: (data) => {
-      console.log('📞 ŞOFÖR - ESKİ GELEN ARAMA (Agora - devre dışı):', data);
-      // Artık Daily.co kullanılıyor
+      console.log('📞 ŞOFÖR - GELEN ARAMA (socket):', data);
     },
     onCallAccepted: (data) => {
-      console.log('✅ ŞOFÖR - ESKİ ARAMA KABUL:', data);
+      console.log('✅ ŞOFÖR - ARAMA KABUL:', data);
       setCallAccepted(true);
     },
     onCallRejected: (data) => {
@@ -8726,11 +8376,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE - Her halükarda bitirilecek
       setActiveTag(null);
       setRequests([]);
-      setDailyCallActive(false);
-      setDailyRoomUrl(null);
       driverClearIncomingCall();
-      setOutgoingCall(false);
-      setOutgoingCallData(null);
+      setShowCallScreen(false);
+      setCallScreenData(null);
       setDriverChatVisible(false);
       setDriverEndTripModalVisible(false);
       
@@ -8791,6 +8439,103 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
   });
+
+  const startTripCallAsDriver = async (callType: 'audio' | 'video') => {
+    if (!user?.id || !activeTag?.id) {
+      Alert.alert('Hata', 'Yolculuk bilgisi bulunamadı');
+      return;
+    }
+    const receiverId = String(activeTag.passenger_id ?? '').trim();
+    if (!receiverId) {
+      Alert.alert('Hata', 'Yolcu bilgisi bulunamadı');
+      return;
+    }
+    if (receiverId === String(user.id).trim()) {
+      Alert.alert('Hata', 'Kendinizi arayamazsınız');
+      return;
+    }
+    if (showCallScreen || driverIncomingCallData) {
+      Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+      return;
+    }
+    driverClearIncomingCall();
+    setCalling(true);
+    try {
+      const response = await fetch(`${API_URL}/voice/start-call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caller_id: user.id,
+          receiver_id: receiverId,
+          call_type: callType === 'video' ? 'video' : 'voice',
+          tag_id: activeTag.id,
+          caller_name: user.name,
+        }),
+      });
+      const data = await response.json();
+      setCalling(false);
+      if (!data.success) {
+        Alert.alert('Hata', (data.detail as string) || 'Arama başlatılamadı');
+        return;
+      }
+      const agoraOk = await joinTripCallAgoraAsCaller(
+        data.channel_name,
+        data.agora_token || '',
+        String(user.id)
+      );
+      if (!agoraOk) return;
+      setCallAccepted(false);
+      setCallRejected(false);
+      setCallEnded(false);
+      setReceiverOffline(false);
+      setCallScreenData({
+        mode: 'caller',
+        callId: data.call_id,
+        channelName: data.channel_name,
+        agoraToken: data.agora_token || '',
+        remoteUserId: receiverId,
+        remoteName: displayFirstName(activeTag.passenger_name, 'Yolcu'),
+        callType,
+      });
+      setShowCallScreen(true);
+    } catch (e) {
+      console.error('Agora arama (sürücü):', e);
+      setCalling(false);
+      Alert.alert('Hata', 'Arama başlatılamadı');
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.id || !driverIncomingCallData?.callId || !driverIncomingCallData.channelName) return;
+    if (String(driverIncomingCallData.callerId) === String(user.id)) return;
+    if (
+      showCallScreen &&
+      callScreenData?.callId &&
+      String(callScreenData.callId) === String(driverIncomingCallData.callId)
+    ) {
+      return;
+    }
+    setCallAccepted(false);
+    setCallRejected(false);
+    setCallEnded(false);
+    setReceiverOffline(false);
+    setCallScreenData({
+      mode: 'receiver',
+      callId: driverIncomingCallData.callId,
+      channelName: driverIncomingCallData.channelName,
+      agoraToken: driverIncomingCallData.agoraToken || '',
+      remoteUserId: driverIncomingCallData.callerId,
+      remoteName: displayFirstName(driverIncomingCallData.callerName, 'Arayan'),
+      callType: driverIncomingCallData.callType,
+    });
+    setShowCallScreen(true);
+  }, [
+    driverIncomingCallData,
+    driverIncomingCallPresentToken,
+    user?.id,
+    showCallScreen,
+    callScreenData?.callId,
+  ]);
 
   // 🔔 Bildirime tıklanınca (teklif / ilk sohbet mesajı)
   useEffect(() => {
@@ -9634,112 +9379,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             otherUserDetails={otherUserDetails || undefined}
             onShowQRModal={() => setShowQRModal(true)}
             onCall={async (type) => {
-              // ════════════════════════════════════════════════════════════
-              // ANINDA ÇALAN ARAMA - Önce bildirim, sonra room oluştur
-              // ════════════════════════════════════════════════════════════
-              
-              // 🔥 MERKEZİ STATE KONTROLÜ
-              if (dailyCallActive || driverIncomingCallData || outgoingCall) {
-                Alert.alert('Uyari', 'Zaten bir arama devam ediyor');
-                return;
-              }
-              
-              if (!activeTag?.passenger_id || !user?.id) {
-                Alert.alert('Hata', 'Yolcu bilgisi bulunamadi');
-                return;
-              }
-              
-              const passengerId = activeTag.passenger_id;
-              const passengerName = displayFirstName(activeTag.passenger_name, 'Yolcu');
-              
-              // 1. 🔥 ANINDA "Çalıyor" bildirimi gönder - Room beklemeden!
-              console.log('📞 ŞOFÖR - ANINDA çaldırma bildirimi gönderiliyor...');
-              emitCallInvite({
-                caller_id: user.id,
-                caller_name: displayFirstName(user.name, 'Sofor'),
-                receiver_id: passengerId,
-                room_url: '', // Henüz yok
-                room_name: '',
-                call_type: type,
-                tag_id: activeTag.id || '',
-                is_ringing: true, // Sadece çaldırma
-              });
-              
-              // 2. "Aranıyor..." ekranını göster
-              setOutgoingCallData({
-                receiverName: passengerName,
-                callType: type,
-                roomUrl: '',
-                roomName: '',
-                receiverId: passengerId,
-              });
-              setOutgoingCall(true);
-              
-              try {
-                // 3. Daily.co room oluştur (arka planda)
-                console.log('📞 ŞOFÖR - Daily.co room oluşturuluyor...');
-                const response = await fetch(`${API_URL}/calls/start`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    caller_id: user.id,
-                    receiver_id: passengerId,
-                    call_type: type,
-                    tag_id: activeTag.id || ''
-                  })
-                });
-                
-                const data = await response.json();
-                
-                if (!data.success || !data.room_url) {
-                  setOutgoingCall(false);
-                  setOutgoingCallData(null);
-                  // İptal bildirimi gönder
-                  emitCallCancel({
-                    caller_id: user.id,
-                    receiver_id: passengerId,
-                  });
-                  Alert.alert('Hata', 'Arama başlatılamadı');
-                  return;
-                }
-                
-                console.log('📞 ŞOFÖR - Room hazır, gerçek invite gönderiliyor:', data.room_url);
-                
-                // 4. Room URL ile GERÇEK invite gönder
-                emitCallInvite({
-                  caller_id: user.id,
-                  caller_name: displayFirstName(user.name, 'Sofor'),
-                  receiver_id: passengerId,
-                  room_url: data.room_url,
-                  room_name: data.room_name,
-                  call_type: type,
-                  tag_id: activeTag.id || '',
-                  is_ringing: false, // Gerçek davet
-                });
-                
-                // 5. Outgoing call verilerini güncelle
-                setOutgoingCallData({
-                  receiverName: passengerName,
-                  callType: type,
-                  roomUrl: data.room_url,
-                  roomName: data.room_name,
-                  receiverId: passengerId,
-                });
-                
-                // 6. Arayan'ın room bilgilerini kaydet
-                setDailyRoomUrl(data.room_url);
-                setDailyRoomName(data.room_name);
-                setDailyCallType(type);
-                setDailyCallerId(user.id);
-                setDailyReceiverId(passengerId);
-                setDailyCallerName(passengerName);
-                
-              } catch (error) {
-                console.error('Arama başlatma hatası:', error);
-                setOutgoingCall(false);
-                setOutgoingCallData(null);
-                Alert.alert('Hata', 'Arama başlatılamadı');
-              }
+              await startTripCallAsDriver(type);
             }}
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
@@ -10128,19 +9768,29 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 caller_id: callScreenData.remoteUserId,
                 receiver_id: user.id
               });
+              driverClearIncomingCall();
             }
           }}
           onReject={() => {
             if (callScreenData) {
+              void fetch(
+                `${API_URL}/voice/reject-call?user_id=${encodeURIComponent(user.id)}&call_id=${encodeURIComponent(callScreenData.callId)}`,
+                { method: 'POST' }
+              );
               socketRejectCall({
                 call_id: callScreenData.callId,
                 caller_id: callScreenData.remoteUserId,
                 receiver_id: user.id
               });
             }
+            driverClearIncomingCall();
           }}
           onEnd={() => {
             if (callScreenData) {
+              void fetch(
+                `${API_URL}/voice/end-call?user_id=${encodeURIComponent(user.id)}&call_id=${encodeURIComponent(callScreenData.callId)}`,
+                { method: 'POST' }
+              );
               socketEndCall({
                 call_id: callScreenData.callId,
                 caller_id: callScreenData.mode === 'caller' ? user.id : callScreenData.remoteUserId,
@@ -10148,6 +9798,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 ended_by: user.id
               });
             }
+            driverClearIncomingCall();
           }}
           onClose={() => {
             console.log('📞 ŞOFÖR - Arama ekranı kapandı');
@@ -10158,6 +9809,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             setCallRejected(false);
             setCallEnded(false);
             setReceiverOffline(false);
+            driverClearIncomingCall();
           }}
         />
       )}

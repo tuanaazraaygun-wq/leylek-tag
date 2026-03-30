@@ -321,8 +321,11 @@ export default function LiveMapView({
   const pulseAnim = useRef(new Animated.Value(1)).current;
   /** Sürücü "Yolcuya Git" — daha belirgin nefes alan ölçek */
   const navBreathAnim = useRef(new Animated.Value(1)).current;
+  /** Küçük yeşil ara butonu — hızlı nefes animasyonu */
+  const quickCallBreath = useRef(new Animated.Value(1)).current;
   const driverCueOpacity = useRef(new Animated.Value(1)).current;
   const canliBlink = useRef(new Animated.Value(1)).current;
+  const callLabelBlink = useRef(new Animated.Value(1)).current;
 
   const [passengerEtaTick, setPassengerEtaTick] = useState(0);
   const [passengerReminderCycle, setPassengerReminderCycle] = useState(0);
@@ -416,6 +419,34 @@ export default function LiveMapView({
     anim.start();
     return () => anim.stop();
   }, [isDriver, canliBlink]);
+
+  useEffect(() => {
+    if (!onCall) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(callLabelBlink, {
+          toValue: 0.38,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(callLabelBlink, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [onCall, callLabelBlink]);
+
+  const callPromptUpperText = useMemo(() => {
+    const name = displayFirstName(otherUserName, isDriver ? 'Yolcu' : 'Sürücü');
+    const upper = name.toLocaleUpperCase('tr-TR');
+    return isDriver ? `YOLCU ${upper} ARA` : `SÜRÜCÜ ${upper} ARA`;
+  }, [isDriver, otherUserName]);
 
   useEffect(() => {
     if (isDriver) return;
@@ -518,6 +549,28 @@ export default function LiveMapView({
       }, 1000);
     }
   };
+
+  useEffect(() => {
+    if (!onCall) return;
+    const breath = Animated.loop(
+      Animated.sequence([
+        Animated.timing(quickCallBreath, {
+          toValue: 1.08,
+          duration: 580,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(quickCallBreath, {
+          toValue: 1,
+          duration: 580,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    breath.start();
+    return () => breath.stop();
+  }, [onCall, quickCallBreath]);
 
   // OSRM API — buluşma / hedef için ayrı throttle (km·dk her zaman dolabilsin)
   const fetchRoute = async (
@@ -799,8 +852,9 @@ export default function LiveMapView({
       
       {/* Uyarı yazısı (matrixStatus) artık üst bilgi panelinin altına sabitleniyor */}
 
-      {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF */}
+      {/* HARİTA - Google Maps - ZOOM VE SCROLL AKTİF + sol üst Ara (48x48) */}
       {MapView ? (
+        <View style={styles.mapSlot}>
         <MapView
           ref={mapRef}
           style={styles.map}
@@ -907,6 +961,7 @@ export default function LiveMapView({
             </Marker>
           )}
         </MapView>
+        </View>
       ) : (
         // Web fallback - harita yok
         <View style={styles.webFallback}>
@@ -1027,7 +1082,31 @@ export default function LiveMapView({
           } 
           style={styles.bottomGradient}
         >
-          {/* 🆕 Cue artık harita üzerinde tıklanabilir olarak gösteriliyor */}
+          {/* Ara: alt panelde, Yaz butonunun hemen üstünde — yeşil yanıp sönen etiket + FAB (sol) */}
+          {MapView && onCall ? (
+            <View style={styles.callPromptRow} pointerEvents="box-none">
+              <View style={styles.callPromptColumn}>
+                <Animated.Text style={[styles.callPromptLabel, { opacity: callLabelBlink }]}>
+                  {callPromptUpperText}
+                </Animated.Text>
+                <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
+                  <TouchableOpacity
+                    style={[styles.mapCallFabCircle, isCallLoading && styles.mapCallFabCircleDisabled]}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      void handleCall('audio');
+                    }}
+                    activeOpacity={0.88}
+                    disabled={isCallLoading}
+                    accessibilityRole="button"
+                    accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
+                  >
+                    <Ionicons name="call" size={22} color="#FFF" />
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            </View>
+          ) : null}
 
           {/* 🆕 SÜRÜCÜ İÇİN - YOLCUYA GİT BUTONU (Ortalı, Yaz butonunun üstünde) */}
           {isDriver && (
@@ -1068,32 +1147,32 @@ export default function LiveMapView({
               </TouchableOpacity>
             </Animated.View>
           )}
-          
-          {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
-          <TouchableOpacity 
-            style={[styles.mainChatButton]} 
-            onPress={() => {
-              void tapButtonHaptic();
-              onChat?.();
-            }}
-            activeOpacity={0.8}
-          >
-            <LinearGradient 
-              colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']} 
-              style={styles.mainChatButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+
+            {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
+            <TouchableOpacity
+              style={styles.mainChatButton}
+              onPress={() => {
+                void tapButtonHaptic();
+                onChat?.();
+              }}
+              activeOpacity={0.8}
             >
-              <View style={styles.chatButtonContent}>
-                <View style={styles.chatIconWrapperLarge}>
-                  <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
+              <LinearGradient
+                colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']}
+                style={styles.mainChatButtonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <View style={styles.chatButtonContent}>
+                  <View style={styles.chatIconWrapperLarge}>
+                    <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
+                  </View>
+                  <Text style={styles.mainChatButtonText}>
+                    {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
+                  </Text>
                 </View>
-                <Text style={styles.mainChatButtonText}>
-                  {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
-                </Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              </LinearGradient>
+            </TouchableOpacity>
 
           {/* 🆕 ALT BUTONLAR - Destek ve Bitir */}
           <View style={styles.actionButtons}>
@@ -1379,7 +1458,47 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   
+  mapSlot: {
+    flex: 1,
+    position: 'relative',
+  },
   map: { flex: 1 },
+  callPromptRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginBottom: 10,
+  },
+  callPromptColumn: {
+    alignItems: 'flex-start',
+  },
+  callPromptLabel: {
+    color: '#16A34A',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    letterSpacing: 0.35,
+    marginBottom: 8,
+    maxWidth: SCREEN_WIDTH * 0.72,
+  },
+  mapCallFabCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#25D366',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.45)',
+    shadowColor: '#0D4F3C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  mapCallFabCircleDisabled: {
+    opacity: 0.55,
+  },
   webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8' },
   webFallbackText: { fontSize: 16, color: '#666', marginTop: 16, textAlign: 'center' },
   distanceText: { fontSize: 18, fontWeight: 'bold', color: '#22C55E', marginTop: 12 },
