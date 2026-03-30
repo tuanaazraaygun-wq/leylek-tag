@@ -78,6 +78,7 @@ export interface RideMatchSocketData {
   dropoff_lng?: number;
   final_price?: number;
   matched_at?: string;
+  passenger_payment_method?: 'cash' | 'card';
 }
 
 interface UseSocketProps {
@@ -655,6 +656,7 @@ export default function useSocket({
     distance_km?: number;
     estimated_minutes?: number;
     notes?: string;
+    passenger_payment_method?: 'cash' | 'card';
   }) => {
     console.log('🏷️ [useSocket] TAG REQUEST gönderiliyor:', data);
     console.log('   offered_price:', data.offered_price);

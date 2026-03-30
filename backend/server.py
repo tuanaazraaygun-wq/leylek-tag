@@ -490,6 +490,18 @@ def _canonical_vehicle_kind(value) -> Optional[str]:
     return None
 
 
+def _canonical_passenger_payment_method(value) -> Optional[str]:
+    """Yolcu ödeme tercihi: cash | card. Tanınmayan/boş -> None."""
+    if value is None or value == "":
+        return None
+    s = str(value).strip().lower()
+    if s in ("cash", "nakit"):
+        return "cash"
+    if s in ("card", "kart", "sanal", "sanal_kart", "virtual_card", "credit_card", "kredi"):
+        return "card"
+    return None
+
+
 def _driver_details_as_dict(user_row: dict) -> dict:
     """users.driver_details: JSONB dict veya nadiren JSON string -> dict."""
     dd = user_row.get("driver_details")
@@ -950,7 +962,7 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
             .select(
                 "id, passenger_id, passenger_name, pickup_lat, pickup_lng, pickup_location, "
                 "dropoff_lat, dropoff_lng, dropoff_location, final_price, distance_km, estimated_minutes, "
-                "passenger_preferred_vehicle"
+                "passenger_preferred_vehicle, passenger_payment_method"
             )
             .eq("status", "waiting")
             .execute()
@@ -990,6 +1002,7 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
                 "is_dispatch": True,
                 "passenger_vehicle_kind": passenger_pref,
                 "distance_to_pickup": round(dist_to_pickup_km, 2),
+                "passenger_payment_method": tag.get("passenger_payment_method"),
             }
 
             await emit_new_passenger_offer_to_driver(driver_id, offer_data)
@@ -1171,6 +1184,7 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
             "dispatch_timeout": timeout,
             "is_dispatch": True,  # Bu bir dispatch teklifi
             "passenger_vehicle_kind": merged.get("passenger_preferred_vehicle") or "car",
+            "passenger_payment_method": merged.get("passenger_payment_method"),
         }
 
         price = merged.get("final_price") or merged.get("offered_price", 0)
@@ -1306,6 +1320,7 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
             "dispatch_timeout": timeout_sec,
             "is_broadcast": True,
             "passenger_vehicle_kind": pref,
+            "passenger_payment_method": tag_data.get("passenger_payment_method"),
         }
         
         price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
@@ -1444,6 +1459,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         "dispatch_timeout": DISPATCH_TIMEOUT,
         "is_rolling_batch": True,
         "passenger_vehicle_kind": pref,
+        "passenger_payment_method": tag_data.get("passenger_payment_method"),
     }
 
     for entry in batch_entries:
@@ -1543,6 +1559,7 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         "distance_km": row.get("distance_km", 0),
         "estimated_minutes": row.get("estimated_minutes", 0),
         "passenger_preferred_vehicle": passenger_pref,
+        "passenger_payment_method": row.get("passenger_payment_method"),
     }
 
     eligible = await find_eligible_drivers(
@@ -8032,6 +8049,22 @@ async def complete_trip_with_qr(request: Request):
         if not _uid_eq(scanned_user_id, driver_id):
             return {"success": False, "detail": "QR kod bu yolculuğun sürücüsüne ait değil"}
         
+        booked_pm = _canonical_passenger_payment_method(tag.get("passenger_payment_method"))
+        confirmed_pm = _canonical_passenger_payment_method(
+            body.get("payment_confirmed_method") or body.get("payment_confirmed")
+        )
+        if booked_pm in ("cash", "card"):
+            if confirmed_pm not in ("cash", "card"):
+                return {
+                    "success": False,
+                    "detail": "Yolculuğu bitirmek için ödeme yöntemini onaylamanız gerekir.",
+                }
+            if confirmed_pm != booked_pm:
+                return {
+                    "success": False,
+                    "detail": "Onay, teklifte seçtiğiniz ödeme ile aynı olmalı.",
+                }
+        
         # 3. Yolculuğu tamamla
         completed_at = datetime.utcnow().isoformat()
         
@@ -9156,7 +9189,8 @@ async def handle_driver_accept_offer(sid, data):
         tag_result = (
             supabase.table("tags")
             .select(
-                "id, status, passenger_id, passenger_preferred_vehicle, pickup_location, pickup_lat, pickup_lng, "
+                "id, status, passenger_id, passenger_preferred_vehicle, passenger_payment_method, "
+                "pickup_location, pickup_lat, pickup_lng, "
                 "dropoff_location, dropoff_lat, dropoff_lng, final_price, distance_km, estimated_minutes"
             )
             .eq("id", tid)
@@ -9341,6 +9375,7 @@ async def handle_driver_accept_offer(sid, data):
             "estimated_minutes": tag.get("estimated_minutes"),
             "status": "matched",
             "matched_at": matched_at,
+            "passenger_payment_method": tag.get("passenger_payment_method"),
         }
         driver_sid = connected_users.get(str(resolved_driver_id).strip().lower()) or connected_users.get(
             resolved_driver_id
@@ -9722,6 +9757,8 @@ class CreateRideOfferRequest(BaseModel):
     passenger_preferred_vehicle: Optional[str] = None
     # Frontend alias (ride/create); passenger_preferred_vehicle ile aynı anlam
     passenger_vehicle_kind: Optional[str] = None
+    # Yolcu ödeme tercihi: cash | card (Supabase tags.passenger_payment_method)
+    passenger_payment_method: Optional[str] = None
 
 @api_router.post("/ride/create-offer")
 async def create_ride_offer(request: CreateRideOfferRequest):
@@ -9776,6 +9813,9 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             "created_at": datetime.utcnow().isoformat(),
             "passenger_preferred_vehicle": passenger_pref_vehicle,
         }
+        pay_pref = _canonical_passenger_payment_method(request.passenger_payment_method)
+        if pay_pref:
+            tag_data["passenger_payment_method"] = pay_pref
         
         result = supabase.table("tags").insert(tag_data).execute()
         
@@ -9929,6 +9969,7 @@ async def accept_ride(tag_id: str, driver_id: str):
             "dropoff_lng": updated_tag.get("dropoff_lng"),
             "final_price": updated_tag.get("final_price"),
             "matched_at": updated_tag.get("matched_at"),
+            "passenger_payment_method": updated_tag.get("passenger_payment_method"),
         }
         if passenger_id:
             await emit_socket_event_to_user(passenger_id, "ride_accepted", match_socket_payload)

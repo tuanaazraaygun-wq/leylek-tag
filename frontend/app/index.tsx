@@ -311,6 +311,17 @@ interface Tag {
   route_info?: any;
   passenger_preferred_vehicle?: 'car' | 'motorcycle';
   passenger_vehicle_kind?: 'car' | 'motorcycle';
+  /** Yolcu teklifte seçtiği ödeme (sunucu: cash | card) */
+  passenger_payment_method?: 'cash' | 'card';
+}
+
+function normalizePassengerPaymentMethod(raw: unknown): 'cash' | 'card' | null {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === 'cash' || s === 'nakit') return 'cash';
+  if (s === 'card' || s === 'kart' || s === 'sanal' || s === 'sanal_kart' || s === 'virtual_card') {
+    return 'card';
+  }
+  return null;
 }
 
 interface Offer {
@@ -5299,10 +5310,14 @@ function PassengerDashboard({
   } | null>(null);
   const [selectedPrice, setSelectedPrice] = useState<number>(0);
   const [priceLoading, setPriceLoading] = useState(false);
+  const [passengerPaymentPreference, setPassengerPaymentPreference] = useState<'cash' | 'card' | null>(
+    null,
+  );
 
   useEffect(() => {
     if (showPriceModal) {
       setRideVehiclePreference(passengerVehicleFromRole);
+      setPassengerPaymentPreference(null);
     }
   }, [showPriceModal, passengerVehicleFromRole]);
   
@@ -5790,6 +5805,9 @@ function PassengerDashboard({
           estimated_minutes: data.estimated_minutes,
           status: 'matched',
           matched_at: new Date().toISOString(),
+          passenger_payment_method: normalizePassengerPaymentMethod(
+            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
+          ) ?? undefined,
         };
         console.log('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', matchedTag);
         setActiveTag(matchedTag);
@@ -5823,6 +5841,9 @@ function PassengerDashboard({
           estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
           status: 'matched',
           matched_at: data.matched_at || new Date().toISOString(),
+          passenger_payment_method: normalizePassengerPaymentMethod(
+            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
+          ) ?? undefined,
         };
         setActiveTag(matchedTag as Tag);
       }
@@ -6305,6 +6326,10 @@ function PassengerDashboard({
   const handleSendPriceOffer = async () => {
     playTapSound();
     if (!destination || !priceInfo || !selectedPrice || !user?.id) return;
+    if (!passengerPaymentPreference) {
+      Alert.alert('Ödeme seçimi', 'Lütfen nakit veya sanal kart ile ödeyeceğinizi seçin.');
+      return;
+    }
 
     setShowPriceModal(false);
     setLoading(true);
@@ -6366,6 +6391,7 @@ function PassengerDashboard({
           distance_km: priceInfo.distance_km,
           estimated_minutes: priceInfo.estimated_minutes,
           passenger_preferred_vehicle: rideVehiclePreference,
+          passenger_payment_method: passengerPaymentPreference,
         }),
       });
       const data = await res.json();
@@ -6382,6 +6408,9 @@ function PassengerDashboard({
         distance_km: priceInfo.distance_km,
         estimated_minutes: priceInfo.estimated_minutes,
         status: serverTag.status || 'waiting',
+        passenger_payment_method:
+          normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ??
+          passengerPaymentPreference,
       };
       setActiveTag(mergedTag);
       setCurrentRequestId(requestId);
@@ -6403,6 +6432,7 @@ function PassengerDashboard({
           estimated_minutes: priceInfo.estimated_minutes,
           passenger_preferred_vehicle: rideVehiclePreference,
           passenger_vehicle_kind: rideVehiclePreference,
+          passenger_payment_method: passengerPaymentPreference,
         });
       }
       console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', mergedTag.id);
@@ -7206,6 +7236,63 @@ function PassengerDashboard({
                           <Text style={styles.sliderButtonText}>+5</Text>
                         </TouchableOpacity>
                       </View>
+
+                      <Text style={styles.priceModalPaySectionTitle}>Yol paylaşımını nasıl ödeyeceksiniz?</Text>
+                      <Text style={styles.priceModalPayHint}>
+                        Sürücü teklif ve eşleşme ekranında bu seçimi görecek.
+                      </Text>
+                      <View style={styles.priceModalPayChipsRow}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            void tapButtonHaptic();
+                            setPassengerPaymentPreference('cash');
+                          }}
+                          style={[
+                            styles.priceModalPayChip,
+                            passengerPaymentPreference === 'cash' && styles.priceModalPayChipCashActive,
+                          ]}
+                          activeOpacity={0.88}
+                        >
+                          <Ionicons
+                            name="cash-outline"
+                            size={22}
+                            color={passengerPaymentPreference === 'cash' ? '#FFF' : '#047857'}
+                          />
+                          <Text
+                            style={[
+                              styles.priceModalPayChipText,
+                              passengerPaymentPreference === 'cash' && styles.priceModalVehicleChipTextActive,
+                            ]}
+                          >
+                            Nakit
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            void tapButtonHaptic();
+                            setPassengerPaymentPreference('card');
+                          }}
+                          style={[
+                            styles.priceModalPayChip,
+                            passengerPaymentPreference === 'card' && styles.priceModalPayChipCardActive,
+                          ]}
+                          activeOpacity={0.88}
+                        >
+                          <Ionicons
+                            name="card-outline"
+                            size={22}
+                            color={passengerPaymentPreference === 'card' ? '#FFF' : '#1D4ED8'}
+                          />
+                          <Text
+                            style={[
+                              styles.priceModalPayChipText,
+                              passengerPaymentPreference === 'card' && styles.priceModalVehicleChipTextActive,
+                            ]}
+                          >
+                            Sanal kart
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                       
                       <View style={styles.priceModalButtons}>
                         <TouchableOpacity 
@@ -7216,13 +7303,25 @@ function PassengerDashboard({
                         </TouchableOpacity>
                         
                         <TouchableOpacity
-                          style={styles.priceModalSendWrap}
-                          activeOpacity={0.88}
-                          onPress={() => { void tapButtonHaptic(); handleSendPriceOffer(); }}
+                          style={[
+                            styles.priceModalSendWrap,
+                            !passengerPaymentPreference && styles.priceModalSendWrapDisabled,
+                          ]}
+                          activeOpacity={passengerPaymentPreference ? 0.88 : 1}
+                          disabled={!passengerPaymentPreference}
+                          onPress={() => {
+                            if (!passengerPaymentPreference) return;
+                            void tapButtonHaptic();
+                            handleSendPriceOffer();
+                          }}
                         >
                           <Animated.View style={{ transform: [{ scale: priceSendPulse }] }}>
                             <LinearGradient
-                              colors={['#0EA5E9', '#2563EB', '#1D4ED8']}
+                              colors={
+                                passengerPaymentPreference
+                                  ? ['#0EA5E9', '#2563EB', '#1D4ED8']
+                                  : ['#94A3B8', '#64748B']
+                              }
                               start={{ x: 0, y: 0 }}
                               end={{ x: 1, y: 1 }}
                               style={styles.priceModalSendGradient}
@@ -8001,6 +8100,7 @@ function PassengerDashboard({
         tagId={activeTag?.id || ''}
         isDriver={false}
         otherUserName={displayFirstName(activeTag?.driver_name, 'Sürücü')}
+        bookingPaymentMethod={normalizePassengerPaymentMethod(activeTag?.passenger_payment_method)}
         myLatitude={userLocation?.latitude}
         myLongitude={userLocation?.longitude}
         otherLatitude={activeTag?.driver_latitude}
@@ -8163,6 +8263,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           time_to_passenger_min: null,
           trip_distance_km: tag.distance_km ?? null,
           trip_duration_min: tag.estimated_minutes ?? null,
+          passenger_payment_method: normalizePassengerPaymentMethod(tag.passenger_payment_method) ?? undefined,
         }];
       });
     } catch (e) {
@@ -8490,6 +8591,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           time_to_passenger_min: null,
           trip_distance_km: data.distance_km || null,
           trip_duration_min: data.estimated_minutes || null,
+          passenger_payment_method: normalizePassengerPaymentMethod(
+            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
+          ) ?? undefined,
         }];
       });
       
@@ -8542,6 +8646,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           estimated_minutes: data.estimated_minutes,
           status: 'matched',
           matched_at: new Date().toISOString(),
+          passenger_payment_method: normalizePassengerPaymentMethod(
+            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
+          ) ?? undefined,
         };
         console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
         setActiveTag(matchedTag);
@@ -8575,6 +8682,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
           status: 'matched',
           matched_at: data.matched_at || new Date().toISOString(),
+          passenger_payment_method: normalizePassengerPaymentMethod(
+            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
+          ) ?? undefined,
         };
         setActiveTag(matchedTag as Tag);
       }
@@ -9511,6 +9621,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 ? 'motorcycle'
                 : 'car'
             }
+            passengerPaymentMethod={normalizePassengerPaymentMethod(activeTag?.passenger_payment_method) ?? undefined}
             isDriver={true}
             userName={user.name}
             otherUserName={displayFirstName(activeTag?.passenger_name, 'Yolcu')}
@@ -10514,6 +10625,53 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginBottom: 12,
     lineHeight: 17,
+  },
+  priceModalPaySectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  priceModalPayHint: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 10,
+    lineHeight: 17,
+  },
+  priceModalPayChipsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  priceModalPayChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: '#E2E8F0',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  priceModalPayChipCashActive: {
+    backgroundColor: '#059669',
+    borderColor: '#047857',
+  },
+  priceModalPayChipCardActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#1D4ED8',
+  },
+  priceModalPayChipText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  priceModalSendWrapDisabled: {
+    opacity: 0.72,
   },
   priceInfoRow: {
     flexDirection: 'row',

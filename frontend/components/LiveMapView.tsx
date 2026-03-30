@@ -64,6 +64,8 @@ interface LiveMapViewProps {
   onShowQRModal?: () => void;  // 🆕 QR Modal aç
   /** Sürücü haritasında: yolcu araç/motor tercihi (marker ve uyarı metinleri) */
   otherTripVehicleKind?: 'car' | 'motorcycle';
+  /** Sürücü: yolcunun teklifte seçtiği ödeme */
+  passengerPaymentMethod?: 'cash' | 'card';
 }
 
 /** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
@@ -273,6 +275,7 @@ export default function LiveMapView({
   onShowEndTripModal,
   onShowQRModal,  // 🆕
   otherTripVehicleKind = 'car',
+  passengerPaymentMethod,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   
@@ -968,6 +971,19 @@ export default function LiveMapView({
                   <Text style={styles.priceValue}>₺{price}</Text>
                 </View>
               ) : null}
+
+              {isDriver && passengerPaymentMethod ? (
+                <View style={styles.paymentMethodPill}>
+                  <Ionicons
+                    name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
+                    size={16}
+                    color="#0F172A"
+                  />
+                  <Text style={styles.paymentMethodPillText}>
+                    {passengerPaymentMethod === 'card' ? 'Yolcu: sanal kart' : 'Yolcu: nakit'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </LinearGradient>
         </View>
@@ -1599,6 +1615,24 @@ const styles = StyleSheet.create({
   },
   priceLabel: { fontSize: 13, fontWeight: '700', color: '#0369A1', letterSpacing: 1 },
   priceValue: { fontSize: 24, fontWeight: '800', color: '#0EA5E9' },
+  paymentMethodPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(14, 165, 233, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(14, 165, 233, 0.35)',
+  },
+  paymentMethodPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
 
   passengerLiveBlock: {
     alignSelf: 'flex-end',

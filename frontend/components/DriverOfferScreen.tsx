@@ -125,6 +125,8 @@ export interface PassengerRequest {
   created_at?: string;
   /** Yolcu talebi: car | motorcycle (socket / dispatch) */
   passenger_vehicle_kind?: 'car' | 'motorcycle';
+  /** Yolcu ödeme: nakit | sanal kart */
+  passenger_payment_method?: 'cash' | 'card';
 }
 
 interface DriverOfferScreenProps {
@@ -194,6 +196,17 @@ function RequestCard({
             ) : (
               <Text style={{ fontSize: 11, color: '#0369a1', fontWeight: '700', marginTop: 2 }}>🚗 Araç talebi</Text>
             )}
+            {request.passenger_payment_method === 'card' ? (
+              <View style={styles.paymentBadge}>
+                <Ionicons name="card-outline" size={12} color="#1D4ED8" />
+                <Text style={styles.paymentBadgeText}>Sanal kart</Text>
+              </View>
+            ) : request.passenger_payment_method === 'cash' ? (
+              <View style={[styles.paymentBadge, styles.paymentBadgeCash]}>
+                <Ionicons name="cash-outline" size={12} color="#047857" />
+                <Text style={[styles.paymentBadgeText, styles.paymentBadgeTextCash]}>Nakit</Text>
+              </View>
+            ) : null}
           </View>
         </View>
         {/* 🆕 MARTI TAG - Yolcunun Teklif Ettiği Fiyat */}
@@ -1134,6 +1147,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
     marginTop: 1,
+  },
+  paymentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#DBEAFE',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+  },
+  paymentBadgeCash: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#6EE7B7',
+  },
+  paymentBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  paymentBadgeTextCash: {
+    color: '#047857',
   },
   dismissBtn: {
     padding: 8,
