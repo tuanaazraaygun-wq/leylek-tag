@@ -6230,7 +6230,12 @@ function PassengerDashboard({
   // MARTI TAG: Fiyat teklifi gönder — önce backend tag oluşturur, rolling dispatch tetiklenir; sonra bekleme UI
   const handleSendPriceOffer = async () => {
     playTapSound();
-    if (!destination || !priceInfo || !selectedPrice || !user?.id) return;
+    if (!destination || !priceInfo || !selectedPrice || !user?.id) {
+      if (!destination) {
+        Alert.alert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
+      }
+      return;
+    }
     if (!passengerPaymentPreference) {
       Alert.alert('Ödeme seçimi', 'Lütfen nakit veya sanal kart ile ödeyeceğinizi seçin.');
       return;
@@ -6284,17 +6289,17 @@ function PassengerDashboard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tag_id: tagId,
-          passenger_id: user.id,
+          passenger_id: String(user.id),
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
-          pickup_location: pickupAddress,
+          pickup_location: pickupAddress || 'Mevcut konum',
           passenger_vehicle_kind: rideVehiclePreference,
           dropoff_lat: destination.latitude,
           dropoff_lng: destination.longitude,
-          dropoff_location: destination.address,
+          dropoff_location: (destination.address && String(destination.address).trim()) || 'Seçilen hedef',
           offered_price: selectedPrice,
-          distance_km: priceInfo.distance_km,
-          estimated_minutes: priceInfo.estimated_minutes,
+          distance_km: priceInfo.distance_km ?? 0,
+          estimated_minutes: priceInfo.estimated_minutes ?? 0,
           passenger_preferred_vehicle: rideVehiclePreference,
           passenger_payment_method: passengerPaymentPreference,
         }),

@@ -9420,10 +9420,10 @@ class CreateRideOfferRequest(BaseModel):
     passenger_id: str
     pickup_lat: float
     pickup_lng: float
-    pickup_location: str
+    pickup_location: str = ""
     dropoff_lat: float
     dropoff_lng: float
-    dropoff_location: str
+    dropoff_location: str = ""
     offered_price: int
     distance_km: float
     estimated_minutes: int
@@ -9516,24 +9516,82 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         if pay_pref:
             tag_data["passenger_payment_method"] = pay_pref
 
-        result = supabase.table("tags").insert(tag_data).execute()
-        # Kolon yoksa (migration atlanmış DB): ödeme alanı olmadan tekrar dene
-        if not result.data and pay_pref:
-            logger.warning(
-                "tags.insert boş döndü — passenger_payment_method kolonu eksik olabilir; tekrar deneniyor"
-            )
-            tag_data.pop("passenger_payment_method", None)
-            result = supabase.table("tags").insert(tag_data).execute()
+        def _try_tags_insert(rows: dict) -> tuple:
+            """(data list | None, hata metni | None)"""
+            try:
+                r = supabase.table("tags").insert(rows).execute()
+                if r.data:
+                    return r.data, None
+                return None, "Supabase insert boş data (kolon/kısıt hatası olabilir)"
+            except Exception as ins_ex:
+                return None, str(ins_ex)
+
+        insert_variants = [
+            ("full", dict(tag_data)),
+            ("no_payment_col", {k: v for k, v in tag_data.items() if k != "passenger_payment_method"}),
+            (
+                "no_pref_col",
+                {
+                    k: v
+                    for k, v in tag_data.items()
+                    if k not in ("passenger_payment_method", "passenger_preferred_vehicle")
+                },
+            ),
+            (
+                "core_only",
+                {
+                    "id": tag_data["id"],
+                    "passenger_id": tag_data["passenger_id"],
+                    "passenger_name": tag_data["passenger_name"],
+                    "pickup_lat": tag_data["pickup_lat"],
+                    "pickup_lng": tag_data["pickup_lng"],
+                    "pickup_location": tag_data["pickup_location"] or "Mevcut konum",
+                    "dropoff_lat": tag_data["dropoff_lat"],
+                    "dropoff_lng": tag_data["dropoff_lng"],
+                    "dropoff_location": tag_data["dropoff_location"] or "Hedef",
+                    "final_price": tag_data["final_price"],
+                    "status": tag_data["status"],
+                },
+            ),
+        ]
+
+        result_data = None
+        last_ins_err = None
+        used_variant = None
+        for vname, payload in insert_variants:
+            if vname != "full" and payload == insert_variants[0][1]:
+                continue
+            rd, err = _try_tags_insert(payload)
+            if rd:
+                result_data = rd
+                used_variant = vname
+                if vname != "full":
+                    logger.warning(
+                        f"tags.insert başarılı (yedek şema): variant={vname} tag_id={tag_id}"
+                    )
+                break
+            last_ins_err = err
+            logger.warning(f"tags.insert denemesi başarısız variant={vname}: {err}")
+
+        if result_data:
+            result = type("R", (), {"data": result_data})()
+        else:
+            result = type("R", (), {"data": None})()
 
         if result.data:
             tag = result.data[0]
+            # Eski şemada eksik kolonlar — istemci / dispatch için tamamla
+            if not tag.get("passenger_preferred_vehicle"):
+                tag["passenger_preferred_vehicle"] = passenger_pref_vehicle
+            if pay_pref and not tag.get("passenger_payment_method"):
+                tag["passenger_payment_method"] = pay_pref
             # Response'a ek bilgiler ekle
             tag["offered_price"] = request.offered_price  # Frontend için
             tag["distance_km"] = request.distance_km
             tag["estimated_minutes"] = request.estimated_minutes
             logger.info(
                 f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL "
-                f"(yolcu araç tercihi={passenger_pref_vehicle})"
+                f"(yolcu araç tercihi={passenger_pref_vehicle}, insert_variant={used_variant})"
             )
             logger.info(f"PASSENGER CREATED TAG {tag_id}")
             # Dağıtım hatası teklif oluşturmayı bozmasın (yolcu ekranında "Teklif oluşturulamadı" önlenir)
@@ -9562,7 +9620,10 @@ async def create_ride_offer(request: CreateRideOfferRequest):
                 "message": "Teklifiniz sürücülere gönderildi"
             }
 
-        return {"success": False, "error": "Tag oluşturulamadı (veritabanı kaydı başarısız)"}
+        return {
+            "success": False,
+            "error": f"Tag oluşturulamadı (veritabanı): {last_ins_err or 'tüm insert denemeleri başarısız'}",
+        }
     except Exception as e:
         logger.error(f"❌ Create ride offer error: {e}")
         return {"success": False, "error": str(e)}
