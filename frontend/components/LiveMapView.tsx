@@ -1075,13 +1075,7 @@ export default function LiveMapView({
 
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
-        <LinearGradient 
-          colors={isDriver 
-            ? ['rgba(237,233,254,0.97)', 'rgba(196,181,253,0.95)'] 
-            : ['rgba(219,234,254,0.95)', 'rgba(147,197,253,0.98)']
-          } 
-          style={styles.bottomGradient}
-        >
+        <View style={styles.bottomGradient}>
           {/* Ara: alt panelde, Yaz butonunun hemen üstünde — yeşil yanıp sönen etiket + FAB (sol) */}
           {MapView && onCall ? (
             <View style={styles.callPromptRow} pointerEvents="box-none">
@@ -1268,7 +1262,7 @@ export default function LiveMapView({
               <Text style={styles.endButtonText}>Zorla Bitir</Text>
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
       </View>
 
       {/* 🆕 KULLANICI BİLGİ KARTI MODAL */}
@@ -1778,7 +1772,12 @@ const styles = StyleSheet.create({
   
   // Bottom Panel
   bottomPanel: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  bottomGradient: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 18, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  bottomGradient: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 18,
+    backgroundColor: 'transparent',
+  },
   
   // 🆕 Ortalı Navigasyon Butonu (Alt Panelde)
   centeredNavButton: {
