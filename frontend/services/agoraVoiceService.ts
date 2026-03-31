@@ -92,7 +92,7 @@ export class AgoraVoiceService {
   /**
    * @param token Boş string token yok projelerinde denenebilir; prod'da RTC token gerekir.
    */
-  joinChannel(channelName: string, token: string, uid: number): void {
+  async joinChannel(channelName: string, token: string, uid: number): Promise<void> {
     if (!this.engine) {
       throw new Error('AgoraVoiceService.initialize() önce çağrılmalı');
     }

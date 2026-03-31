@@ -158,6 +158,7 @@ export default function CallScreenV2({
         setPhase('ended');
       },
       onError: (err, msg) => {
+        console.log('AGORA JOIN ERROR', err);
         LOG('Agora hata', { err, msg });
         setStatus('Bağlantı hatası');
       },
@@ -195,7 +196,7 @@ export default function CallScreenV2({
       callerJoinExecutedRef.current = true;
       return;
     }
-    agoraVoiceService.joinChannel(ch, tok, myUid);
+    await agoraVoiceService.joinChannel(ch, tok, myUid);
     setJoined(true);
     callerJoinExecutedRef.current = true;
   }, [agoraTokenProp, channelName, attachEngineHandlers, myUid, requestMicPermission]);
@@ -226,7 +227,6 @@ export default function CallScreenV2({
       }
 
       if (!data.agora_token || !data.channel_name) {
-        setStatus('Token hatası');
         return;
       }
 
@@ -244,14 +244,26 @@ export default function CallScreenV2({
 
       await agoraVoiceService.initialize();
       attachEngineHandlers();
-      agoraVoiceService.joinChannel(
-        data.channel_name,
-        data.agora_token,
-        agoraUidFromUserId(userId)
-      );
+      console.log('RECEIVER JOIN', {
+        channel: data.channel_name,
+        token: data.agora_token,
+        uid: agoraUidFromUserId(userId),
+      });
+      try {
+        await agoraVoiceService.joinChannel(
+          data.channel_name,
+          data.agora_token,
+          agoraUidFromUserId(userId)
+        );
+      } catch (e) {
+        console.log('JOIN FAILED', e);
+        setStatus('Bağlantı hatası');
+        return;
+      }
       setJoined(true);
       setStatus('Bağlandı');
     } catch (e) {
+      console.log('ACCEPT ERROR', e);
       LOG('accept-call hata', e);
       Alert.alert('Hata', 'Sunucuya ulaşılamadı');
       setPhase('ended');
@@ -266,14 +278,25 @@ export default function CallScreenV2({
     setTimeout(onClose, 250);
   }, [onClose, onReject, stopTimersAndRing]);
 
-  const hangUp = useCallback(async () => {
-    LOG('Arama bitiriliyor');
+  const hangUp = useCallback(async (reason: string = 'user') => {
+    console.log('HANGUP TRIGGERED', reason);
+    console.log('CALLER HANGUP', reason);
+    LOG('Arama bitiriliyor', { reason });
     stopTimersAndRing();
     await runCleanup();
     setPhase('ended');
     onEnd();
     setTimeout(onClose, 250);
   }, [onClose, onEnd, runCleanup, stopTimersAndRing]);
+
+  const endWithoutNotify = useCallback(async (reason: string) => {
+    console.log('HANGUP TRIGGERED', reason);
+    LOG('Arama lokal kapatılıyor', { reason });
+    stopTimersAndRing();
+    await runCleanup();
+    setPhase('ended');
+    setTimeout(onClose, 250);
+  }, [onClose, runCleanup, stopTimersAndRing]);
 
   const toggleMute = useCallback(() => {
     const next = !muted;
@@ -356,37 +379,45 @@ export default function CallScreenV2({
 
   useEffect(() => {
     if (callAccepted && mode === 'caller' && phase === 'outgoing') {
-      setPhase('connecting');
-      setStatus('Kabul edildi…');
+      setPhase('active');
+      setStatus('Görüşmedesiniz');
       stopTimersAndRing();
     }
   }, [callAccepted, mode, phase, stopTimersAndRing]);
 
   useEffect(() => {
     if (!callRejected) return;
+    if (mode === 'receiver') {
+      console.log('AUTO HANGUP BLOCKED', 'callRejected');
+      return;
+    }
     setStatus('Arama reddedildi');
     setPhase('ended');
     stopTimersAndRing();
-    const t = setTimeout(() => void hangUp(), 1200);
+    const t = setTimeout(() => void endWithoutNotify('remote_rejected'), 1200);
     return () => clearTimeout(t);
-  }, [callRejected, hangUp, stopTimersAndRing]);
+  }, [callRejected, endWithoutNotify, mode, stopTimersAndRing]);
 
   useEffect(() => {
     if (!callEnded) return;
     setStatus('Arama sonlandı');
     setPhase('ended');
-    const t = setTimeout(() => void hangUp(), 400);
+    const t = setTimeout(() => void endWithoutNotify('remote_call_ended'), 400);
     return () => clearTimeout(t);
-  }, [callEnded, hangUp]);
+  }, [callEnded, endWithoutNotify]);
 
   useEffect(() => {
     if (!receiverOffline) return;
+    if (mode === 'receiver') {
+      console.log('AUTO HANGUP BLOCKED', 'receiverOffline');
+      return;
+    }
     setStatus('Kullanıcı çevrimdışı');
     setPhase('ended');
     stopTimersAndRing();
-    const t = setTimeout(() => void hangUp(), 2000);
+    const t = setTimeout(() => void endWithoutNotify('receiver_offline'), 2000);
     return () => clearTimeout(t);
-  }, [hangUp, receiverOffline, stopTimersAndRing]);
+  }, [endWithoutNotify, mode, receiverOffline, stopTimersAndRing]);
 
   if (!visible) return null;
 
@@ -436,7 +467,7 @@ export default function CallScreenV2({
           ) : null}
 
           {showConnecting && !showIncoming ? (
-            <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp()}>
+            <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp('user')}>
               <Ionicons name="call" size={30} color="#fff" style={styles.iconHangup} />
             </TouchableOpacity>
           ) : null}
@@ -450,7 +481,7 @@ export default function CallScreenV2({
               >
                 <Ionicons name={muted ? 'mic-off' : 'mic'} size={24} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp()}>
+              <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp('user')}>
                 <Ionicons name="call" size={30} color="#fff" style={styles.iconHangup} />
               </TouchableOpacity>
               <TouchableOpacity
