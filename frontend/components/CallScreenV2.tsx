@@ -394,8 +394,7 @@ export default function CallScreenV2({
     setStatus('Arama reddedildi');
     setPhase('ended');
     stopTimersAndRing();
-    const t = setTimeout(() => void endWithoutNotify('remote_rejected'), 1200);
-    return () => clearTimeout(t);
+    void endWithoutNotify('remote_rejected');
   }, [callRejected, endWithoutNotify, mode, stopTimersAndRing]);
 
   useEffect(() => {

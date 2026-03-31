@@ -572,102 +572,63 @@ export default function LiveMapView({
     return () => breath.stop();
   }, [onCall, quickCallBreath]);
 
-  // OSRM API — buluşma / hedef için ayrı throttle (km·dk her zaman dolabilsin)
-  const fetchRoute = async (
-    start: { latitude: number; longitude: number },
-    end: { latitude: number; longitude: number },
-    slot: 'meeting' | 'destination',
-  ): Promise<{ coordinates: {latitude: number, longitude: number}[], distance: number, duration: number } | null> => {
-    try {
-      const now = Date.now();
-      if (now - routeThrottleRef.current[slot] < 900) {
-        return null;
-      }
-      routeThrottleRef.current[slot] = now;
-
-      const url = `https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=polyline`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-        const route = data.routes[0];
-        const points = decodePolyline(route.geometry);
-        const distKm = route.distance / 1000;
-        const durMin = Math.max(0, Math.round(route.duration / 60));
-
-        return { coordinates: points, distance: distKm, duration: durMin };
-      }
-    } catch (error) {
-      console.log('OSRM hatası:', error);
-    }
-    return null;
-  };
-
-  // YEŞİL ROTA: Şoför → Yolcu (her 5 saniyede güncelle)
+  // Frontend route call yok: rota çizgisi sadece mevcut konumlardan üretilir.
   useEffect(() => {
     if (!userLocation || !otherLocation) return;
-    
-    const updateMeetingRoute = async () => {
-      let start, end;
-      if (isDriver) {
-        start = userLocation;
-        end = otherLocation;
-      } else {
-        start = otherLocation;
-        end = userLocation;
-      }
-      
-      const result = await fetchRoute(start, end);
-      if (result && result.coordinates.length > 2) {
-        setMeetingRoute(result.coordinates);
-        setMeetingDistance(result.distance);
-        setMeetingDuration(result.duration);
-      }
-    };
-    
-    updateMeetingRoute();
-    const interval = setInterval(updateMeetingRoute, 5000);
-    return () => clearInterval(interval);
+    const start = isDriver ? userLocation : otherLocation;
+    const end = isDriver ? otherLocation : userLocation;
+    setMeetingRoute([start, end]);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, isDriver]);
 
-  // TURUNCU ROTA: Yolcu → Hedef
+  // TURUNCU ROTA: Yolcu → Hedef (çizim için düz segment)
   useEffect(() => {
-    if (!destinationLocation) return;
-    
+    if (!destinationLocation) {
+      setDestinationRoute([]);
+      return;
+    }
     const passengerLocation = isDriver ? otherLocation : userLocation;
     if (!passengerLocation) return;
-    
-    const updateDestinationRoute = async () => {
-      const result = await fetchRoute(passengerLocation, destinationLocation, 'destination');
-      if (result) {
-        if (result.coordinates.length >= 2) {
-          setDestinationRoute(result.coordinates);
-        }
-        setDestinationDistance(result.distance);
-        setDestinationDuration(result.duration);
-
-        // 1 km kontrolü - Otomatik tamamlama
-        if (result.distance <= 1 && !autoCompleteTriggered.current) {
-          setNearDestination(true);
-          autoCompleteTriggered.current = true;
-          
-          // OTOMATİK BİTİR + 1 PUAN
-          Alert.alert(
-            '🎯 Hedefe Ulaşıldı!',
-            'Hedefe 1 km\'den az kaldı. Yolculuk otomatik olarak tamamlanacak ve +1 puan kazanacaksınız!',
-            [
-              { text: 'Tamam', onPress: () => onAutoComplete?.() }
-            ]
-          );
-        }
-      }
-    };
-    
-    updateDestinationRoute();
-    const interval = setInterval(updateDestinationRoute, 10000);
-    return () => clearInterval(interval);
+    setDestinationRoute([passengerLocation, destinationLocation]);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
+
+  // KM/DK değerleri sadece backend response'tan okunur.
+  useEffect(() => {
+    const info = (routeInfo as any) || {};
+    const meetingKm = Number(info.meeting_distance_km ?? info.distance_to_passenger_km);
+    const meetingMin = Number(info.meeting_duration_min ?? info.time_to_passenger_min);
+    const tripKm = Number(info.trip_distance_km ?? info.distance_km);
+    const tripMin = Number(info.trip_duration_min ?? info.duration_min);
+
+    setMeetingDistance(Number.isFinite(meetingKm) ? meetingKm : null);
+    setMeetingDuration(Number.isFinite(meetingMin) ? Math.max(0, Math.round(meetingMin)) : null);
+    setDestinationDistance(Number.isFinite(tripKm) ? tripKm : null);
+    setDestinationDuration(Number.isFinite(tripMin) ? Math.max(0, Math.round(tripMin)) : null);
+
+    if (Number.isFinite(tripKm)) {
+      const isNear = (tripKm as number) <= 1;
+      setNearDestination(isNear);
+      if (isNear && !autoCompleteTriggered.current) {
+        autoCompleteTriggered.current = true;
+        Alert.alert(
+          '🎯 Hedefe Ulaşıldı!',
+          'Hedefe 1 km\'den az kaldı. Yolculuk otomatik olarak tamamlanacak ve +1 puan kazanacaksınız!',
+          [{ text: 'Tamam', onPress: () => onAutoComplete?.() }],
+        );
+      }
+    }
+  }, [routeInfo, onAutoComplete]);
+
+  // Sürücü aracı haritanın merkezinde kalsın
+  useEffect(() => {
+    if (!isDriver || !mapRef.current || !userLocation) return;
+    const t = setTimeout(() => {
+      mapRef.current?.animateCamera(
+        { center: userLocation },
+        { duration: 450 }
+      );
+    }, 120);
+    return () => clearTimeout(t);
+  }, [isDriver, userLocation?.latitude, userLocation?.longitude]);
 
   // Harita: yalnızca ilk uygun an + hedef ilk kez geldiğinde fit (kullanıcı zoom yapabilsin)
   useEffect(() => {
@@ -735,9 +696,10 @@ export default function LiveMapView({
     
     // Hedef koordinatları
     const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
+    const origin = `${userLocation.latitude},${userLocation.longitude}`;
     
     // Google Maps navigasyon URL - tarayıcıda veya Google Maps uygulamasında açılır
-    const googleNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving&dir_action=navigate`;
+    const googleNavUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving&dir_action=navigate`;
     
     // Tarayıcıda aç
     Linking.openURL(googleNavUrl).catch((err) => {

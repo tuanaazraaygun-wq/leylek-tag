@@ -7,7 +7,9 @@ import iyzipay
 import json
 import uuid
 import logging
-from typing import Dict, Any, Optional, Tuple
+import hashlib
+import hmac
+from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
 import os
 
@@ -35,6 +37,23 @@ class IyzicoPaymentService:
             'secret_key': self.secret_key,
             'base_url': self.base_url
         }
+        self.webhook_secret = os.environ.get("IYZICO_WEBHOOK_SECRET", "")
+
+        if not self.api_key or not self.secret_key:
+            # Geriye uyumluluk için çalışmayı kesmeden görünür uyarı bırak.
+            logger.warning("iyzico credentials are missing; requests may fail at runtime")
+
+    @staticmethod
+    def _parse_iyzico_response(raw_response) -> Dict:
+        """iyzico raw cevabını güvenli şekilde JSON'a çevir."""
+        try:
+            return json.loads(raw_response.read().decode('utf-8'))
+        except Exception as exc:
+            logger.error(f"Failed to parse iyzico response: {exc}")
+            return {
+                "status": "failure",
+                "errorMessage": "iyzico response parse error"
+            }
     
     def get_package_details(self, package_type: str) -> Optional[Dict]:
         """Paket detaylarını getir"""
@@ -115,7 +134,7 @@ class IyzicoPaymentService:
             
             # iyzico API çağrısı
             checkout_form = iyzipay.CheckoutFormInitialize().create(request, self.options)
-            result = json.loads(checkout_form.read().decode('utf-8'))
+            result = self._parse_iyzico_response(checkout_form)
             
             if result.get('status') == 'success':
                 logger.info(f"Checkout form created: {conversation_id}")
@@ -138,7 +157,7 @@ class IyzicoPaymentService:
             }
             
             result = iyzipay.CheckoutForm().retrieve(request, self.options)
-            return json.loads(result.read().decode('utf-8'))
+            return self._parse_iyzico_response(result)
             
         except Exception as e:
             logger.error(f"iyzico retrieve error: {e}")
@@ -147,9 +166,18 @@ class IyzicoPaymentService:
     def verify_webhook_signature(self, payload: Dict, signature: str) -> bool:
         """Webhook imzasını doğrula"""
         try:
-            # iyzico webhook imza doğrulama
-            # Gerçek implementasyonda iyzico'nun belirttiği algoritmayı kullanın
-            return True  # Sandbox'ta imza kontrolü opsiyonel
+            # Geriye uyumluluk: secret yoksa mevcut davranış korunur.
+            if not self.webhook_secret:
+                logger.warning("IYZICO_WEBHOOK_SECRET not set; webhook signature check is bypassed")
+                return True
+
+            payload_str = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+            computed = hmac.new(
+                self.webhook_secret.encode("utf-8"),
+                payload_str.encode("utf-8"),
+                hashlib.sha256
+            ).hexdigest()
+            return hmac.compare_digest(computed, signature or "")
         except Exception as e:
             logger.error(f"Webhook signature verification error: {e}")
             return False

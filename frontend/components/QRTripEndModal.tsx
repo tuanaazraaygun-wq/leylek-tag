@@ -167,7 +167,7 @@ export default function QRTripEndModal({
 
   const handleLegacyConfirm = () => {
     if (!legacyPaymentPick || !pendingDriverId) {
-      Alert.alert('Seçim gerekli', 'Nakit veya sanal kart ile ödemeyi tamamladığınızı seçin.');
+      Alert.alert('Seçim gerekli', 'Nakit veya kart ile ödemeyi tamamladığınızı seçin.');
       return;
     }
     void submitCompleteQr(legacyPaymentPick, pendingDriverId);
@@ -186,14 +186,14 @@ export default function QRTripEndModal({
     bookingPaymentMethod === 'cash'
       ? 'Nakit ödeme'
       : bookingPaymentMethod === 'card'
-        ? 'Sanal kart'
+        ? 'Kart'
         : 'Ödeme onayı';
 
   const paymentSubtitle =
     bookingPaymentMethod === 'cash'
       ? 'Teklifinizde nakit seçmiştiniz. Ücreti nakit olarak ödediğinizi onaylayın.'
       : bookingPaymentMethod === 'card'
-        ? 'Teklifinizde sanal kart seçmiştiniz. Ödemeyi kart ile tamamladığınızı onaylayın.'
+        ? 'Teklifinizde kart seçmiştiniz. Ödemeyi kart ile tamamladığınızı onaylayın.'
         : 'Bu yolculuk için teklifte ödeme tercihi kayıtlı değil. Nasıl ödediğinizi seçin.';
 
   return (
@@ -307,7 +307,7 @@ export default function QRTripEndModal({
                     >
                       <LinearGradient colors={['#2563EB', '#1D4ED8']} style={styles.primaryPayGradient}>
                         <Ionicons name="card-outline" size={24} color="#FFF" />
-                        <Text style={styles.primaryPayText}>Sanal kart ile ödemeyi tamamladım</Text>
+                        <Text style={styles.primaryPayText}>Kart ile ödemeyi tamamladım</Text>
                       </LinearGradient>
                     </TouchableOpacity>
                   )}
@@ -355,7 +355,7 @@ export default function QRTripEndModal({
                               legacyPaymentPick === 'card' && styles.legacyChipTextActive,
                             ]}
                           >
-                            Sanal kart
+                            Kart
                           </Text>
                         </TouchableOpacity>
                       </View>

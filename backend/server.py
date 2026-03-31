@@ -72,6 +72,112 @@ def _check_netgsm_env_on_startup() -> None:
 
 _check_netgsm_env_on_startup()
 
+
+def _check_google_maps_env_on_startup() -> None:
+    """
+    Google Directions / Maps API için GOOGLE_MAPS_API_KEY yüklendi mi kontrol eder.
+    Tam anahtarı asla loglamaz; yalnızca maske ve uzunluk yazar.
+    """
+    raw = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
+    if not raw:
+        logger.warning(
+            "⚠️ GOOGLE_MAPS_API_KEY tanımlı değil veya boş. "
+            "Directions çağrıları başarısız olur; backend/.env veya ortam değişkeni + process yeniden başlatma kontrol edin."
+        )
+        return
+    masked = f"{raw[:8]}…{raw[-4:]}" if len(raw) > 12 else "***"
+    logger.info(
+        "✅ Google Maps API key yüklendi (maske=%s, uzunluk=%s). Directions için kullanılabilir.",
+        masked,
+        len(raw),
+    )
+
+
+_check_google_maps_env_on_startup()
+
+
+def _warn_duplicate_api_routes() -> None:
+    """
+    Aynı method+path için birden fazla endpoint tanımı varsa startup'ta uyarı üretir.
+    Davranışı değiştirmez; sadece regresyon riskini görünür yapar.
+    """
+    try:
+        seen: dict[tuple[str, str], str] = {}
+        duplicates: list[str] = []
+        for route in api_router.routes:
+            path = getattr(route, "path", None)
+            methods = getattr(route, "methods", None)
+            endpoint = getattr(route, "endpoint", None)
+            endpoint_name = getattr(endpoint, "__name__", "unknown")
+            if not path or not methods:
+                continue
+
+            for method in methods:
+                if method in {"HEAD", "OPTIONS"}:
+                    continue
+                key = (method, path)
+                current = endpoint_name
+                if key in seen:
+                    duplicates.append(
+                        f"{method} {path} -> {seen[key]} / {current}"
+                    )
+                else:
+                    seen[key] = current
+
+        if duplicates:
+            logger.warning(
+                "⚠️ Duplicate API route tanımları bulundu (%d): %s",
+                len(duplicates),
+                " | ".join(duplicates),
+            )
+    except Exception as exc:
+        logger.warning("Duplicate route check failed: %s", exc)
+
+
+def _warn_security_env_on_startup() -> None:
+    """
+    Kritik env anahtarları eksikse startup'ta görünür uyarı üretir.
+    Davranış değiştirmez; sadece operasyonel görünürlük sağlar.
+    """
+    try:
+        checks = {
+            "SUPABASE_URL": (os.getenv("SUPABASE_URL") or "").strip(),
+            "SUPABASE_SERVICE_ROLE_KEY": (
+                os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY") or ""
+            ).strip(),
+            "GOOGLE_MAPS_API_KEY": (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip(),
+            "IYZICO_API_KEY": (os.getenv("IYZICO_API_KEY") or "").strip(),
+            "IYZICO_SECRET_KEY": (os.getenv("IYZICO_SECRET_KEY") or "").strip(),
+        }
+        missing = [k for k, v in checks.items() if not v]
+        if missing:
+            logger.warning("⚠️ Kritik env eksik/boş: %s", ", ".join(missing))
+    except Exception as exc:
+        logger.warning("Security env check failed: %s", exc)
+
+
+def _warn_admin_auth_style_inconsistency() -> None:
+    """
+    Dosya içinde admin kontrol stilini tarar:
+    - is_admin(...) kullanımı
+    - direct 'in ADMIN_PHONE_NUMBERS' kullanımı
+    Çalışmayı etkilemez; sadece standardizasyon ihtiyacını görünür yapar.
+    """
+    try:
+        source_path = Path(__file__)
+        source = source_path.read_text(encoding="utf-8")
+        is_admin_calls = source.count("is_admin(")
+        direct_checks = source.count("in ADMIN_PHONE_NUMBERS")
+        if is_admin_calls > 0 and direct_checks > 0:
+            logger.warning(
+                "⚠️ Admin auth kontrolü karışık kullanımda: is_admin(%d), direct list check(%d). "
+                "Faz 1'de davranış değişmeden bırakıldı; ileride standardize edilmeli.",
+                is_admin_calls,
+                direct_checks,
+            )
+    except Exception as exc:
+        logger.warning("Admin auth style check failed: %s", exc)
+
 # ==================== SOCKET.IO SERVER ====================
 sio = socketio.AsyncServer(
     async_mode="asgi",
@@ -1779,7 +1885,10 @@ last_cleanup_time = None
 async def startup():
     global last_cleanup_time
     clear_dispatch_in_memory_state()
+    _warn_security_env_on_startup()
+    _warn_admin_auth_style_inconsistency()
     init_supabase()
+    _warn_duplicate_api_routes()
     last_cleanup_time = datetime.utcnow()
     print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
     logger.info("✅ Server started with Supabase + Socket.IO (path: /socket.io)")
@@ -1869,18 +1978,14 @@ async def resolve_user_id(user_id: str) -> str:
     # Bulunamadıysa orijinal değeri döndür
     return user_id
 
-# OSRM API (TAMAMEN ÜCRETSİZ - LİMİTSİZ)
-# OpenStreetMap'in routing servisi - Daha güvenilir ve limitsiz
-
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
-    """Google Directions API ile rota bilgisi al - EN DOĞRU SONUÇ"""
+    """Rota bilgisi al: Google Directions tek kaynak, OSRM sadece backend fallback."""
     try:
-        # Önce Google Directions API dene
+        # 1) Google Directions (tek kaynak)
         road_info = await get_road_distance(
             float(origin_lat), float(origin_lng),
             float(dest_lat), float(dest_lng)
         )
-        
         if road_info:
             return {
                 "distance_km": road_info["distance_km"],
@@ -1888,24 +1993,19 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                 "distance_text": f"{road_info['distance_km']} km",
                 "duration_text": f"{road_info['duration_min']} dk"
             }
-        
-        # Google başarısız olursa OSRM dene
+
+        # 2) Fallback: OSRM (yalnızca backend içinde)
         url = f"https://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
-        
         async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
             response = await client.get(url)
             data = response.json()
-            
             if data.get("code") == "Ok" and data.get("routes"):
                 route = data["routes"][0]
                 distance_m = route.get("distance", 0)
                 duration_s = route.get("duration", 0)
-                
                 distance_km = distance_m / 1000
                 duration_min = duration_s / 60
-                
-                logger.info(f"✅ OSRM rota: {distance_km:.1f} km, {duration_min:.0f} dk")
-                
+                logger.warning(f"⚠️ Google başarısız, OSRM fallback kullanıldı: {distance_km:.1f} km, {duration_min:.0f} dk")
                 return {
                     "distance_km": round(distance_km, 1),
                     "duration_min": round(duration_min, 0),
@@ -1914,28 +2014,7 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                 }
     except Exception as e:
         logger.warning(f"Route info error: {e}")
-    
-    # Fallback: Düz çizgi mesafesi hesapla
-    try:
-        from math import radians, sin, cos, sqrt, atan2
-        R = 6371  # Dünya yarıçapı km
-        lat1, lon1 = radians(float(origin_lat)), radians(float(origin_lng))
-        lat2, lon2 = radians(float(dest_lat)), radians(float(dest_lng))
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        c = 2 * atan2(sqrt(a), sqrt(1-a))
-        distance_km = R * c * 1.3  # Gerçek yol mesafesi için %30 ekle
-        duration_min = distance_km / 40 * 60  # 40 km/saat ortalama
-        return {
-            "distance_km": round(distance_km, 1),
-            "duration_min": round(duration_min, 0),
-            "distance_text": f"{round(distance_km, 1)} km",
-            "duration_text": f"{int(duration_min)} dk"
-        }
-    except:
-        pass
-    
+
     return None
 
 # ==================== AUTH ENDPOINTS ====================
@@ -4776,6 +4855,29 @@ async def send_offer(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@api_router.post("/send-offer")
+async def send_offer_alias(
+    body: SendOfferRequest,
+    user_id: Optional[str] = None,
+    driver_id: Optional[str] = None,
+):
+    """POST /api/send-offer → mevcut POST /api/driver/send-offer ile aynı mantık."""
+    return await send_offer(body, user_id=user_id, driver_id=driver_id)
+
+
+@api_router.api_route("/send-offer", methods=["GET", "HEAD"], include_in_schema=False)
+async def send_offer_alias_get():
+    """Yanlışlıkla GET ile çağrılırsa 404 yerine yönlendirme bilgisi."""
+    return JSONResponse(
+        status_code=405,
+        content={
+            "success": False,
+            "detail": "Method Not Allowed. Teklif göndermek için POST /api/send-offer veya POST /api/driver/send-offer kullanın (JSON body: tag_id, price; query: user_id).",
+        },
+        headers={"Allow": "POST"},
+    )
+
+
 class DriverAcceptOfferRequest(BaseModel):
     tag_id: str
     driver_id: Optional[str] = None
@@ -7054,9 +7156,13 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 
 # ==================== VOICE/VIDEO CALL ENDPOINTS ====================
 
-# Agora credentials - HARDCODED (güvenli değil ama çalışır)
-AGORA_APP_ID = "94d93f08ffb84b90b4231d4988463464"
-AGORA_APP_CERTIFICATE = "62116c6f9b534b7e9765c6659f4c1c73"
+# Agora credentials:
+# - Önce env'den oku
+# - Yoksa mevcut hardcoded değerle geriye dönük uyumlu devam et
+AGORA_APP_ID = (os.getenv("AGORA_APP_ID") or "94d93f08ffb84b90b4231d4988463464").strip()
+AGORA_APP_CERTIFICATE = (os.getenv("AGORA_APP_CERTIFICATE") or "62116c6f9b534b7e9765c6659f4c1c73").strip()
+if not os.getenv("AGORA_APP_ID") or not os.getenv("AGORA_APP_CERTIFICATE"):
+    logger.warning("⚠️ AGORA env eksik; fallback credentials kullanılıyor")
 
 def agora_uid_from_user_id(user_id: str) -> int:
     """Stable Agora UID: md5(user_id) ilk 8 hex -> int."""
@@ -7888,9 +7994,14 @@ async def get_trip_qr_code(tag_id: str, user_id: str):
             "expires": timestamp + 300  # 5 dakika
         }
         
-        # 5. Kullanıcı adını al
+        # 5. Kullanıcı adını al (boş/whitespace adlarda split()[0] hatasını önle)
         user = await get_cached_user(driver_id)
-        user_name = user.get("first_name") or user.get("name", "Sürücü").split()[0] if user else "Sürücü"
+        if user:
+            first_name = str(user.get("first_name") or "").strip()
+            full_name = str(user.get("name") or "").strip()
+            user_name = first_name or (full_name.split()[0] if full_name.split() else "Sürücü")
+        else:
+            user_name = "Sürücü"
         
         # 6. QR string formatı - Yolcu bu kodu tarayacak
         qr_string = f"leylektag://trip?t={qr_token}&tag={tag_id}"
@@ -7956,11 +8067,23 @@ async def verify_trip_qr(
         invalidate_tag_cache(tag_id)
         del active_trip_qr_codes[qr_token]
         
-        # 6. Kullanıcı isimlerini al
+        # 6. Kullanıcı isimlerini al (boş adlarda güvenli)
         driver_user = await get_cached_user(driver_id)
         passenger_user = await get_cached_user(scanner_user_id)
-        driver_name = driver_user.get("first_name") or driver_user.get("name", "Sürücü").split()[0] if driver_user else "Sürücü"
-        passenger_name = passenger_user.get("first_name") or passenger_user.get("name", "Yolcu").split()[0] if passenger_user else "Yolcu"
+        if driver_user:
+            driver_first = str(driver_user.get("first_name") or "").strip()
+            driver_full = str(driver_user.get("name") or "").strip()
+            driver_name = driver_first or (driver_full.split()[0] if driver_full.split() else "Sürücü")
+        else:
+            driver_name = "Sürücü"
+        if passenger_user:
+            passenger_first = str(passenger_user.get("first_name") or "").strip()
+            passenger_full = str(passenger_user.get("name") or "").strip()
+            passenger_name = passenger_first or (
+                passenger_full.split()[0] if passenger_full.split() else "Yolcu"
+            )
+        else:
+            passenger_name = "Yolcu"
         
         # 7. Socket.IO ile İKİ TARAFA DA puanlama modalı gönder
         try:
@@ -8125,8 +8248,21 @@ async def complete_trip_with_qr(request: Request):
         # 4. İsimleri al
         driver_user = await get_cached_user(driver_id)
         passenger_user = await get_cached_user(scanner_user_id)
-        driver_name = (driver_user.get("first_name") or driver_user.get("name", "Sürücü").split()[0]) if driver_user else "Sürücü"
-        passenger_name = (passenger_user.get("first_name") or passenger_user.get("name", "Yolcu").split()[0]) if passenger_user else "Yolcu"
+
+        def _safe_first_name(user_obj, fallback: str) -> str:
+            if not user_obj:
+                return fallback
+            first = str(user_obj.get("first_name") or "").strip()
+            if first:
+                return first
+            full = str(user_obj.get("name") or "").strip()
+            if not full:
+                return fallback
+            parts = full.split()
+            return parts[0] if parts else fallback
+
+        driver_name = _safe_first_name(driver_user, "Sürücü")
+        passenger_name = _safe_first_name(passenger_user, "Yolcu")
         
         # 5. Socket.IO ile İKİ TARAFA DA puanlama modalı gönder
         try:
@@ -9269,9 +9405,13 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
         import httpx
         
         # Google Maps API Key
-        api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        api_key = (os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
         if not api_key:
-            logger.warning("⚠️ GOOGLE_MAPS_API_KEY bulunamadı, haversine kullanılacak")
+            logger.warning(
+                "⚠️ GOOGLE_MAPS_API_KEY boş — Google Directions atlanıyor. "
+                "Sunucuda ortam değişkeni (systemd Environment= veya .env) tanımlayıp uvicorn yeniden başlatın. "
+                "get_route_info bu durumda OSRM fallback dener."
+            )
             return None
         
         url = f"https://maps.googleapis.com/maps/api/directions/json"
@@ -9337,25 +9477,18 @@ async def calculate_price(request: CalculatePriceRequest):
     Google Directions API ile gerçek yol mesafesi kullanır
     """
     try:
-        # 1. Önce Google Directions API ile gerçek mesafe dene
-        road_info = await get_road_distance(
+        # Tek kaynak route fonksiyonu (Google + backend fallback)
+        route_info = await get_route_info(
             request.pickup_lat, request.pickup_lng,
             request.dropoff_lat, request.dropoff_lng
         )
-        
-        if road_info:
-            trip_distance_km = road_info["distance_km"]
-            estimated_minutes = road_info["duration_min"]
-            logger.info(f"📍 Google API ile hesaplandı: {trip_distance_km} km, {estimated_minutes} dk")
-        else:
-            # Fallback: Haversine (kuş uçuşu) + %30 ekleme (yol kıvrımları için)
-            haversine_km = haversine_distance(
-                request.pickup_lat, request.pickup_lng,
-                request.dropoff_lat, request.dropoff_lng
-            )
-            trip_distance_km = round(haversine_km * 1.3, 1)  # %30 ekleme
-            estimated_minutes = int((trip_distance_km / 30) * 60)
-            logger.info(f"📍 Haversine ile hesaplandı: {trip_distance_km} km (kuş uçuşu: {haversine_km:.1f} km)")
+
+        if not route_info:
+            raise HTTPException(status_code=503, detail="Rota bilgisi alınamadı")
+
+        trip_distance_km = float(route_info["distance_km"])
+        estimated_minutes = int(route_info["duration_min"])
+        logger.info(f"📍 Route engine ile hesaplandı: {trip_distance_km} km, {estimated_minutes} dk")
         
         # Minimum mesafe 1 km
         trip_distance_km = max(1.0, trip_distance_km)
