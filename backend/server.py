@@ -7058,25 +7058,21 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 AGORA_APP_ID = "94d93f08ffb84b90b4231d4988463464"
 AGORA_APP_CERTIFICATE = "62116c6f9b534b7e9765c6659f4c1c73"
 
-def _to_int32(x: int) -> int:
-    x &= 0xFFFFFFFF
-    if x >= 0x80000000:
-        x -= 0x100000000
-    return int(x)
-
-
 def agora_uid_from_user_id(user_id: str) -> int:
-    """Frontend `agoraUidFromUserId` ile aynı (Rtc token uid)."""
+    """Stable Agora UID: md5(user_id) ilk 8 hex -> int."""
     if not user_id:
         return 1
-    h = 0
-    for ch in user_id:
-        c = ord(ch)
-        h = _to_int32(_to_int32(h << 5) - h + c)
-    return abs(h % 1000000) + 1
+    uid = int(hashlib.md5(str(user_id).encode()).hexdigest()[:8], 16)
+    print("AGORA UID", user_id, uid)
+    return uid
 
 
-def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: int = 86400) -> str:
+def generate_agora_token(
+    channel_name: str,
+    uid: int = 0,
+    user_id: Optional[str] = None,
+    expiration_seconds: int = 86400,
+) -> str:
     """Agora RTC token üret - 24 saat geçerli"""
     if not AGORA_APP_CERTIFICATE:
         logger.warning("⚠️ Agora token üretilemiyor - certificate eksik")
@@ -7089,16 +7085,17 @@ def generate_agora_token(channel_name: str, uid: int = 0, expiration_seconds: in
         # Role = 1 (Publisher), 2 (Subscriber)
         ROLE_PUBLISHER = 1
         
+        resolved_uid = agora_uid_from_user_id(user_id) if user_id else int(uid or 0)
         # Token üret
         token = RtcTokenBuilder.buildTokenWithUid(
             AGORA_APP_ID,
             AGORA_APP_CERTIFICATE,
             channel_name,
-            uid,
+            resolved_uid,
             ROLE_PUBLISHER,
             privilege_expired_ts
         )
-        logger.info(f"🎫 Agora token üretildi: {channel_name}")
+        logger.info(f"🎫 Agora token üretildi: {channel_name} uid={resolved_uid}")
         return token
     except Exception as e:
         logger.error(f"Agora token üretme hatası: {e}")
@@ -7192,8 +7189,8 @@ async def start_call(request: StartCallRequest):
         # Agora: arayan ve alıcı için ayrı uid + token
         caller_uid = agora_uid_from_user_id(request.caller_id)
         receiver_uid = agora_uid_from_user_id(receiver_id)
-        caller_token = generate_agora_token(channel_name, caller_uid)
-        receiver_token = generate_agora_token(channel_name, receiver_uid)
+        caller_token = generate_agora_token(channel_name, user_id=request.caller_id)
+        receiver_token = generate_agora_token(channel_name, user_id=receiver_id)
         
         # Arayan bilgisi
         caller_name = request.caller_name
@@ -7358,7 +7355,7 @@ async def accept_call(user_id: str, call_id: str):
             call = result.data[0]
             logger.info(f"✅ SUPABASE: Arama kabul edildi: {call_id}")
             recv_uid = agora_uid_from_user_id(user_id)
-            fresh_token = generate_agora_token(call["channel_name"], recv_uid)
+            fresh_token = generate_agora_token(call["channel_name"], user_id=user_id)
             return {
                 "success": True,
                 "channel_name": call["channel_name"],
