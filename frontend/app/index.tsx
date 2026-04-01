@@ -67,6 +67,15 @@ if (Platform.OS !== 'web') {
 const BACKEND_URL = BACKEND_BASE_URL;
 const API_URL = API_BASE_URL;
 
+/** PIN ekranına geçerken phone state kaybolursa verify-pin boş phone göndermesin */
+const PENDING_PIN_LOGIN_PHONE_KEY = 'pending_pin_login_phone';
+
+function normalizeTrMobile10(s: string | undefined | null): string {
+  const d = String(s || '').replace(/\D/g, '');
+  if (d.length >= 10) return d.slice(-10);
+  return d;
+}
+
 /** start-call sonrası arayan tarafı Agora kanalına alır (receiver ekranı açılmadan önce). */
 async function joinTripCallAgoraAsCaller(
   channelName: string,
@@ -900,6 +909,11 @@ export default function App() {
       await removePushToken(user.id);
     }
     await AsyncStorage.removeItem('user');
+    try {
+      await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
+    } catch {
+      /* ignore */
+    }
     setUser(null);
     setScreen('login');
     setPhone('');
@@ -945,6 +959,11 @@ export default function App() {
         setIsDeviceVerified(!!checkData.device_verified);
         // Aynı cihaz: doğrulama kodu gönderilmez, direkt PIN ekranına git
         if (checkData.device_verified) {
+          try {
+            await AsyncStorage.setItem(PENDING_PIN_LOGIN_PHONE_KEY, cleanPhone.slice(-10));
+          } catch {
+            /* ignore */
+          }
           setScreen('enter-pin');
           return;
         }
@@ -1051,6 +1070,16 @@ export default function App() {
           await saveUser(data.user);
           setUser(data.user);
           if (data.has_pin) {
+            const u = data.user as { phone?: string } | undefined;
+            const ten =
+              normalizeTrMobile10(phone) || normalizeTrMobile10(u?.phone) || '';
+            if (ten.length === 10) {
+              try {
+                await AsyncStorage.setItem(PENDING_PIN_LOGIN_PHONE_KEY, ten);
+              } catch {
+                /* ignore */
+              }
+            }
             setScreen('enter-pin');
           } else {
             setScreen('set-pin');
@@ -1939,7 +1968,23 @@ export default function App() {
 
       try {
         const currentDeviceId = deviceId || await getOrCreateDeviceId();
-        const phoneDigits = phone.replace(/\D/g, '');
+        let storedPhone = '';
+        try {
+          storedPhone = (await AsyncStorage.getItem(PENDING_PIN_LOGIN_PHONE_KEY)) || '';
+        } catch {
+          storedPhone = '';
+        }
+        const phoneDigits =
+          normalizeTrMobile10(phone) ||
+          normalizeTrMobile10(user?.phone) ||
+          normalizeTrMobile10(storedPhone);
+        if (phoneDigits.length !== 10) {
+          Alert.alert(
+            'Hata',
+            'Telefon numarası bulunamadı. Lütfen geri dönüp numaranızı tekrar girip devam edin.'
+          );
+          return;
+        }
 
         const response = await fetch(`${API_URL}/auth/verify-pin`, {
           method: 'POST',
@@ -1959,6 +2004,11 @@ export default function App() {
         }
 
         if (data.success) {
+          try {
+            await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
+          } catch {
+            /* ignore */
+          }
           setUser(data.user as User);
           saveUser(data.user as User);
           
@@ -2035,6 +2085,11 @@ export default function App() {
               onPress={async () => {
                 void tapButtonHaptic();
                 setPin('');
+                try {
+                  await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
+                } catch {
+                  /* ignore */
+                }
                 setScreen('login');
               }}
             >
@@ -6281,6 +6336,23 @@ function PassengerDashboard({
     const tagId = generateUUID();
     const requestId = generateUUID();
 
+    const dLat = Number(destination.latitude);
+    const dLng = Number(destination.longitude);
+    if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
+      Alert.alert('Hata', 'Alış veya bırakış koordinatları geçersiz. Haritadan konumu tekrar onaylayın.');
+      setLoading(false);
+      return;
+    }
+
+    const distKm = Number(priceInfo.distance_km ?? priceInfo.trip_distance_km ?? 0);
+    const estMin = Number(priceInfo.estimated_minutes ?? 0);
+    const offerAmt = Math.round(Number(selectedPrice));
+    if (!Number.isFinite(offerAmt) || offerAmt < 1) {
+      Alert.alert('Hata', 'Geçerli bir fiyat seçin.');
+      setLoading(false);
+      return;
+    }
+
     try {
       console.log('CREATE RIDE REQUEST SENT');
       // API_URL = {BACKEND}/api → yol /api/ride/create (çift /api olmaması için /ride/create)
@@ -6294,12 +6366,12 @@ function PassengerDashboard({
           pickup_lng: pickupLng,
           pickup_location: pickupAddress || 'Mevcut konum',
           passenger_vehicle_kind: rideVehiclePreference,
-          dropoff_lat: destination.latitude,
-          dropoff_lng: destination.longitude,
+          dropoff_lat: dLat,
+          dropoff_lng: dLng,
           dropoff_location: (destination.address && String(destination.address).trim()) || 'Seçilen hedef',
-          offered_price: selectedPrice,
-          distance_km: priceInfo.distance_km ?? 0,
-          estimated_minutes: priceInfo.estimated_minutes ?? 0,
+          offered_price: offerAmt,
+          distance_km: Number.isFinite(distKm) ? distKm : 0,
+          estimated_minutes: Number.isFinite(estMin) ? Math.max(0, Math.round(estMin)) : 0,
           passenger_preferred_vehicle: rideVehiclePreference,
           passenger_payment_method: passengerPaymentPreference,
         }),

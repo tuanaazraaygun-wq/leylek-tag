@@ -2,11 +2,11 @@
 Leylek TAG - Supabase Backend
 Full PostgreSQL Backend with Supabase + Socket.IO
 """
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request, Query, Body
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationError, field_validator
 from typing import Optional
 import os
 import logging
@@ -21,19 +21,30 @@ import json
 import time
 import math
 import asyncio
+import sys
 
 # Socket.IO
 import socketio
 
-# Supabase — tek service role client: backend/supabase_client.py
-from supabase import Client
-import supabase_client as _supabase_core
+# Yerel modüller (supabase_client, expo_push_channels): uvicorn cwd farklı olsa bile server.py dizininden yükle
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
-# Agora Token Builder
-from agora_token_builder import RtcTokenBuilder
+# Supabase — tek service role client: backend/supabase_client.py (VPS'te server.py ile aynı klasörde olmalı)
+from supabase import Client
+try:
+    import supabase_client as _supabase_core
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError(
+        f"{e}. Sunucuda '{_ROOT / 'supabase_client.py'}' dosyası yok veya yanlış dizinde — "
+        "yalnızca server.py değil, backend klasörünü (git pull / scp) tam senkronlayın; "
+        "systemd WorkingDirectory bu klasör olmalı."
+    ) from e
+
 from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
 
-ROOT_DIR = Path(__file__).parent
+ROOT_DIR = _ROOT
 load_dotenv(ROOT_DIR / '.env')
 
 # Logger setup
@@ -678,7 +689,7 @@ DISPATCH_CONFIG = {
 
 # Yolcu teklifi broadcast: aynı anda en yakın N sürücü; hepsi 20 sn içinde kabul edebilir (ilk kabul kazanır)
 BROADCAST_MAX_RECIPIENTS = 5
-BROADCAST_RADIUS_KM = 20
+# BROADCAST_RADIUS_KM — rolling ile aynı yarıçap (DISPATCH_RADIUS_KM) dosya aşağısında atanır
 BROADCAST_ACCEPT_WINDOW_SECONDS = 20
 
 # Sürücü Aktiflik Kuralları
@@ -723,9 +734,6 @@ def clear_dispatch_in_memory_state():
     logger.info("🧹 Dispatch bellek durumu temizlendi (queues, tag_context, active_dispatch_tasks, rolling_dispatch)")
 
 
-# Sıralı eşleşme yarıçapı — şimdilik sabit 20 km (config override edilmez)
-SEQUENTIAL_DISPATCH_RADIUS_KM = 20
-
 # Araç tipi eşleşmesi her zaman açık: yolcu car → yalnız car sürücü; yolcu motorcycle → yalnız motorcycle.
 # Eski DISPATCH_VEHICLE_FILTER_DISABLED prod'da yanlışlıkla açılınca motor talepleri araç sürücüsüne gidiyordu; artık yok sayılır.
 if os.getenv("DISPATCH_VEHICLE_FILTER_DISABLED", "").strip().lower() in ("1", "true", "yes", "on"):
@@ -733,10 +741,16 @@ if os.getenv("DISPATCH_VEHICLE_FILTER_DISABLED", "").strip().lower() in ("1", "t
         "DISPATCH_VEHICLE_FILTER_DISABLED ortamda ayarlı; artık kullanılmıyor — araç tipi eşleşmesi zorunlu."
     )
 
-# Rolling batch dispatch (yalnızca bellek; DB dispatch_queue / Supabase kuyruk yok)
+# Rolling batch: bellek + dispatch_queue tablosu (sürücü polling / çoklu worker toleransı)
 BATCH_SIZE = 5
 DISPATCH_TIMEOUT = 20
-DISPATCH_RADIUS_KM = 20
+try:
+    _dr = float(os.getenv("DISPATCH_RADIUS_KM", "20").strip().replace(",", "."))
+    DISPATCH_RADIUS_KM = max(5.0, min(100.0, _dr))
+except (TypeError, ValueError):
+    DISPATCH_RADIUS_KM = 20.0
+SEQUENTIAL_DISPATCH_RADIUS_KM = DISPATCH_RADIUS_KM
+BROADCAST_RADIUS_KM = DISPATCH_RADIUS_KM
 
 # tag_id -> asyncio.Task (20s zamanlayıcı)
 rolling_dispatch_tasks: dict = {}
@@ -777,82 +791,134 @@ async def get_dispatch_config() -> dict:
         pass
     return DISPATCH_CONFIG
 
+def _dispatch_env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 async def find_eligible_drivers(
     pickup_lat: float,
     pickup_lng: float,
     exclude_ids: list = None,
     passenger_vehicle_kind: Optional[str] = None,
     radius_km: Optional[float] = None,
+    *,
+    vehicle_filter: bool = True,
 ) -> list:
     """
     Uygun sürücüleri bul ve öncelik sırasına göre sırala
     Kriterler: online, aktif paket, mesafe içinde
     Araç talebi (car) / motorcycle katı eşleşmesi; sürücüde vehicle_kind yoksa eff=car.
+    vehicle_filter=False: mesafe/online dışında araç tipi eşleşmesi atlanır (yedek tarama).
     Sıralama: mesafe (yakın), rating (yüksek)
     """
     try:
         r_km = float(radius_km) if radius_km is not None else float(SEQUENTIAL_DISPATCH_RADIUS_KM)
         pref = _canonical_vehicle_kind(passenger_vehicle_kind) or "car"
-        
+
         # Online ve aktif paketi olan sürücüleri getir
         now = datetime.utcnow().isoformat()
         query = supabase.table("users").select(
             "id, name, rating, latitude, longitude, driver_active_until, driver_online, driver_details"
         ).eq("driver_online", True)
         query = _apply_driver_active_until_filter(query, now)
-        
+
         result = query.execute()
-        
+
         if not result.data:
+            logger.warning(
+                "find_eligible_drivers: driver_online=true kayıt yok — sürücü uygulamasında çevrimiçi ve konum açık mı?"
+            )
             return []
-        
+
         eligible_drivers = []
         exclude_set = {str(x).strip().lower() for x in (exclude_ids or []) if x is not None}
-        
+        online_count = len(result.data)
+        logger.info(
+            "find_eligible_drivers debug: online_rows=%s pickup=(%.5f,%.5f) r_km=%s pref=%s vehicle_filter=%s",
+            online_count,
+            float(pickup_lat),
+            float(pickup_lng),
+            r_km,
+            pref,
+            vehicle_filter,
+        )
+        no_loc = excluded = vehicle_mismatch = too_far = 0
+
+        from math import radians, sin, cos, sqrt, atan2
+
+        R = 6371  # Dünya yarıçapı (km)
+        lat1, lon1 = radians(float(pickup_lat)), radians(float(pickup_lng))
+
         for driver in result.data:
-            # Exclude listesinde mi? (UUID string karşılaştırması)
             if str(driver["id"]).strip().lower() in exclude_set:
-                continue
-            
-            # Konum var mı?
-            if not driver.get("latitude") or not driver.get("longitude"):
+                excluded += 1
                 continue
 
-            eff = _driver_vehicle_kind_from_row(driver)
-            if eff is None:
-                eff = "car"
-            if not _driver_matches_passenger_vehicle_pref(eff, pref):
+            if driver.get("latitude") is None or driver.get("longitude") is None:
+                no_loc += 1
                 continue
-            
-            # Mesafe hesapla
-            from math import radians, sin, cos, sqrt, atan2
-            R = 6371  # Dünya yarıçapı (km)
-            
-            lat1, lon1 = radians(pickup_lat), radians(pickup_lng)
-            lat2, lon2 = radians(driver["latitude"]), radians(driver["longitude"])
-            
+            if (
+                str(driver.get("latitude", "")).strip() == ""
+                or str(driver.get("longitude", "")).strip() == ""
+            ):
+                no_loc += 1
+                continue
+
+            if vehicle_filter:
+                eff = _driver_vehicle_kind_from_row(driver)
+                if eff is None:
+                    eff = "car"
+                if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                    vehicle_mismatch += 1
+                    continue
+
+            lat2, lon2 = radians(float(driver["latitude"])), radians(float(driver["longitude"]))
             dlat = lat2 - lat1
             dlon = lon2 - lon1
-            
-            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+            c = 2 * atan2(sqrt(a), sqrt(1 - a))
             distance_km = R * c
-            
-            # Yarıçap içinde mi?
+
             if distance_km <= r_km:
-                eligible_drivers.append({
-                    "driver_id": str(driver["id"]).strip().lower(),
-                    "driver_name": driver.get("name", "Sürücü"),
-                    "distance_km": round(distance_km, 2),
-                    "rating": driver.get("rating", 4.0) or 4.0,
-                })
-        
-        # Sırala: önce mesafe (yakın), sonra rating (yüksek)
+                eligible_drivers.append(
+                    {
+                        "driver_id": str(driver["id"]).strip().lower(),
+                        "driver_name": driver.get("name", "Sürücü"),
+                        "distance_km": round(distance_km, 2),
+                        "rating": driver.get("rating", 4.0) or 4.0,
+                    }
+                )
+            else:
+                too_far += 1
+
         eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
-        
-        logger.info(f"🔍 Dispatch: {len(eligible_drivers)} uygun sürücü (yolcu tercihi={pref})")
+
+        if not eligible_drivers:
+            logger.warning(
+                "find_eligible_drivers: 0 uygun — online=%s no_latlng=%s excluded=%s vehicle_mismatch=%s "
+                "too_far=%s pref=%s r_km=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
+                online_count,
+                no_loc,
+                excluded,
+                vehicle_mismatch,
+                too_far,
+                pref,
+                r_km,
+                float(pickup_lat),
+                float(pickup_lng),
+                vehicle_filter,
+            )
+        else:
+            logger.info(
+                "find_eligible_drivers: eligible=%s / online=%s pref=%s r_km=%s vehicle_filter=%s",
+                len(eligible_drivers),
+                online_count,
+                pref,
+                r_km,
+                vehicle_filter,
+            )
         return eligible_drivers
-        
+
     except Exception as e:
         logger.error(f"❌ Find eligible drivers error: {e}")
         return []
@@ -1452,7 +1518,62 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
         return 0
 
 
-# ==================== ROLLING BATCH DISPATCH (in-memory; no DB dispatch_queue) ====================
+# ==================== ROLLING BATCH DISPATCH (bellek + dispatch_queue senkronu) ====================
+
+
+async def _expire_dispatch_queue_rows_for_tag(tag_id: str) -> None:
+    """Aynı tag için eski waiting/sent satırlarını kapat (polling ile uyum)."""
+    try:
+        now = datetime.utcnow().isoformat()
+        supabase.table("dispatch_queue").update(
+            {"status": "expired", "responded_at": now}
+        ).eq("tag_id", tag_id).in_("status", ["waiting", "sent"]).execute()
+    except Exception as e:
+        logger.warning("dispatch_queue expire tag=%s: %s", tag_id, e)
+
+
+async def _dispatch_queue_insert_after_emit(
+    tag_id: str,
+    driver_id: str,
+    priority: int,
+) -> bool:
+    """
+    Socket emit sonrası tek sürücü satırı — /driver/dispatch-pending-offer ile uyum.
+    Log satırı deploy doğrulaması için sabit: 'dispatch_queue rolling sync'
+    """
+    did = str(driver_id).strip().lower() if driver_id else ""
+    if not did:
+        logger.warning("dispatch_queue rolling sync tag=%s driver=(boş) ok=0", tag_id)
+        return False
+    now = datetime.utcnow().isoformat()
+    row = {
+        "id": str(uuid.uuid4()),
+        "tag_id": tag_id,
+        "driver_id": did,
+        "priority": int(priority),
+        "status": "sent",
+        "created_at": now,
+        "sent_at": now,
+    }
+    ins = {k: row[k] for k in DISPATCH_QUEUE_DB_KEYS if k in row}
+    try:
+        supabase.table("dispatch_queue").insert(ins).execute()
+        logger.info(
+            "dispatch_queue rolling sync tag=%s driver=%s priority=%s ok=1",
+            tag_id,
+            did,
+            priority,
+        )
+        return True
+    except Exception as e:
+        logger.warning(
+            "dispatch_queue rolling sync tag=%s driver=%s priority=%s ok=0 err=%s",
+            tag_id,
+            did,
+            priority,
+            e,
+        )
+        return False
 
 
 async def rolling_dispatch_stop(
@@ -1478,6 +1599,7 @@ async def rolling_dispatch_stop(
                 await emit_socket_event_to_user(did, "remove_offer", {"tag_id": tag_id})
             except Exception:
                 pass
+    await _expire_dispatch_queue_rows_for_tag(tag_id)
 
 
 async def rolling_dispatch_batch(tag_id: str) -> None:
@@ -1563,10 +1685,19 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         "passenger_payment_method": tag_data.get("passenger_payment_method"),
     }
 
-    for entry in batch_entries:
+    # Bu batch için eski waiting/sent satırlarını kapat; insert her sürücüde emit SONRASI
+    await _expire_dispatch_queue_rows_for_tag(tag_id)
+
+    n_queue_ok = 0
+    for idx, entry in enumerate(batch_entries, start=1):
         d_id = entry["driver_id"]
         offer_data = {**offer_base, "distance_to_pickup": entry.get("distance_km", 0)}
         await emit_new_passenger_offer_to_driver(d_id, offer_data)
+        logger.info(
+            "new_passenger_offer emitted tag=%s driver=%s (socket veya room)",
+            tag_id,
+            d_id,
+        )
         logger.info(f"🚀 DISPATCH PUSH driver={d_id} tag={tag_id}")
         try:
             await _expo_push_dispatch_new_offer(
@@ -1577,7 +1708,19 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             )
         except Exception as push_err:
             logger.warning(f"⚠️ Rolling batch push: {d_id} - {push_err}")
+        if await _dispatch_queue_insert_after_emit(tag_id, d_id, idx):
+            n_queue_ok += 1
 
+    logger.info(
+        "dispatch_queue rolling sync tag=%s batch_summary drivers=%s queue_ok=%s idx=%s-%s/%s next_cursor=%s",
+        tag_id,
+        len(batch_entries),
+        n_queue_ok,
+        start,
+        end - 1,
+        n,
+        next_idx,
+    )
     logger.info(
         f"📦 rolling_dispatch_batch tag={tag_id} batch={len(batch_entries)} "
         f"idx {start}-{end - 1}/{n} next_cursor={next_idx}"
@@ -1645,12 +1788,20 @@ async def rolling_dispatch_start(tag_id: str) -> int:
             f"rolling_dispatch_start: pickup koordinat eksik tag_id={tag_id} lat={pickup_lat} lng={pickup_lng}"
         )
         return 0
+    try:
+        pickup_lat_f = float(pickup_lat)
+        pickup_lng_f = float(pickup_lng)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"rolling_dispatch_start: pickup koordinat sayısal değil tag_id={tag_id} lat={pickup_lat!r} lng={pickup_lng!r}"
+        )
+        return 0
 
     full_tag_data = {
         "passenger_id": passenger_id,
         "passenger_name": passenger_name,
-        "pickup_lat": pickup_lat,
-        "pickup_lng": pickup_lng,
+        "pickup_lat": pickup_lat_f,
+        "pickup_lng": pickup_lng_f,
         "pickup_location": row.get("pickup_location"),
         "dropoff_lat": row.get("dropoff_lat"),
         "dropoff_lng": row.get("dropoff_lng"),
@@ -1664,19 +1815,32 @@ async def rolling_dispatch_start(tag_id: str) -> int:
     }
 
     eligible = await find_eligible_drivers(
-        float(pickup_lat),
-        float(pickup_lng),
+        pickup_lat_f,
+        pickup_lng_f,
         exclude_ids=[passenger_id] if passenger_id else [],
         passenger_vehicle_kind=passenger_pref,
         radius_km=DISPATCH_RADIUS_KM,
     )
+    if not eligible and _dispatch_env_flag("DISPATCH_RELAX_VEHICLE_ON_EMPTY"):
+        logger.warning(
+            "rolling_dispatch_start: DISPATCH_RELAX_VEHICLE_ON_EMPTY=1 — araç tipi filtresiz ikinci tarama tag_id=%s",
+            tag_id,
+        )
+        eligible = await find_eligible_drivers(
+            pickup_lat_f,
+            pickup_lng_f,
+            exclude_ids=[passenger_id] if passenger_id else [],
+            passenger_vehicle_kind=passenger_pref,
+            radius_km=DISPATCH_RADIUS_KM,
+            vehicle_filter=False,
+        )
     if not eligible:
         logger.warning(
             f"rolling_dispatch_start: 0 uygun sürücü tag_id={tag_id} "
-            f"radius={DISPATCH_RADIUS_KM}km pref={passenger_pref!r} pickup=({pickup_lat},{pickup_lng}). "
+            f"radius={DISPATCH_RADIUS_KM}km pref={passenger_pref!r} pickup=({pickup_lat_f},{pickup_lng_f}). "
             f"Kontrol: users.driver_online=true, lat/lng dolu, mesafe≤{DISPATCH_RADIUS_KM}km, "
-            f"araç tipi eşleşmesi (yolcu {passenger_pref!r}), "
-            f"backend tek worker (socket_app + --workers 1)."
+            f"araç tipi eşleşmesi (yolcu {passenger_pref!r}); isteğe bağlı DISPATCH_RELAX_VEHICLE_ON_EMPTY=1 veya DISPATCH_RADIUS_KM artırın. "
+            f"Teklifler ayrıca dispatch_queue + socket ile gider; uvicorn server:socket_app ve mümkünse --workers 1 önerilir."
         )
         return 0
 
@@ -1892,6 +2056,13 @@ async def startup():
     last_cleanup_time = datetime.utcnow()
     print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
     logger.info("✅ Server started with Supabase + Socket.IO (path: /socket.io)")
+    # Deploy doğrulama: bu satır yoksa ride/create hâlâ eski imza ile çalışıyordur (422, logda Pydantic uyarısı yok)
+    logger.info("ride/create handler: manual Request.json parse + explicit validation (2026-03-31)")
+    logger.info(
+        "Teklif pipeline: POST /api/ride/create → tags.insert → rolling_dispatch_start → "
+        "rolling_dispatch_batch → emit new_passenger_offer → dispatch_queue rolling sync (DISPATCH_RADIUS_KM=%s)",
+        DISPATCH_RADIUS_KM,
+    )
 
 # Otomatik temizlik - her 10 dakikada bir inaktif TAG'leri temizle
 async def auto_cleanup_inactive_tags():
@@ -2356,29 +2527,28 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         gsmno = netgsm_gsmno_param(phone)
         logger.info(f"📱 Phone internal: {phone} -> {normalized_phone}, Netgsm gsmno: {gsmno}")
         
-        # Use msgheader or usercode as sender
-        sender = msgheader if msgheader else usercode
+        # Use msgheader or usercode as sender (boşluk / Türkçe karakter: urlencode ile tek tip kodlama)
+        sender = (msgheader if msgheader else usercode).strip()
         
         # NETGSM HTTP GET API - https://www.netgsm.com.tr/dokuman/
         import urllib.parse
-        
-        # URL encode the message
-        encoded_message = urllib.parse.quote(message)
-        
-        # Build API URL
-        url = (
-            f"https://api.netgsm.com.tr/sms/send/get?"
-            f"usercode={urllib.parse.quote(usercode)}"
-            f"&password={urllib.parse.quote(password)}"
-            f"&gsmno={urllib.parse.quote(gsmno)}"
-            f"&message={encoded_message}"
-            f"&msgheader={urllib.parse.quote(sender)}"
-            f"&dil=TR"
-        )
+
+        params = {
+            "usercode": usercode,
+            "password": password,
+            "gsmno": gsmno,
+            "message": message,
+            "msgheader": sender,
+            "dil": "TR",
+        }
         if filter_param:
-            url += f"&filter={urllib.parse.quote(filter_param)}"
+            params["filter"] = filter_param
+        # requests.get(..., params=...) ile aynı mantık: application/x-www-form-urlencoded (+ boşluk vb.)
+        query = urllib.parse.urlencode(params, encoding="utf-8")
+        # Çoğu NetGSM OTP hesabı GET API için HTTP kullanır (HTTPS TLS/redirect sorunları olabiliyor)
+        url = f"http://api.netgsm.com.tr/sms/send/get?{query}"
         
-        logger.info(f"📱 NETGSM Request - gsmno: {gsmno}, Sender: {sender}, filter: {filter_param or '(yok)'}")
+        logger.info(f"📱 NETGSM Request - gsmno: {gsmno}, Sender: {sender!r}, filter: {filter_param or '(yok)'}")
         
         # Önce urllib (HTTP/1.1) — VPS'te httpx ConnectError / TLS reset sorunlarını aşar.
         response_text = None
@@ -2429,6 +2599,31 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
 
             logger.error(f"❌ SMS gönderilemedi: gsmno={gsmno} - Code: {code}, Desc: {error_desc}")
             result["error"] = f"Code: {code}, Desc: {error_desc}"
+            # 30: NetGSM panelinde çoğunlukla şifre/API kullanıcısı veya GİT çıkış IP (IPv4/IPv6 farkı)
+            if code == "30" and os.getenv("NETGSM_LOG_EGRESS_IP", "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            ):
+                try:
+                    import urllib.request as _ur
+
+                    egress = (
+                        _ur.urlopen("https://api.ipify.org", timeout=6)
+                        .read()
+                        .decode("ascii", errors="replace")
+                        .strip()
+                    )
+                    logger.warning(
+                        "NETGSM kod 30 — sunucunun dışarı görünen IPv4 (ipify): %s. "
+                        "NetGSM panelinde SMS API için tanımlı ‘erişim IP’ listesine bu adresi ekleyin; "
+                        "hosting sağlayıcı panelindeki sunucu IP’si ile outbound IP farklı olabilir. "
+                        "Hâlâ 30 ise şifre / NETGSM_USERCODE / NETGSM_MSGHEADER (onaylı başlık) kontrol edin.",
+                        egress,
+                    )
+                except Exception as _eg_err:
+                    logger.warning("NETGSM kod 30 — çıkış IP okunamadı: %s", _eg_err)
 
     except Exception as e:
         logger.exception(f"❌ NETGSM exception: {type(e).__name__}: {e!r}")
@@ -2700,22 +2895,49 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         raise HTTPException(status_code=500, detail=str(e))
 
 class VerifyPinBody(BaseModel):
-    """POST /auth/verify-pin — JSON body (query yerine; CDN/proxy ve mobil istemci uyumu)."""
+    """POST /auth/verify-pin — referans şema (doğrulama model_validate ile)."""
     phone: str
     pin: str
     device_id: Optional[str] = None
 
 
+async def _parse_verify_pin_json(request: Request) -> tuple[str, str, Optional[str]]:
+    """JSON gövdesini Request üzerinden oku (FastAPI body + Request birlikte bazen boş kalabiliyor)."""
+    try:
+        raw = await request.json()
+    except Exception as e:
+        logger.warning("verify-pin: JSON parse hatası: %s", e)
+        raise HTTPException(
+            status_code=422, detail="Geçersiz veya boş JSON gövdesi"
+        ) from e
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="İstek gövdesi JSON nesnesi olmalı")
+    try:
+        body = VerifyPinBody.model_validate(
+            {
+                "phone": raw.get("phone") or raw.get("phone_number") or "",
+                "pin": raw.get("pin") or raw.get("password") or "",
+                "device_id": raw.get("device_id"),
+            }
+        )
+    except ValidationError as e:
+        logger.warning("verify-pin: Pydantic hatalar=%s", e.errors())
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    phone = (body.phone or "").strip()
+    pin = (body.pin or "").strip()
+    if not phone and request.query_params.get("phone"):
+        phone = str(request.query_params.get("phone") or "").strip()
+    if not phone or not pin:
+        raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
+    return phone, pin, body.device_id
+
+
 # verify-pin endpoint - Frontend uyumluluğu için
 @api_router.post("/auth/verify-pin")
-async def verify_pin_endpoint(request: Request, payload: VerifyPinBody):
+async def verify_pin_endpoint(request: Request):
     """PIN doğrulama - login ile aynı işlevi görür (body: phone, pin, device_id)."""
     try:
-        phone = (payload.phone or "").strip()
-        pin = (payload.pin or "").strip()
-        device_id = payload.device_id
-        if not phone or not pin:
-            raise HTTPException(status_code=422, detail="Phone ve PIN gerekli")
+        phone, pin, device_id = await _parse_verify_pin_json(request)
 
         canonical = _auth_normalize_or_raise(phone)
         
@@ -4662,24 +4884,24 @@ class SendOfferRequest(BaseModel):
 
 @api_router.post("/driver/send-offer")
 async def send_offer(
-    request: SendOfferRequest = None,
-    user_id: str = None,
-    driver_id: str = None,
-    tag_id: str = None,
-    price: float = None,
-    notes: str = None,
-    latitude: float = None,
-    longitude: float = None
+    user_id: Optional[str] = Query(None),
+    driver_id: Optional[str] = Query(None),
+    tag_id: Optional[str] = Query(None),
+    price: Optional[float] = Query(None),
+    notes: Optional[str] = Query(None),
+    latitude: Optional[float] = Query(None),
+    longitude: Optional[float] = Query(None),
+    offer_body: Optional[SendOfferRequest] = Body(None),
 ):
     """Teklif gönder - HIZLI VE MESAFE BİLGİLİ"""
     try:
-        # Body veya query param'dan al
+        # Body veya query param'dan al (request adı kullanılmaz: FastAPI Request ile karışır)
         did = user_id or driver_id
-        tid = request.tag_id if request else tag_id
-        p = request.price if request else price
-        n = request.notes if request else notes
-        lat = request.latitude if request else latitude
-        lng = request.longitude if request else longitude
+        tid = (offer_body.tag_id if offer_body else None) or tag_id
+        p = offer_body.price if offer_body is not None else price
+        n = (offer_body.notes if offer_body else None) or notes
+        lat = offer_body.latitude if offer_body else latitude
+        lng = offer_body.longitude if offer_body else longitude
         
         if not did:
             raise HTTPException(status_code=422, detail="user_id veya driver_id gerekli")
@@ -4858,11 +5080,20 @@ async def send_offer(
 @api_router.post("/send-offer")
 async def send_offer_alias(
     body: SendOfferRequest,
-    user_id: Optional[str] = None,
-    driver_id: Optional[str] = None,
+    user_id: Optional[str] = Query(None),
+    driver_id: Optional[str] = Query(None),
 ):
     """POST /api/send-offer → mevcut POST /api/driver/send-offer ile aynı mantık."""
-    return await send_offer(body, user_id=user_id, driver_id=driver_id)
+    return await send_offer(
+        user_id=user_id,
+        driver_id=driver_id,
+        tag_id=None,
+        price=None,
+        notes=None,
+        latitude=None,
+        longitude=None,
+        offer_body=body,
+    )
 
 
 @api_router.api_route("/send-offer", methods=["GET", "HEAD"], include_in_schema=False)
@@ -9585,21 +9816,44 @@ class CreateRideOfferRequest(BaseModel):
             return 0
         return int(round(float(v)))
 
-@api_router.post("/ride/create-offer")
-async def create_ride_offer(request: CreateRideOfferRequest):
-    """
-    Martı TAG - Yolcu teklif oluşturur
-    Bu teklif tüm yakındaki sürücülere gönderilir
-    """
+
+async def _parse_create_ride_offer_json(http_request: Request) -> CreateRideOfferRequest:
+    """JSON gövdesini açıkça oku — FastAPI Body enjeksiyonu bazen 422 'field required' üretebiliyor (proxy/eski imza)."""
+    logger.info(
+        "ride/create parse: path=%s content-type=%s content-length=%s",
+        http_request.url.path,
+        http_request.headers.get("content-type"),
+        http_request.headers.get("content-length"),
+    )
+    try:
+        raw = await http_request.json()
+    except Exception as e:
+        logger.warning("ride/create: JSON parse hatası: %s", e)
+        raise HTTPException(status_code=422, detail="Geçersiz veya boş JSON gövdesi") from e
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="İstek gövdesi JSON nesnesi olmalı")
+    try:
+        return CreateRideOfferRequest.model_validate(raw)
+    except ValidationError as e:
+        logger.warning(
+            "ride/create: Pydantic hatası gönderilen_anahtarlar=%s hatalar=%s",
+            sorted(raw.keys()),
+            e.errors(),
+        )
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+
+
+async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
+    """Teklif oluşturma iş mantığı (tag insert + dispatch)."""
     try:
         # Her zaman canonical UUID ile ilerle (eski id/telefon kaynaklı eşleşme kaçaklarını önler)
         passenger_id = await resolve_user_id(
-            str(request.passenger_id).strip() if request.passenger_id else ""
+            str(payload.passenger_id).strip() if payload.passenger_id else ""
         )
         if not passenger_id:
             return {"success": False, "error": "Geçersiz yolcu kimliği"}
         # Tag ID - frontend'den gelen veya yeni oluştur
-        tag_id = (request.tag_id and str(request.tag_id).strip()) or str(uuid.uuid4())
+        tag_id = (payload.tag_id and str(payload.tag_id).strip()) or str(uuid.uuid4())
         
         # Yolcu bilgisi + araç tercihi (driver_details.passenger_preferred_vehicle)
         passenger_result = (
@@ -9609,8 +9863,8 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             .execute()
         )
         pref_from_request = _canonical_vehicle_kind(
-            request.passenger_preferred_vehicle
-        ) or _canonical_vehicle_kind(request.passenger_vehicle_kind)
+            payload.passenger_preferred_vehicle
+        ) or _canonical_vehicle_kind(payload.passenger_vehicle_kind)
         passenger_name = "Yolcu"
         passenger_pref_vehicle = pref_from_request or "car"
         if passenger_result.data:
@@ -9631,18 +9885,18 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             "id": tag_id,
             "passenger_id": passenger_id,
             "passenger_name": passenger_name,
-            "pickup_lat": request.pickup_lat,
-            "pickup_lng": request.pickup_lng,
-            "pickup_location": request.pickup_location,
-            "dropoff_lat": request.dropoff_lat,
-            "dropoff_lng": request.dropoff_lng,
-            "dropoff_location": request.dropoff_location,
-            "final_price": request.offered_price,  # offered_price yerine final_price kullan
+            "pickup_lat": payload.pickup_lat,
+            "pickup_lng": payload.pickup_lng,
+            "pickup_location": payload.pickup_location,
+            "dropoff_lat": payload.dropoff_lat,
+            "dropoff_lng": payload.dropoff_lng,
+            "dropoff_location": payload.dropoff_location,
+            "final_price": payload.offered_price,  # offered_price yerine final_price kullan
             "status": "waiting",
             "created_at": datetime.utcnow().isoformat(),
             "passenger_preferred_vehicle": passenger_pref_vehicle,
         }
-        pay_pref = _canonical_passenger_payment_method(request.passenger_payment_method)
+        pay_pref = _canonical_passenger_payment_method(payload.passenger_payment_method)
         if pay_pref:
             tag_data["passenger_payment_method"] = pay_pref
 
@@ -9688,10 +9942,10 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         result_data = None
         last_ins_err = None
         used_variant = None
-        for vname, payload in insert_variants:
-            if vname != "full" and payload == insert_variants[0][1]:
+        for vname, insert_row in insert_variants:
+            if vname != "full" and insert_row == insert_variants[0][1]:
                 continue
-            rd, err = _try_tags_insert(payload)
+            rd, err = _try_tags_insert(insert_row)
             if rd:
                 result_data = rd
                 used_variant = vname
@@ -9716,11 +9970,11 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             if pay_pref and not tag.get("passenger_payment_method"):
                 tag["passenger_payment_method"] = pay_pref
             # Response'a ek bilgiler ekle
-            tag["offered_price"] = request.offered_price  # Frontend için
-            tag["distance_km"] = request.distance_km
-            tag["estimated_minutes"] = request.estimated_minutes
+            tag["offered_price"] = payload.offered_price  # Frontend için
+            tag["distance_km"] = payload.distance_km
+            tag["estimated_minutes"] = payload.estimated_minutes
             logger.info(
-                f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {request.offered_price}TL "
+                f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {payload.offered_price}TL "
                 f"(yolcu araç tercihi={passenger_pref_vehicle}, insert_variant={used_variant})"
             )
             logger.info(f"PASSENGER CREATED TAG {tag_id}")
@@ -9732,11 +9986,52 @@ async def create_ride_offer(request: CreateRideOfferRequest):
             except Exception as dispatch_ex:
                 logger.error(f"❌ rolling_dispatch_start hata (tag kaydı başarılı): {dispatch_ex}")
             if notified == 0:
-                logger.warning(f"⚠️ Rolling batch: tag={tag_id} için {DISPATCH_RADIUS_KM} km içinde uygun sürücü yok veya dispatch atlandı")
+                logger.warning(
+                    "⚠️ rolling_dispatch 0 sürücü tag=%s — broadcast_offer_to_all yedek deneniyor",
+                    tag_id,
+                )
+                try:
+                    bc = await broadcast_offer_to_all(
+                        tag_id,
+                        {
+                            "passenger_id": passenger_id,
+                            "passenger_name": passenger_name,
+                            "pickup_lat": tag.get("pickup_lat"),
+                            "pickup_lng": tag.get("pickup_lng"),
+                            "pickup_location": tag.get("pickup_location"),
+                            "dropoff_lat": tag.get("dropoff_lat"),
+                            "dropoff_lng": tag.get("dropoff_lng"),
+                            "dropoff_location": tag.get("dropoff_location"),
+                            "final_price": payload.offered_price,
+                            "offered_price": payload.offered_price,
+                            "distance_km": payload.distance_km,
+                            "estimated_minutes": payload.estimated_minutes,
+                            "passenger_preferred_vehicle": passenger_pref_vehicle,
+                            "passenger_payment_method": pay_pref
+                            or tag.get("passenger_payment_method"),
+                        },
+                    )
+                    if bc > 0:
+                        notified = bc
+                        logger.info(
+                            "ride/create: broadcast yedek OK tag=%s notified=%s",
+                            tag_id,
+                            bc,
+                        )
+                except Exception as bc_err:
+                    logger.warning("ride/create: broadcast_offer_to_all yedek hata: %s", bc_err)
+            if notified == 0:
+                logger.warning(
+                    "⚠️ Teklif dağıtılamadı tag=%s (rolling=0, broadcast=0) — sürücü/konum/ yarıçap kontrolü",
+                    tag_id,
+                )
                 try:
                     await sio.emit(
                         "dispatch_exhausted",
-                        {"tag_id": tag_id, "message": "20 km içinde uygun sürücü bulunamadı"},
+                        {
+                            "tag_id": tag_id,
+                            "message": f"{int(DISPATCH_RADIUS_KM)} km içinde uygun sürücü bulunamadı",
+                        },
                         room=_normalize_user_room(passenger_id),
                     )
                 except Exception:
@@ -9748,6 +10043,8 @@ async def create_ride_offer(request: CreateRideOfferRequest):
                 "dispatch_mode": "rolling_batch",
                 "eligible_driver_count": notified,
                 "message": "Teklifiniz sürücülere gönderildi"
+                if notified > 0
+                else "Talep kaydedildi; yakında uygun sürücü aranıyor",
             }
 
         return {
@@ -9759,13 +10056,21 @@ async def create_ride_offer(request: CreateRideOfferRequest):
         return {"success": False, "error": str(e)}
 
 
+@api_router.post("/ride/create-offer")
+async def create_ride_offer(http_request: Request):
+    """Martı TAG — yolcu teklifi; gövde JSON, Request üzerinden okunur."""
+    payload = await _parse_create_ride_offer_json(http_request)
+    return await _create_ride_offer_execute(payload)
+
+
 @api_router.post("/ride/create")
-async def create_ride(request: CreateRideOfferRequest):
+async def create_ride(http_request: Request):
     """
     Yolcu teklif oluşturma — POST /api/ride/create
     create-offer ile aynı: tag insert + rolling_dispatch_start.
     """
-    return await create_ride_offer(request)
+    payload = await _parse_create_ride_offer_json(http_request)
+    return await _create_ride_offer_execute(payload)
 
 
 @api_router.post("/ride/accept")
