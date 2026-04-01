@@ -34,6 +34,41 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_POLL_INTERVAL_MS = 9000;
 
 /** İki nokta arası km (haritada yakın pin / zoom sınırı için). */
+/** Kartta km: 0 veya geçersizse "?" (0.0 göstermeyi engeller). */
+function formatTripKmBadge(km: number | undefined | null): string {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n <= 0) return '?';
+  return n.toFixed(1);
+}
+
+function pickupLineFromRequest(r: PassengerRequest): string {
+  const s = [r.pickup_location, (r as { pickup_address?: string }).pickup_address].find(
+    (x) => typeof x === 'string' && x.trim(),
+  );
+  if (s) return s.trim();
+  const la = Number(r.pickup_lat);
+  const ln = Number(r.pickup_lng);
+  if (Number.isFinite(la) && Number.isFinite(ln)) {
+    return `Konum (${la.toFixed(4)}, ${ln.toFixed(4)})`;
+  }
+  return 'Alış noktası';
+}
+
+function dropoffLineFromRequest(r: PassengerRequest): string {
+  const s = [
+    r.dropoff_location,
+    (r as { dropoff_address?: string }).dropoff_address,
+    (r as { destination?: string }).destination,
+  ].find((x) => typeof x === 'string' && x.trim());
+  if (s) return s.trim();
+  const la = Number(r.dropoff_lat);
+  const ln = Number(r.dropoff_lng);
+  if (Number.isFinite(la) && Number.isFinite(ln) && (Math.abs(la) > 1e-6 || Math.abs(ln) > 1e-6)) {
+    return `Hedef (${la.toFixed(4)}, ${ln.toFixed(4)})`;
+  }
+  return 'Hedef (haritada işaretli)';
+}
+
 function haversineKm(
   a: { latitude: number; longitude: number },
   b: { latitude: number; longitude: number }
@@ -174,9 +209,13 @@ function RequestCard({
     ]).start();
   }, []);
 
-  // Mesafe hesapla
-  const distanceToPassenger = request.distance_to_passenger_km?.toFixed(1) || '?';
-  const tripDistance = request.trip_distance_km?.toFixed(1) || '?';
+  // Mesafe hesapla (0 km gösterme — sunucu henüz yazmadıysa "?")
+  const distanceToPassenger = formatTripKmBadge(
+    request.distance_to_passenger_km ?? (request as { distance_to_pickup?: number }).distance_to_pickup,
+  );
+  const tripDistance = formatTripKmBadge(
+    request.trip_distance_km ?? (request as { distance_km?: number }).distance_km,
+  );
   const timeToPassenger = request.time_to_passenger_min || Math.round((request.distance_to_passenger_km || 5) / 40 * 60);
   const tripDuration = request.trip_duration_min || Math.round((request.trip_distance_km || 10) / 50 * 60);
 
@@ -223,8 +262,8 @@ function RequestCard({
           <View style={[styles.locationDot, { backgroundColor: COLORS.success }]} />
           <View style={styles.locationTextContainer}>
             <Text style={styles.locationLabel}>Nereden</Text>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {request.pickup_location || 'Bilinmiyor'}
+            <Text style={styles.locationText} numberOfLines={2}>
+              {pickupLineFromRequest(request)}
             </Text>
           </View>
           <View style={styles.distanceBadge}>
@@ -241,8 +280,8 @@ function RequestCard({
           <View style={[styles.locationDot, { backgroundColor: COLORS.secondary }]} />
           <View style={styles.locationTextContainer}>
             <Text style={styles.locationLabel}>Nereye</Text>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {request.dropoff_location || 'Belirtilmedi'}
+            <Text style={styles.locationText} numberOfLines={2}>
+              {dropoffLineFromRequest(request)}
             </Text>
           </View>
           <View style={styles.distanceBadge}>

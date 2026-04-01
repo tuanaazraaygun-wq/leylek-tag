@@ -544,17 +544,21 @@ export default function LiveMapView({
     passengerReminderCycle,
   ]);
   
-  // 🆕 Matrix Durum Yazıları - Mesafeye göre güncelle
+  // 🆕 Matrix Durum Yazıları - Mesafeye göre güncelle (OSRM buluşma km varsa onu kullan)
   useEffect(() => {
     if (!userLocation || !otherLocation) return;
-    
-    const distance = calculateDistance(
-      userLocation.latitude, 
-      userLocation.longitude, 
-      otherLocation.latitude, 
-      otherLocation.longitude
+
+    const crowKm = calculateDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      otherLocation.latitude,
+      otherLocation.longitude,
     );
-    const meters = distance * 1000;
+    const distanceKm =
+      meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
+        ? meetingDistance
+        : crowKm;
+    const meters = distanceKm * 1000;
     
     if (isDriver) {
       // SÜRÜCÜ İÇİN MESAJLAR
@@ -580,7 +584,7 @@ export default function LiveMapView({
         setMatrixStatus('> IYI YOLCULUKLAR');
       }
     }
-  }, [userLocation, otherLocation, isDriver, destinationLocation, passMotor]);
+  }, [userLocation, otherLocation, isDriver, destinationLocation, passMotor, meetingDistance]);
   
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
@@ -677,7 +681,7 @@ export default function LiveMapView({
     isDriver,
   ]);
 
-  // TURUNCU ROTA: Yolcu → Hedef (çizim için düz segment)
+  // TURUNCU ROTA: Yolcu → Hedef — düz çizgi sonra OSRM polyline (etiketteki km/süre routeInfo’dan)
   useEffect(() => {
     if (!destinationLocation) {
       setDestinationRoute([]);
@@ -686,7 +690,29 @@ export default function LiveMapView({
     const passengerLocation = isDriver ? otherLocation : userLocation;
     if (!passengerLocation) return;
     setDestinationRoute([passengerLocation, destinationLocation]);
-  }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
+    let cancelled = false;
+    void (async () => {
+      const r = await fetchOsrmDrivingRoute(
+        passengerLocation.latitude,
+        passengerLocation.longitude,
+        destinationLocation.latitude,
+        destinationLocation.longitude,
+      );
+      if (cancelled || !r?.coordinates?.length) return;
+      setDestinationRoute(r.coordinates);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    isDriver,
+  ]);
 
   // Hedef km/dk backend’den; buluşma OSRM yoksa backend’den doldurulur.
   useEffect(() => {
@@ -1271,19 +1297,23 @@ export default function LiveMapView({
                 onPress={() => {
                   // 🔥 KONUM KONTROLÜ - Sadece sürücü için (1 KM mesafe)
                   if (isDriver && userLocation && otherLocation) {
-                    const distance = calculateDistance(
-                      userLocation.latitude, 
-                      userLocation.longitude, 
-                      otherLocation.latitude, 
-                      otherLocation.longitude
+                    const crowKm = calculateDistance(
+                      userLocation.latitude,
+                      userLocation.longitude,
+                      otherLocation.latitude,
+                      otherLocation.longitude,
                     );
-                    const distanceMeters = distance * 1000; // km to meters
-                    
+                    const distanceKm =
+                      meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
+                        ? meetingDistance
+                        : crowKm;
+                    const distanceMeters = distanceKm * 1000;
+
                     if (distanceMeters > 1000) {
                       // Yolcu 1km'den uzakta - QR gösterme
                       Alert.alert(
                         '📍 Yakın değil',
-                        `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : (distance).toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
+                        `${riderNoun} sizden ${distanceMeters < 1000 ? Math.round(distanceMeters) + ' metre' : distanceKm.toFixed(1) + ' km'} uzakta.\n\nQR kodu göstermek için ${passMotor ? 'motor yolcusunun' : 'yolcunun'} yakınınızda olmanız gerekir.`,
                         [{ text: 'Tamam', style: 'default' }]
                       );
                       return;

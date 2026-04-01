@@ -1883,6 +1883,18 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         )
         return 0
 
+    raw_drop = row.get("dropoff_location")
+    drop_loc_str = str(raw_drop).strip() if raw_drop is not None and str(raw_drop).strip() else ""
+    if not drop_loc_str:
+        _dlat, _dlng = row.get("dropoff_lat"), row.get("dropoff_lng")
+        if _dlat is not None and _dlng is not None:
+            try:
+                drop_loc_str = f"Hedef ({float(_dlat):.4f}, {float(_dlng):.4f})"
+            except (TypeError, ValueError):
+                drop_loc_str = "Haritadan seçilen hedef"
+        else:
+            drop_loc_str = "Hedef belirtilmedi"
+
     full_tag_data = {
         "passenger_id": passenger_id,
         "passenger_name": passenger_name,
@@ -1891,7 +1903,7 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         "pickup_location": row.get("pickup_location"),
         "dropoff_lat": row.get("dropoff_lat"),
         "dropoff_lng": row.get("dropoff_lng"),
-        "dropoff_location": row.get("dropoff_location"),
+        "dropoff_location": drop_loc_str,
         "final_price": row.get("final_price"),
         "offered_price": row.get("final_price"),
         "distance_km": row.get("distance_km", 0),
@@ -2273,6 +2285,25 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
         logger.warning(f"Route info error: {e}")
 
     return None
+
+
+async def _enrich_tag_trip_distance_if_missing(tag: dict) -> None:
+    """Yanıtta distance_km boş/0 ise pickup–dropoff ile yol mesafesini doldur (salt okuma yanıtı)."""
+    try:
+        plat, plng = tag.get("pickup_lat"), tag.get("pickup_lng")
+        dlat, dlng = tag.get("dropoff_lat"), tag.get("dropoff_lng")
+        if plat is None or plng is None or dlat is None or dlng is None:
+            return
+        dk = tag.get("distance_km")
+        if dk is not None and float(dk) > 0:
+            return
+        ri = await get_route_info(float(plat), float(plng), float(dlat), float(dlng))
+        if ri:
+            tag["distance_km"] = float(ri["distance_km"])
+            tag["estimated_minutes"] = int(ri["duration_min"])
+    except Exception:
+        pass
+
 
 # ==================== AUTH ENDPOINTS ====================
 
@@ -4246,7 +4277,8 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
             
             # TAG'e driver_location ekle
             tag["driver_location"] = driver_location
-            
+            await _enrich_tag_trip_distance_if_missing(tag)
+
             return {"success": True, "tag": tag}
         
         # ÖNCELİK 2: Aktif tag yoksa, son 10 saniyede cancelled olmuş TAG kontrol et
@@ -9738,15 +9770,33 @@ def _eta_minutes(from_lat: float, from_lng: float, to_lat: float, to_lng: float)
     minutes = max(1, round(km * 2.5))
     return min(minutes, 120)  # max 120 dk
 
+def _directions_leg_to_road_dict(leg: dict) -> dict:
+    """Google Directions tek leg → distance_km / duration_min (trafik varsa duration_in_traffic)."""
+    distance_km = leg["distance"]["value"] / 1000
+    dur_src = leg.get("duration_in_traffic") or leg["duration"]
+    duration_min = max(1, int(math.ceil(dur_src["value"] / 60)))
+    base_min = max(1, int(math.ceil(leg["duration"]["value"] / 60)))
+    used_traffic = "duration_in_traffic" in leg
+    logger.info(
+        f"📍 Google Directions: {distance_km:.1f} km, {duration_min} dk"
+        f"{' (trafik dahil)' if used_traffic else ' (trafik yok, süre=duration)'}"
+    )
+    return {
+        "distance_km": round(distance_km, 1),
+        "duration_min": duration_min,
+        "duration_min_no_traffic": base_min,
+        "used_traffic": used_traffic,
+    }
+
+
 async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
     """
     Google Directions API ile gerçek yol mesafesi hesapla
-    Returns: {"distance_km": float, "duration_min": int} veya None
+    Returns: {"distance_km": float, "duration_min": int, ...} veya None
     """
     try:
         import httpx
-        
-        # Google Maps API Key
+
         api_key = (os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
         if not api_key:
             logger.warning(
@@ -9755,44 +9805,40 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
                 "get_route_info bu durumda OSRM fallback dener."
             )
             return None
-        
-        url = f"https://maps.googleapis.com/maps/api/directions/json"
-        # departure_time=now + traffic_model → leg içinde duration_in_traffic (canlı trafik tahmini)
-        params = {
+
+        url = "https://maps.googleapis.com/maps/api/directions/json"
+        base_params = {
             "origin": f"{origin_lat},{origin_lng}",
             "destination": f"{dest_lat},{dest_lng}",
             "mode": "driving",
-            "departure_time": "now",
-            "traffic_model": "best_guess",
             "key": api_key,
         }
-        
+
         async with httpx.AsyncClient(http2=False, timeout=10.0) as client:
-            response = await client.get(url, params=params)
-            data = response.json()
-        
-        if data.get("status") == "OK" and data.get("routes"):
-            leg = data["routes"][0]["legs"][0]
-            distance_km = leg["distance"]["value"] / 1000  # metre -> km
-            dur_src = leg.get("duration_in_traffic") or leg["duration"]
-            duration_min = max(1, int(math.ceil(dur_src["value"] / 60)))
-            base_min = max(1, int(math.ceil(leg["duration"]["value"] / 60)))
-            used_traffic = "duration_in_traffic" in leg
-            logger.info(
-                f"📍 Google Directions: {distance_km:.1f} km, {duration_min} dk"
-                f"{' (trafik dahil)' if used_traffic else ' (trafik yok, süre=duration)'}"
-            )
-            
-            return {
-                "distance_km": round(distance_km, 1),
-                "duration_min": duration_min,
-                "duration_min_no_traffic": base_min,
-                "used_traffic": used_traffic,
+            # 1) Trafik tahmini (bazı API kısıtlarında INVALID_REQUEST döner)
+            traffic_params = {
+                **base_params,
+                "departure_time": "now",
+                "traffic_model": "best_guess",
             }
-        else:
-            logger.warning(f"⚠️ Google Directions API hatası: {data.get('status')}")
+            response = await client.get(url, params=traffic_params)
+            data = response.json()
+            if data.get("status") == "OK" and data.get("routes"):
+                return _directions_leg_to_road_dict(data["routes"][0]["legs"][0])
+            logger.warning(
+                "⚠️ Google Directions (trafikli) başarısız: %s — trafiksiz yeniden deneniyor",
+                data.get("status"),
+            )
+
+            response2 = await client.get(url, params=base_params)
+            data2 = response2.json()
+            if data2.get("status") == "OK" and data2.get("routes"):
+                logger.info("📍 Google Directions: trafik parametresiz rota kullanıldı")
+                return _directions_leg_to_road_dict(data2["routes"][0]["legs"][0])
+
+            logger.warning(f"⚠️ Google Directions API hatası: {data2.get('status')}")
             return None
-            
+
     except Exception as e:
         logger.error(f"❌ Google Directions API hatası: {e}")
         return None
@@ -10021,6 +10067,28 @@ async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
         if pay_pref:
             tag_data["passenger_payment_method"] = pay_pref
 
+        trip_km = float(payload.distance_km or 0)
+        trip_min = int(payload.estimated_minutes or 0)
+        try:
+            ri = await get_route_info(
+                float(payload.pickup_lat),
+                float(payload.pickup_lng),
+                float(payload.dropoff_lat),
+                float(payload.dropoff_lng),
+            )
+            if ri:
+                trip_km = float(ri["distance_km"])
+                trip_min = int(ri["duration_min"])
+                logger.info(
+                    "ride/create: rota sunucuda doğrulandı %.2f km, %s dk",
+                    trip_km,
+                    trip_min,
+                )
+        except Exception as re_err:
+            logger.warning("ride/create: get_route_info atlandı: %s", re_err)
+        tag_data["distance_km"] = round(trip_km, 2)
+        tag_data["estimated_minutes"] = max(1, trip_min or 1)
+
         def _try_tags_insert(rows: dict) -> tuple:
             """(data list | None, hata metni | None)"""
             try:
@@ -10040,6 +10108,24 @@ async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
                     k: v
                     for k, v in tag_data.items()
                     if k not in ("passenger_payment_method", "passenger_preferred_vehicle")
+                },
+            ),
+            (
+                "core_with_route",
+                {
+                    "id": tag_data["id"],
+                    "passenger_id": tag_data["passenger_id"],
+                    "passenger_name": tag_data["passenger_name"],
+                    "pickup_lat": tag_data["pickup_lat"],
+                    "pickup_lng": tag_data["pickup_lng"],
+                    "pickup_location": tag_data["pickup_location"] or "Mevcut konum",
+                    "dropoff_lat": tag_data["dropoff_lat"],
+                    "dropoff_lng": tag_data["dropoff_lng"],
+                    "dropoff_location": tag_data["dropoff_location"] or "Hedef",
+                    "final_price": tag_data["final_price"],
+                    "status": tag_data["status"],
+                    "distance_km": tag_data["distance_km"],
+                    "estimated_minutes": tag_data["estimated_minutes"],
                 },
             ),
             (
@@ -10092,8 +10178,8 @@ async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
                 tag["passenger_payment_method"] = pay_pref
             # Response'a ek bilgiler ekle
             tag["offered_price"] = payload.offered_price  # Frontend için
-            tag["distance_km"] = payload.distance_km
-            tag["estimated_minutes"] = payload.estimated_minutes
+            tag["distance_km"] = trip_km
+            tag["estimated_minutes"] = max(1, trip_min or 1)
             logger.info(
                 f"🏷️ Yeni teklif oluşturuldu: {tag['id']} - {payload.offered_price}TL "
                 f"(yolcu araç tercihi={passenger_pref_vehicle}, insert_variant={used_variant})"
@@ -10125,8 +10211,8 @@ async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
                             "dropoff_location": tag.get("dropoff_location"),
                             "final_price": payload.offered_price,
                             "offered_price": payload.offered_price,
-                            "distance_km": payload.distance_km,
-                            "estimated_minutes": payload.estimated_minutes,
+                            "distance_km": trip_km,
+                            "estimated_minutes": max(1, trip_min or 1),
                             "passenger_preferred_vehicle": passenger_pref_vehicle,
                             "passenger_payment_method": pay_pref
                             or tag.get("passenger_payment_method"),

@@ -44,6 +44,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useOffers } from '../hooks/useOffers';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import { displayFirstName } from '../lib/displayName';
+import { resolveTripRoadKmMin, type TripRoadSource } from '../lib/tripRoadDistance';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { playMatchChimeSound } from '../utils/sound';
 
@@ -338,41 +339,41 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(distance * 10) / 10; // 1 ondalık basamak
 };
 
-// 🆕 Google Maps Directions API ile gerçek yol mesafesi hesapla
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+/** Teklif kartı: 0 veya NaN km gösterme */
+function formatOfferKmBadge(km: unknown): string {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n <= 0) return '?';
+  return n.toFixed(1);
+}
 
-const calculateRoadDistance = async (
-  originLat: number, 
-  originLng: number, 
-  destLat: number, 
-  destLng: number
-): Promise<{ distance_km: number; duration_min: number } | null> => {
-  try {
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originLat},${originLng}&destination=${destLat},${destLng}&mode=driving&key=${GOOGLE_MAPS_API_KEY}`;
-    
-    const response = await fetch(url);
-    const data = await response.json();
-    
-    if (data.status === 'OK' && data.routes.length > 0) {
-      const route = data.routes[0].legs[0];
-      const distanceKm = route.distance.value / 1000; // metre -> km
-      const durationMin = Math.ceil(route.duration.value / 60); // saniye -> dakika
-      
-      console.log(`📍 Gerçek yol mesafesi: ${distanceKm.toFixed(1)} km, ${durationMin} dk`);
-      
-      return {
-        distance_km: Math.round(distanceKm * 10) / 10,
-        duration_min: durationMin
-      };
-    }
-    
-    console.log('⚠️ Google Directions API hatası:', data.status);
-    return null;
-  } catch (error) {
-    console.error('❌ Yol mesafesi hesaplama hatası:', error);
-    return null;
+function offerPickupLine(o: Record<string, unknown>): string {
+  const s = [o.pickup_location, o.pickup_address].find(
+    (x) => typeof x === 'string' && String(x).trim(),
+  ) as string | undefined;
+  if (s) return s.trim();
+  const la = Number(o.pickup_lat);
+  const ln = Number(o.pickup_lng);
+  if (Number.isFinite(la) && Number.isFinite(ln)) {
+    return `Konum (${la.toFixed(4)}, ${ln.toFixed(4)})`;
   }
-};
+  return 'Alış noktası';
+}
+
+function offerDropoffLine(o: Record<string, unknown>): string {
+  const s = [o.dropoff_location, o.dropoff_address, o.destination].find(
+    (x) => typeof x === 'string' && String(x).trim(),
+  ) as string | undefined;
+  if (s) return s.trim();
+  const la = Number(o.dropoff_lat);
+  const ln = Number(o.dropoff_lng);
+  if (Number.isFinite(la) && Number.isFinite(ln) && (Math.abs(la) > 1e-6 || Math.abs(ln) > 1e-6)) {
+    return `Hedef (${la.toFixed(4)}, ${ln.toFixed(4)})`;
+  }
+  return 'Hedef (haritada işaretli)';
+}
+
+/** İstemci Google anahtarı — rota önbelleği ve sunucu dışı yedek için (Directions) */
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 // Leylek TAG Colors
 const COLORS = {
@@ -3028,10 +3029,23 @@ function TikTokOfferCard({
   }, [index, isPassenger]);
   
   // Hesaplamalar
-  const arrivalTime = driverArrivalMin || offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
-  const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || offer.distance_km?.toFixed(1) || '?';
-  const tripDistanceKm = offer.trip_distance_km?.toFixed(1) || '?';
-  const tripDuration = tripDurationMin || offer.trip_duration_min || Math.round((offer.trip_distance_km || 10) / 50 * 60);
+  const dtp = Number(offer.distance_to_passenger_km);
+  const dtk = Number(offer.distance_km);
+  const arrivalTime =
+    driverArrivalMin ||
+    offer.estimated_arrival_min ||
+    Math.round(
+      ((Number.isFinite(dtp) && dtp > 0 ? dtp : Number.isFinite(dtk) && dtk > 0 ? dtk : 5) as number) / 40 * 60,
+    );
+  const distanceToPassengerKm = formatOfferKmBadge(
+    offer.distance_to_passenger_km ?? offer.distance_km,
+  );
+  const tripKmForCard = Number(offer.trip_distance_km ?? offer.distance_km);
+  const tripDistanceKm = formatOfferKmBadge(tripKmForCard);
+  const tripDuration =
+    tripDurationMin ||
+    offer.trip_duration_min ||
+    Math.round((Number.isFinite(tripKmForCard) && tripKmForCard > 0 ? tripKmForCard : 10) / 50 * 60);
   // Sadece isim göster (soyad yok)
   const fullName = isPassenger ? offer.driver_name : offer.passenger_name;
   const personName = fullName?.split(' ')[0] || 'Kullanıcı';
@@ -3281,7 +3295,7 @@ function TikTokOfferCard({
               <View style={driverViewStyles.addressContent}>
                 <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressLabel}>ALIŞ NOKTASI</Text>
                 <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressText} numberOfLines={2}>
-                  {offer.pickup_location || offer.pickup_address || 'Konum alınıyor...'}
+                  {offerPickupLine(offer as Record<string, unknown>)}
                 </Text>
               </View>
             </View>
@@ -3296,7 +3310,7 @@ function TikTokOfferCard({
               <View style={driverViewStyles.addressContent}>
                 <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressLabel}>VARIŞ NOKTASI</Text>
                 <Text maxFontSizeMultiplier={OFFER_CARD_MAX_FONT_SCALE} style={driverViewStyles.addressText} numberOfLines={2}>
-                  {offer.dropoff_location || offer.dropoff_address || 'Hedef alınıyor...'}
+                  {offerDropoffLine(offer as Record<string, unknown>)}
                 </Text>
               </View>
             </View>
@@ -5510,6 +5524,8 @@ function PassengerDashboard({
   const [passengerPaymentPreference, setPassengerPaymentPreference] = useState<'cash' | 'card' | null>(
     null,
   );
+  /** Konum + hedef + araç tipi için fiyat/rota önbelleği — “Ara” anında gecikmeyi azaltır */
+  const pricePrefetchRef = useRef<{ key: string; data: Record<string, unknown>; ts: number } | null>(null);
 
   useEffect(() => {
     if (showPriceModal) {
@@ -6300,27 +6316,17 @@ function PassengerDashboard({
     if (passengerChatVisible) setFirstChatTapBanner(null);
   }, [passengerChatVisible]);
 
-  const buildLocalPriceEstimate = (
-    pickupLat: number,
-    pickupLng: number,
-    dropoffLat: number,
-    dropoffLng: number,
-    vehicleKind: 'car' | 'motorcycle'
+  /** Sunucu `/price/calculate` ile aynı fiyat bandı — km/dk yol mesafesinden türetilir */
+  const passengerPriceFromTripLeg = (
+    tripDistanceKm: number,
+    estimatedMinutes: number,
+    vehicleKind: 'car' | 'motorcycle',
+    routeSource?: TripRoadSource | string,
   ) => {
-    // Backend geçici hata verirse kullanıcı akışını kırmamak için istemci fallback'i
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const R = 6371;
-    const dLat = toRad(dropoffLat - pickupLat);
-    const dLng = toRad(dropoffLng - pickupLng);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(pickupLat)) * Math.cos(toRad(dropoffLat)) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const crowKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const tripDistanceKm = Math.max(1, Number((crowKm * 1.3).toFixed(1)));
-    const estimatedMinutes = Math.max(5, Math.round((tripDistanceKm / 30) * 60));
+    const tripDistanceKmAdj = Math.max(1, Math.round(Number(tripDistanceKm) * 10) / 10);
+    const estimatedMinutesAdj = Math.max(5, Math.round(Number(estimatedMinutes)));
 
-    const hour = (new Date().getUTCHours() + 3) % 24; // TR UTC+3
+    const hour = (new Date().getUTCHours() + 3) % 24;
     const isPeak = (hour >= 8 && hour < 10) || (hour >= 17 && hour < 20);
     const multiplier = isPeak ? 1.15 : 1.0;
 
@@ -6328,16 +6334,24 @@ function PassengerDashboard({
     const perKm = vehicleKind === 'motorcycle' ? 12 : 20;
     const minimum = vehicleKind === 'motorcycle' ? 80 : 120;
 
-    let price = base + tripDistanceKm * perKm;
+    let price = base + tripDistanceKmAdj * perKm;
     if (price < minimum) price = minimum;
     price *= multiplier;
 
     const suggested = Math.round(price);
+    const src =
+      routeSource === 'crow_fallback'
+        ? 'local_fallback_crow'
+        : routeSource === 'osrm'
+          ? 'local_fallback_osrm'
+          : routeSource === 'google'
+            ? 'local_fallback_google'
+            : 'local_fallback';
     return {
       success: true,
-      distance_km: tripDistanceKm,
-      trip_distance_km: tripDistanceKm,
-      estimated_minutes: estimatedMinutes,
+      distance_km: tripDistanceKmAdj,
+      trip_distance_km: tripDistanceKmAdj,
+      estimated_minutes: estimatedMinutesAdj,
       min_price: Math.round(suggested * 0.9),
       max_price: Math.round(suggested * 1.1),
       suggested_price: suggested,
@@ -6348,9 +6362,93 @@ function PassengerDashboard({
       per_km: perKm,
       minimum_price: minimum,
       multiplier,
-      source: 'local_fallback',
+      source: src,
     };
   };
+
+  const buildOfflinePriceEstimate = async (
+    pickupLat: number,
+    pickupLng: number,
+    dropoffLat: number,
+    dropoffLng: number,
+    vehicleKind: 'car' | 'motorcycle',
+  ) => {
+    const leg = await resolveTripRoadKmMin(
+      pickupLat,
+      pickupLng,
+      dropoffLat,
+      dropoffLng,
+      GOOGLE_MAPS_API_KEY,
+    );
+    return passengerPriceFromTripLeg(leg.distance_km, leg.duration_min, vehicleKind, leg.source);
+  };
+
+  const makePricePrefetchKey = (
+    plat: number,
+    plng: number,
+    dlat: number,
+    dlng: number,
+    vk: 'car' | 'motorcycle',
+  ) =>
+    `${plat.toFixed(4)},${plng.toFixed(4)}|${dlat.toFixed(4)},${dlng.toFixed(4)}|${vk}`;
+
+  // Hedef veya konum değişince rota+fiyatı arka planda hesapla (Google → OSRM → kuş uçuşu yedek)
+  useEffect(() => {
+    if (!destination || !userLocation) {
+      pricePrefetchRef.current = null;
+      return;
+    }
+    const plat = userLocation.latitude;
+    const plng = userLocation.longitude;
+    const dlat = Number(destination.latitude);
+    const dlng = Number(destination.longitude);
+    if (!Number.isFinite(plat) || !Number.isFinite(plng) || !Number.isFinite(dlat) || !Number.isFinite(dlng)) {
+      return;
+    }
+    const key = makePricePrefetchKey(plat, plng, dlat, dlng, rideVehiclePreference);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const response = await fetch(`${API_URL}/price/calculate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pickup_lat: plat,
+            pickup_lng: plng,
+            dropoff_lat: dlat,
+            dropoff_lng: dlng,
+            passenger_vehicle_kind: rideVehiclePreference,
+          }),
+        });
+        const data = await response.json();
+        if (cancelled) return;
+        if (response.ok && data?.success) {
+          pricePrefetchRef.current = { key, data, ts: Date.now() };
+          return;
+        }
+        const fb = await buildOfflinePriceEstimate(plat, plng, dlat, dlng, rideVehiclePreference);
+        pricePrefetchRef.current = { key, data: fb as Record<string, unknown>, ts: Date.now() };
+      } catch {
+        if (cancelled) return;
+        try {
+          const fb = await buildOfflinePriceEstimate(plat, plng, dlat, dlng, rideVehiclePreference);
+          pricePrefetchRef.current = { key, data: fb as Record<string, unknown>, ts: Date.now() };
+        } catch {
+          pricePrefetchRef.current = null;
+        }
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [
+    destination?.latitude,
+    destination?.longitude,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    rideVehiclePreference,
+  ]);
 
   // ÇAĞRI BUTONU - MARTI TAG: Fiyat hesapla ve modal aç
   const handleCallButton = async () => {
@@ -6389,46 +6487,71 @@ function PassengerDashboard({
     
     const pickupLat = userLocation.latitude;
     const pickupLng = userLocation.longitude;
-    
+    const dropLat = Number(destination.latitude);
+    const dropLng = Number(destination.longitude);
+    const prefetchKey = makePricePrefetchKey(pickupLat, pickupLng, dropLat, dropLng, rideVehiclePreference);
+    const pf = pricePrefetchRef.current;
+    if (
+      pf &&
+      pf.key === prefetchKey &&
+      Date.now() - pf.ts < 120_000 &&
+      pf.data &&
+      pf.data.suggested_price != null
+    ) {
+      setPriceInfo(pf.data as any);
+      setSelectedPrice(Number((pf.data as { suggested_price: number }).suggested_price));
+      setShowPriceModal(true);
+      setPriceLoading(false);
+      return;
+    }
+
     try {
-      // Fiyat hesaplama API'sini çağır
       const response = await fetch(`${API_URL}/price/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pickup_lat: pickupLat,
           pickup_lng: pickupLng,
-          dropoff_lat: destination.latitude,
-          dropoff_lng: destination.longitude,
+          dropoff_lat: dropLat,
+          dropoff_lng: dropLng,
           passenger_vehicle_kind: rideVehiclePreference,
-        })
+        }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`Price API HTTP ${response.status}`);
       }
       const data = await response.json();
-      
+
       if (data.success) {
         setPriceInfo(data);
         setSelectedPrice(data.suggested_price);
+        pricePrefetchRef.current = { key: prefetchKey, data, ts: Date.now() };
         setShowPriceModal(true);
       } else {
         throw new Error(data?.error || 'Price API success=false');
       }
     } catch (error) {
       console.error('Fiyat hesaplama hatası:', error);
-      const fallback = buildLocalPriceEstimate(
+      const fallback = await buildOfflinePriceEstimate(
         pickupLat,
         pickupLng,
-        destination.latitude,
-        destination.longitude,
-        rideVehiclePreference
+        dropLat,
+        dropLng,
+        rideVehiclePreference,
       );
       setPriceInfo(fallback as any);
       setSelectedPrice(fallback.suggested_price);
+      pricePrefetchRef.current = { key: prefetchKey, data: fallback as Record<string, unknown>, ts: Date.now() };
       setShowPriceModal(true);
-      appAlert('Bilgi', 'Sunucuya ulaşılamadı, yaklaşık fiyat gösteriliyor.');
+      if ((fallback as { source?: string }).source === 'local_fallback_crow') {
+        appAlert(
+          'Bilgi',
+          'Ağ veya rota servisi kısıtlı; mesafe kuş uçuşu tahminiyle hesaplandı. Mümkünse tekrar deneyin.',
+        );
+      } else {
+        appAlert('Bilgi', 'Sunucuya ulaşılamadı; yol mesafesi cihaz üzerinden hesaplandı.');
+      }
     } finally {
       setPriceLoading(false);
     }
@@ -6462,12 +6585,12 @@ function PassengerDashboard({
       }
     } catch (e) {
       console.log('Price recalc error:', e);
-      const fallback = buildLocalPriceEstimate(
+      const fallback = await buildOfflinePriceEstimate(
         userLocation.latitude,
         userLocation.longitude,
         destination.latitude,
         destination.longitude,
-        nextVehicleKind
+        nextVehicleKind,
       );
       setPriceInfo(fallback as any);
       setSelectedPrice(fallback.suggested_price);
@@ -6604,11 +6727,14 @@ function PassengerDashboard({
       }
 
       const serverTag = data.tag as Record<string, unknown>;
+      const srvKm = Number(serverTag.distance_km);
+      const srvMin = Number(serverTag.estimated_minutes);
       const mergedTag = {
         ...serverTag,
         offered_price: selectedPrice,
-        distance_km: priceInfo.distance_km,
-        estimated_minutes: priceInfo.estimated_minutes,
+        distance_km: Number.isFinite(srvKm) && srvKm > 0 ? srvKm : priceInfo.distance_km,
+        estimated_minutes:
+          Number.isFinite(srvMin) && srvMin > 0 ? Math.round(srvMin) : priceInfo.estimated_minutes,
         status: serverTag.status || 'waiting',
         passenger_payment_method:
           normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ??
@@ -6630,8 +6756,8 @@ function PassengerDashboard({
           dropoff_lat: destination.latitude,
           dropoff_lng: destination.longitude,
           offered_price: selectedPrice,
-          distance_km: priceInfo.distance_km,
-          estimated_minutes: priceInfo.estimated_minutes,
+          distance_km: mergedTag.distance_km,
+          estimated_minutes: mergedTag.estimated_minutes,
           passenger_preferred_vehicle: rideVehiclePreference,
           passenger_vehicle_kind: rideVehiclePreference,
           passenger_payment_method: passengerPaymentPreference,
@@ -8270,6 +8396,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             .toLowerCase() === 'motor'
             ? 'motorcycle'
             : 'car';
+        const td = tag.dropoff_location;
+        const tds = typeof td === 'string' ? td.trim() : '';
+        const tdlat = Number(tag.dropoff_lat);
+        const tdlng = Number(tag.dropoff_lng);
+        const dropLab =
+          tds ||
+          (Number.isFinite(tdlat) &&
+          Number.isFinite(tdlng) &&
+          (Math.abs(tdlat) > 1e-6 || Math.abs(tdlng) > 1e-6)
+            ? `Hedef (${tdlat.toFixed(4)}, ${tdlng.toFixed(4)})`
+            : 'Hedef (haritada işaretli)');
+        const tkm = Number(tag.distance_km);
+        const tripK = Number.isFinite(tkm) && tkm > 0 ? tkm : null;
         return [...prev, {
           id: tag.id,
           tag_id: tag.id,
@@ -8283,17 +8422,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           pickup_location: tag.pickup_location,
           dropoff_lat: tag.dropoff_lat,
           dropoff_lng: tag.dropoff_lng,
-          dropoff_address: tag.dropoff_location,
-          dropoff_location: tag.dropoff_location,
+          dropoff_address: dropLab,
+          dropoff_location: dropLab,
           offered_price: tag.final_price ?? tag.offered_price ?? 0,
-          distance_km: tag.distance_km ?? 0,
+          distance_km: tripK ?? 0,
           estimated_minutes: tag.estimated_minutes ?? 0,
           distance_to_pickup: null,
           status: 'pending',
           created_at: tag.created_at || new Date().toISOString(),
           distance_to_passenger_km: null,
           time_to_passenger_min: null,
-          trip_distance_km: tag.distance_km ?? null,
+          trip_distance_km: tripK,
           trip_duration_min: tag.estimated_minutes ?? null,
           passenger_payment_method: normalizePassengerPaymentMethod(tag.passenger_payment_method) ?? undefined,
         }];
@@ -8482,6 +8621,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const pvkRaw = data.passenger_vehicle_kind ?? data.passenger_preferred_vehicle;
         const pvkStr = String(pvkRaw || '').trim().toLowerCase();
         const pvkNorm = pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
+        const rawDrop =
+          data.dropoff_location ?? data.dropoff_address ?? (data as { destination?: string }).destination;
+        const dropStr = typeof rawDrop === 'string' ? rawDrop.trim() : '';
+        const dLat = Number(data.dropoff_lat);
+        const dLng = Number(data.dropoff_lng);
+        const dropoffLabel =
+          dropStr ||
+          (Number.isFinite(dLat) && Number.isFinite(dLng) && (Math.abs(dLat) > 1e-6 || Math.abs(dLng) > 1e-6)
+            ? `Hedef (${dLat.toFixed(4)}, ${dLng.toFixed(4)})`
+            : 'Hedef (haritada işaretli)');
+        const tripKmNum = Number(data.distance_km);
+        const tripKm =
+          Number.isFinite(tripKmNum) && tripKmNum > 0 ? tripKmNum : null;
         return [...filtered, {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -8495,11 +8647,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           pickup_location: data.pickup_location || data.pickup_address,
           dropoff_lat: data.dropoff_lat,
           dropoff_lng: data.dropoff_lng,
-          dropoff_address: data.dropoff_address || data.dropoff_location,
-          dropoff_location: data.dropoff_location || data.dropoff_address,
+          dropoff_address: data.dropoff_address || dropoffLabel,
+          dropoff_location: dropoffLabel,
           // 🆕 MARTI TAG - Yolcu fiyat teklifi
           offered_price: data.offered_price || 0,
-          distance_km: data.distance_km || 0,
+          distance_km: tripKm ?? 0,
           estimated_minutes: data.estimated_minutes || 0,
           distance_to_pickup: data.distance_to_pickup || 0,
           status: 'pending',
@@ -8507,7 +8659,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           // Mesafeler hesaplanıyor işareti
           distance_to_passenger_km: data.distance_to_pickup || null,
           time_to_passenger_min: null,
-          trip_distance_km: data.distance_km || null,
+          trip_distance_km: tripKm,
           trip_duration_min: data.estimated_minutes || null,
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
@@ -9118,6 +9270,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       }
       setRequests((prev) => {
         if (prev.some((r) => r.id === data.tag_id)) return prev;
+        const rawDrop = data.dropoff_location;
+        const dropStr = typeof rawDrop === 'string' ? rawDrop.trim() : '';
+        const pdlat = Number(data.dropoff_lat);
+        const pdlng = Number(data.dropoff_lng);
+        const dropLabel =
+          dropStr ||
+          (Number.isFinite(pdlat) &&
+          Number.isFinite(pdlng) &&
+          (Math.abs(pdlat) > 1e-6 || Math.abs(pdlng) > 1e-6)
+            ? `Hedef (${pdlat.toFixed(4)}, ${pdlng.toFixed(4)})`
+            : 'Hedef (haritada işaretli)');
+        const dk = Number(data.distance_km);
+        const tripKm = Number.isFinite(dk) && dk > 0 ? dk : null;
         return [
           ...prev,
           {
@@ -9132,17 +9297,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             pickup_location: data.pickup_location,
             dropoff_lat: data.dropoff_lat,
             dropoff_lng: data.dropoff_lng,
-            dropoff_address: data.dropoff_location,
-            dropoff_location: data.dropoff_location,
+            dropoff_address: dropLabel,
+            dropoff_location: dropLabel,
             offered_price: data.offered_price ?? 0,
-            distance_km: data.distance_km ?? 0,
+            distance_km: tripKm ?? 0,
             estimated_minutes: data.estimated_minutes ?? 0,
             distance_to_pickup: data.distance_to_pickup,
             status: 'pending',
             created_at: new Date().toISOString(),
             distance_to_passenger_km: data.distance_to_pickup ?? null,
             time_to_passenger_min: null,
-            trip_distance_km: data.distance_km ?? null,
+            trip_distance_km: tripKm,
             trip_duration_min: data.estimated_minutes ?? null,
             passenger_vehicle_kind: (() => {
               const v = data.passenger_vehicle_kind;
@@ -9570,7 +9735,28 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               driverId={user.id}
               playTapSound={playTapSound}
               driverLocation={userLocation}
-              requests={requests.map((req) => ({
+              requests={requests.map((req) => {
+                const dlat = Number(req.dropoff_lat);
+                const dlng = Number(req.dropoff_lng);
+                const dropText = [req.dropoff_location, req.dropoff_address, req.destination].find(
+                  (x: unknown) => typeof x === 'string' && String(x).trim(),
+                ) as string | undefined;
+                const dropoffLine =
+                  (dropText && dropText.trim()) ||
+                  (Number.isFinite(dlat) &&
+                  Number.isFinite(dlng) &&
+                  (Math.abs(dlat) > 1e-6 || Math.abs(dlng) > 1e-6)
+                    ? `Hedef (${dlat.toFixed(4)}, ${dlng.toFixed(4)})`
+                    : 'Hedef (haritada işaretli)');
+                const tTrip = Number(req.trip_distance_km);
+                const tDist = Number(req.distance_km);
+                const tripKmOk =
+                  Number.isFinite(tTrip) && tTrip > 0
+                    ? tTrip
+                    : Number.isFinite(tDist) && tDist > 0
+                      ? tDist
+                      : undefined;
+                return {
                 id: req.id,
                 request_id: req.request_id || req.id,
                 tag_id: req.tag_id,
@@ -9579,18 +9765,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 pickup_location: req.pickup_location || req.passenger_address || 'Bilinmiyor',
                 pickup_lat: req.pickup_lat || req.passenger_lat,
                 pickup_lng: req.pickup_lng || req.passenger_lng,
-                dropoff_location: req.dropoff_location || req.destination || 'Belirtilmedi',
+                dropoff_location: dropoffLine,
                 dropoff_lat: req.dropoff_lat,
                 dropoff_lng: req.dropoff_lng,
                 distance_to_passenger_km: req.distance_to_passenger_km || req.distance_to_pickup,
-                trip_distance_km: req.trip_distance_km || req.distance_km,
+                trip_distance_km: tripKmOk,
                 time_to_passenger_min: req.time_to_passenger_min,
                 trip_duration_min: req.trip_duration_min || req.estimated_minutes,
                 offered_price: req.offered_price || 0,
                 passenger_vehicle_kind: (req as any).passenger_vehicle_kind || 'car',
+                passenger_payment_method: (req as { passenger_payment_method?: 'cash' | 'card' })
+                  .passenger_payment_method,
                 notes: req.notes,
                 created_at: req.created_at,
-              }))}
+              };
+              })}
               driverName={user.name}
               driverRating={user.rating ?? 4.0}
               onSendOffer={sendOfferInstant}
