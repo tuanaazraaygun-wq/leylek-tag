@@ -796,28 +796,38 @@ export default function LiveMapView({
     return () => clearTimeout(t);
   }, [userLocation, otherLocation, destinationLocation, isDriver]);
 
-  // Google/Apple Maps navigasyon aç
-  // 🆕 IN-APP NAVİGASYON - Google Maps tarayıcıda/uygulamada aç
-  const openGoogleMapsNavigation = () => {
-    if (!userLocation || !otherLocation) {
+  /** Google yön tarifi URL’i (koordinat → gerçek yol rotası Maps tarafında hesaplanır). */
+  const buildGoogleDirNavUrl = () => {
+    if (!userLocation || !otherLocation) return '';
+    const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
+    const origin = `${userLocation.latitude},${userLocation.longitude}`;
+    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving&dir_action=navigate`;
+  };
+
+  /** Harici: Google Maps / Safari / Chrome — tam sesli navigasyon genelde burada en sorunsuz. */
+  const openGoogleMapsNavigationExternal = () => {
+    const googleNavUrl = buildGoogleDirNavUrl();
+    if (!googleNavUrl) {
       Alert.alert('Hata', 'Konum bilgisi alınamadı');
       return;
     }
-    
-    // Hedef koordinatları
-    const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
-    const origin = `${userLocation.latitude},${userLocation.longitude}`;
-    
-    // Google Maps navigasyon URL - tarayıcıda veya Google Maps uygulamasında açılır
-    const googleNavUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving&dir_action=navigate`;
-    
-    // Tarayıcıda aç
     Linking.openURL(googleNavUrl).catch((err) => {
       console.error('Navigation error:', err);
       Alert.alert('Hata', 'Navigasyon açılamadı');
     });
   };
-  
+
+  /** Uygulama içi: WebView (Google web arayüzü; bazı cihazlarda “uygulamada aç” önerebilir). */
+  const openGoogleMapsNavigationInApp = () => {
+    const googleNavUrl = buildGoogleDirNavUrl();
+    if (!googleNavUrl) {
+      Alert.alert('Hata', 'Konum bilgisi alınamadı');
+      return;
+    }
+    setGoogleMapsUrl(googleNavUrl);
+    setShowGoogleMapsModal(true);
+  };
+
   // Eski fonksiyon - artık kullanılmıyor ama backup olarak kalıyor
   const openExternalNavigation = () => {
     if (!otherLocation) return;
@@ -838,9 +848,9 @@ export default function LiveMapView({
     }
   };
 
-  // 🆕 Ana navigasyon fonksiyonu - Google Maps WebView Modal aç
+  // Önce uygulama içi WebView; kullanıcı isterse harici Maps (modal başlığından veya sorun olursa)
   const openNavigation = () => {
-    openGoogleMapsNavigation();
+    openGoogleMapsNavigationInApp();
   };
 
   // Web fallback
@@ -890,19 +900,36 @@ export default function LiveMapView({
         visible={showGoogleMapsModal}
         animationType="slide"
         transparent={false}
-        onRequestClose={() => setShowGoogleMapsModal(false)}
+        onRequestClose={() => {
+          setShowGoogleMapsModal(false);
+          setGoogleMapsUrl('');
+        }}
       >
         <View style={styles.googleMapsModalContainer}>
           {/* Modal Header - Kapatma butonu */}
           <View style={styles.googleMapsHeader}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.googleMapsCloseBtn}
-              onPress={() => setShowGoogleMapsModal(false)}
+              onPress={() => {
+                setShowGoogleMapsModal(false);
+                setGoogleMapsUrl('');
+              }}
             >
               <Ionicons name="close" size={28} color="#FFF" />
             </TouchableOpacity>
-            <Text style={styles.googleMapsTitle}>Google Maps Navigasyon</Text>
-            <View style={{ width: 40 }} />
+            <Text style={styles.googleMapsTitle} numberOfLines={1}>
+              Yol tarifi
+            </Text>
+            <TouchableOpacity
+              style={styles.googleMapsExternalBtn}
+              onPress={() => {
+                setShowGoogleMapsModal(false);
+                setGoogleMapsUrl('');
+                openGoogleMapsNavigationExternal();
+              }}
+            >
+              <Ionicons name="open-outline" size={22} color="#FFF" />
+            </TouchableOpacity>
           </View>
           
           {/* WebView - Google Maps */}
@@ -2378,10 +2405,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  googleMapsExternalBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   googleMapsTitle: {
+    flex: 1,
     color: '#FFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
+    textAlign: 'center',
+    marginHorizontal: 6,
   },
   googleMapsWebView: {
     flex: 1,
