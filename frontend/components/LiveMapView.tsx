@@ -5,6 +5,7 @@ import { tapButtonHaptic } from '../utils/touchHaptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
 import { displayFirstName } from '../lib/displayName';
+import { API_BASE_URL } from '../lib/backendConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -105,11 +106,22 @@ function buildPassengerDriverHint(
 }
 
 function formatRouteKmMin(distanceKm: number | null, durationMin: number | null): string {
-  const km =
-    distanceKm != null && Number.isFinite(distanceKm) ? distanceKm.toFixed(1) : '—';
+  let distPart = '—';
+  if (distanceKm != null && Number.isFinite(distanceKm) && distanceKm >= 0) {
+    const m = Math.round(distanceKm * 1000);
+    if (m < 1000) {
+      distPart = `${m} m`;
+    } else if (distanceKm < 10) {
+      distPart = `${distanceKm.toFixed(2)} km`;
+    } else {
+      distPart = `${distanceKm.toFixed(1)} km`;
+    }
+  }
   const min =
-    durationMin != null && Number.isFinite(durationMin) ? String(durationMin) : '—';
-  return `${km} km • ${min} dk`;
+    durationMin != null && Number.isFinite(durationMin)
+      ? String(Math.max(1, Math.round(durationMin)))
+      : '—';
+  return `${distPart} • ${min} dk`;
 }
 
 // Haversine mesafe hesaplama (km)
@@ -156,6 +168,35 @@ const decodePolyline = (encoded: string): {latitude: number, longitude: number}[
   }
   return points;
 };
+
+/** OSRM (Project OSRM) — gerçek yol mesafesi/süresi + polyline */
+async function fetchOsrmDrivingRoute(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+): Promise<{ distanceM: number; durationS: number; coordinates: { latitude: number; longitude: number }[] } | null> {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=polyline`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
+    const data = await res.json();
+    if (data?.code !== 'Ok' || !data?.routes?.[0]) return null;
+    const r = data.routes[0];
+    const geom = r.geometry;
+    if (!geom || typeof geom !== 'string') return null;
+    return {
+      distanceM: Number(r.distance) || 0,
+      durationS: Number(r.duration) || 0,
+      coordinates: decodePolyline(geom),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function meetingEndpointsKey(dLat: number, dLng: number, pLat: number, pLng: number): string {
+  return `${dLat.toFixed(5)},${dLng.toFixed(5)}|${pLat.toFixed(5)},${pLng.toFixed(5)}`;
+}
 
 // 🆕 Hareketli Çerçeve Componenti
 const AnimatedBorder = ({ color, children }: { color: string; children: React.ReactNode }) => {
@@ -316,6 +357,20 @@ export default function LiveMapView({
     initialDone: false,
     hadDestination: false,
   });
+  /** OSRM buluşma rotası backend routeInfo’yu ezdiyse true */
+  const osrmMeetingLockRef = useRef(false);
+  const lastOsrmAtRef = useRef(0);
+  const lastOsrmKeyRef = useRef('');
+  const meetingHasOsrmPolylineRef = useRef(false);
+  const refreshMeetingRouteOsrmRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    osrmMeetingLockRef.current = false;
+    meetingHasOsrmPolylineRef.current = false;
+    lastOsrmKeyRef.current = '';
+    lastOsrmAtRef.current = 0;
+    mapFitRef.current = { initialDone: false, hadDestination: false };
+  }, [tagId]);
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -442,10 +497,9 @@ export default function LiveMapView({
     return () => anim.stop();
   }, [onCall, callLabelBlink]);
 
-  const callPromptUpperText = useMemo(() => {
+  const callPromptNameUpper = useMemo(() => {
     const name = displayFirstName(otherUserName, isDriver ? 'Yolcu' : 'Sürücü');
-    const upper = name.toLocaleUpperCase('tr-TR');
-    return isDriver ? `YOLCU ${upper} ARA` : `SÜRÜCÜ ${upper} ARA`;
+    return name.toLocaleUpperCase('tr-TR');
   }, [isDriver, otherUserName]);
 
   useEffect(() => {
@@ -572,13 +626,56 @@ export default function LiveMapView({
     return () => breath.stop();
   }, [onCall, quickCallBreath]);
 
-  // Frontend route call yok: rota çizgisi sadece mevcut konumlardan üretilir.
+  // OSRM gelene kadar düz segment; polyline gelince dokunma
   useEffect(() => {
     if (!userLocation || !otherLocation) return;
     const start = isDriver ? userLocation : otherLocation;
     const end = isDriver ? otherLocation : userLocation;
-    setMeetingRoute([start, end]);
+    if (!meetingHasOsrmPolylineRef.current) {
+      setMeetingRoute([start, end]);
+    }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, isDriver]);
+
+  // Buluşma: OSRM gerçek yol (km/dk + polyline), periyodik yenileme
+  useEffect(() => {
+    refreshMeetingRouteOsrmRef.current = async (force = false) => {
+      if (!userLocation || !otherLocation) return;
+      const dLat = isDriver ? userLocation.latitude : otherLocation.latitude;
+      const dLng = isDriver ? userLocation.longitude : otherLocation.longitude;
+      const pLat = isDriver ? otherLocation.latitude : userLocation.latitude;
+      const pLng = isDriver ? otherLocation.longitude : userLocation.longitude;
+      const key = meetingEndpointsKey(dLat, dLng, pLat, pLng);
+      const now = Date.now();
+      const throttleMs = 22000;
+      if (!force) {
+        if (now - lastOsrmAtRef.current < throttleMs && key === lastOsrmKeyRef.current) {
+          return;
+        }
+      }
+      lastOsrmKeyRef.current = key;
+      lastOsrmAtRef.current = now;
+      const r = await fetchOsrmDrivingRoute(dLat, dLng, pLat, pLng);
+      if (!r || r.coordinates.length < 2) return;
+      meetingHasOsrmPolylineRef.current = true;
+      osrmMeetingLockRef.current = true;
+      setMeetingRoute(r.coordinates);
+      setMeetingDistance(r.distanceM / 1000);
+      setMeetingDuration(Math.max(1, Math.ceil(r.durationS / 60)));
+    };
+
+    void refreshMeetingRouteOsrmRef.current(true);
+
+    const id = setInterval(() => {
+      void refreshMeetingRouteOsrmRef.current(false);
+    }, 28000);
+    return () => clearInterval(id);
+  }, [
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    isDriver,
+  ]);
 
   // TURUNCU ROTA: Yolcu → Hedef (çizim için düz segment)
   useEffect(() => {
@@ -591,7 +688,7 @@ export default function LiveMapView({
     setDestinationRoute([passengerLocation, destinationLocation]);
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, destinationLocation?.latitude, destinationLocation?.longitude, isDriver]);
 
-  // KM/DK değerleri sadece backend response'tan okunur.
+  // Hedef km/dk backend’den; buluşma OSRM yoksa backend’den doldurulur.
   useEffect(() => {
     const info = (routeInfo as any) || {};
     const meetingKm = Number(info.meeting_distance_km ?? info.distance_to_passenger_km);
@@ -599,8 +696,10 @@ export default function LiveMapView({
     const tripKm = Number(info.trip_distance_km ?? info.distance_km);
     const tripMin = Number(info.trip_duration_min ?? info.duration_min);
 
-    setMeetingDistance(Number.isFinite(meetingKm) ? meetingKm : null);
-    setMeetingDuration(Number.isFinite(meetingMin) ? Math.max(0, Math.round(meetingMin)) : null);
+    if (!osrmMeetingLockRef.current) {
+      setMeetingDistance(Number.isFinite(meetingKm) ? meetingKm : null);
+      setMeetingDuration(Number.isFinite(meetingMin) ? Math.max(0, Math.round(meetingMin)) : null);
+    }
     setDestinationDistance(Number.isFinite(tripKm) ? tripKm : null);
     setDestinationDuration(Number.isFinite(tripMin) ? Math.max(0, Math.round(tripMin)) : null);
 
@@ -618,21 +717,36 @@ export default function LiveMapView({
     }
   }, [routeInfo, onAutoComplete]);
 
-  // Sürücü aracı haritanın merkezinde kalsın
+  /** Sürücü: harita merkezi araç konumu — zoom yolcu mesafesine göre (araç tam ortada) */
   useEffect(() => {
-    if (!isDriver || !mapRef.current || !userLocation) return;
+    if (!isDriver || !mapRef.current || !userLocation || !otherLocation) return;
+    const dLat = Math.abs(userLocation.latitude - otherLocation.latitude);
+    const dLng = Math.abs(userLocation.longitude - otherLocation.longitude);
+    const latDelta = Math.min(0.14, Math.max(0.0028, dLat * 2.35));
+    const lngDelta = Math.min(0.14, Math.max(0.0028, dLng * 2.35));
     const t = setTimeout(() => {
-      mapRef.current?.animateCamera(
-        { center: userLocation },
-        { duration: 450 }
+      mapRef.current?.animateToRegion(
+        {
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          latitudeDelta: latDelta,
+          longitudeDelta: lngDelta,
+        },
+        420,
       );
-    }, 120);
+    }, 140);
     return () => clearTimeout(t);
-  }, [isDriver, userLocation?.latitude, userLocation?.longitude]);
+  }, [isDriver, userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
 
-  // Harita: yalnızca ilk uygun an + hedef ilk kez geldiğinde fit (kullanıcı zoom yapabilsin)
+  // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
-    if (!mapRef.current || !userLocation || !otherLocation) return;
+    if (!mapRef.current || !userLocation || !otherLocation || isDriver) {
+      if (isDriver && userLocation && otherLocation) {
+        mapFitRef.current.initialDone = true;
+        mapFitRef.current.hadDestination = !!destinationLocation;
+      }
+      return;
+    }
 
     const hasDest = !!destinationLocation;
     const destJustAdded = hasDest && !mapFitRef.current.hadDestination;
@@ -654,39 +768,9 @@ export default function LiveMapView({
       mapFitRef.current.initialDone = true;
     }, 650);
     return () => clearTimeout(t);
-  }, [userLocation, otherLocation, destinationLocation]);
+  }, [userLocation, otherLocation, destinationLocation, isDriver]);
 
   // Google/Apple Maps navigasyon aç
-  // 🆕 Polyline decode fonksiyonu - Google'dan gelen encoded polyline'ı koordinatlara çevir
-  const decodePolyline = (encoded: string): {latitude: number; longitude: number}[] => {
-    const points: {latitude: number; longitude: number}[] = [];
-    let index = 0, lat = 0, lng = 0;
-    
-    while (index < encoded.length) {
-      let b, shift = 0, result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
-      
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
-      
-      points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
-    }
-    return points;
-  };
-
   // 🆕 IN-APP NAVİGASYON - Google Maps tarayıcıda/uygulamada aç
   const openGoogleMapsNavigation = () => {
     if (!userLocation || !otherLocation) {
@@ -827,6 +911,7 @@ export default function LiveMapView({
             latitudeDelta: 0.05,
             longitudeDelta: 0.05,
           }}
+          mapPadding={{ top: 200, right: 14, bottom: 268, left: 14 }}
           showsUserLocation={false}
           showsMyLocationButton={false}
           showsCompass={false}
@@ -1042,9 +1127,13 @@ export default function LiveMapView({
           {MapView && onCall ? (
             <View style={styles.callPromptRow} pointerEvents="box-none">
               <View style={styles.callPromptColumn}>
-                <Animated.Text style={[styles.callPromptLabel, { opacity: callLabelBlink }]}>
-                  {callPromptUpperText}
-                </Animated.Text>
+                <Animated.View style={{ opacity: callLabelBlink }}>
+                  <Text style={styles.callPromptLabelRole}>
+                    {isDriver ? 'YOLCU' : 'SÜRÜCÜ'}{' '}
+                    <Text style={styles.callPromptLabelName}>{callPromptNameUpper}</Text>
+                  </Text>
+                  <Text style={styles.callPromptLabelAra}>ARA</Text>
+                </Animated.View>
                 <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
                   <TouchableOpacity
                     style={[styles.mapCallFabCircle, isCallLoading && styles.mapCallFabCircleDisabled]}
@@ -1078,6 +1167,11 @@ export default function LiveMapView({
               <TouchableOpacity
                 onPress={() => {
                   void tapButtonHaptic();
+                  void refreshMeetingRouteOsrmRef.current(true);
+                  if (userId && tagId) {
+                    const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
+                    void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
+                  }
                   openNavigation();
                 }}
                 activeOpacity={0.7}
@@ -1132,14 +1226,14 @@ export default function LiveMapView({
 
           {/* 🆕 ALT BUTONLAR - Destek ve Bitir */}
           <View style={styles.actionButtons}>
-            {/* WhatsApp Destek Butonu - Küçük, ortalı ikon */}
-            <TouchableOpacity 
-              style={styles.whatsappButton} 
+            {/* Destek — aynı WhatsApp linki; görünüm: yeşil sohbet + sarı uyarı, logo yok */}
+            <TouchableOpacity
+              style={styles.supportDestekTouch}
               onPress={() => {
                 const phoneNumber = '905326497412';
                 const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
                 const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-                
+
                 Linking.canOpenURL(whatsappUrl)
                   .then((supported) => {
                     if (supported) {
@@ -1152,9 +1246,20 @@ export default function LiveMapView({
                     Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
                   });
               }}
-              activeOpacity={0.7}
+              activeOpacity={0.75}
+              accessibilityLabel="Destek — WhatsApp"
             >
-              <Ionicons name="logo-whatsapp" size={18} color="#FFF" />
+              <View style={styles.supportSplitIcon} pointerEvents="none">
+                <View style={styles.supportSplitLeft}>
+                  <Ionicons name="chatbubbles" size={13} color="#FFF" />
+                </View>
+                <View style={styles.supportSplitRight}>
+                  <Ionicons name="alert" size={15} color="#713F12" />
+                </View>
+              </View>
+              <Text style={styles.supportDestekLabel} numberOfLines={1}>
+                Destek
+              </Text>
             </TouchableOpacity>
 
             {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile + KONUM KONTROLÜ */}
@@ -1428,14 +1533,24 @@ const styles = StyleSheet.create({
   callPromptColumn: {
     alignItems: 'flex-start',
   },
-  callPromptLabel: {
+  callPromptLabelRole: {
     color: '#16A34A',
     fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 17,
+    fontWeight: '800',
     letterSpacing: 0.35,
-    marginBottom: 8,
     maxWidth: SCREEN_WIDTH * 0.72,
+  },
+  callPromptLabelName: {
+    color: '#15803D',
+    fontWeight: '900',
+  },
+  callPromptLabelAra: {
+    color: '#16A34A',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginTop: 2,
+    marginBottom: 8,
   },
   mapCallFabCircle: {
     width: 48,
@@ -1906,23 +2021,45 @@ const styles = StyleSheet.create({
   },
   
   // 🆕 Action Buttons
-  actionButtons: { 
-    flexDirection: 'row', 
+  actionButtons: {
+    flexDirection: 'row',
     gap: 12,
+    alignItems: 'flex-end',
   },
-  whatsappButton: { 
-    width: 44, 
-    height: 44, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    backgroundColor: '#25D366',
-    borderRadius: 22,
+  supportDestekTouch: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    maxWidth: 48,
+    paddingHorizontal: 2,
   },
-  whatsappButtonText: { 
-    fontSize: 10, 
-    fontWeight: '600', 
-    marginTop: 2, 
-    color: '#FFF',
+  supportSplitIcon: {
+    flexDirection: 'row',
+    width: 36,
+    height: 26,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15, 23, 42, 0.2)',
+  },
+  supportSplitLeft: {
+    flex: 1,
+    backgroundColor: '#22C55E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  supportSplitRight: {
+    flex: 1,
+    backgroundColor: '#FACC15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  supportDestekLabel: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#334155',
+    marginTop: 3,
+    letterSpacing: 0.15,
   },
   supportButton: { 
     flex: 1, 

@@ -113,10 +113,12 @@ interface UseSocketProps {
   onTripEnded?: (data: { tag_id: string }) => void;
   onTripEndRequested?: (data: { tag_id: string; requester_id: string }) => void;
   onTripEndResponse?: (data: { tag_id: string; accepted: boolean }) => void;
-  onTripForceEnded?: (data: { 
-    tag_id: string; 
-    ended_by: string; 
+  onTripForceEnded?: (data: {
+    tag_id: string;
+    ended_by?: string;
+    ender_id?: string;
     ender_type: string;
+    ender_name?: string;
     points_deducted: number;
     new_points?: number;
     new_rating?: number;

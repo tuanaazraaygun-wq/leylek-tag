@@ -12,12 +12,12 @@ import {
   FlatList,
   Animated,
   Dimensions,
-  KeyboardAvoidingView,
   Platform,
   Keyboard,
   Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Audio } from 'expo-av';
 import { API_BASE_URL } from '../lib/backendConfig';
@@ -114,7 +114,9 @@ export default function ChatBubble({
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessageTime, setLastMessageTime] = useState(0); // 🆕 Spam koruması
   const [spamWarning, setSpamWarning] = useState(''); // 🆕 Uyarı mesajı
-  
+  const [keyboardPad, setKeyboardPad] = useState(0);
+  const insets = useSafeAreaInsets();
+
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const flatListRef = useRef<FlatList>(null);
@@ -192,6 +194,28 @@ export default function ChatBubble({
       }
     };
   }, [tagId, userId, isMinimized, visible, otherFirst]);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subShow = Keyboard.addListener(showEvt, (e) => {
+      const h = e.endCoordinates?.height ?? 0;
+      setKeyboardPad(h > 0 ? h : 0);
+    });
+    const subHide = Keyboard.addListener(hideEvt, () => setKeyboardPad(0));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (keyboardPad <= 0) return;
+    const t = setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [keyboardPad]);
 
   // ═══════════════════════════════════════════════════════════════
   // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
@@ -279,8 +303,6 @@ export default function ChatBubble({
         console.warn('[ChatBubble] send-message API (non-fatal):', e);
       }
     }
-
-    Keyboard.dismiss();
   }, [tagId, userId, otherUserId, isDriver, lastMessageTime, myFirst]);
 
   // ═══════════════════════════════════════════════════════════════
@@ -379,11 +401,7 @@ export default function ChatBubble({
         { transform: [{ translateY: slideAnim }] }
       ]}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
+      <View style={styles.keyboardView}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -478,8 +496,18 @@ export default function ChatBubble({
           </View>
         ) : null}
 
-        {/* Input */}
-        <View style={styles.inputContainer}>
+        {/* Input — klavye yüksekliği ile altta sabit; gönderince klavye kapanmaz */}
+        <View
+          style={[
+            styles.inputContainer,
+            {
+              paddingBottom:
+                keyboardPad > 0
+                  ? keyboardPad + 10
+                  : Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12),
+            },
+          ]}
+        >
           <TextInput
             style={styles.input}
             placeholder="Mesajınızı yazın..."
@@ -500,7 +528,7 @@ export default function ChatBubble({
             <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Animated.View>
   );
 }
@@ -661,8 +689,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#eee',
     backgroundColor: '#fff',

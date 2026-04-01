@@ -46,6 +46,18 @@ const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } =
   'Erzurum': { lat: 39.9043, lng: 41.2679, bbox: '40.3,39.3,42.5,40.5' },
 };
 
+/** Kayıtlı şehir adı CITY_DATA anahtarıyla birebir olmayabilir (büyük/küçük harf vb.) */
+function resolveCityDataKey(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  if (CITY_DATA[t]) return t;
+  const lower = t.toLocaleLowerCase('tr-TR');
+  for (const k of Object.keys(CITY_DATA)) {
+    if (k.toLocaleLowerCase('tr-TR') === lower) return k;
+  }
+  return null;
+}
+
 // Mahalle popüler aramaları - her şehir için
 const POPULAR_PLACES: { [key: string]: string[] } = {
   'İstanbul': ['Kadıköy', 'Beşiktaş', 'Şişli', 'Bakırköy', 'Ümraniye', 'Üsküdar', 'Fatih', 'Beyoğlu', 'Ataşehir', 'Maltepe'],
@@ -61,6 +73,7 @@ interface PlaceResult {
   lat: string;
   lon: string;
   type: string;
+  importance?: number;
   address?: {
     neighbourhood?: string;
     suburb?: string;
@@ -75,6 +88,21 @@ interface PlaceDetails {
   address: string;
   latitude: number;
   longitude: number;
+}
+
+/** Sokak / cadde / mahalle önceliği — hedef aramada üstte göster */
+function nominatimStreetRank(item: PlaceResult): number {
+  const t = (item.type || '').toLowerCase();
+  const dn = item.display_name || '';
+  const roadHint =
+    /\b(sokak|sokağı|cadde|caddesi|bulvar|bulvarı|mah\.?|mahalle|sk\.|cd\.)\b/i.test(dn) ||
+    !!(item.address?.road);
+  if (t === 'house' || t === 'building') return 0;
+  if (roadHint || t === 'road' || t === 'residential' || t === 'living_street') return 1;
+  if (t === 'neighbourhood' || t === 'suburb' || t === 'quarter') return 2;
+  if (t === 'village' || t === 'hamlet' || t === 'farm') return 3;
+  if (t === 'town' || t === 'city' || t === 'administrative') return 8;
+  return 4;
 }
 
 /** Liste ve çipler için tek yerden layout — küçük ekranda sıkışmayı azaltır */
@@ -100,6 +128,8 @@ interface PlacesAutocompleteProps {
   suggestionsFirst?: boolean;
   /** Daha fazla sonuç; şehir viewbox sınırı gevşetilir */
   widerSearch?: boolean;
+  /** true: şehir biliniyorsa her zaman viewbox ile sınırla (hedef seçim — tüm TR önerilerini kes) */
+  strictCityBounds?: boolean;
   /** Hedef modalı: arama kutusu daha yüksek */
   inputSize?: 'default' | 'large';
   /** Öneri listesi tavanına eklenecek piksel */
@@ -115,6 +145,7 @@ export default function PlacesAutocomplete({
   visualVariant = 'default',
   suggestionsFirst = false,
   widerSearch = false,
+  strictCityBounds = false,
   inputSize = 'default',
   predictionMaxHeightBonus = 0,
 }: PlacesAutocompleteProps) {
@@ -160,26 +191,28 @@ export default function PlacesAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, widerSearch, city]);
+  }, [query, widerSearch, city, strictCityBounds]);
 
   // Nominatim API ile arama (ÜCRETSİZ)
   const searchPlaces = async (input: string) => {
     setLoading(true);
     try {
-      // Şehir bilgisi varsa bbox ekle
-      const cityData = city ? CITY_DATA[city] : null;
-      
+      const cityKey = resolveCityDataKey(city);
+      const cityData = cityKey ? CITY_DATA[cityKey] : null;
+      const cityLabel = cityKey || city.trim();
+
       // Arama sorgusunu hazırla
       let searchQuery = input;
-      if (city && !input.toLowerCase().includes(city.toLowerCase())) {
-        searchQuery = `${input}, ${city}`;
+      if (cityLabel && !input.toLowerCase().includes(cityLabel.toLowerCase())) {
+        searchQuery = `${input}, ${cityLabel}`;
       }
       
       // Nominatim API - OpenStreetMap ücretsiz servisi
-      const limit = widerSearch ? 20 : 10;
+      const limit = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 15 : 10;
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=tr&addressdetails=1&limit=${limit}&accept-language=tr`;
       
-      if (cityData && !widerSearch) {
+      const useBbox = cityData && (!widerSearch || strictCityBounds);
+      if (useBbox) {
         url += `&viewbox=${cityData.bbox}&bounded=1`;
       }
       
@@ -196,12 +229,30 @@ export default function PlacesAutocomplete({
       console.log('📍 Nominatim sonuç:', data.length, 'adet');
       
       if (data && data.length > 0) {
+        const cityNeedle = cityLabel
+          ? cityLabel.toLocaleLowerCase('tr-TR')
+          : '';
         // Sonuçları filtrele ve formatla
-        const filtered = data.filter(item => {
+        let filtered = data.filter(item => {
           // Ülke, il gibi çok geniş sonuçları çıkar
           return !['country', 'state', 'county'].includes(item.type);
         });
-        
+        if (strictCityBounds && cityNeedle) {
+          filtered = filtered.filter((item) =>
+            item.display_name.toLocaleLowerCase('tr-TR').includes(cityNeedle),
+          );
+        }
+
+        filtered.sort((a, b) => {
+          const ra = nominatimStreetRank(a);
+          const rb = nominatimStreetRank(b);
+          if (ra !== rb) return ra - rb;
+          const ia = typeof a.importance === 'number' ? a.importance : 0;
+          const ib = typeof b.importance === 'number' ? b.importance : 0;
+          if (ib !== ia) return ib - ia;
+          return 0;
+        });
+
         setPredictions(filtered);
         setShowPredictions(true);
       } else {
@@ -293,8 +344,11 @@ export default function PlacesAutocomplete({
   };
 
   // Popüler yerler listesi
+  const popularCityKey = resolveCityDataKey(city);
   const popularPlaces =
-    hidePopularChips || !city || !POPULAR_PLACES[city] ? [] : POPULAR_PLACES[city];
+    hidePopularChips || !popularCityKey || !POPULAR_PLACES[popularCityKey]
+      ? []
+      : POPULAR_PLACES[popularCityKey];
 
   return (
     <View style={[styles.container, tech && suggestionsFirst && styles.containerTechSuggestionsFirst]}>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView } from 'react-native';
+import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -86,14 +87,14 @@ async function joinTripCallAgoraAsCaller(
   if (Platform.OS === 'android') {
     const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
     if (r !== PermissionsAndroid.RESULTS.GRANTED) {
-      Alert.alert('İzin gerekli', 'Sesli arama için mikrofon izni şart.');
+      appAlert('İzin gerekli', 'Sesli arama için mikrofon izni şart.');
       return false;
     }
   }
   try {
     const tok = String(agoraToken || '').trim();
     if (!tok) {
-      Alert.alert('Hata', 'Arama bileti (token) alınamadı');
+      appAlert('Hata', 'Arama bileti (token) alınamadı');
       return false;
     }
     await agoraVoiceService.initialize();
@@ -101,7 +102,7 @@ async function joinTripCallAgoraAsCaller(
     return true;
   } catch (e) {
     console.error('Agora caller join:', e);
-    Alert.alert('Hata', 'Ses kanalına bağlanılamadı');
+    appAlert('Hata', 'Ses kanalına bağlanılamadı');
     return false;
   }
 }
@@ -126,6 +127,84 @@ async function parseApiJson(response: Response): Promise<{ data: Record<string, 
     return { data: JSON.parse(text) as Record<string, unknown> };
   } catch {
     return { data: { detail: text.length > 180 ? `${text.slice(0, 180)}…` : text } };
+  }
+}
+
+/** Rol ekranındayken şikayet — eşleşme zorla bitti / iptal sonrası */
+/** Eşleşme (matched / in_progress) varken uygulama yeniden açılınca rol ekranına düşmemek için */
+const MATCH_SESSION_STATUSES = ['matched', 'in_progress'] as const;
+
+async function tryResumeActiveMatchSession(
+  parsedUser: User,
+  deps: {
+    saveUser: (u: User) => Promise<void>;
+    setUser: (u: User | ((prev: User | null) => User | null)) => void;
+    setSelectedRole: (r: 'passenger' | 'driver') => void;
+    setScreen: (s: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin' | 'community' | 'driver-kyc') => void;
+  },
+): Promise<boolean> {
+  const uid = parsedUser.id;
+  if (!uid) return false;
+  const enc = encodeURIComponent(uid);
+  try {
+    const [pr, dr] = await Promise.all([
+      fetch(`${API_URL}/passenger/active-tag?user_id=${enc}`),
+      fetch(`${API_URL}/driver/active-tag?user_id=${enc}`),
+    ]);
+    const pj = await pr.json().catch(() => ({}));
+    const dj = await dr.json().catch(() => ({}));
+    const pTag = pj?.tag;
+    const dTag = dj?.tag;
+    const pOk =
+      pj?.success &&
+      pTag &&
+      MATCH_SESSION_STATUSES.includes(pTag.status) &&
+      String(pTag.passenger_id) === String(uid);
+    const dOk =
+      dj?.success &&
+      dTag &&
+      MATCH_SESSION_STATUSES.includes(dTag.status) &&
+      String(dTag.driver_id) === String(uid);
+    if (pOk) {
+      const u: User = { ...parsedUser, role: 'passenger' };
+      await deps.saveUser(u);
+      deps.setUser(u);
+      deps.setSelectedRole('passenger');
+      deps.setScreen('dashboard');
+      return true;
+    }
+    if (dOk) {
+      const u: User = { ...parsedUser, role: 'driver' };
+      await deps.saveUser(u);
+      deps.setUser(u);
+      deps.setSelectedRole('driver');
+      deps.setScreen('dashboard');
+      return true;
+    }
+  } catch (e) {
+    console.warn('tryResumeActiveMatchSession', e);
+  }
+  return false;
+}
+
+async function submitUserReport(
+  reporterId: string,
+  reportedUserId: string,
+  reason: string,
+  details?: string,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!reporterId?.trim() || !reportedUserId?.trim()) {
+    return { ok: false, message: 'Eksik bilgi' };
+  }
+  try {
+    const url = details
+      ? `${API_URL}/user/report?user_id=${encodeURIComponent(reporterId)}&reported_user_id=${encodeURIComponent(reportedUserId)}&reason=${encodeURIComponent(reason)}&details=${encodeURIComponent(details)}`
+      : `${API_URL}/user/report?user_id=${encodeURIComponent(reporterId)}&reported_user_id=${encodeURIComponent(reportedUserId)}&reason=${encodeURIComponent(reason)}`;
+    const response = await fetch(url, { method: 'POST' });
+    const data = (await response.json()) as { success?: boolean; message?: string };
+    return { ok: data.success !== false, message: data.message };
+  } catch {
+    return { ok: false, message: 'Şikayet gönderilemedi' };
   }
 }
 
@@ -815,12 +894,24 @@ export default function App() {
           cleanPhone === '05326497412' ||
           cleanPhone.endsWith('5326497412');
 
-        if (isMainAdmin) {
-          setIsAdmin(true);
-          setShowAdminPanel(true);
-          setScreen('role-select');
-        } else {
-          setScreen('role-select');
+        let resumedMatch = false;
+        if (!isMainAdmin) {
+          resumedMatch = await tryResumeActiveMatchSession(parsedUser, {
+            saveUser,
+            setUser,
+            setSelectedRole,
+            setScreen,
+          });
+        }
+
+        if (!resumedMatch) {
+          if (isMainAdmin) {
+            setIsAdmin(true);
+            setShowAdminPanel(true);
+            setScreen('role-select');
+          } else {
+            setScreen('role-select');
+          }
         }
 
         if (!legalWasAccepted) {
@@ -841,17 +932,38 @@ export default function App() {
     }
   };
   
-  // Legal consent kabul
+  // Legal consent red
+  const handleLegalDecline = async () => {
+    appAlert(
+      'Uyarı',
+      'Kullanım şartlarını kabul etmeden devam edemezsiniz.',
+      [{ text: 'Tamam' }]
+    );
+  };
+
+  const saveUser = async (userData: User) => {
+    await AsyncStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
+  };
+
+  // Legal consent kabul (saveUser sonrası — aktif eşleşmede rol düzeltmesi için)
   const handleLegalAccept = async () => {
     await AsyncStorage.setItem('legal_accepted', 'true');
     setLegalAccepted(true);
     setShowLegalConsent(false);
-    // İlk açılışta legal sonrası aktif trip / dispatch teklifi varsa dashboard
-    if (user?.id && user.role) {
+    if (user?.id) {
       try {
         const cleanPhone = user.phone?.replace(/\D/g, '');
         const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
-        if (isMainAdmin) return;
+        if (!isMainAdmin) {
+          const resumed = await tryResumeActiveMatchSession(user as User, {
+            saveUser,
+            setUser,
+            setSelectedRole,
+            setScreen,
+          });
+          if (resumed) return;
+        }
         if (user.role === 'passenger') {
           const r = await fetch(`${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(user.id)}`);
           const j = await r.json();
@@ -888,20 +1000,32 @@ export default function App() {
       }
     }
   };
-  
-  // Legal consent red
-  const handleLegalDecline = async () => {
-    Alert.alert(
-      'Uyarı',
-      'Kullanım şartlarını kabul etmeden devam edemezsiniz.',
-      [{ text: 'Tamam' }]
-    );
-  };
 
-  const saveUser = async (userData: User) => {
-    await AsyncStorage.setItem('user', JSON.stringify(userData));
-    setUser(userData);
-  };
+  /** Rol ekranına düşmüş olsalar bile aktif eşleşme varsa doğrudan panele al */
+  useEffect(() => {
+    if (screen !== 'role-select' || !user?.id) return;
+    const cleanPhone = user.phone?.replace(/\D/g, '') || '';
+    const isMainAdmin =
+      cleanPhone === '5326497412' ||
+      cleanPhone === '05326497412' ||
+      cleanPhone.endsWith('5326497412');
+    if (isMainAdmin) return;
+    let cancelled = false;
+    void (async () => {
+      const ok = await tryResumeActiveMatchSession(user, {
+        saveUser,
+        setUser,
+        setSelectedRole,
+        setScreen,
+      });
+      if (!cancelled && ok) {
+        console.log('✅ Aktif eşleşme — rol ekranından panele yönlendirildi');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, user?.id]);
 
   const logout = async () => {
     // Logout sırasında push token'ı sil
@@ -928,13 +1052,13 @@ export default function App() {
     
     // 10 hane kontrolü
     if (cleanPhone.length !== 10) {
-      Alert.alert('Hata', 'Telefon numarası 10 haneli olmalıdır (5XX XXX XX XX)');
+      appAlert('Hata', 'Telefon numarası 10 haneli olmalıdır (5XX XXX XX XX)');
       return;
     }
     
     // 5 ile başlama kontrolü
     if (!cleanPhone.startsWith('5')) {
-      Alert.alert('Hata', 'Telefon numarası 5 ile başlamalıdır');
+      appAlert('Hata', 'Telefon numarası 5 ile başlamalıdır');
       return;
     }
 
@@ -949,7 +1073,7 @@ export default function App() {
       const { data: checkData } = await parseApiJson(checkResponse);
       console.log('🔍 Check user response:', checkData, 'status', checkResponse.status);
       if (!checkResponse.ok) {
-        Alert.alert('Hata', apiErrMsg(checkData, `Sunucu hatası (${checkResponse.status})`));
+        appAlert('Hata', apiErrMsg(checkData, `Sunucu hatası (${checkResponse.status})`));
         return;
       }
 
@@ -975,13 +1099,13 @@ export default function App() {
         });
         const { data } = await parseApiJson(response);
         if (!response.ok) {
-          Alert.alert('Hata', apiErrMsg(data, 'Doğrulama kodu gönderilemedi'));
+          appAlert('Hata', apiErrMsg(data, 'Doğrulama kodu gönderilemedi'));
           return;
         }
         if (data.success) {
           setScreen('otp');
         } else {
-          Alert.alert('Hata', apiErrMsg(data, 'Doğrulama kodu gönderilemedi'));
+          appAlert('Hata', apiErrMsg(data, 'Doğrulama kodu gönderilemedi'));
         }
       } else if (checkData.success && checkData.user_exists && !checkData.has_pin) {
         // Kayıtlı ama PIN yok - OTP gönder ve PIN oluştur
@@ -994,18 +1118,18 @@ export default function App() {
         });
         const { data } = await parseApiJson(response);
         if (!response.ok) {
-          Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
+          appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
           return;
         }
         if (data.success) {
-          Alert.alert('Şifre Oluşturma 🔐', 'Hesabınız için 6 haneli şifre belirlemeniz gerekiyor. SMS ile gelen kodu girin.');
+          appAlert('Şifre Oluşturma 🔐', 'Hesabınız için 6 haneli şifre belirlemeniz gerekiyor. SMS ile gelen kodu girin.');
           setScreen('otp');
         } else {
-          Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
+          appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
         }
       } else {
         // 🆕 YENİ KULLANICI - Kayıt sayfasına yönlendir
-        Alert.alert(
+        appAlert(
           'Kayıt Ol 📝', 
           'Bu numara kayıtlı değil. Kayıt olmak ister misiniz?',
           [
@@ -1022,14 +1146,14 @@ export default function App() {
                 });
                 const { data } = await parseApiJson(response);
                 if (!response.ok) {
-                  Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
+                  appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
                   return;
                 }
                 if (data.success) {
-                  Alert.alert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.');
+                  appAlert('SMS Gönderildi', 'Telefon doğrulaması için SMS kodu gönderildi.');
                   setScreen('otp');
                 } else {
-                  Alert.alert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
+                  appAlert('Hata', apiErrMsg(data, 'SMS gönderilemedi'));
                 }
               }
             }
@@ -1039,13 +1163,13 @@ export default function App() {
       }
     } catch (error) {
       console.error('handleSendOTP error:', error);
-      Alert.alert('Hata', 'Bağlantı hatası');
+      appAlert('Hata', 'Bağlantı hatası');
     }
   };
 
   const handleVerifyOTP = async () => {
     if (!otp) {
-      Alert.alert('Hata', 'OTP kodunu girin');
+      appAlert('Hata', 'OTP kodunu girin');
       return;
     }
     try {
@@ -1060,7 +1184,7 @@ export default function App() {
       const { data } = await parseApiJson(response);
       console.log('🔐 Verify OTP response:', data, 'status', response.status);
       if (!response.ok) {
-        Alert.alert('Hata', apiErrMsg(data, 'OTP doğrulanamadı'));
+        appAlert('Hata', apiErrMsg(data, 'OTP doğrulanamadı'));
         return;
       }
 
@@ -1107,16 +1231,16 @@ export default function App() {
               if (registerData.success && registerData.user) {
                 await saveUser(registerData.user);
                 setUser(registerData.user);
-                Alert.alert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
+                appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
                 ]);
               } else {
-                Alert.alert('Hata', registerData.detail || 'Kayıt oluşturulamadı');
+                appAlert('Hata', registerData.detail || 'Kayıt oluşturulamadı');
                 setScreen('register');
               }
             } catch (regError) {
               console.error('Kayıt hatası:', regError);
-              Alert.alert('Hata', 'Kayıt işlemi başarısız');
+              appAlert('Hata', 'Kayıt işlemi başarısız');
               setScreen('register');
             }
           } else {
@@ -1125,11 +1249,11 @@ export default function App() {
           }
         }
       } else {
-        Alert.alert('Hata', data.detail || 'OTP doğrulanamadı');
+        appAlert('Hata', data.detail || 'OTP doğrulanamadı');
       }
     } catch (error) {
       console.error('handleVerifyOTP error:', error);
-      Alert.alert('Hata', 'OTP doğrulanamadı');
+      appAlert('Hata', 'OTP doğrulanamadı');
     }
   };
 
@@ -1170,7 +1294,7 @@ export default function App() {
         
         return true;
       } else {
-        Alert.alert(
+        appAlert(
           'Konum İzni Gerekli',
           'LeylekTag\'ı kullanabilmek için konum izni vermeniz gerekmektedir. Ayarlardan konum iznini açabilirsiniz.',
           [{ text: 'Tamam' }]
@@ -1210,12 +1334,12 @@ export default function App() {
 
   const handleRegister = async () => {
     if (!name) {
-      Alert.alert('Hata', 'Adınızı girin');
+      appAlert('Hata', 'Adınızı girin');
       return;
     }
 
     if (!selectedCity) {
-      Alert.alert('Hata', 'Şehir seçimi yapmalısınız');
+      appAlert('Hata', 'Şehir seçimi yapmalısınız');
       return;
     }
 
@@ -1232,10 +1356,10 @@ export default function App() {
         
         setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
       } else {
-        Alert.alert('Hata', data.detail || 'Kayıt oluşturulamadı');
+        appAlert('Hata', data.detail || 'Kayıt oluşturulamadı');
       }
     } catch (error) {
-      Alert.alert('Hata', 'Kayıt oluşturulamadı');
+      appAlert('Hata', 'Kayıt oluşturulamadı');
     }
   };
 
@@ -1372,7 +1496,7 @@ export default function App() {
                 onPress={async () => {
                   void tapButtonHaptic();
                   if (!kvkkAccepted) {
-                    Alert.alert(
+                    appAlert(
                       '⚠️ Onay Gerekli', 
                       'Devam etmek için Aydınlatma Metni ve Gizlilik Politikasını kabul etmelisiniz.',
                       [{ text: 'Tamam', style: 'default' }]
@@ -1487,12 +1611,12 @@ export default function App() {
                 });
                 const data = await response.json();
                 if (data.success) {
-                  Alert.alert('Başarılı', 'Yeni kod gönderildi');
+                  appAlert('Başarılı', 'Yeni kod gönderildi');
                 } else {
-                  Alert.alert('Hata', apiErrMsg(data, 'Kod gönderilemedi'));
+                  appAlert('Hata', apiErrMsg(data, 'Kod gönderilemedi'));
                 }
               } catch (error) {
-                Alert.alert('Hata', 'Kod gönderilemedi');
+                appAlert('Hata', 'Kod gönderilemedi');
               }
             }} />
 
@@ -1639,14 +1763,14 @@ export default function App() {
                       if (Platform.OS === 'web') {
                         window.alert('Hata: ' + em);
                       } else {
-                        Alert.alert('Hata', em);
+                        appAlert('Hata', em);
                       }
                     }
                   } catch (error: any) {
                     if (Platform.OS === 'web') {
                       window.alert('Hata: ' + (error.message || 'Bir hata oluştu'));
                     } else {
-                      Alert.alert('Hata', error.message || 'Bir hata oluştu');
+                      appAlert('Hata', error.message || 'Bir hata oluştu');
                     }
                   } finally {
                     setLoading(false);
@@ -1794,11 +1918,11 @@ export default function App() {
   if (screen === 'set-pin') {
     const handleSetPin = async () => {
       if (pin.length !== 6) {
-        Alert.alert('Hata', 'PIN 6 haneli olmalıdır');
+        appAlert('Hata', 'PIN 6 haneli olmalıdır');
         return;
       }
       if (pin !== confirmPin) {
-        Alert.alert('Hata', 'PIN kodları eşleşmiyor');
+        appAlert('Hata', 'PIN kodları eşleşmiyor');
         return;
       }
 
@@ -1821,13 +1945,13 @@ export default function App() {
           });
           const setPinData = await setPinResponse.json();
           if (setPinData.success) {
-            Alert.alert(
+            appAlert(
               'Kayıt Başarılı',
               'Hesabınız hazır. PIN kodunuzu kimseyle paylaşmayın.',
               [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
             );
           } else {
-            Alert.alert('Hata', setPinData.detail || 'PIN ayarlanamadı');
+            appAlert('Hata', setPinData.detail || 'PIN ayarlanamadı');
           }
           return;
         }
@@ -1849,17 +1973,17 @@ export default function App() {
         if (registerData.success && registerData.user) {
           setUser(registerData.user);
           await saveUser(registerData.user);
-          Alert.alert(
+          appAlert(
             'Kayıt Başarılı',
             'Hesabınız oluşturuldu. PIN kodunuzu kimseyle paylaşmayın.',
             [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
           );
         } else {
-          Alert.alert('Hata', registerData.detail || 'Kayıt yapılamadı');
+          appAlert('Hata', registerData.detail || 'Kayıt yapılamadı');
         }
       } catch (error) {
         console.error('Set PIN / Register error:', error);
-        Alert.alert('Hata', 'Bir sorun oluştu');
+        appAlert('Hata', 'Bir sorun oluştu');
       }
     };
 
@@ -1962,7 +2086,7 @@ export default function App() {
   if (screen === 'enter-pin') {
     const handleEnterPin = async () => {
       if (pin.length !== 6) {
-        Alert.alert('Hata', 'PIN 6 haneli olmalıdır');
+        appAlert('Hata', 'PIN 6 haneli olmalıdır');
         return;
       }
 
@@ -1979,7 +2103,7 @@ export default function App() {
           normalizeTrMobile10(user?.phone) ||
           normalizeTrMobile10(storedPhone);
         if (phoneDigits.length !== 10) {
-          Alert.alert(
+          appAlert(
             'Hata',
             'Telefon numarası bulunamadı. Lütfen geri dönüp numaranızı tekrar girip devam edin.'
           );
@@ -1998,7 +2122,7 @@ export default function App() {
         const { data } = await parseApiJson(response);
 
         if (!response.ok) {
-          Alert.alert('Hata', apiErrMsg(data, 'Yanlış şifre veya giriş yapılamadı'));
+          appAlert('Hata', apiErrMsg(data, 'Yanlış şifre veya giriş yapılamadı'));
           setPin('');
           return;
         }
@@ -2021,11 +2145,11 @@ export default function App() {
           
           setScreen('role-select');
         } else {
-          Alert.alert('Hata', data.detail || 'Yanlış şifre');
+          appAlert('Hata', data.detail || 'Yanlış şifre');
           setPin('');
         }
       } catch (error) {
-        Alert.alert('Hata', 'Bir sorun oluştu');
+        appAlert('Hata', 'Bir sorun oluştu');
       }
     };
 
@@ -2140,7 +2264,7 @@ export default function App() {
               onPress={async () => {
                 void tapButtonHaptic();
                 if (!phone || phone.length < 10) {
-                  Alert.alert('Hata', 'Geçerli bir telefon numarası girin');
+                  appAlert('Hata', 'Geçerli bir telefon numarası girin');
                   return;
                 }
                 
@@ -2155,7 +2279,7 @@ export default function App() {
                   const checkData = await checkResponse.json();
                   
                   if (!checkData.user_exists) {
-                    Alert.alert('Hata', 'Bu numara ile kayıtlı kullanıcı bulunamadı');
+                    appAlert('Hata', 'Bu numara ile kayıtlı kullanıcı bulunamadı');
                     setLoading(false);
                     return;
                   }
@@ -2171,10 +2295,10 @@ export default function App() {
                   if (data.success) {
                     setScreen('reset-pin');
                   } else {
-                    Alert.alert('Hata', apiErrMsg(data, 'OTP gönderilemedi'));
+                    appAlert('Hata', apiErrMsg(data, 'OTP gönderilemedi'));
                   }
                 } catch (error) {
-                  Alert.alert('Hata', 'Bir hata oluştu');
+                  appAlert('Hata', 'Bir hata oluştu');
                 } finally {
                   setLoading(false);
                 }
@@ -2260,11 +2384,11 @@ export default function App() {
               onPress={async () => {
                 void tapButtonHaptic();
                 if (!otp || otp.length !== 6) {
-                  Alert.alert('Hata', 'Geçerli bir doğrulama kodu girin');
+                  appAlert('Hata', 'Geçerli bir doğrulama kodu girin');
                   return;
                 }
                 if (!pin || pin.length !== 6) {
-                  Alert.alert('Hata', 'Şifre 6 haneli olmalıdır');
+                  appAlert('Hata', 'Şifre 6 haneli olmalıdır');
                   return;
                 }
                 
@@ -2279,7 +2403,7 @@ export default function App() {
                   const verifyData = await verifyResponse.json();
                   
                   if (!verifyData.success) {
-                    Alert.alert('Hata', verifyData.detail || 'Doğrulama kodu yanlış');
+                    appAlert('Hata', verifyData.detail || 'Doğrulama kodu yanlış');
                     setLoading(false);
                     return;
                   }
@@ -2293,7 +2417,7 @@ export default function App() {
                   const resetData = await resetResponse.json();
                   
                   if (resetData.success) {
-                    Alert.alert('Başarılı', 'Şifreniz güncellendi. Giriş yapabilirsiniz.', [
+                    appAlert('Başarılı', 'Şifreniz güncellendi. Giriş yapabilirsiniz.', [
                       { text: 'Tamam', onPress: () => {
                         setOtp('');
                         setPin('');
@@ -2301,10 +2425,10 @@ export default function App() {
                       }}
                     ]);
                   } else {
-                    Alert.alert('Hata', resetData.detail || 'Şifre güncellenemedi');
+                    appAlert('Hata', resetData.detail || 'Şifre güncellenemedi');
                   }
                 } catch (error) {
-                  Alert.alert('Hata', 'Bir hata oluştu');
+                  appAlert('Hata', 'Bir hata oluştu');
                 } finally {
                   setLoading(false);
                 }
@@ -2466,7 +2590,7 @@ export default function App() {
               style={styles.roleExitBtn}
               onPress={() => {
                 roleScreenHaptic();
-                Alert.alert('Çıkış', 'Oturumu kapatmak istiyor musunuz?', [
+                appAlert('Çıkış', 'Oturumu kapatmak istiyor musunuz?', [
                   { text: 'İptal', style: 'cancel' },
                   { text: 'Çıkış', style: 'destructive', onPress: async () => {
                     await AsyncStorage.removeItem('user');
@@ -2712,7 +2836,7 @@ export default function App() {
         }
         onBack={() => setScreen('role-select')}
         onSuccess={() => {
-          Alert.alert(
+          appAlert(
             '✅ Başvuru Alındı',
             'Başvurunuz inceleniyor. Onaylandığında sürücü olarak giriş yapabilirsiniz.',
             [{ text: 'Tamam', onPress: () => setScreen('role-select') }]
@@ -2927,7 +3051,7 @@ function TikTokOfferCard({
     if (!priceInput || sending || sent) return;
     const price = Number(priceInput);
     if (price < 10) {
-      Alert.alert('Hata', 'Minimum 10₺ giriniz');
+      appAlert('Hata', 'Minimum 10₺ giriniz');
       return;
     }
     
@@ -5668,6 +5792,18 @@ function PassengerDashboard({
   const [receiverOffline, setReceiverOffline] = useState(false);
   
   const isCallActiveRef = useRef(false);
+
+  const closePassengerCallUi = useCallback(() => {
+    setShowCallScreen(false);
+    setCallScreenData(null);
+    setCalling(false);
+    isCallActiveRef.current = false;
+    setCallAccepted(false);
+    setCallRejected(false);
+    setCallEnded(false);
+    setReceiverOffline(false);
+    clearIncomingCall();
+  }, [clearIncomingCall]);
   
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
@@ -5707,7 +5843,7 @@ function PassengerDashboard({
     },
     onCallRejected: (data) => {
       console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
-      setCallRejected(true);
+      closePassengerCallUi();
     },
     onCallEnded: (data) => {
       console.log('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
@@ -5845,41 +5981,74 @@ function PassengerDashboard({
       
       // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
       const enderType = data.ender_type;
-      const enderId = data.ender_id;
+      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
       const tagId = data.tag_id;
-      
+      const enderFirst = displayFirstName(
+        (data as { ender_name?: string }).ender_name,
+        enderType === 'driver' ? 'Sürücü' : 'Yolcu',
+      );
+      const selfEnded = user?.id && String(user.id) === enderId;
+      const uid = String(user?.id || '');
+
       if (enderType === 'driver') {
-        // Sürücü bitirdi - Yolcuya onay sor
-        Alert.alert(
-          '⚠️ Sürücü Eşleşmeyi Bitirdi',
-          'Sürücü yolculuğu sonlandırdı.\nBu işlemi onaylıyor musunuz?',
+        appAlert(
+          'Eşleşme sonlandırıldı',
+          `Sürücü ${enderFirst} eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
-            { 
-              text: 'Onaylıyorum (0 puan)', 
+            {
+              text: 'Onaylıyorum (0 puan)',
               style: 'default',
               onPress: async () => {
-                // Onay - Sürücüye 0 puan
                 try {
                   await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
-                } catch (e) { console.log('Onay gönderilemedi:', e); }
-              }
+                } catch (e) {
+                  console.log('Onay gönderilemedi:', e);
+                }
+              },
             },
-            { 
-              text: 'Onaylamıyorum (-5 puan)', 
+            {
+              text: 'Onaylamıyorum (-5 puan)',
               style: 'destructive',
               onPress: async () => {
-                // Red - Sürücüye -5 puan
                 try {
                   await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
-                } catch (e) { console.log('Red gönderilemedi:', e); }
-              }
-            }
+                } catch (e) {
+                  console.log('Red gönderilemedi:', e);
+                }
+              },
+            },
+            {
+              text: 'Şikayet et',
+              style: 'destructive',
+              onPress: async () => {
+                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
+                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
+              },
+            },
           ],
-          { cancelable: false }
+          { cancelable: false, variant: 'warning' },
         );
+      } else if (selfEnded) {
+        appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
+          variant: 'info',
+        });
       } else {
-        // Yolcu bitirdi - Bu yolcu tarafı, sadece bilgi
-        Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme sonlandırıldı.');
+        appAlert(
+          'Eşleşme sonlandırıldı',
+          `Yolcu ${enderFirst} eşleşmeyi zorla bitirdi. Şikayet etmek için "Şikayet et"e dokunun.`,
+          [
+            { text: 'Tamam', style: 'default' },
+            {
+              text: 'Şikayet et',
+              style: 'destructive',
+              onPress: async () => {
+                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
+                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
+              },
+            },
+          ],
+          { variant: 'warning' },
+        );
       }
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
@@ -6071,7 +6240,32 @@ function PassengerDashboard({
           
           // Alert'i sadece bir kez göster
           if (shouldShowAlert) {
-            Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
+            const t = data.tag;
+            const otherId = String(t.driver_id || '');
+            const otherName = displayFirstName(t.driver_name, 'Sürücü');
+            appAlert(
+              'Eşleşme sonlandırıldı',
+              `${otherName} eşleşmeyi sonlandırdı. Şikayet etmek için "Şikayet et"e dokunun.`,
+              [
+                { text: 'Tamam', style: 'default' },
+                ...(otherId
+                  ? [
+                      {
+                        text: 'Şikayet et',
+                        style: 'destructive' as const,
+                        onPress: async () => {
+                          const r = await submitUserReport(String(user.id), otherId, 'trip_cancelled_other');
+                          appAlert(
+                            r.ok ? 'Şikayet alındı' : 'Hata',
+                            r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'),
+                          );
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+              { variant: 'warning' },
+            );
           }
           return;
         }
@@ -6165,7 +6359,7 @@ function PassengerDashboard({
     
     // Hedef kontrolü (arama tek başına yetmez; haritadan nokta şart)
     if (!destination) {
-      Alert.alert(
+      appAlert(
         '⚠️ Hedef gerekli',
         destinationAwaitingMapTap
           ? 'Listeden bölgeyi seçtikten sonra haritadan tam durağa dokunun veya yeşil işaretçiyi sürükleyin.'
@@ -6180,7 +6374,7 @@ function PassengerDashboard({
     if (!userLocation) {
       const granted = await requestLocationPermission();
       if (!granted) {
-        Alert.alert(
+        appAlert(
           'Konum İzni Gerekli',
           'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
           [{ text: 'Tamam' }]
@@ -6234,7 +6428,7 @@ function PassengerDashboard({
       setPriceInfo(fallback as any);
       setSelectedPrice(fallback.suggested_price);
       setShowPriceModal(true);
-      Alert.alert('Bilgi', 'Sunucuya ulaşılamadı, yaklaşık fiyat gösteriliyor.');
+      appAlert('Bilgi', 'Sunucuya ulaşılamadı, yaklaşık fiyat gösteriliyor.');
     } finally {
       setPriceLoading(false);
     }
@@ -6287,12 +6481,12 @@ function PassengerDashboard({
     playTapSound();
     if (!destination || !priceInfo || !selectedPrice || !user?.id) {
       if (!destination) {
-        Alert.alert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
+        appAlert('Hedef gerekli', 'Önce gideceğiniz konumu seçin (haritadan onaylayın).');
       }
       return;
     }
     if (!passengerPaymentPreference) {
-      Alert.alert('Ödeme seçimi', 'Lütfen nakit veya sanal kart ile ödeyeceğinizi seçin.');
+      appAlert('Ödeme seçimi', 'Lütfen nakit veya sanal kart ile ödeyeceğinizi seçin.');
       return;
     }
 
@@ -6300,7 +6494,7 @@ function PassengerDashboard({
     setLoading(true);
 
     if (!userLocation) {
-      Alert.alert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
+      appAlert('Hata', 'Konum bilgisi alınamadı. Lütfen konum iznini kontrol edin.');
       setLoading(false);
       return;
     }
@@ -6339,7 +6533,7 @@ function PassengerDashboard({
     const dLat = Number(destination.latitude);
     const dLng = Number(destination.longitude);
     if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng) || !Number.isFinite(dLat) || !Number.isFinite(dLng)) {
-      Alert.alert('Hata', 'Alış veya bırakış koordinatları geçersiz. Haritadan konumu tekrar onaylayın.');
+      appAlert('Hata', 'Alış veya bırakış koordinatları geçersiz. Haritadan konumu tekrar onaylayın.');
       setLoading(false);
       return;
     }
@@ -6348,7 +6542,7 @@ function PassengerDashboard({
     const estMin = Number(priceInfo.estimated_minutes ?? 0);
     const offerAmt = Math.round(Number(selectedPrice));
     if (!Number.isFinite(offerAmt) || offerAmt < 1) {
-      Alert.alert('Hata', 'Geçerli bir fiyat seçin.');
+      appAlert('Hata', 'Geçerli bir fiyat seçin.');
       setLoading(false);
       return;
     }
@@ -6453,7 +6647,7 @@ function PassengerDashboard({
           : raw.length > 0
             ? raw
             : 'Teklif oluşturulamadı';
-      Alert.alert('Hata', message);
+      appAlert('Hata', message);
     } finally {
       setLoading(false);
     }
@@ -6498,20 +6692,20 @@ function PassengerDashboard({
   /** Eşleşmiş yolculukta Agora araması — POST /voice/start-call + CallScreenV2 */
   const startTripCallAsPassenger = async (callType: 'audio' | 'video') => {
     if (!user?.id || !activeTag?.id) {
-      Alert.alert('Hata', 'Yolculuk bilgisi bulunamadı');
+      appAlert('Hata', 'Yolculuk bilgisi bulunamadı');
       return;
     }
     const receiverId = String(activeTag.driver_id ?? '').trim();
     if (!receiverId) {
-      Alert.alert('Hata', 'Sürücü bilgisi bulunamadı');
+      appAlert('Hata', 'Sürücü bilgisi bulunamadı');
       return;
     }
     if (receiverId === String(user.id).trim()) {
-      Alert.alert('Hata', 'Kendinizi arayamazsınız');
+      appAlert('Hata', 'Kendinizi arayamazsınız');
       return;
     }
     if (showCallScreen || incomingCallData) {
-      Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+      appAlert('Uyarı', 'Zaten bir arama devam ediyor');
       return;
     }
     clearIncomingCall();
@@ -6531,7 +6725,7 @@ function PassengerDashboard({
       const data = await response.json();
       setCalling(false);
       if (!data.success) {
-        Alert.alert('Hata', (data.detail as string) || 'Arama başlatılamadı');
+        appAlert('Hata', (data.detail as string) || 'Arama başlatılamadı');
         return;
       }
       const agoraOk = await joinTripCallAgoraAsCaller(
@@ -6557,7 +6751,7 @@ function PassengerDashboard({
     } catch (e) {
       console.error('Agora arama (yolcu):', e);
       setCalling(false);
-      Alert.alert('Hata', 'Arama başlatılamadı');
+      appAlert('Hata', 'Arama başlatılamadı');
     }
   };
 
@@ -6675,11 +6869,11 @@ function PassengerDashboard({
         loadActiveTag();
       } else {
         setMatchingInProgress(false);
-        Alert.alert('Hata', 'Teklif kabul edilemedi');
+        appAlert('Hata', 'Teklif kabul edilemedi');
       }
     } catch (error) {
       setMatchingInProgress(false);
-      Alert.alert('Hata', 'Teklif kabul edilemedi');
+      appAlert('Hata', 'Teklif kabul edilemedi');
     }
   };
 
@@ -6688,7 +6882,7 @@ function PassengerDashboard({
     playTapSound();
     if (!activeTag) return;
 
-    Alert.alert(
+    appAlert(
       'İptal Et',
       'İsteğinizi iptal etmek istediğinizden emin misiniz? Sürücülere bildirim gönderilecek.',
       [
@@ -6709,10 +6903,10 @@ function PassengerDashboard({
                 setActiveTag(null);
                 // offers artık useOffers hook'u tarafından yönetiliyor - otomatik temizlenecek
               } else {
-                Alert.alert('Hata', data.detail || 'İptal edilemedi');
+                appAlert('Hata', data.detail || 'İptal edilemedi');
               }
             } catch (error) {
-              Alert.alert('Hata', 'İptal edilemedi');
+              appAlert('Hata', 'İptal edilemedi');
             }
           }
         }
@@ -6744,10 +6938,10 @@ function PassengerDashboard({
         if (data.success) {
           loadActiveTag();
         } else {
-          Alert.alert('Hata', data.detail || 'Hedef güncellenemedi');
+          appAlert('Hata', data.detail || 'Hedef güncellenemedi');
         }
       } catch (error) {
-        Alert.alert('Hata', 'Hedef güncellenemedi');
+        appAlert('Hata', 'Hedef güncellenemedi');
       }
     }
   };
@@ -6821,7 +7015,7 @@ function PassengerDashboard({
         data?.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
       await commitDestinationFromMap(address, latitude, longitude);
     } catch {
-      Alert.alert('Hata', 'Adres okunamadı. İşareti sürükleyip tekrar deneyin.');
+      appAlert('Hata', 'Adres okunamadı. İşareti sürükleyip tekrar deneyin.');
     } finally {
       setDestinationPickerGeocoding(false);
     }
@@ -7348,12 +7542,12 @@ function PassengerDashboard({
                       );
                       const data = await response.json();
                       if (data.success) {
-                        Alert.alert('✅ İstek Gönderildi', 'Şoförün onayı bekleniyor...');
+                        appAlert('✅ İstek Gönderildi', 'Şoförün onayı bekleniyor...');
                       } else {
-                        Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                        appAlert('Hata', data.detail || 'İstek gönderilemedi');
                       }
                     } catch (error) {
-                      Alert.alert('Hata', 'İstek gönderilemedi');
+                      appAlert('Hata', 'İstek gönderilemedi');
                     }
                   }}
                   onAutoComplete={async () => {
@@ -7365,16 +7559,16 @@ function PassengerDashboard({
                       );
                       const data = await response.json();
                       if (data.success) {
-                        Alert.alert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
+                        appAlert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
                         setActiveTag(null);
                         loadActiveTag();
                       }
                     } catch (error) {
-                      Alert.alert('Hata', 'İşlem başarısız');
+                      appAlert('Hata', 'İşlem başarısız');
                     }
                   }}
                   onComplete={() => {
-                    Alert.alert(
+                    appAlert(
                       'Yolculuğu Tamamla',
                       'Sürücü ile buluştunuz mu?',
                       [
@@ -7389,13 +7583,13 @@ function PassengerDashboard({
                               );
                               const data = await response.json();
                               if (data.success) {
-                                Alert.alert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
+                                appAlert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
                                 setActiveTag(null);
                                 setDestination(null);
                                 setScreen('role-select');
                               }
                             } catch (error) {
-                              Alert.alert('Hata', 'İşlem başarısız');
+                              appAlert('Hata', 'İşlem başarısız');
                             }
                           }
                         }
@@ -7409,13 +7603,13 @@ function PassengerDashboard({
                         { method: 'POST' }
                       );
                       const data = await response.json();
-                      Alert.alert(data.success ? '✅ Engellendi' : '❌ Hata', data.message);
+                      appAlert(data.success ? '✅ Engellendi' : '❌ Hata', data.message);
                     } catch (error) {
-                      Alert.alert('Hata', 'Engelleme başarısız');
+                      appAlert('Hata', 'Engelleme başarısız');
                     }
                   }}
                   onReport={() => {
-                    Alert.alert(
+                    appAlert(
                       '⚠️ Şikayet Et',
                       'Şikayet sebebinizi seçin:',
                       [
@@ -7436,7 +7630,7 @@ function PassengerDashboard({
                                     if (text && text.trim()) {
                                       reportUser('other', text.trim());
                                     } else {
-                                      Alert.alert('Hata', 'Lütfen açıklama yazın');
+                                      appAlert('Hata', 'Lütfen açıklama yazın');
                                     }
                                   }
                                 },
@@ -7457,9 +7651,9 @@ function PassengerDashboard({
                           : `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.driver_id}&reason=${reason}`;
                         const response = await fetch(url, { method: 'POST' });
                         const data = await response.json();
-                        Alert.alert('📩 Şikayet Alındı', data.message || 'Şikayetiniz admin\'e iletildi.');
+                        appAlert('📩 Şikayet Alındı', data.message || 'Şikayetiniz admin\'e iletildi.');
                       } catch (error) {
-                        Alert.alert('Hata', 'Şikayet gönderilemedi');
+                        appAlert('Hata', 'Şikayet gönderilemedi');
                       }
                     }
                   }}
@@ -7468,7 +7662,7 @@ function PassengerDashboard({
                     console.log('⚡ YOLCU - ZORLA BİTİR başlatılıyor...');
                     
                     if (!activeTag?.id) {
-                      Alert.alert('Hata', 'Eşleşme bilgisi bulunamadı');
+                      appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
                       return;
                     }
                     
@@ -7570,10 +7764,10 @@ function PassengerDashboard({
                         setDestination(null);
                         setScreen('role-select');
                       } else {
-                        Alert.alert('Hata', data.detail);
+                        appAlert('Hata', data.detail);
                       }
                     } catch (error) {
-                      Alert.alert('Hata', 'İşlem başarısız');
+                      appAlert('Hata', 'İşlem başarısız');
                     }
                   }}
                   onRequestApproval={async () => {
@@ -7584,12 +7778,12 @@ function PassengerDashboard({
                       );
                       const data = await response.json();
                       if (data.success) {
-                        Alert.alert('✅ İstek Gönderildi', 'Sürücünün onayı bekleniyor...');
+                        appAlert('✅ İstek Gönderildi', 'Sürücünün onayı bekleniyor...');
                       } else {
-                        Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                        appAlert('Hata', data.detail || 'İstek gönderilemedi');
                       }
                     } catch (error) {
-                      Alert.alert('Hata', 'İstek gönderilemedi');
+                      appAlert('Hata', 'İstek gönderilemedi');
                     }
                   }}
                   onForceEnd={async () => {
@@ -7607,10 +7801,10 @@ function PassengerDashboard({
                         setDestination(null);
                         setScreen('role-select');
                       } else {
-                        Alert.alert('Hata', data.detail);
+                        appAlert('Hata', data.detail);
                       }
                     } catch (error) {
-                      Alert.alert('Hata', 'İşlem başarısız');
+                      appAlert('Hata', 'İşlem başarısız');
                     }
                   }}
                 />
@@ -7648,8 +7842,8 @@ function PassengerDashboard({
                   userLocation?.longitude ??
                   destination?.longitude ??
                   28.9784,
-                latitudeDelta: 0.004,
-                longitudeDelta: 0.004,
+                latitudeDelta: 0.0024,
+                longitudeDelta: 0.0024,
               }}
               onPress={
                 destinationPickerPhase === 'map' ? handleDestinationMapPress : undefined
@@ -7785,7 +7979,7 @@ function PassengerDashboard({
                         hidePopularChips
                         visualVariant="tech"
                         suggestionsFirst={false}
-                        widerSearch
+                        strictCityBounds
                         inputSize="large"
                         predictionMaxHeightBonus={56}
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
@@ -7907,13 +8101,13 @@ function PassengerDashboard({
                     );
                     const data = await response.json();
                     if (data.success && data.approved) {
-                      Alert.alert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
+                      appAlert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
                       setActiveTag(null);
                       setDestination(null);
                       setScreen('role-select');
                     }
                   } catch (error) {
-                    Alert.alert('Hata', 'İşlem başarısız');
+                    appAlert('Hata', 'İşlem başarısız');
                   }
                   setShowTripEndModal(false);
                 }}
@@ -8179,6 +8373,18 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   
   // Arama kilidi
   const isCallActiveRef = useRef(false);
+
+  const closeDriverCallUi = useCallback(() => {
+    setShowCallScreen(false);
+    setCallScreenData(null);
+    setCalling(false);
+    isCallActiveRef.current = false;
+    setCallAccepted(false);
+    setCallRejected(false);
+    setCallEnded(false);
+    setReceiverOffline(false);
+    driverClearIncomingCall();
+  }, [driverClearIncomingCall]);
   
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
@@ -8213,7 +8419,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onCallRejected: (data) => {
       console.log('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
-      setCallRejected(true);
+      closeDriverCallUi();
     },
     onCallEnded: (data) => {
       console.log('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
@@ -8392,7 +8598,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     onOfferAccepted: (data) => {
       console.log('✅ ŞOFÖR - TEKLİF KABUL EDİLDİ (Socket):', data);
       loadData();
-      Alert.alert('🎉 Teklif Kabul Edildi!', 'Yolcu teklifinizi kabul etti.');
+      appAlert('🎉 Teklif Kabul Edildi!', 'Yolcu teklifinizi kabul etti.');
     },
     onOfferRejected: (data) => {
       console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
@@ -8400,7 +8606,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onOfferAlreadyTaken: () => {
       loadData();
-      Alert.alert(
+      appAlert(
         'Teklif müsait değil',
         'Bu çağrı başka bir sürücü tarafından alındı veya süresi doldu. Liste güncellendi.',
       );
@@ -8434,41 +8640,74 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       
       // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
       const enderType = data.ender_type;
-      const enderId = data.ender_id;
+      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
       const tagId = data.tag_id;
-      
+      const enderFirst = displayFirstName(
+        (data as { ender_name?: string }).ender_name,
+        enderType === 'driver' ? 'Sürücü' : 'Yolcu',
+      );
+      const selfEnded = user?.id && String(user.id) === enderId;
+      const uid = String(user?.id || '');
+
       if (enderType === 'passenger') {
-        // Yolcu bitirdi - Sürücüye onay sor
-        Alert.alert(
-          '⚠️ Yolcu Eşleşmeyi Bitirdi',
-          'Yolcu yolculuğu sonlandırdı.\nBu işlemi onaylıyor musunuz?',
+        appAlert(
+          'Eşleşme sonlandırıldı',
+          `Yolcu ${enderFirst} eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
-            { 
-              text: 'Onaylıyorum (0 puan)', 
+            {
+              text: 'Onaylıyorum (0 puan)',
               style: 'default',
               onPress: async () => {
-                // Onay - Yolcuya 0 puan
                 try {
                   await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
-                } catch (e) { console.log('Onay gönderilemedi:', e); }
-              }
+                } catch (e) {
+                  console.log('Onay gönderilemedi:', e);
+                }
+              },
             },
-            { 
-              text: 'Onaylamıyorum (-5 puan)', 
+            {
+              text: 'Onaylamıyorum (-5 puan)',
               style: 'destructive',
               onPress: async () => {
-                // Red - Yolcuya -5 puan
                 try {
                   await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
-                } catch (e) { console.log('Red gönderilemedi:', e); }
-              }
-            }
+                } catch (e) {
+                  console.log('Red gönderilemedi:', e);
+                }
+              },
+            },
+            {
+              text: 'Şikayet et',
+              style: 'destructive',
+              onPress: async () => {
+                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
+                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
+              },
+            },
           ],
-          { cancelable: false }
+          { cancelable: false, variant: 'warning' },
         );
+      } else if (selfEnded) {
+        appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
+          variant: 'info',
+        });
       } else {
-        // Sürücü bitirdi - Bu sürücü tarafı, sadece bilgi
-        Alert.alert('⚠️ Yolculuk Bitirildi', 'Eşleşme sonlandırıldı.');
+        appAlert(
+          'Eşleşme sonlandırıldı',
+          `Sürücü ${enderFirst} eşleşmeyi zorla bitirdi. Şikayet etmek için "Şikayet et"e dokunun.`,
+          [
+            { text: 'Tamam', style: 'default' },
+            {
+              text: 'Şikayet et',
+              style: 'destructive',
+              onPress: async () => {
+                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
+                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
+              },
+            },
+          ],
+          { variant: 'warning' },
+        );
       }
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
@@ -8489,20 +8728,20 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const startTripCallAsDriver = async (callType: 'audio' | 'video') => {
     if (!user?.id || !activeTag?.id) {
-      Alert.alert('Hata', 'Yolculuk bilgisi bulunamadı');
+      appAlert('Hata', 'Yolculuk bilgisi bulunamadı');
       return;
     }
     const receiverId = String(activeTag.passenger_id ?? '').trim();
     if (!receiverId) {
-      Alert.alert('Hata', 'Yolcu bilgisi bulunamadı');
+      appAlert('Hata', 'Yolcu bilgisi bulunamadı');
       return;
     }
     if (receiverId === String(user.id).trim()) {
-      Alert.alert('Hata', 'Kendinizi arayamazsınız');
+      appAlert('Hata', 'Kendinizi arayamazsınız');
       return;
     }
     if (showCallScreen || driverIncomingCallData) {
-      Alert.alert('Uyarı', 'Zaten bir arama devam ediyor');
+      appAlert('Uyarı', 'Zaten bir arama devam ediyor');
       return;
     }
     driverClearIncomingCall();
@@ -8522,7 +8761,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       const data = await response.json();
       setCalling(false);
       if (!data.success) {
-        Alert.alert('Hata', (data.detail as string) || 'Arama başlatılamadı');
+        appAlert('Hata', (data.detail as string) || 'Arama başlatılamadı');
         return;
       }
       const agoraOk = await joinTripCallAgoraAsCaller(
@@ -8548,7 +8787,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     } catch (e) {
       console.error('Agora arama (sürücü):', e);
       setCalling(false);
-      Alert.alert('Hata', 'Arama başlatılamadı');
+      appAlert('Hata', 'Arama başlatılamadı');
     }
   };
 
@@ -8794,7 +9033,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         if (cancelled) return;
         if (req.status !== 'granted' && !driverLocationAlertShown.current) {
           driverLocationAlertShown.current = true;
-          Alert.alert(
+          appAlert(
             'Konum izni gerekli',
             'Haritayı görmek, teklif almak ve çevrimiçi olmak için konum izni vermelisiniz.',
             [
@@ -8945,7 +9184,32 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           
           // Alert'i sadece bir kez göster
           if (shouldShowAlert) {
-            Alert.alert('⚠️ Eşleşme Bitirildi', 'Karşı taraf eşleşmeyi sonlandırdı.');
+            const t = data.tag;
+            const otherId = String(t.passenger_id || '');
+            const otherName = displayFirstName(t.passenger_name, 'Yolcu');
+            appAlert(
+              'Eşleşme sonlandırıldı',
+              `${otherName} eşleşmeyi sonlandırdı. Şikayet etmek için "Şikayet et"e dokunun.`,
+              [
+                { text: 'Tamam', style: 'default' },
+                ...(otherId
+                  ? [
+                      {
+                        text: 'Şikayet et',
+                        style: 'destructive' as const,
+                        onPress: async () => {
+                          const r = await submitUserReport(String(user.id), otherId, 'trip_cancelled_other');
+                          appAlert(
+                            r.ok ? 'Şikayet alındı' : 'Hata',
+                            r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'),
+                          );
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+              { variant: 'warning' },
+            );
           }
           return null;
         }
@@ -9054,7 +9318,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         // Talebi listeden kaldır
         setRequests(prev => prev.filter(r => r.id !== tagId));
         // Toast göster
-        Alert.alert('Gizlendi', 'Bu talep 10 dakika boyunca görünmeyecek');
+        appAlert('Gizlendi', 'Bu talep 10 dakika boyunca görünmeyecek');
       }
     } catch (error) {
       console.log('Dismiss error:', error);
@@ -9134,14 +9398,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         loadActiveTag();
       }
     } catch (error) {
-      Alert.alert('Hata', 'Yolculuk başlatılamadı');
+      appAlert('Hata', 'Yolculuk başlatılamadı');
     }
   };
 
   const handleCompleteTag = async () => {
     if (!activeTag) return;
 
-    Alert.alert(
+    appAlert(
       'Yolculuğu Tamamla',
       'Yolculuk tamamlandı olarak işaretlenecek',
       [
@@ -9162,7 +9426,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 loadRequests();
               }
             } catch (error) {
-              Alert.alert('Hata', 'İşlem başarısız');
+              appAlert('Hata', 'İşlem başarısız');
             }
           }
         }
@@ -9172,7 +9436,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   // SESLİ ARAMA - Driver için mock fonksiyon
   const handleDriverVoiceCall = () => {
     setCalling(true);
-    Alert.alert(
+    appAlert(
       '📞 Sesli Arama',
       'Yolcunuzla bağlantı kuruluyor...\n\n🔒 Uçtan uca şifreli arama\n📱 Gerçek numaralar gizli',
       [
@@ -9248,7 +9512,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   if (Platform.OS === 'web') {
                     window.alert('✅ Tebrikler! Başvurunuz onaylandı. Artık teklifleri alabilirsiniz.');
                   } else {
-                    Alert.alert('✅ Onaylandı', 'Tebrikler! Başvurunuz onaylandı. Artık teklifleri alabilirsiniz.');
+                    appAlert('✅ Onaylandı', 'Tebrikler! Başvurunuz onaylandı. Artık teklifleri alabilirsiniz.');
                   }
                 } else if (data.kyc_status === 'rejected') {
                   setKycStatus(null);
@@ -9256,7 +9520,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   if (Platform.OS === 'web') {
                     window.alert('❌ Başvurunuz reddedildi: ' + (data.rejection_reason || 'Belgeler uygun değil'));
                   } else {
-                    Alert.alert('❌ Reddedildi', 'Başvurunuz reddedildi: ' + (data.rejection_reason || 'Belgeler uygun değil'));
+                    appAlert('❌ Reddedildi', 'Başvurunuz reddedildi: ' + (data.rejection_reason || 'Belgeler uygun değil'));
                   }
                 } else {
                   // Hala pending
@@ -9443,7 +9707,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
               
               if (!activeTag?.id) {
-                Alert.alert('Hata', 'Eşleşme bilgisi bulunamadı');
+                appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
                 return;
               }
               
@@ -9491,16 +9755,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 );
                 const data = await response.json();
                 if (data.success) {
-                  Alert.alert('✅ İstek Gönderildi', 'Yolcunun onayı bekleniyor...');
+                  appAlert('✅ İstek Gönderildi', 'Yolcunun onayı bekleniyor...');
                 } else {
-                  Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                  appAlert('Hata', data.detail || 'İstek gönderilemedi');
                 }
               } catch (error) {
-                Alert.alert('Hata', 'İstek gönderilemedi');
+                appAlert('Hata', 'İstek gönderilemedi');
               }
             }}
             onComplete={() => {
-              Alert.alert(
+              appAlert(
                 'Yolculuğu Tamamla',
                 'Yolcuyu hedefe ulaştırdınız mı?',
                 [
@@ -9515,12 +9779,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                         );
                         const data = await response.json();
                         if (data.success) {
-                          Alert.alert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
+                          appAlert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
                           setActiveTag(null);
                           setScreen('role-select');
                         }
                       } catch (error) {
-                        Alert.alert('Hata', 'İşlem başarısız');
+                        appAlert('Hata', 'İşlem başarısız');
                       }
                     }
                   }
@@ -9536,12 +9800,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 );
                 const data = await response.json();
                 if (data.success) {
-                  Alert.alert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
+                  appAlert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
                   setActiveTag(null);
                   setScreen('role-select');
                 }
               } catch (error) {
-                Alert.alert('Hata', 'İşlem başarısız');
+                appAlert('Hata', 'İşlem başarısız');
               }
             }}
             onBlock={async () => {
@@ -9551,13 +9815,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   { method: 'POST' }
                 );
                 const data = await response.json();
-                Alert.alert(data.success ? '✅ Engellendi' : '❌ Hata', data.message);
+                appAlert(data.success ? '✅ Engellendi' : '❌ Hata', data.message);
               } catch (error) {
-                Alert.alert('Hata', 'Engelleme başarısız');
+                appAlert('Hata', 'Engelleme başarısız');
               }
             }}
             onReport={() => {
-              Alert.alert(
+              appAlert(
                 '⚠️ Şikayet Et',
                 'Şikayet sebebinizi seçin:',
                 [
@@ -9578,7 +9842,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                               if (text && text.trim()) {
                                 reportPassenger('other', text.trim());
                               } else {
-                                Alert.alert('Hata', 'Lütfen açıklama yazın');
+                                appAlert('Hata', 'Lütfen açıklama yazın');
                               }
                             }
                           },
@@ -9599,9 +9863,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                     : `${API_URL}/user/report?user_id=${user.id}&reported_user_id=${activeTag?.passenger_id}&reason=${reason}`;
                   const response = await fetch(url, { method: 'POST' });
                   const data = await response.json();
-                  Alert.alert('📩 Şikayet Alındı', data.message || 'Şikayetiniz admin\'e iletildi.');
+                  appAlert('📩 Şikayet Alındı', data.message || 'Şikayetiniz admin\'e iletildi.');
                 } catch (error) {
-                  Alert.alert('Hata', 'Şikayet gönderilemedi');
+                  appAlert('Hata', 'Şikayet gönderilemedi');
                 }
               }
             }}
@@ -9665,10 +9929,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   setActiveTag(null);
                   setScreen('role-select');
                 } else {
-                  Alert.alert('Hata', data.detail);
+                  appAlert('Hata', data.detail);
                 }
               } catch (error) {
-                Alert.alert('Hata', 'İşlem başarısız');
+                appAlert('Hata', 'İşlem başarısız');
               }
             }}
             onRequestApproval={async () => {
@@ -9679,12 +9943,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 );
                 const data = await response.json();
                 if (data.success) {
-                  Alert.alert('✅ İstek Gönderildi', 'Yolcunun onayı bekleniyor...');
+                  appAlert('✅ İstek Gönderildi', 'Yolcunun onayı bekleniyor...');
                 } else {
-                  Alert.alert('Hata', data.detail || 'İstek gönderilemedi');
+                  appAlert('Hata', data.detail || 'İstek gönderilemedi');
                 }
               } catch (error) {
-                Alert.alert('Hata', 'İstek gönderilemedi');
+                appAlert('Hata', 'İstek gönderilemedi');
               }
             }}
             onForceEnd={async () => {
@@ -9701,10 +9965,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   setActiveTag(null);
                   setScreen('role-select');
                 } else {
-                  Alert.alert('Hata', data.detail);
+                  appAlert('Hata', data.detail);
                 }
               } catch (error) {
-                Alert.alert('Hata', 'İşlem başarısız');
+                appAlert('Hata', 'İşlem başarısız');
               }
             }}
           />
@@ -9899,12 +10163,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                     );
                     const data = await response.json();
                     if (data.success && data.approved) {
-                      Alert.alert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
+                      appAlert('✅ Yolculuk Tamamlandı', 'Yolculuk karşılıklı onay ile sonlandırıldı.');
                       setActiveTag(null);
                       setScreen('role-select');
                     }
                   } catch (error) {
-                    Alert.alert('Hata', 'İşlem başarısız');
+                    appAlert('Hata', 'İşlem başarısız');
                   }
                   setShowTripEndModal(false);
                 }}

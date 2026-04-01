@@ -22,6 +22,7 @@ import { PushNotificationsProvider } from '../hooks/usePushNotifications';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { RootErrorBoundary } from '../components/RootErrorBoundary';
+import { AppAlertProvider } from '../contexts/AppAlertContext';
 
 // Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
@@ -71,19 +72,21 @@ export default function RootLayout() {
   return (
     <RootErrorBoundary>
       <SafeAreaProvider>
-        <PushNotificationsProvider>
-          <NotificationProvider>
-            <SocketProvider>
-              <StatusBar style="dark" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  animation: 'fade',
-                }}
-              />
-            </SocketProvider>
-          </NotificationProvider>
-        </PushNotificationsProvider>
+        <AppAlertProvider>
+          <PushNotificationsProvider>
+            <NotificationProvider>
+              <SocketProvider>
+                <StatusBar style="dark" />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    animation: 'fade',
+                  }}
+                />
+              </SocketProvider>
+            </NotificationProvider>
+          </PushNotificationsProvider>
+        </AppAlertProvider>
       </SafeAreaProvider>
     </RootErrorBoundary>
   );

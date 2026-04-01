@@ -22,6 +22,8 @@ import {
   Modal,
   Image,
   Animated,
+  ImageBackground,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,6 +33,16 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /** Şu an yalnızca bu şehrin muhabbet kanalı açık; diğer iller talep ile admin paneline düşer. */
 const COMMUNITY_LIVE_CITY = 'Ankara';
+
+/** Ankara / doğa — Papazın Bağı çevresi hissi (Unsplash, ücretsiz kullanım) */
+const ANKARA_MUHABBET_BG =
+  'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=1200&q=75';
+
+const QUICK_SUGGESTION_CHIPS = [
+  'Bugün hava yağmurluydu — yollara dikkat ⚠️',
+  'Anlık trafik / yol durumu paylaş',
+  'Güvenli sürüş, iyi yolculuklar 👋',
+];
 
 // Şehir temaları
 const CITY_THEMES: { [key: string]: { gradient: string[], icon: string } } = {
@@ -138,8 +150,6 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     city.toLowerCase().includes(citySearch.toLowerCase())
   );
 
-  const cityTheme = getCityTheme(selectedCity);
-
   // Mesajları yükle
   const loadMessages = useCallback(async () => {
     if (!selectedCity) return;
@@ -162,10 +172,10 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     
     loadMessages();
     
-    // Her 3 saniyede bir mesajları kontrol et
+    // Her 4 saniyede bir güncelle (hızlı his, sunucu yükü dengeli)
     pollingRef.current = setInterval(() => {
       loadMessages();
-    }, 3000);
+    }, 4000);
     
     // Online sayısı için ayrı bir API çağrısı
     const loadOnlineCount = async () => {
@@ -209,6 +219,9 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
   // Mesaj gönder
   const sendMessage = async () => {
     if (!newMessage.trim() && !selectedImage) return;
+
+    const contentSend = newMessage.trim();
+    const imageSend = selectedImage;
     
     const now = Date.now();
     if (now - lastSentTime < 2000) {
@@ -223,8 +236,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
       user_id: user.id,
       name: displayName,
       role: user.role as 'passenger' | 'driver',
-      content: newMessage.trim(),
-      image_url: selectedImage || undefined,
+      content: contentSend,
+      image_url: imageSend || undefined,
       likes_count: 0,
       created_at: new Date().toISOString(),
       city: selectedCity,
@@ -248,8 +261,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           user_id: user.id,
           name: displayName,
           role: user.role,
-          content: newMessage.trim(),
-          image_url: selectedImage,
+          content: contentSend,
+          image_url: imageSend,
           city: selectedCity,
           rating: user.rating ?? 4,
         }),
@@ -267,20 +280,28 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
     }
   };
 
-  // Resim seç
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
+  /** Yalnızca anlık kamera — galeri / dosya yok */
+  const takePhotoFromCamera = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('İzin', 'Fotoğraf paylaşmak için kamera izni gerekir.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.5,
+      allowsEditing: false,
+      quality: 0.62,
       base64: true,
     });
-    
+
     if (!result.canceled && result.assets[0]) {
       setUploadingImage(true);
       try {
-        // Base64 olarak gönder
         const base64 = result.assets[0].base64;
+        if (!base64) {
+          Alert.alert('Hata', 'Fotoğraf okunamadı, tekrar deneyin.');
+          return;
+        }
         const response = await fetch(`${apiUrl}/upload/image`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -289,8 +310,10 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
         const data = await response.json();
         if (data.url) {
           setSelectedImage(data.url);
+        } else {
+          Alert.alert('Hata', (data.detail as string) || 'Yükleme başarısız');
         }
-      } catch (e) {
+      } catch {
         Alert.alert('Hata', 'Resim yüklenemedi');
       }
       setUploadingImage(false);
@@ -548,25 +571,58 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={cityTheme.gradient} style={styles.mainContainer}>
+      <ImageBackground
+        source={{ uri: ANKARA_MUHABBET_BG }}
+        style={styles.mainContainer}
+        imageStyle={styles.bgImage}
+      >
+        <LinearGradient
+          colors={['rgba(15,23,42,0.72)', 'rgba(15,23,42,0.55)', 'rgba(15,23,42,0.88)']}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.mainForeground}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setShowCityPicker(true)} style={styles.headerLeft}>
+          <TouchableOpacity onPress={onBack} style={styles.headerLeft}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           
           <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Leylek Muhabbeti</Text>
             <Text style={styles.headerCity}>{selectedCity}</Text>
             <View style={styles.onlineContainer}>
               <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>{onlineCount} kişi çevrimiçi</Text>
+              <Text style={styles.onlineText}>{onlineCount} çevrimiçi</Text>
             </View>
+            <TouchableOpacity onPress={() => setShowCityPicker(true)} hitSlop={{ top: 8, bottom: 8 }}>
+              <Text style={styles.headerTalepLink}>Başka il talep et</Text>
+            </TouchableOpacity>
           </View>
           
-          <TouchableOpacity onPress={loadMessages} style={styles.headerRight}>
+          <TouchableOpacity onPress={() => void loadMessages()} style={styles.headerRight}>
             <Ionicons name="refresh" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipsScroll}
+          contentContainerStyle={styles.chipsScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {QUICK_SUGGESTION_CHIPS.map((chip) => (
+            <TouchableOpacity
+              key={chip}
+              style={styles.suggestionChip}
+              onPress={() => setNewMessage((p) => (p ? `${p} ${chip}` : chip))}
+            >
+              <Text style={styles.suggestionChipText} numberOfLines={2}>
+                {chip}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         
         {/* Mesajlar */}
         <KeyboardAvoidingView 
@@ -624,18 +680,18 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
               <Ionicons name="happy-outline" size={24} color="#F97316" />
             </TouchableOpacity>
             
-            <TouchableOpacity onPress={pickImage} style={styles.inputIcon}>
+            <TouchableOpacity onPress={() => void takePhotoFromCamera()} style={styles.inputIcon}>
               {uploadingImage ? (
                 <ActivityIndicator size="small" color="#F97316" />
               ) : (
-                <Ionicons name="image-outline" size={24} color="#F97316" />
+                <Ionicons name="camera-outline" size={24} color="#F97316" />
               )}
             </TouchableOpacity>
             
             <TextInput
               style={styles.input}
-              placeholder={`${selectedCity} topluluğuna mesaj yaz...`}
-              placeholderTextColor="#64748b"
+              placeholder="Kısa not yaz…"
+              placeholderTextColor="rgba(148,163,184,0.9)"
               value={newMessage}
               onChangeText={setNewMessage}
               multiline
@@ -651,7 +707,8 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
-      </LinearGradient>
+        </View>
+      </ImageBackground>
     </SafeAreaView>
   );
 }
@@ -663,6 +720,38 @@ const styles = StyleSheet.create({
   },
   mainContainer: {
     flex: 1,
+  },
+  bgImage: {
+    opacity: 0.85,
+  },
+  mainForeground: {
+    flex: 1,
+  },
+  chipsScroll: {
+    maxHeight: 52,
+    flexGrow: 0,
+  },
+  chipsScrollContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 8,
+    alignItems: 'center',
+  },
+  suggestionChip: {
+    maxWidth: SCREEN_WIDTH * 0.72,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(30,41,59,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    marginRight: 8,
+  },
+  suggestionChipText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
   },
   
   // City Picker
@@ -762,10 +851,24 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  headerCity: {
-    fontSize: 18,
+  headerTitle: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#fff',
+    letterSpacing: 0.2,
+  },
+  headerCity: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.88)',
+    marginTop: 2,
+  },
+  headerTalepLink: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#7dd3fc',
+    textDecorationLine: 'underline',
+    fontWeight: '600',
   },
   onlineContainer: {
     flexDirection: 'row',
@@ -780,8 +883,8 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   onlineText: {
-    fontSize: 12,
-    color: '#94a3b8',
+    fontSize: 11,
+    color: 'rgba(148,163,184,0.95)',
   },
   headerRight: {
     width: 40,
@@ -817,9 +920,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 8,
@@ -830,9 +933,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   messageBubble: {
-    maxWidth: SCREEN_WIDTH * 0.7,
-    padding: 12,
-    borderRadius: 18,
+    maxWidth: SCREEN_WIDTH * 0.78,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
   },
   ownMessageBubble: {
     backgroundColor: '#F97316', // Turuncu
@@ -874,14 +978,14 @@ const styles = StyleSheet.create({
   },
   messageImage: {
     width: '100%',
-    height: 180,
-    borderRadius: 12,
-    marginBottom: 8,
+    height: 160,
+    borderRadius: 10,
+    marginBottom: 6,
   },
   messageText: {
-    fontSize: 15,
+    fontSize: 13,
     color: '#fff',
-    lineHeight: 20,
+    lineHeight: 18,
   },
   ownMessageText: {
     color: '#fff',
@@ -1008,14 +1112,16 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: '#1e293b',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(30,41,59,0.92)',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     color: '#fff',
-    fontSize: 15,
-    maxHeight: 100,
+    fontSize: 14,
+    maxHeight: 88,
     marginHorizontal: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   sendButton: {
     width: 44,

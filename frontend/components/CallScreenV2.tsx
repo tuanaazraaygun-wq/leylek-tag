@@ -275,7 +275,7 @@ export default function CallScreenV2({
     stopTimersAndRing();
     setPhase('ended');
     onReject();
-    setTimeout(onClose, 250);
+    onClose();
   }, [onClose, onReject, stopTimersAndRing]);
 
   const hangUp = useCallback(async (reason: string = 'user') => {
@@ -295,7 +295,11 @@ export default function CallScreenV2({
     stopTimersAndRing();
     await runCleanup();
     setPhase('ended');
-    setTimeout(onClose, 250);
+    if (reason === 'remote_rejected') {
+      onClose();
+    } else {
+      setTimeout(onClose, 250);
+    }
   }, [onClose, runCleanup, stopTimersAndRing]);
 
   const toggleMute = useCallback(() => {

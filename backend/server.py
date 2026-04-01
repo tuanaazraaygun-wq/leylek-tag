@@ -43,6 +43,7 @@ except ModuleNotFoundError as e:
     ) from e
 
 from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
+from route_service import get_route_cached
 
 ROOT_DIR = _ROOT
 load_dotenv(ROOT_DIR / '.env')
@@ -430,6 +431,14 @@ async def force_end_trip(sid, data):
                 {"type": "force_ended", "tag_id": tag_id, "ender_type": ender_type, "can_report": True}
             ))
         
+        ender_name = ""
+        try:
+            _en = supabase.table("users").select("name").eq("id", ender_id).limit(1).execute()
+            if _en.data:
+                ender_name = (str(_en.data[0].get("name") or "")).strip()
+        except Exception:
+            pass
+
         # Her iki tarafa da ANINDA bildir (Socket)
         for user_id in [passenger_id, driver_id]:
             if user_id:
@@ -438,7 +447,9 @@ async def force_end_trip(sid, data):
                     await sio.emit('trip_force_ended', {
                         'tag_id': tag_id,
                         'ended_by': ender_id,
+                        'ender_id': ender_id,
                         'ender_type': ender_type,
+                        'ender_name': ender_name,
                         'completed_at': datetime.utcnow().isoformat(),
                         'points_deducted': 3 if user_id == ender_id else 0,
                         'new_points': new_points if user_id == ender_id else None,
@@ -585,6 +596,47 @@ def _has_active_package_for_dispatch(driver_active_until, now_iso: str) -> bool:
     if DRIVER_UNLIMITED_FREE_PERIOD:
         return True
     return bool(driver_active_until and driver_active_until > now_iso)
+
+
+async def is_driver_eligible_for_dispatch_offer(driver_id) -> bool:
+    """
+    Teklif / push gönderilebilir mi: çevrimiçi, geçerli paket süresi (ücretsiz dönemde yalnızca online),
+    konum satırı dolu. Kuyruk/eski liste gecikmeli kalsa bile pasif sürücüye emit edilmez.
+    """
+    try:
+        uid = str(driver_id).strip() if driver_id is not None else ""
+        if not uid or not supabase:
+            return False
+        try:
+            resolved = await resolve_user_id(uid)
+            if resolved:
+                uid = str(resolved).strip()
+        except Exception:
+            pass
+        now_iso = datetime.utcnow().isoformat()
+        r = (
+            supabase.table("users")
+            .select("id, driver_online, driver_active_until, latitude, longitude")
+            .eq("id", uid)
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return False
+        row = r.data[0]
+        if row.get("driver_online") is not True:
+            return False
+        if not _has_active_package_for_dispatch(row.get("driver_active_until"), now_iso):
+            return False
+        lat, lng = row.get("latitude"), row.get("longitude")
+        if lat is None or lng is None:
+            return False
+        if str(lat).strip() == "" or str(lng).strip() == "":
+            return False
+        return True
+    except Exception as e:
+        logger.warning("is_driver_eligible_for_dispatch_offer: %s", e)
+        return False
 
 
 def _canonical_vehicle_kind(value) -> Optional[str]:
@@ -1008,22 +1060,29 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
         return False
 
 
-async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> None:
+async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> bool:
     """
     Teklif socket event'i: önce doğrudan sid (connected_users), yoksa user room.
-    UUID büyük/küçük harf ve register anahtarı uyumsuzluğunu azaltır.
+    Pasif / çevrimdışı / paketsiz / konumsuz sürücüye gönderilmez (True=socket gönderildi).
     """
     try:
         raw = str(driver_id).strip().lower() if driver_id is not None else ""
         if not raw:
             logger.warning("emit_new_passenger_offer_to_driver: boş driver_id")
-            return
+            return False
         try:
             resolved = await resolve_user_id(raw)
             if resolved:
                 raw = str(resolved).strip().lower()
         except Exception:
             pass
+        if not await is_driver_eligible_for_dispatch_offer(raw):
+            logger.info(
+                "emit_new_passenger_offer_to_driver: atlandı (aktif değil) driver=%s tag=%s",
+                raw[:13] + "…" if len(raw) > 13 else raw,
+                offer_data.get("tag_id"),
+            )
+            return False
         room = _normalize_user_room(raw)
         sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip())
         if sid:
@@ -1087,8 +1146,10 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> Non
             asyncio.create_task(_push_driver_offer())
         except Exception as e:
             logger.warning(f"Push create_task failed: {e}")
+        return True
     except Exception as e:
         logger.error(f"new_passenger_offer emit hatası: {e}")
+        return False
 
 
 async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
@@ -1107,6 +1168,8 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
         timeout_sec = int(cfg.get("driver_offer_timeout", DISPATCH_CONFIG.get("driver_offer_timeout", 10)))
 
         resolved_driver_id = await resolve_user_id(driver_id)
+        if not await is_driver_eligible_for_dispatch_offer(resolved_driver_id):
+            return
         drv_res = (
             supabase.table("users")
             .select("id, latitude, longitude, driver_details")
@@ -1319,21 +1382,7 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         
         driver_id = next_entry["driver_id"]
         driver_name = next_entry["driver_name"]
-        
-        # Status'u sent yap
-        next_entry["status"] = "sent"
-        next_entry["sent_at"] = datetime.utcnow().isoformat()
-        
-        # Supabase güncelle
-        try:
-            supabase.table("dispatch_queue").update({
-                "status": "sent",
-                "sent_at": next_entry["sent_at"]
-            }).eq("id", next_entry["id"]).execute()
-        except:
-            pass
-        
-        # Socket ile sürücüye teklif gönder
+
         offer_data = {
             "tag_id": tag_id,
             "passenger_id": merged.get("passenger_id"),
@@ -1360,7 +1409,34 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
         distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
         body = f"{price_int} TL • {distance_str} - {timeout} sn içinde kabul et"
 
-        await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+        sent_ok = await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+        if not sent_ok:
+            logger.info(
+                f"📭 Dispatch sıradaki sürücü atlandı (aktif değil): tag={tag_id} driver={driver_name}"
+            )
+            next_entry["status"] = "expired"
+            try:
+                supabase.table("dispatch_queue").update({
+                    "status": "expired",
+                    "responded_at": datetime.utcnow().isoformat(),
+                }).eq("id", next_entry["id"]).execute()
+            except Exception:
+                pass
+            await emit_passenger_offer_revoked(driver_id, tag_id)
+            fresh = dispatch_tag_context.get(tag_id, merged)
+            await dispatch_offer_to_next_driver(tag_id, fresh)
+            return
+
+        next_entry["status"] = "sent"
+        next_entry["sent_at"] = datetime.utcnow().isoformat()
+        try:
+            supabase.table("dispatch_queue").update({
+                "status": "sent",
+                "sent_at": next_entry["sent_at"],
+            }).eq("id", next_entry["id"]).execute()
+        except Exception:
+            pass
+
         logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
         logger.info(f"🚀 DISPATCH PUSH driver={driver_id} tag={tag_id}")
         try:
@@ -1496,17 +1572,23 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
         distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
         body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
         for driver_id in eligible_drivers:
-            await emit_new_passenger_offer_to_driver(str(driver_id).strip().lower(), offer_data)
+            did = str(driver_id).strip().lower()
+            if not await is_driver_eligible_for_dispatch_offer(did):
+                logger.info(f"📢 Broadcast atlandı (aktif değil): driver={did[:13]}… tag={tag_id}")
+                continue
+            ok = await emit_new_passenger_offer_to_driver(did, offer_data)
+            if not ok:
+                continue
             try:
                 await send_trip_push_and_log(
-                    driver_id,
+                    did,
                     "new_ride_request",
                     "Yeni yolculuk teklifi",
                     body,
                     {"type": "new_offer", "tag_id": tag_id, "price": price, "distance_km": trip_distance_km, "timeout": timeout_sec, "action": "accept", "is_broadcast": True}
                 )
             except Exception as push_err:
-                logger.warning(f"⚠️ Broadcast push sürücüye gönderilemedi: {driver_id} - {push_err}")
+                logger.warning(f"⚠️ Broadcast push sürücüye gönderilemedi: {did} - {push_err}")
         
         logger.info(
             f"📢 Broadcast: tag={tag_id}, en yakın {len(eligible_drivers)}/{BROADCAST_MAX_RECIPIENTS} sürücü "
@@ -1691,8 +1773,12 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     n_queue_ok = 0
     for idx, entry in enumerate(batch_entries, start=1):
         d_id = entry["driver_id"]
+        if not await is_driver_eligible_for_dispatch_offer(d_id):
+            logger.info("rolling batch atlandı (aktif değil) tag=%s driver=%s", tag_id, d_id)
+            continue
         offer_data = {**offer_base, "distance_to_pickup": entry.get("distance_km", 0)}
-        await emit_new_passenger_offer_to_driver(d_id, offer_data)
+        if not await emit_new_passenger_offer_to_driver(d_id, offer_data):
+            continue
         logger.info(
             "new_passenger_offer emitted tag=%s driver=%s (socket veya room)",
             tag_id,
@@ -5608,16 +5694,36 @@ async def driver_on_the_way(driver_id: str = None, user_id: str = None, tag_id: 
         row = tag_result.data[0]
         passenger_id = row.get("passenger_id")
         eta_min = 0
+        distance_km_road = None
         try:
             driver_loc = supabase.table("users").select("latitude, longitude").eq("id", resolved_id).limit(1).execute()
             p_lat, p_lng = row.get("pickup_lat"), row.get("pickup_lng")
             if driver_loc.data and p_lat is not None and p_lng is not None:
                 d = driver_loc.data[0]
-                eta_min = _eta_minutes(d.get("latitude"), d.get("longitude"), float(p_lat), float(p_lng))
+                dl, dg = d.get("latitude"), d.get("longitude")
+                if dl is not None and dg is not None:
+                    route = await get_route_cached(
+                        float(dl),
+                        float(dg),
+                        float(p_lat),
+                        float(p_lng),
+                        str(resolved_id),
+                        str(passenger_id) if passenger_id else None,
+                    )
+                    if route:
+                        eta_min = int(route.get("duration_min") or 0)
+                        distance_km_road = float(route.get("distance_km") or 0)
+                    if not eta_min:
+                        eta_min = _eta_minutes(dl, dg, float(p_lat), float(p_lng))
         except Exception:
             pass
         title = "Eşleştiniz, sürücü yola çıktı"
-        body = f"Tahmini varış: {eta_min} dk" if eta_min else "Sürücünüz size doğru geliyor."
+        if eta_min and distance_km_road is not None and distance_km_road > 0:
+            body = f"Yaklaşık {distance_km_road:.1f} km • {eta_min} dk"
+        elif eta_min:
+            body = f"Tahmini varış: {eta_min} dk"
+        else:
+            body = "Sürücünüz size doğru geliyor."
         if passenger_id:
             asyncio.create_task(send_trip_push_and_log(
                 passenger_id, "driver_on_the_way",
@@ -5625,7 +5731,12 @@ async def driver_on_the_way(driver_id: str = None, user_id: str = None, tag_id: 
                 body,
                 {"type": "driver_on_the_way", "tag_id": tag_id, "eta_min": eta_min}
             ))
-        return {"success": True, "message": "Bildirim gönderildi"}
+        return {
+            "success": True,
+            "message": "Bildirim gönderildi",
+            "eta_min": eta_min,
+            "distance_km": distance_km_road,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -9646,11 +9757,14 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
             return None
         
         url = f"https://maps.googleapis.com/maps/api/directions/json"
+        # departure_time=now + traffic_model → leg içinde duration_in_traffic (canlı trafik tahmini)
         params = {
             "origin": f"{origin_lat},{origin_lng}",
             "destination": f"{dest_lat},{dest_lng}",
             "mode": "driving",
-            "key": api_key
+            "departure_time": "now",
+            "traffic_model": "best_guess",
+            "key": api_key,
         }
         
         async with httpx.AsyncClient(http2=False, timeout=10.0) as client:
@@ -9660,13 +9774,20 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
         if data.get("status") == "OK" and data.get("routes"):
             leg = data["routes"][0]["legs"][0]
             distance_km = leg["distance"]["value"] / 1000  # metre -> km
-            duration_min = int(leg["duration"]["value"] / 60)  # saniye -> dakika
-            
-            logger.info(f"📍 Google Directions: {distance_km:.1f} km, {duration_min} dk")
+            dur_src = leg.get("duration_in_traffic") or leg["duration"]
+            duration_min = max(1, int(math.ceil(dur_src["value"] / 60)))
+            base_min = max(1, int(math.ceil(leg["duration"]["value"] / 60)))
+            used_traffic = "duration_in_traffic" in leg
+            logger.info(
+                f"📍 Google Directions: {distance_km:.1f} km, {duration_min} dk"
+                f"{' (trafik dahil)' if used_traffic else ' (trafik yok, süre=duration)'}"
+            )
             
             return {
                 "distance_km": round(distance_km, 1),
-                "duration_min": max(1, duration_min)
+                "duration_min": duration_min,
+                "duration_min_no_traffic": base_min,
+                "used_traffic": used_traffic,
             }
         else:
             logger.warning(f"⚠️ Google Directions API hatası: {data.get('status')}")
@@ -11749,10 +11870,10 @@ async def delete_user_account(request: DeleteAccountRequest):
             "cancel_reason": "account_deleted"
         }).eq("driver_id", user_id).in_("status", ["matched", "in_progress"]).execute()
         
-        # 4. Community mesajlarını anonimleştir
+        # 4. Community mesajlarını anonimleştir (kolon adı insert ile aynı: name)
         supabase.table("community_messages").update({
-            "user_name": "Silinmiş Kullanıcı",
-            "user_id": None
+            "name": "Silinmiş Kullanıcı",
+            "user_id": None,
         }).eq("user_id", user_id).execute()
         
         logger.warning(f"✅ HESAP SİLİNDİ: {user_id}")
@@ -12799,7 +12920,9 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
             "destination": f"{dest_lat},{dest_lng}",
             "mode": "driving",
             "language": "tr",
-            "key": GOOGLE_MAPS_API_KEY
+            "departure_time": "now",
+            "traffic_model": "best_guess",
+            "key": GOOGLE_MAPS_API_KEY,
         }
         
         async with httpx.AsyncClient(http2=False, timeout=30) as client:
@@ -12811,6 +12934,7 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
         
         route = data.get("routes", [{}])[0]
         leg = route.get("legs", [{}])[0]
+        dur_traffic = leg.get("duration_in_traffic")
         
         steps = []
         for step in leg.get("steps", []):
@@ -12837,6 +12961,8 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
             "steps": steps,
             "total_distance": leg.get("distance", {}).get("text", ""),
             "total_duration": leg.get("duration", {}).get("text", ""),
+            "total_duration_in_traffic": dur_traffic.get("text", "") if dur_traffic else "",
+            "traffic_aware": bool(dur_traffic),
             "polyline": route.get("overview_polyline", {}).get("points", "")
         }
         

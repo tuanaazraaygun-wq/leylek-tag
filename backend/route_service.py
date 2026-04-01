@@ -4,6 +4,7 @@ OSRM API ile rota hesaplama, Redis benzeri in-memory cache
 """
 
 import asyncio
+import math
 import httpx
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Tuple
@@ -104,9 +105,11 @@ async def get_route_cached(
         if data.get('code') == 'Ok' and data.get('routes'):
             route = data['routes'][0]
             
+            dist_m = float(route.get("distance", 0) or 0)
+            dur_s = float(route.get("duration", 0) or 0)
             result = {
-                "distance_km": round(route['distance'] / 1000, 2),
-                "duration_min": round(route['duration'] / 60),
+                "distance_km": round(dist_m / 1000, 3),
+                "duration_min": max(1, math.ceil(dur_s / 60)),
                 "geometry": route.get('geometry', ''),
                 "cached_at": datetime.utcnow().isoformat()
             }
