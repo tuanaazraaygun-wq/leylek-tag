@@ -75,6 +75,8 @@ export interface DriverMapSeekingPin {
   pickup_lng: number;
   status?: string;
   label?: string;
+  /** Backend yol mesafesi (km) — harita zoom sınırı; kuş uçuşu hesaplanmaz */
+  pickup_distance_km?: number;
   distance_km?: number;
 }
 
@@ -136,7 +138,7 @@ export interface PassengerRequest {
   dropoff_lat?: number;
   dropoff_lng?: number;
   distance_to_passenger_km?: number;
-  /** Backend tek kaynak (sürücü → pickup, Google→OSRM) */
+  /** Backend tek kaynak (sürücü → pickup) */
   pickup_distance_km?: number;
   pickup_eta_min?: number;
   trip_distance_km?: number;
@@ -651,12 +653,16 @@ export default function DriverOfferScreen({
     const coordinates: { latitude: number; longitude: number }[] = [{ ...driverLocation }];
 
     mapSeekingPins.forEach((p) => {
-      const d = haversineKm(driverLocation, { latitude: p.pickup_lat, longitude: p.pickup_lng });
-      if (d <= fitKm) coordinates.push({ latitude: p.pickup_lat, longitude: p.pickup_lng });
+      const pk = Number(p.pickup_distance_km ?? p.distance_km);
+      if (Number.isFinite(pk) && pk <= fitKm) {
+        coordinates.push({ latitude: p.pickup_lat, longitude: p.pickup_lng });
+      }
     });
     mapLightPins.forEach((p) => {
-      const d = haversineKm(driverLocation, { latitude: p.latitude, longitude: p.longitude });
-      if (d <= fitKm) coordinates.push({ latitude: p.latitude, longitude: p.longitude });
+      const dk = Number(p.distance_km);
+      if (Number.isFinite(dk) && dk <= fitKm) {
+        coordinates.push({ latitude: p.latitude, longitude: p.longitude });
+      }
     });
 
     if (coordinates.length === 1) {

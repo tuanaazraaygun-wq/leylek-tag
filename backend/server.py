@@ -5434,9 +5434,9 @@ async def driver_accept_offer_http(
         ur = (
             supabase.table("tags")
             .update(update_data)
+            .select("*")
             .eq("id", tid)
             .in_("status", matchable_statuses)
-            .select("*")
             .execute()
         )
         updated_tag = ur.data[0] if ur.data else None
@@ -10563,7 +10563,7 @@ async def accept_ride(tag_id: str, driver_id: str):
             "driver_id": resolved_driver_id,
             "driver_name": driver_name,
             "matched_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("status", "waiting").select("*").execute()
+        }).select("*").eq("id", tag_id).eq("status", "waiting").execute()
         
         if not update_result.data:
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
