@@ -232,16 +232,35 @@ async def register(sid, data):
     user_id = data.get('user_id')
     if user_id:
         role = data.get('role')
+        raw = str(user_id).strip()
+        try:
+            resolved_uid = await resolve_user_id(raw) or raw
+        except Exception:
+            resolved_uid = raw
+        resolved_uid = str(resolved_uid).strip()
+
         connected_users[user_id] = sid
-        # Aynı kullanıcı normalized id ile de bulunabilsin (emit'te kullanılıyor)
-        connected_users[str(user_id).strip().lower()] = sid
-        
-        # 🔥 KRİTİK: Kullanıcıyı kendi room'una join et (normalized = her zaman aynı room)
-        room_name = _normalize_user_room(user_id)
+        connected_users[raw.lower()] = sid
+        connected_users[resolved_uid.lower()] = sid
+
+        # ride_matched / tag_matched emit'leri Supabase UUID room'una gider; join her zaman çözümlü id ile
+        room_name = _normalize_user_room(resolved_uid)
         await sio.enter_room(sid, room_name)
-        
-        logger.info(f"📱 Kullanıcı kayıtlı: {user_id} -> {sid} (room: {room_name})")
-        await sio.emit('registered', {'success': True, 'user_id': user_id, 'room': room_name}, room=sid)
+
+        _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
+        logger.info(
+            f"📱 Kullanıcı kayıtlı: {user_id} -> {sid} (room: {room_name}, resolved={_ru_short})"
+        )
+        await sio.emit(
+            "registered",
+            {
+                "success": True,
+                "user_id": user_id,
+                "room": room_name,
+                "resolved_user_id": resolved_uid,
+            },
+            room=sid,
+        )
 
         # 🆕 Kritik: Yeni sürücü bağlandıktan sonra, daha önce oluşmuş waiting teklifleri de yeniden göster
         # (client listesi socket ile dolduğu için sadece "yeni" event kaçırılırsa bu bug olur)
@@ -896,11 +915,8 @@ async def find_eligible_drivers(
         )
         no_loc = excluded = vehicle_mismatch = too_far = 0
 
-        from math import radians, sin, cos, sqrt, atan2
-
-        R = 6371  # Dünya yarıçapı (km)
-        lat1, lon1 = radians(float(pickup_lat)), radians(float(pickup_lng))
-
+        plat_f, plng_f = float(pickup_lat), float(pickup_lng)
+        candidates: list = []
         for driver in result.data:
             if str(driver["id"]).strip().lower() in exclude_set:
                 excluded += 1
@@ -924,25 +940,44 @@ async def find_eligible_drivers(
                     vehicle_mismatch += 1
                     continue
 
-            lat2, lon2 = radians(float(driver["latitude"])), radians(float(driver["longitude"]))
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-            c = 2 * atan2(sqrt(a), sqrt(1 - a))
-            distance_km = R * c
+            try:
+                d_la = float(driver["latitude"])
+                d_lo = float(driver["longitude"])
+            except (TypeError, ValueError):
+                no_loc += 1
+                continue
 
-            if distance_km <= r_km:
-                eligible_drivers.append(
-                    {
-                        "driver_id": str(driver["id"]).strip().lower(),
-                        "driver_name": driver.get("name", "Sürücü"),
-                        "distance_km": round(distance_km, 2),
-                        "rating": driver.get("rating", 4.0) or 4.0,
-                    }
-                )
-            else:
+            if not _bbox_road_prefilter_ok(d_la, d_lo, plat_f, plng_f, r_km):
                 too_far += 1
+                continue
 
+            candidates.append(driver)
+
+        sem = asyncio.Semaphore(12)
+
+        async def _road_row(drv: dict):
+            async with sem:
+                try:
+                    d_la = float(drv["latitude"])
+                    d_lo = float(drv["longitude"])
+                except (TypeError, ValueError):
+                    return None
+                ri = await get_route_info(d_la, d_lo, plat_f, plng_f)
+                if not ri:
+                    return None
+                road_km = float(ri["distance_km"])
+                if road_km > r_km:
+                    return None
+                return {
+                    "driver_id": str(drv["id"]).strip().lower(),
+                    "driver_name": drv.get("name", "Sürücü"),
+                    "distance_km": round(road_km, 2),
+                    "duration_min": int(max(1, round(float(ri["duration_min"])))),
+                    "rating": drv.get("rating", 4.0) or 4.0,
+                }
+
+        rows = await asyncio.gather(*[_road_row(d) for d in candidates])
+        eligible_drivers = [x for x in rows if x is not None]
         eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
 
         if not eligible_drivers:
@@ -1210,10 +1245,13 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
             if not _driver_matches_passenger_vehicle_pref(driver_eff, passenger_pref):
                 continue
 
-            # Sürücü-kalkış mesafesi (pickup'a)
-            dist_to_pickup_km = haversine_distance(float(driver_lat), float(driver_lng), float(tag_lat), float(tag_lng))
-            if dist_to_pickup_km > matching_radius_km:
+            ri_pk = await get_route_info(
+                float(driver_lat), float(driver_lng), float(tag_lat), float(tag_lng)
+            )
+            if not ri_pk or float(ri_pk["distance_km"]) > matching_radius_km:
                 continue
+            pu_km = round(float(ri_pk["distance_km"]), 1)
+            pu_min = int(max(1, round(float(ri_pk["duration_min"]))))
 
             offer_data = {
                 "tag_id": str(tag.get("id")).strip(),
@@ -1228,10 +1266,15 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
                 "offered_price": tag.get("final_price") or tag.get("offered_price") or 0,
                 "distance_km": tag.get("distance_km") or 0,
                 "estimated_minutes": tag.get("estimated_minutes") or 0,
+                "trip_distance_km": tag.get("distance_km") or 0,
+                "trip_duration_min": tag.get("estimated_minutes") or 0,
                 "dispatch_timeout": timeout_sec,
                 "is_dispatch": True,
                 "passenger_vehicle_kind": passenger_pref,
-                "distance_to_pickup": round(dist_to_pickup_km, 2),
+                "distance_to_pickup": pu_km,
+                "pickup_distance_km": pu_km,
+                "pickup_eta_min": pu_min,
+                "time_to_passenger_min": pu_min,
                 "passenger_payment_method": tag.get("passenger_payment_method"),
             }
 
@@ -1521,57 +1564,83 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
             return 0
         
         passenger_pid = tag_data.get("passenger_id")
-        # (driver_id, distance_km) — yarıçap + araç tipi
-        with_distance: list = []
-        for driver in drivers_result.data:
-            d_lat = driver.get("latitude")
-            d_lng = driver.get("longitude")
-            if not d_lat or not d_lng:
-                continue
-            if passenger_pid and str(driver["id"]) == str(passenger_pid):
-                continue
-            eff = _effective_driver_vehicle_kind(driver)
-            if not _driver_matches_passenger_vehicle_pref(eff, pref):
-                continue
-            dist_km = haversine_distance(pickup_lat, pickup_lng, d_lat, d_lng)
-            if dist_km <= BROADCAST_RADIUS_KM:
-                with_distance.append((driver["id"], dist_km))
-        
+        plat_b, plng_b = float(pickup_lat), float(pickup_lng)
+        sem_b = asyncio.Semaphore(12)
+
+        async def _broadcast_pickup_row(driver: dict):
+            async with sem_b:
+                d_lat = driver.get("latitude")
+                d_lng = driver.get("longitude")
+                if not d_lat or not d_lng:
+                    return None
+                if passenger_pid and str(driver["id"]) == str(passenger_pid):
+                    return None
+                eff = _effective_driver_vehicle_kind(driver)
+                if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                    return None
+                try:
+                    d_laf = float(d_lat)
+                    d_log = float(d_lng)
+                except (TypeError, ValueError):
+                    return None
+                if not _bbox_road_prefilter_ok(
+                    d_laf, d_log, plat_b, plng_b, BROADCAST_RADIUS_KM
+                ):
+                    return None
+                ri = await get_route_info(d_laf, d_log, plat_b, plng_b)
+                if not ri or float(ri["distance_km"]) > BROADCAST_RADIUS_KM:
+                    return None
+                return (
+                    str(driver["id"]).strip().lower(),
+                    float(ri["distance_km"]),
+                    int(max(1, round(float(ri["duration_min"])))),
+                )
+
+        br_rows = await asyncio.gather(
+            *[_broadcast_pickup_row(d) for d in drivers_result.data]
+        )
+        with_distance = [x for x in br_rows if x is not None]
         if not with_distance:
-            logger.info(f"📢 Broadcast: {BROADCAST_RADIUS_KM} km içinde sürücü yok")
+            logger.info(f"📢 Broadcast: {BROADCAST_RADIUS_KM} km yol içinde sürücü yok")
             return 0
-        
+
         with_distance.sort(key=lambda x: x[1])
         top = with_distance[:BROADCAST_MAX_RECIPIENTS]
-        eligible_drivers = [d[0] for d in top]
-        
+
         timeout_sec = BROADCAST_ACCEPT_WINDOW_SECONDS
-        
-        offer_data = {
-            "tag_id": tag_id,
-            "passenger_id": tag_data.get("passenger_id"),
-            "passenger_name": tag_data.get("passenger_name", "Yolcu"),
-            "pickup_location": tag_data.get("pickup_location"),
-            "pickup_lat": pickup_lat,
-            "pickup_lng": pickup_lng,
-            "dropoff_location": tag_data.get("dropoff_location"),
-            "dropoff_lat": tag_data.get("dropoff_lat"),
-            "dropoff_lng": tag_data.get("dropoff_lng"),
-            "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
-            "distance_km": tag_data.get("distance_km", 0),
-            "estimated_minutes": tag_data.get("estimated_minutes", 0),
-            "dispatch_timeout": timeout_sec,
-            "is_broadcast": True,
-            "passenger_vehicle_kind": pref,
-            "passenger_payment_method": tag_data.get("passenger_payment_method"),
-        }
-        
         price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
         trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
+        trip_dur = tag_data.get("estimated_minutes") or tag_data.get("trip_duration_min") or 0
         price_int = int(price) if price else 0
         distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
         body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
-        for driver_id in eligible_drivers:
+
+        n_sent = 0
+        for driver_id, r_pick_km, r_eta in top:
+            offer_data = {
+                "tag_id": tag_id,
+                "passenger_id": tag_data.get("passenger_id"),
+                "passenger_name": tag_data.get("passenger_name", "Yolcu"),
+                "pickup_location": tag_data.get("pickup_location"),
+                "pickup_lat": pickup_lat,
+                "pickup_lng": pickup_lng,
+                "dropoff_location": tag_data.get("dropoff_location"),
+                "dropoff_lat": tag_data.get("dropoff_lat"),
+                "dropoff_lng": tag_data.get("dropoff_lng"),
+                "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
+                "distance_km": trip_distance_km,
+                "estimated_minutes": trip_dur,
+                "trip_distance_km": trip_distance_km,
+                "trip_duration_min": trip_dur,
+                "pickup_distance_km": round(r_pick_km, 1),
+                "pickup_eta_min": r_eta,
+                "distance_to_pickup": round(r_pick_km, 2),
+                "time_to_passenger_min": r_eta,
+                "dispatch_timeout": timeout_sec,
+                "is_broadcast": True,
+                "passenger_vehicle_kind": pref,
+                "passenger_payment_method": tag_data.get("passenger_payment_method"),
+            }
             did = str(driver_id).strip().lower()
             if not await is_driver_eligible_for_dispatch_offer(did):
                 logger.info(f"📢 Broadcast atlandı (aktif değil): driver={did[:13]}… tag={tag_id}")
@@ -1579,6 +1648,7 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
             ok = await emit_new_passenger_offer_to_driver(did, offer_data)
             if not ok:
                 continue
+            n_sent += 1
             try:
                 await send_trip_push_and_log(
                     did,
@@ -1591,10 +1661,10 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
                 logger.warning(f"⚠️ Broadcast push sürücüye gönderilemedi: {did} - {push_err}")
         
         logger.info(
-            f"📢 Broadcast: tag={tag_id}, en yakın {len(eligible_drivers)}/{BROADCAST_MAX_RECIPIENTS} sürücü "
-            f"({BROADCAST_RADIUS_KM} km, {timeout_sec}s pencere, yolcu_araç_tipi={pref})"
+            f"📢 Broadcast: tag={tag_id}, gönderilen={n_sent}/{BROADCAST_MAX_RECIPIENTS} sürücü "
+            f"({BROADCAST_RADIUS_KM} km yol, {timeout_sec}s pencere, yolcu_araç_tipi={pref})"
         )
-        return len(eligible_drivers)
+        return n_sent
     except Exception as e:
         logger.error(f"Broadcast error: {e}")
         return 0
@@ -1761,6 +1831,10 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         "offered_price": tag_data.get("final_price") or tag_data.get("offered_price"),
         "distance_km": tag_data.get("distance_km", 0),
         "estimated_minutes": tag_data.get("estimated_minutes", 0),
+        "trip_distance_km": tag_data.get("trip_distance_km")
+        or tag_data.get("distance_km", 0),
+        "trip_duration_min": tag_data.get("trip_duration_min")
+        or tag_data.get("estimated_minutes", 0),
         "dispatch_timeout": DISPATCH_TIMEOUT,
         "is_rolling_batch": True,
         "passenger_vehicle_kind": pref,
@@ -1776,7 +1850,15 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         if not await is_driver_eligible_for_dispatch_offer(d_id):
             logger.info("rolling batch atlandı (aktif değil) tag=%s driver=%s", tag_id, d_id)
             continue
-        offer_data = {**offer_base, "distance_to_pickup": entry.get("distance_km", 0)}
+        pk_km = entry.get("distance_km", 0)
+        pk_min = entry.get("duration_min")
+        offer_data = {
+            **offer_base,
+            "distance_to_pickup": pk_km,
+            "pickup_distance_km": round(float(pk_km), 1) if pk_km else None,
+            "pickup_eta_min": int(pk_min) if pk_min is not None else None,
+            "time_to_passenger_min": int(pk_min) if pk_min is not None else None,
+        }
         if not await emit_new_passenger_offer_to_driver(d_id, offer_data):
             continue
         logger.info(
@@ -1908,6 +1990,8 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         "offered_price": row.get("final_price"),
         "distance_km": row.get("distance_km", 0),
         "estimated_minutes": row.get("estimated_minutes", 0),
+        "trip_distance_km": row.get("distance_km", 0),
+        "trip_duration_min": row.get("estimated_minutes", 0),
         "passenger_preferred_vehicle": passenger_pref,
         "passenger_payment_method": row.get("passenger_payment_method"),
     }
@@ -2285,6 +2369,21 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
         logger.warning(f"Route info error: {e}")
 
     return None
+
+
+def _bbox_road_prefilter_ok(
+    lat1: float, lng1: float, lat2: float, lng2: float, max_road_km: float
+) -> bool:
+    """
+    Sürücü adaylarını azaltmak için geniş enlem/boylam kutusu.
+    Gösterilen km değil; yalnızca get_route_info çağrı sayısını sınırlar.
+    """
+    m = max(1.0, float(max_road_km)) * 1.4
+    dlat_max = m / 111.0
+    mid_lat = (lat1 + lat2) / 2.0
+    cos_lat = max(0.25, math.cos(math.radians(mid_lat)))
+    dlng_max = m / (111.0 * cos_lat)
+    return abs(lat1 - lat2) <= dlat_max and abs(lng1 - lng2) <= dlng_max
 
 
 async def _enrich_tag_trip_distance_if_missing(tag: dict) -> None:
@@ -4377,11 +4476,17 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
         logger.info(f"🔍 Accept offer request: offer_id={oid}, driver_id={did}, tag_id={tid}")
         
         offer = None
+        resolved_driver_for_query = None
+        if did:
+            try:
+                resolved_driver_for_query = await resolve_user_id(str(did).strip()) or str(did).strip()
+            except Exception:
+                resolved_driver_for_query = str(did).strip()
         
         # 1. ÖNCE driver_id + tag_id ile bul (en güvenilir yol)
-        if did and tid:
-            logger.info(f"🔍 Teklif aranıyor: driver_id={did}, tag_id={tid}")
-            offer_result = supabase.table("offers").select("*").eq("driver_id", did).eq("tag_id", tid).eq("status", "pending").execute()
+        if resolved_driver_for_query and tid:
+            logger.info(f"🔍 Teklif aranıyor: driver_id={resolved_driver_for_query}, tag_id={tid}")
+            offer_result = supabase.table("offers").select("*").eq("driver_id", resolved_driver_for_query).eq("tag_id", tid).eq("status", "pending").execute()
             if offer_result.data:
                 offer = offer_result.data[0]
                 oid = offer["id"]
@@ -4713,6 +4818,10 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                     trip_distance_km = trip_route["distance_km"]
                     trip_duration_min = trip_route["duration_min"]
             
+            pk_km = round(distance_km, 1) if distance_km else None
+            pk_min = int(round(duration_min)) if duration_min else None
+            tr_km = round(trip_distance_km, 1) if trip_distance_km else None
+            tr_min = int(round(trip_duration_min)) if trip_duration_min else None
             requests.append({
                 "id": tag["id"],
                 "passenger_id": tag["passenger_id"],
@@ -4728,12 +4837,15 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
                 "notes": tag.get("notes"),
                 "status": tag["status"],
-                "distance_to_passenger_km": round(distance_km, 1) if distance_km else None,
-                "time_to_passenger_min": round(duration_min) if duration_min else None,
-                "trip_distance_km": round(trip_distance_km, 1) if trip_distance_km else None,
-                "trip_duration_min": round(trip_duration_min) if trip_duration_min else None,
-                "distance_km": round(distance_km, 1) if distance_km else None,
-                "duration_min": round(duration_min) if duration_min else None,
+                "pickup_distance_km": pk_km,
+                "pickup_eta_min": pk_min,
+                "trip_distance_km": tr_km,
+                "trip_duration_min": tr_min,
+                "distance_to_passenger_km": pk_km,
+                "time_to_passenger_min": pk_min,
+                "distance_km": tr_km,
+                "estimated_minutes": tr_min,
+                "duration_min": pk_min,
                 "created_at": tag["created_at"]
             })
         
@@ -4828,9 +4940,12 @@ async def get_driver_nearby_passengers_map(
             except (TypeError, ValueError):
                 continue
 
-            dist = haversine_distance(driver_lat, driver_lng, plat_f, plng_f)
-            if dist > rk:
+            if not _bbox_road_prefilter_ok(driver_lat, driver_lng, plat_f, plng_f, rk):
                 continue
+            ri_seek = await get_route_info(driver_lat, driver_lng, plat_f, plng_f)
+            if not ri_seek or float(ri_seek["distance_km"]) > rk:
+                continue
+            road_km = round(float(ri_seek["distance_km"]), 2)
 
             pid = tag.get("passenger_id")
             if pid:
@@ -4847,7 +4962,8 @@ async def get_driver_nearby_passengers_map(
                     "pickup_lng": plng_f,
                     "pickup_location": (tag.get("pickup_location") or "")[:80],
                     "status": tag.get("status"),
-                    "distance_km": round(dist, 2),
+                    "distance_km": road_km,
+                    "pickup_distance_km": road_km,
                     "offered_price": tag.get("offered_price"),
                     "label": label,
                 }
@@ -4933,9 +5049,12 @@ async def get_driver_nearby_passengers_map(
                 uc = str(row.get("city") or "").strip().lower()
                 if uc != driver_city_norm:
                     continue
-            dist = haversine_distance(driver_lat, driver_lng, ulat, ulng)
-            if dist > rk:
+            if not _bbox_road_prefilter_ok(driver_lat, driver_lng, ulat, ulng, rk):
                 continue
+            ri_u = await get_route_info(driver_lat, driver_lng, ulat, ulng)
+            if not ri_u or float(ri_u["distance_km"]) > rk:
+                continue
+            road_u = round(float(ri_u["distance_km"]), 2)
             nm = row.get("name") or "Yolcu"
             label = (nm.split() or ["Yakında"])[0][:12]
             nearby_app_users.append(
@@ -4943,7 +5062,7 @@ async def get_driver_nearby_passengers_map(
                     "user_id": row["id"],
                     "latitude": ulat,
                     "longitude": ulng,
-                    "distance_km": round(dist, 2),
+                    "distance_km": road_u,
                     "label": label,
                 }
             )
@@ -5234,7 +5353,7 @@ class DriverAcceptOfferRequest(BaseModel):
 
 @api_router.post("/driver/accept-offer")
 async def driver_accept_offer_http(
-    request: DriverAcceptOfferRequest = None,
+    body: Optional[DriverAcceptOfferRequest] = Body(None),
     tag_id: str = None,
     driver_id: str = None,
     user_id: str = None,
@@ -5243,9 +5362,9 @@ async def driver_accept_offer_http(
     Sürücü teklifi HTTP ile kabul: tag matched + dispatch temizlik + tag_matched socket.
     """
     try:
-        tid = (request.tag_id if request else None) or tag_id
+        tid = (body.tag_id if body else None) or tag_id
         did = (
-            (request.driver_id if request and request.driver_id else None)
+            (body.driver_id if body and body.driver_id else None)
             or driver_id
             or user_id
         )
@@ -5364,6 +5483,32 @@ async def driver_accept_offer_http(
             if pr.data and pr.data[0].get("name"):
                 passenger_name = pr.data[0]["name"]
 
+        pickup_distance_km = None
+        pickup_eta_min = None
+        try:
+            udrv = (
+                supabase.table("users")
+                .select("latitude, longitude")
+                .eq("id", resolved_driver_id)
+                .limit(1)
+                .execute()
+            )
+            plat, plng = updated_tag.get("pickup_lat"), updated_tag.get("pickup_lng")
+            if udrv.data and plat is not None and plng is not None:
+                dlat, dlng = udrv.data[0].get("latitude"), udrv.data[0].get("longitude")
+                if dlat is not None and dlng is not None:
+                    ri_pk = await get_route_info(
+                        float(dlat), float(dlng), float(plat), float(plng)
+                    )
+                    if ri_pk:
+                        pickup_distance_km = float(ri_pk["distance_km"])
+                        pickup_eta_min = int(ri_pk["duration_min"])
+        except Exception as _pke:
+            logger.warning(f"driver/accept-offer pickup_distance: {_pke}")
+
+        trip_dk = updated_tag.get("distance_km")
+        est_min = updated_tag.get("estimated_minutes")
+
         payload = {
             "trip_id": tid,
             "tag_id": tid,
@@ -5380,10 +5525,13 @@ async def driver_accept_offer_http(
             "offered_price": updated_tag.get("offered_price")
             or updated_tag.get("final_price"),
             "final_price": updated_tag.get("final_price"),
-            "distance_km": updated_tag.get("distance_km"),
-            "estimated_minutes": updated_tag.get("estimated_minutes"),
+            "distance_km": trip_dk,
+            "trip_distance_km": trip_dk,
+            "pickup_distance_km": pickup_distance_km,
+            "estimated_minutes": est_min,
             "status": "matched",
             "matched_at": updated_tag.get("matched_at") or matched_at,
+            "passenger_payment_method": updated_tag.get("passenger_payment_method"),
         }
         try:
             driver_sid = connected_users.get(
@@ -5393,6 +5541,7 @@ async def driver_accept_offer_http(
             driver_target = driver_sid or driver_room
             if driver_target:
                 await sio.emit("tag_matched", payload, room=driver_target)
+                await sio.emit("ride_matched", payload, room=driver_target)
             if passenger_id:
                 passenger_sid = connected_users.get(
                     str(passenger_id).strip().lower()
@@ -5401,10 +5550,19 @@ async def driver_accept_offer_http(
                 passenger_target = passenger_sid or passenger_room
                 if passenger_target:
                     await sio.emit("tag_matched", payload, room=passenger_target)
+                    await sio.emit("ride_matched", payload, room=passenger_target)
         except Exception as sock_e:
-            logger.warning(f"driver/accept-offer HTTP tag_matched emit: {sock_e}")
+            logger.warning(f"driver/accept-offer HTTP socket emit: {sock_e}")
 
-        return {"success": True}
+        return {
+            "success": True,
+            "match": payload,
+            "distance_km": trip_dk,
+            "trip_distance_km": trip_dk,
+            "pickup_distance_km": pickup_distance_km,
+            "pickup_eta_min": pickup_eta_min,
+            "estimated_minutes": est_min,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -5429,6 +5587,8 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         
         if result.data:
             tag = result.data[0]
+            # Tam tag satırı: pickup–dropoff yol km eksikse hesapla (sürücü haritası routeInfo için şart)
+            await _enrich_tag_trip_distance_if_missing(tag)
             passenger_info = tag.get("users", {}) or {}
             
             # Yolcu konumu
@@ -5439,6 +5599,22 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                     "longitude": float(passenger_info["longitude"])
                 }
             
+            dk = tag.get("distance_km")
+            em = tag.get("estimated_minutes")
+            try:
+                dk_f = float(dk) if dk is not None else None
+            except (TypeError, ValueError):
+                dk_f = None
+            try:
+                em_i = int(round(float(em))) if em is not None else None
+            except (TypeError, ValueError):
+                em_i = None
+            fp = tag.get("final_price")
+            try:
+                fp_f = float(fp) if fp is not None else None
+            except (TypeError, ValueError):
+                fp_f = None
+
             tag_data = {
                 "id": tag["id"],
                 "passenger_id": tag["passenger_id"],
@@ -5447,14 +5623,21 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "passenger_rating": float(passenger_info.get("rating", 4.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
                 "passenger_location": passenger_location,
-                "pickup_location": tag["pickup_location"],
-                "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
-                "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
-                "dropoff_location": tag["dropoff_location"],
-                "dropoff_lat": float(tag["dropoff_lat"]) if tag.get("dropoff_lat") else None,
-                "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
+                "pickup_location": tag.get("pickup_location"),
+                "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") is not None else None,
+                "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") is not None else None,
+                "dropoff_location": tag.get("dropoff_location"),
+                "dropoff_lat": float(tag["dropoff_lat"]) if tag.get("dropoff_lat") is not None else None,
+                "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") is not None else None,
                 "status": tag["status"],
-                "final_price": float(tag["final_price"]) if tag.get("final_price") else None
+                "final_price": fp_f,
+                "offered_price": fp_f,
+                "distance_km": dk_f,
+                "estimated_minutes": em_i,
+                "trip_distance_km": dk_f,
+                "trip_duration_min": em_i,
+                "passenger_preferred_vehicle": tag.get("passenger_preferred_vehicle"),
+                "passenger_payment_method": tag.get("passenger_payment_method"),
             }
             
             return {
@@ -5560,6 +5743,30 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
             driver_eff = _effective_driver_vehicle_kind(drv.data[0] if drv.data else {})
             if not _driver_matches_passenger_vehicle_pref(driver_eff, pvk):
                 continue
+            trip_km = tag.get("distance_km") or 0
+            trip_min = tag.get("estimated_minutes") or 0
+            pk_km = row.get("distance_km")
+            pk_min = None
+            try:
+                dlu = (
+                    supabase.table("users")
+                    .select("latitude, longitude")
+                    .eq("id", resolved_id)
+                    .limit(1)
+                    .execute()
+                )
+                if dlu.data and tag.get("pickup_lat") is not None and tag.get("pickup_lng") is not None:
+                    d_la = float(dlu.data[0]["latitude"])
+                    d_lo = float(dlu.data[0]["longitude"])
+                    p_la = float(tag["pickup_lat"])
+                    p_lo = float(tag["pickup_lng"])
+                    ri_d = await get_route_info(d_la, d_lo, p_la, p_lo)
+                    if ri_d:
+                        if pk_km is None:
+                            pk_km = round(float(ri_d["distance_km"]), 1)
+                        pk_min = int(max(1, round(float(ri_d["duration_min"]))))
+            except Exception:
+                pass
             offer_payload = {
                 "tag_id": tid,
                 "passenger_id": tag.get("passenger_id"),
@@ -5571,9 +5778,14 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
                 "dropoff_lat": tag.get("dropoff_lat"),
                 "dropoff_lng": tag.get("dropoff_lng"),
                 "offered_price": fp,
-                "distance_km": tag.get("distance_km") or 0,
-                "estimated_minutes": tag.get("estimated_minutes") or 0,
-                "distance_to_pickup": row.get("distance_km") or 0,
+                "distance_km": trip_km,
+                "estimated_minutes": trip_min,
+                "trip_distance_km": trip_km,
+                "trip_duration_min": trip_min,
+                "distance_to_pickup": pk_km or 0,
+                "pickup_distance_km": pk_km,
+                "pickup_eta_min": pk_min,
+                "time_to_passenger_min": pk_min,
                 "dispatch_timeout": timeout,
                 "is_dispatch": True,
                 "passenger_vehicle_kind": pvk,
@@ -10431,14 +10643,22 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
             trip_pref = _trip_passenger_vehicle_pref(tag, None)
             if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
                 continue
-            # Mesafe hesapla
-            distance = haversine_distance(lat, lng, tag["pickup_lat"], tag["pickup_lng"])
-            
-            # Sadece belirli yarıçap içindekiler
-            if distance <= radius_km:
-                tag["distance_to_pickup"] = round(distance, 1)
-                tag["passenger_name"] = tag.get("passenger_name") or "Yolcu"
-                offers.append(tag)
+            try:
+                p_la = float(tag["pickup_lat"])
+                p_lo = float(tag["pickup_lng"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if not _bbox_road_prefilter_ok(float(lat), float(lng), p_la, p_lo, radius_km):
+                continue
+            ri_o = await get_route_info(float(lat), float(lng), p_la, p_lo)
+            if not ri_o or float(ri_o["distance_km"]) > radius_km:
+                continue
+            road_o = round(float(ri_o["distance_km"]), 1)
+            tag["distance_to_pickup"] = road_o
+            tag["pickup_distance_km"] = road_o
+            tag["pickup_eta_min"] = int(max(1, round(float(ri_o["duration_min"]))))
+            tag["passenger_name"] = tag.get("passenger_name") or "Yolcu"
+            offers.append(tag)
         
         # Mesafeye göre sırala (en yakın önce)
         offers.sort(key=lambda x: x["distance_to_pickup"])

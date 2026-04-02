@@ -64,6 +64,8 @@ export interface UseOffersReturn {
   addOffer: (offer: Partial<Offer>) => void;
   removeOffer: (offerId: string) => void;
   updateOfferStatus: (offerId: string, status: string) => void;
+  /** DB’de güncellenen mesafe/süre alanlarını çeker (socket minimal geldiğinde). */
+  refreshOffersForTag: (tagId: string) => Promise<void>;
 }
 
 // ==================== HOOK ====================
@@ -131,6 +133,8 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       distance_km: offerData.distance_km,
       distance_to_passenger_km: offerData.distance_to_passenger_km,
       estimated_arrival_min: offerData.estimated_arrival_min,
+      trip_distance_km: offerData.trip_distance_km,
+      trip_duration_min: offerData.trip_duration_min,
       created_at: offerData.created_at || new Date().toISOString(),
       _optimistic: offerData._optimistic || false
     };
@@ -145,6 +149,55 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       return [newOffer, ...prev];
     });
   }, [requestId, tagId]);
+
+  const refreshOffersForTag = useCallback(
+    async (tId: string) => {
+      if (!userId || !tId) return;
+      try {
+        const url = `${API_URL}/passenger/offers?user_id=${encodeURIComponent(userId)}&tag_id=${encodeURIComponent(tId)}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (!data.success || !Array.isArray(data.offers)) return;
+
+        setOffers((prev) => {
+          const updates = new Map<string, Record<string, unknown>>(
+            (data.offers as Record<string, unknown>[]).map((o) => [String(o.id), o]),
+          );
+          return prev.map((p) => {
+            const u = updates.get(p.id);
+            if (!u) return p;
+            const dtp = u.distance_to_passenger_km;
+            const earr = u.estimated_arrival_min;
+            const tdk = u.trip_distance_km;
+            const tdm = u.trip_duration_min;
+            return {
+              ...p,
+              distance_to_passenger_km:
+                typeof dtp === 'number' && Number.isFinite(dtp)
+                  ? dtp
+                  : p.distance_to_passenger_km,
+              estimated_arrival_min:
+                typeof earr === 'number' && Number.isFinite(earr)
+                  ? earr
+                  : p.estimated_arrival_min,
+              trip_distance_km:
+                typeof tdk === 'number' && Number.isFinite(tdk) ? tdk : p.trip_distance_km,
+              trip_duration_min:
+                typeof tdm === 'number' && Number.isFinite(tdm) ? tdm : p.trip_duration_min,
+              notes: typeof u.notes === 'string' ? u.notes : p.notes,
+              driver_rating:
+                typeof u.driver_rating === 'number' ? u.driver_rating : p.driver_rating,
+              vehicle_model:
+                typeof u.vehicle_model === 'string' ? u.vehicle_model : p.vehicle_model,
+            };
+          });
+        });
+      } catch (e) {
+        console.warn('[useOffers] refreshOffersForTag:', e);
+      }
+    },
+    [userId],
+  );
 
   // ==================== REMOVE OFFER ====================
   
@@ -266,7 +319,8 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     clearOffers,
     addOffer,
     removeOffer,
-    updateOfferStatus
+    updateOfferStatus,
+    refreshOffersForTag,
   };
 }
 

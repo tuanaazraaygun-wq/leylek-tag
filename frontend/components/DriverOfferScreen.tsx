@@ -69,21 +69,6 @@ function dropoffLineFromRequest(r: PassengerRequest): string {
   return 'Hedef (haritada işaretli)';
 }
 
-function haversineKm(
-  a: { latitude: number; longitude: number },
-  b: { latitude: number; longitude: number }
-): number {
-  const R = 6371;
-  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
-  const lat1 = (a.latitude * Math.PI) / 180;
-  const lat2 = (b.latitude * Math.PI) / 180;
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));
-}
-
 export interface DriverMapSeekingPin {
   tag_id: string;
   pickup_lat: number;
@@ -151,6 +136,9 @@ export interface PassengerRequest {
   dropoff_lat?: number;
   dropoff_lng?: number;
   distance_to_passenger_km?: number;
+  /** Backend tek kaynak (sürücü → pickup, Google→OSRM) */
+  pickup_distance_km?: number;
+  pickup_eta_min?: number;
   trip_distance_km?: number;
   time_to_passenger_min?: number;
   trip_duration_min?: number;
@@ -179,6 +167,8 @@ interface DriverOfferScreenProps {
   vehicleKind?: 'car' | 'motorcycle';
   /** true: üstte panel var; SafeArea üst padding yok, flex ile sığdır */
   embedded?: boolean;
+  /** POST /driver/accept-offer başarılı olunca (optimistic harita / LiveMapView) */
+  onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
 }
 
 // Yolcu Request Kartı Bileşeni - MARTI TAG MODELİ
@@ -188,6 +178,7 @@ function RequestCard({
   driverId,
   playTapSound,
   onDismiss,
+  onDriverAcceptMatch,
   index
 }: { 
   request: PassengerRequest; 
@@ -195,6 +186,7 @@ function RequestCard({
   driverId: string;
   playTapSound?: () => void;
   onDismiss: () => void;
+  onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
   index: number;
 }) {
   const { socket } = useSocketContext();
@@ -209,15 +201,24 @@ function RequestCard({
     ]).start();
   }, []);
 
-  // Mesafe hesapla (0 km gösterme — sunucu henüz yazmadıysa "?")
-  const distanceToPassenger = formatTripKmBadge(
-    request.distance_to_passenger_km ?? (request as { distance_to_pickup?: number }).distance_to_pickup,
-  );
-  const tripDistance = formatTripKmBadge(
-    request.trip_distance_km ?? (request as { distance_km?: number }).distance_km,
-  );
-  const timeToPassenger = request.time_to_passenger_min || Math.round((request.distance_to_passenger_km || 5) / 40 * 60);
-  const tripDuration = request.trip_duration_min || Math.round((request.trip_distance_km || 10) / 50 * 60);
+  // km yalnızca backend alanları (pickup_distance_km / trip_distance_km); yoksa "?"
+  const distanceToPassenger = formatTripKmBadge(request.pickup_distance_km);
+  const tripDistance = formatTripKmBadge(request.trip_distance_km);
+
+  const timeToPassenger =
+    request.pickup_eta_min ??
+    request.time_to_passenger_min ??
+    null;
+  const tripDuration = request.trip_duration_min ?? null;
+
+  const timeToPassengerDisplay =
+    timeToPassenger != null && Number.isFinite(Number(timeToPassenger))
+      ? Math.max(1, Math.round(Number(timeToPassenger)))
+      : '—';
+  const tripDurationDisplay =
+    tripDuration != null && Number.isFinite(Number(tripDuration))
+      ? Math.max(1, Math.round(Number(tripDuration)))
+      : '—';
 
   return (
     <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
@@ -296,7 +297,10 @@ function RequestCard({
         <View style={styles.statItem}>
           <Ionicons name="time-outline" size={20} color="#3FA9F5" />
           <View>
-            <Text style={styles.statValueBig}>{timeToPassenger} dk</Text>
+            <Text style={styles.statValueBig}>
+              {timeToPassengerDisplay}
+              {typeof timeToPassengerDisplay === 'number' ? ' dk' : ''}
+            </Text>
             <Text style={styles.statLabelBig}>yolcuya</Text>
           </View>
         </View>
@@ -304,7 +308,10 @@ function RequestCard({
         <View style={styles.statItem}>
           <Ionicons name="speedometer-outline" size={20} color="#FF6B35" />
           <View>
-            <Text style={styles.statValueBig}>{tripDuration} dk</Text>
+            <Text style={styles.statValueBig}>
+              {tripDurationDisplay}
+              {typeof tripDurationDisplay === 'number' ? ' dk' : ''}
+            </Text>
             <Text style={styles.statLabelBig}>yolculuk</Text>
           </View>
         </View>
@@ -321,15 +328,13 @@ function RequestCard({
         
         <TouchableOpacity
           style={[styles.acceptButton, accepting && styles.acceptButtonDisabled]}
-          onPress={() => {
+          onPress={async () => {
             if (accepting) return;
 
-            // Socket/API bazen yalnızca `id` doldurur; `tag_id` ayrı gelmeyebilir
             const tagIdForAccept = String(request.tag_id || request.id || '').trim();
-            const offer = { tag_id: tagIdForAccept };
             const userId = String(driverId || '').trim();
 
-            if (!offer.tag_id || !userId) {
+            if (!tagIdForAccept || !userId) {
               Alert.alert('Hata', 'Eksik bilgi');
               return;
             }
@@ -337,14 +342,65 @@ function RequestCard({
             setAccepting(true);
             try {
               playTapSound?.();
-              console.log('EMIT driver_accept_offer', offer.tag_id, userId);
-              // Driver accept için tek event ve düz payload
+              const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
+              const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag_id: tagIdForAccept, driver_id: userId }),
+              });
+              const rawText = await res.text();
+              let body: Record<string, unknown> | null = null;
+              try {
+                body = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
+              } catch {
+                body = null;
+              }
+              console.log('[driver/accept-offer]', res.status, rawText?.slice?.(0, 500) || rawText);
+
+              if (res.ok && body && body.success === true) {
+                const m = (body.match as Record<string, unknown> | undefined) || body;
+                onDriverAcceptMatch?.({
+                  ...m,
+                  pickup_distance_km:
+                    m.pickup_distance_km ?? request.pickup_distance_km,
+                  pickup_eta_min: m.pickup_eta_min ?? request.pickup_eta_min,
+                  trip_distance_km:
+                    m.trip_distance_km ?? request.trip_distance_km,
+                  trip_duration_min:
+                    m.trip_duration_min ?? request.trip_duration_min,
+                });
+                return;
+              }
+
+              let errMsg = '';
+              if (body) {
+                const d = (body as { detail?: unknown }).detail;
+                const m = (body as { message?: unknown }).message;
+                errMsg = [d, m]
+                  .map((x) => (x != null && String(x).trim() ? String(x).trim() : ''))
+                  .find(Boolean) || '';
+              }
+              if (!errMsg) {
+                errMsg =
+                  res.status === 409
+                    ? 'Bu çağrı artık müsait değil veya başka sürücüye düştü.'
+                    : `Sunucu yanıtı: ${res.status}`;
+              }
+              Alert.alert('Eşleşme olmadı', errMsg);
+              console.warn('[driver/accept-offer] socket yedek denemesi');
               socket.emit('driver_accept_offer', {
-                tag_id: offer.tag_id,
+                tag_id: tagIdForAccept,
+                driver_id: userId,
+              });
+            } catch (e) {
+              console.error('[driver/accept-offer] fetch', e);
+              Alert.alert('Hata', 'Bağlantı hatası; socket ile deneniyor.');
+              socket.emit('driver_accept_offer', {
+                tag_id: tagIdForAccept,
                 driver_id: userId,
               });
             } finally {
-              setTimeout(() => setAccepting(false), 4000);
+              setAccepting(false);
             }
           }}
           disabled={accepting}
@@ -450,6 +506,7 @@ export default function DriverOfferScreen({
   onLogout,
   vehicleKind = 'car',
   embedded = false,
+  onDriverAcceptMatch,
 }: DriverOfferScreenProps) {
   const isMotor = vehicleKind === 'motorcycle';
   const mapRef = useRef<any>(null);
@@ -824,6 +881,7 @@ export default function DriverOfferScreen({
                 driverId={driverId}
                 playTapSound={playTapSound}
                 onDismiss={() => onDismissRequest(item.id)}
+                onDriverAcceptMatch={onDriverAcceptMatch}
                 index={index}
               />
             )}

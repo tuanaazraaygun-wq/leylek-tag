@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing, Modal, Image, ImageBackground } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { WebView } from 'react-native-webview';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
 
@@ -39,7 +38,14 @@ interface LiveMapViewProps {
   tagId?: string;   // 🆕 Tag ID
   price?: number;
   offeredPrice?: number;  // Teklif edilen fiyat
-  routeInfo?: { distance_km: number; duration_min: number } | null;
+  routeInfo?: {
+    distance_km?: number;
+    duration_min?: number;
+    meeting_distance_km?: number | null;
+    meeting_duration_min?: number | null;
+    trip_distance_km?: number | null;
+    trip_duration_min?: number | null;
+  } | null;
   // Yeni: Sürücü/Yolcu detay bilgileri
   otherUserDetails?: {
     rating?: number;
@@ -67,6 +73,8 @@ interface LiveMapViewProps {
   otherTripVehicleKind?: 'car' | 'motorcycle';
   /** Sürücü: yolcunun teklifte seçtiği ödeme */
   passengerPaymentMethod?: 'cash' | 'card';
+  /** Sürücü uygulama-içi navigasyon açıkken üst bileşen GPS aralığını kısaltır */
+  onNavigationModeChange?: (active: boolean) => void;
 }
 
 /** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
@@ -317,6 +325,7 @@ export default function LiveMapView({
   onShowQRModal,  // 🆕
   otherTripVehicleKind = 'car',
   passengerPaymentMethod,
+  onNavigationModeChange,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   
@@ -343,10 +352,9 @@ export default function LiveMapView({
   // 🆕 Matrix Tarzı Durum Mesajları
   const [matrixStatus, setMatrixStatus] = useState('');
   
-  // 🆕 IN-APP NAVİGASYON - Google Maps WebView Modal
-  const [showGoogleMapsModal, setShowGoogleMapsModal] = useState(false);
-  const [googleMapsUrl, setGoogleMapsUrl] = useState('');
-  
+  /** Sürücü "Yolcuya Git" — tamamen uygulama içi harita; dış Maps açılmaz */
+  const [navigationMode, setNavigationMode] = useState(false);
+
   /** OSRM: buluşma ve hedef rotaları ayrı throttle — aynı anda birbirini iptal etmesin */
   const routeThrottleRef = useRef<{ meeting: number; destination: number }>({
     meeting: 0,
@@ -357,20 +365,23 @@ export default function LiveMapView({
     initialDone: false,
     hadDestination: false,
   });
-  /** OSRM buluşma rotası backend routeInfo’yu ezdiyse true */
-  const osrmMeetingLockRef = useRef(false);
   const lastOsrmAtRef = useRef(0);
   const lastOsrmKeyRef = useRef('');
   const meetingHasOsrmPolylineRef = useRef(false);
   const refreshMeetingRouteOsrmRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
 
   useEffect(() => {
-    osrmMeetingLockRef.current = false;
     meetingHasOsrmPolylineRef.current = false;
     lastOsrmKeyRef.current = '';
     lastOsrmAtRef.current = 0;
     mapFitRef.current = { initialDone: false, hadDestination: false };
+    setNavigationMode(false);
   }, [tagId]);
+
+  useEffect(() => {
+    if (!isDriver) return;
+    onNavigationModeChange?.(navigationMode);
+  }, [isDriver, navigationMode, onNavigationModeChange]);
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -518,18 +529,15 @@ export default function LiveMapView({
     if (isDriver || !userLocation || !otherLocation) {
       return '';
     }
-    const dKm = calculateDistance(
-      userLocation.latitude,
-      userLocation.longitude,
-      otherLocation.latitude,
-      otherLocation.longitude,
-    );
-    const meters = dKm * 1000;
-    const kmForHint = meetingDistance ?? dKm;
+    if (meetingDistance == null || !Number.isFinite(meetingDistance)) {
+      const name = displayFirstName(otherUserName, 'Sürücünüz');
+      return `${name} yolda — tahmini süre backend güncellemesiyle gösterilecek`;
+    }
+    const meters = meetingDistance * 1000;
     return buildPassengerDriverHint(
       meters,
       meetingDuration,
-      kmForHint,
+      meetingDistance,
       otherUserName,
       passengerReminderCycle,
     );
@@ -544,20 +552,18 @@ export default function LiveMapView({
     passengerReminderCycle,
   ]);
   
-  // 🆕 Matrix Durum Yazıları - Mesafeye göre güncelle (OSRM buluşma km varsa onu kullan)
+  // Matrix durumları — yalnızca backend meetingDistance (km); yoksa nötr metin
   useEffect(() => {
     if (!userLocation || !otherLocation) return;
 
-    const crowKm = calculateDistance(
-      userLocation.latitude,
-      userLocation.longitude,
-      otherLocation.latitude,
-      otherLocation.longitude,
-    );
     const distanceKm =
       meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
         ? meetingDistance
-        : crowKm;
+        : null;
+    if (distanceKm == null) {
+      setMatrixStatus(isDriver ? '> YOLCUYU ALINIZ' : '> SURUCU YOLA CIKTI');
+      return;
+    }
     const meters = distanceKm * 1000;
     
     if (isDriver) {
@@ -640,8 +646,11 @@ export default function LiveMapView({
     }
   }, [userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude, isDriver]);
 
-  // Buluşma: OSRM gerçek yol (km/dk + polyline), periyodik yenileme
+  // Buluşma: OSRM yalnızca polyline; km/dk backend (routeInfo). Nav modunda daha sık yenile (sürücü hareketi).
   useEffect(() => {
+    const throttleMs = navigationMode && isDriver ? 9000 : 22000;
+    const pollMs = navigationMode && isDriver ? 12000 : 28000;
+
     refreshMeetingRouteOsrmRef.current = async (force = false) => {
       if (!userLocation || !otherLocation) return;
       const dLat = isDriver ? userLocation.latitude : otherLocation.latitude;
@@ -650,7 +659,6 @@ export default function LiveMapView({
       const pLng = isDriver ? otherLocation.longitude : userLocation.longitude;
       const key = meetingEndpointsKey(dLat, dLng, pLat, pLng);
       const now = Date.now();
-      const throttleMs = 22000;
       if (!force) {
         if (now - lastOsrmAtRef.current < throttleMs && key === lastOsrmKeyRef.current) {
           return;
@@ -661,17 +669,14 @@ export default function LiveMapView({
       const r = await fetchOsrmDrivingRoute(dLat, dLng, pLat, pLng);
       if (!r || r.coordinates.length < 2) return;
       meetingHasOsrmPolylineRef.current = true;
-      osrmMeetingLockRef.current = true;
       setMeetingRoute(r.coordinates);
-      setMeetingDistance(r.distanceM / 1000);
-      setMeetingDuration(Math.max(1, Math.ceil(r.durationS / 60)));
     };
 
     void refreshMeetingRouteOsrmRef.current(true);
 
     const id = setInterval(() => {
       void refreshMeetingRouteOsrmRef.current(false);
-    }, 28000);
+    }, pollMs);
     return () => clearInterval(id);
   }, [
     userLocation?.latitude,
@@ -679,6 +684,7 @@ export default function LiveMapView({
     otherLocation?.latitude,
     otherLocation?.longitude,
     isDriver,
+    navigationMode,
   ]);
 
   // TURUNCU ROTA: Yolcu → Hedef — düz çizgi sonra OSRM polyline (etiketteki km/süre routeInfo’dan)
@@ -714,23 +720,31 @@ export default function LiveMapView({
     isDriver,
   ]);
 
-  // Hedef km/dk backend’den; buluşma OSRM yoksa backend’den doldurulur.
+  // Tüm gösterilen km/dk tek kaynak: backend → routeInfo (socket/API)
   useEffect(() => {
-    const info = (routeInfo as any) || {};
-    const meetingKm = Number(info.meeting_distance_km ?? info.distance_to_passenger_km);
-    const meetingMin = Number(info.meeting_duration_min ?? info.time_to_passenger_min);
+    const info = (routeInfo as Record<string, unknown>) || {};
+    const meetingKm = Number(
+      info.meeting_distance_km ?? info.pickup_distance_km ?? info.distance_to_passenger_km,
+    );
+    const meetingMin = Number(
+      info.meeting_duration_min ?? info.pickup_eta_min ?? info.time_to_passenger_min,
+    );
     const tripKm = Number(info.trip_distance_km ?? info.distance_km);
     const tripMin = Number(info.trip_duration_min ?? info.duration_min);
 
-    if (!osrmMeetingLockRef.current) {
-      setMeetingDistance(Number.isFinite(meetingKm) ? meetingKm : null);
-      setMeetingDuration(Number.isFinite(meetingMin) ? Math.max(0, Math.round(meetingMin)) : null);
+    setMeetingDistance(Number.isFinite(meetingKm) && meetingKm > 0 ? meetingKm : null);
+    setMeetingDuration(
+      Number.isFinite(meetingMin) && meetingMin > 0 ? Math.max(0, Math.round(meetingMin)) : null,
+    );
+    if (Number.isFinite(tripKm) && tripKm > 0) {
+      setDestinationDistance(tripKm);
     }
-    setDestinationDistance(Number.isFinite(tripKm) ? tripKm : null);
-    setDestinationDuration(Number.isFinite(tripMin) ? Math.max(0, Math.round(tripMin)) : null);
+    if (Number.isFinite(tripMin) && tripMin > 0) {
+      setDestinationDuration(Math.max(0, Math.round(tripMin)));
+    }
 
-    if (Number.isFinite(tripKm)) {
-      const isNear = (tripKm as number) <= 1;
+    if (Number.isFinite(tripKm) && tripKm > 0) {
+      const isNear = tripKm <= 1;
       setNearDestination(isNear);
       if (isNear && !autoCompleteTriggered.current) {
         autoCompleteTriggered.current = true;
@@ -743,9 +757,9 @@ export default function LiveMapView({
     }
   }, [routeInfo, onAutoComplete]);
 
-  /** Sürücü: harita merkezi araç konumu — zoom yolcu mesafesine göre (araç tam ortada) */
+  /** Sürücü: harita merkezi araçta — navigasyon modunda kullanıcı rotayı görüyor; otomatik merkezleme yok */
   useEffect(() => {
-    if (!isDriver || !mapRef.current || !userLocation || !otherLocation) return;
+    if (!isDriver || navigationMode || !mapRef.current || !userLocation || !otherLocation) return;
     const dLat = Math.abs(userLocation.latitude - otherLocation.latitude);
     const dLng = Math.abs(userLocation.longitude - otherLocation.longitude);
     const latDelta = Math.min(0.14, Math.max(0.0028, dLat * 2.35));
@@ -762,7 +776,29 @@ export default function LiveMapView({
       );
     }, 140);
     return () => clearTimeout(t);
-  }, [isDriver, userLocation?.latitude, userLocation?.longitude, otherLocation?.latitude, otherLocation?.longitude]);
+  }, [
+    isDriver,
+    navigationMode,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+  ]);
+
+  /** Uygulama içi navigasyon: sürücü → alış → hedef (hepsi varsa) tek görünümde */
+  const fitNavigationViewport = useCallback(() => {
+    if (!mapRef.current || !userLocation || !otherLocation) return;
+    const coords: { latitude: number; longitude: number }[] = [userLocation, otherLocation];
+    if (destinationLocation) {
+      coords.push(destinationLocation);
+    }
+    setTimeout(() => {
+      mapRef.current?.fitToCoordinates(coords, {
+        edgePadding: { top: 240, right: 48, bottom: 300, left: 48 },
+        animated: true,
+      });
+    }, 200);
+  }, [userLocation, otherLocation, destinationLocation]);
 
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
@@ -795,63 +831,6 @@ export default function LiveMapView({
     }, 650);
     return () => clearTimeout(t);
   }, [userLocation, otherLocation, destinationLocation, isDriver]);
-
-  /** Google yön tarifi URL’i (koordinat → gerçek yol rotası Maps tarafında hesaplanır). */
-  const buildGoogleDirNavUrl = () => {
-    if (!userLocation || !otherLocation) return '';
-    const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
-    const origin = `${userLocation.latitude},${userLocation.longitude}`;
-    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving&dir_action=navigate`;
-  };
-
-  /** Harici: Google Maps / Safari / Chrome — tam sesli navigasyon genelde burada en sorunsuz. */
-  const openGoogleMapsNavigationExternal = () => {
-    const googleNavUrl = buildGoogleDirNavUrl();
-    if (!googleNavUrl) {
-      Alert.alert('Hata', 'Konum bilgisi alınamadı');
-      return;
-    }
-    Linking.openURL(googleNavUrl).catch((err) => {
-      console.error('Navigation error:', err);
-      Alert.alert('Hata', 'Navigasyon açılamadı');
-    });
-  };
-
-  /** Uygulama içi: WebView (Google web arayüzü; bazı cihazlarda “uygulamada aç” önerebilir). */
-  const openGoogleMapsNavigationInApp = () => {
-    const googleNavUrl = buildGoogleDirNavUrl();
-    if (!googleNavUrl) {
-      Alert.alert('Hata', 'Konum bilgisi alınamadı');
-      return;
-    }
-    setGoogleMapsUrl(googleNavUrl);
-    setShowGoogleMapsModal(true);
-  };
-
-  // Eski fonksiyon - artık kullanılmıyor ama backup olarak kalıyor
-  const openExternalNavigation = () => {
-    if (!otherLocation) return;
-    
-    const destination = `${otherLocation.latitude},${otherLocation.longitude}`;
-    const label = encodeURIComponent(otherUserName);
-    
-    const googleUrl = `google.navigation:q=${destination}&mode=d`;
-    const appleUrl = `maps://app?daddr=${destination}&dirflg=d`;
-    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
-    
-    if (Platform.OS === 'android') {
-      Linking.openURL(googleUrl).catch(() => Linking.openURL(webUrl));
-    } else if (Platform.OS === 'ios') {
-      Linking.openURL(appleUrl).catch(() => Linking.openURL(webUrl));
-    } else {
-      Linking.openURL(webUrl);
-    }
-  };
-
-  // Önce uygulama içi WebView; kullanıcı isterse harici Maps (modal başlığından veya sorun olursa)
-  const openNavigation = () => {
-    openGoogleMapsNavigationInApp();
-  };
 
   // Web fallback
   if (Platform.OS === 'web' || !MapView) {
@@ -894,60 +873,6 @@ export default function LiveMapView({
           { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
         ]}
       />
-      
-      {/* 🆕 GOOGLE MAPS NAVİGASYON MODAL - WebView ile */}
-      <Modal
-        visible={showGoogleMapsModal}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => {
-          setShowGoogleMapsModal(false);
-          setGoogleMapsUrl('');
-        }}
-      >
-        <View style={styles.googleMapsModalContainer}>
-          {/* Modal Header - Kapatma butonu */}
-          <View style={styles.googleMapsHeader}>
-            <TouchableOpacity
-              style={styles.googleMapsCloseBtn}
-              onPress={() => {
-                setShowGoogleMapsModal(false);
-                setGoogleMapsUrl('');
-              }}
-            >
-              <Ionicons name="close" size={28} color="#FFF" />
-            </TouchableOpacity>
-            <Text style={styles.googleMapsTitle} numberOfLines={1}>
-              Yol tarifi
-            </Text>
-            <TouchableOpacity
-              style={styles.googleMapsExternalBtn}
-              onPress={() => {
-                setShowGoogleMapsModal(false);
-                setGoogleMapsUrl('');
-                openGoogleMapsNavigationExternal();
-              }}
-            >
-              <Ionicons name="open-outline" size={22} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-          
-          {/* WebView - Google Maps */}
-          {googleMapsUrl && Platform.OS !== 'web' && (
-            <WebView
-              source={{ uri: googleMapsUrl }}
-              style={styles.googleMapsWebView}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              startInLoadingState={true}
-              scalesPageToFit={true}
-              allowsInlineMediaPlayback={true}
-              mediaPlaybackRequiresUserAction={false}
-              geolocationEnabled={true}
-            />
-          )}
-        </View>
-      </Modal>
       
       {/* Uyarı yazısı (matrixStatus) artık üst bilgi panelinin altına sabitleniyor */}
 
@@ -1220,12 +1145,17 @@ export default function LiveMapView({
               <TouchableOpacity
                 onPress={() => {
                   void tapButtonHaptic();
+                  if (!userLocation || !otherLocation) {
+                    Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
+                    return;
+                  }
+                  setNavigationMode(true);
                   void refreshMeetingRouteOsrmRef.current(true);
+                  fitNavigationViewport();
                   if (userId && tagId) {
                     const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
                     void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
                   }
-                  openNavigation();
                 }}
                 activeOpacity={0.7}
               >
@@ -1245,11 +1175,26 @@ export default function LiveMapView({
                     />
                     <Ionicons name="navigate" size={22} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.centeredNavBtnText}>Yolcuya Git</Text>
+                  <Text style={styles.centeredNavBtnText}>
+                    {navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
+                  </Text>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
           )}
+
+          {isDriver && navigationMode ? (
+            <TouchableOpacity
+              style={styles.navModeExitRow}
+              onPress={() => {
+                void tapButtonHaptic();
+                setNavigationMode(false);
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.navModeExitText}>Navigasyonu kapat (haritayı serbest bırak)</Text>
+            </TouchableOpacity>
+          ) : null}
 
             {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
             <TouchableOpacity
@@ -2383,45 +2328,17 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // 🆕 Google Maps Modal Stilleri
-  googleMapsModalContainer: {
-    flex: 1,
-    backgroundColor: '#000',
+  navModeExitRow: {
+    alignSelf: 'center',
+    marginTop: 6,
+    marginBottom: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
-  googleMapsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#1E40AF',
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
-    paddingBottom: 15,
-    paddingHorizontal: 15,
-  },
-  googleMapsCloseBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  googleMapsExternalBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  googleMapsTitle: {
-    flex: 1,
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginHorizontal: 6,
-  },
-  googleMapsWebView: {
-    flex: 1,
+  navModeExitText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

@@ -44,7 +44,6 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useOffers } from '../hooks/useOffers';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
 import { displayFirstName } from '../lib/displayName';
-import { resolveTripRoadKmMin, type TripRoadSource } from '../lib/tripRoadDistance';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { playMatchChimeSound } from '../utils/sound';
 
@@ -325,20 +324,6 @@ const cloudStyles = StyleSheet.create({
   },
 });
 
-// Mesafe Hesaplama Fonksiyonu (Haversine)
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371; // Dünya'nın yarıçapı (km)
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
-  return Math.round(distance * 10) / 10; // 1 ondalık basamak
-};
-
 /** Teklif kartı: 0 veya NaN km gösterme */
 function formatOfferKmBadge(km: unknown): string {
   const n = Number(km);
@@ -371,9 +356,6 @@ function offerDropoffLine(o: Record<string, unknown>): string {
   }
   return 'Hedef (haritada işaretli)';
 }
-
-/** İstemci Google anahtarı — rota önbelleği ve sunucu dışı yedek için (Directions) */
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 // Leylek TAG Colors
 const COLORS = {
@@ -423,6 +405,19 @@ interface Tag {
   passenger_vehicle_kind?: 'car' | 'motorcycle';
   /** Yolcu teklifte seçtiği ödeme (sunucu: cash | card) */
   passenger_payment_method?: 'cash' | 'card';
+  /** Backend tek kaynak: yolcu–şoför buluşma (yol) */
+  pickup_distance_km?: number | null;
+  pickup_eta_min?: number | null;
+  trip_distance_km?: number | null;
+  trip_duration_min?: number | null;
+  distance_to_passenger_km?: number | null;
+  time_to_passenger_min?: number | null;
+  distance_km?: number;
+  estimated_minutes?: number;
+  offered_price?: number;
+  tag_id?: string;
+  pickup_lat?: number;
+  pickup_lng?: number;
 }
 
 function normalizePassengerPaymentMethod(raw: unknown): 'cash' | 'card' | null {
@@ -4017,7 +4012,7 @@ function PassengerOfferCard({
   offer: any; 
   index: number; 
   total: number; 
-  onAccept: () => void;
+  onAccept: () => void | Promise<void>;
   onDismiss?: () => void;
   isBest?: boolean;
 }) {
@@ -4026,12 +4021,25 @@ function PassengerOfferCard({
   const personName = displayFirstName(offer.driver_name, 'Sürücü');
   const personRating = offer.driver_rating ?? 4.0;
   const tripCount = Math.floor(personRating * 100) + 50;
-  const distanceToPassengerKm = offer.distance_to_passenger_km?.toFixed(1) || offer.distance_km?.toFixed(1) || '?';
-  const arrivalTime = offer.estimated_arrival_min || Math.round((offer.distance_to_passenger_km || 5) / 40 * 60);
+  const dtp = Number(offer.distance_to_passenger_km);
+  const dk = Number(offer.distance_km);
+  const distanceToPassengerKm =
+    Number.isFinite(dtp) && dtp > 0
+      ? dtp.toFixed(1)
+      : Number.isFinite(dk) && dk > 0
+        ? dk.toFixed(1)
+        : '?';
+  const arrivalTime =
+    offer.estimated_arrival_min ??
+    (Number.isFinite(dtp) && dtp > 0 ? Math.round((dtp / 40) * 60) : Math.round((5 / 40) * 60));
 
   const handleAccept = async () => {
     setAccepting(true);
-    onAccept();
+    try {
+      await Promise.resolve(onAccept());
+    } finally {
+      setAccepting(false);
+    }
   };
 
   return (
@@ -5750,7 +5758,8 @@ function PassengerDashboard({
     clearOffers,
     addOffer: addOfferFromSocket,
     removeOffer,
-    updateOfferStatus
+    updateOfferStatus,
+    refreshOffersForTag,
   } = useOffers({
     userId: user?.id || '',
     tagId: activeTag?.id,
@@ -5786,8 +5795,6 @@ function PassengerDashboard({
   }, [offers.length, offers.map(o => o.driver_id).join(',')]);
   
   // Mesafe ve süre state'leri
-  const [realDistance, setRealDistance] = useState<number>(0);
-  const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
   // ==================== BASİT ARAMA SİSTEMİ - YOLCU ====================
   const [showCallScreen, setShowCallScreen] = useState(false);
@@ -5874,15 +5881,30 @@ function PassengerDashboard({
     // Yeni teklif eventi - Şoförden gelen teklifler
     onNewOffer: (data) => {
       console.log('💰 YOLCU - YENİ TEKLİF GELDİ (Socket):', data);
-      // 🚀 TEKLİF KARTINI ANINDA EKLE - Supabase bekleme!
+      const oid = data.offer_id || `socket_${Date.now()}`;
+      // 🚀 TEKLİF KARTINI ANINDA EKLE; mesafeler backend’de async yazılıyor → kısa süre sonra API ile tazele
       addOfferFromSocket({
-        id: data.offer_id || `socket_${Date.now()}`,
+        id: oid,
+        offer_id: data.offer_id || oid,
         tag_id: data.tag_id,
         driver_id: data.driver_id,
         driver_name: data.driver_name,
+        driver_rating: data.driver_rating,
+        driver_photo: data.driver_photo,
         price: data.price,
-        status: 'pending'
+        status: 'pending',
+        distance_to_passenger_km: data.distance_to_passenger_km,
+        estimated_arrival_min: data.estimated_arrival_min,
+        trip_distance_km: data.trip_distance_km,
+        trip_duration_min: data.trip_duration_min,
+        vehicle_model: data.vehicle_model,
+        notes: data.notes,
       });
+      const tid = data.tag_id as string | undefined;
+      if (tid) {
+        setTimeout(() => void refreshOffersForTag(tid), 700);
+        setTimeout(() => void refreshOffersForTag(tid), 2800);
+      }
       // Ses çal ve toast göster
       playOfferSound();
       setToastMessage(`${displayFirstName(data.driver_name, 'Sürücü')} teklifinize ${data.price}₺ önerdi!`);
@@ -5899,6 +5921,11 @@ function PassengerDashboard({
       
       // 🚀 ANLIK GÜNCELLEME - Socket'ten gelen veriyi kullan
       if (data && data.tag_id) {
+        const d = data as Record<string, unknown>;
+        const pkKm = Number(d.pickup_distance_km);
+        const pkMin = Number(d.pickup_eta_min);
+        const tripKm = Number(d.trip_distance_km ?? d.distance_km);
+        const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -5915,14 +5942,23 @@ function PassengerDashboard({
           offered_price: data.offered_price,
           distance_km: data.distance_km,
           estimated_minutes: data.estimated_minutes,
+          pickup_distance_km: Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          pickup_eta_min: Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+          trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+          distance_to_passenger_km:
+            Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          time_to_passenger_min:
+            Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
           status: 'matched',
           matched_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
         console.log('🔥 YOLCU - ActiveTag ANINDA güncelleniyor:', matchedTag);
-        setActiveTag(matchedTag);
+        setActiveTag(matchedTag as Tag);
       }
       
       // Backend'den de çek (ekstra bilgiler için)
@@ -5934,6 +5970,11 @@ function PassengerDashboard({
       playMatchSound();
       clearOffers();
       if (data?.tag_id) {
+        const d = data as Record<string, unknown>;
+        const pkKm = Number(d.pickup_distance_km);
+        const pkMin = Number(d.pickup_eta_min);
+        const tripKm = Number(d.trip_distance_km ?? d.distance_km);
+        const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -5951,8 +5992,65 @@ function PassengerDashboard({
           final_price: data.final_price,
           distance_km: (data as { distance_km?: number }).distance_km,
           estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
+          pickup_distance_km: Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          pickup_eta_min: Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+          trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+          distance_to_passenger_km:
+            Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          time_to_passenger_min:
+            Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
           status: 'matched',
           matched_at: data.matched_at || new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          passenger_payment_method: normalizePassengerPaymentMethod(
+            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
+          ) ?? undefined,
+        };
+        setActiveTag(matchedTag as Tag);
+      }
+      setScreen('dashboard');
+      setTimeout(() => loadActiveTag(), 1000);
+    },
+    // Sürücü HTTP/socket eşleşmesi — ride_matched (tag_matched ile aynı yük)
+    onRideMatched: (data) => {
+      console.log('✅ YOLCU - ride_matched (Socket):', data);
+      playMatchSound();
+      clearOffers();
+      if (data?.tag_id) {
+        const d = data as Record<string, unknown>;
+        const pkKm = Number(d.pickup_distance_km);
+        const pkMin = Number(d.pickup_eta_min);
+        const tripKm = Number(d.trip_distance_km ?? d.distance_km);
+        const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
+        const matchedTag = {
+          id: data.tag_id,
+          tag_id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name,
+          driver_id: data.driver_id,
+          driver_name: data.driver_name,
+          pickup_location: data.pickup_location,
+          dropoff_location: data.dropoff_location,
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          offered_price: data.offered_price ?? data.final_price,
+          final_price: data.final_price,
+          distance_km: (data as { distance_km?: number }).distance_km,
+          estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
+          pickup_distance_km: Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          pickup_eta_min: Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+          trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+          distance_to_passenger_km:
+            Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          time_to_passenger_min:
+            Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          status: 'matched' as const,
+          matched_at: data.matched_at || new Date().toISOString(),
+          created_at: new Date().toISOString(),
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
@@ -6138,17 +6236,6 @@ function PassengerDashboard({
           const data = await response.json();
           if (data.location) {
             setDriverLocation(data.location);
-            if (userLocation) {
-              const distance = calculateDistance(
-                userLocation.latitude,
-                userLocation.longitude,
-                data.location.latitude,
-                data.location.longitude
-              );
-              setRealDistance(distance);
-              const time = Math.round((distance / 40) * 60);
-              setEstimatedTime(time);
-            }
           }
         } catch (error) {
           console.log('Şoför konumu alınamadı:', error);
@@ -6316,73 +6403,6 @@ function PassengerDashboard({
     if (passengerChatVisible) setFirstChatTapBanner(null);
   }, [passengerChatVisible]);
 
-  /** Sunucu `/price/calculate` ile aynı fiyat bandı — km/dk yol mesafesinden türetilir */
-  const passengerPriceFromTripLeg = (
-    tripDistanceKm: number,
-    estimatedMinutes: number,
-    vehicleKind: 'car' | 'motorcycle',
-    routeSource?: TripRoadSource | string,
-  ) => {
-    const tripDistanceKmAdj = Math.max(1, Math.round(Number(tripDistanceKm) * 10) / 10);
-    const estimatedMinutesAdj = Math.max(5, Math.round(Number(estimatedMinutes)));
-
-    const hour = (new Date().getUTCHours() + 3) % 24;
-    const isPeak = (hour >= 8 && hour < 10) || (hour >= 17 && hour < 20);
-    const multiplier = isPeak ? 1.15 : 1.0;
-
-    const base = vehicleKind === 'motorcycle' ? 25 : 40;
-    const perKm = vehicleKind === 'motorcycle' ? 12 : 20;
-    const minimum = vehicleKind === 'motorcycle' ? 80 : 120;
-
-    let price = base + tripDistanceKmAdj * perKm;
-    if (price < minimum) price = minimum;
-    price *= multiplier;
-
-    const suggested = Math.round(price);
-    const src =
-      routeSource === 'crow_fallback'
-        ? 'local_fallback_crow'
-        : routeSource === 'osrm'
-          ? 'local_fallback_osrm'
-          : routeSource === 'google'
-            ? 'local_fallback_google'
-            : 'local_fallback';
-    return {
-      success: true,
-      distance_km: tripDistanceKmAdj,
-      trip_distance_km: tripDistanceKmAdj,
-      estimated_minutes: estimatedMinutesAdj,
-      min_price: Math.round(suggested * 0.9),
-      max_price: Math.round(suggested * 1.1),
-      suggested_price: suggested,
-      is_peak_hour: isPeak,
-      currency: 'TL',
-      vehicle_kind: vehicleKind,
-      base_price: base,
-      per_km: perKm,
-      minimum_price: minimum,
-      multiplier,
-      source: src,
-    };
-  };
-
-  const buildOfflinePriceEstimate = async (
-    pickupLat: number,
-    pickupLng: number,
-    dropoffLat: number,
-    dropoffLng: number,
-    vehicleKind: 'car' | 'motorcycle',
-  ) => {
-    const leg = await resolveTripRoadKmMin(
-      pickupLat,
-      pickupLng,
-      dropoffLat,
-      dropoffLng,
-      GOOGLE_MAPS_API_KEY,
-    );
-    return passengerPriceFromTripLeg(leg.distance_km, leg.duration_min, vehicleKind, leg.source);
-  };
-
   const makePricePrefetchKey = (
     plat: number,
     plng: number,
@@ -6392,7 +6412,7 @@ function PassengerDashboard({
   ) =>
     `${plat.toFixed(4)},${plng.toFixed(4)}|${dlat.toFixed(4)},${dlng.toFixed(4)}|${vk}`;
 
-  // Hedef veya konum değişince rota+fiyatı arka planda hesapla (Google → OSRM → kuş uçuşu yedek)
+  // Hedef veya konum değişince fiyatı arka planda sunucudan al (cihazda rota/kuş uçuşu yok)
   useEffect(() => {
     if (!destination || !userLocation) {
       pricePrefetchRef.current = null;
@@ -6426,16 +6446,9 @@ function PassengerDashboard({
           pricePrefetchRef.current = { key, data, ts: Date.now() };
           return;
         }
-        const fb = await buildOfflinePriceEstimate(plat, plng, dlat, dlng, rideVehiclePreference);
-        pricePrefetchRef.current = { key, data: fb as Record<string, unknown>, ts: Date.now() };
+        pricePrefetchRef.current = null;
       } catch {
-        if (cancelled) return;
-        try {
-          const fb = await buildOfflinePriceEstimate(plat, plng, dlat, dlng, rideVehiclePreference);
-          pricePrefetchRef.current = { key, data: fb as Record<string, unknown>, ts: Date.now() };
-        } catch {
-          pricePrefetchRef.current = null;
-        }
+        if (!cancelled) pricePrefetchRef.current = null;
       }
     }, 400);
     return () => {
@@ -6533,25 +6546,10 @@ function PassengerDashboard({
       }
     } catch (error) {
       console.error('Fiyat hesaplama hatası:', error);
-      const fallback = await buildOfflinePriceEstimate(
-        pickupLat,
-        pickupLng,
-        dropLat,
-        dropLng,
-        rideVehiclePreference,
+      appAlert(
+        'Fiyat alınamadı',
+        'Sunucuya bağlanılamadı. Bağlantınızı kontrol edip tekrar deneyin.',
       );
-      setPriceInfo(fallback as any);
-      setSelectedPrice(fallback.suggested_price);
-      pricePrefetchRef.current = { key: prefetchKey, data: fallback as Record<string, unknown>, ts: Date.now() };
-      setShowPriceModal(true);
-      if ((fallback as { source?: string }).source === 'local_fallback_crow') {
-        appAlert(
-          'Bilgi',
-          'Ağ veya rota servisi kısıtlı; mesafe kuş uçuşu tahminiyle hesaplandı. Mümkünse tekrar deneyin.',
-        );
-      } else {
-        appAlert('Bilgi', 'Sunucuya ulaşılamadı; yol mesafesi cihaz üzerinden hesaplandı.');
-      }
     } finally {
       setPriceLoading(false);
     }
@@ -6585,15 +6583,7 @@ function PassengerDashboard({
       }
     } catch (e) {
       console.log('Price recalc error:', e);
-      const fallback = await buildOfflinePriceEstimate(
-        userLocation.latitude,
-        userLocation.longitude,
-        destination.latitude,
-        destination.longitude,
-        nextVehicleKind,
-      );
-      setPriceInfo(fallback as any);
-      setSelectedPrice(fallback.suggested_price);
+      appAlert('Fiyat güncellenemedi', 'Sunucuya ulaşılamadı. Biraz sonra tekrar deneyin.');
     } finally {
       setPriceLoading(false);
     }
@@ -6740,7 +6730,7 @@ function PassengerDashboard({
           normalizePassengerPaymentMethod(serverTag.passenger_payment_method) ??
           passengerPaymentPreference,
       };
-      setActiveTag(mergedTag);
+      setActiveTag(mergedTag as Tag);
       setCurrentRequestId(requestId);
 
       if (emitCreateTagRequest) {
@@ -6946,10 +6936,18 @@ function PassengerDashboard({
 
   const handleAcceptOffer = async (offerId: string) => {
     playTapSound();
-    if (!activeTag) return;
+    if (!activeTag) {
+      appAlert('Hata', 'Aktif talep bulunamadı');
+      return;
+    }
 
-    const selectedOffer = offers.find(o => o.id === offerId);
-    if (!selectedOffer) return;
+    const selectedOffer = offers.find(
+      (o) => o.id === offerId || o.offer_id === offerId,
+    );
+    if (!selectedOffer) {
+      appAlert('Hata', 'Teklif bulunamadı. Listeyi yenileyip tekrar deneyin.');
+      return;
+    }
 
     // 🆕 "Eşleşme sağlanıyor..." göster
     setMatchingInProgress(true);
@@ -7645,8 +7643,18 @@ function PassengerDashboard({
                   offeredPrice={activeTag?.offered_price}
                   routeInfo={{
                     ...(activeTag?.route_info || {}),
-                    meeting_distance_km: activeTag?.distance_to_passenger_km ?? null,
-                    meeting_duration_min: activeTag?.time_to_passenger_min ?? null,
+                    pickup_distance_km:
+                      activeTag?.pickup_distance_km ??
+                      activeTag?.distance_to_passenger_km ??
+                      null,
+                    pickup_eta_min:
+                      activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
+                    meeting_distance_km:
+                      activeTag?.pickup_distance_km ??
+                      activeTag?.distance_to_passenger_km ??
+                      null,
+                    meeting_duration_min:
+                      activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
                     trip_distance_km: activeTag?.trip_distance_km ?? activeTag?.distance_km ?? null,
                     trip_duration_min: activeTag?.trip_duration_min ?? activeTag?.estimated_minutes ?? null,
                   }}
@@ -8339,10 +8347,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [passengerLocation, setPassengerLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  /** LiveMapView uygulama-içi navigasyon: GPS/socket aralığı 12s → 5s */
+  const [driverLiveMapNavigationMode, setDriverLiveMapNavigationMode] = useState(false);
   
   // Mesafe ve süre state'leri
-  const [realDistance, setRealDistance] = useState<number>(0);
-  const [estimatedTime, setEstimatedTime] = useState<number>(0);
   
   // 🔥 MERKEZİ GELEN ARAMA STATE + GLOBAL SOCKET (backend aynı bağlantıyı dinler)
   const {
@@ -8631,9 +8639,22 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           (Number.isFinite(dLat) && Number.isFinite(dLng) && (Math.abs(dLat) > 1e-6 || Math.abs(dLng) > 1e-6)
             ? `Hedef (${dLat.toFixed(4)}, ${dLng.toFixed(4)})`
             : 'Hedef (haritada işaretli)');
-        const tripKmNum = Number(data.distance_km);
+        const tripKmNum = Number(
+          (data as { trip_distance_km?: number }).trip_distance_km ?? data.distance_km,
+        );
         const tripKm =
           Number.isFinite(tripKmNum) && tripKmNum > 0 ? tripKmNum : null;
+        const tripDur =
+          (data as { trip_duration_min?: number }).trip_duration_min ?? data.estimated_minutes;
+        const pkKmN = Number(
+          (data as { pickup_distance_km?: number }).pickup_distance_km ?? data.distance_to_pickup,
+        );
+        const pkKm = Number.isFinite(pkKmN) && pkKmN > 0 ? pkKmN : null;
+        const pkMinN = Number(
+          (data as { pickup_eta_min?: number }).pickup_eta_min ??
+            (data as { time_to_passenger_min?: number }).time_to_passenger_min,
+        );
+        const pkMin = Number.isFinite(pkMinN) && pkMinN > 0 ? pkMinN : null;
         return [...filtered, {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -8652,15 +8673,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           // 🆕 MARTI TAG - Yolcu fiyat teklifi
           offered_price: data.offered_price || 0,
           distance_km: tripKm ?? 0,
-          estimated_minutes: data.estimated_minutes || 0,
-          distance_to_pickup: data.distance_to_pickup || 0,
+          estimated_minutes: tripDur || 0,
+          distance_to_pickup: pkKm ?? 0,
           status: 'pending',
           created_at: new Date().toISOString(),
-          // Mesafeler hesaplanıyor işareti
-          distance_to_passenger_km: data.distance_to_pickup || null,
-          time_to_passenger_min: null,
+          pickup_distance_km: pkKm,
+          pickup_eta_min: pkMin,
+          distance_to_passenger_km: pkKm,
+          time_to_passenger_min: pkMin,
           trip_distance_km: tripKm,
-          trip_duration_min: data.estimated_minutes || null,
+          trip_duration_min: tripDur || null,
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
@@ -8683,6 +8705,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       
       // 🔥 ANINDA activeTag'ı güncelle - API bekleme!
       if (data && data.tag_id) {
+        const d = data as Record<string, unknown>;
+        const pkKm = Number(d.pickup_distance_km);
+        const pkMin = Number(d.pickup_eta_min);
+        const tripKm = Number(d.trip_distance_km ?? d.distance_km);
+        const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -8699,14 +8726,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           offered_price: data.offered_price,
           distance_km: data.distance_km,
           estimated_minutes: data.estimated_minutes,
+          pickup_distance_km: Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          pickup_eta_min: Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+          trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+          distance_to_passenger_km:
+            Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          time_to_passenger_min:
+            Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
           status: 'matched',
           matched_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
         };
         console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
-        setActiveTag(matchedTag);
+        setActiveTag(matchedTag as Tag);
       }
       
       // Backend'den de çek (ekstra bilgiler için)
@@ -8718,6 +8754,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       playMatchSound();
       setRequests([]);
       if (data?.tag_id) {
+        const d = data as Record<string, unknown>;
+        const pkKm = Number(d.pickup_distance_km);
+        const pkMin = Number(d.pickup_eta_min);
+        const tripKm = Number(d.trip_distance_km ?? d.distance_km);
+        const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -8735,8 +8776,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           final_price: data.final_price,
           distance_km: (data as { distance_km?: number }).distance_km,
           estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
+          pickup_distance_km: Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          pickup_eta_min: Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+          trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+          trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+          distance_to_passenger_km:
+            Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+          time_to_passenger_min:
+            Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
           status: 'matched',
           matched_at: data.matched_at || new Date().toISOString(),
+          created_at: new Date().toISOString(),
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
@@ -9093,19 +9143,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           const data = await response.json();
           if (data.location) {
             setPassengerLocation(data.location);
-            // Mesafeyi hesapla
-            if (userLocation) {
-              const distance = calculateDistance(
-                userLocation.latitude,
-                userLocation.longitude,
-                data.location.latitude,
-                data.location.longitude
-              );
-              setRealDistance(distance);
-              // Tahmini süreyi hesapla (ortalama 40 km/h)
-              const time = Math.round((distance / 40) * 60);
-              setEstimatedTime(time);
-            }
           }
         } catch (error) {
           console.log('Yolcu konumu alınamadı:', error);
@@ -9114,7 +9151,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
       return () => clearInterval(interval);
     }
-  }, [activeTag, userLocation]);
+  }, [activeTag?.id, activeTag?.status, activeTag?.passenger_id]);
 
   // Karşılıklı iptal isteği polling - ŞOFÖR için
   useEffect(() => {
@@ -9203,44 +9240,102 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     };
   }, [user?.id]);
 
-  // GPS konum güncellemesi + Socket.IO location update
   useEffect(() => {
-    const updateLocation = async () => {
+    if (!activeTag) {
+      setDriverLiveMapNavigationMode(false);
+    }
+  }, [activeTag?.id]);
+
+  // GPS + socket + DB: normal 12s, navigasyon modunda 5s; OS ~5m mesafe ile ek güncelleme (watch)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const intervalMs = driverLiveMapNavigationMode ? 5000 : 12000;
+    const distanceIntervalM = 5;
+    let cancelled = false;
+    const subRef = { current: null as { remove: () => void } | null };
+    const intervalRef = { current: null as ReturnType<typeof setInterval> | null };
+
+    const applyLocation = async (location: Location.LocationObject) => {
+      if (cancelled || !user?.id) return;
+      const coords = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+      setUserLocation(coords);
+      if (emitDriverLocationUpdate) {
+        emitDriverLocationUpdate({
+          driver_id: user.id,
+          lat: coords.latitude,
+          lng: coords.longitude,
+        });
+      }
+      try {
+        await fetch(
+          `${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`,
+          { method: 'POST' },
+        );
+      } catch (e) {
+        console.error('Konum backend güncellemesi başarısız:', e);
+      }
+    };
+
+    const tick = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High
-          });
-          const coords = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude
-          };
-          setUserLocation(coords);
-          
-          // 🆕 Socket.IO ile konum güncelle (RAM'de tutulur - 20km radius için)
-          if (emitDriverLocationUpdate && user?.id) {
-            emitDriverLocationUpdate({
-              driver_id: user.id,
-              lat: coords.latitude,
-              lng: coords.longitude
-            });
-          }
-          
-          // Backend'e gönder (DB için)
-          await fetch(`${API_URL}/user/update-location?user_id=${user.id}&latitude=${coords.latitude}&longitude=${coords.longitude}`, {
-            method: 'POST'
-          });
-        }
+        if (status !== 'granted' || cancelled) return;
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        await applyLocation(location);
       } catch (error) {
         console.error('Konum alınamadı:', error);
       }
     };
 
-    updateLocation();
-    const locationInterval = setInterval(updateLocation, 10000); // 10 saniyede bir
-    return () => clearInterval(locationInterval);
-  }, [user.id, emitDriverLocationUpdate]);
+    void (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || cancelled) return;
+
+      await tick();
+
+      try {
+        const sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            distanceInterval: distanceIntervalM,
+            ...(Platform.OS === 'android' ? { timeInterval: intervalMs } : {}),
+          },
+          (loc) => {
+            void applyLocation(loc);
+          },
+        );
+        if (cancelled) {
+          sub.remove();
+          return;
+        }
+        subRef.current = sub;
+      } catch (e) {
+        console.error('watchPositionAsync:', e);
+      }
+
+      if (!cancelled && Platform.OS === 'ios') {
+        intervalRef.current = setInterval(() => {
+          void tick();
+        }, intervalMs);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      subRef.current?.remove();
+      subRef.current = null;
+      if (intervalRef.current != null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [user?.id, emitDriverLocationUpdate, driverLiveMapNavigationMode]);
 
   const loadData = async () => {
     const trip = await loadActiveTag();
@@ -9282,7 +9377,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             ? `Hedef (${pdlat.toFixed(4)}, ${pdlng.toFixed(4)})`
             : 'Hedef (haritada işaretli)');
         const dk = Number(data.distance_km);
-        const tripKm = Number.isFinite(dk) && dk > 0 ? dk : null;
+        const tripKmLegacy = Number.isFinite(dk) && dk > 0 ? dk : null;
+        const tripKmN = Number(data.trip_distance_km ?? data.distance_km);
+        const tripKm =
+          Number.isFinite(tripKmN) && tripKmN > 0 ? tripKmN : tripKmLegacy;
+        const pkKmN = Number(data.pickup_distance_km ?? data.distance_to_pickup);
+        const pkKm = Number.isFinite(pkKmN) && pkKmN > 0 ? pkKmN : null;
+        const pkMinN = Number(data.pickup_eta_min ?? data.time_to_passenger_min);
+        const pkMin = Number.isFinite(pkMinN) && pkMinN > 0 ? pkMinN : null;
+        const tripDurN = Number(data.trip_duration_min ?? data.estimated_minutes);
+        const tripDur =
+          Number.isFinite(tripDurN) && tripDurN > 0 ? tripDurN : null;
         return [
           ...prev,
           {
@@ -9302,13 +9407,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             offered_price: data.offered_price ?? 0,
             distance_km: tripKm ?? 0,
             estimated_minutes: data.estimated_minutes ?? 0,
-            distance_to_pickup: data.distance_to_pickup,
+            distance_to_pickup: pkKm ?? data.distance_to_pickup,
             status: 'pending',
             created_at: new Date().toISOString(),
-            distance_to_passenger_km: data.distance_to_pickup ?? null,
-            time_to_passenger_min: null,
+            pickup_distance_km: pkKm,
+            pickup_eta_min: pkMin,
+            distance_to_passenger_km: pkKm,
+            time_to_passenger_min: pkMin,
             trip_distance_km: tripKm,
-            trip_duration_min: data.estimated_minutes ?? null,
+            trip_duration_min: tripDur ?? data.estimated_minutes ?? null,
             passenger_vehicle_kind: (() => {
               const v = data.passenger_vehicle_kind;
               const s = String(v || '').toLowerCase();
@@ -9768,9 +9875,21 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 dropoff_location: dropoffLine,
                 dropoff_lat: req.dropoff_lat,
                 dropoff_lng: req.dropoff_lng,
-                distance_to_passenger_km: req.distance_to_passenger_km || req.distance_to_pickup,
+                pickup_distance_km:
+                  (req as { pickup_distance_km?: number }).pickup_distance_km ??
+                  req.distance_to_passenger_km ??
+                  req.distance_to_pickup,
+                distance_to_passenger_km:
+                  (req as { pickup_distance_km?: number }).pickup_distance_km ??
+                  req.distance_to_passenger_km ??
+                  req.distance_to_pickup,
                 trip_distance_km: tripKmOk,
-                time_to_passenger_min: req.time_to_passenger_min,
+                pickup_eta_min:
+                  (req as { pickup_eta_min?: number }).pickup_eta_min ??
+                  req.time_to_passenger_min,
+                time_to_passenger_min:
+                  (req as { pickup_eta_min?: number }).pickup_eta_min ??
+                  req.time_to_passenger_min,
                 trip_duration_min: req.trip_duration_min || req.estimated_minutes,
                 offered_price: req.offered_price || 0,
                 passenger_vehicle_kind: (req as any).passenger_vehicle_kind || 'car',
@@ -9784,6 +9903,58 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               driverRating={user.rating ?? 4.0}
               onSendOffer={sendOfferInstant}
               onDismissRequest={handleDismissRequest}
+              onDriverAcceptMatch={(match) => {
+                const data = match as Record<string, unknown>;
+                if (data?.tag_id) {
+                  const pkKm = Number(data.pickup_distance_km);
+                  const pkMin = Number(data.pickup_eta_min);
+                  const tripKm = Number(data.trip_distance_km ?? data.distance_km);
+                  const tripMin = Number(data.trip_duration_min ?? data.estimated_minutes);
+                  setActiveTag({
+                    id: String(data.tag_id),
+                    tag_id: String(data.tag_id),
+                    passenger_id: data.passenger_id as string | undefined,
+                    passenger_name: data.passenger_name as string | undefined,
+                    driver_id: data.driver_id as string | undefined,
+                    driver_name: data.driver_name as string | undefined,
+                    pickup_location: data.pickup_location as string | undefined,
+                    dropoff_location: data.dropoff_location as string | undefined,
+                    pickup_lat: data.pickup_lat as number | undefined,
+                    pickup_lng: data.pickup_lng as number | undefined,
+                    dropoff_lat: data.dropoff_lat as number | undefined,
+                    dropoff_lng: data.dropoff_lng as number | undefined,
+                    offered_price: (data.offered_price ?? data.final_price) as number | undefined,
+                    final_price: data.final_price as number | undefined,
+                    distance_km: data.distance_km as number | undefined,
+                    estimated_minutes: data.estimated_minutes as number | undefined,
+                    pickup_distance_km:
+                      Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+                    pickup_eta_min:
+                      Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+                    trip_distance_km:
+                      Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+                    trip_duration_min:
+                      Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+                    distance_to_passenger_km:
+                      Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
+                    time_to_passenger_min:
+                      Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
+                    status: 'matched',
+                    matched_at:
+                      typeof data.matched_at === 'string'
+                        ? data.matched_at
+                        : new Date().toISOString(),
+                    created_at: new Date().toISOString(),
+                    passenger_payment_method: normalizePassengerPaymentMethod(
+                      data.passenger_payment_method,
+                    ) ?? undefined,
+                  } as Tag);
+                }
+                setRequests([]);
+                playMatchSound();
+                setScreen('dashboard');
+                setTimeout(() => loadData(), 800);
+              }}
               onBack={() => {
                 playTapSound();
                 setScreen('role-select');
@@ -9877,11 +10048,22 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             offeredPrice={activeTag?.offered_price}
             routeInfo={{
               ...(activeTag?.route_info || {}),
-              meeting_distance_km: activeTag?.distance_to_passenger_km ?? null,
-              meeting_duration_min: activeTag?.time_to_passenger_min ?? null,
+              pickup_distance_km:
+                activeTag?.pickup_distance_km ??
+                activeTag?.distance_to_passenger_km ??
+                null,
+              pickup_eta_min:
+                activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
+              meeting_distance_km:
+                activeTag?.pickup_distance_km ??
+                activeTag?.distance_to_passenger_km ??
+                null,
+              meeting_duration_min:
+                activeTag?.pickup_eta_min ?? activeTag?.time_to_passenger_min ?? null,
               trip_distance_km: activeTag?.trip_distance_km ?? activeTag?.distance_km ?? null,
               trip_duration_min: activeTag?.trip_duration_min ?? activeTag?.estimated_minutes ?? null,
             }}
+            onNavigationModeChange={setDriverLiveMapNavigationMode}
             otherUserDetails={otherUserDetails || undefined}
             onShowQRModal={() => setShowQRModal(true)}
             onCall={async (type) => {
