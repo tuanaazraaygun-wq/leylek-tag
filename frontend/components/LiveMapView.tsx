@@ -6,6 +6,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -363,9 +365,41 @@ function nextTurnInstructionText(
 }
 
 function zoomForRemainKm(remainKm: number): number {
-  if (remainKm > 5) return 14;
-  if (remainKm >= 1) return 16;
+  if (remainKm > 5) return 15;
+  if (remainKm >= 1) return 16.5;
   return 18;
+}
+
+/**
+ * Gidiş yönünde kamera merkezini ileri alır; pitch + heading ile araç noktası ekranda ~alt 1/3 bandına kayar.
+ */
+function offsetCameraCenterForward(from: MapLatLng, bearingDeg: number, remainKm: number): MapLatLng {
+  let forwardM = 155;
+  if (remainKm > 5) forwardM = 240;
+  else if (remainKm >= 1) forwardM = 185;
+  else forwardM = 125;
+  const R = 6378137;
+  const brng = (bearingDeg * Math.PI) / 180;
+  const lat1 = (from.latitude * Math.PI) / 180;
+  const lng1 = (from.longitude * Math.PI) / 180;
+  const ang = forwardM / R;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(ang) + Math.cos(lat1) * Math.sin(ang) * Math.cos(brng),
+  );
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(brng) * Math.sin(ang) * Math.cos(lat1),
+      Math.cos(ang) - Math.sin(lat1) * Math.sin(lat2),
+    );
+  return { latitude: (lat2 * 180) / Math.PI, longitude: (lng2 * 180) / Math.PI };
+}
+
+/** Sesli okumada aynı manevrayı tekrar etmemek için (mesafe metni hariç) */
+function maneuverVoiceKey(text: string): string {
+  const idx = text.indexOf(' sonra ');
+  if (idx === -1) return text.trim();
+  return text.slice(idx + ' sonra '.length).trim();
 }
 
 function meetingEndpointsKey(dLat: number, dLng: number, pLat: number, pLng: number): string {
@@ -555,7 +589,8 @@ export default function LiveMapView({
   onNavigationModeChange,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
-  
+  const insets = useSafeAreaInsets();
+
   // BİLGİ KARTI STATE'İ
   const [showInfoCard, setShowInfoCard] = useState(false);
   
@@ -606,6 +641,10 @@ export default function LiveMapView({
 
   const [navTurnInstruction, setNavTurnInstruction] = useState('');
 
+  const lastManeuverVoiceKeyRef = useRef('');
+  const lastSpokenFullInstructionRef = useRef('');
+  const lastVoiceSpeakAtRef = useRef(0);
+
   /** Sürücü gerçek navigasyon: harita kamerası heading (pusula) */
   const navHeadingRef = useRef(0);
   const lastNavCameraAtRef = useRef(0);
@@ -629,7 +668,7 @@ export default function LiveMapView({
     if (!isDriver || !navigationMode || !userLocation || !otherLocation) return;
     if (navigationStage !== 'pickup') return;
     if (!destinationLocation) return;
-    if (haversineMeters(userLocation, otherLocation) <= 50) {
+    if (haversineMeters(userLocation, otherLocation) < 50) {
       setNavigationStage('destination');
     }
   }, [
@@ -729,11 +768,12 @@ export default function LiveMapView({
     }
 
     const zoom = zoomForRemainKm(remainKm);
+    const cameraCenter = offsetCameraCenterForward(userLocation, userHeading, remainKm);
     lastNavCameraAtRef.current = Date.now();
     const t = setTimeout(() => {
       mapRef.current?.animateCamera(
         {
-          center: userLocation,
+          center: cameraCenter,
           pitch: 60,
           heading: userHeading,
           zoom,
@@ -802,6 +842,44 @@ export default function LiveMapView({
     otherLocation?.latitude,
     otherLocation?.longitude,
   ]);
+
+  useEffect(() => {
+    if (!navigationMode) {
+      if (Platform.OS !== 'web') {
+        Speech.stop();
+      }
+      lastManeuverVoiceKeyRef.current = '';
+      lastSpokenFullInstructionRef.current = '';
+      lastVoiceSpeakAtRef.current = 0;
+    }
+  }, [navigationMode]);
+
+  /** Manevra / mesafe metnini sesli oku (manevra değişince hemen; aynı manevrada mesafe ~10 sn throttle) */
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isDriver || !navigationMode || !navTurnInstruction.trim()) {
+      return;
+    }
+    const full = navTurnInstruction.trim();
+    const mKey = maneuverVoiceKey(full);
+    const now = Date.now();
+    const maneuverChanged = mKey.length > 0 && mKey !== lastManeuverVoiceKeyRef.current;
+
+    if (maneuverChanged) {
+      lastManeuverVoiceKeyRef.current = mKey;
+      lastSpokenFullInstructionRef.current = full;
+      lastVoiceSpeakAtRef.current = now;
+      Speech.stop();
+      Speech.speak(full, { language: 'tr-TR', rate: 0.92, pitch: 1.0 });
+      return;
+    }
+
+    if (full !== lastSpokenFullInstructionRef.current && now - lastVoiceSpeakAtRef.current >= 10000) {
+      lastSpokenFullInstructionRef.current = full;
+      lastVoiceSpeakAtRef.current = now;
+      Speech.stop();
+      Speech.speak(full, { language: 'tr-TR', rate: 0.92, pitch: 1.0 });
+    }
+  }, [navTurnInstruction, isDriver, navigationMode]);
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -1505,6 +1583,23 @@ export default function LiveMapView({
           { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
         ]}
       />
+
+      {driverNavImmersive && navTurnInstruction ? (
+        <View
+          style={[
+            styles.navManeuverBanner,
+            { paddingTop: Math.max(insets.top, 8) + 8 },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.navManeuverBannerStage}>
+            {navigationStage === 'pickup' ? 'Buluşmaya gidiyorsunuz' : 'Hedefe gidiyorsunuz'}
+          </Text>
+          <Text style={styles.navManeuverBannerManeuver} numberOfLines={2}>
+            {navTurnInstruction}
+          </Text>
+        </View>
+      ) : null}
       
       {/* Uyarı yazısı (matrixStatus) artık üst bilgi panelinin altına sabitleniyor */}
 
@@ -1525,7 +1620,12 @@ export default function LiveMapView({
           onMapReady={onDriverNavMapReady}
           mapPadding={
             driverNavImmersive
-              ? { top: 240, right: 10, bottom: 120, left: 10 }
+              ? {
+                  top: Math.max(insets.top, 12) + 168,
+                  right: 12,
+                  bottom: Math.min(100, Math.max(72, SCREEN_HEIGHT * 0.11)),
+                  left: 12,
+                }
               : driverNavActive
                 ? { top: 270, right: 12, bottom: 300, left: 12 }
                 : { top: 200, right: 14, bottom: 268, left: 14 }
@@ -1673,20 +1773,7 @@ export default function LiveMapView({
               ))}
             </View>
             <View style={styles.topCardContent}>
-              {driverNavImmersive ? (
-                <View style={styles.driverNavTitleBlock}>
-                  <Text style={styles.driverNavTitle}>
-                    {navigationStage === 'pickup'
-                      ? 'Buluşmaya gidiyorsunuz'
-                      : 'Hedefe gidiyorsunuz'}
-                  </Text>
-                  {navTurnInstruction ? (
-                    <Text style={styles.driverNavInstruction} numberOfLines={2}>
-                      {navTurnInstruction}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
+              {/* Manevra metni üst banner’da; kartta yalnızca km/dk */}
               <View style={styles.routeInfoRow}>
                 <View style={[styles.routeIndicator, { backgroundColor: '#059669' }]} />
                 <View style={styles.routeDetails}>
@@ -2197,24 +2284,36 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   map: { flex: 1 },
-  driverNavTitleBlock: {
-    marginBottom: 10,
-    paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(15, 23, 42, 0.12)',
+  navManeuverBanner: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    zIndex: 100,
+    backgroundColor: '#0F172A',
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 12,
   },
-  driverNavTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: 0.2,
-  },
-  driverNavInstruction: {
-    marginTop: 6,
-    fontSize: 14,
+  navManeuverBannerStage: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
     fontWeight: '700',
-    color: '#1D4ED8',
-    lineHeight: 19,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  navManeuverBannerManeuver: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '800',
+    lineHeight: 23,
   },
   driverNavCloseFab: {
     position: 'absolute',
