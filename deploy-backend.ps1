@@ -1,6 +1,8 @@
-# Backend deploy: SSH -> /opt/leylektag -> git fetch/merge origin/main -> restart leylektag.service
-# Canli systemd WorkingDirectory=/opt/leylektag/backend — repo kokunu guncellemek gerekir.
-# Prerequisite: push commits to the remote the server uses before running.
+# Backend deploy: SSH -> /opt/leylektag git pull -> CANLI kodu /opt/leylek-backend ile senkron -> restart
+#
+# ONEMLI: systemd loglarinda uvicorn bazen /opt/leylek-backend altindan calisir; sadece git merge
+# yeterli degil — asagidaki cp ile server.py (ve bagli .py) prod dizinine kopyalanir.
+# Prerequisite: push commits to origin/main before running.
 # Run: .\deploy-backend.ps1  (SSH key or password)
 
 $Server = "157.173.113.156"
@@ -8,6 +10,7 @@ $Server = "157.173.113.156"
 $RemoteBash = @'
 set -e
 PROD=/opt/leylektag
+LIVE=/opt/leylek-backend
 if [ ! -d "$PROD/.git" ]; then
   echo "ERROR: $PROD is not a git clone"
   exit 1
@@ -16,12 +19,24 @@ echo "=== Deploy: $PROD ==="
 cd "$PROD"
 git fetch origin
 git merge origin/main --no-edit
+if [ -d "$LIVE" ] && [ -d "$PROD/backend" ]; then
+  echo "=== Sync $PROD/backend/*.py -> $LIVE/ (systemd calisma dizini) ==="
+  for f in server.py supabase_client.py expo_push_channels.py route_service.py; do
+    if [ -f "$PROD/backend/$f" ]; then cp -f "$PROD/backend/$f" "$LIVE/$f"; fi
+  done
+  if [ -d "$PROD/backend/services" ]; then
+    mkdir -p "$LIVE/services"
+    cp -f "$PROD/backend/services/"*.py "$LIVE/services/" 2>/dev/null || true
+  fi
+else
+  echo "WARN: $LIVE veya $PROD/backend yok — yalnizca repo guncellendi; systemd baska dizinden calisiyorsa manuel kopyalayin."
+fi
 sudo systemctl restart leylektag.service
 sleep 2
 sudo systemctl status leylektag.service 2>&1 || true
 '@
 
-Write-Host "Deploy: /opt/leylektag -> git merge origin/main -> systemctl restart leylektag" -ForegroundColor Cyan
+Write-Host "Deploy: git merge + sync backend/*.py -> /opt/leylek-backend + restart leylektag" -ForegroundColor Cyan
 Write-Host "Server: root@$Server" -ForegroundColor Gray
 
 # Windows CRLF -> LF (aksi halde uzak bash'te `| cat\r` gibi hatalar)
