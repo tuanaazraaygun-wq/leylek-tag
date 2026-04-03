@@ -894,17 +894,27 @@ export default function LiveMapView({
     (routeCoords?: MapLatLng[] | null) => {
       if (!mapRef.current || !userLocation || !otherLocation) return;
       const navMeetingOnly = isDriver && navigationMode;
-      const fullRoute =
+      const legKm = straightLineKm(userLocation, otherLocation);
+      /** OSRM öncesi / hata: sadece 2 nokta — tüm mesafeyi fit etmek şehir zoom’u (ekrandaki bug) */
+      const polyForSlice =
         routeCoords && routeCoords.length >= 2 ? routeCoords : [userLocation, otherLocation];
-      let coords: MapLatLng[] = [...fullRoute];
-      // Uzun buluşmada tüm polyline’ı fit etmek şehir zoom’una indirir — yalnızca sürücü önü ~3.4 km
-      if (
-        navMeetingOnly &&
-        routeCoords &&
-        routeCoords.length >= 4 &&
-        straightLineKm(userLocation, otherLocation) >= 2.2
-      ) {
-        coords = sliceMeetingRouteForNavFit(userLocation, routeCoords, 3400);
+      /** OSRM en az bir ara düğüm döndüyse (≥3 nokta) segment dilimle; 2 nokta = düz çizgi = şehir zoom’u */
+      const hasRichPolyline = polyForSlice.length >= 3;
+      const longPickupLeg = navMeetingOnly && legKm >= 2.2;
+
+      if (longPickupLeg && !hasRichPolyline) {
+        const head = bearingDegrees(userLocation, otherLocation);
+        mapRef.current.animateCamera(
+          { center: userLocation, pitch: 54, heading: head, zoom: 17.9 },
+          { duration: 480 },
+        );
+        lastNavCameraAtRef.current = Date.now();
+        return;
+      }
+
+      let coords: MapLatLng[] = [...polyForSlice];
+      if (longPickupLeg && hasRichPolyline) {
+        coords = sliceMeetingRouteForNavFit(userLocation, polyForSlice, 3400);
       }
       if (destinationLocation && !navMeetingOnly) {
         const last = coords[coords.length - 1];
@@ -950,6 +960,8 @@ export default function LiveMapView({
     }, 150);
     setTimeout(() => {
       if (!navigationModeRef.current || !mapRef.current || !userLocation || !otherLocation) return;
+      // Uzun buluşmada 2 nokta: fitNavigationViewport zaten animateCamera verdi — çift tetikleme titremesin
+      if (straightLineKm(userLocation, otherLocation) >= 2.2 && coords.length < 3) return;
       const head = bearingDegrees(userLocation, otherLocation);
       mapRef.current.animateCamera(
         { center: userLocation, pitch: 54, heading: head, zoom: 17.95 },
