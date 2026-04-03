@@ -13327,6 +13327,9 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
         route = data.get("routes", [{}])[0]
         leg = route.get("legs", [{}])[0]
         dur_traffic = leg.get("duration_in_traffic")
+        dur_base_s = int(leg.get("duration", {}).get("value") or 0)
+        dur_traffic_s = int(dur_traffic.get("value")) if dur_traffic and dur_traffic.get("value") is not None else dur_base_s
+        traffic_delay_ratio = (dur_traffic_s / max(dur_base_s, 1)) if dur_base_s > 0 else 1.0
         
         steps = []
         for step in leg.get("steps", []):
@@ -13355,6 +13358,9 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
             "total_duration": leg.get("duration", {}).get("text", ""),
             "total_duration_in_traffic": dur_traffic.get("text", "") if dur_traffic else "",
             "traffic_aware": bool(dur_traffic),
+            "duration_seconds": dur_base_s,
+            "duration_in_traffic_seconds": dur_traffic_s,
+            "traffic_delay_ratio": round(traffic_delay_ratio, 3),
             "polyline": route.get("overview_polyline", {}).get("points", "")
         }
         

@@ -395,6 +395,8 @@ type NavManeuverUi = {
   arrowKind: ManeuverArrowKind;
   /** Ses: yalnızca bu anahtar değişince okunur */
   speechKey: string;
+  /** Sonraki manevraya kalan mesafe (m); yoksa mesafe anonsu yapılmaz */
+  metersToManeuver: number | null;
 };
 
 function buildNavManeuverUiFromSteps(
@@ -410,6 +412,7 @@ function buildNavManeuverUiFromSteps(
       streetName: null,
       arrowKind: 'unknown',
       speechKey: `${stage}-noroute`,
+      metersToManeuver: null,
     };
   }
   if (k >= steps.length) {
@@ -419,6 +422,7 @@ function buildNavManeuverUiFromSteps(
       streetName: last.name?.trim() || null,
       arrowKind: 'straight',
       speechKey: `${stage}-arrive-end`,
+      metersToManeuver: null,
     };
   }
   const step = steps[k];
@@ -429,7 +433,7 @@ function buildNavManeuverUiFromSteps(
   const streetName = step.name?.trim() || null;
   const arrowKind = stepToArrowKind(step);
   const speechKey = `${stage}-step${k}-${step.maneuver?.type || ''}-${step.maneuver?.modifier || ''}`;
-  return { instructionLine, streetName, arrowKind, speechKey };
+  return { instructionLine, streetName, arrowKind, speechKey, metersToManeuver: d };
 }
 
 const ROUTE_HIGHLIGHT_AHEAD_M = 200;
@@ -493,20 +497,83 @@ function splitRouteForNavDisplay(
   };
 }
 
-function zoomForRemainKm(remainKm: number): number {
-  if (remainKm > 5) return 15;
-  if (remainKm >= 1) return 16.5;
-  return 18;
+type NavTrafficLevel = 'free' | 'slow' | 'heavy';
+
+function trafficLevelFromDelayRatio(ratio: number | null | undefined): NavTrafficLevel {
+  if (ratio == null || !Number.isFinite(ratio) || ratio <= 1.12) return 'free';
+  if (ratio <= 1.38) return 'slow';
+  return 'heavy';
+}
+
+/** Buluşma aşaması: yeşil ton + trafik yoğunluğuna göre parlak hat */
+function pickupNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
+  switch (level) {
+    case 'free':
+      return {
+        dim: 'rgba(20, 83, 45, 0.32)',
+        bright: '#16A34A',
+        hot: 'rgba(255,255,255,0.9)',
+      };
+    case 'slow':
+      return {
+        dim: 'rgba(120, 53, 15, 0.34)',
+        bright: '#EA580C',
+        hot: 'rgba(255, 247, 237, 0.92)',
+      };
+    case 'heavy':
+      return {
+        dim: 'rgba(127, 29, 29, 0.38)',
+        bright: '#DC2626',
+        hot: 'rgba(254, 242, 242, 0.92)',
+      };
+  }
+}
+
+/** Hedef aşaması: turuncu ton + trafik */
+function destinationNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; bright: string; hot: string } {
+  switch (level) {
+    case 'free':
+      return {
+        dim: 'rgba(154, 52, 18, 0.36)',
+        bright: '#FB923C',
+        hot: '#FFFBEB',
+      };
+    case 'slow':
+      return {
+        dim: 'rgba(124, 45, 18, 0.4)',
+        bright: '#EA580C',
+        hot: '#FED7AA',
+      };
+    case 'heavy':
+      return {
+        dim: 'rgba(127, 29, 29, 0.4)',
+        bright: '#DC2626',
+        hot: '#FECACA',
+      };
+  }
+}
+
+/** GPS hızına göre hedef zoom (m/s → km/h); bilinmiyorsa yavaş / yakın zoom */
+function zoomTargetForSpeedMps(speedMps: number | null | undefined): number {
+  const kmh =
+    typeof speedMps === 'number' && speedMps >= 0 && Number.isFinite(speedMps)
+      ? speedMps * 3.6
+      : 0;
+  if (kmh < 5) return 18.5;
+  if (kmh < 20) return 17.5;
+  if (kmh < 40) return 16.5;
+  if (kmh < 70) return 15.5;
+  return 14.8;
 }
 
 /**
  * Gidiş yönünde kamera merkezini ileri alır; pitch + heading ile araç noktası ekranda ~alt 1/3 bandına kayar.
  */
 function offsetCameraCenterForward(from: MapLatLng, bearingDeg: number, remainKm: number): MapLatLng {
-  let forwardM = 155;
-  if (remainKm > 5) forwardM = 240;
-  else if (remainKm >= 1) forwardM = 185;
-  else forwardM = 125;
+  let forwardM = 175;
+  if (remainKm > 5) forwardM = 260;
+  else if (remainKm >= 1) forwardM = 205;
+  else forwardM = 142;
   const R = 6378137;
   const brng = (bearingDeg * Math.PI) / 180;
   const lat1 = (from.latitude * Math.PI) / 180;
@@ -553,6 +620,60 @@ function bearingDegrees(from: MapLatLng, to: MapLatLng): number {
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   const θ = Math.atan2(y, x);
   return ((θ * 180) / Math.PI + 360) % 360;
+}
+
+/** En kısa yönde açı farkı (-180, 180] */
+function angleDiffDeg(fromDeg: number, toDeg: number): number {
+  let d = toDeg - fromDeg;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
+function absAngleDiffDeg(a: number, b: number): number {
+  return Math.abs(angleDiffDeg(a, b));
+}
+
+/**
+ * Heading yumuşatma — 0↔90 zıplamasını önler. t: 0–1 (her karede hedefe yaklaşma oranı).
+ */
+function interpolateHeading(prevHeading: number, newHeading: number, t: number): number {
+  const d = angleDiffDeg(prevHeading, newHeading);
+  let h = prevHeading + d * Math.max(0, Math.min(1, t));
+  h = ((h % 360) + 360) % 360;
+  return h;
+}
+
+function lerpLatLng(a: MapLatLng, b: MapLatLng, t: number): MapLatLng {
+  const k = Math.max(0, Math.min(1, t));
+  return {
+    latitude: a.latitude + (b.latitude - a.latitude) * k,
+    longitude: a.longitude + (b.longitude - a.longitude) * k,
+  };
+}
+
+const NAV_CAMERA_THROTTLE_MS = 300;
+const NAV_CAMERA_MIN_MOVE_M = 8;
+const NAV_CAMERA_MIN_HEADING_DEG = 5;
+/** GPS gürültüsünde <5 m adımda kamera animasyonu yok (yalnız marker) */
+const NAV_MARKER_ONLY_MOVE_M = 5;
+const NAV_CAMERA_ANIM_MS = 520;
+/** Araç dururken sadece pusula: ~4,5 km/h altı = kırmızı ışık; üstü = sürüşte gereksiz dönüş azalır */
+const NAV_CAMERA_STATIONARY_SPEED_MPS = 1.25;
+const NAV_CAMERA_STATIONARY_HEADING_DEG = 8;
+const NAV_CAMERA_HEADING_ONLY_MS = 320;
+const NAV_HEADING_PULSE_MIN_MS = 100;
+const NAV_ZOOM_SMOOTH = 0.18;
+/** Manevra mesafe anonsları arası minimum süre (ms) */
+const NAV_SPEECH_MIN_GAP_MS = 2800;
+/** Sürücü–yolcu bu kadar yakın + varış var → trip (turuncu) navigasyon aşaması */
+const NAV_HANDOFF_TO_DESTINATION_M = 45;
+
+function smoothZoomToward(prev: number | null, target: number): number {
+  if (prev == null || !Number.isFinite(prev)) return target;
+  const d = target - prev;
+  if (Math.abs(d) < 0.04) return target;
+  return prev + d * NAV_ZOOM_SMOOTH;
 }
 
 /**
@@ -794,12 +915,48 @@ export default function LiveMapView({
 
   const [navManeuverUi, setNavManeuverUi] = useState<NavManeuverUi | null>(null);
   const [navHeadingUi, setNavHeadingUi] = useState(0);
-
-  const lastNavSpeechKeyRef = useRef('');
+  /** Pusula güncellemesinde kamera efektini tetikler (dururken heading dönüşü) */
+  const [navHeadingPulse, setNavHeadingPulse] = useState(0);
+  /** Google Directions (backend) trafik gecikme oranına göre rota rengi */
+  const [navRouteTrafficLevel, setNavRouteTrafficLevel] = useState<NavTrafficLevel>('free');
 
   /** Sürücü gerçek navigasyon: harita kamerası heading (pusula) */
   const navHeadingRef = useRef(0);
   const lastNavCameraAtRef = useRef(0);
+
+  const navCamLastUserRef = useRef<MapLatLng | null>(null);
+  const navCamLastRawHeadingRef = useRef<number | null>(null);
+  const navCamLastTimeRef = useRef(0);
+  const navSmoothHeadingRef = useRef(0);
+  const navSmoothCenterRef = useRef<MapLatLng | null>(null);
+  const navCamLastManeuverKeyRef = useRef('');
+  const navCamInitializedRef = useRef(false);
+  /** Son GPS örneği — <5 m adım için kamera atlama */
+  const navLastTickUserRef = useRef<MapLatLng | null>(null);
+  /** GPS hızı (m/s); yoksa veya <0 ise null */
+  const navGpsSpeedMpsRef = useRef<number | null>(null);
+  const navHeadingPulseAtRef = useRef(0);
+  const navSmoothZoomRef = useRef<number | null>(null);
+  const navSpeechStateRef = useRef<{ key: string; bands: Set<number> }>({ key: '', bands: new Set() });
+  const navSpeechLastAtRef = useRef(0);
+  const navSpeechPrevMetersRef = useRef<number | null>(null);
+  const navStagePrevRef = useRef<'pickup' | 'destination'>('pickup');
+
+  /** Pickup → hedef geçişinde kamera eşiklerini sıfırla (turuncu rota + araç hizası tazelensin) */
+  useEffect(() => {
+    if (!isDriver || !navigationMode) {
+      navStagePrevRef.current = navigationStage;
+      return;
+    }
+    if (navStagePrevRef.current === 'pickup' && navigationStage === 'destination') {
+      navCamInitializedRef.current = false;
+      navCamLastUserRef.current = null;
+      navCamLastRawHeadingRef.current = null;
+      navCamLastTimeRef.current = 0;
+      navLastTickUserRef.current = null;
+    }
+    navStagePrevRef.current = navigationStage;
+  }, [isDriver, navigationMode, navigationStage]);
 
   /** Sürücü navigasyonu kapatınca buluşma polyline’ını kaldır (yolcu ekranı etkilenmez) */
   useEffect(() => {
@@ -812,17 +969,87 @@ export default function LiveMapView({
       pickupNavStepsRef.current = null;
       destNavStepsRef.current = null;
       setNavManeuverUi(null);
+      setNavRouteTrafficLevel('free');
+      navCamLastUserRef.current = null;
+      navCamLastRawHeadingRef.current = null;
+      navCamLastTimeRef.current = 0;
+      navSmoothCenterRef.current = null;
+      navCamLastManeuverKeyRef.current = '';
+      navCamInitializedRef.current = false;
+      navLastTickUserRef.current = null;
+      navSmoothHeadingRef.current = 0;
+      navGpsSpeedMpsRef.current = null;
+      navSmoothZoomRef.current = null;
+      navSpeechStateRef.current = { key: '', bands: new Set() };
+      navSpeechLastAtRef.current = 0;
+      navSpeechPrevMetersRef.current = null;
     }
   }, [navigationMode, isDriver]);
 
-  /** Yolcuya 50 m: hedef aşamasına geç (varış noktası varsa) */
+  /**
+   * Buluşma sonrası: sürücü yolcuya yakın + varış noktası var → hedef (turuncu) aşaması.
+   * Navigasyon açıkken oturum aynı kalır; kamera / maneuver / OSRM hedef rotası devam eder.
+   */
   useEffect(() => {
     if (!isDriver || !navigationMode || !userLocation || !otherLocation) return;
     if (navigationStage !== 'pickup') return;
     if (!destinationLocation) return;
-    if (haversineMeters(userLocation, otherLocation) < 50) {
+    if (haversineMeters(userLocation, otherLocation) < NAV_HANDOFF_TO_DESTINATION_M) {
       setNavigationStage('destination');
     }
+  }, [
+    isDriver,
+    navigationMode,
+    navigationStage,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+  ]);
+
+  /** Sürücü nav: backend /directions ile trafik gecikme oranı → rota rengi (yeşil / turuncu / kırmızı) */
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      setNavRouteTrafficLevel('free');
+      return;
+    }
+    if (!isDriver || !navigationMode || !userLocation) {
+      if (!isDriver || !navigationMode) setNavRouteTrafficLevel('free');
+      return;
+    }
+    const dest =
+      navigationStage === 'pickup'
+        ? otherLocation
+        : navigationStage === 'destination'
+          ? destinationLocation
+          : null;
+    if (!dest) return;
+
+    let cancelled = false;
+    const fetchTrafficHint = async () => {
+      try {
+        const q = new URLSearchParams({
+          origin_lat: String(userLocation.latitude),
+          origin_lng: String(userLocation.longitude),
+          dest_lat: String(dest.latitude),
+          dest_lng: String(dest.longitude),
+        });
+        const res = await fetch(`${API_BASE_URL}/directions?${q}`);
+        const data = await res.json();
+        if (cancelled || !data?.success) return;
+        setNavRouteTrafficLevel(trafficLevelFromDelayRatio(Number(data.traffic_delay_ratio)));
+      } catch {
+        if (!cancelled) setNavRouteTrafficLevel('free');
+      }
+    };
+    void fetchTrafficHint();
+    const id = setInterval(fetchTrafficHint, 45000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [
     isDriver,
     navigationMode,
@@ -860,10 +1087,25 @@ export default function LiveMapView({
     mapFitRef.current = { initialDone: false, hadDestination: false };
     setNavigationMode(false);
     setNavigationStage('pickup');
+    navStagePrevRef.current = 'pickup';
     setMeetingRouteCoordinates([]);
     pickupNavStepsRef.current = null;
     destNavStepsRef.current = null;
     setNavManeuverUi(null);
+    setNavRouteTrafficLevel('free');
+    navCamLastUserRef.current = null;
+    navCamLastRawHeadingRef.current = null;
+    navCamLastTimeRef.current = 0;
+    navSmoothCenterRef.current = null;
+    navCamLastManeuverKeyRef.current = '';
+    navCamInitializedRef.current = false;
+    navLastTickUserRef.current = null;
+    navSmoothHeadingRef.current = 0;
+    navGpsSpeedMpsRef.current = null;
+    navSmoothZoomRef.current = null;
+    navSpeechStateRef.current = { key: '', bands: new Set() };
+    navSpeechLastAtRef.current = 0;
+    navSpeechPrevMetersRef.current = null;
   }, [tagId]);
 
   useEffect(() => {
@@ -873,35 +1115,64 @@ export default function LiveMapView({
 
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode) return;
-    let sub: Location.LocationSubscription | undefined;
+    let headingSub: Location.LocationSubscription | undefined;
+    let positionSub: Location.LocationSubscription | undefined;
     (async () => {
       try {
         const perm = await Location.getForegroundPermissionsAsync();
         if (perm.status !== 'granted') {
           await Location.requestForegroundPermissionsAsync();
         }
-        sub = await Location.watchHeadingAsync((h) => {
+        headingSub = await Location.watchHeadingAsync((h) => {
           const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-          if (Number.isFinite(deg)) navHeadingRef.current = deg;
+          if (!Number.isFinite(deg)) return;
+          navHeadingRef.current = deg;
+          const t = Date.now();
+          if (t - navHeadingPulseAtRef.current >= NAV_HEADING_PULSE_MIN_MS) {
+            navHeadingPulseAtRef.current = t;
+            setNavHeadingPulse((p) => p + 1);
+          }
         });
+        positionSub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 900,
+            distanceInterval: 0,
+          },
+          (loc) => {
+            const s = loc.coords.speed;
+            navGpsSpeedMpsRef.current =
+              typeof s === 'number' && s >= 0 && Number.isFinite(s) ? s : null;
+          },
+        );
       } catch {
-        /* heading opsiyonel */
+        /* heading / speed opsiyonel */
       }
     })();
     return () => {
-      sub?.remove();
+      headingSub?.remove();
+      positionSub?.remove();
     };
   }, [isDriver, navigationMode]);
 
   /**
-   * Sürücü gerçek navigasyon: her GPS güncellemesinde kamera (pitch 60, kullanıcı heading, dinamik zoom).
+   * Sürücü gerçek navigasyon: kamera yumuşatma (throttle, heading/mesafe eşikleri, maneuver).
+   * Heading-only: kısa animasyon; merkez de offsetCameraCenterForward ile güncellenir (araç ~alt %30).
    */
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
       return;
     }
+    const prevTick = navLastTickUserRef.current;
+    const stepMovedM =
+      prevTick != null ? haversineMeters(prevTick, userLocation) : Infinity;
+    navLastTickUserRef.current = {
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+    };
+
     const h = navHeadingRef.current;
-    const userHeading =
+    const rawHeading =
       typeof h === 'number' && Number.isFinite(h) && h >= 0
         ? h
         : navigationStage === 'destination' && destinationLocation
@@ -919,19 +1190,150 @@ export default function LiveMapView({
       remainKm = straightLineKm(userLocation, otherLocation);
     }
 
-    const zoom = zoomForRemainKm(remainKm);
-    const cameraCenter = offsetCameraCenterForward(userLocation, userHeading, remainKm);
-    setNavHeadingUi(userHeading);
-    lastNavCameraAtRef.current = Date.now();
+    const speedMpsEarly = navGpsSpeedMpsRef.current;
+    const isLowSpeedEarly =
+      (typeof speedMpsEarly === 'number' && speedMpsEarly >= 0 && speedMpsEarly < NAV_CAMERA_STATIONARY_SPEED_MPS) ||
+      ((speedMpsEarly == null || speedMpsEarly < 0) && stepMovedM < 1.2);
+
+    const headingBlend = isLowSpeedEarly
+      ? 0.14
+      : stepMovedM < NAV_MARKER_ONLY_MOVE_M
+        ? 0.2
+        : stepMovedM < 2
+          ? 0.26
+          : 0.4;
+    const smoothHeading =
+      !navCamInitializedRef.current && prevTick == null
+        ? rawHeading
+        : interpolateHeading(navSmoothHeadingRef.current, rawHeading, headingBlend);
+    navSmoothHeadingRef.current = smoothHeading;
+    setNavHeadingUi(smoothHeading);
+
+    /** Her kare: araç ~alt %30 için ileri ofset merkez (heading-only / full ortak) */
+    const targetCenter = offsetCameraCenterForward(userLocation, smoothHeading, remainKm);
+
+    const mk = navManeuverUi?.speechKey ?? '';
+    const maneuverChanged = mk.length > 0 && mk !== navCamLastManeuverKeyRef.current;
+
+    const lastCamUser = navCamLastUserRef.current;
+    const lastCamHead = navCamLastRawHeadingRef.current;
+    const distSinceCamM =
+      lastCamUser == null ? Infinity : haversineMeters(lastCamUser, userLocation);
+    const headingSinceCamDeg =
+      lastCamHead == null
+        ? NAV_CAMERA_MIN_HEADING_DEG + 1
+        : absAngleDiffDeg(lastCamHead, rawHeading);
+
+    const now = Date.now();
+    const throttled =
+      !maneuverChanged && now - navCamLastTimeRef.current < NAV_CAMERA_THROTTLE_MS;
+
+    const speedMps = navGpsSpeedMpsRef.current;
+    const isLowSpeed =
+      (typeof speedMps === 'number' && speedMps >= 0 && speedMps < NAV_CAMERA_STATIONARY_SPEED_MPS) ||
+      ((speedMps == null || speedMps < 0) && stepMovedM < 1.2);
+
+    const headingDeltaSinceCam =
+      lastCamHead == null ? 0 : absAngleDiffDeg(lastCamHead, rawHeading);
+
+    let shouldFullAnimate =
+      maneuverChanged ||
+      !navCamInitializedRef.current ||
+      (stepMovedM >= NAV_MARKER_ONLY_MOVE_M &&
+        (distSinceCamM > NAV_CAMERA_MIN_MOVE_M ||
+          headingSinceCamDeg > NAV_CAMERA_MIN_HEADING_DEG));
+
+    if (stepMovedM < NAV_MARKER_ONLY_MOVE_M && navCamInitializedRef.current && !maneuverChanged) {
+      shouldFullAnimate = false;
+    }
+
+    if (shouldFullAnimate && throttled) {
+      shouldFullAnimate = false;
+    }
+
+    let headingOnlyAnimate =
+      navCamInitializedRef.current &&
+      !maneuverChanged &&
+      isLowSpeed &&
+      stepMovedM < NAV_MARKER_ONLY_MOVE_M &&
+      lastCamHead != null &&
+      headingDeltaSinceCam > NAV_CAMERA_STATIONARY_HEADING_DEG &&
+      !shouldFullAnimate;
+
+    if (headingOnlyAnimate && throttled) {
+      headingOnlyAnimate = false;
+    }
+
+    const prevSmoothCenter = navSmoothCenterRef.current;
+    const centerLerp = shouldFullAnimate
+      ? 0.62
+      : headingOnlyAnimate
+        ? 0.52
+        : 0.18;
+    navSmoothCenterRef.current =
+      prevSmoothCenter == null
+        ? { ...targetCenter }
+        : lerpLatLng(prevSmoothCenter, targetCenter, centerLerp);
+
+    const zoomTargetSpeed = zoomTargetForSpeedMps(navGpsSpeedMpsRef.current);
+    if (shouldFullAnimate) {
+      navSmoothZoomRef.current = smoothZoomToward(navSmoothZoomRef.current, zoomTargetSpeed);
+    }
+    const zoom =
+      navSmoothZoomRef.current != null && Number.isFinite(navSmoothZoomRef.current)
+        ? navSmoothZoomRef.current
+        : zoomTargetSpeed;
+
+    if (headingOnlyAnimate) {
+      navCamLastRawHeadingRef.current = rawHeading;
+      navCamLastTimeRef.current = now;
+      lastNavCameraAtRef.current = now;
+      const map = mapRef.current;
+      const center = navSmoothCenterRef.current;
+      if (!map || !center) {
+        return;
+      }
+      const heading = smoothHeading;
+      const pitch = 60;
+      const currentZoom = zoom;
+      const t = setTimeout(() => {
+        map.animateCamera(
+          {
+            center: { ...center },
+            heading,
+            pitch,
+            zoom: currentZoom,
+          },
+          { duration: NAV_CAMERA_HEADING_ONLY_MS },
+        );
+      }, 0);
+      return () => clearTimeout(t);
+    }
+
+    if (!shouldFullAnimate) {
+      return;
+    }
+
+    const smoothCenter = navSmoothCenterRef.current;
+    navCamLastUserRef.current = {
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+    };
+    navCamLastRawHeadingRef.current = rawHeading;
+    navCamLastTimeRef.current = now;
+    if (mk.length) navCamLastManeuverKeyRef.current = mk;
+    navCamInitializedRef.current = true;
+    lastNavCameraAtRef.current = now;
+
     const t = setTimeout(() => {
       mapRef.current?.animateCamera(
         {
-          center: cameraCenter,
+          center: smoothCenter,
           pitch: 60,
-          heading: userHeading,
+          heading: smoothHeading,
           zoom,
         },
-        { duration: 280 },
+        { duration: NAV_CAMERA_ANIM_MS },
       );
     }, 0);
     return () => clearTimeout(t);
@@ -939,6 +1341,8 @@ export default function LiveMapView({
     isDriver,
     navigationMode,
     navigationStage,
+    navManeuverUi?.speechKey,
+    navHeadingPulse,
     userLocation?.latitude,
     userLocation?.longitude,
     otherLocation?.latitude,
@@ -967,6 +1371,7 @@ export default function LiveMapView({
           streetName: null,
           arrowKind: 'straight',
           speechKey: 'pickup-fallback-approach',
+          metersToManeuver: d,
         });
       } else {
         setNavManeuverUi({
@@ -974,6 +1379,7 @@ export default function LiveMapView({
           streetName: null,
           arrowKind: 'unknown',
           speechKey: 'pickup-nolocation',
+          metersToManeuver: null,
         });
       }
       return;
@@ -992,6 +1398,7 @@ export default function LiveMapView({
           streetName: null,
           arrowKind: 'straight',
           speechKey: 'dest-fallback-approach',
+          metersToManeuver: d,
         });
       } else {
         setNavManeuverUi({
@@ -999,6 +1406,7 @@ export default function LiveMapView({
           streetName: null,
           arrowKind: 'unknown',
           speechKey: 'dest-nodropoff',
+          metersToManeuver: null,
         });
       }
     }
@@ -1021,25 +1429,69 @@ export default function LiveMapView({
       if (Platform.OS !== 'web') {
         Speech.stop();
       }
-      lastNavSpeechKeyRef.current = '';
+      navSpeechStateRef.current = { key: '', bands: new Set() };
+      navSpeechLastAtRef.current = 0;
+      navSpeechPrevMetersRef.current = null;
     }
   }, [navigationMode]);
 
-  /** Yalnızca yeni manevra (speechKey değişince) sesli oku */
+  /**
+   * Manevra değişince tam anons; aynı manevrada 300 / 100 / 30 m kısa anonslar (tekrar yok, throttle).
+   */
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !navManeuverUi) {
       return;
     }
     const key = navManeuverUi.speechKey;
-    if (!key || key === lastNavSpeechKeyRef.current) {
-      return;
-    }
-    lastNavSpeechKeyRef.current = key;
+    if (!key) return;
+
     const line = navManeuverUi.instructionLine.trim();
     const street = navManeuverUi.streetName?.trim();
-    const utterance = street ? `${line}. ${street}` : line;
-    Speech.stop();
-    Speech.speak(utterance, { language: 'tr-TR', rate: 0.92, pitch: 1.0 });
+    const baseUtterance = street ? `${line}. ${street}` : line;
+    const streetSuffix = street ? `. ${street}` : '';
+
+    const speak = (utterance: string) => {
+      Speech.stop();
+      Speech.speak(utterance, { language: 'tr-TR', rate: 0.92, pitch: 1.0 });
+    };
+
+    if (key !== navSpeechStateRef.current.key) {
+      navSpeechStateRef.current = { key, bands: new Set() };
+      navSpeechLastAtRef.current = Date.now();
+      speak(baseUtterance);
+      navSpeechPrevMetersRef.current = navManeuverUi.metersToManeuver ?? null;
+      return;
+    }
+
+    const m = navManeuverUi.metersToManeuver;
+    if (m == null || !Number.isFinite(m)) {
+      navSpeechPrevMetersRef.current = m ?? null;
+      return;
+    }
+
+    const prevM = navSpeechPrevMetersRef.current ?? Infinity;
+    navSpeechPrevMetersRef.current = m;
+
+    const now = Date.now();
+    if (now - navSpeechLastAtRef.current < NAV_SPEECH_MIN_GAP_MS) return;
+
+    const bands = navSpeechStateRef.current.bands;
+    const hysteresisM = 12;
+    for (const th of [30, 100, 300]) {
+      const crossed = prevM > th + hysteresisM && m <= th;
+      if (crossed && !bands.has(th)) {
+        bands.add(th);
+        navSpeechLastAtRef.current = now;
+        const hint =
+          th === 300
+            ? `Yaklaşık üç yüz metre sonra manevraya hazırlanın${streetSuffix}`
+            : th === 100
+              ? `Yüz metre kaldı${streetSuffix}`
+              : `Otuz metre sonra. ${line}${street ? ` ${street}` : ''}`;
+        speak(hint);
+        return;
+      }
+    }
   }, [navManeuverUi, isDriver, navigationMode]);
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
@@ -1455,7 +1907,7 @@ export default function LiveMapView({
   const fitNavigationViewport = useCallback(
     (routeCoords?: MapLatLng[] | null) => {
       if (!mapRef.current || !userLocation || !otherLocation) return;
-      const navMeetingOnly = isDriver && navigationMode;
+      const navMeetingOnly = isDriver && navigationMode && navigationStage === 'pickup';
       const legKm = straightLineKm(userLocation, otherLocation);
       /** OSRM öncesi / hata: sadece 2 nokta — tüm mesafeyi fit etmek şehir zoom’u (ekrandaki bug) */
       const polyForSlice =
@@ -1496,7 +1948,7 @@ export default function LiveMapView({
         animated: true,
       });
     },
-    [userLocation, otherLocation, destinationLocation, isDriver, navigationMode],
+    [userLocation, otherLocation, destinationLocation, isDriver, navigationMode, navigationStage],
   );
 
   const loadDriverNavMeetingRoute = useCallback(async () => {
@@ -1722,6 +2174,9 @@ export default function LiveMapView({
     userLocation?.longitude,
   ]);
 
+  const pickupNavStroke = pickupNavRouteStrokeColors(navRouteTrafficLevel);
+  const destNavStroke = destinationNavRouteStrokeColors(navRouteTrafficLevel);
+
   // Web fallback
   if (Platform.OS === 'web' || !MapView) {
     return (
@@ -1772,23 +2227,27 @@ export default function LiveMapView({
         <View
           style={[
             styles.navManeuverBanner,
-            { paddingTop: Math.max(insets.top, 8) + 8 },
+            styles.navManeuverBannerCompact,
+            { paddingTop: Math.max(insets.top, 8) + 4 },
           ]}
           pointerEvents="none"
         >
-          <Text style={styles.navManeuverBannerStage}>
+          <Text style={[styles.navManeuverBannerStage, styles.navManeuverBannerStageCompact]}>
             {navigationStage === 'pickup' ? 'Buluşmaya gidiyorsunuz' : 'Hedefe gidiyorsunuz'}
           </Text>
-          <View style={styles.navManeuverBannerRow}>
-            <View style={styles.navManeuverIconCircle}>
-              <NavManeuverArrowIcon kind={navManeuverUi?.arrowKind ?? 'unknown'} size={52} />
+          <View style={[styles.navManeuverBannerRow, styles.navManeuverBannerRowCompact]}>
+            <View style={[styles.navManeuverIconCircle, styles.navManeuverIconCircleCompact]}>
+              <NavManeuverArrowIcon kind={navManeuverUi?.arrowKind ?? 'unknown'} size={44} />
             </View>
             <View style={styles.navManeuverTextCol}>
-              <Text style={styles.navManeuverBannerManeuver} numberOfLines={2}>
+              <Text
+                style={[styles.navManeuverBannerManeuver, styles.navManeuverBannerManeuverCompact]}
+                numberOfLines={2}
+              >
                 {navManeuverUi?.instructionLine ?? 'Rota hazırlanıyor…'}
               </Text>
               {navManeuverUi?.streetName ? (
-                <Text style={styles.navManeuverStreet} numberOfLines={1}>
+                <Text style={[styles.navManeuverStreet, styles.navManeuverStreetCompact]} numberOfLines={1}>
                   {navManeuverUi.streetName}
                 </Text>
               ) : null}
@@ -1817,7 +2276,7 @@ export default function LiveMapView({
           mapPadding={
             driverNavImmersive
               ? {
-                  top: Math.max(insets.top, 12) + 200,
+                  top: Math.max(insets.top, 12) + 152,
                   right: 12,
                   bottom: Math.min(100, Math.max(72, SCREEN_HEIGHT * 0.11)),
                   left: 12,
@@ -1837,6 +2296,7 @@ export default function LiveMapView({
           minZoomLevel={4}
           maxZoomLevel={22}
           customMapStyle={mapStyle}
+          showsTraffic
         >
           {isDriver &&
             navigationMode &&
@@ -1847,7 +2307,7 @@ export default function LiveMapView({
                   <Polyline
                     coordinates={driverNavRouteLayers.dim}
                     strokeWidth={5}
-                    strokeColor="rgba(20, 83, 45, 0.38)"
+                    strokeColor={pickupNavStroke.dim}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={8}
@@ -1857,7 +2317,7 @@ export default function LiveMapView({
                   <Polyline
                     coordinates={driverNavRouteLayers.bright}
                     strokeWidth={11}
-                    strokeColor="#22C55E"
+                    strokeColor={pickupNavStroke.bright}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={9}
@@ -1867,7 +2327,7 @@ export default function LiveMapView({
                   <Polyline
                     coordinates={driverNavRouteLayers.hot}
                     strokeWidth={14}
-                    strokeColor="rgba(255,255,255,0.88)"
+                    strokeColor={pickupNavStroke.hot}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={10}
@@ -1884,7 +2344,7 @@ export default function LiveMapView({
               <Polyline
                 coordinates={meetingRouteCoordinates}
                 strokeWidth={8}
-                strokeColor="#22C55E"
+                strokeColor={pickupNavStroke.bright}
                 lineCap="round"
                 lineJoin="round"
                 zIndex={10}
@@ -1912,7 +2372,7 @@ export default function LiveMapView({
                   <Polyline
                     coordinates={driverNavRouteLayers.dim}
                     strokeWidth={5}
-                    strokeColor="rgba(154, 52, 18, 0.4)"
+                    strokeColor={destNavStroke.dim}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={8}
@@ -1922,7 +2382,7 @@ export default function LiveMapView({
                   <Polyline
                     coordinates={driverNavRouteLayers.bright}
                     strokeWidth={10}
-                    strokeColor="#FB923C"
+                    strokeColor={destNavStroke.bright}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={9}
@@ -1932,7 +2392,7 @@ export default function LiveMapView({
                   <Polyline
                     coordinates={driverNavRouteLayers.hot}
                     strokeWidth={13}
-                    strokeColor="#FFFBEB"
+                    strokeColor={destNavStroke.hot}
                     lineCap="round"
                     lineJoin="round"
                     zIndex={10}
@@ -2049,12 +2509,22 @@ export default function LiveMapView({
 
       {/* Sürücü ekranında "Yolcu burada..." yazısı kaldırıldı */}
 
-      {/* ÜST BİLGİ PANELİ — gök mavisi, desenli, profesyonel tipografi */}
-      <View style={styles.topInfoPanel}>
-        <View style={styles.topInfoBorder}>
+      {/* ÜST BİLGİ PANELİ — buluşma / hedef / fiyat (nav modunda kompakt) */}
+      <View
+        style={[
+          styles.topInfoPanel,
+          driverNavImmersive ? { paddingTop: Math.max(insets.top, 8) + 112 } : null,
+        ]}
+      >
+        <View
+          style={[
+            styles.topInfoBorder,
+            driverNavImmersive ? styles.topInfoBorderNav : null,
+          ]}
+        >
           <LinearGradient
-            colors={['#F0F9FF', '#E0F2FE', '#DBEAFE', '#F8FAFC']}
-            locations={[0, 0.35, 0.7, 1]}
+            colors={['#FFFFFF', '#FAFBFC', '#F4F7FA', '#FAFBFC']}
+            locations={[0, 0.3, 0.65, 1]}
             style={styles.infoGradient}
           >
             <View style={styles.topCardPatternRoot} pointerEvents="none">
@@ -2064,55 +2534,154 @@ export default function LiveMapView({
                 <View key={i} style={[styles.topCardStripe, { left: -72 + i * 26 }]} />
               ))}
             </View>
-            <View style={styles.topCardContent}>
-              {/* Manevra metni üst banner’da; kartta yalnızca km/dk */}
-              <View style={styles.routeInfoRow}>
-                <View style={[styles.routeIndicator, { backgroundColor: '#059669' }]} />
-                <View style={styles.routeDetails}>
-                  <Text style={styles.routeLabelModern}>BULUŞMA</Text>
-                  <Text style={styles.routeValueModern}>
+            <View
+              style={[
+                styles.topCardContent,
+                driverNavImmersive ? styles.topCardContentNav : null,
+              ]}
+            >
+              <View
+                style={[
+                  styles.routeInfoRow,
+                  driverNavImmersive ? styles.routeInfoRowNav : null,
+                  isDriver && navigationMode
+                    ? { opacity: navigationStage === 'pickup' ? 1 : 0.42 }
+                    : null,
+                ]}
+              >
+                <View style={[styles.routeDot, { backgroundColor: '#059669' }]} />
+                <View style={styles.routeTextStack}>
+                  <Text
+                    style={[
+                      styles.routeLabelModern,
+                      driverNavImmersive ? styles.routeLabelModernNav : null,
+                    ]}
+                  >
+                    Buluşma
+                  </Text>
+                  <Text
+                    style={[
+                      styles.routeValueModern,
+                      driverNavImmersive ? styles.routeValueModernNav : null,
+                    ]}
+                  >
                     {formatRouteKmMin(meetingDistance, meetingDuration)}
                   </Text>
                 </View>
               </View>
 
               {destinationLocation ? (
-                <View style={styles.routeInfoRow}>
-                  <View style={[styles.routeIndicator, { backgroundColor: '#EA580C' }]} />
-                  <View style={styles.routeDetails}>
-                    <Text style={styles.routeLabelModern}>HEDEF</Text>
-                    <Text style={styles.routeValueModern}>
+                <View
+                  style={[
+                    styles.routeInfoRow,
+                    driverNavImmersive ? styles.routeInfoRowNav : null,
+                    isDriver && navigationMode
+                      ? { opacity: navigationStage === 'destination' ? 1 : 0.42 }
+                      : null,
+                  ]}
+                >
+                  <View style={[styles.routeDot, { backgroundColor: '#EA580C' }]} />
+                  <View style={styles.routeTextStack}>
+                    <Text
+                      style={[
+                        styles.routeLabelModern,
+                        driverNavImmersive ? styles.routeLabelModernNav : null,
+                      ]}
+                    >
+                      Hedef
+                    </Text>
+                    <Text
+                      style={[
+                        styles.routeValueModern,
+                        driverNavImmersive ? styles.routeValueModernNav : null,
+                      ]}
+                    >
                       {formatRouteKmMin(destinationDistance, destinationDuration)}
                     </Text>
                   </View>
-                  {nearDestination ? (
-                    <View style={styles.nearBadge}>
-                      <Text style={styles.nearBadgeText}>YAKIN!</Text>
-                    </View>
-                  ) : null}
-                  {offeredPrice ? (
-                    <View style={styles.offeredPriceBadge}>
-                      <Text style={styles.offeredPriceText}>₺{offeredPrice}</Text>
-                    </View>
-                  ) : null}
+                  <View style={styles.routeRowTrail}>
+                    {nearDestination ? (
+                      <View
+                        style={[
+                          styles.nearBadge,
+                          driverNavImmersive ? styles.nearBadgeNav : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.nearBadgeText,
+                            driverNavImmersive ? styles.nearBadgeTextNav : null,
+                          ]}
+                        >
+                          YAKIN!
+                        </Text>
+                      </View>
+                    ) : null}
+                    {offeredPrice ? (
+                      <View
+                        style={[
+                          styles.offeredPriceBadge,
+                          driverNavImmersive ? styles.offeredPriceBadgeNav : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.offeredPriceText,
+                            driverNavImmersive ? styles.offeredPriceTextNav : null,
+                          ]}
+                        >
+                          ₺{offeredPrice}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
               ) : null}
 
               {price && !offeredPrice ? (
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>Ücret</Text>
-                  <Text style={styles.priceValue}>₺{price}</Text>
+                <View
+                  style={[
+                    styles.priceRow,
+                    driverNavImmersive ? styles.priceRowNav : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.priceLabel,
+                      driverNavImmersive ? styles.priceLabelNav : null,
+                    ]}
+                  >
+                    Ücret
+                  </Text>
+                  <Text
+                    style={[
+                      styles.priceValue,
+                      driverNavImmersive ? styles.priceValueNav : null,
+                    ]}
+                  >
+                    ₺{price}
+                  </Text>
                 </View>
               ) : null}
 
               {isDriver && passengerPaymentMethod ? (
-                <View style={styles.paymentMethodPill}>
+                <View
+                  style={[
+                    styles.paymentMethodPill,
+                    driverNavImmersive ? styles.paymentMethodPillNav : null,
+                  ]}
+                >
                   <Ionicons
                     name={passengerPaymentMethod === 'card' ? 'card-outline' : 'cash-outline'}
-                    size={16}
-                    color="#0F172A"
+                    size={driverNavImmersive ? 13 : 15}
+                    color="#334155"
                   />
-                  <Text style={styles.paymentMethodPillText}>
+                  <Text
+                    style={[
+                      styles.paymentMethodPillText,
+                      driverNavImmersive ? styles.paymentMethodPillTextNav : null,
+                    ]}
+                  >
                     {passengerPaymentMethod === 'card' ? 'Yolcu: sanal kart' : 'Yolcu: nakit'}
                   </Text>
                 </View>
@@ -2203,7 +2772,10 @@ export default function LiveMapView({
                     return;
                   }
                   if (!navigationMode) {
-                    setNavigationStage('pickup');
+                    const dM = haversineMeters(userLocation, otherLocation);
+                    const handoff =
+                      !!destinationLocation && dM < NAV_HANDOFF_TO_DESTINATION_M;
+                    setNavigationStage(handoff ? 'destination' : 'pickup');
                     setNavigationMode(true);
                     if (userId && tagId) {
                       const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
@@ -2593,6 +3165,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 12,
   },
+  navManeuverBannerCompact: {
+    paddingBottom: 8,
+    paddingHorizontal: 12,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+  },
   navManeuverBannerStage: {
     color: 'rgba(255,255,255,0.72)',
     fontSize: 12,
@@ -2601,10 +3179,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 6,
   },
+  navManeuverBannerStageCompact: {
+    fontSize: 10,
+    marginBottom: 3,
+    letterSpacing: 0.35,
+  },
   navManeuverBannerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
+  },
+  navManeuverBannerRowCompact: {
+    marginTop: 2,
   },
   navManeuverIconCircle: {
     width: 68,
@@ -2617,6 +3203,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
   },
+  navManeuverIconCircleCompact: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    marginRight: 10,
+    borderWidth: 1.5,
+  },
   navManeuverTextCol: {
     flex: 1,
     minWidth: 0,
@@ -2627,10 +3220,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 23,
   },
+  navManeuverBannerManeuverCompact: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
   navManeuverStreet: {
     marginTop: 4,
     color: 'rgba(255,255,255,0.82)',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  navManeuverStreetCompact: {
+    marginTop: 2,
+    fontSize: 12,
     fontWeight: '600',
   },
   driverNavVehicleMark: {
@@ -2864,22 +3467,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   
-  // Top Info Panel — gök mavisi / desen
-  topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Top Info Panel — buluşma / hedef kartı (dar, premium, nav’da kompakt)
+  topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 90 },
   topInfoBorder: {
-    borderWidth: 2,
-    borderColor: '#0EA5E9',
-    borderRadius: 26,
-    margin: 8,
+    alignSelf: 'center',
+    width: SCREEN_WIDTH * 0.885,
+    borderWidth: 1,
+    borderColor: 'rgba(14, 165, 233, 0.38)',
+    borderRadius: 20,
     marginTop: 40,
+    marginBottom: 6,
     overflow: 'hidden',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 8,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  infoGradient: { paddingVertical: 0, paddingHorizontal: 0, borderRadius: 24, overflow: 'hidden' },
+  topInfoBorderNav: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  infoGradient: { paddingVertical: 0, paddingHorizontal: 0, borderRadius: 19, overflow: 'hidden' },
   topCardPatternRoot: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
@@ -2889,82 +3499,159 @@ const styles = StyleSheet.create({
     top: -80,
     width: 1,
     height: 320,
-    backgroundColor: 'rgba(14, 165, 233, 0.09)',
+    backgroundColor: 'rgba(14, 165, 233, 0.05)',
     transform: [{ rotate: '32deg' }],
   },
   topCardContent: {
     position: 'relative',
     zIndex: 2,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 24,
+    paddingVertical: 9,
+    paddingHorizontal: 15,
+    borderRadius: 20,
   },
-  routeInfoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  routeIndicator: { width: 16, height: 16, borderRadius: 8, marginRight: 12 },
-  routeDetails: { flex: 1 },
+  topCardContentNav: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  routeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 7,
+  },
+  routeInfoRowNav: {
+    marginBottom: 2,
+  },
+  routeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  routeTextStack: {
+    flex: 1,
+    minWidth: 0,
+  },
+  routeRowTrail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+    gap: 6,
+    marginLeft: 4,
+  },
   routeLabel: { fontSize: 13, color: '#666', fontWeight: '500' },
   routeValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   routeLabelModern: {
-    fontSize: 12,
-    color: '#0369A1',
-    fontWeight: '800',
-    letterSpacing: 2.8,
-    marginBottom: 4,
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginBottom: 1,
+    textTransform: 'uppercase',
+  },
+  routeLabelModernNav: {
+    fontSize: 8,
+    letterSpacing: 1,
+    marginBottom: 0,
   },
   routeValueModern: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#0C4A6E',
-    letterSpacing: 0.2,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: 0.15,
+    marginTop: 0,
   },
-  nearBadge: { backgroundColor: '#EA580C', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-  nearBadgeText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
+  routeValueModernNav: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  nearBadge: {
+    backgroundColor: '#EA580C',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  nearBadgeNav: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  nearBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
+  nearBadgeTextNav: { fontSize: 9 },
   offeredPriceBadge: {
     backgroundColor: '#0284C7',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 14,
-    marginLeft: 'auto',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    minWidth: 52,
+    alignItems: 'center',
+    borderRadius: 10,
     shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  offeredPriceBadgeNav: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    minWidth: 48,
+    borderRadius: 8,
   },
   offeredPriceText: {
     color: '#FFF',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
+  },
+  offeredPriceTextNav: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 6,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(14, 165, 233, 0.22)',
+    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(148, 163, 184, 0.45)',
   },
-  priceLabel: { fontSize: 13, fontWeight: '700', color: '#0369A1', letterSpacing: 1 },
-  priceValue: { fontSize: 24, fontWeight: '800', color: '#0EA5E9' },
+  priceRowNav: {
+    marginTop: 0,
+    paddingTop: 5,
+  },
+  priceLabel: { fontSize: 12, fontWeight: '700', color: '#64748B', letterSpacing: 0.6 },
+  priceLabelNav: { fontSize: 11 },
+  priceValue: { fontSize: 18, fontWeight: '800', color: '#0284C7' },
+  priceValueNav: { fontSize: 15 },
   paymentMethodPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     alignSelf: 'flex-start',
-    marginTop: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(14, 165, 233, 0.18)',
+    marginTop: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(241, 245, 249, 0.95)',
     borderWidth: 1,
-    borderColor: 'rgba(14, 165, 233, 0.35)',
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+  },
+  paymentMethodPillNav: {
+    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    gap: 5,
   },
   paymentMethodPillText: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontWeight: '700',
+    color: '#334155',
+  },
+  paymentMethodPillTextNav: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   passengerLiveBlock: {
