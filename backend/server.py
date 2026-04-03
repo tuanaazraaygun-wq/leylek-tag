@@ -4945,7 +4945,7 @@ async def get_driver_nearby_passengers_map(
         tag_res = (
             supabase.table("tags")
             .select(
-                "id, passenger_id, pickup_lat, pickup_lng, pickup_location, status, offered_price, created_at, "
+                "id, passenger_id, pickup_lat, pickup_lng, pickup_location, status, final_price, created_at, "
                 "users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)"
             )
             .in_("status", ["waiting", "pending", "offers_received"])
@@ -5000,7 +5000,7 @@ async def get_driver_nearby_passengers_map(
                     "status": tag.get("status"),
                     "distance_km": road_km,
                     "pickup_distance_km": road_km,
-                    "offered_price": tag.get("offered_price"),
+                    "offered_price": tag.get("final_price") or tag.get("offered_price"),
                     "label": label,
                 }
             )
@@ -5934,7 +5934,7 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
             logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
         
         # 🔔 PUSH NOTIFICATIONS - TRIP_COMPLETED (trip lifecycle)
-        tag_info = supabase.table("tags").select("final_price, offered_price, passenger_id, driver_id").eq("id", tag_id).execute()
+        tag_info = supabase.table("tags").select("final_price, passenger_id, driver_id").eq("id", tag_id).execute()
         if tag_info.data:
             tag_data = tag_info.data[0]
             price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
@@ -11513,7 +11513,7 @@ async def send_match_notification_to_both(tag_id: str, driver_id: str, passenger
     out = {"driver": False, "passenger": False}
     logger.info(f"📢 EŞLEŞME BİLDİRİMİ BAŞLADI: tag_id={tag_id}, driver_id={driver_id}, passenger_id={passenger_id}")
     try:
-        tag_row = supabase.table("tags").select("id, passenger_id, driver_id, pickup_lat, pickup_lng, final_price, offered_price").eq("id", tag_id).limit(1).execute()
+        tag_row = supabase.table("tags").select("id, passenger_id, driver_id, pickup_lat, pickup_lng, final_price").eq("id", tag_id).limit(1).execute()
         if not tag_row.data:
             logger.warning(f"🔔 Eşleşme bildirimi: tag bulunamadı {tag_id}")
             return out
