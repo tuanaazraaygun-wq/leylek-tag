@@ -193,6 +193,64 @@ function meetingEndpointsKey(dLat: number, dLng: number, pLat: number, pLng: num
   return `${dLat.toFixed(5)},${dLng.toFixed(5)}|${pLat.toFixed(5)},${pLng.toFixed(5)}`;
 }
 
+function haversineMeters(a: MapLatLng, b: MapLatLng): number {
+  const R = 6371000;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const la1 = (a.latitude * Math.PI) / 180;
+  const la2 = (b.latitude * Math.PI) / 180;
+  const sin1 = Math.sin(dLat / 2);
+  const sin2 = Math.sin(dLng / 2);
+  const h = sin1 * sin1 + Math.cos(la1) * Math.cos(la2) * sin2 * sin2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** Sürücü → yolcu düz mesafe (km) — uzun buluşmada tam polyline fit zoom’u öldürür */
+function straightLineKm(a: MapLatLng, b: MapLatLng): number {
+  return haversineMeters(a, b) / 1000;
+}
+
+function bearingDegrees(from: MapLatLng, to: MapLatLng): number {
+  const φ1 = (from.latitude * Math.PI) / 180;
+  const φ2 = (to.latitude * Math.PI) / 180;
+  const Δλ = ((to.longitude - from.longitude) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const θ = Math.atan2(y, x);
+  return ((θ * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Nav modu: tüm 10–20 km rotayı fit etmek yerine, sürücüye yakın ~3 km’lik segmenti göster.
+ * Böylece “yol tarifi” hissi (yakın zoom) korunur.
+ */
+function sliceMeetingRouteForNavFit(user: MapLatLng, route: MapLatLng[], aheadM: number): MapLatLng[] {
+  if (route.length < 2) return [user, ...route];
+  let bestI = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < route.length; i++) {
+    const d = haversineMeters(user, route[i]);
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+  const out: MapLatLng[] = [user];
+  let prev = user;
+  let acc = 0;
+  for (let i = bestI; i < route.length; i++) {
+    const step = haversineMeters(prev, route[i]);
+    acc += step;
+    if (acc > aheadM && out.length >= 2) break;
+    out.push(route[i]);
+    prev = route[i];
+  }
+  if (out.length < 2) {
+    out.push(route[Math.min(route.length - 1, bestI + 1)]);
+  }
+  return out;
+}
+
 /** NAV REFRESH: OSRM spam / flicker önleme — en az ms aralık */
 const NAV_REFRESH_OSRM_MIN_MS = 3000;
 
@@ -421,28 +479,47 @@ export default function LiveMapView({
 
   /**
    * Nav modunda: pitch/heading ile araç içi görünüm.
-   * Her GPS tick'te animateCamera(center=user) fitToCoordinates görünümünü bozar; yalnızca seyrek güncelle.
+   * followsUserLocation kapalı; fit slice sonrası bu kamera “yol tarifi” hissini verir.
    */
   useEffect(() => {
-    if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
+    if (
+      Platform.OS === 'web' ||
+      !isDriver ||
+      !navigationMode ||
+      !userLocation ||
+      !otherLocation ||
+      !mapRef.current
+    ) {
       return;
     }
     const now = Date.now();
-    if (now - lastNavCameraAtRef.current < 4500) return;
+    if (now - lastNavCameraAtRef.current < 2200) return;
     lastNavCameraAtRef.current = now;
+    const h = navHeadingRef.current;
+    const heading =
+      typeof h === 'number' && Number.isFinite(h) && h >= 0
+        ? h
+        : bearingDegrees(userLocation, otherLocation);
     const t = setTimeout(() => {
       mapRef.current?.animateCamera(
         {
           center: userLocation,
-          pitch: 50,
-          heading: navHeadingRef.current,
-          zoom: 17.5,
+          pitch: 54,
+          heading,
+          zoom: 17.9,
         },
         { duration: 550 },
       );
     }, 120);
     return () => clearTimeout(t);
-  }, [isDriver, navigationMode, userLocation?.latitude, userLocation?.longitude]);
+  }, [
+    isDriver,
+    navigationMode,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+  ]);
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -816,10 +893,19 @@ export default function LiveMapView({
   const fitNavigationViewport = useCallback(
     (routeCoords?: MapLatLng[] | null) => {
       if (!mapRef.current || !userLocation || !otherLocation) return;
-      const coords: MapLatLng[] =
-        routeCoords && routeCoords.length >= 2 ? [...routeCoords] : [userLocation, otherLocation];
-      // Sürücü "Yolcuya Git": yalnızca buluşma rotasını oturt; trip hedefi km uzaktaysa tüm zoom bozulur
       const navMeetingOnly = isDriver && navigationMode;
+      const fullRoute =
+        routeCoords && routeCoords.length >= 2 ? routeCoords : [userLocation, otherLocation];
+      let coords: MapLatLng[] = [...fullRoute];
+      // Uzun buluşmada tüm polyline’ı fit etmek şehir zoom’una indirir — yalnızca sürücü önü ~3.4 km
+      if (
+        navMeetingOnly &&
+        routeCoords &&
+        routeCoords.length >= 4 &&
+        straightLineKm(userLocation, otherLocation) >= 2.2
+      ) {
+        coords = sliceMeetingRouteForNavFit(userLocation, routeCoords, 3400);
+      }
       if (destinationLocation && !navMeetingOnly) {
         const last = coords[coords.length - 1];
         const d = destinationLocation;
@@ -830,9 +916,8 @@ export default function LiveMapView({
           coords.push(destinationLocation);
         }
       }
-      // Üst bilgi paneli + alt butonlar için asimetrik padding — rota görünür alanın orta bandında
       const edgePadding = navMeetingOnly
-        ? { top: 300, right: 40, bottom: 340, left: 40 }
+        ? { top: 260, right: 36, bottom: 300, left: 36 }
         : { top: 120, right: 50, bottom: 350, left: 50 };
       mapRef.current.fitToCoordinates(coords, {
         edgePadding,
@@ -863,6 +948,15 @@ export default function LiveMapView({
     setTimeout(() => {
       setMeetingRouteCoordinates(coords);
     }, 150);
+    setTimeout(() => {
+      if (!navigationModeRef.current || !mapRef.current || !userLocation || !otherLocation) return;
+      const head = bearingDegrees(userLocation, otherLocation);
+      mapRef.current.animateCamera(
+        { center: userLocation, pitch: 54, heading: head, zoom: 17.95 },
+        { duration: 520 },
+      );
+      lastNavCameraAtRef.current = Date.now();
+    }, 420);
   }, [isDriver, userLocation, otherLocation, fitNavigationViewport]);
 
   useEffect(() => {
@@ -1060,11 +1154,7 @@ export default function LiveMapView({
       {MapView ? (
         <View style={styles.mapSlot}>
         <MapView
-          key={
-            isDriver
-              ? `nav-${navigationMode}-${meetingRouteCoordinates?.length ?? 0}`
-              : 'map-default'
-          }
+          key={isDriver ? `driver-map-${String(tagId ?? 'active')}` : 'map-default'}
           ref={mapRef}
           style={styles.map}
           provider={PROVIDER_GOOGLE}
@@ -1080,7 +1170,7 @@ export default function LiveMapView({
               ? { top: 270, right: 12, bottom: 300, left: 12 }
               : { top: 200, right: 14, bottom: 268, left: 14 }
           }
-          followsUserLocation={driverNavActive}
+          followsUserLocation={false}
           showsUserLocation={driverNavActive}
           showsMyLocationButton={false}
           showsCompass={false}
@@ -1348,7 +1438,25 @@ export default function LiveMapView({
                       void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
                     }
                   } else {
-                    void loadDriverNavMeetingRouteRef.current();
+                    lastNavCameraAtRef.current = 0;
+                    void (async () => {
+                      await loadDriverNavMeetingRouteRef.current();
+                      const u = userLocation;
+                      const o = otherLocation;
+                      if (!mapRef.current || !u || !o) return;
+                      setTimeout(() => {
+                        mapRef.current?.animateCamera(
+                          {
+                            center: u,
+                            pitch: 54,
+                            heading: bearingDegrees(u, o),
+                            zoom: 17.95,
+                          },
+                          { duration: 480 },
+                        );
+                        lastNavCameraAtRef.current = Date.now();
+                      }, 200);
+                    })();
                   }
                 }}
                 activeOpacity={0.7}
