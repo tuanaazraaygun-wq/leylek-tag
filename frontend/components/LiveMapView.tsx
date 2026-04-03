@@ -419,25 +419,28 @@ export default function LiveMapView({
     };
   }, [isDriver, navigationMode]);
 
-  /** Nav modunda: 3D takip kamerası (pitch + heading + zoom) */
+  /**
+   * Nav modunda: pitch/heading ile araç içi görünüm.
+   * Her GPS tick'te animateCamera(center=user) fitToCoordinates görünümünü bozar; yalnızca seyrek güncelle.
+   */
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
       return;
     }
     const now = Date.now();
-    if (now - lastNavCameraAtRef.current < 500) return;
+    if (now - lastNavCameraAtRef.current < 4500) return;
     lastNavCameraAtRef.current = now;
     const t = setTimeout(() => {
       mapRef.current?.animateCamera(
         {
           center: userLocation,
-          pitch: 45,
+          pitch: 50,
           heading: navHeadingRef.current,
-          zoom: 16,
+          zoom: 17.5,
         },
-        { duration: 400 },
+        { duration: 550 },
       );
-    }, 80);
+    }, 120);
     return () => clearTimeout(t);
   }, [isDriver, navigationMode, userLocation?.latitude, userLocation?.longitude]);
   
@@ -815,7 +818,9 @@ export default function LiveMapView({
       if (!mapRef.current || !userLocation || !otherLocation) return;
       const coords: MapLatLng[] =
         routeCoords && routeCoords.length >= 2 ? [...routeCoords] : [userLocation, otherLocation];
-      if (destinationLocation) {
+      // Sürücü "Yolcuya Git": yalnızca buluşma rotasını oturt; trip hedefi km uzaktaysa tüm zoom bozulur
+      const navMeetingOnly = isDriver && navigationMode;
+      if (destinationLocation && !navMeetingOnly) {
         const last = coords[coords.length - 1];
         const d = destinationLocation;
         const same =
@@ -825,12 +830,16 @@ export default function LiveMapView({
           coords.push(destinationLocation);
         }
       }
+      // Üst bilgi paneli + alt butonlar için asimetrik padding — rota görünür alanın orta bandında
+      const edgePadding = navMeetingOnly
+        ? { top: 300, right: 40, bottom: 340, left: 40 }
+        : { top: 120, right: 50, bottom: 350, left: 50 };
       mapRef.current.fitToCoordinates(coords, {
-        edgePadding: { top: 120, right: 50, bottom: 350, left: 50 },
+        edgePadding,
         animated: true,
       });
     },
-    [userLocation, otherLocation, destinationLocation],
+    [userLocation, otherLocation, destinationLocation, isDriver, navigationMode],
   );
 
   const loadDriverNavMeetingRoute = useCallback(async () => {
@@ -1066,7 +1075,11 @@ export default function LiveMapView({
             longitudeDelta: 0.01,
           }}
           onMapReady={onDriverNavMapReady}
-          mapPadding={{ top: 200, right: 14, bottom: 268, left: 14 }}
+          mapPadding={
+            driverNavActive
+              ? { top: 270, right: 12, bottom: 300, left: 12 }
+              : { top: 200, right: 14, bottom: 268, left: 14 }
+          }
           followsUserLocation={driverNavActive}
           showsUserLocation={driverNavActive}
           showsMyLocationButton={false}

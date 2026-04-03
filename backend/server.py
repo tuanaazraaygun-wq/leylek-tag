@@ -4413,6 +4413,9 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
             # TAG'e driver_location ekle
             tag["driver_location"] = driver_location
             await _enrich_tag_trip_distance_if_missing(tag)
+            # Yolcu ekranı: sürücü→pickup buluşma km/dk (sürücü active-trip ile aynı kaynak)
+            if tag.get("driver_id"):
+                await _enrich_tag_pickup_from_driver_if_missing(tag, tag["driver_id"])
 
             return {"success": True, "tag": tag}
         
