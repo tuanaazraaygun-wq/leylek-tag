@@ -5467,10 +5467,11 @@ async def driver_accept_offer_http(
         }
 
         matchable_statuses = ["waiting", "offers_received", "pending"]
+        # postgrest-py 2.x: update() sonrası .select() yok (SyncFilterRequestBuilder).
+        # Varsayılan Prefer: return=representation ile güncellenen satır( lar) ur.data içinde gelir.
         ur = (
             supabase.table("tags")
             .update(update_data)
-            .select("*")
             .eq("id", tid)
             .in_("status", matchable_statuses)
             .execute()
@@ -9697,12 +9698,12 @@ async def handle_driver_accept_offer(sid, data):
             "driver_name": driver_name,
             "matched_at": datetime.now(timezone.utc).isoformat(),
         }
-        supabase.table("tags").update(_upd_body).select("*").eq("id", tid).execute()
+        supabase.table("tags").update(_upd_body).eq("id", tid).execute()
         # Orijinal tag_id farklı biçimdeyse (UUID büyük/küçük harf) bir kez daha dene
         if str(tag_id).strip() != tid:
             alt = str(tag_id).strip()
             print("RETRY UPDATE with alt id:", alt)
-            supabase.table("tags").update(_upd_body).select("*").eq("id", alt).execute()
+            supabase.table("tags").update(_upd_body).eq("id", alt).execute()
         logger.info(
             f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id}"
         )
@@ -10639,13 +10640,13 @@ async def accept_ride(tag_id: str, driver_id: str):
             passenger_name = "Yolcu"
         
         # Atomik güncelleme - sadece status='waiting' ise güncelle
-        # .select("*") zorunlu: aksi halde update_result.data boş kalır (PostgREST)
+        # postgrest-py 2.x: update().select() kullanılamaz; return=representation varsayılan → data dolu
         update_result = supabase.table("tags").update({
             "status": "matched",
             "driver_id": resolved_driver_id,
             "driver_name": driver_name,
             "matched_at": datetime.utcnow().isoformat()
-        }).select("*").eq("id", tag_id).eq("status", "waiting").execute()
+        }).eq("id", tag_id).eq("status", "waiting").execute()
         
         if not update_result.data:
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
