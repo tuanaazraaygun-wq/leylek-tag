@@ -2404,6 +2404,42 @@ async def _enrich_tag_trip_distance_if_missing(tag: dict) -> None:
         pass
 
 
+async def _enrich_tag_pickup_from_driver_if_missing(tag: dict, driver_id: str) -> None:
+    """Sürücü→pickup buluşma km/dk yoksa users konumu ile doldur (aktif trip yanıtı / harita kartı)."""
+    try:
+        if not driver_id:
+            return
+        plat, plng = tag.get("pickup_lat"), tag.get("pickup_lng")
+        if plat is None or plng is None:
+            return
+        pk = tag.get("pickup_distance_km")
+        try:
+            if pk is not None and float(pk) > 0 and tag.get("pickup_eta_min") is not None:
+                return
+        except (TypeError, ValueError):
+            pass
+        resolved = await resolve_user_id(str(driver_id).strip())
+        udrv = (
+            supabase.table("users")
+            .select("latitude, longitude")
+            .eq("id", resolved)
+            .limit(1)
+            .execute()
+        )
+        if not udrv.data:
+            return
+        dlat = udrv.data[0].get("latitude")
+        dlng = udrv.data[0].get("longitude")
+        if dlat is None or dlng is None:
+            return
+        ri = await get_route_info(float(dlat), float(dlng), float(plat), float(plng))
+        if ri:
+            tag["pickup_distance_km"] = float(ri["distance_km"])
+            tag["pickup_eta_min"] = int(max(0, round(float(ri["duration_min"]))))
+    except Exception:
+        pass
+
+
 # ==================== AUTH ENDPOINTS ====================
 
 # Pydantic modelleri
@@ -5528,7 +5564,9 @@ async def driver_accept_offer_http(
             "distance_km": trip_dk,
             "trip_distance_km": trip_dk,
             "pickup_distance_km": pickup_distance_km,
+            "pickup_eta_min": pickup_eta_min,
             "estimated_minutes": est_min,
+            "trip_duration_min": est_min,
             "status": "matched",
             "matched_at": updated_tag.get("matched_at") or matched_at,
             "passenger_payment_method": updated_tag.get("passenger_payment_method"),
@@ -5589,6 +5627,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
             tag = result.data[0]
             # Tam tag satırı: pickup–dropoff yol km eksikse hesapla (sürücü haritası routeInfo için şart)
             await _enrich_tag_trip_distance_if_missing(tag)
+            await _enrich_tag_pickup_from_driver_if_missing(tag, resolved_id)
             passenger_info = tag.get("users", {}) or {}
             
             # Yolcu konumu
@@ -5609,6 +5648,16 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 em_i = int(round(float(em))) if em is not None else None
             except (TypeError, ValueError):
                 em_i = None
+            pickup_km = tag.get("pickup_distance_km")
+            pickup_min = tag.get("pickup_eta_min")
+            try:
+                pickup_km_f = float(pickup_km) if pickup_km is not None else None
+            except (TypeError, ValueError):
+                pickup_km_f = None
+            try:
+                pickup_min_i = int(round(float(pickup_min))) if pickup_min is not None else None
+            except (TypeError, ValueError):
+                pickup_min_i = None
             fp = tag.get("final_price")
             try:
                 fp_f = float(fp) if fp is not None else None
@@ -5636,6 +5685,8 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "estimated_minutes": em_i,
                 "trip_distance_km": dk_f,
                 "trip_duration_min": em_i,
+                "pickup_distance_km": pickup_km_f,
+                "pickup_eta_min": pickup_min_i,
                 "passenger_preferred_vehicle": tag.get("passenger_preferred_vehicle"),
                 "passenger_payment_method": tag.get("passenger_payment_method"),
             }
@@ -9646,12 +9697,12 @@ async def handle_driver_accept_offer(sid, data):
             "driver_name": driver_name,
             "matched_at": datetime.now(timezone.utc).isoformat(),
         }
-        supabase.table("tags").update(_upd_body).eq("id", tid).execute()
+        supabase.table("tags").update(_upd_body).select("*").eq("id", tid).execute()
         # Orijinal tag_id farklı biçimdeyse (UUID büyük/küçük harf) bir kez daha dene
         if str(tag_id).strip() != tid:
             alt = str(tag_id).strip()
             print("RETRY UPDATE with alt id:", alt)
-            supabase.table("tags").update(_upd_body).eq("id", alt).execute()
+            supabase.table("tags").update(_upd_body).select("*").eq("id", alt).execute()
         logger.info(
             f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id}"
         )
@@ -9748,7 +9799,34 @@ async def handle_driver_accept_offer(sid, data):
                     logger.info("PUSH PASSENGER SENT (retry by phone)")
             logger.info("PUSH PASSENGER SENT" if push_p_ok else "PUSH PASSENGER FAILED")
 
+        pickup_distance_km = None
+        pickup_eta_min = None
+        try:
+            udrv_sock = (
+                supabase.table("users")
+                .select("latitude, longitude")
+                .eq("id", resolved_driver_id)
+                .limit(1)
+                .execute()
+            )
+            plat_s, plng_s = tag.get("pickup_lat"), tag.get("pickup_lng")
+            if udrv_sock.data and plat_s is not None and plng_s is not None:
+                dlat_s, dlng_s = udrv_sock.data[0].get("latitude"), udrv_sock.data[0].get(
+                    "longitude"
+                )
+                if dlat_s is not None and dlng_s is not None:
+                    ri_sock = await get_route_info(
+                        float(dlat_s), float(dlng_s), float(plat_s), float(plng_s)
+                    )
+                    if ri_sock:
+                        pickup_distance_km = float(ri_sock["distance_km"])
+                        pickup_eta_min = int(ri_sock["duration_min"])
+        except Exception as _pks:
+            logger.warning(f"driver_accept_offer pickup_distance: {_pks}")
+
         matched_at = datetime.utcnow().isoformat()
+        trip_dk_sock = tag.get("distance_km")
+        est_min_sock = tag.get("estimated_minutes")
         payload = {
             "trip_id": trip_id,
             "tag_id": tid,
@@ -9764,8 +9842,12 @@ async def handle_driver_accept_offer(sid, data):
             "dropoff_lng": tag.get("dropoff_lng"),
             "offered_price": tag.get("offered_price") or tag.get("final_price"),
             "final_price": tag.get("final_price"),
-            "distance_km": tag.get("distance_km"),
-            "estimated_minutes": tag.get("estimated_minutes"),
+            "distance_km": trip_dk_sock,
+            "trip_distance_km": trip_dk_sock,
+            "estimated_minutes": est_min_sock,
+            "trip_duration_min": est_min_sock,
+            "pickup_distance_km": pickup_distance_km,
+            "pickup_eta_min": pickup_eta_min,
             "status": "matched",
             "matched_at": matched_at,
             "passenger_payment_method": tag.get("passenger_payment_method"),

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dim
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapButtonHaptic } from '../utils/touchHaptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
 
@@ -350,6 +351,10 @@ export default function LiveMapView({
     navigationModeRef.current = navigationMode;
   }, [navigationMode]);
 
+  /** Sürücü gerçek navigasyon: harita kamerası heading (pusula) */
+  const navHeadingRef = useRef(0);
+  const lastNavCameraAtRef = useRef(0);
+
   /** Sürücü navigasyonu kapatınca buluşma polyline’ını kaldır (yolcu ekranı etkilenmez) */
   useEffect(() => {
     if (!navigationMode && isDriver) {
@@ -391,6 +396,50 @@ export default function LiveMapView({
     if (!isDriver) return;
     onNavigationModeChange?.(navigationMode);
   }, [isDriver, navigationMode, onNavigationModeChange]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isDriver || !navigationMode) return;
+    let sub: Location.LocationSubscription | undefined;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status !== 'granted') {
+          await Location.requestForegroundPermissionsAsync();
+        }
+        sub = await Location.watchHeadingAsync((h) => {
+          const deg = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          if (Number.isFinite(deg)) navHeadingRef.current = deg;
+        });
+      } catch {
+        /* heading opsiyonel */
+      }
+    })();
+    return () => {
+      sub?.remove();
+    };
+  }, [isDriver, navigationMode]);
+
+  /** Nav modunda: 3D takip kamerası (pitch + heading + zoom) */
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastNavCameraAtRef.current < 500) return;
+    lastNavCameraAtRef.current = now;
+    const t = setTimeout(() => {
+      mapRef.current?.animateCamera(
+        {
+          center: userLocation,
+          pitch: 45,
+          heading: navHeadingRef.current,
+          zoom: 16,
+        },
+        { duration: 400 },
+      );
+    }, 80);
+    return () => clearTimeout(t);
+  }, [isDriver, navigationMode, userLocation?.latitude, userLocation?.longitude]);
   
   // 🔥 YANIP SÖNEN BUTON ANİMASYONU
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -777,7 +826,7 @@ export default function LiveMapView({
         }
       }
       mapRef.current.fitToCoordinates(coords, {
-        edgePadding: { top: 240, right: 48, bottom: 300, left: 48 },
+        edgePadding: { top: 120, right: 50, bottom: 350, left: 50 },
         animated: true,
       });
     },
@@ -974,6 +1023,8 @@ export default function LiveMapView({
     );
   }
 
+  const driverNavActive = isDriver && navigationMode;
+
   return (
     <View style={styles.container}>
       {/* 🆕 BULUTLU ARKAPLAN - Sadece üst kısım */}
@@ -1011,18 +1062,19 @@ export default function LiveMapView({
           initialRegion={{
             latitude: userLocation?.latitude || 39.9334,
             longitude: userLocation?.longitude || 32.8597,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
           }}
           onMapReady={onDriverNavMapReady}
           mapPadding={{ top: 200, right: 14, bottom: 268, left: 14 }}
-          showsUserLocation={false}
+          followsUserLocation={driverNavActive}
+          showsUserLocation={driverNavActive}
           showsMyLocationButton={false}
           showsCompass={false}
           scrollEnabled={true}
           zoomEnabled={true}
-          rotateEnabled={false}
-          pitchEnabled={false}
+          rotateEnabled={driverNavActive}
+          pitchEnabled={driverNavActive}
           minZoomLevel={4}
           maxZoomLevel={22}
           customMapStyle={mapStyle}
@@ -1062,8 +1114,8 @@ export default function LiveMapView({
             />
           )}
 
-          {/* BEN - Profesyonel Marker */}
-          {userLocation && (
+          {/* BEN — nav modunda mavi konum noktası kullanılır; çift marker önlenir */}
+          {userLocation && !driverNavActive && (
             <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.9 }}>
               <View style={styles.proMarkerContainer}>
                 <View style={[styles.proMarkerHead, { backgroundColor: themeColor }]}>
