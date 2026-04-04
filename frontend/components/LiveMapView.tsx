@@ -567,29 +567,11 @@ function zoomTargetForSpeedMps(speedMps: number | null | undefined): number {
 }
 
 /**
- * Gidiş yönünde kamera merkezini ileri alır; pitch + heading ile araç noktası ekranda ~alt 1/3 bandına kayar.
+ * Nav kamera hedef merkezi — araç konumu ile aynı; ileri ofset araç ikonunu ekran dışına (alt band) kaçırıyordu.
+ * Pitch + heading ile yol önde kalır, marker haritada ortada görünür.
  */
-function offsetCameraCenterForward(from: MapLatLng, bearingDeg: number, remainKm: number): MapLatLng {
-  /** +70 m ileri (araç ~ekran alt %25, yol ortada) */
-  let forwardM = 175 + 70;
-  if (remainKm > 5) forwardM = 260 + 70;
-  else if (remainKm >= 1) forwardM = 205 + 70;
-  else forwardM = 142 + 70;
-  const R = 6378137;
-  const brng = (bearingDeg * Math.PI) / 180;
-  const lat1 = (from.latitude * Math.PI) / 180;
-  const lng1 = (from.longitude * Math.PI) / 180;
-  const ang = forwardM / R;
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(ang) + Math.cos(lat1) * Math.sin(ang) * Math.cos(brng),
-  );
-  const lng2 =
-    lng1 +
-    Math.atan2(
-      Math.sin(brng) * Math.sin(ang) * Math.cos(lat1),
-      Math.cos(ang) - Math.sin(lat1) * Math.sin(lat2),
-    );
-  return { latitude: (lat2 * 180) / Math.PI, longitude: (lng2 * 180) / Math.PI };
+function offsetCameraCenterForward(from: MapLatLng, _bearingDeg: number, _remainKm: number): MapLatLng {
+  return { latitude: from.latitude, longitude: from.longitude };
 }
 
 function meetingEndpointsKey(dLat: number, dLng: number, pLat: number, pLng: number): string {
@@ -2314,7 +2296,7 @@ export default function LiveMapView({
                 ? { top: 270, right: 12, bottom: 300, left: 12 }
                 : { top: 200, right: 14, bottom: 268, left: 14 }
           }
-          followsUserLocation={driverNavActive}
+          followsUserLocation={false}
           showsUserLocation={false}
           showsMyLocationButton={false}
           showsCompass={false}
@@ -2450,6 +2432,7 @@ export default function LiveMapView({
               flat={true}
               rotation={navHeadingUi}
               tracksViewChanges={false}
+              zIndex={2000}
             >
               <View style={styles.driverNavVehicleMark}>
                 {passMotor ? (
