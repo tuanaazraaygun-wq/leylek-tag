@@ -390,14 +390,14 @@ function RequestCard({
               }
               Alert.alert('Eşleşme olmadı', errMsg);
               console.warn('[driver/accept-offer] socket yedek denemesi');
-              socket.emit('driver_accept_offer', {
+              socket?.emit('driver_accept_offer', {
                 tag_id: tagIdForAccept,
                 driver_id: userId,
               });
             } catch (e) {
               console.error('[driver/accept-offer] fetch', e);
               Alert.alert('Hata', 'Bağlantı hatası; socket ile deneniyor.');
-              socket.emit('driver_accept_offer', {
+              socket?.emit('driver_accept_offer', {
                 tag_id: tagIdForAccept,
                 driver_id: userId,
               });
@@ -505,7 +505,7 @@ export default function DriverOfferScreen({
   playTapSound,
   onDismissRequest,
   onBack,
-  onLogout,
+  onLogout: _onLogout,
   vehicleKind = 'car',
   embedded = false,
   onDriverAcceptMatch,
@@ -820,27 +820,29 @@ export default function DriverOfferScreen({
     );
   };
 
+  const displayRating = driverRating != null ? driverRating.toFixed(1) : '4.0';
+
   const body = (
     <>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
-          <Text style={styles.headerSubtitle}>⭐ {driverRating != null ? driverRating.toFixed(1) : '4.0'}</Text>
-        </View>
-        <TouchableOpacity onPress={onLogout} style={styles.logoutBtn}>
-          <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Harita — gerçek Google Haritalar; üst metinler kaldırıldı */}
       <View style={[styles.mapContainer, styles.mapContainerSolid, { height: mapSectionHeight }]}>
         {renderMap()}
+        <View style={styles.mapTopOverlay} pointerEvents="box-none">
+          <TouchableOpacity onPress={onBack} style={styles.mapBackFab} accessibilityRole="button">
+            <Ionicons name="chevron-back" size={26} color="#0F172A" />
+          </TouchableOpacity>
+          <View style={styles.mapNameCardWrap} pointerEvents="none">
+            <View style={styles.mapNameCard}>
+              <Text style={styles.mapNameText}>{driverName?.split(' ')[0] || 'Sürücü'}</Text>
+              <View style={styles.mapRatingRow}>
+                <Ionicons name="star" size={15} color="#F59E0B" />
+                <Text style={styles.mapRatingText}>{displayRating}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.mapTopSpacer} />
+        </View>
         <View style={styles.mapHud} pointerEvents="none">
-          <Ionicons name="radar" size={14} color="#0F172A" style={{ marginRight: 6 }} />
+          <Ionicons name="radio-outline" size={14} color="#0F172A" style={{ marginRight: 6 }} />
           <Text style={styles.mapHudText}>
             Talep {mapHud.seeking} · {mapHud.radius} km
           </Text>
@@ -919,35 +921,69 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   
-  // Header
-  header: {
+  mapTopOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 8,
+    paddingHorizontal: 8,
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    zIndex: 6,
+  },
+  mapBackFab: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  backBtn: {
-    padding: 8,
+  mapTopSpacer: {
+    width: 42,
+    height: 42,
   },
-  headerCenter: {
+  mapNameCardWrap: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 6,
   },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
+  mapNameCard: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(15, 23, 42, 0.1)',
+    maxWidth: SCREEN_WIDTH * 0.62,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
+  mapNameText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  mapRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 2,
+    gap: 4,
   },
-  logoutBtn: {
-    padding: 8,
+  mapRatingText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 
   // Map (yükseklik runtime'da mapSectionHeight ile verilir)
@@ -969,7 +1005,7 @@ const styles = StyleSheet.create({
   },
   mapHud: {
     position: 'absolute',
-    top: 10,
+    bottom: 10,
     left: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -977,7 +1013,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
-    maxWidth: '90%',
+    maxWidth: '88%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.12,
@@ -1171,7 +1207,7 @@ const styles = StyleSheet.create({
   },
   listHeader: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 8,
     backgroundColor: 'rgba(13, 27, 42, 0.85)',
   },
@@ -1187,7 +1223,8 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingTop: 4,
+    paddingBottom: 28,
   },
   emptyState: {
     flex: 1,
@@ -1399,7 +1436,7 @@ const styles = StyleSheet.create({
   dismissButton: {
     flex: 1,
     backgroundColor: '#F1F5F9',
-    paddingVertical: 14,
+    paddingVertical: 17,
     borderRadius: 12,
     alignItems: 'center',
   },
@@ -1411,9 +1448,11 @@ const styles = StyleSheet.create({
   acceptButton: {
     flex: 2,
     backgroundColor: COLORS.primary,
-    paddingVertical: 14,
+    paddingVertical: 17,
+    minHeight: 52,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   acceptButtonDisabled: {
     backgroundColor: '#CBD5E1',

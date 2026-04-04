@@ -567,16 +567,57 @@ function zoomTargetForSpeedMps(speedMps: number | null | undefined): number {
 }
 
 /**
- * Nav kamera hedef merkezi — araç konumu ile aynı; ileri ofset araç ikonunu ekran dışına (alt band) kaçırıyordu.
- * Pitch + heading ile yol önde kalır, marker haritada ortada görünür.
+ * Hız / pitch uyumu: yavaşta daha az eğim, hızlıda önde daha fazla yol.
  */
-function offsetCameraCenterForward(from: MapLatLng, _bearingDeg: number, _remainKm: number): MapLatLng {
-  return { latitude: from.latitude, longitude: from.longitude };
+function navPitchForSpeedMps(speedMps: number | null | undefined): number {
+  const s =
+    typeof speedMps === 'number' && speedMps >= 0 && Number.isFinite(speedMps) ? speedMps : 0;
+  if (s < 0.8) return 62;
+  if (s < 5) return 65;
+  if (s < 12) return 68;
+  if (s < 22) return 69;
+  return 71;
+}
+
+/**
+ * Kamera merkezi = araçtan ileri (yol ekseni); marker userLocation’da kalır → ekranda alt bantta “sabit” görünür.
+ * zoom yüksek (yakın) iken ileri mesafe kısaltılır; taşma / titreme azalır.
+ */
+function offsetCameraCenterForward(
+  from: MapLatLng,
+  bearingDeg: number,
+  remainKm: number,
+  zoom: number,
+): MapLatLng {
+  let forwardM = 255;
+  if (remainKm > 5) forwardM = 328;
+  else if (remainKm >= 1) forwardM = 285;
+  else forwardM = 242;
+  const z = Number.isFinite(zoom) ? Math.max(14.8, Math.min(18.5, zoom)) : 16.5;
+  forwardM *= Math.min(1.1, Math.max(0.88, 17 / z));
+  const R = 6378137;
+  const brng = (bearingDeg * Math.PI) / 180;
+  const lat1 = (from.latitude * Math.PI) / 180;
+  const lng1 = (from.longitude * Math.PI) / 180;
+  const ang = forwardM / R;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(ang) + Math.cos(lat1) * Math.sin(ang) * Math.cos(brng),
+  );
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(brng) * Math.sin(ang) * Math.cos(lat1),
+      Math.cos(ang) - Math.sin(lat1) * Math.sin(lat2),
+    );
+  return { latitude: (lat2 * 180) / Math.PI, longitude: (lng2 * 180) / Math.PI };
 }
 
 function meetingEndpointsKey(dLat: number, dLng: number, pLat: number, pLng: number): string {
   return `${dLat.toFixed(5)},${dLng.toFixed(5)}|${pLat.toFixed(5)},${pLng.toFixed(5)}`;
 }
+
+/** Karşı taraf çok yakınsa arama gereksiz — çağrıyı engelle (metre) */
+const PROXIMITY_CALL_BLOCK_M = 100;
 
 function haversineMeters(a: MapLatLng, b: MapLatLng): number {
   const R = 6371000;
@@ -646,7 +687,7 @@ function lerpLatLng(a: MapLatLng, b: MapLatLng, t: number): MapLatLng {
   };
 }
 
-const NAV_CAMERA_THROTTLE_MS = 80;
+const NAV_CAMERA_THROTTLE_MS = 72;
 const NAV_CAMERA_MIN_MOVE_M = 8;
 const NAV_CAMERA_MIN_HEADING_DEG = 5;
 /** GPS gürültüsünde <5 m adımda kamera animasyonu yok (yalnız marker) */
@@ -656,9 +697,13 @@ const NAV_CAMERA_ANIM_MS = 460;
 const NAV_CAMERA_STATIONARY_SPEED_MPS = 1.25;
 const NAV_CAMERA_STATIONARY_HEADING_DEG = 8;
 const NAV_CAMERA_HEADING_ONLY_MS = 260;
-const NAV_CENTER_LERP_HEADING_ONLY = 0.65;
-const NAV_CENTER_LERP_FULL = 0.8;
-const NAV_PITCH = 68;
+const NAV_CENTER_LERP_HEADING_ONLY = 0.66;
+const NAV_CENTER_LERP_FULL = 0.84;
+/** Mikro GPS / heading gürültüsü — çok agresif olursa araç ekranda zıplar */
+const NAV_JITTER_MAX_STEP_M = 0.55;
+const NAV_JITTER_MAX_HEADING_DEG = 1.45;
+const NAV_JITTER_MIN_CENTER_MOVE_M = 0.38;
+const NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG = 0.95;
 const NAV_HEADING_PULSE_MIN_MS = 100;
 const NAV_ZOOM_SMOOTH = 0.18;
 /** Manevra mesafe anonsları arası minimum süre (ms) */
@@ -726,9 +771,9 @@ function NavManeuverArrowIcon({ kind, size = 56 }: { kind: ManeuverArrowKind; si
     case 'slight_left':
       return <MaterialCommunityIcons name="arrow-top-left" size={size} color={green} />;
     case 'uturn':
-      return <MaterialCommunityIcons name="u-turn-left" size={size} color={green} />;
+      return <MaterialCommunityIcons name={'u-turn-left' as any} size={size} color={green} />;
     case 'roundabout':
-      return <MaterialCommunityIcons name="roundabout" size={size} color={green} />;
+      return <MaterialCommunityIcons name={'rotate-right' as any} size={size} color={green} />;
     case 'merge':
       return <MaterialCommunityIcons name="call-merge" size={size} color={green} />;
     case 'fork':
@@ -1158,8 +1203,8 @@ export default function LiveMapView({
   }, [isDriver, navigationMode]);
 
   /**
-   * Sürücü navigasyon: merkez + heading aynı karede; lerp → ref → animateCamera.
-   * Sadece dönüş (center oynamadan) yasak; mikro GPS gürültüsü + 80ms throttle.
+   * Follow-car: kamera merkezi offsetCameraCenterForward (araç değil); marker userLocation + smoothHeading.
+   * Tek animateCamera çağrısı: centerAfterLerp + heading + pitch(hız) + zoom; jitter/throttle ile sıçrama azaltılır.
    */
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
@@ -1197,13 +1242,16 @@ export default function LiveMapView({
       (typeof speedMpsEarly === 'number' && speedMpsEarly >= 0 && speedMpsEarly < NAV_CAMERA_STATIONARY_SPEED_MPS) ||
       ((speedMpsEarly == null || speedMpsEarly < 0) && stepMovedM < 1.2);
 
-    const headingBlend = isLowSpeedEarly
+    let headingBlend = isLowSpeedEarly
       ? 0.14
       : stepMovedM < NAV_MARKER_ONLY_MOVE_M
         ? 0.2
         : stepMovedM < 2
           ? 0.26
           : 0.4;
+    if (stepMovedM < 0.6) {
+      headingBlend *= 0.55;
+    }
 
     const prevSmoothHeadingForDiff = navSmoothHeadingRef.current;
     const smoothHeading =
@@ -1222,22 +1270,21 @@ export default function LiveMapView({
       prevRemainKm == null || !Number.isFinite(prevRemainKm) || Math.abs(remainKm - prevRemainKm) >= 0.001;
     navRemainKmRef.current = remainKm;
 
-    if (
-      navCamInitializedRef.current &&
-      !maneuverChanged &&
-      stepMovedM < 1 &&
-      headingDiffDeg < 2 &&
-      !remainChanged
-    ) {
-      return;
-    }
-
     const speedMps = navGpsSpeedMpsRef.current;
     const isMoving =
-      stepMovedM >= 1 ||
+      stepMovedM >= 1.2 ||
       (typeof speedMps === 'number' && speedMps >= 0 && speedMps >= NAV_CAMERA_STATIONARY_SPEED_MPS);
 
-    const targetCenter = offsetCameraCenterForward(userLocation, smoothHeading, remainKm);
+    const zoomTargetSpeed = clampNavZoom(zoomTargetForSpeedMps(speedMps));
+    navSmoothZoomRef.current = smoothZoomToward(navSmoothZoomRef.current, zoomTargetSpeed);
+    const zoomRaw =
+      navSmoothZoomRef.current != null && Number.isFinite(navSmoothZoomRef.current)
+        ? navSmoothZoomRef.current
+        : zoomTargetSpeed;
+    const zoom = clampNavZoom(zoomRaw);
+
+    /** Kamera hedefi araç değil: ileri ofset (follow-car); marker userLocation’da — zoom ile ölçekli */
+    const targetCenter = offsetCameraCenterForward(userLocation, smoothHeading, remainKm, zoom);
     const prevSmoothCenter = navSmoothCenterRef.current;
     const centerLerp = isMoving ? NAV_CENTER_LERP_FULL : NAV_CENTER_LERP_HEADING_ONLY;
     navSmoothCenterRef.current =
@@ -1245,15 +1292,7 @@ export default function LiveMapView({
         ? { ...targetCenter }
         : lerpLatLng(prevSmoothCenter, targetCenter, centerLerp);
 
-    const zoomTargetSpeed = clampNavZoom(zoomTargetForSpeedMps(navGpsSpeedMpsRef.current));
-    if (isMoving) {
-      navSmoothZoomRef.current = smoothZoomToward(navSmoothZoomRef.current, zoomTargetSpeed);
-    }
-    const zoomRaw =
-      navSmoothZoomRef.current != null && Number.isFinite(navSmoothZoomRef.current)
-        ? navSmoothZoomRef.current
-        : zoomTargetSpeed;
-    const zoom = clampNavZoom(zoomRaw);
+    const pitch = navPitchForSpeedMps(speedMps);
 
     const centerAfterLerp = navSmoothCenterRef.current;
     if (!centerAfterLerp) {
@@ -1261,11 +1300,22 @@ export default function LiveMapView({
     }
     const centerMovedM =
       prevSmoothCenter == null ? Infinity : haversineMeters(prevSmoothCenter, centerAfterLerp);
+
     if (
       navCamInitializedRef.current &&
       !maneuverChanged &&
-      centerMovedM < 0.5 &&
-      headingDiffDeg < 1.5 &&
+      stepMovedM < NAV_JITTER_MAX_STEP_M &&
+      headingDiffDeg < NAV_JITTER_MAX_HEADING_DEG &&
+      !remainChanged
+    ) {
+      return;
+    }
+
+    if (
+      navCamInitializedRef.current &&
+      !maneuverChanged &&
+      centerMovedM < NAV_JITTER_MIN_CENTER_MOVE_M &&
+      headingDiffDeg < NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG &&
       prevSmoothCenter != null
     ) {
       return;
@@ -1276,16 +1326,14 @@ export default function LiveMapView({
       return;
     }
 
-    const center = centerAfterLerp;
-    const heading = navSmoothHeadingRef.current;
-
+    const headingForCamera = smoothHeading;
     const duration = isMoving ? NAV_CAMERA_ANIM_MS : NAV_CAMERA_HEADING_ONLY_MS;
 
     mapRef.current.animateCamera(
       {
-        center: { ...center },
-        heading,
-        pitch: NAV_PITCH,
+        center: { ...centerAfterLerp },
+        heading: headingForCamera,
+        pitch,
         zoom,
       },
       { duration },
@@ -1578,9 +1626,11 @@ export default function LiveMapView({
     return () => anim.stop();
   }, [onCall, callLabelBlink]);
 
-  const callPromptNameUpper = useMemo(() => {
-    const name = displayFirstName(otherUserName, isDriver ? 'Yolcu' : 'Sürücü');
-    return name.toLocaleUpperCase('tr-TR');
+  /** Tek satır: "SÜRÜCÜ AHMET ARA" / "YOLCU MEHMET ARA" — kalın parlak yeşil */
+  const callPromptLine = useMemo(() => {
+    const role = isDriver ? 'YOLCU' : 'SÜRÜCÜ';
+    const name = displayFirstName(otherUserName, isDriver ? 'Yolcu' : 'Sürücü').toLocaleUpperCase('tr-TR');
+    return `${role} ${name} ARA`;
   }, [isDriver, otherUserName]);
 
   useEffect(() => {
@@ -1671,6 +1721,18 @@ export default function LiveMapView({
   const handleCall = async (type: 'audio' | 'video') => {
     if (isCallLoading) {
       return;
+    }
+
+    if (userLocation && otherLocation) {
+      const dM = haversineMeters(userLocation, otherLocation);
+      if (dM < PROXIMITY_CALL_BLOCK_M) {
+        Alert.alert(
+          isDriver ? 'Yolcu yanınızda' : 'Sürücü yanınızda',
+          'Karşı taraf çok yakın görünüyor; yan yanayken aramaya gerek yok.',
+          [{ text: 'Tamam' }]
+        );
+        return;
+      }
     }
     
     setIsCallLoading(true);
@@ -1912,7 +1974,8 @@ export default function LiveMapView({
       const hasRichPolyline = polyForSlice.length >= 3;
       const longPickupLeg = navMeetingOnly && legKm >= 2.2;
 
-      if (longPickupLeg && !hasRichPolyline) {
+      /** Sürücü navigasyon açıkken kamera follow-car effect’e ait; merkezi userLocation’a çekme */
+      if (longPickupLeg && !hasRichPolyline && !(isDriver && navigationMode)) {
         const head = bearingDegrees(userLocation, otherLocation);
         mapRef.current.animateCamera(
           { center: userLocation, pitch: 54, heading: head, zoom: 17.9 },
@@ -2289,7 +2352,7 @@ export default function LiveMapView({
               ? {
                   top: Math.max(insets.top, 12) + 152,
                   right: 12,
-                  bottom: Math.min(100, Math.max(72, SCREEN_HEIGHT * 0.11)),
+                  bottom: Math.min(200, Math.max(76, SCREEN_HEIGHT * 0.21)),
                   left: 12,
                 }
               : driverNavActive
@@ -2428,11 +2491,11 @@ export default function LiveMapView({
           {userLocation && driverNavActive && (
             <Marker
               coordinate={userLocation}
-              anchor={{ x: 0.5, y: 0.5 }}
+              anchor={{ x: 0.5, y: 0.58 }}
               flat={true}
               rotation={navHeadingUi}
               tracksViewChanges={false}
-              zIndex={2000}
+              zIndex={3500}
             >
               <View style={styles.driverNavVehicleMark}>
                 {passMotor ? (
@@ -2740,11 +2803,9 @@ export default function LiveMapView({
             <View style={styles.callPromptRow} pointerEvents="box-none">
               <View style={styles.callPromptColumn}>
                 <Animated.View style={{ opacity: callLabelBlink }}>
-                  <Text style={styles.callPromptLabelRole}>
-                    {isDriver ? 'YOLCU' : 'SÜRÜCÜ'}{' '}
-                    <Text style={styles.callPromptLabelName}>{callPromptNameUpper}</Text>
+                  <Text style={styles.callPromptLabelSingle} numberOfLines={1}>
+                    {callPromptLine}
                   </Text>
-                  <Text style={styles.callPromptLabelAra}>ARA</Text>
                 </Animated.View>
                 <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
                   <TouchableOpacity
@@ -3291,24 +3352,16 @@ const styles = StyleSheet.create({
   callPromptColumn: {
     alignItems: 'flex-start',
   },
-  callPromptLabelRole: {
-    color: '#16A34A',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.35,
-    maxWidth: SCREEN_WIDTH * 0.72,
-  },
-  callPromptLabelName: {
-    color: '#15803D',
+  callPromptLabelSingle: {
+    color: '#4ADE80',
+    fontSize: 15,
     fontWeight: '900',
-  },
-  callPromptLabelAra: {
-    color: '#16A34A',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    marginTop: 2,
+    letterSpacing: 0.25,
+    maxWidth: SCREEN_WIDTH * 0.88,
     marginBottom: 8,
+    textShadowColor: 'rgba(74, 222, 128, 0.55)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
   },
   mapCallFabCircle: {
     width: 48,

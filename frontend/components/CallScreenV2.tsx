@@ -20,6 +20,9 @@ import { API_BASE_URL } from '../lib/backendConfig';
 
 type CallPhase = 'idle' | 'incoming' | 'outgoing' | 'connecting' | 'active' | 'ended';
 
+/** Ortak görüşme süresi (saniye) — iki taraf için aynı tavan */
+const CALL_MAX_SECONDS = 600;
+
 export interface CallScreenV2Props {
   visible: boolean;
   mode: 'caller' | 'receiver';
@@ -69,30 +72,42 @@ export default function CallScreenV2({
 
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [remoteUid, setRemoteUid] = useState(0);
-  const [duration, setDuration] = useState(0);
+  /** Görüşme bağlandıktan sonra kalan süre (geri sayım) */
+  const [remainingSec, setRemainingSec] = useState(CALL_MAX_SECONDS);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [status, setStatus] = useState('');
   const [joined, setJoined] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownStartedRef = useRef(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const speakerRef = useRef(true);
   speakerRef.current = speakerOn;
   const prevSessionKeyRef = useRef('');
   /** Caller oturumunda useEffect’in ikinci kez startOutgoing çalıştırmasını engeller */
   const callerJoinExecutedRef = useRef(false);
+  const hangUpRef = useRef<(reason?: string) => void>(() => {});
 
   const myUid = agoraUidFromUserId(userId);
 
-  const stopTimersAndRing = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  const stopCountdown = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
     }
+  }, []);
+
+  const stopTimersAndRing = useCallback(() => {
+    stopCountdown();
     Vibration.cancel();
     try {
       InCallManager.stopRingtone();
+    } catch {
+      /* noop */
+    }
+    try {
+      InCallManager.stopRingback();
     } catch {
       /* noop */
     }
@@ -101,10 +116,11 @@ export default function CallScreenV2({
     } catch {
       /* noop */
     }
-  }, []);
+  }, [stopCountdown]);
 
   const runCleanup = useCallback(async () => {
     stopTimersAndRing();
+    countdownStartedRef.current = false;
     agoraVoiceService.resetCallbacks();
     await agoraVoiceService.leaveChannelAndDestroy();
     setJoined(false);
@@ -124,24 +140,37 @@ export default function CallScreenV2({
     }
   }, []);
 
-  const startDurationTimer = useCallback(() => {
-    if (timerRef.current) return;
-    timerRef.current = setInterval(() => {
-      setDuration((d) => d + 1);
+  const startCountdown = useCallback(() => {
+    if (countdownStartedRef.current) return;
+    countdownStartedRef.current = true;
+    setRemainingSec(CALL_MAX_SECONDS);
+    countdownRef.current = setInterval(() => {
+      setRemainingSec((s) => {
+        if (s <= 1) {
+          stopCountdown();
+          queueMicrotask(() => hangUpRef.current?.('time_limit'));
+          return 0;
+        }
+        return s - 1;
+      });
     }, 1000);
-  }, []);
+  }, [stopCountdown]);
 
   const attachEngineHandlers = useCallback(() => {
     agoraVoiceService.setCallbacks({
       onJoinChannelSuccess: (_connection: RtcConnection) => {
         LOG('Kanala katılındı', { channelName, uid: myUid });
-        setStatus('Bağlandı');
+        if (mode === 'caller') {
+          setStatus('Çalıyor…');
+        } else {
+          setStatus('Bağlanıyor…');
+        }
       },
       onUserJoined: (_connection: RtcConnection, uid: number) => {
         LOG('Karşı taraf kanalda', { uid });
         setRemoteUid(uid);
         setPhase('active');
-        setStatus('Görüşmedesiniz');
+        setStatus('Bağlandı');
         stopTimersAndRing();
         try {
           InCallManager.start({ media: 'audio' });
@@ -149,7 +178,7 @@ export default function CallScreenV2({
         } catch {
           /* noop */
         }
-        startDurationTimer();
+        startCountdown();
       },
       onUserOffline: (_connection: RtcConnection, uid: number) => {
         LOG('Karşı taraf ayrıldı', { uid });
@@ -163,15 +192,15 @@ export default function CallScreenV2({
         setStatus('Bağlantı hatası');
       },
     });
-  }, [channelName, myUid, startDurationTimer, stopTimersAndRing]);
+  }, [channelName, mode, myUid, startCountdown, stopTimersAndRing]);
 
   const startOutgoing = useCallback(async () => {
     LOG('Giden arama (Agora ses)');
     setPhase('outgoing');
-    setStatus('Aranıyor…');
+    setStatus('Çalıyor…');
     try {
-      /* Giden aramada ringback kullanma — kullanıcıda “kendi telefonum çalıyor” algısı oluşuyor */
       InCallManager.start({ media: 'audio' });
+      InCallManager.startRingback('_DEFAULT_');
     } catch {
       /* noop */
     }
@@ -261,7 +290,7 @@ export default function CallScreenV2({
         return;
       }
       setJoined(true);
-      setStatus('Bağlandı');
+      setStatus('Bağlanıyor…');
     } catch (e) {
       console.log('ACCEPT ERROR', e);
       LOG('accept-call hata', e);
@@ -278,29 +307,40 @@ export default function CallScreenV2({
     onClose();
   }, [onClose, onReject, stopTimersAndRing]);
 
-  const hangUp = useCallback(async (reason: string = 'user') => {
-    console.log('HANGUP TRIGGERED', reason);
-    console.log('CALLER HANGUP', reason);
-    LOG('Arama bitiriliyor', { reason });
-    stopTimersAndRing();
-    await runCleanup();
-    setPhase('ended');
-    onEnd();
-    setTimeout(onClose, 250);
-  }, [onClose, onEnd, runCleanup, stopTimersAndRing]);
+  const hangUp = useCallback(
+    async (reason: string = 'user') => {
+      console.log('HANGUP TRIGGERED', reason);
+      LOG('Arama bitiriliyor', { reason });
+      stopTimersAndRing();
+      await runCleanup();
+      setPhase('ended');
+      if (reason === 'time_limit') {
+        setStatus('Görüşme süresi doldu');
+      }
+      onEnd();
+      setTimeout(onClose, reason === 'time_limit' ? 400 : 250);
+    },
+    [onClose, onEnd, runCleanup, stopTimersAndRing]
+  );
 
-  const endWithoutNotify = useCallback(async (reason: string) => {
-    console.log('HANGUP TRIGGERED', reason);
-    LOG('Arama lokal kapatılıyor', { reason });
-    stopTimersAndRing();
-    await runCleanup();
-    setPhase('ended');
-    if (reason === 'remote_rejected') {
-      onClose();
-    } else {
-      setTimeout(onClose, 250);
-    }
-  }, [onClose, runCleanup, stopTimersAndRing]);
+  hangUpRef.current = hangUp;
+
+  const endWithoutNotify = useCallback(
+    async (reason: string) => {
+      console.log('HANGUP TRIGGERED', reason);
+      LOG('Arama lokal kapatılıyor', { reason });
+      stopTimersAndRing();
+      await runCleanup();
+      setPhase('ended');
+      if (reason === 'remote_rejected') {
+        setStatus('Reddedildi');
+        onClose();
+      } else {
+        setTimeout(onClose, 250);
+      }
+    },
+    [onClose, runCleanup, stopTimersAndRing]
+  );
 
   const toggleMute = useCallback(() => {
     const next = !muted;
@@ -343,7 +383,8 @@ export default function CallScreenV2({
 
       LOG('CallScreenV2 açıldı', { mode, callId, channelName });
       setRemoteUid(0);
-      setDuration(0);
+      setRemainingSec(CALL_MAX_SECONDS);
+      countdownStartedRef.current = false;
       setMuted(false);
       setSpeakerOn(true);
       setPhase('idle');
@@ -365,7 +406,7 @@ export default function CallScreenV2({
         setPhase('incoming');
         setStatus('Gelen arama');
         try {
-          InCallManager.startRingtone('_DEFAULT_');
+          InCallManager.startRingtone('_DEFAULT_', [0, 600, 300, 600], 'playback', 60);
           Vibration.vibrate([0, 600, 300, 600], true);
         } catch {
           /* noop */
@@ -377,17 +418,19 @@ export default function CallScreenV2({
       cancelled = true;
       pulseAnim.stopAnimation();
     };
-    // runCleanup cleanup’ta yok: ring/kabul sırasında effect’in yeniden çalışması motoru öldürmesin.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startOutgoing/runCleanup dep'e alınmaz
   }, [visible, callId, mode, channelName, pulseAnim]);
 
+  /** Karşı taraf hattı kabul etti (socket) — arayan: çalma tonu kesilir, yeşil “Bağlandı” */
   useEffect(() => {
-    if (callAccepted && mode === 'caller' && phase === 'outgoing') {
-      setPhase('active');
-      setStatus('Görüşmedesiniz');
-      stopTimersAndRing();
+    if (!callAccepted || mode !== 'caller' || phase !== 'outgoing') return;
+    setStatus('Bağlandı');
+    try {
+      InCallManager.stopRingback();
+    } catch {
+      /* noop */
     }
-  }, [callAccepted, mode, phase, stopTimersAndRing]);
+  }, [callAccepted, mode, phase]);
 
   useEffect(() => {
     if (!callRejected) return;
@@ -395,7 +438,7 @@ export default function CallScreenV2({
       console.log('AUTO HANGUP BLOCKED', 'callRejected');
       return;
     }
-    setStatus('Arama reddedildi');
+    setStatus('Reddedildi');
     setPhase('ended');
     stopTimersAndRing();
     void endWithoutNotify('remote_rejected');
@@ -403,7 +446,7 @@ export default function CallScreenV2({
 
   useEffect(() => {
     if (!callEnded) return;
-    setStatus('Arama sonlandı');
+    setStatus('Görüşme sonlandı');
     setPhase('ended');
     const t = setTimeout(() => void endWithoutNotify('remote_call_ended'), 400);
     return () => clearTimeout(t);
@@ -430,17 +473,41 @@ export default function CallScreenV2({
       .padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
   const showIncoming = phase === 'incoming';
-  const showConnecting = phase === 'outgoing' || phase === 'connecting';
-  const showActive = phase === 'active' && remoteUid > 0;
+  const callInProgress = remoteUid > 0 && phase === 'active';
+  /** Arayan: karşı taraf henüz kanala girmeden kapatma butonu */
+  const showCallerWait =
+    mode === 'caller' && (phase === 'outgoing' || phase === 'connecting' || (phase === 'active' && remoteUid === 0));
+  const showReceiverWait = mode === 'receiver' && phase === 'connecting';
+  const showOutgoingBar = showCallerWait || showReceiverWait;
+  const showActive = callInProgress;
 
-  const headerLabel =
-    callType === 'video' ? 'Görüntülü arama (ses)' : 'Sesli arama';
+  const headerLabel = callType === 'video' ? 'Görüntülü arama (ses)' : 'Sesli arama';
+
+  const subLine = (() => {
+    if (showActive) {
+      return { text: formatTime(remainingSec), style: styles.subTimer };
+    }
+    if (status === 'Bağlandı') {
+      return { text: status, style: styles.subSuccess };
+    }
+    if (status === 'Reddedildi') {
+      return { text: status, style: styles.subDanger };
+    }
+    if (status === 'Çalıyor…' || status.startsWith('Çalıyor')) {
+      return { text: status, style: styles.subRinging };
+    }
+    if (status === 'Görüşme süresi doldu' || status === 'Görüşme sonlandı') {
+      return { text: status, style: styles.subMuted };
+    }
+    return { text: status || '—', style: styles.sub };
+  })();
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <View style={styles.root}>
         <View style={styles.top}>
           <Text style={styles.headerType}>{headerLabel}</Text>
+          <Text style={styles.encryptionHint}>Görüşmeler uçtan uca şifrelidir</Text>
         </View>
 
         <View style={styles.center}>
@@ -452,9 +519,7 @@ export default function CallScreenV2({
             </View>
           </Animated.View>
           <Text style={styles.name}>{remoteName}</Text>
-          <Text style={styles.sub}>
-            {showActive ? formatTime(duration) : status || '—'}
-          </Text>
+          <Text style={subLine.style}>{subLine.text}</Text>
         </View>
 
         <View style={styles.bottom}>
@@ -469,7 +534,7 @@ export default function CallScreenV2({
             </View>
           ) : null}
 
-          {showConnecting && !showIncoming ? (
+          {showOutgoingBar && !showIncoming ? (
             <TouchableOpacity style={styles.fabHangup} onPress={() => void hangUp('user')}>
               <Ionicons name="call" size={30} color="#fff" style={styles.iconHangup} />
             </TouchableOpacity>
@@ -527,6 +592,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.3,
   },
+  encryptionHint: {
+    marginTop: 8,
+    color: '#4ADE80',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   center: {
     flex: 1,
     justifyContent: 'center',
@@ -557,6 +629,35 @@ const styles = StyleSheet.create({
   sub: {
     fontSize: 16,
     color: '#8696A0',
+    textAlign: 'center',
+  },
+  subTimer: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#E9EDEF',
+    textAlign: 'center',
+  },
+  subSuccess: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#22C55E',
+    textAlign: 'center',
+  },
+  subDanger: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#F87171',
+    textAlign: 'center',
+  },
+  subRinging: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FCD34D',
+    textAlign: 'center',
+  },
+  subMuted: {
+    fontSize: 16,
+    color: '#94A3B8',
     textAlign: 'center',
   },
   bottom: {
