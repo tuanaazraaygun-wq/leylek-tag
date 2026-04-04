@@ -570,10 +570,11 @@ function zoomTargetForSpeedMps(speedMps: number | null | undefined): number {
  * Gidiş yönünde kamera merkezini ileri alır; pitch + heading ile araç noktası ekranda ~alt 1/3 bandına kayar.
  */
 function offsetCameraCenterForward(from: MapLatLng, bearingDeg: number, remainKm: number): MapLatLng {
-  let forwardM = 175;
-  if (remainKm > 5) forwardM = 260;
-  else if (remainKm >= 1) forwardM = 205;
-  else forwardM = 142;
+  /** +70 m ileri (araç ~ekran alt %25, yol ortada) */
+  let forwardM = 175 + 70;
+  if (remainKm > 5) forwardM = 260 + 70;
+  else if (remainKm >= 1) forwardM = 205 + 70;
+  else forwardM = 142 + 70;
   const R = 6378137;
   const brng = (bearingDeg * Math.PI) / 180;
   const lat1 = (from.latitude * Math.PI) / 180;
@@ -610,6 +611,17 @@ function haversineMeters(a: MapLatLng, b: MapLatLng): number {
 /** Sürücü → yolcu düz mesafe (km) — uzun buluşmada tam polyline fit zoom’u öldürür */
 function straightLineKm(a: MapLatLng, b: MapLatLng): number {
   return haversineMeters(a, b) / 1000;
+}
+
+/** OSRM yoksa: süre ≈ mesafe / 40 km/h (dk) */
+function fallbackDurationMinFromKm(distanceKm: number): number {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 1;
+  return Math.max(1, Math.round((distanceKm / 40) * 60));
+}
+
+function clampNavZoom(z: number): number {
+  if (!Number.isFinite(z)) return 16.5;
+  return Math.min(18.5, Math.max(14.8, z));
 }
 
 function bearingDegrees(from: MapLatLng, to: MapLatLng): number {
@@ -652,16 +664,19 @@ function lerpLatLng(a: MapLatLng, b: MapLatLng, t: number): MapLatLng {
   };
 }
 
-const NAV_CAMERA_THROTTLE_MS = 300;
+const NAV_CAMERA_THROTTLE_MS = 80;
 const NAV_CAMERA_MIN_MOVE_M = 8;
 const NAV_CAMERA_MIN_HEADING_DEG = 5;
 /** GPS gürültüsünde <5 m adımda kamera animasyonu yok (yalnız marker) */
 const NAV_MARKER_ONLY_MOVE_M = 5;
-const NAV_CAMERA_ANIM_MS = 520;
+const NAV_CAMERA_ANIM_MS = 460;
 /** Araç dururken sadece pusula: ~4,5 km/h altı = kırmızı ışık; üstü = sürüşte gereksiz dönüş azalır */
 const NAV_CAMERA_STATIONARY_SPEED_MPS = 1.25;
 const NAV_CAMERA_STATIONARY_HEADING_DEG = 8;
-const NAV_CAMERA_HEADING_ONLY_MS = 320;
+const NAV_CAMERA_HEADING_ONLY_MS = 260;
+const NAV_CENTER_LERP_HEADING_ONLY = 0.65;
+const NAV_CENTER_LERP_FULL = 0.8;
+const NAV_PITCH = 68;
 const NAV_HEADING_PULSE_MIN_MS = 100;
 const NAV_ZOOM_SMOOTH = 0.18;
 /** Manevra mesafe anonsları arası minimum süre (ms) */
@@ -929,6 +944,8 @@ export default function LiveMapView({
   const navCamLastTimeRef = useRef(0);
   const navSmoothHeadingRef = useRef(0);
   const navSmoothCenterRef = useRef<MapLatLng | null>(null);
+  /** Önceki kare remainKm — mikro jitter’da yolcu/ hedef kaydıyla skip’i engellemek için */
+  const navRemainKmRef = useRef<number | null>(null);
   const navCamLastManeuverKeyRef = useRef('');
   const navCamInitializedRef = useRef(false);
   /** Son GPS örneği — <5 m adım için kamera atlama */
@@ -954,6 +971,7 @@ export default function LiveMapView({
       navCamLastRawHeadingRef.current = null;
       navCamLastTimeRef.current = 0;
       navLastTickUserRef.current = null;
+      navRemainKmRef.current = null;
     }
     navStagePrevRef.current = navigationStage;
   }, [isDriver, navigationMode, navigationStage]);
@@ -974,6 +992,7 @@ export default function LiveMapView({
       navCamLastRawHeadingRef.current = null;
       navCamLastTimeRef.current = 0;
       navSmoothCenterRef.current = null;
+      navRemainKmRef.current = null;
       navCamLastManeuverKeyRef.current = '';
       navCamInitializedRef.current = false;
       navLastTickUserRef.current = null;
@@ -1097,6 +1116,7 @@ export default function LiveMapView({
     navCamLastRawHeadingRef.current = null;
     navCamLastTimeRef.current = 0;
     navSmoothCenterRef.current = null;
+    navRemainKmRef.current = null;
     navCamLastManeuverKeyRef.current = '';
     navCamInitializedRef.current = false;
     navLastTickUserRef.current = null;
@@ -1156,8 +1176,8 @@ export default function LiveMapView({
   }, [isDriver, navigationMode]);
 
   /**
-   * Sürücü gerçek navigasyon: kamera yumuşatma (throttle, heading/mesafe eşikleri, maneuver).
-   * Heading-only: kısa animasyon; merkez de offsetCameraCenterForward ile güncellenir (araç ~alt %30).
+   * Sürücü navigasyon: merkez + heading aynı karede; lerp → ref → animateCamera.
+   * Sadece dönüş (center oynamadan) yasak; mikro GPS gürültüsü + 80ms throttle.
    */
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
@@ -1202,141 +1222,98 @@ export default function LiveMapView({
         : stepMovedM < 2
           ? 0.26
           : 0.4;
+
+    const prevSmoothHeadingForDiff = navSmoothHeadingRef.current;
     const smoothHeading =
       !navCamInitializedRef.current && prevTick == null
         ? rawHeading
         : interpolateHeading(navSmoothHeadingRef.current, rawHeading, headingBlend);
+    const headingDiffDeg = absAngleDiffDeg(prevSmoothHeadingForDiff, smoothHeading);
     navSmoothHeadingRef.current = smoothHeading;
     setNavHeadingUi(smoothHeading);
-
-    /** Her kare: araç ~alt %30 için ileri ofset merkez (heading-only / full ortak) */
-    const targetCenter = offsetCameraCenterForward(userLocation, smoothHeading, remainKm);
 
     const mk = navManeuverUi?.speechKey ?? '';
     const maneuverChanged = mk.length > 0 && mk !== navCamLastManeuverKeyRef.current;
 
-    const lastCamUser = navCamLastUserRef.current;
-    const lastCamHead = navCamLastRawHeadingRef.current;
-    const distSinceCamM =
-      lastCamUser == null ? Infinity : haversineMeters(lastCamUser, userLocation);
-    const headingSinceCamDeg =
-      lastCamHead == null
-        ? NAV_CAMERA_MIN_HEADING_DEG + 1
-        : absAngleDiffDeg(lastCamHead, rawHeading);
+    const prevRemainKm = navRemainKmRef.current;
+    const remainChanged =
+      prevRemainKm == null || !Number.isFinite(prevRemainKm) || Math.abs(remainKm - prevRemainKm) >= 0.001;
+    navRemainKmRef.current = remainKm;
 
-    const now = Date.now();
-    const throttled =
-      !maneuverChanged && now - navCamLastTimeRef.current < NAV_CAMERA_THROTTLE_MS;
-
-    const speedMps = navGpsSpeedMpsRef.current;
-    const isLowSpeed =
-      (typeof speedMps === 'number' && speedMps >= 0 && speedMps < NAV_CAMERA_STATIONARY_SPEED_MPS) ||
-      ((speedMps == null || speedMps < 0) && stepMovedM < 1.2);
-
-    const headingDeltaSinceCam =
-      lastCamHead == null ? 0 : absAngleDiffDeg(lastCamHead, rawHeading);
-
-    let shouldFullAnimate =
-      maneuverChanged ||
-      !navCamInitializedRef.current ||
-      (stepMovedM >= NAV_MARKER_ONLY_MOVE_M &&
-        (distSinceCamM > NAV_CAMERA_MIN_MOVE_M ||
-          headingSinceCamDeg > NAV_CAMERA_MIN_HEADING_DEG));
-
-    if (stepMovedM < NAV_MARKER_ONLY_MOVE_M && navCamInitializedRef.current && !maneuverChanged) {
-      shouldFullAnimate = false;
-    }
-
-    if (shouldFullAnimate && throttled) {
-      shouldFullAnimate = false;
-    }
-
-    let headingOnlyAnimate =
+    if (
       navCamInitializedRef.current &&
       !maneuverChanged &&
-      isLowSpeed &&
-      stepMovedM < NAV_MARKER_ONLY_MOVE_M &&
-      lastCamHead != null &&
-      headingDeltaSinceCam > NAV_CAMERA_STATIONARY_HEADING_DEG &&
-      !shouldFullAnimate;
-
-    if (headingOnlyAnimate && throttled) {
-      headingOnlyAnimate = false;
+      stepMovedM < 1 &&
+      headingDiffDeg < 2 &&
+      !remainChanged
+    ) {
+      return;
     }
 
+    const speedMps = navGpsSpeedMpsRef.current;
+    const isMoving =
+      stepMovedM >= 1 ||
+      (typeof speedMps === 'number' && speedMps >= 0 && speedMps >= NAV_CAMERA_STATIONARY_SPEED_MPS);
+
+    const targetCenter = offsetCameraCenterForward(userLocation, smoothHeading, remainKm);
     const prevSmoothCenter = navSmoothCenterRef.current;
-    const centerLerp = shouldFullAnimate
-      ? 0.62
-      : headingOnlyAnimate
-        ? 0.52
-        : 0.18;
+    const centerLerp = isMoving ? NAV_CENTER_LERP_FULL : NAV_CENTER_LERP_HEADING_ONLY;
     navSmoothCenterRef.current =
       prevSmoothCenter == null
         ? { ...targetCenter }
         : lerpLatLng(prevSmoothCenter, targetCenter, centerLerp);
 
-    const zoomTargetSpeed = zoomTargetForSpeedMps(navGpsSpeedMpsRef.current);
-    if (shouldFullAnimate) {
+    const zoomTargetSpeed = clampNavZoom(zoomTargetForSpeedMps(navGpsSpeedMpsRef.current));
+    if (isMoving) {
       navSmoothZoomRef.current = smoothZoomToward(navSmoothZoomRef.current, zoomTargetSpeed);
     }
-    const zoom =
+    const zoomRaw =
       navSmoothZoomRef.current != null && Number.isFinite(navSmoothZoomRef.current)
         ? navSmoothZoomRef.current
         : zoomTargetSpeed;
+    const zoom = clampNavZoom(zoomRaw);
 
-    if (headingOnlyAnimate) {
-      navCamLastRawHeadingRef.current = rawHeading;
-      navCamLastTimeRef.current = now;
-      lastNavCameraAtRef.current = now;
-      const map = mapRef.current;
-      const center = navSmoothCenterRef.current;
-      if (!map || !center) {
-        return;
-      }
-      const heading = smoothHeading;
-      const pitch = 60;
-      const currentZoom = zoom;
-      const t = setTimeout(() => {
-        map.animateCamera(
-          {
-            center: { ...center },
-            heading,
-            pitch,
-            zoom: currentZoom,
-          },
-          { duration: NAV_CAMERA_HEADING_ONLY_MS },
-        );
-      }, 0);
-      return () => clearTimeout(t);
+    const centerAfterLerp = navSmoothCenterRef.current;
+    if (!centerAfterLerp) {
+      return;
     }
-
-    if (!shouldFullAnimate) {
+    const centerMovedM =
+      prevSmoothCenter == null ? Infinity : haversineMeters(prevSmoothCenter, centerAfterLerp);
+    if (
+      navCamInitializedRef.current &&
+      !maneuverChanged &&
+      centerMovedM < 0.5 &&
+      headingDiffDeg < 1.5 &&
+      prevSmoothCenter != null
+    ) {
       return;
     }
 
-    const smoothCenter = navSmoothCenterRef.current;
-    navCamLastUserRef.current = {
-      latitude: userLocation.latitude,
-      longitude: userLocation.longitude,
-    };
+    const now = Date.now();
+    if (!maneuverChanged && now - navCamLastTimeRef.current < NAV_CAMERA_THROTTLE_MS) {
+      return;
+    }
+
+    const center = centerAfterLerp;
+    const heading = navSmoothHeadingRef.current;
+
+    const duration = isMoving ? NAV_CAMERA_ANIM_MS : NAV_CAMERA_HEADING_ONLY_MS;
+
+    mapRef.current.animateCamera(
+      {
+        center: { ...center },
+        heading,
+        pitch: NAV_PITCH,
+        zoom,
+      },
+      { duration },
+    );
+
     navCamLastRawHeadingRef.current = rawHeading;
     navCamLastTimeRef.current = now;
     if (mk.length) navCamLastManeuverKeyRef.current = mk;
     navCamInitializedRef.current = true;
     lastNavCameraAtRef.current = now;
-
-    const t = setTimeout(() => {
-      mapRef.current?.animateCamera(
-        {
-          center: smoothCenter,
-          pitch: 60,
-          heading: smoothHeading,
-          zoom,
-        },
-        { duration: NAV_CAMERA_ANIM_MS },
-      );
-    }, 0);
-    return () => clearTimeout(t);
   }, [
     isDriver,
     navigationMode,
@@ -1839,38 +1816,75 @@ export default function LiveMapView({
     destinationLocation?.longitude,
   ]);
 
-  // Tüm gösterilen km/dk tek kaynak: backend routeInfo (pickup_*, trip_*); OSRM kullanılmaz
+  /**
+   * Buluşma km/dk: backend routeInfo (sürücü navigasyon açıkken OSRM — driver→yolcu rota).
+   * Hedef km/dk: ayrı effect (yolcu konumu → trip hedefi; sürücü→hedef değil).
+   */
   useEffect(() => {
+    if (isDriver && navigationMode) return;
     const info = (routeInfo as Record<string, unknown>) || {};
     const meetingKm = Number(info.pickup_distance_km);
     const meetingMin = Number(info.pickup_eta_min);
-    const tripKm = Number(info.trip_distance_km);
-    const tripMin = Number(info.trip_duration_min);
 
     setMeetingDistance(Number.isFinite(meetingKm) && meetingKm > 0 ? meetingKm : null);
     setMeetingDuration(
       Number.isFinite(meetingMin) && meetingMin > 0 ? Math.max(0, Math.round(meetingMin)) : null,
     );
-    if (Number.isFinite(tripKm) && tripKm > 0) {
-      setDestinationDistance(tripKm);
-    }
-    if (Number.isFinite(tripMin) && tripMin > 0) {
-      setDestinationDuration(Math.max(0, Math.round(tripMin)));
-    }
+  }, [routeInfo, isDriver, navigationMode]);
 
-    if (Number.isFinite(tripKm) && tripKm > 0) {
-      const isNear = tripKm <= 1;
-      setNearDestination(isNear);
-      if (isNear && !autoCompleteTriggered.current) {
-        autoCompleteTriggered.current = true;
-        Alert.alert(
-          '🎯 Hedefe Ulaşıldı!',
-          'Hedefe 1 km\'den az kaldı. Yolculuk otomatik olarak tamamlanacak ve +1 puan kazanacaksınız!',
-          [{ text: 'Tamam', onPress: () => onAutoComplete?.() }],
-        );
+  /** Hedef ETA: yolcu konumu → trip varışı (OSRM veya düz mesafe / 40 km/h) */
+  useEffect(() => {
+    if (!destinationLocation) return;
+    const passengerLoc = isDriver ? otherLocation : userLocation;
+    if (!passengerLoc) return;
+    let cancelled = false;
+    void (async () => {
+      const r = await fetchOsrmDrivingRoute(
+        passengerLoc.latitude,
+        passengerLoc.longitude,
+        destinationLocation.latitude,
+        destinationLocation.longitude,
+      );
+      if (cancelled) return;
+      let km: number;
+      let min: number;
+      if (r && r.distanceM > 0) {
+        km = r.distanceM / 1000;
+        min = Math.max(1, Math.round(r.durationS / 60));
+      } else {
+        km = straightLineKm(passengerLoc, destinationLocation);
+        min = fallbackDurationMinFromKm(km);
       }
+      setDestinationDistance(km);
+      setDestinationDuration(Math.max(0, min));
+      console.log('DEST ETA', km, min);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    isDriver,
+  ]);
+
+  useEffect(() => {
+    if (destinationDistance == null || !Number.isFinite(destinationDistance)) return;
+    const isNear = destinationDistance <= 1;
+    setNearDestination(isNear);
+    if (isNear && !autoCompleteTriggered.current) {
+      autoCompleteTriggered.current = true;
+      Alert.alert(
+        '🎯 Hedefe Ulaşıldı!',
+        'Hedefe 1 km\'den az kaldı. Yolculuk otomatik olarak tamamlanacak ve +1 puan kazanacaksınız!',
+        [{ text: 'Tamam', onPress: () => onAutoComplete?.() }],
+      );
     }
-  }, [routeInfo, onAutoComplete]);
+  }, [destinationDistance, onAutoComplete]);
 
   /** Sürücü: harita merkezi araçta — navigasyon modunda kullanıcı rotayı görüyor; otomatik merkezleme yok */
   useEffect(() => {
@@ -1964,6 +1978,11 @@ export default function LiveMapView({
       coords = [userLocation, otherLocation];
       meetingHasOsrmPolylineRef.current = false;
       pickupNavStepsRef.current = null;
+      const km = straightLineKm(userLocation, otherLocation);
+      const min = fallbackDurationMinFromKm(km);
+      setMeetingDistance(km);
+      setMeetingDuration(min);
+      console.log('PICKUP ETA', km, min);
     } else {
       meetingHasOsrmPolylineRef.current = true;
       coords = r.coordinates;
@@ -1971,6 +1990,11 @@ export default function LiveMapView({
         steps: r.steps,
         cumStart: buildCumStartMeters(r.steps),
       };
+      const km = r.distanceM / 1000;
+      const min = Math.max(1, Math.round(r.durationS / 60));
+      setMeetingDistance(km);
+      setMeetingDuration(min);
+      console.log('PICKUP ETA', km, min);
     }
     lastOsrmAtRef.current = Date.now();
     lastOsrmKeyRef.current = meetingEndpointsKey(
@@ -2092,6 +2116,11 @@ export default function LiveMapView({
           cumStart: buildCumStartMeters(rw.steps),
         };
         setMeetingRouteCoordinates(rw.coordinates);
+        const km = rw.distanceM / 1000;
+        const min = Math.max(1, Math.round(rw.durationS / 60));
+        setMeetingDistance(km);
+        setMeetingDuration(min);
+        console.log('PICKUP ETA', km, min);
         return;
       }
 
@@ -2418,7 +2447,7 @@ export default function LiveMapView({
             <Marker
               coordinate={userLocation}
               anchor={{ x: 0.5, y: 0.5 }}
-              flat
+              flat={true}
               rotation={navHeadingUi}
               tracksViewChanges={false}
             >
