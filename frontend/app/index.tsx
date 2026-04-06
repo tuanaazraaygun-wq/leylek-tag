@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, Animated, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,7 +10,6 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
-import Logo from '../components/Logo';
 import LiveMapView from '../components/LiveMapView';
 import QRTripEndModal from '../components/QRTripEndModal';
 import RatingModal from '../components/RatingModal';
@@ -31,7 +30,8 @@ import OTPCountdown from '../components/OTPCountdown'; // 🆕 SMS Geri Sayım
 import useSocket from '../hooks/useSocket';
 import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ ARAMA STATE
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
-import PlacesAutocomplete from '../components/PlacesAutocomplete';
+import PlacesAutocomplete, { getRegisteredCityCenter } from '../components/PlacesAutocomplete';
+import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
 import SplashScreen from '../components/SplashScreen';
@@ -43,6 +43,12 @@ import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
+import {
+  persistAccessToken,
+  clearSessionStorage,
+  getPersistedUserRaw,
+  setPersistedUserJson,
+} from '../lib/sessionToken';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { playMatchChimeSound } from '../utils/sound';
@@ -75,6 +81,13 @@ function normalizeTrMobile10(s: string | undefined | null): string {
   const d = String(s || '').replace(/\D/g, '');
   if (d.length >= 10) return d.slice(-10);
   return d;
+}
+
+/** Harita marker’ları — backend `female` | `male` */
+function parseGender(raw: unknown): 'female' | 'male' | null {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s === 'female' || s === 'male') return s;
+  return null;
 }
 
 /** start-call sonrası arayan tarafı Agora kanalına alır (receiver ekranı açılmadan önce). */
@@ -140,7 +153,7 @@ async function tryResumeActiveMatchSession(
     saveUser: (u: User) => Promise<void>;
     setUser: (u: User | ((prev: User | null) => User | null)) => void;
     setSelectedRole: (r: 'passenger' | 'driver') => void;
-    setScreen: (s: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin' | 'community' | 'driver-kyc') => void;
+    setScreen: (s: AppScreen) => void;
   },
 ): Promise<boolean> {
   const uid = parsedUser.id;
@@ -324,6 +337,159 @@ const cloudStyles = StyleSheet.create({
   },
 });
 
+/** Giriş / OTP: uygulama ikonu (OTP vb.) */
+const LOGIN_LOGO_AR = 1;
+const LOGIN_LOGO_SOURCE = require('../assets/images/logo.png');
+/** Giriş sayfası: trimlenmiş marka görseli (fazla beyaz alan yok) */
+const LOGIN_BRAND_TRIM_SOURCE = require('../assets/images/login-brand-trim.png');
+
+/**
+ * Giriş / OTP ortak logo. `animated={false}` girişte sabit görüntü (ekran zıplaması yok).
+ */
+const AnimatedLoginLogo = ({
+  compact,
+  animated = true,
+}: {
+  compact?: boolean;
+  animated?: boolean;
+}) => {
+  const floatY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!animated) return undefined;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatY, {
+          toValue: -3,
+          duration: 3200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatY, {
+          toValue: 0,
+          duration: 3200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [floatY, animated]);
+
+  const imageEl = (
+    <Image
+      source={LOGIN_LOGO_SOURCE}
+      style={[
+        styles.loginLogoImage,
+        compact ? styles.loginLogoImageCompact : null,
+        { aspectRatio: LOGIN_LOGO_AR },
+      ]}
+      resizeMode="contain"
+    />
+  );
+
+  return (
+    <View style={styles.loginLogoStage} pointerEvents="none">
+      {animated ? (
+        <Animated.View style={{ width: '100%', alignItems: 'center', transform: [{ translateY: floatY }] }}>
+          {imageEl}
+        </Animated.View>
+      ) : (
+        <View style={{ width: '100%', alignItems: 'center' }}>{imageEl}</View>
+      )}
+    </View>
+  );
+};
+
+/** Sadece telefon girişi: orta boy marka + hemen altında başlık (kaydırma yok düzeni için) */
+function LoginBrandHeader({
+  screenWidth,
+  isCompact,
+}: {
+  screenWidth: number;
+  isCompact: boolean;
+}) {
+  const logoW = Math.min(isCompact ? 100 : 116, Math.round(screenWidth * 0.30));
+  return (
+    <View style={styles.loginV2Brand} pointerEvents="none">
+      <View style={[styles.loginV2LogoBox, { width: logoW, height: logoW }]}>
+        <Image source={LOGIN_BRAND_TRIM_SOURCE} style={StyleSheet.absoluteFillObject} resizeMode="contain" />
+      </View>
+      <Text
+        style={[styles.loginV2Title, isCompact && styles.loginV2TitleCompact]}
+        maxFontSizeMultiplier={1.25}
+      >
+        Yolculuk Eşleştirme
+      </Text>
+      <Text
+        style={[styles.loginV2Tagline, isCompact && styles.loginV2TaglineCompact]}
+        maxFontSizeMultiplier={1.2}
+      >
+        Güvenli ve hızlı yolculuk deneyimi
+      </Text>
+    </View>
+  );
+}
+
+/** Giriş — DEVAM ET: KVKK sonrası renk nabız; öncesi gri ama her zaman dokunulabilir */
+function LoginPulseContinueButton({
+  kvkkAccepted,
+  onPress,
+}: {
+  kvkkAccepted: boolean;
+  onPress: () => void;
+}) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!kvkkAccepted) {
+      pulse.setValue(0);
+      return undefined;
+    }
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: false,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [kvkkAccepted, pulse]);
+  const bg = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#3FA9F5', '#0B5CAD'],
+  });
+  const inner = (
+    <>
+      <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
+      <Ionicons name="arrow-forward" size={20} color="#FFF" />
+    </>
+  );
+  if (!kvkkAccepted) {
+    return (
+      <Pressable onPress={onPress} hitSlop={12}>
+        <View style={[styles.modernPrimaryButton, styles.loginPrimaryTight, styles.buttonDisabled]}>{inner}</View>
+      </Pressable>
+    );
+  }
+  return (
+    <Pressable onPress={onPress} hitSlop={12}>
+      <Animated.View style={[styles.modernPrimaryButton, styles.loginPrimaryTight, { backgroundColor: bg }]}>
+        {inner}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 /** Teklif kartı: 0 veya NaN km gösterme */
 function formatOfferKmBadge(km: unknown): string {
   const n = Number(km);
@@ -380,6 +546,15 @@ interface User {
   rating: number;
   total_ratings: number;
   city?: string;
+  gender?: 'female' | 'male' | string;
+  /** Rol ekranı / backend — araç tercihi ve KYC ek alanları */
+  driver_details?: {
+    vehicle_kind?: string;
+    passenger_preferred_vehicle?: string;
+    [key: string]: unknown;
+  };
+  vehicle_model?: string;
+  vehicle_color?: string;
 }
 
 interface Tag {
@@ -405,6 +580,8 @@ interface Tag {
   passenger_vehicle_kind?: 'car' | 'motorcycle';
   /** Yolcu teklifte seçtiği ödeme (sunucu: cash | card) */
   passenger_payment_method?: 'cash' | 'card';
+  /** Sürücü haritası: yolcu cinsiyeti (marker PNG) */
+  passenger_gender?: string;
   /** Backend tek kaynak: yolcu–şoför buluşma (yol) */
   pickup_distance_km?: number | null;
   pickup_eta_min?: number | null;
@@ -418,7 +595,24 @@ interface Tag {
   tag_id?: string;
   pickup_lat?: number;
   pickup_lng?: number;
+  driver_latitude?: number;
+  driver_longitude?: number;
+  passenger_latitude?: number;
+  passenger_longitude?: number;
 }
+
+type AppScreen =
+  | 'login'
+  | 'otp'
+  | 'register'
+  | 'set-pin'
+  | 'enter-pin'
+  | 'role-select'
+  | 'dashboard'
+  | 'forgot-password'
+  | 'reset-pin'
+  | 'community'
+  | 'driver-kyc';
 
 function normalizePassengerPaymentMethod(raw: unknown): 'cash' | 'card' | null {
   const s = String(raw ?? '').trim().toLowerCase();
@@ -427,6 +621,16 @@ function normalizePassengerPaymentMethod(raw: unknown): 'cash' | 'card' | null {
     return 'card';
   }
   return null;
+}
+
+/** Giriş/OTP: döndürme ve farklı genişliklerde simetrik padding + sütun genişliği */
+function useLoginAuthLayout() {
+  const { width, height } = useWindowDimensions();
+  const padH = Math.min(28, Math.max(14, Math.round(width * 0.052)));
+  const colMax = Math.max(260, Math.min(368, Math.round(width - padH * 2)));
+  const isShort = height < 720;
+  const isCompact = height < 620;
+  return { padH, colMax, isShort, isCompact };
 }
 
 interface Offer {
@@ -472,9 +676,11 @@ class RuntimeBoundary extends React.Component<
 }
 
 export default function App() {
+  const insets = useSafeAreaInsets();
+  const loginLayout = useLoginAuthLayout();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin' | 'community' | 'driver-kyc'>('login');
+  const [screen, setScreen] = useState<AppScreen>('login');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
@@ -499,7 +705,19 @@ export default function App() {
   const [selectedCity, setSelectedCity] = useState('');
   const [cities, setCities] = useState<string[]>([]);
   const [showCityPicker, setShowCityPicker] = useState(false);
-  
+  const [citySearchQuery, setCitySearchQuery] = useState('');
+  const [registerGender, setRegisterGender] = useState<'female' | 'male' | null>(null);
+
+  const filteredCities = useMemo(() => {
+    const q = citySearchQuery.trim().toLocaleLowerCase('tr-TR');
+    if (!q) return cities;
+    return cities.filter((c) => c.toLocaleLowerCase('tr-TR').includes(q));
+  }, [cities, citySearchQuery]);
+
+  useEffect(() => {
+    if (showCityPicker) setCitySearchQuery('');
+  }, [showCityPicker]);
+
   // Yeni Auth states
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -863,7 +1081,7 @@ export default function App() {
       let userData: string | null;
       let legalAcceptedStorage: string | null;
       try {
-        userData = await AsyncStorage.getItem('user');
+        userData = await getPersistedUserRaw();
         legalAcceptedStorage = await AsyncStorage.getItem('legal_accepted');
       } catch {
         setLoading(false);
@@ -877,7 +1095,7 @@ export default function App() {
         try {
           parsedUser = JSON.parse(userData) as User;
         } catch {
-          void AsyncStorage.removeItem('user').catch(() => {});
+          void clearSessionStorage();
           setLoading(false);
           return;
         }
@@ -938,7 +1156,7 @@ export default function App() {
   };
 
   const saveUser = async (userData: User) => {
-    await AsyncStorage.setItem('user', JSON.stringify(userData));
+    await setPersistedUserJson(JSON.stringify(userData));
     setUser(userData);
   };
 
@@ -1028,7 +1246,7 @@ export default function App() {
     if (user?.id) {
       await removePushToken(user.id);
     }
-    await AsyncStorage.removeItem('user');
+    await clearSessionStorage();
     try {
       await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
     } catch {
@@ -1185,12 +1403,13 @@ export default function App() {
       }
 
       if (data.success) {
-        if (data.user_exists && data.user) {
+        if (data.user_exists && data.user && typeof data.user === 'object') {
           // Kayıtlı kullanıcı - giriş yapıyor, kayıt sayfasına atma
-          await saveUser(data.user);
-          setUser(data.user);
+          const loggedUser = data.user as User;
+          await saveUser(loggedUser);
+          setUser(loggedUser);
           if (data.has_pin) {
-            const u = data.user as { phone?: string } | undefined;
+            const u = loggedUser as { phone?: string };
             const ten =
               normalizeTrMobile10(phone) || normalizeTrMobile10(u?.phone) || '';
             if (ten.length === 10) {
@@ -1205,8 +1424,8 @@ export default function App() {
             setScreen('set-pin');
           }
         } else {
-          // Yeni kullanıcı - Eğer isim ve şehir zaten girilmişse kayıt yap
-          if (name && selectedCity) {
+          // Yeni kullanıcı - Eğer isim, şehir ve cinsiyet zaten girilmişse kayıt yap
+          if (name && selectedCity && registerGender) {
             try {
               const currentDeviceId = deviceId || await getOrCreateDeviceId();
               const registerResponse = await fetch(`${API_URL}/auth/register`, {
@@ -1217,7 +1436,8 @@ export default function App() {
                   name, 
                   city: selectedCity,
                   role: 'passenger',
-                  device_id: currentDeviceId
+                  device_id: currentDeviceId,
+                  gender: registerGender,
                 })
               });
               
@@ -1225,6 +1445,7 @@ export default function App() {
               console.log('📝 Register response:', registerData);
               
               if (registerData.success && registerData.user) {
+                await persistAccessToken(registerData as { access_token?: string });
                 await saveUser(registerData.user);
                 setUser(registerData.user);
                 appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
@@ -1245,7 +1466,7 @@ export default function App() {
           }
         }
       } else {
-        appAlert('Hata', data.detail || 'OTP doğrulanamadı');
+        appAlert('Hata', apiErrMsg(data as { message?: string; detail?: unknown }, 'OTP doğrulanamadı'));
       }
     } catch (error) {
       console.error('handleVerifyOTP error:', error);
@@ -1348,6 +1569,7 @@ export default function App() {
 
       const data = await response.json();
       if (data.success) {
+        await persistAccessToken(data as { access_token?: string });
         await saveUser(data.user);
         
         setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
@@ -1415,7 +1637,7 @@ export default function App() {
           />
         )}
         
-        {/* Yarı saydam overlay - içeriğin okunabilirliği için (sadece mobil) */}
+        {/* Yarı saydam overlay — çok hafif; logoyu silik göstermesin */}
         {Platform.OS !== 'web' && (
           <View style={{
             position: 'absolute',
@@ -1423,38 +1645,57 @@ export default function App() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(255,255,255,0.3)',
+            backgroundColor: 'rgba(255,255,255,0.03)',
           }} />
         )}
         
         <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
           {/* Hareketli Bulutlar Arka Plan */}
           <AnimatedClouds />
-          
-          <ScrollView contentContainerStyle={styles.loginScrollContent} style={{ backgroundColor: 'transparent' }}>
-            <View style={styles.logoContainer}>
-              {/* Yuvarlak Logo */}
-              <View style={styles.roundLogoWrapper}>
-                <Image 
-                  source={require('../assets/images/logo.png')} 
-                  style={styles.roundLogo}
-                  resizeMode="cover"
-                />
-              </View>
-              <Text style={styles.heroTitle}>Yolculuk Eşleştirme</Text>
-              <Text style={styles.heroSubtitle}>Güvenli ve hızlı yolculuk deneyimi</Text>
-            </View>
+          <View style={styles.loginLayerAboveClouds}>
+          <KeyboardAvoidingView
+            style={styles.loginKavFlex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            enabled
+            keyboardVerticalOffset={
+              Platform.OS === 'ios'
+                ? insets.top + 4
+                : (StatusBar.currentHeight ?? 0) + insets.top
+            }
+          >
+            <View
+              style={[
+                styles.loginV2Root,
+                {
+                  paddingHorizontal: loginLayout.padH,
+                  paddingTop: loginLayout.isCompact ? 4 : 8,
+                  paddingBottom: Math.max(insets.bottom, 10),
+                },
+              ]}
+            >
+            <View style={[styles.loginV2Column, { maxWidth: loginLayout.colMax }]}>
+            <LoginBrandHeader screenWidth={screenWidth} isCompact={loginLayout.isCompact} />
 
-            <View style={styles.modernFormContainer}>
-              <Text style={styles.modernLabel}>Telefon Numaranız</Text>
-              <View style={styles.modernInputContainer}>
-                <Ionicons name="call-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+            <View
+              style={[
+                styles.loginV2Card,
+                {
+                  paddingTop: loginLayout.isShort ? 8 : 10,
+                  paddingBottom: loginLayout.isShort ? 8 : 10,
+                  paddingHorizontal: loginLayout.isShort ? 10 : 12,
+                },
+              ]}
+            >
+              <Text style={[styles.modernLabel, styles.loginV2Label]}>Telefon Numaranız</Text>
+              <View style={[styles.modernInputContainer, styles.loginV2InputWrap]}>
+                <Ionicons name="call-outline" size={18} color="#2196F3" style={styles.inputIcon} />
                 <TextInput
-                  style={styles.modernInput}
+                  style={[styles.modernInput, styles.loginV2Input]}
                   placeholder="5XX XXX XX XX"
                   placeholderTextColor="#A0A0A0"
                   keyboardType="phone-pad"
                   value={phone}
+                  blurOnSubmit={false}
                   onChangeText={(text) => {
                     const cleaned = text.replace(/\D/g, '');
                     if (cleaned.length > phone.length) void keyCharHaptic();
@@ -1466,19 +1707,19 @@ export default function App() {
 
               {/* KVKK Checkbox - Tıklanabilir Metin */}
               <TouchableOpacity 
-                style={styles.kvkkContainer} 
+                style={[styles.kvkkContainer, styles.loginV2Kvkk]} 
                 onPress={() => {
                   void tapButtonHaptic();
                   setKvkkAccepted(!kvkkAccepted);
                 }}
                 activeOpacity={0.7}
               >
-                <View style={[styles.checkbox, kvkkAccepted && styles.checkboxChecked]}>
-                  {kvkkAccepted && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                <View style={[styles.checkbox, styles.loginCheckboxSm, kvkkAccepted && styles.checkboxChecked]}>
+                  {kvkkAccepted && <Ionicons name="checkmark" size={14} color="#FFF" />}
                 </View>
-                <Text style={styles.kvkkText}>
+                <Text style={[styles.kvkkText, styles.loginV2KvkkText]}>
                   <Text 
-                    style={styles.kvkkLink} 
+                    style={[styles.kvkkLink, styles.loginV2KvkkLink]} 
                     onPress={() => setShowKVKKModal(true)}
                   >
                     Aydınlatma Metni ve Gizlilik Politikası
@@ -1487,61 +1728,59 @@ export default function App() {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.modernPrimaryButton, !kvkkAccepted && styles.buttonDisabled]} 
-                onPress={async () => {
+              <LoginPulseContinueButton
+                kvkkAccepted={kvkkAccepted}
+                onPress={() => {
                   void tapButtonHaptic();
                   if (!kvkkAccepted) {
                     appAlert(
-                      '⚠️ Onay Gerekli', 
+                      '⚠️ Onay Gerekli',
                       'Devam etmek için Aydınlatma Metni ve Gizlilik Politikasını kabul etmelisiniz.',
-                      [{ text: 'Tamam', style: 'default' }]
+                      [{ text: 'Tamam', style: 'default' }],
                     );
                     return;
                   }
-                  handleSendOTP();
+                  void handleSendOTP();
                 }}
-              >
-                <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFF" />
-              </TouchableOpacity>
-              
-              {/* Kayıt Ol Butonu */}
-              <TouchableOpacity 
-                style={styles.registerButton}
+              />
+
+              <TouchableOpacity
+                style={[styles.registerButton, styles.loginV2RegisterBtn]}
                 onPress={() => {
                   void tapButtonHaptic();
                   setScreen('register');
                 }}
               >
-                <Ionicons name="person-add-outline" size={20} color="#3FA9F5" />
-                <Text style={styles.registerButtonText}>Kayıt Ol</Text>
+                <Ionicons name="person-add-outline" size={18} color="#1565C0" />
+                <Text style={[styles.registerButtonText, styles.loginV2RegisterTxt]}>Kayıt Ol</Text>
               </TouchableOpacity>
-              
-              {/* Şifremi Unuttum */}
-              <TouchableOpacity 
-                style={styles.forgotPasswordButton}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setScreen('forgot-password');
-                }}
-              >
-                <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
-              </TouchableOpacity>
-              
-              {/* Destek Butonu */}
-              <TouchableOpacity 
-                style={styles.supportButton}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setShowSupportModal(true);
-                }}
-              >
-                <Ionicons name="headset-outline" size={20} color="#3FA9F5" />
-                <Text style={styles.supportButtonText}>Destek</Text>
-              </TouchableOpacity>
+
+              <View style={styles.loginV2FooterRow}>
+                <TouchableOpacity
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    setScreen('forgot-password');
+                  }}
+                >
+                  <Text style={styles.loginV2FooterLink}>Şifremi Unuttum</Text>
+                </TouchableOpacity>
+                <Text style={styles.loginV2FooterSep}>|</Text>
+                <TouchableOpacity
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    setShowSupportModal(true);
+                  }}
+                >
+                  <Text style={styles.loginV2FooterLink}>Destek</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </ScrollView>
+            </View>
+            </View>
+          </KeyboardAvoidingView>
+          </View>
           
           {/* KVKK Modal */}
           <KVKKConsentModal
@@ -1567,28 +1806,105 @@ export default function App() {
   }
 
   if (screen === 'otp') {
+    const otpW = Dimensions.get('window').width;
+    const otpH = Dimensions.get('window').height;
     return (
-      <SafeAreaView style={styles.container}>
-        <AnimatedClouds />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.logoContainer}>
-            <View style={styles.verifyIconContainer}>
-              <Ionicons name="shield-checkmark" size={50} color="#10B981" />
+      <View style={{ flex: 1, width: '100%', height: '100%' }}>
+        {Platform.OS !== 'web' && (
+          <Image
+            source={require('../assets/images/login-background.png')}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: otpW,
+              height: otpH,
+            }}
+            resizeMode="cover"
+          />
+        )}
+        {Platform.OS !== 'web' && (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(255,255,255,0.03)',
+            }}
+          />
+        )}
+        <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
+          <AnimatedClouds />
+          <View style={styles.loginLayerAboveClouds}>
+          <KeyboardAvoidingView
+            style={styles.loginKavFlex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            enabled
+            keyboardVerticalOffset={
+              Platform.OS === 'ios'
+                ? insets.top + 4
+                : (StatusBar.currentHeight ?? 0) + insets.top
+            }
+          >
+            <ScrollView
+              style={styles.loginAuthScroll}
+              contentContainerStyle={[
+                styles.loginAuthScrollContent,
+                {
+                  paddingHorizontal: loginLayout.padH,
+                  paddingTop: loginLayout.isCompact ? 0 : loginLayout.isShort ? 2 : 4,
+                  paddingBottom: Math.max(
+                    insets.bottom,
+                    loginLayout.isCompact ? 8 : loginLayout.isShort ? 10 : 12,
+                  ),
+                },
+              ]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              showsVerticalScrollIndicator={false}
+              alwaysBounceVertical={false}
+              scrollEnabled
+              nestedScrollEnabled={false}
+            >
+            <View
+              style={[
+                styles.loginHeaderSym,
+                { maxWidth: loginLayout.colMax, gap: loginLayout.isShort ? 3 : 4 },
+              ]}
+            >
+              <AnimatedLoginLogo compact={loginLayout.isCompact} />
+              <Text style={styles.loginBrandTitleBlue} maxFontSizeMultiplier={1.35}>
+                Yolculuk Eşleştirme
+              </Text>
+              <Text style={styles.loginTaglineMini} maxFontSizeMultiplier={1.3}>
+                {phone} numarasına SMS ile gönderilen 6 haneli kodu girin
+              </Text>
             </View>
-            <Text style={styles.verifyTitle}>Doğrulama</Text>
-            <Text style={styles.heroSubtitle}>{phone} numarasına gönderilen kodu girin</Text>
-          </View>
 
-          <View style={styles.modernFormContainer}>
-            <Text style={styles.modernLabel}>Doğrulama Kodunu Giriniz</Text>
-            <View style={styles.modernInputContainer}>
-              <Ionicons name="keypad-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
+            <View
+              style={[
+                styles.loginFormBlock,
+                {
+                  maxWidth: loginLayout.colMax,
+                  marginTop: loginLayout.isShort ? 4 : 6,
+                  paddingTop: loginLayout.isShort ? 8 : 10,
+                  paddingBottom: loginLayout.isShort ? 8 : 10,
+                  paddingHorizontal: loginLayout.isShort ? 10 : 12,
+                },
+              ]}
+            >
+            <Text style={[styles.modernLabel, styles.loginLabelTight]}>Doğrulama kodu</Text>
+            <View style={[styles.modernInputContainer, styles.loginInputTight]}>
+              <Ionicons name="keypad-outline" size={20} color="#3FA9F5" style={styles.inputIcon} />
               <TextInput
-                style={styles.modernInput}
+                style={[styles.modernInput, styles.loginModernInput]}
                 placeholder="• • • • • •"
                 placeholderTextColor="#A0A0A0"
                 keyboardType="number-pad"
                 value={otp}
+                blurOnSubmit={false}
                 onChangeText={(t) => {
                   if (t.length > otp.length) void keyCharHaptic();
                   setOtp(t);
@@ -1598,7 +1914,7 @@ export default function App() {
             </View>
             
             {/* 30 Saniye Geri Sayım */}
-            <OTPCountdown phone={phone} onResend={async () => {
+            <OTPCountdown compact phone={phone} onResend={async () => {
               try {
                 const response = await fetch(`${API_URL}/auth/send-otp`, {
                   method: 'POST',
@@ -1617,7 +1933,7 @@ export default function App() {
             }} />
 
             <TouchableOpacity
-              style={styles.modernPrimaryButton}
+              style={[styles.modernPrimaryButton, styles.loginPrimaryTight]}
               onPress={() => {
                 void tapButtonHaptic();
                 handleVerifyOTP();
@@ -1628,7 +1944,7 @@ export default function App() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.modernSecondaryButton}
+              style={[styles.modernSecondaryButton, styles.loginBackRowTight]}
               onPress={() => {
                 void tapButtonHaptic();
                 setScreen('login');
@@ -1638,8 +1954,11 @@ export default function App() {
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </SafeAreaView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -1694,20 +2013,65 @@ export default function App() {
               />
             </View>
 
+            {/* Cinsiyet */}
+            <Text style={styles.modernLabel}>Cinsiyet</Text>
+            <View style={styles.genderRow}>
+              <TouchableOpacity
+                style={[styles.genderCard, registerGender === 'female' && styles.genderCardActive]}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setRegisterGender('female');
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name="woman-outline"
+                  size={26}
+                  color={registerGender === 'female' ? '#FFF' : '#3FA9F5'}
+                />
+                <Text style={[styles.genderCardLabel, registerGender === 'female' && styles.genderCardLabelActive]}>
+                  Kadın
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.genderCard, registerGender === 'male' && styles.genderCardActive]}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  setRegisterGender('male');
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name="man-outline"
+                  size={26}
+                  color={registerGender === 'male' ? '#FFF' : '#3FA9F5'}
+                />
+                <Text style={[styles.genderCardLabel, registerGender === 'male' && styles.genderCardLabelActive]}>
+                  Erkek
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Şehir */}
-            <Text style={styles.modernLabel}>Şehir</Text>
+            <Text style={styles.modernLabel}>Yaşadığınız şehir</Text>
             <TouchableOpacity
-              style={styles.modernInputContainer}
+              style={styles.cityFieldPro}
               onPress={() => {
                 void tapButtonHaptic();
                 setShowCityPicker(true);
               }}
+              activeOpacity={0.88}
             >
-              <Ionicons name="location-outline" size={22} color="#3FA9F5" style={styles.inputIcon} />
-              <Text style={selectedCity ? styles.modernInputText : styles.modernPlaceholder}>
-                {selectedCity || 'Şehir seçin'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color="#A0A0A0" />
+              <View style={styles.cityFieldProIconWrap}>
+                <Ionicons name="business-outline" size={22} color="#3FA9F5" />
+              </View>
+              <View style={styles.cityFieldProTextCol}>
+                <Text style={styles.cityFieldProHint}>Hizmet bölgeniz</Text>
+                <Text style={selectedCity ? styles.cityFieldProValue : styles.cityFieldProPlaceholder}>
+                  {selectedCity || 'Şehir seçmek için dokunun'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
             </TouchableOpacity>
 
             {/* Telefon Numarası - Elle Yazılabilir */}
@@ -1739,10 +2103,10 @@ export default function App() {
             <Text style={styles.phoneHint}>Başında 0 olmadan yazın (örn: 532 XXX XX XX)</Text>
 
             <TouchableOpacity 
-              style={[styles.modernPrimaryButton, (!firstName || !lastName || !selectedCity || phone.length < 10) && styles.buttonDisabled]} 
+              style={[styles.modernPrimaryButton, (!firstName || !lastName || !registerGender || !selectedCity || phone.length < 10) && styles.buttonDisabled]} 
               onPress={async () => {
                 void tapButtonHaptic();
-                if (firstName && lastName && selectedCity && phone.length >= 10) {
+                if (firstName && lastName && registerGender && selectedCity && phone.length >= 10) {
                   setName(`${firstName} ${lastName}`);
                   setLoading(true);
                   try {
@@ -1773,7 +2137,7 @@ export default function App() {
                   }
                 }
               }}
-              disabled={!firstName || !lastName || !selectedCity || phone.length < 10 || loading}
+              disabled={!firstName || !lastName || !registerGender || !selectedCity || phone.length < 10 || loading}
             >
               {loading ? (
                 <ActivityIndicator color="#FFF" size="small" />
@@ -1805,28 +2169,53 @@ export default function App() {
             onRequestClose={() => setShowCityPicker(false)}
           >
             <View style={styles.modalContainer}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Şehir Seçin</Text>
+              <TouchableOpacity style={styles.modalBackdropTap} activeOpacity={1} onPress={() => setShowCityPicker(false)} />
+              <View style={styles.modalSheetPro}>
+                <View style={styles.modalSheetHandle} />
+                <Text style={styles.modalTitlePro}>Şehir seçin</Text>
+                <Text style={styles.modalSubtitlePro}>Listeden seçin veya arayın</Text>
+                <View style={styles.citySearchBar}>
+                  <Ionicons name="search" size={20} color="#94A3B8" style={{ marginRight: 10 }} />
+                  <TextInput
+                    style={styles.citySearchInput}
+                    placeholder="İl adı yazın…"
+                    placeholderTextColor="#94A3B8"
+                    value={citySearchQuery}
+                    onChangeText={setCitySearchQuery}
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                  />
+                  {citySearchQuery.length > 0 ? (
+                    <TouchableOpacity onPress={() => setCitySearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="close-circle" size={22} color="#CBD5E1" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
                 <FlatList
-                  data={cities}
+                  data={filteredCities}
                   keyExtractor={(item) => item}
+                  keyboardShouldPersistTaps="handled"
+                  ListEmptyComponent={
+                    <Text style={styles.cityEmptyHint}>
+                      {cities.length === 0 ? 'Şehirler yükleniyor…' : 'Eşleşen şehir yok'}
+                    </Text>
+                  }
                   renderItem={({ item }) => (
                     <TouchableOpacity
-                      style={styles.cityItem}
+                      style={[styles.cityItemPro, selectedCity === item && styles.cityItemProSelected]}
                       onPress={() => {
+                        void tapButtonHaptic();
                         setSelectedCity(item);
                         setShowCityPicker(false);
                       }}
                     >
-                      <Text style={styles.cityItemText}>{item}</Text>
-                      {selectedCity === item && <Ionicons name="checkmark" size={24} color="#3FA9F5" />}
+                      <Ionicons name="location-outline" size={20} color={selectedCity === item ? '#3FA9F5' : '#64748B'} />
+                      <Text style={[styles.cityItemTextPro, selectedCity === item && styles.cityItemTextProSelected]}>{item}</Text>
+                      {selectedCity === item ? <Ionicons name="checkmark-circle" size={22} color="#3FA9F5" /> : null}
                     </TouchableOpacity>
                   )}
                 />
-                <TouchableOpacity
-                  style={[styles.modalCloseButton, { backgroundColor: '#3FA9F5' }]}
-                  onPress={() => setShowCityPicker(false)}
-                >
+                <TouchableOpacity style={styles.modalCloseButtonPro} onPress={() => setShowCityPicker(false)}>
                   <Text style={styles.modalCloseButtonText}>Kapat</Text>
                 </TouchableOpacity>
               </View>
@@ -1936,11 +2325,21 @@ export default function App() {
               first_name: firstName,
               last_name: lastName,
               city: selectedCity,
-              device_id: currentDeviceId
+              device_id: currentDeviceId,
+              gender: registerGender || undefined,
             })
           });
           const setPinData = await setPinResponse.json();
           if (setPinData.success) {
+            await persistAccessToken(setPinData as { access_token?: string });
+            if (registerGender) {
+              setUser((prev) => {
+                if (!prev) return prev;
+                const next = { ...prev, gender: registerGender };
+                void saveUser(next);
+                return next;
+              });
+            }
             appAlert(
               'Kayıt Başarılı',
               'Hesabınız hazır. PIN kodunuzu kimseyle paylaşmayın.',
@@ -1962,11 +2361,13 @@ export default function App() {
             last_name: lastName,
             city: selectedCity,
             pin,
-            device_id: currentDeviceId
+            device_id: currentDeviceId,
+            gender: registerGender || undefined,
           })
         });
         const registerData = await registerResponse.json();
         if (registerData.success && registerData.user) {
+          await persistAccessToken(registerData as { access_token?: string });
           setUser(registerData.user);
           await saveUser(registerData.user);
           appAlert(
@@ -2129,6 +2530,7 @@ export default function App() {
           } catch {
             /* ignore */
           }
+          await persistAccessToken(data as { access_token?: string });
           setUser(data.user as User);
           saveUser(data.user as User);
           
@@ -2141,7 +2543,7 @@ export default function App() {
           
           setScreen('role-select');
         } else {
-          appAlert('Hata', data.detail || 'Yanlış şifre');
+          appAlert('Hata', apiErrMsg(data as { message?: string; detail?: unknown }, 'Yanlış şifre'));
           setPin('');
         }
       } catch (error) {
@@ -2589,7 +2991,7 @@ export default function App() {
                 appAlert('Çıkış', 'Oturumu kapatmak istiyor musunuz?', [
                   { text: 'İptal', style: 'cancel' },
                   { text: 'Çıkış', style: 'destructive', onPress: async () => {
-                    await AsyncStorage.removeItem('user');
+                    await clearSessionStorage();
                     setUser(null);
                     setScreen('login');
                   }}
@@ -2599,9 +3001,10 @@ export default function App() {
               <Ionicons name="log-out-outline" size={22} color="#EF4444" />
             </TouchableOpacity>
             
-            <View style={{ flex: 1, marginHorizontal: 6 }}>
-              <Text style={styles.roleTopTitle}>Bugün nasıl ilerlemek{'\n'}istersiniz?</Text>
-              <Text style={styles.roleTopSubtitle}>Yolcu veya sürücü — araç ya da motor</Text>
+            <View style={styles.roleTopTitleWrap}>
+              <View style={styles.roleTopTitlePill}>
+                <Text style={styles.roleTopTitle}>Bugün nasıl ilerlemek{'\n'}istersiniz?</Text>
+              </View>
             </View>
             
             {isAdmin ? (
@@ -2846,11 +3249,26 @@ export default function App() {
   // 🔒 FALLBACK - Beklenmeyen durumlarda login ekranına yönlendir
   // Bu beyaz ekran sorununu önler
   console.log('⚠️ Unexpected screen state:', { screen, hasUser: !!user });
-  
+
+  /* Önceki dallarda daraltılmış `screen` için savunmacı yönlendirme — tam birlik tipine aç */
+  const guardScreen = screen as AppScreen;
   // Eğer user yoksa login'e, user varsa role-select'e yönlendir
-  if (!user && screen !== 'login' && screen !== 'register' && screen !== 'otp' && screen !== 'forgot-password' && screen !== 'reset-pin') {
+  if (
+    !user &&
+    guardScreen !== 'login' &&
+    guardScreen !== 'register' &&
+    guardScreen !== 'otp' &&
+    guardScreen !== 'forgot-password' &&
+    guardScreen !== 'reset-pin'
+  ) {
     setTimeout(() => setScreen('login'), 100);
-  } else if (user && screen !== 'dashboard' && screen !== 'role-select' && screen !== 'community' && screen !== 'driver-kyc') {
+  } else if (
+    user &&
+    guardScreen !== 'dashboard' &&
+    guardScreen !== 'role-select' &&
+    guardScreen !== 'community' &&
+    guardScreen !== 'driver-kyc'
+  ) {
     setTimeout(() => setScreen('role-select'), 100);
   }
   
@@ -5421,7 +5839,7 @@ function PassengerDashboard({
   userLocation: any;
   showDestinationPicker: boolean;
   setShowDestinationPicker: (show: boolean) => void;
-  setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
+  setScreen: (screen: AppScreen) => void;
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
 }) {
@@ -5521,6 +5939,7 @@ function PassengerDashboard({
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [priceInfo, setPriceInfo] = useState<{
     distance_km: number;
+    trip_distance_km?: number;
     estimated_minutes: number;
     min_price: number;
     max_price: number;
@@ -5587,6 +6006,61 @@ function PassengerDashboard({
   const [destinationAwaitingMapTap, setDestinationAwaitingMapTap] = useState(false);
   /** search: başlık + arama kartı | map: yalnızca harita (mahalle seçilince) */
   const [destinationPickerPhase, setDestinationPickerPhase] = useState<'search' | 'map'>('search');
+  /** Hedef modalı arama fazı: şehir görünümü */
+  const DESTINATION_PICKER_SEARCH_DELTA = 0.11;
+  /** Pin / mahalle seçim sonrası yakın zoom (initialRegion + animateToRegion ile aynı) */
+  const DESTINATION_PICKER_PIN_DELTA = 0.026;
+  /** Adres önerileri: profil şehri; yoksa konumdan ters geokod */
+  const [passengerSearchCityLabel, setPassengerSearchCityLabel] = useState(() =>
+    (user?.city && String(user.city).trim()) || '',
+  );
+  const passengerDestinationAutoOpenedRef = useRef(false);
+  const prevHadActiveTagRef = useRef(!!activeTag);
+
+  useEffect(() => {
+    const c = user?.city && String(user.city).trim();
+    if (c) setPassengerSearchCityLabel(c);
+  }, [user?.city]);
+
+  useEffect(() => {
+    if (user?.city?.trim() || !userLocation?.latitude || !userLocation?.longitude) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.latitude}&lon=${userLocation.longitude}&accept-language=tr&addressdetails=1`;
+        const r = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
+        const j = await r.json();
+        const a = j?.address;
+        const city =
+          a?.city || a?.town || a?.municipality || a?.county || a?.province || a?.state;
+        if (!cancelled && city) setPassengerSearchCityLabel(String(city));
+      } catch {
+        /* sessiz */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.city, userLocation?.latitude, userLocation?.longitude]);
+
+  useEffect(() => {
+    if (prevHadActiveTagRef.current && !activeTag) {
+      passengerDestinationAutoOpenedRef.current = false;
+    }
+    prevHadActiveTagRef.current = !!activeTag;
+  }, [activeTag]);
+
+  useEffect(() => {
+    if (activeTag || destination) return;
+    if (passengerDestinationAutoOpenedRef.current) return;
+    const t = setTimeout(() => {
+      setShowDestinationPicker(true);
+      setDestinationPickerPhase('search');
+      passengerDestinationAutoOpenedRef.current = true;
+    }, 450);
+    return () => clearTimeout(t);
+  }, [activeTag, destination, setShowDestinationPicker]);
+
   const destinationHeroPulse = useRef(new Animated.Value(1)).current;
   const destPinPulse1 = useRef(new Animated.Value(1)).current;
   const destPinOpacity1 = useRef(new Animated.Value(0.5)).current;
@@ -5789,6 +6263,7 @@ function PassengerDashboard({
         longitude: (offer as any).driver_longitude || (offer as any).longitude || userLocation?.longitude || 0,
         vehicle_model: offer.vehicle_model,
         price: offer.price,
+        vehicle_kind: offer.driver_vehicle_kind === 'motorcycle' ? 'motorcycle' : 'car',
       }));
     
     setOfferDriverLocations(newDriverLocations);
@@ -5899,6 +6374,11 @@ function PassengerDashboard({
         trip_duration_min: data.trip_duration_min,
         vehicle_model: data.vehicle_model,
         notes: data.notes,
+        driver_vehicle_kind:
+          (data as { driver_vehicle_kind?: string }).driver_vehicle_kind === 'motorcycle' ||
+          (data as { vehicle_kind?: string }).vehicle_kind === 'motorcycle'
+            ? 'motorcycle'
+            : 'car',
       });
       const tid = data.tag_id as string | undefined;
       if (tid) {
@@ -5921,7 +6401,7 @@ function PassengerDashboard({
       
       // 🚀 ANLIK GÜNCELLEME - Socket'ten gelen veriyi kullan
       if (data && data.tag_id) {
-        const d = data as Record<string, unknown>;
+        const d = data as unknown as Record<string, unknown>;
         const pkKm = Number(d.pickup_distance_km);
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
@@ -5970,7 +6450,7 @@ function PassengerDashboard({
       playMatchSound();
       clearOffers();
       if (data?.tag_id) {
-        const d = data as Record<string, unknown>;
+        const d = data as unknown as Record<string, unknown>;
         const pkKm = Number(d.pickup_distance_km);
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
@@ -6018,7 +6498,7 @@ function PassengerDashboard({
       playMatchSound();
       clearOffers();
       if (data?.tag_id) {
-        const d = data as Record<string, unknown>;
+        const d = data as unknown as Record<string, unknown>;
         const pkKm = Number(d.pickup_distance_km);
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
@@ -6279,7 +6759,7 @@ function PassengerDashboard({
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
   // 🔥 Polling interval ref - temizleme için
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isPollingActiveRef = useRef<boolean>(true);
 
   useEffect(() => {
@@ -6719,8 +7199,10 @@ function PassengerDashboard({
       const serverTag = data.tag as Record<string, unknown>;
       const srvKm = Number(serverTag.distance_km);
       const srvMin = Number(serverTag.estimated_minutes);
+      const resolvedTagId = String(serverTag.id ?? tagId);
       const mergedTag = {
         ...serverTag,
+        id: resolvedTagId,
         offered_price: selectedPrice,
         distance_km: Number.isFinite(srvKm) && srvKm > 0 ? srvKm : priceInfo.distance_km,
         estimated_minutes:
@@ -6736,7 +7218,7 @@ function PassengerDashboard({
       if (emitCreateTagRequest) {
         emitCreateTagRequest({
           request_id: requestId,
-          tag_id: mergedTag.id,
+          tag_id: resolvedTagId,
           passenger_id: user.id,
           passenger_name: user.name || user.phone,
           pickup_location: pickupAddress,
@@ -6753,7 +7235,7 @@ function PassengerDashboard({
           passenger_payment_method: passengerPaymentPreference,
         });
       }
-      console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', mergedTag.id);
+      console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
     } catch (err) {
       console.log('Backend kayıt hatası:', err);
       const raw = err instanceof Error ? err.message : String(err);
@@ -6841,7 +7323,17 @@ function PassengerDashboard({
       const data = await response.json();
       setCalling(false);
       if (!data.success) {
-        appAlert('Hata', (data.detail as string) || 'Arama başlatılamadı');
+        const detail = String((data as { detail?: unknown }).detail ?? '');
+        if (detail === 'busy') {
+          appAlert(
+            'Meşgul',
+            'Karşı taraf şu an başka bir görüşmede. Lütfen bir süre sonra tekrar deneyin.',
+            [{ text: 'Tamam' }],
+            { variant: 'warning' },
+          );
+          return;
+        }
+        appAlert('Hata', detail || 'Arama başlatılamadı');
         return;
       }
       const agoraOk = await joinTripCallAgoraAsCaller(
@@ -6918,10 +7410,12 @@ function PassengerDashboard({
       if (success) {
         // Socket üzerinden de bildir
         if (socketRejectOffer) {
+          const tagIdForReject = activeTag?.id || (offer as { tag_id?: string })?.tag_id || '';
           socketRejectOffer({
             request_id: currentRequestId,
             offer_id: offerId,
-            driver_id: driverId
+            driver_id: driverId,
+            tag_id: tagIdForReject,
           });
         }
         // Toast göster
@@ -7088,8 +7582,8 @@ function PassengerDashboard({
           {
             latitude: lat,
             longitude: lng,
-            latitudeDelta: 0.026,
-            longitudeDelta: 0.026,
+            latitudeDelta: DESTINATION_PICKER_PIN_DELTA,
+            longitudeDelta: DESTINATION_PICKER_PIN_DELTA,
           },
           420,
         );
@@ -7110,15 +7604,62 @@ function PassengerDashboard({
   useEffect(() => {
     if (showDestinationPicker) {
       setDestinationPickerGeocoding(false);
+      const cityLL = getRegisteredCityCenter(
+        (passengerSearchCityLabel || user?.city || '').trim(),
+      );
       const lat =
-        userLocation?.latitude ?? destination?.latitude ?? 41.0082;
+        userLocation?.latitude ??
+        destination?.latitude ??
+        cityLL?.latitude ??
+        DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
       const lng =
-        userLocation?.longitude ?? destination?.longitude ?? 28.9784;
+        userLocation?.longitude ??
+        destination?.longitude ??
+        cityLL?.longitude ??
+        DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
       setDestinationPickerPin({ latitude: lat, longitude: lng });
     } else {
       setDestinationPickerPin(null);
     }
-  }, [showDestinationPicker]);
+  }, [
+    showDestinationPicker,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    destination?.latitude,
+    destination?.longitude,
+    passengerSearchCityLabel,
+    user?.city,
+  ]);
+
+  useEffect(() => {
+    if (!showDestinationPicker || destinationPickerPhase !== 'search') return;
+    const p = destinationPickerPin;
+    if (
+      !p ||
+      !Number.isFinite(p.latitude) ||
+      !Number.isFinite(p.longitude)
+    )
+      return;
+    const t = setTimeout(() => {
+      try {
+        destinationPickerMapRef.current?.animateToRegion?.(
+          {
+            latitude: p.latitude,
+            longitude: p.longitude,
+            latitudeDelta: DESTINATION_PICKER_SEARCH_DELTA,
+            longitudeDelta: DESTINATION_PICKER_SEARCH_DELTA,
+          },
+          420,
+        );
+      } catch (_) {}
+    }, 450);
+    return () => clearTimeout(t);
+  }, [
+    showDestinationPicker,
+    destinationPickerPhase,
+    destinationPickerPin?.latitude,
+    destinationPickerPin?.longitude,
+  ]);
 
   const applyDestinationFromCoordinate = async (
     latitude: number,
@@ -7159,6 +7700,22 @@ function PassengerDashboard({
     await applyDestinationFromCoordinate(latitude, longitude);
   };
 
+  const destinationPickerCityLLResolved = getRegisteredCityCenter(
+    (passengerSearchCityLabel || user?.city || '').trim(),
+  );
+  const destinationPickerMapLatResolved =
+    destinationPickerPin?.latitude ??
+    userLocation?.latitude ??
+    destination?.latitude ??
+    destinationPickerCityLLResolved?.latitude ??
+    DEFAULT_TR_MAP_FALLBACK_CENTER.latitude;
+  const destinationPickerMapLngResolved =
+    destinationPickerPin?.longitude ??
+    userLocation?.longitude ??
+    destination?.longitude ??
+    destinationPickerCityLLResolved?.longitude ??
+    DEFAULT_TR_MAP_FALLBACK_CENTER.longitude;
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 🆕 SEARCHING PHASE - HARİTA + TEKLİF LİSTESİ (YENİ UI)
   // Üstte harita (tüm sürücüler) + Altta scrollable teklif listesi
@@ -7177,6 +7734,8 @@ function PassengerDashboard({
           tagId={activeTag.id}
           offeredPrice={activeTag.final_price || activeTag.offered_price || 0}
           passengerVehicleKind={rideVehiclePreference}
+          passengerGender={parseGender(user?.gender)}
+          selfUserId={user?.id}
           onCancel={handleCancelTag}
           onMatch={(driverData) => {
             // Eşleşme olduğunda
@@ -7213,6 +7772,8 @@ function PassengerDashboard({
             driverLocations={offerDriverLocations}
             height={SCREEN_HEIGHT * 0.32}
             nearbyDriverCount={nearbyDriverCount}
+            selfGender={parseGender(user?.gender)}
+            selfUserId={user?.id}
           />
         </View>
 
@@ -7634,6 +8195,7 @@ function PassengerDashboard({
                   otherLocation={driverLocation || activeTag?.driver_location || null}
                   destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
                   isDriver={false}
+                  selfGender={parseGender(user?.gender)}
                   userName={user.name}
                   otherUserName={displayFirstName(activeTag?.driver_name, 'Şoför')}
                   otherUserId={activeTag?.driver_id}
@@ -7966,18 +8528,16 @@ function PassengerDashboard({
               pitchEnabled
               rotateEnabled
               initialRegion={{
-                latitude:
-                  destinationPickerPin?.latitude ??
-                  userLocation?.latitude ??
-                  destination?.latitude ??
-                  41.0082,
-                longitude:
-                  destinationPickerPin?.longitude ??
-                  userLocation?.longitude ??
-                  destination?.longitude ??
-                  28.9784,
-                latitudeDelta: 0.0024,
-                longitudeDelta: 0.0024,
+                latitude: destinationPickerMapLatResolved,
+                longitude: destinationPickerMapLngResolved,
+                latitudeDelta:
+                  destinationPickerPhase === 'search'
+                    ? DESTINATION_PICKER_SEARCH_DELTA
+                    : DESTINATION_PICKER_PIN_DELTA,
+                longitudeDelta:
+                  destinationPickerPhase === 'search'
+                    ? DESTINATION_PICKER_SEARCH_DELTA
+                    : DESTINATION_PICKER_PIN_DELTA,
               }}
               onPress={
                 destinationPickerPhase === 'map' ? handleDestinationMapPress : undefined
@@ -8014,7 +8574,7 @@ function PassengerDashboard({
                       ]}
                     />
                     <View style={styles.destinationPinCore}>
-                      <Ionicons name="location" size={28} color="#FFF" />
+                      <Ionicons name="location" size={36} color="#FFF" />
                     </View>
                   </View>
                 </DestinationPickerMarker>
@@ -8025,7 +8585,10 @@ function PassengerDashboard({
             <View style={styles.destinationMapCalloutWrap} pointerEvents="none">
               <View style={styles.destinationMapCalloutBubble}>
                 <Text style={styles.destinationMapCalloutText}>
-                  Haritayı kaydırın · yakınlaştırın · dokunun veya yeşil işaretçiyi sürükleyin
+                  Haritayı kaydırın · yakınlaştırın · yeşil işaretçiyi sürükleyin
+                </Text>
+                <Text style={styles.destinationMapCalloutTextBold}>
+                  Gitmek istediğiniz sokağa haritada biraz daha sert dokunun — pin tam otursun.
                 </Text>
               </View>
             </View>
@@ -8109,11 +8672,11 @@ function PassengerDashboard({
                     <View style={styles.destinationSearchShellModern}>
                       <PlacesAutocomplete
                         placeholder="Mahalle, sokak, mekan ara…"
-                        city={user?.city || ''}
+                        city={passengerSearchCityLabel || user?.city || ''}
                         hidePopularChips
                         visualVariant="tech"
                         suggestionsFirst={false}
-                        strictCityBounds
+                        strictCityBounds={!!(passengerSearchCityLabel || user?.city || '').trim()}
                         inputSize="large"
                         predictionMaxHeightBonus={56}
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
@@ -8323,7 +8886,7 @@ function PassengerDashboard({
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
-  setScreen: (screen: 'login' | 'otp' | 'register' | 'set-pin' | 'enter-pin' | 'role-select' | 'dashboard' | 'forgot-password' | 'reset-pin') => void;
+  setScreen: (screen: AppScreen) => void;
   kycStatusProp?: { status: string; submitted_at: string | null } | null;
   setKycStatusProp?: (status: { status: string; submitted_at: string | null } | null) => void;
   onShowTripEndedBanner?: (message: string) => void;
@@ -8705,7 +9268,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       
       // 🔥 ANINDA activeTag'ı güncelle - API bekleme!
       if (data && data.tag_id) {
-        const d = data as Record<string, unknown>;
+        const d = data as unknown as Record<string, unknown>;
         const pkKm = Number(d.pickup_distance_km);
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
@@ -8754,7 +9317,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       playMatchSound();
       setRequests([]);
       if (data?.tag_id) {
-        const d = data as Record<string, unknown>;
+        const d = data as unknown as Record<string, unknown>;
         const pkKm = Number(d.pickup_distance_km);
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
@@ -8963,7 +9526,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       const data = await response.json();
       setCalling(false);
       if (!data.success) {
-        appAlert('Hata', (data.detail as string) || 'Arama başlatılamadı');
+        const detail = String((data as { detail?: unknown }).detail ?? '');
+        if (detail === 'busy') {
+          appAlert(
+            'Meşgul',
+            'Karşı taraf şu an başka bir görüşmede. Lütfen bir süre sonra tekrar deneyin.',
+            [{ text: 'Tamam' }],
+            { variant: 'warning' },
+          );
+          return;
+        }
+        appAlert('Hata', detail || 'Arama başlatılamadı');
         return;
       }
       const agoraOk = await joinTripCallAgoraAsCaller(
@@ -9841,6 +10414,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               vehicleKind={driverVehicleKind}
               driverId={user.id}
               playTapSound={playTapSound}
+              homeCity={user?.city || ''}
               driverLocation={userLocation}
               requests={requests.map((req) => {
                 const dlat = Number(req.dropoff_lat);
@@ -10037,6 +10611,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 ? 'motorcycle'
                 : 'car'
             }
+            otherPassengerGender={parseGender(activeTag?.passenger_gender)}
             passengerPaymentMethod={normalizePassengerPaymentMethod(activeTag?.passenger_payment_method) ?? undefined}
             isDriver={true}
             userName={user.name}
@@ -10772,6 +11347,387 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  /** Giriş/OTP: üstten sıralı, sabit aralık (space-between yok — ortada dev boşluk oluşmaz) */
+  loginScrollCompact: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 10,
+    justifyContent: 'flex-start',
+    gap: 12,
+  },
+  loginKeyboardScroll: {
+    flex: 1,
+  },
+  /** Klavye açılınca kaydırılabilir; alt boşluk alan bırakır */
+  loginKeyboardScrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 56,
+    gap: 12,
+    alignItems: 'stretch',
+  },
+  /** Giriş/OTP: kaydırma yok; tek sütun, sıkı dikey — Destek’e kadar sığsın */
+  loginFitScreen: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingTop: 0,
+    paddingBottom: 2,
+    gap: 5,
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+  },
+  /** Bulutların üstünde — dokunma ve butonlar kesilmesin */
+  loginLayerAboveClouds: {
+    flex: 1,
+    zIndex: 10,
+    elevation: 6,
+  },
+  loginKavFlex: {
+    flex: 1,
+  },
+  /** Giriş/OTP: kısa ekranda içerik taşarsa dikey kaydırma; padding runtime’da loginLayout ile */
+  loginAuthScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  /** flexGrow yok: tek sütun yüksekliği içerik kadar; altta gereksiz boşluk oluşmaz */
+  loginAuthScrollContent: {
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    width: '100%',
+  },
+  loginScrollInner: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 0,
+    paddingBottom: 28,
+    gap: 8,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  loginHeaderSym: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 352,
+    marginBottom: 0,
+    gap: 4,
+  },
+  /** Giriş: marka kümesi (logo+başlık) ile kart arası — küçük sabit boşluk */
+  loginScreenStack: {
+    width: '100%',
+    alignSelf: 'center',
+    alignItems: 'center',
+    gap: 10,
+  },
+  /** Logo, “Yolculuk Eşleştirme” ve slogan bitişik sütun */
+  loginBrandCluster: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  loginBrandTouchingLogo: {
+    marginTop: 6,
+    marginBottom: 0,
+    fontSize: 17,
+    letterSpacing: 0.2,
+    ...Platform.select({
+      android: { includeFontPadding: false as const },
+      default: {},
+    }),
+  },
+  loginBrandTouchingLogoCompact: {
+    marginTop: 4,
+    fontSize: 15,
+  },
+  loginTaglineTouchingTitle: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 14,
+    paddingHorizontal: 8,
+    ...Platform.select({
+      android: { includeFontPadding: false as const },
+      default: {},
+    }),
+  },
+  loginTaglineTouchingTitleCompact: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    paddingHorizontal: 4,
+  },
+  loginFormBelowLogo: {
+    marginTop: 0,
+    borderRadius: 16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  loginLabelLogin: {
+    marginBottom: 3,
+    fontSize: 13,
+  },
+  loginModernInputLogin: {
+    paddingVertical: 6,
+    fontSize: 15,
+  },
+  /** Telefon girişi — tek ekran, simetrik sütun (ScrollView yok) */
+  loginV2Root: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  loginV2Column: {
+    width: '100%',
+    alignItems: 'stretch',
+  },
+  loginV2Brand: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 6,
+  },
+  loginV2LogoBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginV2Title: {
+    marginTop: 6,
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1565C0',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    ...Platform.select({
+      android: { includeFontPadding: false as const },
+      default: {},
+    }),
+  },
+  loginV2TitleCompact: {
+    marginTop: 6,
+    fontSize: 15,
+  },
+  loginV2Tagline: {
+    marginTop: 3,
+    fontSize: 11,
+    lineHeight: 14,
+    color: '#546E7A',
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingHorizontal: 8,
+    ...Platform.select({
+      android: { includeFontPadding: false as const },
+      default: {},
+    }),
+  },
+  loginV2TaglineCompact: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    paddingHorizontal: 4,
+  },
+  loginV2Card: {
+    width: '100%',
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.93)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.98)',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  loginV2Label: {
+    marginBottom: 5,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#37474F',
+  },
+  loginV2InputWrap: {
+    marginBottom: 6,
+    paddingVertical: 0,
+  },
+  loginV2Input: {
+    paddingVertical: 7,
+    fontSize: 16,
+  },
+  loginV2Kvkk: {
+    marginBottom: 8,
+    paddingHorizontal: 0,
+    alignItems: 'flex-start',
+  },
+  loginV2KvkkText: {
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  loginV2KvkkLink: {
+    color: '#2196F3',
+    fontWeight: '600',
+  },
+  loginV2RegisterBtn: {
+    paddingVertical: 8,
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#2196F3',
+    backgroundColor: '#FFFFFF',
+    gap: 6,
+  },
+  loginV2RegisterTxt: {
+    fontSize: 14,
+    color: '#1565C0',
+    fontWeight: '700',
+  },
+  loginV2FooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+    paddingTop: 2,
+  },
+  loginV2FooterLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1565C0',
+    textDecorationLine: 'underline',
+  },
+  loginV2FooterSep: {
+    fontSize: 12,
+    color: '#90A4AE',
+    fontWeight: '600',
+  },
+  loginBrandTitleBlue: {
+    marginTop: 0,
+    marginBottom: 0,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0369A1',
+    textAlign: 'center',
+    letterSpacing: 0.35,
+  },
+  loginTaglineMini: {
+    marginTop: 0,
+    marginBottom: 0,
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingHorizontal: 14,
+    lineHeight: 16,
+  },
+  loginFooterLinksRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 0,
+    paddingVertical: 2,
+  },
+  loginFooterLinkBlue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0369A1',
+    textDecorationLine: 'underline',
+  },
+  loginFooterSep: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  loginLinkStrong: {
+    color: '#0369A1',
+    fontWeight: '800',
+  },
+  loginLogoBlock: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 400,
+    flexShrink: 0,
+  },
+  loginFormBlock: {
+    width: '100%',
+    maxWidth: 352,
+    flexShrink: 0,
+    flexGrow: 0,
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
+    zIndex: 20,
+    elevation: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+  },
+  loginHeroTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1B1B1E',
+    marginTop: 0,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  loginHeroSubtitle: {
+    fontSize: 11,
+    color: '#495057',
+    marginTop: 1,
+    textAlign: 'center',
+    fontWeight: '600',
+    paddingHorizontal: 6,
+  },
+  loginKvkkTextMicro: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  loginCheckboxSm: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    marginRight: 8,
+    marginTop: 1,
+  },
+  loginInputTight: {
+    marginBottom: 4,
+    paddingVertical: 0,
+  },
+  loginKvkkTight: {
+    marginBottom: 3,
+    paddingHorizontal: 0,
+  },
+  loginPrimaryTight: {
+    paddingVertical: 9,
+    minHeight: 46,
+  },
+  loginSecondaryTight: {
+    paddingVertical: 5,
+    marginTop: 3,
+  },
+  loginForgotTight: {
+    paddingVertical: 2,
+    marginTop: 0,
+  },
+  loginSupportTight: {
+    paddingVertical: 4,
+    marginTop: 0,
+  },
+  loginBackRowTight: {
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  loginLabelTight: {
+    marginBottom: 4,
+  },
+  loginModernInput: {
+    paddingVertical: 8,
+    fontSize: 16,
+  },
   // Yeni Yolcu Sayfa Stilleri
   welcomeQuestionVeryTop: {
     fontSize: 24,
@@ -11192,17 +12148,30 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     zIndex: 1,
   },
-  roundLogoWrapper: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    overflow: 'hidden',
-    justifyContent: 'center',
+  /** logo.png — sütun ortasında, tüm ekran genişliklerinde orantılı */
+  loginLogoStage: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: 0,
+    paddingVertical: 0,
+    marginBottom: 0,
+    zIndex: 2,
+    overflow: 'visible',
   },
-  roundLogo: {
-    width: 140,
-    height: 140,
+  loginLogoImage: {
+    width: '44%',
+    maxWidth: 152,
+    minWidth: 100,
+    alignSelf: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: 22,
+  },
+  loginLogoImageCompact: {
+    width: '40%',
+    maxWidth: 132,
+    minWidth: 88,
+    borderRadius: 20,
   },
   heroTitle: {
     fontSize: 16,
@@ -12582,46 +13551,169 @@ const styles = StyleSheet.create({
   // Modal & Şehir Seçici Stilleri
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
   },
-  modalContent: {
+  modalBackdropTap: {
+    flex: 1,
+  },
+  modalSheetPro: {
     backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '70%',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    maxHeight: '78%',
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
+  modalSheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'center',
     marginBottom: 16,
+  },
+  modalTitlePro: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.text,
     textAlign: 'center',
   },
-  cityItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+  modalSubtitlePro: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 14,
   },
-  cityItemText: {
+  citySearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  citySearchInput: {
+    flex: 1,
     fontSize: 16,
     color: COLORS.text,
+    paddingVertical: 0,
   },
-  modalCloseButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    padding: 16,
+  cityItemPro: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 16,
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  cityItemProSelected: {
+    backgroundColor: '#F0F9FF',
+    marginHorizontal: -8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderBottomWidth: 0,
+  },
+  cityItemTextPro: {
+    flex: 1,
+    fontSize: 16,
+    color: '#334155',
+    fontWeight: '500',
+  },
+  cityItemTextProSelected: {
+    color: '#1E3A5F',
+    fontWeight: '700',
+  },
+  cityEmptyHint: {
+    textAlign: 'center',
+    color: '#94A3B8',
+    paddingVertical: 28,
+    fontSize: 15,
+  },
+  modalCloseButtonPro: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 4,
+  },
+  genderCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+  },
+  genderCardActive: {
+    borderColor: '#3FA9F5',
+    backgroundColor: '#3FA9F5',
+  },
+  genderCardLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  genderCardLabelActive: {
+    color: '#FFF',
+  },
+  cityFieldPro: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cityFieldProIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  cityFieldProTextCol: { flex: 1 },
+  cityFieldProHint: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  cityFieldProValue: {
+    fontSize: 16,
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  cityFieldProPlaceholder: {
+    fontSize: 16,
+    color: '#94A3B8',
+    fontWeight: '600',
   },
   modalCloseButtonText: {
-    color: '#FFF',
+    color: '#334155',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   inputText: {
     fontSize: 16,
@@ -13740,11 +14832,25 @@ const styles = StyleSheet.create({
   roleTopBarCompact: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    alignItems: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'transparent',
     borderBottomWidth: 0,
+  },
+  roleTopTitleWrap: {
+    flex: 1,
+    marginHorizontal: 6,
+    alignItems: 'center',
+  },
+  roleTopTitlePill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.42)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    maxWidth: '100%',
   },
   roleExitBtn: {
     width: 40,
@@ -13759,14 +14865,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     letterSpacing: -0.3,
-  },
-  roleTopSubtitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    letterSpacing: 0.2,
   },
   roleAdminBtn: {
     width: 40,
@@ -15366,6 +16464,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
   },
+  destinationMapCalloutTextBold: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginTop: 8,
+  },
   destinationSearchShellModern: {
     marginTop: 2,
   },
@@ -15423,40 +16529,40 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   destinationPinMarkerWrap: {
-    width: 96,
-    height: 96,
+    width: 118,
+    height: 118,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingBottom: 4,
+    paddingBottom: 2,
   },
   destinationPinRing: {
     position: 'absolute',
-    bottom: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
+    bottom: 18,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 2.5,
     borderColor: 'rgba(34, 197, 94, 0.92)',
     backgroundColor: 'transparent',
   },
   destinationPinRingOuter: {
     borderColor: 'rgba(74, 222, 128, 0.45)',
-    borderWidth: 1.5,
+    borderWidth: 2,
   },
   destinationPinCore: {
     backgroundColor: '#16A34A',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
+    borderWidth: 4,
     borderColor: '#FFF',
     shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.55,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 10,
   },
   destinationSearchShellTech: {
     marginTop: 10,
