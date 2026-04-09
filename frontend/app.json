@@ -5,7 +5,7 @@
     "owner": "leylektagappp",
     "version": "1.0.22",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "leylektag",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
@@ -29,7 +29,17 @@
           "location"
         ],
         "NSBluetoothAlwaysUsageDescription": "Bluetooth kulaklık kullanımı için izin gereklidir.",
-        "NSBluetoothPeripheralUsageDescription": "Bluetooth cihazları ile bağlantı için izin gereklidir."
+        "NSBluetoothPeripheralUsageDescription": "Bluetooth cihazları ile bağlantı için izin gereklidir.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "157.173.113.156": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": false
+            }
+          }
+        }
       }
     },
 
@@ -38,10 +48,11 @@
       "versionCode": 24,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.RECORD_AUDIO",
@@ -87,9 +98,11 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
+            "largeHeap": true,
             "enableProguardInReleaseBuilds": false,
             "newArchEnabled": false,
-            "enableMinifyInReleaseBuilds": false
+            "enableMinifyInReleaseBuilds": false,
+            "usesCleartextTraffic": true
           },
           "ios": {
             "deploymentTarget": "15.1",
@@ -118,7 +131,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
+          "icon": "./assets/images/notification-icon.png",
           "color": "#3FA9F5",
           "sounds": [],
           "defaultChannelId": "default"
@@ -139,6 +152,7 @@
     "extra": {
       "router": {},
       "backendUrl": "https://api.leylektag.com",
+      "leylekZekaPath": "ai/chat",
       "eas": {
         "projectId": "08db7f23-ccd6-4e54-a2ce-5ab599335d0c"
       }
