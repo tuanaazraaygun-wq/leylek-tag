@@ -12,7 +12,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { Stack } from 'expo-router';
 import * as ExpoSplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
@@ -23,6 +23,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { RootErrorBoundary } from '../components/RootErrorBoundary';
 import { AppAlertProvider } from '../contexts/AppAlertContext';
+import { LeylekZekaChromeProvider } from '../contexts/LeylekZekaChromeContext';
+import LeylekZekaWidget from '../components/LeylekZekaWidget';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Uygulama açıkken (foreground) da uyarı göster — tek tanım, component dışı
 Notifications.setNotificationHandler({
@@ -77,12 +80,19 @@ export default function RootLayout() {
             <NotificationProvider>
               <SocketProvider>
                 <StatusBar style="dark" />
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    animation: 'fade',
-                  }}
-                />
+                <LeylekZekaChromeProvider>
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <View style={{ flex: 1 }}>
+                      <Stack
+                        screenOptions={{
+                          headerShown: false,
+                          animation: 'fade',
+                        }}
+                      />
+                      <LeylekZekaWidget />
+                    </View>
+                  </GestureHandlerRootView>
+                </LeylekZekaChromeProvider>
               </SocketProvider>
             </NotificationProvider>
           </PushNotificationsProvider>

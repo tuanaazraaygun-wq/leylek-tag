@@ -1,14 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Animated,
-  Dimensions,
   Easing,
   FlatList,
   Image,
+  InteractionManager,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -29,11 +31,23 @@ import {
   type LeylekZekaReplySource,
 } from '../hooks/useLeylekZeka';
 
-const SHEET_RATIO = 0.7;
-/** Sheet çok küçülmesin; klavye + liste çakışmasını önler */
-const MIN_SHEET_HEIGHT = 300;
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 const LOGO = require('../assets/images/logo.png');
+
+/** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
+const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
+const BRAND_SKY_TINT = '#EFF6FF';
+
+/** İçerik boyutu değişince scroll — agresif kaydırmada tekilleştir */
+const SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS = 120;
+/** Mesaj/typing değişiminden sonra ilk scroll gecikmesi */
+const SCROLL_AFTER_UPDATE_MS = 96;
+
+/** Dev: true yapınca scroll/close yaşam döngüsü loglanır; prod’da false */
+const __LZ_CHAT_SCROLL_DEBUG__ = false;
+function lzChatDebug(...args: unknown[]) {
+  if (__DEV__ && __LZ_CHAT_SCROLL_DEBUG__) console.log('[LeylekZekaChat]', ...args);
+}
 
 type Props = {
   visible: boolean;
@@ -98,12 +112,45 @@ const TypingBars = memo(function TypingBars() {
 
 const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
   const isUser = item.role === 'user';
+  if (isUser) {
+    return (
+      <View style={[styles.bubbleWrap, styles.bubbleWrapUser]}>
+        <LinearGradient
+          colors={[...BRAND_GRADIENT]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.bubbleUserGrad}
+        >
+          <Text style={[styles.bubbleText, styles.bubbleTextUser]}>{item.text}</Text>
+        </LinearGradient>
+      </View>
+    );
+  }
   return (
-    <View style={[styles.bubbleWrap, isUser ? styles.bubbleWrapUser : styles.bubbleWrapAi]}>
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}>
-        <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAi]}>
-          {item.text}
-        </Text>
+    <View style={[styles.bubbleWrap, styles.bubbleWrapAi]}>
+      <View style={styles.bubbleAiCard}>
+        <View style={styles.bubbleAiAccentStrip}>
+          <LinearGradient
+            colors={[...BRAND_GRADIENT]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </View>
+        <View style={styles.bubbleAiContentBody}>
+          <Text
+            style={[styles.bubbleText, styles.bubbleTextAi]}
+            {...Platform.select({
+              android: {
+                textBreakStrategy: 'simple' as const,
+                includeFontPadding: false,
+              },
+              default: {},
+            })}
+          >
+            {item.text}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -122,19 +169,23 @@ const QuickChips = memo(function QuickChips({
     (label: string) => {
       if (disabled) return;
       if (Platform.OS !== 'web') {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        try {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch {
+          /* ignore */
+        }
       }
       onPick(label);
     },
     [disabled, onPick],
   );
 
-  return (
+    return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      nestedScrollEnabled
+      style={styles.chipsScroll}
       contentContainerStyle={styles.chipsRow}
     >
       {LEYLEK_ZEKA_QUICK_PROMPTS.map((label) => {
@@ -155,7 +206,9 @@ const QuickChips = memo(function QuickChips({
               pressed && !disabled && !selected && styles.chipPressed,
             ]}
           >
-            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+            <Text style={[styles.chipText, selected && styles.chipTextSelected]} numberOfLines={2}>
+              {label}
+            </Text>
           </Pressable>
         );
       })}
@@ -177,6 +230,47 @@ const EmptyWelcome = memo(function EmptyWelcome() {
   );
 });
 
+/** Başlık logosu — hafif nefes (scale), spin yok */
+const HeaderLogoMark = memo(function HeaderLogoMark({ reduceMotion }: { reduceMotion: boolean }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduceMotion) {
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 2400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 2400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse, reduceMotion]);
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
+  const floatY = pulse.interpolate({ inputRange: [0, 1], outputRange: [0, -2.5] });
+  return (
+    <Animated.View
+      style={[
+        styles.headerLogoWrapCompact,
+        !reduceMotion && { transform: [{ translateY: floatY }, { scale }] },
+      ]}
+    >
+      <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" accessibilityIgnoresInvertColors />
+    </Animated.View>
+  );
+});
+
 const LeylekZekaChat = memo(function LeylekZekaChat({
   visible,
   onClose,
@@ -192,19 +286,62 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const [showBetaHint, setShowBetaHint] = useState(false);
   const [activeChipLabel, setActiveChipLabel] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
   const wasTypingRef = useRef(false);
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
   const scrollRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentSizeScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  /** Modal açık mı — kapanış sonrası async zincirlerde güncel değer */
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  /**
+   * Modal kapanınca artırılır; scrollToEnd zincirinde yakalanan nesil uyuşmuyorsa scroll iptal.
+   * Kapalı modal / unmount üzerinde scrollToEnd çağrılarını etkisizleştirir.
+   */
+  const scrollGenRef = useRef(0);
 
-  const sheetHeight = useMemo(() => {
-    const h = Dimensions.get('window').height;
-    const base = Math.round(h * SHEET_RATIO);
-    if (Platform.OS === 'ios' || keyboardHeight <= 0) {
-      return base;
-    }
-    const avail = h - keyboardHeight - 16;
-    return Math.max(MIN_SHEET_HEIGHT, Math.min(base, avail));
-  }, [keyboardHeight]);
+  /** Android: composer yukarı — yalnızca alt padding; iOS: KAV zaten yönetir. */
+  const composerBottomPad = useMemo(
+    () => Math.max(insets.bottom, Spacing.md) + (Platform.OS === 'android' ? keyboardHeight : 0),
+    [insets.bottom, keyboardHeight],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      scrollGenRef.current += 1;
+      if (scrollRetryRef.current) {
+        clearTimeout(scrollRetryRef.current);
+        scrollRetryRef.current = null;
+      }
+      if (contentSizeScrollTimerRef.current) {
+        clearTimeout(contentSizeScrollTimerRef.current);
+        contentSizeScrollTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
+      if (!cancelled && mountedRef.current) setReduceMotion(Boolean(v));
+    });
+    const sub =
+      'addEventListener' in AccessibilityInfo
+        ? AccessibilityInfo.addEventListener('reduceMotionChanged', (v: boolean) => {
+            if (!mountedRef.current) return;
+            setReduceMotion(Boolean(v));
+          })
+        : undefined;
+    return () => {
+      cancelled = true;
+      if (sub && 'remove' in sub && typeof sub.remove === 'function') {
+        sub.remove();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!visible) {
@@ -214,13 +351,35 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     const showEv = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const show = Keyboard.addListener(showEv, (e) => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      if (!visibleRef.current) return;
+      try {
+        setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      } catch {
+        /* native race */
+      }
     });
-    const hide = Keyboard.addListener(hideEv, () => setKeyboardHeight(0));
+    const hide = Keyboard.addListener(hideEv, () => {
+      if (!visibleRef.current) return;
+      try {
+        setKeyboardHeight(0);
+      } catch {
+        /* native race */
+      }
+    });
     return () => {
       show.remove();
       hide.remove();
     };
+  }, [visible]);
+
+  /** Sohbet açılışında hafif geri bildirim (web hariç) */
+  useEffect(() => {
+    if (!visible || Platform.OS === 'web') return;
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      /* ignore */
+    }
   }, [visible]);
 
   useEffect(() => {
@@ -245,8 +404,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   useEffect(() => {
     if (lastReplySource !== 'claude') return;
-    setShowBetaHint(false);
     void AsyncStorage.setItem(BETA_HINT_KEY, '1').catch(() => {});
+    setShowBetaHint(false);
   }, [lastReplySource]);
 
   const dismissBetaHint = useCallback(() => {
@@ -257,6 +416,13 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const onSubmit = useCallback(() => {
     const t = input.trim();
     if (!t || isTyping) return;
+    if (Platform.OS !== 'web') {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* ignore */
+      }
+    }
     setActiveChipLabel(null);
     setInput('');
     onSend(t);
@@ -278,38 +444,112 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }
     if (!wasTypingRef.current || !activeChipLabel) return;
     wasTypingRef.current = false;
-    const id = setTimeout(() => setActiveChipLabel(null), 520);
+    const id = setTimeout(() => {
+      if (!mountedRef.current || !visibleRef.current) return;
+      setActiveChipLabel(null);
+    }, 520);
     return () => clearTimeout(id);
   }, [isTyping, activeChipLabel]);
 
   const scrollToEndSafe = useCallback(() => {
+    if (!mountedRef.current || !visibleRef.current) {
+      lzChatDebug('scrollToEndSafe skip: not mounted or not visible');
+      return;
+    }
+    const genAtStart = scrollGenRef.current;
     if (scrollRetryRef.current) {
       clearTimeout(scrollRetryRef.current);
       scrollRetryRef.current = null;
     }
-    requestAnimationFrame(() => {
-      try {
-        const r = listRef.current;
-        if (!r) return;
-        r.scrollToEnd({ animated: true });
-      } catch {
-        /* FlatList henüz layout’ta değilse veya unmount race */
+    InteractionManager.runAfterInteractions(() => {
+      if (
+        genAtStart !== scrollGenRef.current ||
+        !mountedRef.current ||
+        !visibleRef.current
+      ) {
+        lzChatDebug('scrollToEndSafe abort after interactions', { genAtStart, cur: scrollGenRef.current });
+        return;
       }
+      requestAnimationFrame(() => {
+        if (
+          genAtStart !== scrollGenRef.current ||
+          !mountedRef.current ||
+          !visibleRef.current
+        ) {
+          return;
+        }
+        requestAnimationFrame(() => {
+          if (
+            genAtStart !== scrollGenRef.current ||
+            !mountedRef.current ||
+            !visibleRef.current
+          ) {
+            return;
+          }
+          try {
+            listRef.current?.scrollToEnd({ animated: true });
+          } catch {
+            /* Son savunma: animasyonsuz scroll (nadir native/layout yarışları) */
+            lzChatDebug('scrollToEnd animated:true failed, fallback animated:false');
+            try {
+              if (
+                genAtStart !== scrollGenRef.current ||
+                !mountedRef.current ||
+                !visibleRef.current
+              ) {
+                return;
+              }
+              listRef.current?.scrollToEnd({ animated: false });
+            } catch {
+              /* ignore */
+            }
+          }
+        });
+      });
     });
   }, []);
 
+  /** Modal kapanınca: bekleyen scroll zincirlerini iptal et, zamanlayıcıları temizle, klavye kapat */
+  useEffect(() => {
+    if (visible) return;
+    scrollGenRef.current += 1;
+    lzChatDebug('modal hidden, scrollGen bump', scrollGenRef.current);
+    if (scrollRetryRef.current) {
+      clearTimeout(scrollRetryRef.current);
+      scrollRetryRef.current = null;
+    }
+    if (contentSizeScrollTimerRef.current) {
+      clearTimeout(contentSizeScrollTimerRef.current);
+      contentSizeScrollTimerRef.current = null;
+    }
+    try {
+      Keyboard.dismiss();
+    } catch {
+      /* ignore */
+    }
+  }, [visible]);
+
+  const onListContentSizeChange = useCallback(() => {
+    if (!mountedRef.current || !visibleRef.current) return;
+    if (contentSizeScrollTimerRef.current) {
+      clearTimeout(contentSizeScrollTimerRef.current);
+      contentSizeScrollTimerRef.current = null;
+    }
+    contentSizeScrollTimerRef.current = setTimeout(() => {
+      contentSizeScrollTimerRef.current = null;
+      if (!mountedRef.current || !visibleRef.current) return;
+      scrollToEndSafe();
+    }, SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS);
+  }, [scrollToEndSafe]);
+
   useEffect(() => {
     if (!visible) {
-      if (scrollRetryRef.current) {
-        clearTimeout(scrollRetryRef.current);
-        scrollRetryRef.current = null;
-      }
       return;
     }
     scrollRetryRef.current = setTimeout(() => {
       scrollRetryRef.current = null;
       scrollToEndSafe();
-    }, 96);
+    }, SCROLL_AFTER_UPDATE_MS);
     return () => {
       if (scrollRetryRef.current) {
         clearTimeout(scrollRetryRef.current);
@@ -337,7 +577,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       transparent
       onRequestClose={onClose}
       statusBarTranslucent
@@ -349,28 +589,86 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 12) + 8 : 0}
         >
-          <View style={[styles.sheet, { height: sheetHeight }]}>
-            <View style={styles.sheetInner}>
-          <View style={styles.handle} />
+          <View style={styles.sheet}>
+            {/* Marka gökyüzü — düşük opaklık, okunabilirlik öncelikli */}
+            <LinearGradient
+              colors={['#B9E0FB', '#D8EEFC', BRAND_SKY_TINT, '#F8FCFF', '#FFFFFF']}
+              locations={[0, 0.22, 0.48, 0.76, 1]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.sheetSkyBase}
+              pointerEvents="none"
+            />
+            {/* iOS: BlurView (premium cam). Android: düşük uç GPU yükü — gradient fallback, blur yok. */}
+            {Platform.OS === 'ios' ? (
+              <BlurView intensity={22} tint="light" style={styles.sheetBlur} pointerEvents="none" />
+            ) : Platform.OS === 'android' ? (
+              <LinearGradient
+                colors={['rgba(224,242,254,0.48)', 'rgba(255,255,255,0.62)', 'rgba(248,250,252,0.82)']}
+                locations={[0, 0.42, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sheetAndroidSoft}
+                pointerEvents="none"
+              />
+            ) : null}
+            <LinearGradient
+              colors={['rgba(255,255,255,0.12)', 'rgba(248,252,255,0.82)', 'rgba(255,255,255,0.94)']}
+              locations={[0, 0.45, 1]}
+              style={styles.sheetVeil}
+              pointerEvents="none"
+            />
+            {/* Yumuşak bulut hissi — düşük opaklık, okunurluğu bastırmaz */}
+            <View style={styles.cloudLayer} pointerEvents="none">
+              <View style={[styles.cloudBlob, styles.cloudBlob1]} />
+              <View style={[styles.cloudBlob, styles.cloudBlob2]} />
+              <View style={[styles.cloudBlob, styles.cloudBlob3]} />
+            </View>
 
+            <View style={[styles.sheetInner, { paddingTop: Math.max(insets.top, 10) + 6 }]}>
           <LinearGradient
-            colors={['#E8F4FD', '#F0F4F8', '#FFFFFF']}
+            colors={['rgba(255,255,255,0.97)', 'rgba(236,248,255,0.92)', 'rgba(255,255,255,0.88)']}
+            locations={[0, 0.55, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.headerBar}
           >
+            <LinearGradient
+              colors={[...BRAND_GRADIENT]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.headerBrandStrip}
+              pointerEvents="none"
+            />
+            <LinearGradient
+              colors={['rgba(63,169,245,0.2)', 'rgba(255,255,255,0)', 'rgba(147,197,253,0.12)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.headerBarGlow}
+              pointerEvents="none"
+            />
             <View style={styles.headerTitleRow}>
-              <View style={styles.headerIconWrap}>
-                <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
-              </View>
-              <View style={styles.headerTextCol}>
-                <Text style={styles.title}>Leylek Zeka</Text>
-                <Text style={styles.headerSubtitle}>Uygulama içi yardım asistanı</Text>
-                {modeCaption ? <Text style={styles.modeCaptionInline}>{modeCaption}</Text> : null}
+              <View style={styles.headerLead}>
+                <HeaderLogoMark reduceMotion={reduceMotion} />
+                <View style={styles.headerTextCol}>
+                  <View style={styles.titleRow}>
+                    <Text style={styles.title}>Leylek Zeka</Text>
+                    <LinearGradient
+                      colors={[...BRAND_GRADIENT]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.aiBadge}
+                    >
+                      <Text style={styles.aiBadgeText}>AI</Text>
+                    </LinearGradient>
+                  </View>
+                  <Text style={styles.headerSubtitle}>Rehber · Yardım</Text>
+                  {modeCaption ? <Text style={styles.modeCaptionInline}>{modeCaption}</Text> : null}
+                </View>
               </View>
             </View>
             <Pressable onPress={onClose} hitSlop={14} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={Colors.gray600} />
+              <Ionicons name="close" size={22} color="#334155" />
             </Pressable>
           </LinearGradient>
 
@@ -397,40 +695,61 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             <QuickChips onPick={onChip} disabled={isTyping} activeLabel={activeChipLabel} />
           </View>
 
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            style={styles.list}
-            contentContainerStyle={[
-              styles.listContent,
-              messages.length === 0 ? styles.listContentEmpty : null,
-            ]}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={<EmptyWelcome />}
-            ListFooterComponent={
-              isTyping ? (
-                <View style={styles.typingBubble}>
-                  <TypingBars />
-                </View>
-              ) : null
-            }
-          />
+          <View style={styles.listWrap}>
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={keyExtractor}
+              renderItem={renderItem}
+              style={styles.list}
+              scrollEnabled={visible}
+              scrollEventThrottle={16}
+              onContentSizeChange={onListContentSizeChange}
+              contentContainerStyle={[
+                styles.listContent,
+                messages.length === 0 ? styles.listContentEmpty : null,
+              ]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="none"
+              showsVerticalScrollIndicator={false}
+              removeClippedSubviews={false}
+              initialNumToRender={14}
+              windowSize={10}
+              maxToRenderPerBatch={10}
+              updateCellsBatchingPeriod={50}
+              ListEmptyComponent={EmptyWelcome}
+              ListFooterComponent={
+                isTyping ? (
+                  <View style={styles.typingBubbleOuter}>
+                    <LinearGradient
+                      colors={[...BRAND_GRADIENT]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={styles.typingAccent}
+                    />
+                    <View style={styles.typingBubbleInner}>
+                      <TypingBars />
+                    </View>
+                  </View>
+                ) : null
+              }
+            />
+          </View>
 
-          <View
-            style={[
-              styles.composerBar,
-              { paddingBottom: Math.max(insets.bottom, Spacing.md) },
-            ]}
+          <LinearGradient
+            colors={['rgba(240,249,255,0.98)', 'rgba(224,242,254,0.96)', 'rgba(219,234,254,0.94)']}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[styles.composerBar, { paddingBottom: composerBottomPad }]}
           >
+            <Text style={styles.composerLabel}>Mesaj</Text>
+            <View style={styles.composerCard}>
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.input}
-                placeholder="Mesajınızı yazın…"
-                placeholderTextColor={Colors.gray400}
+                placeholder="Sorunuzu yazın…"
+                placeholderTextColor="#475569"
                 value={input}
                 onChangeText={setInput}
                 editable={!isTyping}
@@ -439,6 +758,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 onSubmitEditing={onSubmit}
                 returnKeyType="send"
                 accessibilityLabel="Mesaj metni"
+                onFocus={() => {
+                  if (Platform.OS === 'web' || !visibleRef.current) return;
+                  try {
+                    void Haptics.selectionAsync();
+                  } catch {
+                    /* ignore */
+                  }
+                }}
                 {...Platform.select({
                   ios: { keyboardAppearance: 'light' as const },
                   default: {},
@@ -450,20 +777,28 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 accessibilityLabel="Gönder"
                 accessibilityState={{ disabled: !input.trim() || isTyping }}
                 style={({ pressed }) => [
-                  styles.sendBtn,
+                  styles.sendBtnOuter,
                   (!input.trim() || isTyping) && styles.sendBtnDisabled,
                   pressed && input.trim() && !isTyping && styles.sendBtnPressed,
                 ]}
                 disabled={!input.trim() || isTyping}
               >
-                {isTyping ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Ionicons name="arrow-forward" size={22} color="#fff" />
-                )}
+                <LinearGradient
+                  colors={[...BRAND_GRADIENT]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sendBtnGrad}
+                >
+                  {isTyping ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Ionicons name="arrow-forward" size={24} color="#fff" />
+                  )}
+                </LinearGradient>
               </Pressable>
             </View>
-          </View>
+            </View>
+          </LinearGradient>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -477,118 +812,244 @@ export default LeylekZekaChat;
 const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.42)',
+    backgroundColor: 'rgba(15, 23, 42, 0.38)',
   },
   kavRoot: {
     flex: 1,
     width: '100%',
     maxWidth: '100%',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
   sheet: {
+    flex: 1,
+    position: 'relative',
     width: '100%',
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
+    minHeight: 0,
+    backgroundColor: '#F5FAFF',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     overflow: 'hidden',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.18)',
+    borderColor: 'rgba(63, 169, 245, 0.22)',
     ...Platform.select({
       ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: -8 },
-        shadowOpacity: 0.12,
-        shadowRadius: 24,
+        shadowColor: '#0c4a6e',
+        shadowOffset: { width: 0, height: -10 },
+        shadowOpacity: 0.14,
+        shadowRadius: 28,
       },
-      android: { elevation: 18 },
+      android: { elevation: 20 },
     }),
+  },
+  sheetSkyBase: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  sheetBlur: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  /** Android: BlurView yerine hafif katman (kasma riskini azaltır) */
+  sheetAndroidSoft: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  sheetVeil: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  cloudLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+    overflow: 'hidden',
+  },
+  cloudBlob: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255, 255, 255, 0.38)',
+  },
+  cloudBlob1: {
+    width: 220,
+    height: 120,
+    borderRadius: 80,
+    top: '8%',
+    left: '-12%',
+    opacity: 0.38,
+  },
+  cloudBlob2: {
+    width: 180,
+    height: 95,
+    borderRadius: 70,
+    top: '22%',
+    right: '-8%',
+    opacity: 0.28,
+  },
+  cloudBlob3: {
+    width: 260,
+    height: 100,
+    borderRadius: 90,
+    bottom: '12%',
+    left: '5%',
+    opacity: 0.22,
   },
   sheetInner: {
     flex: 1,
+    zIndex: 1,
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.xs,
     paddingBottom: 0,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.gray200,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xs,
+    minHeight: 0,
   },
   headerBar: {
     borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
+    paddingTop: Spacing.sm + 6,
+    paddingBottom: Spacing.sm + 4,
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.2)',
+    borderColor: 'rgba(63, 169, 245, 0.26)',
     position: 'relative',
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: Colors.primary,
+        shadowColor: '#0c4a6e',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.09,
+        shadowRadius: 16,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  headerBrandStrip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    zIndex: 3,
+    borderTopLeftRadius: BorderRadius.lg,
+    borderTopRightRadius: BorderRadius.lg,
+  },
+  headerBarGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: BorderRadius.lg,
+  },
+  headerLead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    paddingRight: 36,
+    minWidth: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  aiBadge: {
+    marginLeft: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 9,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1d4ed8',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
       },
       android: { elevation: 2 },
     }),
   },
+  aiBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(15, 23, 42, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   headerTitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 40,
+    alignItems: 'flex-start',
+    zIndex: 1,
   },
-  headerIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+  /** Küçük marka işareti — başlık önde */
+  headerLogoWrapCompact: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.94)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.sm,
+    marginTop: 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.25)',
+    borderColor: 'rgba(63, 169, 245, 0.35)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#3FA9F5',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.12,
+        shadowRadius: 4,
+      },
+      android: { elevation: 1 },
+    }),
   },
   headerLogo: {
-    width: 28,
-    height: 28,
+    width: 22,
+    height: 22,
   },
   headerTextCol: {
     flex: 1,
     justifyContent: 'center',
+    minWidth: 0,
   },
   title: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.text,
-    letterSpacing: -0.3,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0c4a6e',
+    letterSpacing: -0.7,
+    flexShrink: 1,
   },
   headerSubtitle: {
-    fontSize: FontSize.xs,
-    color: Colors.gray500,
-    marginTop: 3,
-    fontWeight: '500',
-    letterSpacing: 0.2,
+    fontSize: FontSize.sm + 1,
+    color: '#475569',
+    marginTop: 4,
+    fontWeight: '600',
+    letterSpacing: 0.12,
+    lineHeight: 20,
   },
   modeCaptionInline: {
     fontSize: FontSize.xs,
-    color: Colors.gray500,
-    marginTop: 4,
+    color: '#64748B',
+    marginTop: 6,
+    fontWeight: '600',
+    letterSpacing: 0.06,
+    opacity: 0.88,
   },
   closeBtn: {
     position: 'absolute',
     right: Spacing.sm,
-    top: Spacing.md,
-    padding: Spacing.xs,
+    top: Spacing.sm + 4,
+    padding: 10,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(63, 169, 245, 0.35)',
+    zIndex: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+      },
+      android: { elevation: 3 },
+    }),
   },
   betaBanner: {
     flexDirection: 'row',
@@ -623,27 +1084,35 @@ const styles = StyleSheet.create({
   },
   chipsSection: {
     marginBottom: Spacing.sm,
-    paddingBottom: Spacing.xs,
+    paddingBottom: 2,
   },
   chipsSectionActive: {
     marginHorizontal: -Spacing.xs,
     paddingHorizontal: Spacing.xs,
-    paddingTop: Spacing.xs,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(232, 244, 253, 0.55)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.22)',
+    paddingTop: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: 'rgba(224, 242, 254, 0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.24)',
   },
   chipsLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    color: Colors.gray500,
-    marginBottom: Spacing.xs,
-    letterSpacing: 0.3,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: Spacing.sm,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  list: { flex: 1, minHeight: 120 },
-  listContent: { paddingVertical: Spacing.xs, paddingBottom: Spacing.sm },
+  chipsScroll: {
+    maxHeight: 76,
+  },
+  listWrap: {
+    flex: 1,
+    minHeight: 0,
+    zIndex: 1,
+  },
+  list: { flex: 1 },
+  listContent: { paddingVertical: Spacing.sm + 2, paddingBottom: Spacing.md, flexGrow: 1 },
   listContentEmpty: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -657,72 +1126,144 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   emptyIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.95)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.28)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#3FA9F5',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+      },
+      android: { elevation: 2 },
+    }),
   },
   emptyLogo: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
   },
   emptyTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.text,
-    letterSpacing: -0.2,
+    fontSize: FontSize.xl + 2,
+    fontWeight: '800',
+    color: '#0c4a6e',
+    letterSpacing: -0.4,
   },
   emptyBody: {
     marginTop: Spacing.sm,
     textAlign: 'center',
-    lineHeight: 22,
-    color: Colors.gray600,
-    fontSize: FontSize.sm,
+    lineHeight: 26,
+    color: '#334155',
+    fontSize: FontSize.lg,
+    fontWeight: '500',
+    letterSpacing: 0.02,
   },
-  bubbleWrap: { marginBottom: Spacing.sm, maxWidth: '88%' },
+  bubbleWrap: { marginBottom: Spacing.md + 6, maxWidth: '92%' },
   bubbleWrapUser: { alignSelf: 'flex-end' },
-  bubbleWrapAi: { alignSelf: 'flex-start' },
-  bubble: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-  },
-  bubbleUser: {
-    backgroundColor: Colors.primary,
-    borderBottomRightRadius: BorderRadius.sm,
+  /** % genişlik: row içinde flex:1 alanı Android’de ölçülebilir olsun (yalnız şerit kalmayı önler) */
+  bubbleWrapAi: { alignSelf: 'flex-start', width: '92%' },
+  bubbleAiCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    width: '100%',
+    minHeight: 44,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.12)',
     ...Platform.select({
       ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 6,
+        shadowColor: '#0c4a6e',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
       },
       android: { elevation: 3 },
     }),
   },
-  bubbleAi: {
-    backgroundColor: Colors.gray50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-    borderBottomLeftRadius: BorderRadius.sm,
+  /** Sabit genişlik — flex ile metin alanından genişlik çalmaz */
+  bubbleAiAccentStrip: {
+    width: 5,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'stretch',
+    minHeight: 44,
   },
-  bubbleText: { fontSize: FontSize.md, lineHeight: 22 },
-  bubbleTextUser: { color: '#fff' },
-  bubbleTextAi: { color: Colors.text },
-  typingBubble: {
+  /** Düz arka plan — gradient katmanı yok; metin her zaman görünür ve ölçülebilir genişlik alır */
+  bubbleAiContentBody: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    paddingVertical: Spacing.sm + 6,
+    paddingHorizontal: Spacing.md + 4,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+  },
+  bubbleUserGrad: {
+    paddingHorizontal: Spacing.md + 4,
+    paddingVertical: Spacing.sm + 4,
+    borderRadius: 20,
+    borderBottomRightRadius: 8,
+    maxWidth: '100%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1e40af',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.28,
+        shadowRadius: 10,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  bubbleText: {
+    fontSize: 17,
+    lineHeight: 28,
+    letterSpacing: 0.02,
+  },
+  bubbleTextUser: { color: '#fff', fontWeight: '600' },
+  bubbleTextAi: {
+    color: '#0f172a',
+    fontWeight: '500',
+    opacity: 1,
+    flexShrink: 0,
+    width: '100%',
+  },
+  typingBubbleOuter: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.gray50,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
+    flexDirection: 'row',
+    alignItems: 'stretch',
     marginBottom: Spacing.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.15)',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.12)',
+    maxWidth: '88%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0c4a6e',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  typingAccent: {
+    width: 5,
+    minHeight: 52,
+  },
+  typingBubbleInner: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: Spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.98)',
   },
   typingRow: {
     flexDirection: 'row',
@@ -741,115 +1282,146 @@ const styles = StyleSheet.create({
   chipsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingRight: Spacing.xs,
+    paddingVertical: 4,
+    paddingLeft: 2,
+    paddingRight: Spacing.md,
   },
   chip: {
-    paddingVertical: 11,
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.background,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.38)',
+    maxWidth: 280,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.32)',
     marginRight: 10,
     ...Platform.select({
       ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.06,
-        shadowRadius: 3,
-      },
-      android: { elevation: 1 },
-    }),
-  },
-  chipPressed: {
-    backgroundColor: '#E8F4FD',
-    borderColor: 'rgba(63, 169, 245, 0.55)',
-    transform: [{ scale: 0.98 }],
-  },
-  chipSelected: {
-    backgroundColor: '#E8F4FD',
-    borderColor: Colors.primary,
-    borderWidth: 1.5,
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.primary,
+        shadowColor: '#0c4a6e',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
+        shadowOpacity: 0.06,
         shadowRadius: 4,
       },
       android: { elevation: 2 },
+    }),
+  },
+  chipPressed: {
+    backgroundColor: '#E0F2FE',
+    borderColor: 'rgba(37, 99, 235, 0.45)',
+    transform: [{ scale: 0.985 }],
+  },
+  chipSelected: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#2563EB',
+    borderWidth: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.18,
+        shadowRadius: 6,
+      },
+      android: { elevation: 3 },
     }),
   },
   chipDisabled: {
     opacity: 0.45,
   },
   chipText: {
-    fontSize: FontSize.sm,
-    color: Colors.gray700,
+    fontSize: FontSize.md,
+    color: '#1e293b',
     fontWeight: '600',
+    lineHeight: 22,
+    letterSpacing: 0.02,
   },
   chipTextSelected: {
-    color: Colors.primary,
+    color: '#1d4ed8',
   },
   composerBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(63, 169, 245, 0.22)',
-    backgroundColor: '#EDF5FC',
+    borderTopColor: 'rgba(63, 169, 245, 0.28)',
     marginHorizontal: -Spacing.md,
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm + 2,
     ...Platform.select({
       ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
+        shadowColor: '#0c4a6e',
+        shadowOffset: { width: 0, height: -5 },
+        shadowOpacity: 0.12,
+        shadowRadius: 15,
       },
-      android: { elevation: 3 },
+      android: { elevation: 8 },
     }),
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingBottom: 2,
+  composerLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    letterSpacing: 0.65,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginLeft: 2,
   },
-  input: {
-    flex: 1,
-    minHeight: 48,
-    maxHeight: 120,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.38)',
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Platform.OS === 'ios' ? 14 : Spacing.sm,
-    fontSize: FontSize.md,
-    color: Colors.text,
-    backgroundColor: '#FFFFFF',
-    marginRight: Spacing.sm,
-  },
-  sendBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.35)',
+  composerCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 16,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.22)',
     ...Platform.select({
       ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 8,
+        shadowColor: '#3FA9F5',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 10,
       },
       android: { elevation: 4 },
     }),
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 0,
+  },
+  input: {
+    flex: 1,
+    minHeight: 56,
+    maxHeight: 160,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.45)',
+    borderRadius: 14,
+    paddingHorizontal: Spacing.md + 6,
+    paddingVertical: Platform.OS === 'ios' ? 16 : 15,
+    fontSize: 17,
+    color: '#0f172a',
+    backgroundColor: '#FFFFFF',
+    marginRight: Spacing.sm,
+    fontWeight: '500',
+    letterSpacing: 0.02,
+  },
+  sendBtnOuter: {
+    borderRadius: 27,
+    overflow: 'hidden',
+    marginBottom: 0,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1d4ed8',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+      },
+      android: { elevation: 5 },
+    }),
+  },
+  sendBtnGrad: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sendBtnPressed: {
-    opacity: 0.9,
+    opacity: 0.92,
     transform: [{ scale: 0.96 }],
   },
   sendBtnDisabled: { opacity: 0.45 },

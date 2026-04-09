@@ -278,7 +278,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const pillOpacity = useRef(new Animated.Value(0)).current;
   const pillTranslateY = useRef(new Animated.Value(PILL_ENTER_OFFSET_PX)).current;
 
-  const showChrome = shouldShowLeylekZekaFab({ pathname, homeFlowScreen });
+  const showChrome = shouldShowLeylekZekaFab({ pathname, homeFlowScreen, flowHint });
   const showFab = showChrome && !open && !keyboardUp;
 
   const showFabRef = useRef(showFab);
