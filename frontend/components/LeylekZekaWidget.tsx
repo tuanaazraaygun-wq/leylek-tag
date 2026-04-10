@@ -7,7 +7,6 @@ import {
   Easing,
   Image,
   Keyboard,
-  LayoutChangeEvent,
   Platform,
   Pressable,
   StyleSheet,
@@ -16,12 +15,11 @@ import {
   View,
 } from 'react-native';
 import {
-  GestureHandlerRootView,
   PanGestureHandler,
   type PanGestureHandlerGestureEvent,
   State,
 } from 'react-native-gesture-handler';
-import { usePathname } from 'expo-router';
+import { usePathname, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, BorderRadius, FontSize, Spacing } from '../constants/Colors';
 import {
@@ -119,8 +117,8 @@ type GlowVariant = 'normal' | 'attention' | 'idle';
 const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
-  const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
-  const [open, setOpen] = useState(false);
+  const segments = useSegments();
+  const { homeFlowScreen, flowHint, leylekZekaChatOpen, setLeylekZekaChatOpen } = useLeylekZekaChrome();
   const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
 
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -169,31 +167,17 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const fabPos = useRef(new Animated.ValueXY({ x: 20, y: 120 })).current;
   const fabLTRef = useRef({ x: 20, y: 120 });
-  /** onLayout ile ölçüm; yoksa useWindowDimensions / fallback */
-  const layoutDimsRef = useRef<{ w: number; h: number } | null>(null);
   const gestureStartRef = useRef({ x: 0, y: 0 });
   const posLatest = useRef(
     ltToRB(20, 120, winW > 0 ? winW : windowSizeFallback().w, winH > 0 ? winH : windowSizeFallback().h),
   );
   const springAnimRef = useRef<Animated.CompositeAnimation | null>(null);
-  const panHandlerRef = useRef<React.ComponentRef<typeof PanGestureHandler>>(null);
   const fabMountedRef = useRef(true);
 
+  /** Kök _layout zaten GestureHandlerRootView — pencere boyutu: yalnızca window (onLayout ile çakışma yok). */
   const getEffectiveSize = useCallback(() => {
-    const lw = layoutDimsRef.current?.w;
-    const lh = layoutDimsRef.current?.h;
-    const w =
-      lw != null && lw > 0 && Number.isFinite(lw)
-        ? lw
-        : winW > 0 && Number.isFinite(winW)
-          ? winW
-          : windowSizeFallback().w;
-    const h =
-      lh != null && lh > 0 && Number.isFinite(lh)
-        ? lh
-        : winH > 0 && Number.isFinite(winH)
-          ? winH
-          : windowSizeFallback().h;
+    const w = winW > 0 && Number.isFinite(winW) ? winW : windowSizeFallback().w;
+    const h = winH > 0 && Number.isFinite(winH) ? winH : windowSizeFallback().h;
     return { w, h };
   }, [winW, winH]);
 
@@ -203,37 +187,15 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
     const c = clampFabXY(initialFab.x, initialFab.y, w, h);
     if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return;
-    console.log("setValue", c.x, c.y);
     fabPos.setValue(c);
     fabLTRef.current = { x: c.x, y: c.y };
     posLatest.current = ltToRB(c.x, c.y, w, h);
   }, [fabPos, getEffectiveSize, initialFab.x, initialFab.y]);
 
-  const onFabRootLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      try {
-        const { width, height } = e.nativeEvent.layout;
-        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
-          layoutDimsRef.current = { w: width, h: height };
-          if (!fabMountedRef.current) return;
-          const c = clampFabXY(fabLTRef.current.x, fabLTRef.current.y, width, height);
-          console.log("setValue", c.x, c.y);
-          fabPos.setValue(c);
-          fabLTRef.current = c;
-          posLatest.current = ltToRB(c.x, c.y, width, height);
-        }
-      } catch (e) {
-        console.error("LeylekZeka drag crash", e);
-      }
-    },
-    [fabPos],
-  );
-
   useEffect(() => {
     const { w, h } = getEffectiveSize();
     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
     const c = clampFabXY(fabLTRef.current.x, fabLTRef.current.y, w, h);
-    console.log("setValue", c.x, c.y);
     fabPos.setValue(c);
     fabLTRef.current = c;
     posLatest.current = ltToRB(c.x, c.y, w, h);
@@ -276,18 +238,18 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       try {
         const j = JSON.parse(raw) as { r?: number; b?: number };
         if (typeof j.r === 'number' && typeof j.b === 'number' && Number.isFinite(j.r) && Number.isFinite(j.b)) {
-          const w = windowSizeFallback().w;
-          const h = windowSizeFallback().h;
+          const dim = Dimensions.get('window');
+          const w = dim.width > 0 ? dim.width : windowSizeFallback().w;
+          const h = dim.height > 0 ? dim.height : windowSizeFallback().h;
           const lt = rbToLT(j.r, j.b, w, h);
           const c = clampFabXY(lt.x, lt.y, w, h);
           if (!fabMountedRef.current) return;
-          console.log("setValue", c.x, c.y);
           fabPos.setValue(c);
           fabLTRef.current = c;
           posLatest.current = ltToRB(c.x, c.y, w, h);
         }
-      } catch (e) {
-        console.error("LeylekZeka drag crash", e);
+      } catch {
+        /* ignore corrupt storage */
       }
     });
     return () => {
@@ -302,7 +264,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const onFabGestureEvent = useCallback(
     (e: PanGestureHandlerGestureEvent) => {
-      console.log("drag move", e?.nativeEvent?.translationX, e?.nativeEvent?.translationY);
       try {
         if (!fabMountedRef.current) return;
         if (!e?.nativeEvent) return;
@@ -318,12 +279,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
         const rawY = sy + ty;
         if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return;
         const next = clampFabXY(rawX, rawY, w, h);
-        console.log("clamped", next.x, next.y);
-        console.log("setValue", next.x, next.y);
         fabPos.setValue(next);
         fabLTRef.current = next;
-      } catch (err) {
-        console.error("LeylekZeka drag crash", err);
+      } catch {
+        /* gesture race */
       }
     },
     [fabPos, getEffectiveSize],
@@ -331,7 +290,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const onHandlerStateChange = useCallback(
     (event: PanGestureHandlerGestureEvent) => {
-      console.log("drag state", event?.nativeEvent?.state);
       try {
         if (!event?.nativeEvent) return;
         if (event.nativeEvent.state === undefined) return;
@@ -352,12 +310,10 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
         const y = gestureStartRef.current.y + ty;
         if (!Number.isFinite(x) || !Number.isFinite(y)) return;
         const c = clampFabXY(x, y, w, h);
-        console.log("clamped", c.x, c.y);
         fabLTRef.current = c;
         const centerX = c.x + FAB_SIZE / 2;
         const targetLeft = centerX < w / 2 ? BOUNDS_MIN_X : w - BOUNDS_MAX_X_RIGHT_INSET;
         const targetTop = clamp(c.y, BOUNDS_MIN_Y, h - BOUNDS_MAX_Y_BOTTOM_INSET);
-        console.log("spring start", x, y);
         markInteraction();
         springAnimRef.current = Animated.spring(fabPos, {
           toValue: { x: targetLeft, y: targetTop },
@@ -375,8 +331,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
           posLatest.current = ltToRB(targetLeft, targetTop, w, h);
           persistPos();
         });
-      } catch (err) {
-        console.error("LeylekZeka drag crash", err);
+      } catch {
+        /* handler race */
       }
     },
     [fabPos, getEffectiveSize, markInteraction, persistPos],
@@ -385,7 +341,6 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   useEffect(() => {
     fabMountedRef.current = true;
     return () => {
-      console.log("widget unmount");
       fabMountedRef.current = false;
       springAnimRef.current?.stop?.();
       springAnimRef.current = null;
@@ -400,8 +355,8 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const pillOpacity = useRef(new Animated.Value(0)).current;
   const pillTranslateY = useRef(new Animated.Value(PILL_ENTER_OFFSET_PX)).current;
 
-  const showChrome = shouldShowLeylekZekaFab({ pathname, homeFlowScreen, flowHint });
-  const showFab = showChrome && !open && !keyboardUp;
+  const showChrome = shouldShowLeylekZekaFab({ pathname, segments, homeFlowScreen, flowHint });
+  const showFab = showChrome && !leylekZekaChatOpen && !keyboardUp;
 
   const showFabRef = useRef(showFab);
   const reduceMotionRef = useRef(reduceMotion);
@@ -690,31 +645,17 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const onOpen = useCallback(() => {
     markInteraction();
-    setOpen(true);
-  }, [markInteraction]);
-  const onClose = useCallback(() => setOpen(false), []);
+    setLeylekZekaChatOpen(true);
+  }, [markInteraction, setLeylekZekaChatOpen]);
+  const onClose = useCallback(() => setLeylekZekaChatOpen(false), [setLeylekZekaChatOpen]);
 
   const contextualForA11y = getContextualPillLine(homeFlowScreen ?? null, flowHint);
 
-  const fabDragRenderable =
-    fabLTRef.current != null &&
-    Number.isFinite(fabLTRef.current.x) &&
-    Number.isFinite(fabLTRef.current.y);
-
-  if (showFab && !fabDragRenderable) {
-    console.log("render guard fail", fabLTRef.current);
-  }
-
   return (
     <>
-      {showFab && fabDragRenderable ? (
-        <GestureHandlerRootView
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          pointerEvents="box-none"
-        >
-          <View pointerEvents="box-none" style={StyleSheet.absoluteFill} onLayout={onFabRootLayout}>
+      {showFab ? (
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
             <PanGestureHandler
-              ref={panHandlerRef}
               enabled={true}
               shouldCancelWhenOutside={false}
               hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -724,6 +665,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               onHandlerStateChange={onHandlerStateChange}
             >
             <Animated.View
+              collapsable={false}
               pointerEvents="box-none"
               style={[
                 styles.anchor,
@@ -813,14 +755,13 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
               </Animated.View>
             </Animated.View>
             </PanGestureHandler>
-          </View>
-        </GestureHandlerRootView>
+        </View>
       ) : null}
 
-      {open ? (
+      {leylekZekaChatOpen ? (
         <React.Suspense fallback={null}>
           <LeylekZekaChat
-            visible={open}
+            visible={leylekZekaChatOpen}
             onClose={onClose}
             messages={messages}
             isTyping={isTyping}

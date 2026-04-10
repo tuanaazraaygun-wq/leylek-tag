@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Dimensions
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -326,13 +327,11 @@ interface SupportModalProps {
 }
 
 export function SupportModal({ visible, onClose }: SupportModalProps) {
-  const openWhatsApp = () => {
-    const phone = '905001234567'; // WhatsApp numarası
-    const message = 'Merhaba, Leylek uygulaması hakkında destek almak istiyorum.';
-    const url = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(message)}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Hata', 'WhatsApp açılamadı. Lütfen WhatsApp\'ın yüklü olduğundan emin olun.');
-    });
+  const { setLeylekZekaChatOpen } = useLeylekZekaChrome();
+
+  const openLeylekZeka = () => {
+    onClose();
+    setLeylekZekaChatOpen(true);
   };
 
   const openEmail = () => {
@@ -366,14 +365,14 @@ export function SupportModal({ visible, onClose }: SupportModalProps) {
           </LinearGradient>
 
           <View style={styles.supportOptions}>
-            {/* WhatsApp */}
-            <TouchableOpacity style={styles.supportOption} onPress={openWhatsApp}>
-              <View style={[styles.supportOptionIcon, { backgroundColor: '#25D366' }]}>
-                <Ionicons name="logo-whatsapp" size={28} color="#FFF" />
+            {/* Leylek Zeka — uygulama içi asistan */}
+            <TouchableOpacity style={styles.supportOption} onPress={openLeylekZeka}>
+              <View style={[styles.supportOptionIcon, { backgroundColor: '#2563EB' }]}>
+                <Ionicons name="sparkles" size={28} color="#FFF" />
               </View>
               <View style={styles.supportOptionText}>
-                <Text style={styles.supportOptionTitle}>WhatsApp</Text>
-                <Text style={styles.supportOptionDesc}>Hızlı mesaj gönderin</Text>
+                <Text style={styles.supportOptionTitle}>Leylek Zeka</Text>
+                <Text style={styles.supportOptionDesc}>Uygulama içi yapay zeka asistanı</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,10 +32,13 @@ import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ A
 // NOT: useAgoraEngine kaldırıldı - CallScreenV2 kendi singleton Agora'sını yönetiyor
 import PlacesAutocomplete, { getRegisteredCityCenter } from '../components/PlacesAutocomplete';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
+import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
 import SplashScreen from '../components/SplashScreen';
-import { KVKKConsentModal, SupportModal } from '../components/KVKKComponents';
+import AnimatedClouds from '../components/auth/AnimatedClouds';
+import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
+import { LoginScreen } from '../components/auth/LoginScreen';
 import CommunityScreen from '../components/CommunityScreen';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -51,7 +54,11 @@ import {
 } from '../lib/sessionToken';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
+import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
+import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { playMatchChimeSound } from '../utils/sound';
+import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -76,19 +83,6 @@ const API_URL = API_BASE_URL;
 
 /** PIN ekranına geçerken phone state kaybolursa verify-pin boş phone göndermesin */
 const PENDING_PIN_LOGIN_PHONE_KEY = 'pending_pin_login_phone';
-
-function normalizeTrMobile10(s: string | undefined | null): string {
-  const d = String(s || '').replace(/\D/g, '');
-  if (d.length >= 10) return d.slice(-10);
-  return d;
-}
-
-/** Harita marker’ları — backend `female` | `male` */
-function parseGender(raw: unknown): 'female' | 'male' | null {
-  const s = String(raw ?? '').trim().toLowerCase();
-  if (s === 'female' || s === 'male') return s;
-  return null;
-}
 
 /** start-call sonrası arayan tarafı Agora kanalına alır (receiver ekranı açılmadan önce). */
 async function joinTripCallAgoraAsCaller(
@@ -117,29 +111,6 @@ async function joinTripCallAgoraAsCaller(
     console.error('Agora caller join:', e);
     appAlert('Hata', 'Ses kanalına bağlanılamadı');
     return false;
-  }
-}
-
-/** FastAPI { detail: "..." } veya { message } */
-function apiErrMsg(data: { message?: string; detail?: unknown } | null | undefined, fallback: string): string {
-  if (!data) return fallback;
-  if (data.message) return String(data.message);
-  const d = data.detail;
-  if (typeof d === 'string') return d;
-  if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === 'string') {
-    return String((d[0] as { msg: string }).msg);
-  }
-  return fallback;
-}
-
-/** HTML/502 gövdelerinde response.json() çökmesini önler */
-async function parseApiJson(response: Response): Promise<{ data: Record<string, unknown> }> {
-  const text = await response.text();
-  if (!text) return { data: {} };
-  try {
-    return { data: JSON.parse(text) as Record<string, unknown> };
-  } catch {
-    return { data: { detail: text.length > 180 ? `${text.slice(0, 180)}…` : text } };
   }
 }
 
@@ -223,305 +194,6 @@ async function submitUserReport(
 
 console.log('🌐 BACKEND_URL:', BACKEND_URL);
 console.log('🌐 API_URL:', API_URL);
-
-// Hareketli Bulutlar Bileşeni (90 FPS animasyon) - Daha fazla bulut
-const AnimatedClouds = () => {
-  const cloud1X = useRef(new Animated.Value(-100)).current;
-  const cloud2X = useRef(new Animated.Value(-150)).current;
-  const cloud3X = useRef(new Animated.Value(-80)).current;
-  const cloud4X = useRef(new Animated.Value(-120)).current;
-  const cloud5X = useRef(new Animated.Value(-90)).current;
-  const cloud6X = useRef(new Animated.Value(-130)).current;
-  const cloud7X = useRef(new Animated.Value(-70)).current;
-  const cloud8X = useRef(new Animated.Value(-110)).current;
-
-  useEffect(() => {
-    const animateCloud = (cloudAnim: Animated.Value, duration: number, delay: number) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(cloudAnim, {
-            toValue: SCREEN_WIDTH + 100,
-            duration: duration,
-            useNativeDriver: true,
-          }),
-          Animated.timing(cloudAnim, {
-            toValue: -150,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    };
-
-    // Üst taraf bulutları (logo bölgesi)
-    animateCloud(cloud1X, 20000, 0);
-    animateCloud(cloud2X, 25000, 3000);
-    animateCloud(cloud5X, 18000, 6000);
-    animateCloud(cloud6X, 22000, 9000);
-    // Alt taraf bulutları
-    animateCloud(cloud3X, 28000, 4000);
-    animateCloud(cloud4X, 24000, 7000);
-    animateCloud(cloud7X, 26000, 10000);
-    animateCloud(cloud8X, 30000, 2000);
-  }, []);
-
-  return (
-    <View style={cloudStyles.container} pointerEvents="none">
-      {/* Üst bölge - Logo etrafı (daha fazla bulut) */}
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud1, { transform: [{ translateX: cloud1X }] }]}>
-        <Ionicons name="cloud" size={70} color="rgba(63, 169, 245, 0.18)" />
-      </Animated.View>
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud2, { transform: [{ translateX: cloud2X }] }]}>
-        <Ionicons name="cloud" size={55} color="rgba(63, 169, 245, 0.15)" />
-      </Animated.View>
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud5, { transform: [{ translateX: cloud5X }] }]}>
-        <Ionicons name="cloud" size={65} color="rgba(63, 169, 245, 0.12)" />
-      </Animated.View>
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud6, { transform: [{ translateX: cloud6X }] }]}>
-        <Ionicons name="cloud" size={50} color="rgba(63, 169, 245, 0.16)" />
-      </Animated.View>
-      {/* Orta ve alt bölge */}
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud3, { transform: [{ translateX: cloud3X }] }]}>
-        <Ionicons name="cloud" size={80} color="rgba(63, 169, 245, 0.10)" />
-      </Animated.View>
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud4, { transform: [{ translateX: cloud4X }] }]}>
-        <Ionicons name="cloud" size={60} color="rgba(63, 169, 245, 0.12)" />
-      </Animated.View>
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud7, { transform: [{ translateX: cloud7X }] }]}>
-        <Ionicons name="cloud" size={75} color="rgba(63, 169, 245, 0.08)" />
-      </Animated.View>
-      <Animated.View style={[cloudStyles.cloud, cloudStyles.cloud8, { transform: [{ translateX: cloud8X }] }]}>
-        <Ionicons name="cloud" size={45} color="rgba(63, 169, 245, 0.14)" />
-      </Animated.View>
-    </View>
-  );
-};
-
-const cloudStyles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 0,
-  },
-  cloud: {
-    position: 'absolute',
-  },
-  cloud1: {
-    top: '5%',
-  },
-  cloud2: {
-    top: '12%',
-  },
-  cloud5: {
-    top: '18%',
-  },
-  cloud6: {
-    top: '8%',
-    left: '30%',
-  },
-  cloud3: {
-    top: '35%',
-  },
-  cloud4: {
-    top: '50%',
-  },
-  cloud7: {
-    top: '60%',
-  },
-  cloud8: {
-    top: '70%',
-  },
-});
-
-/** Giriş / OTP: uygulama ikonu (OTP vb.) */
-const LOGIN_LOGO_AR = 1;
-const LOGIN_LOGO_SOURCE = require('../assets/images/logo.png');
-/** Giriş sayfası: trimlenmiş marka görseli (fazla beyaz alan yok) */
-const LOGIN_BRAND_TRIM_SOURCE = require('../assets/images/login-brand-trim.png');
-
-/**
- * Giriş / OTP ortak logo. `animated={false}` girişte sabit görüntü (ekran zıplaması yok).
- */
-const AnimatedLoginLogo = ({
-  compact,
-  animated = true,
-}: {
-  compact?: boolean;
-  animated?: boolean;
-}) => {
-  const floatY = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!animated) return undefined;
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatY, {
-          toValue: -3,
-          duration: 3200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatY, {
-          toValue: 0,
-          duration: 3200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [floatY, animated]);
-
-  const imageEl = (
-    <Image
-      source={LOGIN_LOGO_SOURCE}
-      style={[
-        styles.loginLogoImage,
-        compact ? styles.loginLogoImageCompact : null,
-        { aspectRatio: LOGIN_LOGO_AR },
-      ]}
-      resizeMode="contain"
-    />
-  );
-
-  return (
-    <View style={styles.loginLogoStage} pointerEvents="none">
-      {animated ? (
-        <Animated.View style={{ width: '100%', alignItems: 'center', transform: [{ translateY: floatY }] }}>
-          {imageEl}
-        </Animated.View>
-      ) : (
-        <View style={{ width: '100%', alignItems: 'center' }}>{imageEl}</View>
-      )}
-    </View>
-  );
-};
-
-/** Sadece telefon girişi: orta boy marka + hemen altında başlık (kaydırma yok düzeni için) */
-function LoginBrandHeader({
-  screenWidth,
-  isCompact,
-}: {
-  screenWidth: number;
-  isCompact: boolean;
-}) {
-  const logoW = Math.min(isCompact ? 100 : 116, Math.round(screenWidth * 0.30));
-  return (
-    <View style={styles.loginV2Brand} pointerEvents="none">
-      <View style={[styles.loginV2LogoBox, { width: logoW, height: logoW }]}>
-        <Image source={LOGIN_BRAND_TRIM_SOURCE} style={StyleSheet.absoluteFillObject} resizeMode="contain" />
-      </View>
-      <Text
-        style={[styles.loginV2Title, isCompact && styles.loginV2TitleCompact]}
-        maxFontSizeMultiplier={1.25}
-      >
-        Yolculuk Eşleştirme
-      </Text>
-      <Text
-        style={[styles.loginV2Tagline, isCompact && styles.loginV2TaglineCompact]}
-        maxFontSizeMultiplier={1.2}
-      >
-        Güvenli ve hızlı yolculuk deneyimi
-      </Text>
-    </View>
-  );
-}
-
-/** Giriş — DEVAM ET: KVKK sonrası renk nabız; öncesi gri ama her zaman dokunulabilir */
-function LoginPulseContinueButton({
-  kvkkAccepted,
-  onPress,
-}: {
-  kvkkAccepted: boolean;
-  onPress: () => void;
-}) {
-  const pulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!kvkkAccepted) {
-      pulse.setValue(0);
-      return undefined;
-    }
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: false,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 1000,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: false,
-        }),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [kvkkAccepted, pulse]);
-  const bg = pulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#3FA9F5', '#0B5CAD'],
-  });
-  const inner = (
-    <>
-      <Text style={styles.modernPrimaryButtonText}>DEVAM ET</Text>
-      <Ionicons name="arrow-forward" size={20} color="#FFF" />
-    </>
-  );
-  if (!kvkkAccepted) {
-    return (
-      <Pressable onPress={onPress} hitSlop={12}>
-        <View style={[styles.modernPrimaryButton, styles.loginPrimaryTight, styles.buttonDisabled]}>{inner}</View>
-      </Pressable>
-    );
-  }
-  return (
-    <Pressable onPress={onPress} hitSlop={12}>
-      <Animated.View style={[styles.modernPrimaryButton, styles.loginPrimaryTight, { backgroundColor: bg }]}>
-        {inner}
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-/** Teklif kartı: 0 veya NaN km gösterme */
-function formatOfferKmBadge(km: unknown): string {
-  const n = Number(km);
-  if (!Number.isFinite(n) || n <= 0) return '?';
-  return n.toFixed(1);
-}
-
-function offerPickupLine(o: Record<string, unknown>): string {
-  const s = [o.pickup_location, o.pickup_address].find(
-    (x) => typeof x === 'string' && String(x).trim(),
-  ) as string | undefined;
-  if (s) return s.trim();
-  const la = Number(o.pickup_lat);
-  const ln = Number(o.pickup_lng);
-  if (Number.isFinite(la) && Number.isFinite(ln)) {
-    return `Konum (${la.toFixed(4)}, ${ln.toFixed(4)})`;
-  }
-  return 'Alış noktası';
-}
-
-function offerDropoffLine(o: Record<string, unknown>): string {
-  const s = [o.dropoff_location, o.dropoff_address, o.destination].find(
-    (x) => typeof x === 'string' && String(x).trim(),
-  ) as string | undefined;
-  if (s) return s.trim();
-  const la = Number(o.dropoff_lat);
-  const ln = Number(o.dropoff_lng);
-  if (Number.isFinite(la) && Number.isFinite(ln) && (Math.abs(la) > 1e-6 || Math.abs(ln) > 1e-6)) {
-    return `Hedef (${la.toFixed(4)}, ${ln.toFixed(4)})`;
-  }
-  return 'Hedef (haritada işaretli)';
-}
 
 // Leylek TAG Colors
 const COLORS = {
@@ -614,15 +286,6 @@ type AppScreen =
   | 'community'
   | 'driver-kyc';
 
-function normalizePassengerPaymentMethod(raw: unknown): 'cash' | 'card' | null {
-  const s = String(raw ?? '').trim().toLowerCase();
-  if (s === 'cash' || s === 'nakit') return 'cash';
-  if (s === 'card' || s === 'kart' || s === 'sanal' || s === 'sanal_kart' || s === 'virtual_card') {
-    return 'card';
-  }
-  return null;
-}
-
 /** Giriş/OTP: döndürme ve farklı genişliklerde simetrik padding + sütun genişliği */
 function useLoginAuthLayout() {
   const { width, height } = useWindowDimensions();
@@ -678,9 +341,21 @@ class RuntimeBoundary extends React.Component<
 export default function App() {
   const insets = useSafeAreaInsets();
   const loginLayout = useLoginAuthLayout();
+  const leylekChrome = useLeylekZekaChrome();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<AppScreen>('login');
+
+  /** Leylek Zeka FAB pathname/ekran ile aynı karede senkron olsun (useEffect gecikmesi yok). */
+  useLayoutEffect(() => {
+    leylekChrome.setHomeFlowScreen(screen);
+  }, [screen, leylekChrome.setHomeFlowScreen]);
+
+  useEffect(() => {
+    if (screen !== 'dashboard') {
+      leylekChrome.setFlowHint(null);
+    }
+  }, [screen, leylekChrome.setFlowHint]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
@@ -1617,197 +1292,30 @@ export default function App() {
   }
 
   if (screen === 'login') {
-    const screenWidth = Dimensions.get('window').width;
-    const screenHeight = Dimensions.get('window').height;
-    
     return (
-      <View style={{ flex: 1, width: '100%', height: '100%' }}>
-        {/* Arka Plan Resmi - SADECE MOBİL */}
-        {Platform.OS !== 'web' && (
-          <Image 
-            source={require('../assets/images/login-background.png')}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: screenWidth,
-              height: screenHeight,
-            }}
-            resizeMode="cover"
-          />
-        )}
-        
-        {/* Yarı saydam overlay — çok hafif; logoyu silik göstermesin */}
-        {Platform.OS !== 'web' && (
-          <View style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(255,255,255,0.03)',
-          }} />
-        )}
-        
-        <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
-          {/* Hareketli Bulutlar Arka Plan */}
-          <AnimatedClouds />
-          <View style={styles.loginLayerAboveClouds}>
-          <KeyboardAvoidingView
-            style={styles.loginKavFlex}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            enabled
-            keyboardVerticalOffset={
-              Platform.OS === 'ios'
-                ? insets.top + 4
-                : (StatusBar.currentHeight ?? 0) + insets.top
-            }
-          >
-            <View
-              style={[
-                styles.loginV2Root,
-                {
-                  paddingHorizontal: loginLayout.padH,
-                  paddingTop: loginLayout.isCompact ? 4 : 8,
-                  paddingBottom: Math.max(insets.bottom, 10),
-                },
-              ]}
-            >
-            <View style={[styles.loginV2Column, { maxWidth: loginLayout.colMax }]}>
-            <LoginBrandHeader screenWidth={screenWidth} isCompact={loginLayout.isCompact} />
-
-            <View
-              style={[
-                styles.loginV2Card,
-                {
-                  paddingTop: loginLayout.isShort ? 8 : 10,
-                  paddingBottom: loginLayout.isShort ? 8 : 10,
-                  paddingHorizontal: loginLayout.isShort ? 10 : 12,
-                },
-              ]}
-            >
-              <Text style={[styles.modernLabel, styles.loginV2Label]}>Telefon Numaranız</Text>
-              <View style={[styles.modernInputContainer, styles.loginV2InputWrap]}>
-                <Ionicons name="call-outline" size={18} color="#2196F3" style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.modernInput, styles.loginV2Input]}
-                  placeholder="5XX XXX XX XX"
-                  placeholderTextColor="#A0A0A0"
-                  keyboardType="phone-pad"
-                  value={phone}
-                  blurOnSubmit={false}
-                  onChangeText={(text) => {
-                    const cleaned = text.replace(/\D/g, '');
-                    if (cleaned.length > phone.length) void keyCharHaptic();
-                    setPhone(cleaned);
-                  }}
-                  maxLength={10}
-                />
-              </View>
-
-              {/* KVKK Checkbox - Tıklanabilir Metin */}
-              <TouchableOpacity 
-                style={[styles.kvkkContainer, styles.loginV2Kvkk]} 
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setKvkkAccepted(!kvkkAccepted);
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, styles.loginCheckboxSm, kvkkAccepted && styles.checkboxChecked]}>
-                  {kvkkAccepted && <Ionicons name="checkmark" size={14} color="#FFF" />}
-                </View>
-                <Text style={[styles.kvkkText, styles.loginV2KvkkText]}>
-                  <Text 
-                    style={[styles.kvkkLink, styles.loginV2KvkkLink]} 
-                    onPress={() => setShowKVKKModal(true)}
-                  >
-                    Aydınlatma Metni ve Gizlilik Politikası
-                  </Text>
-                  <Text>&apos;nı okudum, anladım ve kabul ediyorum.</Text>
-                </Text>
-              </TouchableOpacity>
-
-              <LoginPulseContinueButton
-                kvkkAccepted={kvkkAccepted}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  if (!kvkkAccepted) {
-                    appAlert(
-                      '⚠️ Onay Gerekli',
-                      'Devam etmek için Aydınlatma Metni ve Gizlilik Politikasını kabul etmelisiniz.',
-                      [{ text: 'Tamam', style: 'default' }],
-                    );
-                    return;
-                  }
-                  void handleSendOTP();
-                }}
-              />
-
-              <TouchableOpacity
-                style={[styles.registerButton, styles.loginV2RegisterBtn]}
-                onPress={() => {
-                  void tapButtonHaptic();
-                  setScreen('register');
-                }}
-              >
-                <Ionicons name="person-add-outline" size={18} color="#1565C0" />
-                <Text style={[styles.registerButtonText, styles.loginV2RegisterTxt]}>Kayıt Ol</Text>
-              </TouchableOpacity>
-
-              <View style={styles.loginV2FooterRow}>
-                <TouchableOpacity
-                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    setScreen('forgot-password');
-                  }}
-                >
-                  <Text style={styles.loginV2FooterLink}>Şifremi Unuttum</Text>
-                </TouchableOpacity>
-                <Text style={styles.loginV2FooterSep}>|</Text>
-                <TouchableOpacity
-                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    setShowSupportModal(true);
-                  }}
-                >
-                  <Text style={styles.loginV2FooterLink}>Destek</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            </View>
-            </View>
-          </KeyboardAvoidingView>
-          </View>
-          
-          {/* KVKK Modal */}
-          <KVKKConsentModal
-            visible={showKVKKModal}
-            onAccept={() => {
-              setKvkkAccepted(true);
-              setShowKVKKModal(false);
-            }}
-            onDecline={() => {
-              setKvkkAccepted(false);
-              setShowKVKKModal(false);
-            }}
-          />
-          
-          {/* Destek Modal */}
-          <SupportModal
-            visible={showSupportModal}
-            onClose={() => setShowSupportModal(false)}
-          />
-        </SafeAreaView>
-      </View>
+      <LoginScreen
+        phone={phone}
+        kvkkAccepted={kvkkAccepted}
+        showKVKKModal={showKVKKModal}
+        showSupportModal={showSupportModal}
+        setPhone={setPhone}
+        setKvkkAccepted={setKvkkAccepted}
+        setShowKVKKModal={setShowKVKKModal}
+        setShowSupportModal={setShowSupportModal}
+        onPressContinue={() => void handleSendOTP()}
+        onPressRegister={() => setScreen('register')}
+        onPressForgotPassword={() => setScreen('forgot-password')}
+        onPressSupport={() => setShowSupportModal(true)}
+        styles={styles}
+      />
     );
   }
 
   if (screen === 'otp') {
     const otpW = Dimensions.get('window').width;
     const otpH = Dimensions.get('window').height;
+    const otpColumnW = Math.min(loginLayout.colMax, otpW - loginLayout.padH * 2);
+
     return (
       <View style={{ flex: 1, width: '100%', height: '100%' }}>
         {Platform.OS !== 'web' && (
@@ -1848,58 +1356,39 @@ export default function App() {
                 : (StatusBar.currentHeight ?? 0) + insets.top
             }
           >
-            <ScrollView
-              style={styles.loginAuthScroll}
-              contentContainerStyle={[
-                styles.loginAuthScrollContent,
-                {
-                  paddingHorizontal: loginLayout.padH,
-                  paddingTop: loginLayout.isCompact ? 0 : loginLayout.isShort ? 2 : 4,
-                  paddingBottom: Math.max(
-                    insets.bottom,
-                    loginLayout.isCompact ? 8 : loginLayout.isShort ? 10 : 12,
-                  ),
-                },
-              ]}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              showsVerticalScrollIndicator={false}
-              alwaysBounceVertical={false}
-              scrollEnabled
-              nestedScrollEnabled={false}
-            >
             <View
               style={[
-                styles.loginHeaderSym,
-                { maxWidth: loginLayout.colMax, gap: loginLayout.isShort ? 3 : 4 },
+                styles.loginPageShell,
+                {
+                  paddingTop: loginLayout.isCompact ? 6 : 12,
+                  paddingBottom: Math.max(insets.bottom, 8),
+                },
               ]}
             >
-              <AnimatedLoginLogo compact={loginLayout.isCompact} />
-              <Text style={styles.loginBrandTitleBlue} maxFontSizeMultiplier={1.35}>
-                Yolculuk Eşleştirme
-              </Text>
-              <Text style={styles.loginTaglineMini} maxFontSizeMultiplier={1.3}>
-                {phone} numarasına SMS ile gönderilen 6 haneli kodu girin
-              </Text>
-            </View>
+            <View style={[styles.loginPageColumn, { width: otpColumnW }]}>
+            <LoginBrandHeader
+              usableWidth={otpColumnW}
+              isCompact={loginLayout.isCompact}
+              isShort={loginLayout.isShort}
+              subtitle={`${phone} numarasına SMS ile gönderilen 6 haneli kodu girin`}
+            />
 
             <View
               style={[
-                styles.loginFormBlock,
+                styles.loginV2Card,
+                styles.loginV2CardTight,
                 {
-                  maxWidth: loginLayout.colMax,
-                  marginTop: loginLayout.isShort ? 4 : 6,
-                  paddingTop: loginLayout.isShort ? 8 : 10,
-                  paddingBottom: loginLayout.isShort ? 8 : 10,
+                  paddingTop: loginLayout.isShort ? 6 : 8,
+                  paddingBottom: loginLayout.isShort ? 6 : 8,
                   paddingHorizontal: loginLayout.isShort ? 10 : 12,
                 },
               ]}
             >
-            <Text style={[styles.modernLabel, styles.loginLabelTight]}>Doğrulama kodu</Text>
-            <View style={[styles.modernInputContainer, styles.loginInputTight]}>
-              <Ionicons name="keypad-outline" size={20} color="#3FA9F5" style={styles.inputIcon} />
+            <Text style={[styles.modernLabel, styles.loginV2Label]}>Doğrulama kodu</Text>
+            <View style={[styles.modernInputContainer, styles.loginV2InputWrap]}>
+              <Ionicons name="keypad-outline" size={18} color="#2196F3" style={styles.inputIcon} />
               <TextInput
-                style={[styles.modernInput, styles.loginModernInput]}
+                style={[styles.modernInput, styles.loginV2Input]}
                 placeholder="• • • • • •"
                 placeholderTextColor="#A0A0A0"
                 keyboardType="number-pad"
@@ -1950,11 +1439,12 @@ export default function App() {
                 setScreen('login');
               }}
             >
-              <Ionicons name="arrow-back" size={18} color="#3FA9F5" />
+              <Ionicons name="arrow-back" size={18} color="#2196F3" />
               <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
             </TouchableOpacity>
           </View>
-            </ScrollView>
+            </View>
+            </View>
           </KeyboardAvoidingView>
           </View>
         </SafeAreaView>
@@ -3109,6 +2599,30 @@ export default function App() {
                     >
                       Motor
                     </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.roleLeylekZekaRow}>
+                  <TouchableOpacity
+                    style={styles.roleLeylekZekaBtn}
+                    onPress={() => {
+                      roleScreenHaptic();
+                      leylekChrome.setLeylekZekaChatOpen(true);
+                    }}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel="Leylek Zeka"
+                  >
+                    <Image
+                      source={require('../assets/images/logo.png')}
+                      style={styles.roleLeylekZekaLogo}
+                      resizeMode="contain"
+                    />
+                    <View style={styles.roleLeylekZekaTextCol}>
+                      <Text style={styles.roleLeylekZekaTitle}>Leylek Zeka</Text>
+                      <Text style={styles.roleLeylekZekaSub}>Sorularınız için dokunun</Text>
+                    </View>
+                    <Ionicons name="chatbubble-ellipses-outline" size={22} color="#2563EB" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -6244,7 +5758,28 @@ function PassengerDashboard({
   
   // Teklifleri fiyata göre sırala (ucuzdan pahalıya)
   const offers = [...realtimeOffers].sort((a, b) => (a.price || 0) - (b.price || 0));
-  
+
+  const leylekChromePassenger = useLeylekZekaChrome();
+  useEffect(() => {
+    if (!activeTag) {
+      leylekChromePassenger.setFlowHint('passenger_home');
+      return;
+    }
+    if (activeTag.status === 'matched' || activeTag.status === 'in_progress') {
+      leylekChromePassenger.setFlowHint('passenger_trip');
+      return;
+    }
+    if (activeTag.status === 'offers_received' || (activeTag.status === 'pending' && offers.length > 0)) {
+      leylekChromePassenger.setFlowHint('passenger_offer_waiting');
+      return;
+    }
+    if (activeTag.status === 'pending') {
+      leylekChromePassenger.setFlowHint('passenger_matching');
+      return;
+    }
+    leylekChromePassenger.setFlowHint('passenger_home');
+  }, [activeTag, offers.length, leylekChromePassenger.setFlowHint]);
+
   // 🆕 Teklif veren sürücülerin konumlarını offers'tan güncelle
   useEffect(() => {
     if (offers.length === 0) {
@@ -6574,14 +6109,23 @@ function PassengerDashboard({
       setScreen('role-select');
       
       // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
-      const enderType = data.ender_type;
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
       const tagId = data.tag_id;
+      const pid = String((data as { passenger_id?: string }).passenger_id ?? '').trim();
+      const did = String((data as { driver_id?: string }).driver_id ?? '').trim();
+      const eid = enderId.toLowerCase();
+      const pidL = pid.toLowerCase();
+      const didL = did.toLowerCase();
+      let enderType = data.ender_type as string | undefined;
+      if (!enderType && enderId) {
+        if (pid && eid === pidL) enderType = 'passenger';
+        else if (did && eid === didL) enderType = 'driver';
+      }
       const enderFirst = displayFirstName(
         (data as { ender_name?: string }).ender_name,
         enderType === 'driver' ? 'Sürücü' : 'Yolcu',
       );
-      const selfEnded = user?.id && String(user.id) === enderId;
+      const selfEnded = user?.id && String(user.id).toLowerCase() === eid;
       const uid = String(user?.id || '');
 
       if (enderType === 'driver') {
@@ -6629,9 +6173,30 @@ function PassengerDashboard({
       } else {
         appAlert(
           'Eşleşme sonlandırıldı',
-          `Yolcu ${enderFirst} eşleşmeyi zorla bitirdi. Şikayet etmek için "Şikayet et"e dokunun.`,
+          `Karşı taraf eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
-            { text: 'Tamam', style: 'default' },
+            {
+              text: 'Onaylıyorum (0 puan)',
+              style: 'default',
+              onPress: async () => {
+                try {
+                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
+                } catch (e) {
+                  console.log('Onay gönderilemedi:', e);
+                }
+              },
+            },
+            {
+              text: 'Onaylamıyorum (-5 puan)',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
+                } catch (e) {
+                  console.log('Red gönderilemedi:', e);
+                }
+              },
+            },
             {
               text: 'Şikayet et',
               style: 'destructive',
@@ -6641,7 +6206,7 @@ function PassengerDashboard({
               },
             },
           ],
-          { variant: 'warning' },
+          { cancelable: false, variant: 'warning' },
         );
       }
     },
@@ -7571,6 +7136,15 @@ function PassengerDashboard({
     longitude: number;
   }) => {
     void tapButtonHaptic();
+    /** GMS yok (Huawei vb.): MapView mount = crash; arama sonucunu doğrudan hedef kabul et */
+    if (!isNativeGoogleMapsSupported()) {
+      void commitDestinationFromMap(
+        place.address,
+        place.latitude,
+        place.longitude,
+      );
+      return;
+    }
     setDestination(null);
     setDestinationAwaitingMapTap(true);
     setDestinationPickerPhase('map');
@@ -8195,6 +7769,7 @@ function PassengerDashboard({
                   otherLocation={driverLocation || activeTag?.driver_location || null}
                   destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
                   isDriver={false}
+                  peerMapPinScale={1.04}
                   selfGender={parseGender(user?.gender)}
                   userName={user.name}
                   otherUserName={displayFirstName(activeTag?.driver_name, 'Şoför')}
@@ -8515,7 +8090,7 @@ function PassengerDashboard({
         onRequestClose={closeDestinationPickerModal}
       >
         <View style={styles.destinationModalRoot}>
-          {DestinationPickerMapView ? (
+          {DestinationPickerMapView && isNativeGoogleMapsSupported() ? (
             <DestinationPickerMapView
               ref={destinationPickerMapRef}
               style={StyleSheet.absoluteFillObject}
@@ -8525,8 +8100,8 @@ function PassengerDashboard({
               showsMyLocationButton={false}
               scrollEnabled
               zoomEnabled
-              pitchEnabled
-              rotateEnabled
+              pitchEnabled={Platform.OS !== 'android'}
+              rotateEnabled={Platform.OS !== 'android'}
               initialRegion={{
                 latitude: destinationPickerMapLatResolved,
                 longitude: destinationPickerMapLngResolved,
@@ -8581,7 +8156,9 @@ function PassengerDashboard({
               ) : null}
             </DestinationPickerMapView>
           ) : null}
-          {DestinationPickerMapView && destinationPickerPhase === 'map' ? (
+          {DestinationPickerMapView &&
+          isNativeGoogleMapsSupported() &&
+          destinationPickerPhase === 'map' ? (
             <View style={styles.destinationMapCalloutWrap} pointerEvents="none">
               <View style={styles.destinationMapCalloutBubble}>
                 <Text style={styles.destinationMapCalloutText}>
@@ -8593,7 +8170,7 @@ function PassengerDashboard({
               </View>
             </View>
           ) : null}
-          {!DestinationPickerMapView ? (
+          {(!DestinationPickerMapView || !isNativeGoogleMapsSupported()) ? (
             <LinearGradient
               colors={['#0c4a6e', '#075985', '#0369a1', '#0284c7']}
               start={{ x: 0.2, y: 0 }}
@@ -8668,6 +8245,12 @@ function PassengerDashboard({
                         Nereye gitmek istiyorsunuz?
                       </Text>
                     </Animated.View>
+                    {!isNativeGoogleMapsSupported() ? (
+                      <Text style={styles.destinationNoGmsHint}>
+                        Bu cihazda Google Haritalar yok; listeden adres seçmeniz yeterli — konum otomatik
+                        kaydedilir.
+                      </Text>
+                    ) : null}
 
                     <View style={styles.destinationSearchShellModern}>
                       <PlacesAutocomplete
@@ -9404,14 +8987,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       setScreen('role-select');
       
       // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
-      const enderType = data.ender_type;
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
       const tagId = data.tag_id;
+      const pid = String((data as { passenger_id?: string }).passenger_id ?? '').trim();
+      const did = String((data as { driver_id?: string }).driver_id ?? '').trim();
+      const eid = enderId.toLowerCase();
+      const pidL = pid.toLowerCase();
+      const didL = did.toLowerCase();
+      let enderType = data.ender_type as string | undefined;
+      if (!enderType && enderId) {
+        if (pid && eid === pidL) enderType = 'passenger';
+        else if (did && eid === didL) enderType = 'driver';
+      }
       const enderFirst = displayFirstName(
         (data as { ender_name?: string }).ender_name,
         enderType === 'driver' ? 'Sürücü' : 'Yolcu',
       );
-      const selfEnded = user?.id && String(user.id) === enderId;
+      const selfEnded = user?.id && String(user.id).toLowerCase() === eid;
       const uid = String(user?.id || '');
 
       if (enderType === 'passenger') {
@@ -9459,9 +9051,30 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       } else {
         appAlert(
           'Eşleşme sonlandırıldı',
-          `Sürücü ${enderFirst} eşleşmeyi zorla bitirdi. Şikayet etmek için "Şikayet et"e dokunun.`,
+          `Karşı taraf eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
-            { text: 'Tamam', style: 'default' },
+            {
+              text: 'Onaylıyorum (0 puan)',
+              style: 'default',
+              onPress: async () => {
+                try {
+                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
+                } catch (e) {
+                  console.log('Onay gönderilemedi:', e);
+                }
+              },
+            },
+            {
+              text: 'Onaylamıyorum (-5 puan)',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
+                } catch (e) {
+                  console.log('Red gönderilemedi:', e);
+                }
+              },
+            },
             {
               text: 'Şikayet et',
               style: 'destructive',
@@ -9471,7 +9084,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               },
             },
           ],
-          { variant: 'warning' },
+          { cancelable: false, variant: 'warning' },
         );
       }
     },
@@ -10087,6 +9700,37 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [offerPrice, setOfferPrice] = useState('');
   const [offerSent, setOfferSent] = useState(false); // Teklif gönderildi mi?
 
+  const leylekChromeDriver = useLeylekZekaChrome();
+  const driverTripActiveForHint = !!(
+    activeTag &&
+    (activeTag.status === 'matched' || activeTag.status === 'in_progress')
+  );
+  useEffect(() => {
+    if (kycStatus?.status === 'pending') {
+      leylekChromeDriver.setFlowHint('driver_kyc_pending');
+      return;
+    }
+    if (driverTripActiveForHint) {
+      leylekChromeDriver.setFlowHint('driver_trip');
+      return;
+    }
+    if (offerModalVisible) {
+      leylekChromeDriver.setFlowHint('driver_offer_compose');
+      return;
+    }
+    if (requests.length > 0) {
+      leylekChromeDriver.setFlowHint('driver_offer_list');
+      return;
+    }
+    leylekChromeDriver.setFlowHint('driver_idle');
+  }, [
+    kycStatus?.status,
+    driverTripActiveForHint,
+    offerModalVisible,
+    requests.length,
+    leylekChromeDriver.setFlowHint,
+  ]);
+
   // ANINDA TEKLİF GÖNDER - Backend API
   const sendOfferInstant = async (tagId: string, price: number): Promise<boolean> => {
     if (!user?.id || !tagId || price < 10) return false;
@@ -10605,6 +10249,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             userLocation={userLocation}
             otherLocation={passengerLocation || activeTag?.passenger_location || null}
             destinationLocation={activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null}
+            peerMapPinScale={1.04}
             otherTripVehicleKind={
               activeTag?.passenger_vehicle_kind === 'motorcycle' ||
               activeTag?.passenger_preferred_vehicle === 'motorcycle'
@@ -11381,11 +11026,13 @@ const styles = StyleSheet.create({
   /** Bulutların üstünde — dokunma ve butonlar kesilmesin */
   loginLayerAboveClouds: {
     flex: 1,
+    width: '100%',
     zIndex: 10,
     elevation: 6,
   },
   loginKavFlex: {
     flex: 1,
+    width: '100%',
   },
   /** Giriş/OTP: kısa ekranda içerik taşarsa dikey kaydırma; padding runtime’da loginLayout ile */
   loginAuthScroll: {
@@ -11470,60 +11117,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 15,
   },
-  /** Telefon girişi — tek ekran, simetrik sütun (ScrollView yok) */
-  loginV2Root: {
+  /** Giriş / OTP: tek sütun ekranın tam ortasında (sol/sağ boşluk simetrik) */
+  loginPageShell: {
     flex: 1,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
-  loginV2Column: {
-    width: '100%',
+  loginPageColumn: {
     alignItems: 'stretch',
   },
-  loginV2Brand: {
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 6,
-  },
-  loginV2LogoBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loginV2Title: {
-    marginTop: 6,
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#1565C0',
-    textAlign: 'center',
-    letterSpacing: 0.2,
-    ...Platform.select({
-      android: { includeFontPadding: false as const },
-      default: {},
-    }),
-  },
-  loginV2TitleCompact: {
-    marginTop: 6,
-    fontSize: 15,
-  },
-  loginV2Tagline: {
-    marginTop: 3,
-    fontSize: 11,
-    lineHeight: 14,
-    color: '#546E7A',
-    textAlign: 'center',
-    fontWeight: '600',
-    paddingHorizontal: 8,
-    ...Platform.select({
-      android: { includeFontPadding: false as const },
-      default: {},
-    }),
-  },
-  loginV2TaglineCompact: {
-    marginTop: 2,
-    fontSize: 10,
-    lineHeight: 13,
-    paddingHorizontal: 4,
+  loginV2CardTight: {
+    alignSelf: 'stretch',
+    flexShrink: 0,
   },
   loginV2Card: {
     width: '100%',
@@ -12148,30 +11754,18 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     zIndex: 1,
   },
-  /** logo.png — sütun ortasında, tüm ekran genişliklerinde orantılı */
-  loginLogoStage: {
-    alignItems: 'center',
+  /** Klasik giriş: yuvarlak uygulama ikonu */
+  roundLogoWrapper: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    overflow: 'hidden',
     justifyContent: 'center',
-    width: '100%',
-    minHeight: 0,
-    paddingVertical: 0,
-    marginBottom: 0,
-    zIndex: 2,
-    overflow: 'visible',
+    alignItems: 'center',
   },
-  loginLogoImage: {
-    width: '44%',
-    maxWidth: 152,
-    minWidth: 100,
-    alignSelf: 'center',
-    backgroundColor: 'transparent',
-    borderRadius: 22,
-  },
-  loginLogoImageCompact: {
-    width: '40%',
-    maxWidth: 132,
-    minWidth: 88,
-    borderRadius: 20,
+  roundLogo: {
+    width: 140,
+    height: 140,
   },
   heroTitle: {
     fontSize: 16,
@@ -14973,6 +14567,55 @@ const styles = StyleSheet.create({
   roleVehicleChipTextActive: {
     color: '#FFF',
   },
+  roleLeylekZekaRow: {
+    width: '100%',
+    marginTop: 14,
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  roleLeylekZekaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    width: '100%',
+    maxWidth: 400,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderWidth: 2,
+    borderColor: 'rgba(63, 169, 245, 0.5)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0c4a6e',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  roleLeylekZekaLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+  },
+  roleLeylekZekaTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  roleLeylekZekaTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0c4a6e',
+  },
+  roleLeylekZekaSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
   roleCardLabel: {
     fontSize: 18,
     fontWeight: '700',
@@ -16647,6 +16290,16 @@ const styles = StyleSheet.create({
     marginTop: 10,
     lineHeight: 22,
     paddingHorizontal: 4,
+  },
+  destinationNoGmsHint: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(224, 242, 254, 0.95)',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    lineHeight: 19,
+    paddingHorizontal: 12,
   },
   selectedDestinationBoxBlue: {
     flexDirection: 'row',
