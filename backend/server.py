@@ -59,6 +59,7 @@ except ModuleNotFoundError as e:
 
 from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
 from route_service import get_route_cached
+import trust_service as _trust_service
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
 
@@ -8304,6 +8305,41 @@ async def start_call(request: StartCallRequest):
         
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
+
+        # Güven Al: aktif (accepted) güven görüşmesi varken normal aramayı başlatma — /voice akışı aynı, ek guard
+        try:
+            _ca = str(request.caller_id).strip().lower()
+            _re = str(receiver_id).strip().lower()
+
+            def _in_accepted_trust(uid: str) -> bool:
+                q1 = (
+                    supabase.table("trust_sessions")
+                    .select("id")
+                    .eq("status", "accepted")
+                    .eq("requester_id", uid)
+                    .limit(1)
+                    .execute()
+                )
+                if q1.data:
+                    return True
+                q2 = (
+                    supabase.table("trust_sessions")
+                    .select("id")
+                    .eq("status", "accepted")
+                    .eq("target_id", uid)
+                    .limit(1)
+                    .execute()
+                )
+                return bool(q2.data)
+
+            if _in_accepted_trust(_ca) or _in_accepted_trust(_re):
+                return {
+                    "success": False,
+                    "detail": "busy",
+                    "message": "Güven görüşmesi devam ediyor. Lütfen bitmesini bekleyin.",
+                }
+        except Exception as _tb:
+            logger.warning("trust_sessions busy check skipped: %s", _tb)
         
         # Önceki aktif aramaları iptal et (aynı kullanıcının tekrar araması için önce eski ringing kapanmalı)
         try:
@@ -8695,6 +8731,183 @@ async def get_call_history(user_id: str, limit: int = 20):
     except Exception as e:
         logger.error(f"Get call history error: {e}")
         return {"success": False, "calls": []}
+
+# ==================== TRUST (Güven Al) — calls /voice akışından ayrı ====================
+
+
+class TrustRequestBody(BaseModel):
+    tag_id: str
+
+
+class TrustRespondBody(BaseModel):
+    trust_id: str
+    accept: bool
+
+
+class TrustEndBody(BaseModel):
+    trust_id: str
+
+
+async def _trust_emit_ended_batch(rows: list) -> None:
+    for p in rows:
+        ep = {
+            "trust_id": p.get("trust_id", ""),
+            "tag_id": p.get("tag_id", ""),
+            "end_reason": p.get("end_reason", "expired"),
+        }
+        try:
+            await emit_socket_event_to_user(p.get("requester_id"), "trust_session_ended", ep)
+            await emit_socket_event_to_user(p.get("target_id"), "trust_session_ended", ep)
+        except Exception as e:
+            logger.warning("trust_session_ended emit: %s", e)
+
+
+@api_router.post("/trust/request")
+async def api_trust_request(
+    body: TrustRequestBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Eşleşmiş tag üzerinden karşı tarafa güven isteği gönder."""
+    try:
+        ended = _trust_service.expire_stale_sessions(supabase)
+        if ended:
+            await _trust_emit_ended_batch(ended)
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            return {"success": False, "error": "user_not_found"}
+        r = _trust_service.create_trust_request(supabase, uid, body.tag_id.strip())
+        if not r.get("success"):
+            return r
+        target_id = r["target_id"]
+        payload = {
+            "trust_id": r["trust_id"],
+            "tag_id": r["tag_id"],
+            "requester_id": r["requester_id"],
+            "requester_role": r["requester_role"],
+            "request_ttl_expires_at": r["request_ttl_expires_at"],
+        }
+        await emit_socket_event_to_user(target_id, "trust_request", payload)
+        return {
+            "success": True,
+            "trust_id": r["trust_id"],
+            "target_id": target_id,
+            "request_ttl_expires_at": r["request_ttl_expires_at"],
+        }
+    except Exception as e:
+        logger.exception("trust request: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+@api_router.post("/trust/respond")
+async def api_trust_respond(
+    body: TrustRespondBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Güven Ver / Verme."""
+    try:
+        ended = _trust_service.expire_stale_sessions(supabase)
+        if ended:
+            await _trust_emit_ended_batch(ended)
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            return {"success": False, "error": "user_not_found"}
+        r = _trust_service.respond_trust(supabase, uid, body.trust_id.strip(), bool(body.accept))
+        if not r.get("success"):
+            if r.get("emit_ended"):
+                ep = {
+                    "trust_id": r.get("trust_id", ""),
+                    "tag_id": r.get("tag_id", ""),
+                    "end_reason": "expired",
+                }
+                await emit_socket_event_to_user(r.get("requester_id"), "trust_session_ended", ep)
+                await emit_socket_event_to_user(r.get("target_id"), "trust_session_ended", ep)
+            return r
+        if r.get("action") == "rejected":
+            ep = {
+                "trust_id": r["trust_id"],
+                "tag_id": r["tag_id"],
+                "end_reason": "rejected",
+            }
+            await emit_socket_event_to_user(r["requester_id"], "trust_session_ended", ep)
+            await emit_socket_event_to_user(r["target_id"], "trust_session_ended", ep)
+            return {"success": True, "action": "rejected"}
+        ch = r.get("channel_name")
+        deadline = r.get("session_hard_deadline_at")
+        tid = r["trust_id"]
+        tag_id = r["tag_id"]
+        req_id = r["requester_id"]
+        tgt_id = r["target_id"]
+        tok_req = generate_agora_token(ch, user_id=req_id)
+        tok_tgt = generate_agora_token(ch, user_id=tgt_id)
+        base = {
+            "trust_id": tid,
+            "tag_id": tag_id,
+            "channel_name": ch,
+            "agora_app_id": AGORA_APP_ID,
+            "session_hard_deadline_at": deadline,
+        }
+        await emit_socket_event_to_user(
+            req_id,
+            "trust_session_ready",
+            {**base, "agora_token": tok_req, "peer_user_id": tgt_id},
+        )
+        await emit_socket_event_to_user(
+            tgt_id,
+            "trust_session_ready",
+            {**base, "agora_token": tok_tgt, "peer_user_id": req_id},
+        )
+        return {"success": True, "action": "accepted", "trust_id": tid, "channel_name": ch}
+    except Exception as e:
+        logger.exception("trust respond: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+@api_router.post("/trust/end")
+async def api_trust_end(
+    body: TrustEndBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        ended = _trust_service.expire_stale_sessions(supabase)
+        if ended:
+            await _trust_emit_ended_batch(ended)
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            return {"success": False, "error": "user_not_found"}
+        r = _trust_service.end_trust_session(supabase, uid, body.trust_id.strip(), "user_ended")
+        if not r.get("success"):
+            return r
+        ep = {
+            "trust_id": r["trust_id"],
+            "tag_id": r.get("tag_id", ""),
+            "end_reason": r.get("end_reason") or "user_ended",
+        }
+        await emit_socket_event_to_user(r["requester_id"], "trust_session_ended", ep)
+        await emit_socket_event_to_user(r["target_id"], "trust_session_ended", ep)
+        return {"success": True}
+    except Exception as e:
+        logger.exception("trust end: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+@api_router.get("/trust/active")
+async def api_trust_active(
+    tag_id: Optional[str] = Query(None),
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        ended = _trust_service.expire_stale_sessions(supabase)
+        if ended:
+            await _trust_emit_ended_batch(ended)
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            return {"success": False, "session": None}
+        r = _trust_service.get_active_trust(supabase, uid, tag_id.strip() if tag_id else None)
+        return r
+    except Exception as e:
+        logger.exception("trust active: %s", e)
+        return {"success": False, "session": None, "error": str(e)}
+
 
 # ==================== DRIVER LOCATION TRACKING ====================
 
