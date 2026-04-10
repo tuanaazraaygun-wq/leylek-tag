@@ -7,6 +7,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Animated,
+  Dimensions,
   Easing,
   FlatList,
   Image,
@@ -16,7 +17,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,23 +25,25 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, FontSize, Spacing } from '../constants/Colors';
-import {
-  LEYLEK_ZEKA_QUICK_PROMPTS,
-  type LeylekZekaMessage,
-  type LeylekZekaReplySource,
-} from '../hooks/useLeylekZeka';
+import { type LeylekZekaMessage, type LeylekZekaReplySource } from '../hooks/useLeylekZeka';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 const LOGO = require('../assets/images/logo.png');
 
 /** Giriş / CTA ile aynı marka gradient’i (app/index — Teklif Gönder vb.) */
 const BRAND_GRADIENT = ['#3FA9F5', '#2563EB', '#1D4ED8'] as const;
-const BRAND_SKY_TINT = '#EFF6FF';
 
-/** İçerik boyutu değişince scroll — agresif kaydırmada tekilleştir */
-const SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS = 120;
+/** İçerik boyutu değişince scroll — uzun metin layout sonrası yakalamak için kısa tutulur */
+const SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS = 48;
 /** Mesaj/typing değişiminden sonra ilk scroll gecikmesi */
-const SCROLL_AFTER_UPDATE_MS = 96;
+const SCROLL_AFTER_UPDATE_MS = 72;
+
+/** Terminal / HUD hissi — tüm sohbet tipografisi */
+const DIGITAL_MONO = Platform.select({
+  ios: 'Menlo',
+  android: 'monospace',
+  default: 'monospace',
+});
 
 /** Dev: true yapınca scroll/close yaşam döngüsü loglanır; prod’da false */
 const __LZ_CHAT_SCROLL_DEBUG__ = false;
@@ -121,7 +123,9 @@ const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
           end={{ x: 1, y: 1 }}
           style={styles.bubbleUserGrad}
         >
-          <Text style={[styles.bubbleText, styles.bubbleTextUser]}>{item.text}</Text>
+          <Text style={[styles.bubbleText, styles.bubbleTextUser]} selectable>
+            {item.text}
+          </Text>
         </LinearGradient>
       </View>
     );
@@ -140,6 +144,7 @@ const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
         <View style={styles.bubbleAiContentBody}>
           <Text
             style={[styles.bubbleText, styles.bubbleTextAi]}
+            selectable
             {...Platform.select({
               android: {
                 textBreakStrategy: 'simple' as const,
@@ -156,63 +161,43 @@ const Bubble = memo(function Bubble({ item }: { item: LeylekZekaMessage }) {
   );
 });
 
-const QuickChips = memo(function QuickChips({
-  onPick,
-  disabled,
-  activeLabel,
-}: {
-  onPick: (t: string) => void;
-  disabled: boolean;
-  activeLabel: string | null;
-}) {
-  const onChip = useCallback(
-    (label: string) => {
-      if (disabled) return;
-      if (Platform.OS !== 'web') {
-        try {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        } catch {
-          /* ignore */
-        }
-      }
-      onPick(label);
-    },
-    [disabled, onPick],
-  );
-
-    return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      style={styles.chipsScroll}
-      contentContainerStyle={styles.chipsRow}
+/** Arkada hafif 0/1 deseni — pointerEvents yok */
+const BinaryPatternBackdrop = memo(function BinaryPatternBackdrop() {
+  const shift = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shift, {
+          toValue: 1,
+          duration: 14000,
+          easing: Easing.inOut(Easing.linear),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shift, {
+          toValue: 0,
+          duration: 14000,
+          easing: Easing.inOut(Easing.linear),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shift]);
+  const tx = shift.interpolate({ inputRange: [0, 1], outputRange: [0, -56] });
+  const ty = shift.interpolate({ inputRange: [0, 1], outputRange: [0, 24] });
+  const rows = ['0 1 0 1 0 1', '1 0 1 0 1 0', '0 1 0 1 0 1', '1 0 1 0 1 0'];
+  return (
+    <Animated.View
+      style={[styles.binaryPatternWrap, { transform: [{ translateX: tx }, { translateY: ty }] }]}
+      pointerEvents="none"
     >
-      {LEYLEK_ZEKA_QUICK_PROMPTS.map((label) => {
-        const selected = activeLabel === label;
-        return (
-          <Pressable
-            key={label}
-            onPress={() => onChip(label)}
-            disabled={disabled}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            accessibilityHint="Önerilen soruyu mesaj olarak gönderir."
-            accessibilityState={{ disabled, selected }}
-            style={({ pressed }) => [
-              styles.chip,
-              disabled && styles.chipDisabled,
-              selected && styles.chipSelected,
-              pressed && !disabled && !selected && styles.chipPressed,
-            ]}
-          >
-            <Text style={[styles.chipText, selected && styles.chipTextSelected]} numberOfLines={2}>
-              {label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+      {rows.map((line, i) => (
+        <Text key={i} style={styles.binaryPatternLine}>
+          {line}
+        </Text>
+      ))}
+    </Animated.View>
   );
 });
 
@@ -284,10 +269,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const insets = useSafeAreaInsets();
   const [input, setInput] = useState('');
   const [showBetaHint, setShowBetaHint] = useState(false);
-  const [activeChipLabel, setActiveChipLabel] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const wasTypingRef = useRef(false);
   const listRef = useRef<FlatList<LeylekZekaMessage>>(null);
   const scrollRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentSizeScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -305,6 +288,14 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const composerBottomPad = useMemo(
     () => Math.max(insets.bottom, Spacing.md) + (Platform.OS === 'android' ? keyboardHeight : 0),
     [insets.bottom, keyboardHeight],
+  );
+
+  const sheetHeight = useMemo(() => Math.round(Dimensions.get('window').height * 0.6), []);
+
+  /** Uzun tek mesajda da içerik imzası değişsin; scroll + FlatList extraData */
+  const messagesScrollSig = useMemo(
+    () => messages.map((m) => `${m.id}:${m.text.length}`).join('\u001e'),
+    [messages],
   );
 
   useEffect(() => {
@@ -384,8 +375,6 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   useEffect(() => {
     if (!visible) {
-      setActiveChipLabel(null);
-      wasTypingRef.current = false;
       return;
     }
     let cancelled = false;
@@ -423,33 +412,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
         /* ignore */
       }
     }
-    setActiveChipLabel(null);
     setInput('');
     onSend(t);
   }, [input, isTyping, onSend]);
-
-  const onChip = useCallback(
-    (t: string) => {
-      if (isTyping) return;
-      setActiveChipLabel(t);
-      onSend(t);
-    },
-    [isTyping, onSend],
-  );
-
-  useEffect(() => {
-    if (isTyping) {
-      wasTypingRef.current = true;
-      return;
-    }
-    if (!wasTypingRef.current || !activeChipLabel) return;
-    wasTypingRef.current = false;
-    const id = setTimeout(() => {
-      if (!mountedRef.current || !visibleRef.current) return;
-      setActiveChipLabel(null);
-    }, 520);
-    return () => clearTimeout(id);
-  }, [isTyping, activeChipLabel]);
 
   const scrollToEndSafe = useCallback(() => {
     if (!mountedRef.current || !visibleRef.current) {
@@ -542,21 +507,30 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }, SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS);
   }, [scrollToEndSafe]);
 
+  const onListLayout = useCallback(() => {
+    scrollToEndSafe();
+  }, [scrollToEndSafe]);
+
   useEffect(() => {
     if (!visible) {
       return;
     }
-    scrollRetryRef.current = setTimeout(() => {
-      scrollRetryRef.current = null;
-      scrollToEndSafe();
-    }, SCROLL_AFTER_UPDATE_MS);
+    const delays = [
+      SCROLL_AFTER_UPDATE_MS,
+      SCROLL_AFTER_UPDATE_MS + 90,
+      SCROLL_AFTER_UPDATE_MS + 220,
+      SCROLL_AFTER_UPDATE_MS + 420,
+      SCROLL_AFTER_UPDATE_MS + 700,
+    ];
+    const ids = delays.map((ms) =>
+      setTimeout(() => {
+        scrollToEndSafe();
+      }, ms),
+    );
     return () => {
-      if (scrollRetryRef.current) {
-        clearTimeout(scrollRetryRef.current);
-        scrollRetryRef.current = null;
-      }
+      ids.forEach(clearTimeout);
     };
-  }, [visible, messages.length, isTyping, scrollToEndSafe]);
+  }, [visible, messagesScrollSig, isTyping, scrollToEndSafe]);
 
   const renderItem = useCallback(
     ({ item }: { item: LeylekZekaMessage }) => <Bubble item={item} />,
@@ -589,23 +563,28 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 12) + 8 : 0}
         >
-          <View style={styles.sheet}>
-            {/* Marka gökyüzü — düşük opaklık, okunabilirlik öncelikli */}
+          <View
+            style={[
+              styles.sheet,
+              { height: sheetHeight, maxHeight: sheetHeight, marginBottom: Math.max(insets.bottom, 10) },
+            ]}
+          >
+            {/* Açık mavi → açık mor, düşük opaklık */}
             <LinearGradient
-              colors={['#B9E0FB', '#D8EEFC', BRAND_SKY_TINT, '#F8FCFF', '#FFFFFF']}
-              locations={[0, 0.22, 0.48, 0.76, 1]}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
+              colors={['rgba(186, 230, 253, 0.55)', 'rgba(199, 210, 254, 0.42)', 'rgba(233, 213, 255, 0.38)', 'rgba(250, 245, 255, 0.5)']}
+              locations={[0, 0.35, 0.7, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.sheetSkyBase}
               pointerEvents="none"
             />
-            {/* iOS: BlurView (premium cam). Android: düşük uç GPU yükü — gradient fallback, blur yok. */}
+            <BinaryPatternBackdrop />
             {Platform.OS === 'ios' ? (
-              <BlurView intensity={22} tint="light" style={styles.sheetBlur} pointerEvents="none" />
+              <BlurView intensity={28} tint="light" style={styles.sheetBlur} pointerEvents="none" />
             ) : Platform.OS === 'android' ? (
               <LinearGradient
-                colors={['rgba(224,242,254,0.48)', 'rgba(255,255,255,0.62)', 'rgba(248,250,252,0.82)']}
-                locations={[0, 0.42, 1]}
+                colors={['rgba(186, 230, 253, 0.35)', 'rgba(221, 214, 254, 0.28)', 'rgba(250, 245, 255, 0.45)']}
+                locations={[0, 0.5, 1]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.sheetAndroidSoft}
@@ -613,12 +592,11 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               />
             ) : null}
             <LinearGradient
-              colors={['rgba(255,255,255,0.12)', 'rgba(248,252,255,0.82)', 'rgba(255,255,255,0.94)']}
+              colors={['rgba(255,255,255,0.1)', 'rgba(248,250,255,0.75)', 'rgba(255,255,255,0.9)']}
               locations={[0, 0.45, 1]}
               style={styles.sheetVeil}
               pointerEvents="none"
             />
-            {/* Yumuşak bulut hissi — düşük opaklık, okunurluğu bastırmaz */}
             <View style={styles.cloudLayer} pointerEvents="none">
               <View style={[styles.cloudBlob, styles.cloudBlob1]} />
               <View style={[styles.cloudBlob, styles.cloudBlob2]} />
@@ -690,20 +668,18 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             </Pressable>
           ) : null}
 
-          <View style={[styles.chipsSection, activeChipLabel ? styles.chipsSectionActive : null]}>
-            <Text style={styles.chipsLabel}>Önerilen sorular</Text>
-            <QuickChips onPick={onChip} disabled={isTyping} activeLabel={activeChipLabel} />
-          </View>
-
           <View style={styles.listWrap}>
             <FlatList
               ref={listRef}
               data={messages}
+              extraData={messagesScrollSig}
               keyExtractor={keyExtractor}
               renderItem={renderItem}
               style={styles.list}
               scrollEnabled={visible}
+              nestedScrollEnabled
               scrollEventThrottle={16}
+              onLayout={onListLayout}
               onContentSizeChange={onListContentSizeChange}
               contentContainerStyle={[
                 styles.listContent,
@@ -711,8 +687,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               ]}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="none"
-              showsVerticalScrollIndicator={false}
+              showsVerticalScrollIndicator
               removeClippedSubviews={false}
+              bounces
+              overScrollMode="always"
               initialNumToRender={14}
               windowSize={10}
               maxToRenderPerBatch={10}
@@ -792,7 +770,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   {isTyping ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Ionicons name="arrow-forward" size={24} color="#fff" />
+                    <Ionicons name="arrow-forward" size={20} color="#fff" />
                   )}
                 </LinearGradient>
               </Pressable>
@@ -821,21 +799,22 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     maxWidth: '100%',
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   sheet: {
-    flex: 1,
     position: 'relative',
-    width: '100%',
+    width: '92%',
     minHeight: 0,
-    backgroundColor: '#F5FAFF',
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
+    alignSelf: 'center',
+    backgroundColor: '#EEF8FF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     overflow: 'hidden',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.22)',
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderColor: 'rgba(14, 165, 233, 0.72)',
     ...Platform.select({
       ios: {
         shadowColor: '#0c4a6e',
@@ -848,23 +827,41 @@ const styles = StyleSheet.create({
   },
   sheetSkyBase: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  binaryPatternWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+    overflow: 'hidden',
+    opacity: 0.16,
+    paddingTop: 24,
+    paddingLeft: 12,
+  },
+  binaryPatternLine: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 11,
+    lineHeight: 18,
+    fontWeight: '300',
+    letterSpacing: 4,
+    color: 'rgba(59, 130, 246, 0.5)',
+    fontVariant: ['tabular-nums'],
   },
   sheetBlur: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
+    zIndex: 2,
   },
   /** Android: BlurView yerine hafif katman (kasma riskini azaltır) */
   sheetAndroidSoft: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
+    zIndex: 2,
   },
   sheetVeil: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
+    zIndex: 2,
   },
   cloudLayer: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
+    zIndex: 2,
     overflow: 'hidden',
   },
   cloudBlob: {
@@ -897,19 +894,19 @@ const styles = StyleSheet.create({
   },
   sheetInner: {
     flex: 1,
-    zIndex: 1,
-    paddingHorizontal: Spacing.md,
+    zIndex: 10,
+    paddingHorizontal: Spacing.sm + 2,
     paddingBottom: 0,
     minHeight: 0,
   },
   headerBar: {
     borderRadius: BorderRadius.lg,
-    paddingTop: Spacing.sm + 6,
-    paddingBottom: Spacing.sm + 4,
-    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm + 2,
+    paddingBottom: Spacing.sm + 2,
+    paddingHorizontal: Spacing.sm + 2,
     marginBottom: Spacing.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(63, 169, 245, 0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.42)',
     position: 'relative',
     overflow: 'hidden',
     ...Platform.select({
@@ -949,10 +946,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   aiBadge: {
-    marginLeft: 8,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 9,
+    marginLeft: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
     ...Platform.select({
       ios: {
         shadowColor: '#1d4ed8',
@@ -964,10 +961,11 @@ const styles = StyleSheet.create({
     }),
   },
   aiBadgeText: {
+    fontFamily: DIGITAL_MONO,
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
     textShadowColor: 'rgba(15, 23, 42, 0.45)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
@@ -1009,27 +1007,30 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   title: {
-    fontSize: 24,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 14,
     fontWeight: '800',
     color: '#0c4a6e',
-    letterSpacing: -0.7,
+    letterSpacing: 0.15,
     flexShrink: 1,
   },
   headerSubtitle: {
-    fontSize: FontSize.sm + 1,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
     color: '#475569',
-    marginTop: 4,
+    marginTop: 2,
     fontWeight: '600',
     letterSpacing: 0.12,
-    lineHeight: 20,
+    lineHeight: 14,
   },
   modeCaptionInline: {
-    fontSize: FontSize.xs,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 9,
     color: '#64748B',
-    marginTop: 6,
+    marginTop: 5,
     fontWeight: '600',
-    letterSpacing: 0.06,
-    opacity: 0.88,
+    letterSpacing: 0.08,
+    opacity: 0.92,
   },
   closeBtn: {
     position: 'absolute',
@@ -1064,8 +1065,9 @@ const styles = StyleSheet.create({
   },
   betaText: {
     flex: 1,
-    fontSize: FontSize.sm,
-    lineHeight: 20,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 10,
+    lineHeight: 15,
     color: Colors.gray700,
     paddingRight: Spacing.sm,
   },
@@ -1079,40 +1081,28 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   errorText: {
+    fontFamily: DIGITAL_MONO,
     color: Colors.error,
-    fontSize: FontSize.sm,
-  },
-  chipsSection: {
-    marginBottom: Spacing.sm,
-    paddingBottom: 2,
-  },
-  chipsSectionActive: {
-    marginHorizontal: -Spacing.xs,
-    paddingHorizontal: Spacing.xs,
-    paddingTop: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: 'rgba(224, 242, 254, 0.5)',
-    borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.24)',
-  },
-  chipsLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: Spacing.sm,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  chipsScroll: {
-    maxHeight: 76,
+    lineHeight: 16,
   },
   listWrap: {
     flex: 1,
     minHeight: 0,
     zIndex: 1,
+    marginTop: 2,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.38)',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
   },
   list: { flex: 1 },
-  listContent: { paddingVertical: Spacing.sm + 2, paddingBottom: Spacing.md, flexGrow: 1 },
+  listContent: {
+    paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.lg + 12,
+    flexGrow: 1,
+  },
   listContentEmpty: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -1150,21 +1140,23 @@ const styles = StyleSheet.create({
     height: 34,
   },
   emptyTitle: {
-    fontSize: FontSize.xl + 2,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 13,
     fontWeight: '800',
     color: '#0c4a6e',
-    letterSpacing: -0.4,
+    letterSpacing: 0.12,
   },
   emptyBody: {
+    fontFamily: DIGITAL_MONO,
     marginTop: Spacing.sm,
     textAlign: 'center',
-    lineHeight: 26,
+    lineHeight: 17,
     color: '#334155',
-    fontSize: FontSize.lg,
+    fontSize: 11,
     fontWeight: '500',
-    letterSpacing: 0.02,
+    letterSpacing: 0.04,
   },
-  bubbleWrap: { marginBottom: Spacing.md + 6, maxWidth: '92%' },
+  bubbleWrap: { marginBottom: Spacing.md, maxWidth: '92%' },
   bubbleWrapUser: { alignSelf: 'flex-end' },
   /** % genişlik: row içinde flex:1 alanı Android’de ölçülebilir olsun (yalnız şerit kalmayı önler) */
   bubbleWrapAi: { alignSelf: 'flex-start', width: '92%' },
@@ -1176,7 +1168,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.12)',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
     ...Platform.select({
       ios: {
         shadowColor: '#0c4a6e',
@@ -1200,14 +1192,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     alignSelf: 'stretch',
-    paddingVertical: Spacing.sm + 6,
-    paddingHorizontal: Spacing.md + 4,
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.sm + 4,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
   },
   bubbleUserGrad: {
-    paddingHorizontal: Spacing.md + 4,
-    paddingVertical: Spacing.sm + 4,
+    paddingHorizontal: Spacing.sm + 4,
+    paddingVertical: Spacing.sm + 2,
     borderRadius: 20,
     borderBottomRightRadius: 8,
     maxWidth: '100%',
@@ -1222,16 +1214,17 @@ const styles = StyleSheet.create({
     }),
   },
   bubbleText: {
-    fontSize: 17,
-    lineHeight: 28,
-    letterSpacing: 0.02,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 13,
+    lineHeight: 19,
+    letterSpacing: 0.04,
   },
   bubbleTextUser: { color: '#fff', fontWeight: '600' },
   bubbleTextAi: {
     color: '#0f172a',
     fontWeight: '500',
     opacity: 1,
-    flexShrink: 0,
+    flexShrink: 1,
     width: '100%',
   },
   typingBubbleOuter: {
@@ -1279,70 +1272,12 @@ const styles = StyleSheet.create({
     opacity: 0.88,
   },
   typingBarMid: { marginHorizontal: 5 },
-  chipsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingLeft: 2,
-    paddingRight: Spacing.md,
-  },
-  chip: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    maxWidth: 280,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.32)',
-    marginRight: 10,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#0c4a6e',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 4,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  chipPressed: {
-    backgroundColor: '#E0F2FE',
-    borderColor: 'rgba(37, 99, 235, 0.45)',
-    transform: [{ scale: 0.985 }],
-  },
-  chipSelected: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#2563EB',
-    borderWidth: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#2563EB',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.18,
-        shadowRadius: 6,
-      },
-      android: { elevation: 3 },
-    }),
-  },
-  chipDisabled: {
-    opacity: 0.45,
-  },
-  chipText: {
-    fontSize: FontSize.md,
-    color: '#1e293b',
-    fontWeight: '600',
-    lineHeight: 22,
-    letterSpacing: 0.02,
-  },
-  chipTextSelected: {
-    color: '#1d4ed8',
-  },
   composerBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(63, 169, 245, 0.28)',
-    marginHorizontal: -Spacing.md,
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm + 2,
+    marginHorizontal: -(Spacing.sm + 2),
+    paddingHorizontal: Spacing.sm + 2,
+    paddingTop: Spacing.sm,
     ...Platform.select({
       ios: {
         shadowColor: '#0c4a6e',
@@ -1354,20 +1289,21 @@ const styles = StyleSheet.create({
     }),
   },
   composerLabel: {
-    fontSize: 11,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 9,
     fontWeight: '700',
     color: '#475569',
-    letterSpacing: 0.65,
+    letterSpacing: 0.55,
     textTransform: 'uppercase',
-    marginBottom: 8,
+    marginBottom: 6,
     marginLeft: 2,
   },
   composerCard: {
     backgroundColor: 'rgba(255,255,255,0.96)',
     borderRadius: 16,
-    padding: 10,
+    padding: 8,
     borderWidth: 1,
-    borderColor: 'rgba(63, 169, 245, 0.22)',
+    borderColor: 'rgba(59, 130, 246, 0.4)',
     ...Platform.select({
       ios: {
         shadowColor: '#3FA9F5',
@@ -1385,22 +1321,24 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 56,
-    maxHeight: 160,
+    minHeight: 40,
+    maxHeight: 140,
     borderWidth: 1,
-    borderColor: 'rgba(100, 116, 139, 0.45)',
+    borderColor: 'rgba(59, 130, 246, 0.38)',
     borderRadius: 14,
-    paddingHorizontal: Spacing.md + 6,
-    paddingVertical: Platform.OS === 'ios' ? 16 : 15,
-    fontSize: 17,
+    paddingHorizontal: Spacing.sm + 4,
+    paddingVertical: Platform.OS === 'ios' ? 9 : 8,
+    fontFamily: DIGITAL_MONO,
+    fontSize: 12,
+    lineHeight: 17,
     color: '#0f172a',
     backgroundColor: '#FFFFFF',
     marginRight: Spacing.sm,
     fontWeight: '500',
-    letterSpacing: 0.02,
+    letterSpacing: 0.04,
   },
   sendBtnOuter: {
-    borderRadius: 27,
+    borderRadius: 22,
     overflow: 'hidden',
     marginBottom: 0,
     ...Platform.select({
@@ -1414,9 +1352,9 @@ const styles = StyleSheet.create({
     }),
   },
   sendBtnGrad: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -2,12 +2,12 @@
 Leylek TAG - Supabase Backend
 Full PostgreSQL Backend with Supabase + Socket.IO
 """
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request, Query, Body
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request, Query, Body, Depends, Header
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError, field_validator
-from typing import Optional
+from typing import Annotated, Optional
 import os
 import logging
 import uuid
@@ -22,6 +22,8 @@ import time
 import math
 import asyncio
 import sys
+import jwt
+from jwt.exceptions import InvalidTokenError
 
 # Socket.IO
 import socketio
@@ -30,6 +32,19 @@ import socketio
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+ROOT_DIR = _ROOT
+# Env MUST load before importing local modules (they read os.environ at import time).
+# Order (requested):
+# - /etc/leylektag.env
+# - backend/.env
+# Use override=True so values replace existing ones.
+try:
+    load_dotenv("/etc/leylektag.env", override=True)
+except Exception:
+    pass
+load_dotenv(str(ROOT_DIR / ".env"), override=True)
+print("NETGSM_MSGHEADER:", os.getenv("NETGSM_MSGHEADER"))
 
 # Supabase — tek service role client: backend/supabase_client.py (VPS'te server.py ile aynı klasörde olmalı)
 from supabase import Client
@@ -44,9 +59,8 @@ except ModuleNotFoundError as e:
 
 from expo_push_channels import expo_android_channel_id_for_data, expo_android_channel_id_for_type
 from route_service import get_route_cached
-
-ROOT_DIR = _ROOT
-load_dotenv(ROOT_DIR / '.env')
+from routes.admin_ai import router as admin_ai_router
+from routes.admin_answer_engine import router as admin_answer_engine_router
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -106,6 +120,28 @@ def _check_google_maps_env_on_startup() -> None:
 
 
 _check_google_maps_env_on_startup()
+
+
+def _check_anthropic_env_on_startup() -> None:
+    """
+    Leylek Zeka (Claude) için ANTHROPIC_API_KEY process ortamında var mı kontrol eder.
+    Değerin kendisini veya parçasını loglamaz; yalnızca uzunluk / eksiklik.
+    """
+    raw = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    if not raw:
+        logger.warning(
+            "⚠️ ANTHROPIC_API_KEY tanımlı değil veya boş. "
+            "POST /api/ai/chat yanıtları Claude yerine fallback (source=fallback) kullanır. "
+            "backend/.env veya systemd Environment= ile tanımlayıp bu process'i yeniden başlatın."
+        )
+        return
+    logger.info(
+        "✅ ANTHROPIC_API_KEY yüklendi (uzunluk=%s). Leylek Zeka Claude çağrısı kullanılabilir.",
+        len(raw),
+    )
+
+
+_check_anthropic_env_on_startup()
 
 
 def _warn_duplicate_api_routes() -> None:
@@ -190,10 +226,37 @@ def _warn_admin_auth_style_inconsistency() -> None:
     except Exception as exc:
         logger.warning("Admin auth style check failed: %s", exc)
 
+
+def _build_cors_allow_origins() -> list[str]:
+    """
+    Tarayıcıdan API/Socket.IO istekleri için Origin whitelist.
+    CORS_ALLOWED_ORIGINS=virgülle ayrı URL'ler ile tam liste (override); boşsa varsayılan prod+local.
+    """
+    env_raw = (os.getenv("CORS_ALLOWED_ORIGINS") or "").strip()
+    if env_raw:
+        parsed = [x.strip().rstrip("/") for x in env_raw.split(",") if x.strip()]
+        if parsed:
+            return parsed
+    return [
+        "https://api.leylektag.com",
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:19006",
+        "http://127.0.0.1:19006",
+    ]
+
+
+CORS_ALLOW_ORIGINS = _build_cors_allow_origins()
+logger.info("🌐 CORS allow_origins (%d): %s", len(CORS_ALLOW_ORIGINS), ", ".join(CORS_ALLOW_ORIGINS))
+
 # ==================== SOCKET.IO SERVER ====================
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
+    cors_allowed_origins=CORS_ALLOW_ORIGINS,
     logger=True,
     engineio_logger=True,
 )
@@ -228,47 +291,75 @@ def _normalize_user_room(user_id: str) -> str:
 
 @sio.event
 async def register(sid, data):
-    """Kullanıcı kaydı - user_id ile socket_id eşleştir VE ROOM'A JOIN ET"""
-    user_id = data.get('user_id')
-    if user_id:
-        role = data.get('role')
-        raw = str(user_id).strip()
+    """Kullanıcı kaydı — JWT (delete-account ile aynı access token) zorunlu; user_id yalnızca token sub."""
+    if not isinstance(data, dict):
+        data = {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        logger.warning("Socket register reddedildi sid=%s: token yok", sid)
         try:
-            resolved_uid = await resolve_user_id(raw) or raw
+            await sio.emit(
+                "registered",
+                {"success": False, "error": "auth_required"},
+                room=sid,
+            )
         except Exception:
-            resolved_uid = raw
-        resolved_uid = str(resolved_uid).strip()
+            pass
+        await sio.disconnect(sid)
+        return
 
-        connected_users[user_id] = sid
-        connected_users[raw.lower()] = sid
-        connected_users[resolved_uid.lower()] = sid
+    authed_uid = verify_access_token(token)
+    if not authed_uid:
+        logger.warning("Socket register reddedildi sid=%s: geçersiz token", sid)
+        try:
+            await sio.emit(
+                "registered",
+                {"success": False, "error": "invalid_token"},
+                room=sid,
+            )
+        except Exception:
+            pass
+        await sio.disconnect(sid)
+        return
 
-        # ride_matched / tag_matched emit'leri Supabase UUID room'una gider; join her zaman çözümlü id ile
-        room_name = _normalize_user_room(resolved_uid)
-        await sio.enter_room(sid, room_name)
+    role = data.get("role")
+    raw = str(authed_uid).strip()
+    try:
+        resolved_uid = await resolve_user_id(raw) or raw
+    except Exception:
+        resolved_uid = raw
+    resolved_uid = str(resolved_uid).strip()
+    resolved_lower = resolved_uid.lower()
 
-        _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
-        logger.info(
-            f"📱 Kullanıcı kayıtlı: {user_id} -> {sid} (room: {room_name}, resolved={_ru_short})"
-        )
-        await sio.emit(
-            "registered",
-            {
-                "success": True,
-                "user_id": user_id,
-                "room": room_name,
-                "resolved_user_id": resolved_uid,
-            },
-            room=sid,
-        )
+    connected_users[resolved_uid] = sid
+    connected_users[resolved_lower] = sid
 
-        # 🆕 Kritik: Yeni sürücü bağlandıktan sonra, daha önce oluşmuş waiting teklifleri de yeniden göster
-        # (client listesi socket ile dolduğu için sadece "yeni" event kaçırılırsa bu bug olur)
-        if role == 'driver':
-            try:
-                asyncio.create_task(emit_existing_waiting_offers_to_driver(user_id))
-            except Exception:
-                pass
+    room_name = _normalize_user_room(resolved_uid)
+    await sio.enter_room(sid, room_name)
+
+    _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
+    logger.info(
+        "📱 Kullanıcı kayıtlı (JWT): sid=%s room=%s user=%s",
+        sid,
+        room_name,
+        _ru_short,
+    )
+    await sio.emit(
+        "registered",
+        {
+            "success": True,
+            "user_id": resolved_uid,
+            "room": room_name,
+            "resolved_user_id": resolved_uid,
+        },
+        room=sid,
+    )
+
+    if role == "driver":
+        try:
+            asyncio.create_task(emit_existing_waiting_offers_to_driver(resolved_uid))
+        except Exception:
+            pass
 
 @sio.event
 async def call_user(sid, data):
@@ -417,78 +508,36 @@ async def deduct_points(user_id: str, points: int, reason: str):
 
 @sio.event
 async def force_end_trip(sid, data):
-    """Yolculuğu ANINDA bitir - İki tarafa da bildir, bitiren -3 puan alır"""
-    tag_id = data.get('tag_id')
-    ender_id = data.get('ender_id')
-    ender_type = data.get('ender_type')  # 'passenger' veya 'driver'
-    passenger_id = data.get('passenger_id')
-    driver_id = data.get('driver_id')
-    
-    logger.info(f"🔚 FORCE END TRIP: {tag_id} by {ender_id} ({ender_type})")
-    
+    """Yolculuğu ANINDA bitir — apply_force_end_trip_and_notify ile HTTP ile aynı mantık."""
+    data = data or {}
+    tag_id = data.get("tag_id")
+    ender_id = data.get("ender_id")
+    ender_type = data.get("ender_type")
+    logger.info(f"🔚 FORCE END TRIP (socket): {tag_id} by {ender_id} ({ender_type})")
     try:
-        # Trip'i tamamla
-        supabase.table("tags").update({
-            "status": "completed",
-            "completed_at": datetime.utcnow().isoformat(),
-            "ended_by": ender_id,
-            "end_type": "force"
-        }).eq("id", tag_id).execute()
-        
-        # Bitiren kişiden -3 puan düş
-        new_points, new_rating = await deduct_points(ender_id, 3, "Tek taraflı yolculuk bitirme")
-        
-        # Karşı tarafa PUSH bildirim gönder
-        other_user_id = driver_id if ender_type == 'passenger' else passenger_id
-        ender_role = "Yolcu" if ender_type == 'passenger' else "Sürücü"
-        
-        if other_user_id:
-            asyncio.create_task(send_push_notification(
-                other_user_id,
-                "⚠️ Yolculuk Sonlandırıldı!",
-                f"{ender_role} yolculuğu tek taraflı sonlandırdı. Şikayet etmek için tıklayın.",
-                {"type": "force_ended", "tag_id": tag_id, "ender_type": ender_type, "can_report": True}
-            ))
-        
-        ender_name = ""
-        try:
-            _en = supabase.table("users").select("name").eq("id", ender_id).limit(1).execute()
-            if _en.data:
-                ender_name = (str(_en.data[0].get("name") or "")).strip()
-        except Exception:
-            pass
-
-        # Her iki tarafa da ANINDA bildir (Socket)
-        for user_id in [passenger_id, driver_id]:
-            if user_id:
-                user_sid = connected_users.get(user_id)
-                if user_sid:
-                    await sio.emit('trip_force_ended', {
-                        'tag_id': tag_id,
-                        'ended_by': ender_id,
-                        'ender_id': ender_id,
-                        'ender_type': ender_type,
-                        'ender_name': ender_name,
-                        'completed_at': datetime.utcnow().isoformat(),
-                        'points_deducted': 3 if user_id == ender_id else 0,
-                        'new_points': new_points if user_id == ender_id else None,
-                        'new_rating': new_rating if user_id == ender_id else None
-                    }, room=user_sid)
-        
-        # İsteği gönderene onay
-        await sio.emit('trip_end_confirmed', {
-            'success': True,
-            'tag_id': tag_id,
-            'points_deducted': 3,
-            'new_points': new_points,
-            'new_rating': new_rating
-        }, room=sid)
-        
-        logger.info(f"✅ Trip force ended: {tag_id}, {ender_type} lost 3 points")
-        
+        result = await apply_force_end_trip_and_notify(tag_id, ender_id, ender_type)
+        if result.get("success"):
+            await sio.emit(
+                "trip_end_confirmed",
+                {
+                    "success": True,
+                    "tag_id": tag_id,
+                    "points_deducted": 3 if not result.get("idempotent") else 0,
+                    "new_points": result.get("new_points"),
+                    "new_rating": result.get("new_rating"),
+                    "idempotent": result.get("idempotent"),
+                },
+                room=sid,
+            )
+        else:
+            await sio.emit(
+                "trip_end_confirmed",
+                {"success": False, "error": result.get("error", "Bilinmeyen hata")},
+                room=sid,
+            )
     except Exception as e:
         logger.error(f"Force end trip error: {e}")
-        await sio.emit('trip_end_confirmed', {'success': False, 'error': str(e)}, room=sid)
+        await sio.emit("trip_end_confirmed", {"success": False, "error": str(e)}, room=sid)
 
 @sio.event
 async def request_trip_end_socket(sid, data):
@@ -1321,6 +1370,166 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             logger.info(f"📤 {event_name} room={room} (sid yok)")
     except Exception as e:
         logger.warning(f"{event_name} emit hatası: {e}")
+
+
+async def apply_force_end_trip_and_notify(
+    tag_id: str,
+    ender_id: str,
+    ender_type: Optional[str] = None,
+) -> dict:
+    """
+    Zorla bitir — tek kaynak: tags güncelle, puan kes, trip_force_ended ile iki tarafa bildir.
+    Idempotent: tag zaten completed/cancelled ise tekrar ceza veya socket göndermez.
+    """
+    if not tag_id or not ender_id:
+        return {"success": False, "error": "tag_id ve ender_id gerekli"}
+    tid = str(tag_id).strip()
+    try:
+        resolved_ender = await resolve_user_id(str(ender_id).strip())
+        if resolved_ender:
+            resolved_ender = str(resolved_ender).strip()
+        else:
+            resolved_ender = str(ender_id).strip()
+    except Exception:
+        resolved_ender = str(ender_id).strip()
+
+    try:
+        tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+    except Exception as e:
+        logger.error(f"apply_force_end_trip: tag okunamadı: {e}")
+        return {"success": False, "error": "TAG okunamadı"}
+
+    if not tr.data:
+        return {"success": False, "error": "TAG bulunamadı"}
+
+    tag = tr.data[0]
+    pid_raw = tag.get("passenger_id")
+    did_raw = tag.get("driver_id")
+
+    passenger_id = None
+    driver_id = None
+    if pid_raw:
+        try:
+            passenger_id = await resolve_user_id(str(pid_raw).strip())
+            if passenger_id:
+                passenger_id = str(passenger_id).strip()
+        except Exception:
+            passenger_id = str(pid_raw).strip()
+    if did_raw:
+        try:
+            driver_id = await resolve_user_id(str(did_raw).strip())
+            if driver_id:
+                driver_id = str(driver_id).strip()
+        except Exception:
+            driver_id = str(did_raw).strip()
+
+    et = (ender_type or "").strip().lower()
+    if et not in ("passenger", "driver"):
+        re_l = resolved_ender.lower()
+        if passenger_id and re_l == passenger_id.lower():
+            et = "passenger"
+        elif driver_id and re_l == driver_id.lower():
+            et = "driver"
+        else:
+            return {"success": False, "error": "ender_type belirsiz veya kullanıcı talebe dahil değil"}
+
+    re_l = resolved_ender.lower()
+    if et == "passenger":
+        if not passenger_id or re_l != passenger_id.lower():
+            return {"success": False, "error": "Bu işlem için yolcu olmalısınız"}
+    else:
+        if not driver_id or re_l != driver_id.lower():
+            return {"success": False, "error": "Bu işlem için sürücü olmalısınız"}
+
+    st = (tag.get("status") or "").lower()
+    if st in ("completed", "cancelled"):
+        logger.info(f"apply_force_end_trip: idempotent skip tag={tid} status={st}")
+        return {"success": True, "idempotent": True, "message": "Yolculuk zaten sonlanmış"}
+
+    if st not in ("matched", "in_progress"):
+        return {"success": False, "error": "Aktif eşleşme yok (zorla bitirilemez)"}
+
+    now_iso = datetime.utcnow().isoformat()
+    try:
+        supabase.table("tags").update(
+            {
+                "status": "completed",
+                "completed_at": now_iso,
+                "ended_by": resolved_ender,
+                "end_type": "force",
+            }
+        ).eq("id", tid).execute()
+    except Exception as e:
+        logger.error(f"apply_force_end_trip: tag güncellenemedi: {e}")
+        return {"success": False, "error": str(e)}
+
+    new_points, new_rating = await deduct_points(resolved_ender, 3, "Tek taraflı yolculuk bitirme")
+
+    try:
+        supabase.table("chat_messages").delete().eq("tag_id", tid).execute()
+    except Exception as chat_err:
+        logger.warning(f"apply_force_end_trip: chat silinemedi: {chat_err}")
+
+    ender_name = ""
+    try:
+        _en = supabase.table("users").select("name").eq("id", resolved_ender).limit(1).execute()
+        if _en.data:
+            ender_name = (str(_en.data[0].get("name") or "")).strip()
+    except Exception:
+        pass
+
+    other_user_id = driver_id if et == "passenger" else passenger_id
+    ender_role = "Yolcu" if et == "passenger" else "Sürücü"
+    if other_user_id:
+        try:
+            asyncio.create_task(
+                send_push_notification(
+                    other_user_id,
+                    "⚠️ Yolculuk Sonlandırıldı!",
+                    f"{ender_role} yolculuğu tek taraflı sonlandırdı. Şikayet etmek için tıklayın.",
+                    {
+                        "type": "force_ended",
+                        "tag_id": tid,
+                        "ender_type": et,
+                        "can_report": True,
+                    },
+                )
+            )
+        except Exception as push_err:
+            logger.warning(f"apply_force_end_trip push: {push_err}")
+
+    payload_base = {
+        "tag_id": tid,
+        "ended_by": resolved_ender,
+        "ender_id": resolved_ender,
+        "ender_type": et,
+        "ender_name": ender_name,
+        "passenger_id": passenger_id,
+        "driver_id": driver_id,
+        "completed_at": now_iso,
+    }
+
+    for uid in [passenger_id, driver_id]:
+        if not uid:
+            continue
+        is_ender = str(uid).strip().lower() == str(resolved_ender).strip().lower()
+        pl = {
+            **payload_base,
+            "points_deducted": 3 if is_ender else 0,
+            "new_points": new_points if is_ender else None,
+            "new_rating": new_rating if is_ender else None,
+        }
+        await emit_socket_event_to_user(uid, "trip_force_ended", pl)
+
+    logger.info(f"✅ apply_force_end_trip: tag={tid} ender_type={et} ender={resolved_ender[:12]}…")
+    return {
+        "success": True,
+        "new_points": new_points,
+        "new_rating": new_rating,
+        "ender_type": et,
+        "passenger_id": passenger_id,
+        "driver_id": driver_id,
+    }
 
 
 async def _expo_push_dispatch_new_offer(
@@ -2217,7 +2426,17 @@ TURKEY_CITIES = [
 # Create FastAPI app (app alias keeps all existing routes working)
 fastapi_app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
 app = fastapi_app
+app.include_router(admin_ai_router, prefix="/api")
+app.include_router(admin_answer_engine_router, prefix="/api")
+
 api_router = APIRouter(prefix="/api")
+
+# Leylek Zeka (Claude) — modüler route; ana dosyadaki diğer endpoint'lerle aynı api_router
+from routes.ai import router as leylek_zeka_ai_router
+from routes.legal import router as legal_router
+
+api_router.include_router(leylek_zeka_ai_router)
+api_router.include_router(legal_router)
 
 # ==================== SOCKET.IO ASGI APP ====================
 # Socket.IO'yu /api/socket.io path'inde çalıştır
@@ -2303,6 +2522,71 @@ def hash_pin(pin: str) -> str:
 def verify_pin(pin: str, pin_hash: str) -> bool:
     """PIN doğrula"""
     return hash_pin(pin) == pin_hash
+
+
+def _api_session_signing_secret() -> str:
+    """HS256 imza anahtarı. Üretimde API_SESSION_SECRET tanımlanması önerilir."""
+    explicit = (os.getenv("API_SESSION_SECRET") or "").strip()
+    if explicit:
+        return explicit
+    sr = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY") or "").strip()
+    if sr:
+        return hashlib.sha256(("leylek|api-session|v1|" + sr).encode("utf-8")).hexdigest()
+    logger.warning(
+        "⚠️ API_SESSION_SECRET ve Supabase service key yok; oturum JWT zayıf varsayılan ile imzalanıyor."
+    )
+    return "leylek-insecure-dev-only-change-me"
+
+
+def issue_access_token(user_id: str) -> str:
+    """Mobil istemci için access JWT (korumalı uçlar: hesap silme vb.)."""
+    uid = str(user_id).strip().lower()
+    if not uid:
+        raise ValueError("user_id gerekli")
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(days=90)
+    payload = {
+        "sub": uid,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+        "typ": "leylek_access",
+    }
+    return jwt.encode(payload, _api_session_signing_secret(), algorithm="HS256")
+
+
+def verify_access_token(token: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(
+            token,
+            _api_session_signing_secret(),
+            algorithms=["HS256"],
+            options={"require": ["exp", "sub"]},
+        )
+        uid = payload.get("sub")
+        if not uid or not isinstance(uid, str):
+            return None
+        return uid.strip().lower()
+    except InvalidTokenError:
+        return None
+
+
+def get_authenticated_user_id_from_authorization(
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+) -> str:
+    """Authorization: Bearer <JWT> zorunlu; sub alanı kullanıcı id."""
+    if not authorization or not str(authorization).strip():
+        raise HTTPException(status_code=401, detail="Authorization header gerekli")
+    parts = str(authorization).strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization: Bearer <token> formatında olmalı",
+        )
+    uid = verify_access_token(parts[1].strip())
+    if not uid:
+        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+    return uid
+
 
 async def resolve_user_id(user_id: str) -> str:
     """
@@ -2753,7 +3037,7 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         password = (os.getenv("NETGSM_PASSWORD") or "").strip()
         # Yaygın yazım hatası: MNGHEADER
         msgheader = (
-            os.getenv("NETGSM_MSGHEADER")
+            os.getenv("NETGSM_MSGHEADER", "KAREKOD AS")
             or os.getenv("NETGSM_MNGHEADER")
             or ""
         ).strip()
@@ -2783,6 +3067,7 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         sender = (msgheader if msgheader else usercode).strip()
         
         # NETGSM HTTP GET API - https://www.netgsm.com.tr/dokuman/
+        import re
         import urllib.parse
 
         params = {
@@ -2797,8 +3082,12 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
             params["filter"] = filter_param
         # requests.get(..., params=...) ile aynı mantık: application/x-www-form-urlencoded (+ boşluk vb.)
         query = urllib.parse.urlencode(params, encoding="utf-8")
-        # Çoğu NetGSM OTP hesabı GET API için HTTP kullanır (HTTPS TLS/redirect sorunları olabiliyor)
-        url = f"http://api.netgsm.com.tr/sms/send/get?{query}"
+        # NetGSM bazı ortamlarda HTTP→HTTPS redirect veya direkt HTTPS bekleyebilir.
+        # Bu yüzden önce HTTPS dene, gerekirse HTTP'ye düş.
+        base = (os.getenv("NETGSM_BASE_URL") or "https://api.netgsm.com.tr").strip().rstrip("/")
+        path = "/sms/send/get"
+        url_https = f"{base}{path}?{query}"
+        url_http = f"http://api.netgsm.com.tr{path}?{query}"
         
         logger.info(f"📱 NETGSM Request - gsmno: {gsmno}, Sender: {sender!r}, filter: {filter_param or '(yok)'}")
         
@@ -2806,15 +3095,25 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         response_text = None
         try:
             import asyncio
-            response_text = await asyncio.to_thread(_netgsm_sync_http_get_with_retries, url)
+            try:
+                response_text = await asyncio.to_thread(_netgsm_sync_http_get_with_retries, url_https)
+            except Exception as https_err:
+                logger.warning(f"⚠️ NETGSM HTTPS denemesi başarısız: {https_err!r}, HTTP deneniyor")
+                response_text = await asyncio.to_thread(_netgsm_sync_http_get_with_retries, url_http)
         except Exception as urllib_err:
             logger.warning(f"⚠️ NETGSM urllib isteği başarısız: {urllib_err!r}, httpx (http2=False) deneniyor")
             try:
                 async with httpx.AsyncClient(timeout=45.0, http2=False) as client:
-                    response = await client.get(
-                        url,
-                        headers={"Connection": "close", "Accept": "*/*"},
-                    )
+                    try:
+                        response = await client.get(
+                            url_https,
+                            headers={"Connection": "close", "Accept": "*/*"},
+                        )
+                    except Exception:
+                        response = await client.get(
+                            url_http,
+                            headers={"Connection": "close", "Accept": "*/*"},
+                        )
                     response_text = response.text.strip()
             except Exception as httpx_err:
                 logger.exception(f"❌ NETGSM httpx de başarısız: {httpx_err!r}")
@@ -2827,17 +3126,24 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         logger.info(f"📱 NETGSM Response: {response_text}")
         result["response"] = {"raw": response_text}
 
-        # Parse response - NETGSM returns codes like:
-        # 00 XXXXXXXX = Success (with job ID)
+        # Parse response - NetGSM tipik olarak "00 <jobId>" veya "<code>" döndürür.
+        # Bazı edge-case'lerde HTML/redirect gövdesi dönebilir; o durumda numeric kod bulunmaz.
         parts = response_text.split()
-        code = parts[0] if parts else response_text
+        first_token = parts[0] if parts else ""
+        m = re.search(r"\b(\d{2})\b", first_token) or re.search(r"\b(\d{2})\b", response_text)
+        code = m.group(1) if m else ""
 
-        if code in ["00", "01", "02"]:
+        if code == "00":
             job_id = parts[1] if len(parts) > 1 else "N/A"
             logger.info(f"✅ SMS gönderildi: gsmno={gsmno}, JobID: {job_id}")
             result["success"] = True
             result["response"]["job_id"] = job_id
         else:
+            if not code:
+                snippet = response_text[:180].replace("\n", " ").strip()
+                logger.error(f"❌ NETGSM yanıtı beklenmeyen formatta: {snippet!r}")
+                result["error"] = "NetGSM beklenmeyen yanıt (kod bulunamadı). HTTPS/HTTP erişimi veya proxy/redirect kontrol edin."
+                return result
             error_desc = {
                 "20": "Mesaj metni / karakter sınırı hatası",
                 "30": "Kimlik doğrulama veya API izni / IP kısıtı",
@@ -2910,6 +3216,8 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     # Normalize to 905XXXXXXXXX format
     cleaned_phone = normalize_turkish_phone(result)
     logger.info(f"📱 OTP request for: {cleaned_phone}")
+    sender = os.getenv("NETGSM_MSGHEADER")
+    logger.info(f"📱 OTP sender env NETGSM_MSGHEADER: {sender!r}")
     
     current_time = time.time()
     entry = dict(otp_storage.get(cleaned_phone) or {})
@@ -2958,6 +3266,13 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
         return {"success": True, "message": "OTP gönderildi"}
     else:
         logger.error(f"❌ SMS failed for {cleaned_phone}: {sms_result['error']}")
+        # Non-secret debug info for ops (no credentials).
+        try:
+            raw = (sms_result.get("response") or {}).get("raw")
+            if raw:
+                logger.warning(f"NETGSM raw response (truncated): {str(raw)[:220]!r}")
+        except Exception:
+            pass
         fallback = os.getenv("OTP_SMS_FALLBACK_TEST", "").strip().lower() in ("1", "true", "yes")
         if fallback:
             logger.warning(f"⚠️ OTP_SMS_FALLBACK_TEST: {cleaned_phone} -> 123456")
@@ -3065,7 +3380,11 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
                 "role": user.get("role", "passenger"),
                 "rating": float(user.get("rating", 4.0)),
                 "total_ratings": user.get("total_ratings", 0),
-                "is_admin": user.get("is_admin", False)
+                "is_admin": user.get("is_admin", False),
+                "city": user.get("city"),
+                "gender": user.get("gender"),
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
             }
         }
     else:
@@ -3085,6 +3404,7 @@ class SetPinRequest(BaseModel):
     last_name: Optional[str] = None
     city: Optional[str] = None
     device_id: Optional[str] = None
+    gender: Optional[str] = None
 
 @api_router.post("/auth/set-pin")
 async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = None, first_name: str = None, last_name: str = None, city: str = None, device_id: str = None):
@@ -3096,6 +3416,7 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
         first_name_val = request.first_name if request else first_name
         last_name_val = request.last_name if request else last_name
         city_val = request.city if request else city
+        gender_val = (request.gender if request else None) or None
         dev_id = (request.device_id if request else device_id) or None
         
         if not phone_val or not pin_val:
@@ -3116,6 +3437,8 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
                 "name": f"{first_name_val or ''} {last_name_val or ''}".strip(),
                 "updated_at": datetime.utcnow().isoformat()
             }
+            if gender_val in ("female", "male"):
+                upd["gender"] = gender_val
             if dev_id:
                 upd["last_device_id"] = dev_id
             if user_row.get("phone") != canonical:
@@ -3136,12 +3459,18 @@ async def set_pin(request: SetPinRequest = None, phone: str = None, pin: str = N
                 "total_trips": 0,
                 "is_active": True
             }
+            if gender_val in ("female", "male"):
+                insert_data["gender"] = gender_val
             if dev_id:
                 insert_data["last_device_id"] = dev_id
             supabase.table("users").insert(insert_data).execute()
         
         logger.info(f"✅ PIN ayarlandı: {canonical}")
-        return {"success": True, "message": "PIN ayarlandı"}
+        refreshed = _users_get_by_phone_flexible(canonical)
+        out = {"success": True, "message": "PIN ayarlandı"}
+        if refreshed and refreshed.get("id"):
+            out["access_token"] = issue_access_token(refreshed["id"])
+        return out
     except Exception as e:
         logger.error(f"Set PIN error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -3266,6 +3595,7 @@ async def verify_pin_endpoint(request: Request):
         
         return {
             "success": True,
+            "access_token": issue_access_token(user["id"]),
             "user": {
                 "id": user["id"],
                 "phone": user["phone"],
@@ -3335,6 +3665,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
         
         return {
             "success": True,
+            "access_token": issue_access_token(user["id"]),
             "user": {
                 "id": user["id"],
                 "phone": user["phone"],
@@ -3342,6 +3673,7 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
                 "city": user.get("city"),
+                "gender": user.get("gender"),
                 "rating": float(user.get("rating", 4.0)),
                 "total_trips": user.get("total_trips", 0),
                 "profile_photo": user.get("profile_photo"),
@@ -3478,6 +3810,7 @@ class RegisterRequest(BaseModel):
     last_name: Optional[str] = None
     pin: Optional[str] = None
     device_id: Optional[str] = None
+    gender: Optional[str] = None  # female | male
 
 @api_router.post("/auth/register")
 async def register_user(request: RegisterRequest):
@@ -3532,6 +3865,8 @@ async def register_user(request: RegisterRequest):
             "is_active": True,
             "personal_qr_code": unique_qr_code
         }
+        if request.gender in ("female", "male"):
+            user_data["gender"] = request.gender
         if request.device_id:
             user_data["last_device_id"] = request.device_id
         
@@ -3543,6 +3878,7 @@ async def register_user(request: RegisterRequest):
             
             return {
                 "success": True,
+                "access_token": issue_access_token(user["id"]),
                 "user": {
                     "id": user["id"],
                     "phone": user["phone"],
@@ -3550,6 +3886,7 @@ async def register_user(request: RegisterRequest):
                     "first_name": user.get("first_name"),
                     "last_name": user.get("last_name"),
                     "city": user.get("city"),
+                    "gender": user.get("gender"),
                     "rating": float(user.get("rating", 4.0)),
                     "total_trips": 0,
                     "personal_qr_code": unique_qr_code,
@@ -3585,6 +3922,7 @@ async def get_user(user_id: str):
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
                 "city": user.get("city"),
+                "gender": user.get("gender"),
                 "rating": float(user.get("rating", 4.0)),
                 "total_trips": user.get("total_trips", 0),
                 "profile_photo": user.get("profile_photo"),
@@ -4475,6 +4813,7 @@ async def get_offers_for_passenger(passenger_id: str = None, user_id: str = None
                 "driver_name": driver_info.get("name", "Şoför"),
                 "driver_rating": float(driver_info.get("rating", 4.0)),
                 "driver_photo": driver_info.get("profile_photo"),
+                "driver_vehicle_kind": _effective_driver_vehicle_kind(driver_info),
                 "price": float(offer["price"]),
                 "status": offer["status"],
                 "vehicle_model": driver_info.get("driver_details", {}).get("vehicle_model") if driver_info.get("driver_details") else None,
@@ -4949,7 +5288,8 @@ async def get_driver_nearby_passengers_map(
             supabase.table("tags")
             .select(
                 "id, passenger_id, pickup_lat, pickup_lng, pickup_location, status, final_price, created_at, "
-                "users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)"
+                "passenger_preferred_vehicle, "
+                "users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details, gender)"
             )
             .in_("status", ["waiting", "pending", "offers_received"])
             .gte("created_at", ten_min_ago)
@@ -4993,6 +5333,8 @@ async def get_driver_nearby_passengers_map(
             pname = passenger_info.get("name", "Yolcu") or "Yolcu"
             label = (pname.split() or ["Yolcu"])[0][:20]
 
+            pvk = _trip_passenger_vehicle_pref(tag, passenger_info)
+            pg = passenger_info.get("gender") if isinstance(passenger_info, dict) else None
             seeking.append(
                 {
                     "tag_id": tag["id"],
@@ -5005,6 +5347,8 @@ async def get_driver_nearby_passengers_map(
                     "pickup_distance_km": road_km,
                     "offered_price": tag.get("final_price") or tag.get("offered_price"),
                     "label": label,
+                    "passenger_gender": pg if pg in ("female", "male") else None,
+                    "passenger_vehicle_kind": "motorcycle" if pvk == "motorcycle" else "car",
                 }
             )
 
@@ -5014,7 +5358,7 @@ async def get_driver_nearby_passengers_map(
         try:
             pu = (
                 supabase.table("users")
-                .select("id, name, latitude, longitude, driver_online, updated_at, city")
+                .select("id, name, latitude, longitude, driver_online, updated_at, city, gender")
                 .neq("id", resolved_id)
                 .not_.is_("latitude", "null")
                 .not_.is_("longitude", "null")
@@ -5027,7 +5371,7 @@ async def get_driver_nearby_passengers_map(
             logger.warning(f"nearby-passengers-map users query fallback: {ex}")
             pu = (
                 supabase.table("users")
-                .select("id, name, latitude, longitude, driver_online, city")
+                .select("id, name, latitude, longitude, driver_online, city, gender")
                 .neq("id", resolved_id)
                 .not_.is_("latitude", "null")
                 .not_.is_("longitude", "null")
@@ -5096,6 +5440,7 @@ async def get_driver_nearby_passengers_map(
             road_u = round(float(ri_u["distance_km"]), 2)
             nm = row.get("name") or "Yolcu"
             label = (nm.split() or ["Yakında"])[0][:12]
+            g = row.get("gender")
             nearby_app_users.append(
                 {
                     "user_id": row["id"],
@@ -5103,6 +5448,7 @@ async def get_driver_nearby_passengers_map(
                     "longitude": ulng,
                     "distance_km": road_u,
                     "label": label,
+                    "passenger_gender": g if g in ("female", "male") else None,
                 }
             )
             seen_light += 1
@@ -5668,6 +6014,21 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
             except (TypeError, ValueError):
                 fp_f = None
 
+            passenger_gender = None
+            try:
+                pid_res = await resolve_user_id(tag["passenger_id"])
+                pg_r = (
+                    supabase.table("users")
+                    .select("gender")
+                    .eq("id", pid_res)
+                    .limit(1)
+                    .execute()
+                )
+                if pg_r.data:
+                    passenger_gender = pg_r.data[0].get("gender")
+            except Exception:
+                pass
+
             tag_data = {
                 "id": tag["id"],
                 "passenger_id": tag["passenger_id"],
@@ -5675,6 +6036,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "passenger_phone": passenger_info.get("phone"),
                 "passenger_rating": float(passenger_info.get("rating", 4.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
+                "passenger_gender": passenger_gender,
                 "passenger_location": passenger_location,
                 "pickup_location": tag.get("pickup_location"),
                 "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") is not None else None,
@@ -6098,73 +6460,92 @@ async def dismiss_request(user_id: str, tag_id: str):
 # ==================== TRIP FORCE END ====================
 
 @api_router.post("/trip/force-end")
-async def force_end_trip(tag_id: str, user_id: str):
-    """Yolculuğu zorla bitir (-5 puan)"""
+async def force_end_trip_http(
+    tag_id: str,
+    user_id: str,
+    ender_type: Optional[str] = Query(None, description="passenger veya driver (opsiyonel, tag'den çıkarılır)"),
+):
+    """
+    Yolculuğu zorla bitir — socket ile aynı: apply_force_end_trip_and_notify (-3 puan deduct_points),
+    trip_force_ended her iki tarafa emit_socket_event_to_user ile gider.
+    """
     try:
-        # TAG'i getir
-        tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
+        if not tag_id or not user_id:
+            raise HTTPException(status_code=422, detail="tag_id ve user_id gerekli")
+
+        resolved_id = await resolve_user_id(str(user_id).strip())
+        if not resolved_id:
+            resolved_id = str(user_id).strip()
+        else:
+            resolved_id = str(resolved_id).strip()
+
+        tag_result = supabase.table("tags").select("*").eq("id", str(tag_id).strip()).limit(1).execute()
         if not tag_result.data:
             raise HTTPException(status_code=404, detail="TAG bulunamadı")
-        
         tag = tag_result.data[0]
-        
-        # Karşı tarafı belirle
-        resolved_id = await resolve_user_id(user_id)
-        if resolved_id == tag.get("passenger_id"):
-            other_user_id = tag.get("driver_id")
-            user_type = "passenger"
-        else:
-            other_user_id = tag.get("passenger_id")
-            user_type = "driver"
-        
-        # Zorla bitiren kullanıcının puanını -5 düşür (AĞIR CEZA)
-        user_result = supabase.table("users").select("rating").eq("id", resolved_id).execute()
-        if user_result.data:
-            current_rating = float(user_result.data[0].get("rating", 4.0))
-            new_rating = max(1.0, current_rating - 5.0)  # Min 1.0, -5 puan ceza
-            supabase.table("users").update({"rating": new_rating}).eq("id", resolved_id).execute()
-        
-        # TAG'i tamamla - sadece mevcut sütunları kullan
-        supabase.table("tags").update({
-            "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).execute()
-        
-        # 🆕 Trip bittiğinde chat mesajlarını sil
+
+        pid = tag.get("passenger_id")
+        did = tag.get("driver_id")
         try:
-            delete_result = supabase.table("chat_messages").delete().eq("tag_id", tag_id).execute()
-            logger.info(f"🗑️ Chat mesajları silindi (force-end): tag_id={tag_id}")
-        except Exception as chat_err:
-            logger.warning(f"⚠️ Chat mesajları silinemedi: {chat_err}")
-        
-        # 🆕 Socket ile karşı tarafa bildir
+            pid_r = await resolve_user_id(str(pid).strip()) if pid else None
+            if pid_r:
+                pid_r = str(pid_r).strip()
+        except Exception:
+            pid_r = str(pid).strip() if pid else None
         try:
-            import httpx
-            async with httpx.AsyncClient(http2=False, timeout=30) as client:
-                await client.post(
-                    "https://socket.leylektag.com/emit",
-                    json={
-                        "event": "force_end_trip",
-                        "data": {
-                            "tag_id": tag_id,
-                            "driver_id": tag.get("driver_id"),
-                            "passenger_id": tag.get("passenger_id"),
-                            "ended_by": user_type
-                        }
-                    },
-                    timeout=5
-                )
-        except Exception as socket_err:
-            logger.warning(f"⚠️ Socket bildirim gönderilemedi: {socket_err}")
-        
-        logger.info(f"⚠️ Force end: TAG {tag_id} by {user_type} ({resolved_id}) - 5 PUAN CEZA")
-        
-        return {"success": True, "message": "Yolculuk zorla bitirildi. Puanınız -5 düştü."}
+            did_r = await resolve_user_id(str(did).strip()) if did else None
+            if did_r:
+                did_r = str(did_r).strip()
+        except Exception:
+            did_r = str(did).strip() if did else None
+
+        r = resolved_id.lower()
+        inferred: Optional[str] = None
+        if pid_r and r == pid_r.lower():
+            inferred = "passenger"
+        elif did_r and r == did_r.lower():
+            inferred = "driver"
+        if not inferred:
+            raise HTTPException(status_code=403, detail="Bu yolculukta değilsiniz")
+
+        et = (ender_type or "").strip().lower()
+        if et not in ("passenger", "driver"):
+            et = inferred
+        elif et != inferred:
+            raise HTTPException(status_code=403, detail="Rol uyuşmuyor")
+
+        result = await apply_force_end_trip_and_notify(str(tag_id).strip(), resolved_id, et)
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "İşlem başarısız"))
+
+        msg = (
+            "Yolculuk zaten sonlanmış"
+            if result.get("idempotent")
+            else "Yolculuk zorla bitirildi. Bitiren kullanıcıya puan cezası uygulandı."
+        )
+        return {
+            "success": True,
+            "message": msg,
+            "new_points": result.get("new_points"),
+            "new_rating": result.get("new_rating"),
+            "idempotent": result.get("idempotent"),
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Force end error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/trip/force-end-confirm")
+async def force_end_confirm(
+    tag_id: str = Query(...),
+    ender_id: str = Query(...),
+    approved: bool = Query(True),
+):
+    """Karşı tarafın zorla bitirmeyi onaylaması / reddi (ileride puan düzeltmesi için)."""
+    logger.info(f"force_end_confirm tag={tag_id} ender={ender_id} approved={approved}")
+    return {"success": True}
 
 # ==================== RATING SYSTEM ====================
 
@@ -7924,7 +8305,7 @@ async def start_call(request: StartCallRequest):
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
         
-        # Önceki aktif aramaları iptal et
+        # Önceki aktif aramaları iptal et (aynı kullanıcının tekrar araması için önce eski ringing kapanmalı)
         try:
             supabase.table("calls").update({
                 "status": "cancelled",
@@ -7932,6 +8313,25 @@ async def start_call(request: StartCallRequest):
             }).eq("status", "ringing").or_(f"caller_id.eq.{request.caller_id},receiver_id.eq.{request.caller_id}").execute()
         except:
             pass
+
+        # Karşı taraf başka bir görüşmede veya çalıyor mu (meşgul) — iptal sonrası kontrol
+        try:
+            busy = (
+                supabase.table("calls")
+                .select("call_id")
+                .or_(f"caller_id.eq.{receiver_id},receiver_id.eq.{receiver_id}")
+                .in_("status", ["ringing", "connected"])
+                .limit(1)
+                .execute()
+            )
+            if busy.data:
+                return {
+                    "success": False,
+                    "detail": "busy",
+                    "message": "Karşı taraf meşgul",
+                }
+        except Exception as busy_err:
+            logger.warning(f"Voice busy check skipped: {busy_err}")
         
         # Agora: arayan ve alıcı için ayrı uid + token
         caller_uid = agora_uid_from_user_id(request.caller_id)
@@ -9500,7 +9900,7 @@ async def get_qr_completions(admin_phone: str, limit: int = 50):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOW_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -9583,6 +9983,7 @@ async def account_delete_request(request: dict):
         return {"success": True, "message": "Talebiniz alındı"}
     except Exception as e:
         return {"success": False, "detail": str(e)}
+
 
 # Socket event: MARTI TAG - Sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
 @sio.on("driver_accept_offer")
@@ -12211,22 +12612,19 @@ async def delete_community_message(message_id: str, user_id: str):
 
 # ==================== HESAP SİLME (Google Play Zorunlu) ====================
 
-class DeleteAccountRequest(BaseModel):
-    user_id: str
-
 @api_router.post("/user/delete-account")
-async def delete_user_account(request: DeleteAccountRequest):
+async def delete_user_account(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
     """
     Kullanıcı hesabını sil - Google Play zorunlu özellik
     - Hesap hemen devre dışı bırakılır
     - Veriler 30 gün içinde silinir
     - Yasal zorunluluklar anonimleştirilir
+    - Yalnızca Authorization: Bearer (access_token) ile; silinen kullanıcı token sub ile belirlenir
     """
     try:
-        user_id = request.user_id
-        
-        if not user_id:
-            return {"success": False, "error": "user_id gerekli"}
+        user_id = authenticated_user_id
         
         logger.warning(f"🗑️ HESAP SİLME İSTEĞİ: {user_id}")
         
@@ -12326,6 +12724,7 @@ async def get_nearby_drivers(
                         if isinstance(details, dict):
                             vehicle = f"{details.get('vehicle_brand', '')} {details.get('vehicle_model', '')}".strip()
                     
+                    vk_drv = _effective_driver_vehicle_kind(driver)
                     nearby_drivers.append({
                         "id": driver["id"],
                         "name": driver.get("name", "Sürücü"),
@@ -12333,7 +12732,8 @@ async def get_nearby_drivers(
                         "longitude": d_lng,
                         "rating": driver.get("rating"),
                         "vehicle": vehicle,
-                        "distance_km": round(distance, 1)
+                        "distance_km": round(distance, 1),
+                        "vehicle_kind": vk_drv,
                     })
         
         # Mesafeye göre sırala

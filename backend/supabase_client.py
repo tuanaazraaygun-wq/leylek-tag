@@ -14,7 +14,12 @@ from dotenv import load_dotenv
 from supabase import Client, create_client
 
 _ROOT = Path(__file__).parent
-load_dotenv(_ROOT / ".env")
+# Keep env loading consistent with server.py (ops may use /etc/leylektag.env)
+try:
+    load_dotenv("/etc/leylektag.env", override=True)
+except Exception:
+    pass
+load_dotenv(_ROOT / ".env", override=True)
 
 logger = logging.getLogger(__name__)
 

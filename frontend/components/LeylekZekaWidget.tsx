@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -7,13 +7,20 @@ import {
   Easing,
   Image,
   Keyboard,
-  PanResponder,
+  LayoutChangeEvent,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import {
+  GestureHandlerRootView,
+  PanGestureHandler,
+  type PanGestureHandlerGestureEvent,
+  State,
+} from 'react-native-gesture-handler';
 import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, BorderRadius, FontSize, Spacing } from '../constants/Colors';
@@ -56,6 +63,44 @@ const IDLE_AFTER_MIN_MS = 20000;
 const IDLE_AFTER_MAX_MS = 30000;
 const IDLE_COOLDOWN_MS = 90000;
 
+/** Sürükleme sınırları — sol/üst (FAB sol üst köşesi) */
+const BOUNDS_MIN_X = 10;
+const BOUNDS_MAX_X_RIGHT_INSET = 80;
+const BOUNDS_MIN_Y = 80;
+const BOUNDS_MAX_Y_BOTTOM_INSET = 120;
+
+function windowSizeFallback(): { w: number; h: number } {
+  try {
+    const d = Dimensions.get('window');
+    if (Number.isFinite(d.width) && d.width > 0 && Number.isFinite(d.height) && d.height > 0) {
+      return { w: d.width, h: d.height };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { w: 400, h: 800 };
+}
+
+function rbToLT(r: number, b: number, w: number, h: number): { x: number; y: number } {
+  return { x: w - r - FAB_SIZE, y: h - b - FAB_SIZE };
+}
+
+function ltToRB(x: number, y: number, w: number, h: number): { r: number; b: number } {
+  return { r: w - x - FAB_SIZE, b: h - y - FAB_SIZE };
+}
+
+function clampFabXY(x: number, y: number, w: number, h: number): { x: number; y: number } {
+  const maxX = w - BOUNDS_MAX_X_RIGHT_INSET;
+  const maxY = h - BOUNDS_MAX_Y_BOTTOM_INSET;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) {
+    return { x: BOUNDS_MIN_X, y: BOUNDS_MIN_Y };
+  }
+  return {
+    x: clamp(x, BOUNDS_MIN_X, maxX),
+    y: clamp(y, BOUNDS_MIN_Y, maxY),
+  };
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
@@ -80,7 +125,7 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const [reduceMotion, setReduceMotion] = useState(false);
   const [keyboardUp, setKeyboardUp] = useState(false);
-  const { width: winW, height: winH } = Dimensions.get('window');
+  const { width: winW, height: winH } = useWindowDimensions();
 
   const [pillLabel, setPillLabel] = useState("Leylek'e sor");
   const [glowVariant, setGlowVariant] = useState<GlowVariant>('normal');
@@ -111,36 +156,88 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
     return { r, b };
   }, [insets.bottom, insets.right]);
 
-  const [pos, setPos] = useState(defaultPos);
-  const posLatest = useRef(pos);
-  const rightAnim = useRef(new Animated.Value(defaultPos.r)).current;
-  const isSnapping = useRef(false);
-  useEffect(() => {
-    posLatest.current = pos;
-  }, [pos]);
-
-  useEffect(() => {
-    if (!isSnapping.current) {
-      rightAnim.setValue(pos.r);
+  const initialFab = useMemo(() => {
+    const w = winW > 0 ? winW : windowSizeFallback().w;
+    const h = winH > 0 ? winH : windowSizeFallback().h;
+    const lt = rbToLT(defaultPos.r, defaultPos.b, w, h);
+    const c = clampFabXY(lt.x, lt.y, w, h);
+    if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) {
+      return { x: 20, y: 120 };
     }
-  }, [pos.r, rightAnim]);
+    return c;
+  }, [defaultPos.r, defaultPos.b, winW, winH]);
 
-  const clampPos = useCallback(
-    (r: number, b: number) => {
-      const w = Dimensions.get('window').width;
-      const h = Dimensions.get('window').height;
-      const minR = insets.right + EDGE_PAD;
-      const minB = insets.bottom + EDGE_PAD;
-      const maxR = w - FAB_SIZE - insets.left - EDGE_PAD;
-      const maxB = h - FAB_SIZE - insets.top - EDGE_PAD;
-      return { r: clamp(r, minR, maxR), b: clamp(b, minB, maxB) };
+  const fabPos = useRef(new Animated.ValueXY({ x: 20, y: 120 })).current;
+  const fabLTRef = useRef({ x: 20, y: 120 });
+  /** onLayout ile ölçüm; yoksa useWindowDimensions / fallback */
+  const layoutDimsRef = useRef<{ w: number; h: number } | null>(null);
+  const gestureStartRef = useRef({ x: 0, y: 0 });
+  const posLatest = useRef(
+    ltToRB(20, 120, winW > 0 ? winW : windowSizeFallback().w, winH > 0 ? winH : windowSizeFallback().h),
+  );
+  const springAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const panHandlerRef = useRef<React.ComponentRef<typeof PanGestureHandler>>(null);
+  const fabMountedRef = useRef(true);
+
+  const getEffectiveSize = useCallback(() => {
+    const lw = layoutDimsRef.current?.w;
+    const lh = layoutDimsRef.current?.h;
+    const w =
+      lw != null && lw > 0 && Number.isFinite(lw)
+        ? lw
+        : winW > 0 && Number.isFinite(winW)
+          ? winW
+          : windowSizeFallback().w;
+    const h =
+      lh != null && lh > 0 && Number.isFinite(lh)
+        ? lh
+        : winH > 0 && Number.isFinite(winH)
+          ? winH
+          : windowSizeFallback().h;
+    return { w, h };
+  }, [winW, winH]);
+
+  useLayoutEffect(() => {
+    if (!fabMountedRef.current) return;
+    const { w, h } = getEffectiveSize();
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+    const c = clampFabXY(initialFab.x, initialFab.y, w, h);
+    if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return;
+    console.log("setValue", c.x, c.y);
+    fabPos.setValue(c);
+    fabLTRef.current = { x: c.x, y: c.y };
+    posLatest.current = ltToRB(c.x, c.y, w, h);
+  }, [fabPos, getEffectiveSize, initialFab.x, initialFab.y]);
+
+  const onFabRootLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      try {
+        const { width, height } = e.nativeEvent.layout;
+        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+          layoutDimsRef.current = { w: width, h: height };
+          if (!fabMountedRef.current) return;
+          const c = clampFabXY(fabLTRef.current.x, fabLTRef.current.y, width, height);
+          console.log("setValue", c.x, c.y);
+          fabPos.setValue(c);
+          fabLTRef.current = c;
+          posLatest.current = ltToRB(c.x, c.y, width, height);
+        }
+      } catch (e) {
+        console.error("LeylekZeka drag crash", e);
+      }
     },
-    [insets.bottom, insets.left, insets.right, insets.top],
+    [fabPos],
   );
 
   useEffect(() => {
-    setPos((p) => clampPos(p.r, p.b));
-  }, [clampPos, winW, winH]);
+    const { w, h } = getEffectiveSize();
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+    const c = clampFabXY(fabLTRef.current.x, fabLTRef.current.y, w, h);
+    console.log("setValue", c.x, c.y);
+    fabPos.setValue(c);
+    fabLTRef.current = c;
+    posLatest.current = ltToRB(c.x, c.y, w, h);
+  }, [winW, winH, fabPos, getEffectiveSize]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,97 +275,122 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
       if (!alive || !raw) return;
       try {
         const j = JSON.parse(raw) as { r?: number; b?: number };
-        if (typeof j.r === 'number' && typeof j.b === 'number') {
-          setPos(clampPos(j.r, j.b));
+        if (typeof j.r === 'number' && typeof j.b === 'number' && Number.isFinite(j.r) && Number.isFinite(j.b)) {
+          const w = windowSizeFallback().w;
+          const h = windowSizeFallback().h;
+          const lt = rbToLT(j.r, j.b, w, h);
+          const c = clampFabXY(lt.x, lt.y, w, h);
+          if (!fabMountedRef.current) return;
+          console.log("setValue", c.x, c.y);
+          fabPos.setValue(c);
+          fabLTRef.current = c;
+          posLatest.current = ltToRB(c.x, c.y, w, h);
         }
-      } catch {
-        /* ignore */
+      } catch (e) {
+        console.error("LeylekZeka drag crash", e);
       }
     });
     return () => {
       alive = false;
     };
-  }, [clampPos]);
-
-  useEffect(() => {
-    const sub = Dimensions.addEventListener('change', () => {
-      setPos((p) => clampPos(p.r, p.b));
-    });
-    return () => sub.remove();
-  }, [clampPos]);
+  }, [fabPos]);
 
   const persistPos = useCallback(() => {
     const { r, b } = posLatest.current;
     void AsyncStorage.setItem(POS_KEY, JSON.stringify({ r, b })).catch(() => {});
   }, []);
 
-  const dragStart = useRef({ r: 0, b: 0, x0: 0, y0: 0 });
-
-  const runEdgeSnapAndPersist = useCallback(() => {
-    markInteraction();
-    const w = Dimensions.get('window').width;
-    const r0 = posLatest.current.r;
-    const b0 = posLatest.current.b;
-    const minR = insets.right + EDGE_PAD;
-    const maxR = w - FAB_SIZE - insets.left - EDGE_PAD;
-    const fabCenterX = w - r0 - FAB_SIZE / 2;
-    const targetR = fabCenterX < w / 2 ? maxR : minR;
-
-    if (Math.abs(targetR - r0) < 2) {
-      persistPos();
-      return;
-    }
-
-    isSnapping.current = true;
-    rightAnim.setValue(r0);
-    Animated.spring(rightAnim, {
-      toValue: targetR,
-      useNativeDriver: false,
-      friction: 9,
-      tension: 68,
-      restDisplacementThreshold: 0.5,
-      restSpeedThreshold: 0.5,
-    }).start(({ finished }) => {
-      isSnapping.current = false;
-      if (!finished) {
-        rightAnim.setValue(posLatest.current.r);
-        return;
+  const onFabGestureEvent = useCallback(
+    (e: PanGestureHandlerGestureEvent) => {
+      console.log("drag move", e?.nativeEvent?.translationX, e?.nativeEvent?.translationY);
+      try {
+        if (!fabMountedRef.current) return;
+        if (!e?.nativeEvent) return;
+        const tx = e.nativeEvent.translationX;
+        const ty = e.nativeEvent.translationY;
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
+        const { w, h } = getEffectiveSize();
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+        const sx = gestureStartRef.current.x;
+        const sy = gestureStartRef.current.y;
+        if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
+        const rawX = sx + tx;
+        const rawY = sy + ty;
+        if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return;
+        const next = clampFabXY(rawX, rawY, w, h);
+        console.log("clamped", next.x, next.y);
+        console.log("setValue", next.x, next.y);
+        fabPos.setValue(next);
+        fabLTRef.current = next;
+      } catch (err) {
+        console.error("LeylekZeka drag crash", err);
       }
-      const next = { r: targetR, b: b0 };
-      posLatest.current = next;
-      setPos(next);
-      rightAnim.setValue(targetR);
-      persistPos();
-    });
-  }, [insets.left, insets.right, markInteraction, persistPos, rightAnim]);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponderCapture: (_, g) =>
-          Math.abs(g.dx) > 8 || Math.abs(g.dy) > 8,
-        onPanResponderGrant: (e) => {
-          markInteraction();
-          dragStart.current = {
-            r: posLatest.current.r,
-            b: posLatest.current.b,
-            x0: e.nativeEvent.pageX,
-            y0: e.nativeEvent.pageY,
-          };
-        },
-        onPanResponderMove: (e) => {
-          const dx = e.nativeEvent.pageX - dragStart.current.x0;
-          const dy = e.nativeEvent.pageY - dragStart.current.y0;
-          const next = clampPos(dragStart.current.r - dx, dragStart.current.b - dy);
-          posLatest.current = next;
-          rightAnim.setValue(next.r);
-          setPos(next);
-        },
-        onPanResponderRelease: runEdgeSnapAndPersist,
-        onPanResponderTerminate: runEdgeSnapAndPersist,
-      }),
-    [clampPos, markInteraction, rightAnim, runEdgeSnapAndPersist],
+    },
+    [fabPos, getEffectiveSize],
   );
+
+  const onHandlerStateChange = useCallback(
+    (event: PanGestureHandlerGestureEvent) => {
+      console.log("drag state", event?.nativeEvent?.state);
+      try {
+        if (!event?.nativeEvent) return;
+        if (event.nativeEvent.state === undefined) return;
+        const st = event.nativeEvent.state;
+        if (st === State.BEGAN) {
+          springAnimRef.current?.stop?.();
+          gestureStartRef.current = { ...fabLTRef.current };
+          return;
+        }
+        if (st !== State.END && st !== State.CANCELLED && st !== State.FAILED) return;
+        if (!fabMountedRef.current) return;
+        const tx = event.nativeEvent.translationX;
+        const ty = event.nativeEvent.translationY;
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
+        const { w, h } = getEffectiveSize();
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+        const x = gestureStartRef.current.x + tx;
+        const y = gestureStartRef.current.y + ty;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        const c = clampFabXY(x, y, w, h);
+        console.log("clamped", c.x, c.y);
+        fabLTRef.current = c;
+        const centerX = c.x + FAB_SIZE / 2;
+        const targetLeft = centerX < w / 2 ? BOUNDS_MIN_X : w - BOUNDS_MAX_X_RIGHT_INSET;
+        const targetTop = clamp(c.y, BOUNDS_MIN_Y, h - BOUNDS_MAX_Y_BOTTOM_INSET);
+        console.log("spring start", x, y);
+        markInteraction();
+        springAnimRef.current = Animated.spring(fabPos, {
+          toValue: { x: targetLeft, y: targetTop },
+          useNativeDriver: true,
+          friction: 9,
+          tension: 68,
+          restDisplacementThreshold: 0.5,
+          restSpeedThreshold: 0.5,
+        });
+        springAnimRef.current.start(({ finished }) => {
+          if (!fabMountedRef.current) return;
+          springAnimRef.current = null;
+          if (!finished) return;
+          fabLTRef.current = { x: targetLeft, y: targetTop };
+          posLatest.current = ltToRB(targetLeft, targetTop, w, h);
+          persistPos();
+        });
+      } catch (err) {
+        console.error("LeylekZeka drag crash", err);
+      }
+    },
+    [fabPos, getEffectiveSize, markInteraction, persistPos],
+  );
+
+  useEffect(() => {
+    fabMountedRef.current = true;
+    return () => {
+      console.log("widget unmount");
+      fabMountedRef.current = false;
+      springAnimRef.current?.stop?.();
+      springAnimRef.current = null;
+    };
+  }, []);
 
   /** “Breath” + tilt + ayrı kanat flutter (translateY / micro pulse) — asla 360° spin yok */
   const breathe = useRef(new Animated.Value(0)).current;
@@ -574,22 +696,54 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
 
   const contextualForA11y = getContextualPillLine(homeFlowScreen ?? null, flowHint);
 
+  const fabDragRenderable =
+    fabLTRef.current != null &&
+    Number.isFinite(fabLTRef.current.x) &&
+    Number.isFinite(fabLTRef.current.y);
+
+  if (showFab && !fabDragRenderable) {
+    console.log("render guard fail", fabLTRef.current);
+  }
+
   return (
     <>
-      {showFab ? (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          <Animated.View
-            pointerEvents="box-none"
-            style={[
-              styles.anchor,
-              {
-                right: rightAnim,
-                bottom: pos.b,
-                transform: [{ translateY: floatY }],
-              },
-            ]}
-            {...panResponder.panHandlers}
-          >
+      {showFab && fabDragRenderable ? (
+        <GestureHandlerRootView
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          pointerEvents="box-none"
+        >
+          <View pointerEvents="box-none" style={StyleSheet.absoluteFill} onLayout={onFabRootLayout}>
+            <PanGestureHandler
+              ref={panHandlerRef}
+              enabled={true}
+              shouldCancelWhenOutside={false}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              activeOffsetX={[-10, 10]}
+              activeOffsetY={[-10, 10]}
+              onGestureEvent={onFabGestureEvent}
+              onHandlerStateChange={onHandlerStateChange}
+            >
+            <Animated.View
+              pointerEvents="box-none"
+              style={[
+                styles.anchor,
+                {
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  transform: [{ translateX: fabPos.x }, { translateY: fabPos.y }],
+                },
+              ]}
+            >
+              <Animated.View
+                pointerEvents="box-none"
+                style={[
+                  styles.pillRow,
+                  {
+                    transform: [{ translateY: floatY }],
+                  },
+                ]}
+              >
             <Animated.View
               style={[
                 styles.pillWrap,
@@ -656,8 +810,11 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
                 </Text>
               </Animated.View>
             ) : null}
-          </Animated.View>
-        </View>
+              </Animated.View>
+            </Animated.View>
+            </PanGestureHandler>
+          </View>
+        </GestureHandlerRootView>
       ) : null}
 
       {open ? (
@@ -688,6 +845,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 9999,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   pillWrap: {
     marginRight: Spacing.sm,

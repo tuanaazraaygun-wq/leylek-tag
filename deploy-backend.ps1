@@ -21,12 +21,25 @@ git fetch origin
 git merge origin/main --no-edit
 if [ -d "$LIVE" ] && [ -d "$PROD/backend" ]; then
   echo "=== Sync $PROD/backend/*.py -> $LIVE/ (systemd calisma dizini) ==="
-  for f in server.py supabase_client.py expo_push_channels.py route_service.py; do
-    if [ -f "$PROD/backend/$f" ]; then cp -f "$PROD/backend/$f" "$LIVE/$f"; fi
+  shopt -s nullglob
+  for f in "$PROD/backend"/*.py; do
+    cp -f "$f" "$LIVE/"
   done
+  if [ -d "$PROD/backend/routes" ]; then
+    mkdir -p "$LIVE/routes"
+    cp -f "$PROD/backend/routes/"*.py "$LIVE/routes/" 2>/dev/null || true
+  fi
+  if [ -d "$PROD/backend/controllers" ]; then
+    mkdir -p "$LIVE/controllers"
+    cp -f "$PROD/backend/controllers/"*.py "$LIVE/controllers/" 2>/dev/null || true
+  fi
   if [ -d "$PROD/backend/services" ]; then
     mkdir -p "$LIVE/services"
     cp -f "$PROD/backend/services/"*.py "$LIVE/services/" 2>/dev/null || true
+    if [ -d "$PROD/backend/services/answer_engine" ]; then
+      mkdir -p "$LIVE/services/answer_engine"
+      cp -f "$PROD/backend/services/answer_engine/"*.py "$LIVE/services/answer_engine/"
+    fi
   fi
 else
   echo "WARN: $LIVE veya $PROD/backend yok — yalnizca repo guncellendi; systemd baska dizinden calisiyorsa manuel kopyalayin."
