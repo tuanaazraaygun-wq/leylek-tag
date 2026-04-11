@@ -2432,11 +2432,39 @@ app.include_router(admin_answer_engine_router, prefix="/api")
 
 api_router = APIRouter(prefix="/api")
 
-# Leylek Zeka (Claude) — modüler route; ana dosyadaki diğer endpoint'lerle aynı api_router
+# Leylek Zeka: doğrudan fastapi_app + socket_app öncesi (api_router sondaki include'da değil)
 from routes.ai import router as leylek_zeka_ai_router
+from routes.ai import LeylekZekaRequest, run_leylek_zeka_chat
 from routes.legal import router as legal_router
 
-api_router.include_router(leylek_zeka_ai_router)
+fastapi_app.include_router(leylek_zeka_ai_router, prefix="/api")
+
+
+@fastapi_app.post("/api/ai/chat")
+async def api_ai_chat(request: Request):
+    """
+    Boş veya mesajsız POST → sağlık yanıtı (curl / yük dengeleyici).
+    JSON + message → Leylek Zeka (run_leylek_zeka_chat).
+    """
+    raw = await request.body()
+    if not raw or not raw.strip():
+        return {"success": True, "reply": "Leylek Zeka aktif."}
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {"success": True, "reply": "Leylek Zeka aktif."}
+    if not isinstance(data, dict):
+        return {"success": True, "reply": "Leylek Zeka aktif."}
+    msg = str(data.get("message", "") or "").strip()
+    if not msg:
+        return {"success": True, "reply": "Leylek Zeka aktif."}
+    try:
+        body = LeylekZekaRequest.model_validate(data)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    return await run_leylek_zeka_chat(body, request)
+
+
 api_router.include_router(legal_router)
 
 # ==================== SOCKET.IO ASGI APP ====================

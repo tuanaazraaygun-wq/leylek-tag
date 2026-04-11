@@ -1,5 +1,6 @@
 """
-POST /api/ai/chat — Leylek Zeka (Claude Haiku). Eski yol: POST /api/ai/leylekzeka.
+POST /api/ai/chat — server.py içinde fastapi_app (boş gövde = sağlık; mesajlı = Leylek Zeka).
+POST /api/ai/leylekzeka — bu modül (Claude / fallback / answer_engine).
 """
 from __future__ import annotations
 
@@ -60,15 +61,10 @@ def _client_key(request: Request) -> str:
     return "unknown"
 
 
-@router.post("/chat")
-@router.post("/leylekzeka")
-async def leylek_zeka_endpoint(body: LeylekZekaRequest, request: Request) -> dict[str, Any]:
+async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dict[str, Any]:
     """
-    Async endpoint; Anthropic anahtarı varsa Claude (5 sn timeout), yoksa veya hata varsa hazır yanıt.
-    Hız sınırı: istemci başına 5 sn (bloklamayan asyncio lock).
-    Yanıt: { ok, reply, source: "claude" | "fallback" | "answer_engine", mode }.
-    source=answer_engine iken ek alanlar: intent_id (str), deterministic (true).
-    Claude/fallback için bu alanlar gönderilmez.
+    POST /api/ai/chat (fastapi_app) ve POST /api/ai/leylekzeka ortak mantık.
+    Yanıt: { ok, success, reply, source, mode, ... }.
     """
     key = _client_key(request)
     try:
@@ -92,8 +88,22 @@ async def leylek_zeka_endpoint(body: LeylekZekaRequest, request: Request) -> dic
         logger.exception("Leylek Zeka beklenmeyen hata: %s", e)
         raise HTTPException(status_code=500, detail="Bir hata oluştu.") from e
 
-    out: dict[str, Any] = {"ok": True, "reply": reply, "source": source, "mode": USER_HELP_MODE}
+    out: dict[str, Any] = {
+        "ok": True,
+        "success": True,
+        "reply": reply,
+        "source": source,
+        "mode": USER_HELP_MODE,
+    }
     if engine_meta is not None:
         out["intent_id"] = engine_meta["intent_id"]
         out["deterministic"] = engine_meta["deterministic"]
     return out
+
+
+@router.post("/leylekzeka")
+async def leylek_zeka_endpoint(body: LeylekZekaRequest, request: Request) -> dict[str, Any]:
+    """
+    Eski yol POST /api/ai/leylekzeka — Gövde: LeylekZekaRequest.
+    """
+    return await run_leylek_zeka_chat(body, request)
