@@ -44,6 +44,31 @@ if [ -d "$LIVE" ] && [ -d "$PROD/backend" ]; then
 else
   echo "WARN: $LIVE veya $PROD/backend yok — yalnizca repo guncellendi; systemd baska dizinden calisiyorsa manuel kopyalayin."
 fi
+# systemd bazen WorkingDirectory=/root/leylek-tag ile uvicorn calistirir — tek server.py kopyasi yetmez (routes, trust_service vb.)
+RT=/root/leylek-tag
+if [ -f "$RT/server.py" ] && [ -d "$PROD/backend" ]; then
+  echo "=== Sync $PROD/backend -> $RT (uvicorn WorkingDirectory) ==="
+  shopt -s nullglob
+  for f in "$PROD/backend"/*.py; do
+    cp -f "$f" "$RT/"
+  done
+  if [ -d "$PROD/backend/routes" ]; then
+    mkdir -p "$RT/routes"
+    cp -f "$PROD/backend/routes/"*.py "$RT/routes/" 2>/dev/null || true
+  fi
+  if [ -d "$PROD/backend/controllers" ]; then
+    mkdir -p "$RT/controllers"
+    cp -f "$PROD/backend/controllers/"*.py "$RT/controllers/" 2>/dev/null || true
+  fi
+  if [ -d "$PROD/backend/services" ]; then
+    mkdir -p "$RT/services"
+    cp -f "$PROD/backend/services/"*.py "$RT/services/" 2>/dev/null || true
+    if [ -d "$PROD/backend/services/answer_engine" ]; then
+      mkdir -p "$RT/services/answer_engine"
+      cp -f "$PROD/backend/services/answer_engine/"*.py "$RT/services/answer_engine/"
+    fi
+  fi
+fi
 sudo systemctl restart leylektag.service
 sleep 2
 sudo systemctl status leylektag.service 2>&1 || true
