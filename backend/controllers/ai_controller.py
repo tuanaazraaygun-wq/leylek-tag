@@ -24,8 +24,8 @@ OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 REQUEST_TIMEOUT_SEC = 20.0
 RATE_LIMIT_SEC = 5.0
 
-# Not: HTTP response formatı bozulmasın diye model kaynağını "claude" etiketiyle döndürmeye devam ediyoruz.
-Source = Literal["claude", "fallback", "answer_engine"]
+# Leylek Zeka kullanıcı sohbeti: yalnızca OpenAI (OPENAI_API_KEY). Kaynak etiketi gerçeği yansıtır.
+Source = Literal["openai", "fallback", "answer_engine"]
 
 
 def _emit_answer_engine_telemetry(
@@ -480,7 +480,7 @@ async def get_leylek_zeka_reply(
     context: dict[str, Any] | None = None,
 ) -> tuple[str, Source, AnswerEngineMeta | None]:
     """
-    OpenAI anahtarı varsa ve çağrı başarılıysa claude etiketiyle model yanıtı; aksi halde fallback.
+    Öncelik: yüksek güven akışı → answer_engine (katalog) → OpenAI (anahtar varsa) → Türkçe fallback.
     context: opsiyonel bağlama duyarlı yardım (USER_HELP_MODE).
     Üçüncü dönüş: yalnızca Answer Engine eşleşmesinde intent_id + deterministic (HTTP opsiyonel alanları).
 
@@ -542,11 +542,11 @@ async def get_leylek_zeka_reply(
         _emit_answer_engine_telemetry(
             hit=False,
             intent_id=None,
-            response_source="claude",
+            response_source="openai",
             context=context,
             user_message=text,
         )
-        return reply, "claude", None
+        return reply, "openai", None
     except LeylekZekaError as e:
         logger.info("Leylek Zeka: OpenAI kullanılamadı (%s) — fallback", e)
         _emit_answer_engine_telemetry(

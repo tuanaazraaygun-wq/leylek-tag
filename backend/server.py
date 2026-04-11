@@ -125,19 +125,19 @@ _check_google_maps_env_on_startup()
 
 def _check_anthropic_env_on_startup() -> None:
     """
-    Leylek Zeka (Claude) için ANTHROPIC_API_KEY process ortamında var mı kontrol eder.
-    Değerin kendisini veya parçasını loglamaz; yalnızca uzunluk / eksiklik.
+    Admin / ayrı özellikler için Anthropic (Claude) anahtarı — Leylek Zeka kullanıcı sohbeti OpenAI kullanır.
+    Değerin kendisini loglamaz; yalnızca uzunluk / eksiklik.
     """
     raw = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     if not raw:
         logger.warning(
             "⚠️ ANTHROPIC_API_KEY tanımlı değil veya boş. "
-            "POST /api/ai/chat yanıtları Claude yerine fallback (source=fallback) kullanır. "
-            "backend/.env veya systemd Environment= ile tanımlayıp bu process'i yeniden başlatın."
+            "Admin paneli vb. Claude tabanlı özellikler devre dışı kalabilir. "
+            "Leylek Zeka sohbeti için OPENAI_API_KEY kullanılır."
         )
         return
     logger.info(
-        "✅ ANTHROPIC_API_KEY yüklendi (uzunluk=%s). Leylek Zeka Claude çağrısı kullanılabilir.",
+        "✅ ANTHROPIC_API_KEY yüklendi (uzunluk=%s). Claude tabanlı admin özellikleri kullanılabilir.",
         len(raw),
     )
 

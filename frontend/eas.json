@@ -10,6 +10,9 @@
         "distribution": "internal",
         "developmentClient": false,
         "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
       }
     },
     "development": {
@@ -18,20 +21,28 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "large"
       },
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1",
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com",
+        "NODE_OPTIONS": "--max-old-space-size=8192"
       }
     },
     "production": {
       "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://api.leylektag.com"
       }

@@ -17,6 +17,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -24,7 +25,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, BorderRadius, FontSize, Spacing } from '../constants/Colors';
+import { Colors, BorderRadius, Spacing } from '../constants/Colors';
 import { type LeylekZekaMessage, type LeylekZekaReplySource } from '../hooks/useLeylekZeka';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
@@ -283,14 +284,16 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
    * Kapalı modal / unmount üzerinde scrollToEnd çağrılarını etkisizleştirir.
    */
   const scrollGenRef = useRef(0);
+  /** Android: keyboardDidHide bazen düzen değişince iki kez tetiklenir; anlık sıfırlama odak kaybına yol açabilir */
+  const keyboardHideDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Android: composer yukarı — yalnızca alt padding; iOS: KAV zaten yönetir. */
-  const composerBottomPad = useMemo(
-    () => Math.max(insets.bottom, Spacing.md) + (Platform.OS === 'android' ? keyboardHeight : 0),
-    [insets.bottom, keyboardHeight],
+  /** Güvenli alan — klavye KAV (iOS) veya alt dolgu (Android) ile taşınır */
+  const composerBottomPad = useMemo(() => Math.max(insets.bottom, Spacing.md), [insets.bottom]);
+
+  const panelMaxHeight = useMemo(
+    () => Math.round(Dimensions.get('window').height * 0.74),
+    [],
   );
-
-  const sheetHeight = useMemo(() => Math.round(Dimensions.get('window').height * 0.6), []);
 
   /** Uzun tek mesajda da içerik imzası değişsin; scroll + FlatList extraData */
   const messagesScrollSig = useMemo(
@@ -336,6 +339,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
 
   useEffect(() => {
     if (!visible) {
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+        keyboardHideDebounceRef.current = null;
+      }
       setKeyboardHeight(0);
       return;
     }
@@ -343,6 +350,10 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const show = Keyboard.addListener(showEv, (e) => {
       if (!visibleRef.current) return;
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+        keyboardHideDebounceRef.current = null;
+      }
       try {
         setKeyboardHeight(e.endCoordinates?.height ?? 0);
       } catch {
@@ -351,26 +362,29 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     });
     const hide = Keyboard.addListener(hideEv, () => {
       if (!visibleRef.current) return;
-      try {
-        setKeyboardHeight(0);
-      } catch {
-        /* native race */
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+        keyboardHideDebounceRef.current = null;
       }
+      /** Klavye gizlenince kısa gecikme: layout yarışında odak korunur (özellikle Android). */
+      keyboardHideDebounceRef.current = setTimeout(() => {
+        keyboardHideDebounceRef.current = null;
+        if (!visibleRef.current) return;
+        try {
+          setKeyboardHeight(0);
+        } catch {
+          /* native race */
+        }
+      }, Platform.OS === 'android' ? 140 : 0);
     });
     return () => {
       show.remove();
       hide.remove();
+      if (keyboardHideDebounceRef.current) {
+        clearTimeout(keyboardHideDebounceRef.current);
+        keyboardHideDebounceRef.current = null;
+      }
     };
-  }, [visible]);
-
-  /** Sohbet açılışında hafif geri bildirim (web hariç) */
-  useEffect(() => {
-    if (!visible || Platform.OS === 'web') return;
-    try {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      /* ignore */
-    }
   }, [visible]);
 
   useEffect(() => {
@@ -392,7 +406,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, [visible]);
 
   useEffect(() => {
-    if (lastReplySource !== 'claude') return;
+    if (lastReplySource !== 'openai') return;
     void AsyncStorage.setItem(BETA_HINT_KEY, '1').catch(() => {});
     setShowBetaHint(false);
   }, [lastReplySource]);
@@ -507,20 +521,15 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
     }, SCROLL_ON_CONTENT_SIZE_DEBOUNCE_MS);
   }, [scrollToEndSafe]);
 
-  const onListLayout = useCallback(() => {
-    scrollToEndSafe();
-  }, [scrollToEndSafe]);
-
   useEffect(() => {
     if (!visible) {
       return;
     }
+    /** onLayout ile scrollToEnd birlikte layout/content yarışına yol açmasın — yalnızca içerik imzası + debounce. */
     const delays = [
       SCROLL_AFTER_UPDATE_MS,
-      SCROLL_AFTER_UPDATE_MS + 90,
-      SCROLL_AFTER_UPDATE_MS + 220,
-      SCROLL_AFTER_UPDATE_MS + 420,
-      SCROLL_AFTER_UPDATE_MS + 700,
+      SCROLL_AFTER_UPDATE_MS + 180,
+      SCROLL_AFTER_UPDATE_MS + 400,
     ];
     const ids = delays.map((ms) =>
       setTimeout(() => {
@@ -542,33 +551,60 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const modeCaption =
     lastReplySource === 'fallback'
       ? 'Hazır yanıtlarla destekleniyorsunuz.'
-      : lastReplySource === 'claude'
-        ? 'Yapay zeka yanıtı.'
+      : lastReplySource === 'openai'
+        ? 'Yapay zeka yanıtı (OpenAI).'
         : lastReplySource === 'answer_engine'
           ? 'Resmi adım adım yanıt.'
           : null;
+
+  const closeWithHaptic = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* ignore */
+      }
+    }
+    onClose();
+  }, [onClose]);
+
+  const kavOffset = useMemo(() => {
+    if (Platform.OS === 'ios') {
+      return Math.max(insets.top, 12) + 8;
+    }
+    const sb = StatusBar.currentHeight;
+    return typeof sb === 'number' && sb > 0 ? sb : 0;
+  }, [insets.top]);
 
   return (
     <Modal
       visible={visible}
       animationType="fade"
       transparent
-      onRequestClose={onClose}
+      onRequestClose={closeWithHaptic}
       statusBarTranslucent
     >
       <View style={styles.modalRoot}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Kapat" />
+        <Pressable
+          style={styles.backdrop}
+          onPress={closeWithHaptic}
+          accessibilityRole="button"
+          accessibilityLabel="Kapat"
+        />
         <KeyboardAvoidingView
           style={styles.kavRoot}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 12) + 8 : 0}
+          keyboardVerticalOffset={kavOffset}
         >
           <View
             style={[
-              styles.sheet,
-              { height: sheetHeight, maxHeight: sheetHeight, marginBottom: Math.max(insets.bottom, 10) },
+              styles.kavCenterFill,
+              Platform.OS === 'android' && keyboardHeight > 0
+                ? { paddingBottom: keyboardHeight }
+                : null,
             ]}
           >
+          <View style={[styles.sheet, { height: panelMaxHeight, maxHeight: panelMaxHeight }]}>
             {/* Açık mavi → açık mor, düşük opaklık */}
             <LinearGradient
               colors={['rgba(186, 230, 253, 0.55)', 'rgba(199, 210, 254, 0.42)', 'rgba(233, 213, 255, 0.38)', 'rgba(250, 245, 255, 0.5)']}
@@ -645,7 +681,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 </View>
               </View>
             </View>
-            <Pressable onPress={onClose} hitSlop={14} style={styles.closeBtn}>
+            <Pressable onPress={closeWithHaptic} hitSlop={14} style={styles.closeBtn}>
               <Ionicons name="close" size={22} color="#334155" />
             </Pressable>
           </LinearGradient>
@@ -679,13 +715,12 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
               scrollEnabled={visible}
               nestedScrollEnabled
               scrollEventThrottle={16}
-              onLayout={onListLayout}
               onContentSizeChange={onListContentSizeChange}
               contentContainerStyle={[
                 styles.listContent,
                 messages.length === 0 ? styles.listContentEmpty : null,
               ]}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               keyboardDismissMode="none"
               showsVerticalScrollIndicator
               removeClippedSubviews={false}
@@ -733,6 +768,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                 editable={!isTyping}
                 multiline
                 maxLength={2000}
+                blurOnSubmit={false}
                 onSubmitEditing={onSubmit}
                 returnKeyType="send"
                 accessibilityLabel="Mesaj metni"
@@ -745,7 +781,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
                   }
                 }}
                 {...Platform.select({
-                  ios: { keyboardAppearance: 'light' as const },
+                  ios: { keyboardAppearance: 'light' as const, submitBehavior: 'newline' as const },
+                  android: { submitBehavior: 'newline' as const },
                   default: {},
                 })}
               />
@@ -779,6 +816,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
           </LinearGradient>
             </View>
           </View>
+          </View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -799,27 +837,32 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     maxWidth: '100%',
-    justifyContent: 'flex-end',
+  },
+  kavCenterFill: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 12,
   },
   sheet: {
     position: 'relative',
-    width: '92%',
-    minHeight: 0,
+    width: '100%',
+    maxWidth: 440,
+    minHeight: 300,
+    minWidth: 0,
+    flexShrink: 1,
     alignSelf: 'center',
     backgroundColor: '#EEF8FF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 22,
     overflow: 'hidden',
-    borderTopWidth: 2,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
+    borderWidth: 2,
     borderColor: 'rgba(14, 165, 233, 0.72)',
     ...Platform.select({
       ios: {
         shadowColor: '#0c4a6e',
-        shadowOffset: { width: 0, height: -10 },
-        shadowOpacity: 0.14,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.2,
         shadowRadius: 28,
       },
       android: { elevation: 20 },

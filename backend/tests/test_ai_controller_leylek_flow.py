@@ -6,22 +6,24 @@ from __future__ import annotations
 
 import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 # Ağ / OpenAI tetiklenmesin
 os.environ.pop("OPENAI_API_KEY", None)
 
 
 def test_high_confidence_eslesme_nasil() -> None:
-    from controllers.ai_controller import _high_confidence_flow_reply
+    from controllers import ai_controller
 
-    r = _high_confidence_flow_reply("Eşleşme nasıl çalışır?")
+    r = ai_controller._high_confidence_flow_reply("Eşleşme nasıl çalışır?")
     assert r is not None
-    assert "Yakındaki" in r
-    assert "Yolcu talep" in r
-    assert "Sürücü teklif" in r
+    assert r == ai_controller._ESLESME_VE_ROL
+    assert r.count("Yakındaki") == 1
+    assert "eşleşme olur" not in r.lower()
 
 
 def test_high_confidence_kim_teklif() -> None:
@@ -70,6 +72,26 @@ def test_get_leylek_flow_when_engine_disabled(monkeypatch: pytest.MonkeyPatch) -
     asyncio.run(_run())
 
 
+def test_get_leylek_eslesme_canonical_before_answer_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OPENAI yok: answer_engine kataloğu olsa bile önce sabit _ESLESME_VE_ROL (tek akış metni)."""
+    from controllers import ai_controller
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    async def _run() -> None:
+        reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            user_message="Eşleşme nasıl çalışır?",
+            history=[],
+            context=None,
+        )
+        assert source == "fallback"
+        assert meta is None
+        assert reply == ai_controller._ESLESME_VE_ROL
+        assert "2.\tYakındaki sürücüler bu talebi görür." in reply
+
+    asyncio.run(_run())
+
+
 def test_get_leylek_generic_fallback_no_engine_no_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     from controllers import ai_controller
 
@@ -85,6 +107,52 @@ def test_get_leylek_generic_fallback_no_engine_no_openai(monkeypatch: pytest.Mon
         assert source == "fallback"
         assert meta is None
         assert isinstance(reply, str) and len(reply) > 5
+
+    asyncio.run(_run())
+
+
+def test_route_post_leylekzeka_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/ai/leylekzeka — OpenAI yok; sabit akış yanıtı (rate limit devre dışı)."""
+    import routes.ai as routes_ai
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(routes_ai, "enforce_rate_limit", AsyncMock())
+
+    from routes.ai import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    client = TestClient(app)
+    res = client.post("/api/ai/leylekzeka", json={"message": "Eşleşme nasıl çalışır?"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("success") is True
+    assert data.get("source") == "fallback"
+    assert "2.\tYakındaki sürücüler bu talebi görür." in data.get("reply", "")
+
+
+def test_get_leylek_openai_success_source_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OPENAI var: model yanıtı source=openai (Claude değil)."""
+    from controllers import ai_controller
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
+
+    async def fake_openai(**_kwargs: object) -> str:
+        return "Merhaba, OpenAI."
+
+    async def _run() -> None:
+        with (
+            patch.object(ai_controller, "try_resolve", return_value=None),
+            patch.object(ai_controller, "_call_openai", new=fake_openai),
+        ):
+            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+                user_message="__leylek_unique_nohit_xyz_openai_src__",
+                history=[],
+                context=None,
+            )
+        assert source == "openai"
+        assert meta is None
+        assert reply == "Merhaba, OpenAI."
 
     asyncio.run(_run())
 

@@ -1,6 +1,6 @@
 """
 POST /api/ai/chat — server.py içinde fastapi_app (boş gövde = sağlık; mesajlı = Leylek Zeka).
-POST /api/ai/leylekzeka — bu modül (Claude / fallback / answer_engine).
+POST /api/ai/leylekzeka — bu modül (OpenAI / fallback / answer_engine).
 """
 from __future__ import annotations
 

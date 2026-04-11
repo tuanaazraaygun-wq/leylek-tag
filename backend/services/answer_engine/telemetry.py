@@ -111,7 +111,7 @@ def emit_answer_engine_resolution(
 ) -> None:
     """
     hit=True → answer_engine ile yanıtlandı.
-    hit=False → try_resolve eşleşmedi; response_source claude veya fallback.
+    hit=False → try_resolve eşleşmedi; response_source openai veya fallback.
     """
     if not is_answer_engine_telemetry_enabled():
         return
