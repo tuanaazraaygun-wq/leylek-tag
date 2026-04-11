@@ -21,7 +21,7 @@ logger = logging.getLogger("server")
 OPENAI_URL = "https://api.openai.com/v1/responses"
 # Hızlı/ucuz varsayılan model; opsiyonel override: OPENAI_MODEL
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
-REQUEST_TIMEOUT_SEC = 5.0
+REQUEST_TIMEOUT_SEC = 20.0
 RATE_LIMIT_SEC = 5.0
 
 # Not: HTTP response formatı bozulmasın diye model kaynağını "claude" etiketiyle döndürmeye devam ediyoruz.
@@ -59,20 +59,20 @@ LEYLEK_ZEKA_SYSTEM = (
     "Adın Leylek Zeka.\n"
     "Kullanıcılara eşleşme, teklif, sürücü/yolcu rolleri, araç seçimi, şehir içi kullanım ve güvenlik "
     "konularında yardımcı ol.\n"
-    "Türkçe, kısa ve net konuş.\n\n"
+    "Türkçe, kısa ve net konuş; abartma, varsayım üretme, fiyat veya olmayan özellik uydurma.\n\n"
     "[Yanıt biçimi — zorunlu]\n"
-    "- Önce 1–4 numaralı maddeler halinde doğru eşleşme akışını yaz (aşağıdaki sıraya uy).\n"
-    "- Ardından en fazla iki kısa cümleyle not ekle (rol karışıklığı yok).\n"
-    "- Uydurma özellik, fiyat veya ekran adı ekleme.\n\n"
+    "- Eşleşme veya teklif sorusuysa önce 1–4 numaralı maddeler halinde aşağıdaki tek doğru akışı yaz.\n"
+    "- Sonra en fazla iki kısa cümleyle rol netliği (yolcu teklif göndermez; sürücü kabul etmez).\n"
+    "- Uydurma ekran adı veya ücret bilgisi verme.\n\n"
     "[Eşleşme akışı — tek doğru sıra; rolleri karıştırma]\n"
     "1) Yolcu talep oluşturur.\n"
-    "2) Sürücüler talepleri görür.\n"
+    "2) Yakındaki sürücüler bu talebi görür.\n"
     "3) Sürücü teklif gönderir.\n"
-    "4) Yolcu bir teklifi kabul ederse eşleşme olur.\n\n"
+    "4) Yolcu teklifi kabul ederse eşleşme gerçekleşir.\n\n"
     "[Rol kuralları — bağlayıcı]\n"
     "- Yolcu teklif göndermez.\n"
-    "- Eşleşmeyi tamamlayan taraf yolcudur: yolcu gelen tekliflerden birini kabul eder.\n"
-    "- Sürücü teklifi gönderir; 'yolcunun teklifini sürücü kabul eder' gibi ters ifadeler kullanma.\n"
+    "- Sürücü gelen talebi kabul etmez; sürücü teklif gönderir. Eşleşmeyi yolcunun bir teklifi kabul etmesi tamamlar.\n"
+    "- 'Yolcu teklif gönderir', 'sürücü kabul eder', 'yolcunun teklifini sürücü onaylar' gibi ifadeler yasak; kullanma.\n"
     "- Bilmediğin ürün ayrıntısını uydurma; bu akışa sadık kal."
 )
 
@@ -142,22 +142,24 @@ _REPLIES: dict[str, str] = {
         "İstersen adım adım anlatayım."
     ),
     "eslesme_nasil": (
+        "Eşleşme şu şekilde çalışır:\n"
         "1) Yolcu talep oluşturur.\n"
-        "2) Sürücüler görür.\n"
+        "2) Yakındaki sürücüler bu talebi görür.\n"
         "3) Sürücü teklif gönderir.\n"
-        "4) Yolcu bir teklifi kabul ederse eşleşme olur.\n\n"
-        "Yolcu teklif göndermez; eşleşme yolcunun kabulüyle biter."
+        "4) Yolcu teklifi kabul ederse eşleşme gerçekleşir.\n\n"
+        "Yolcu teklif göndermez; sürücü eşleşmeyi ‘kabul ederek’ tamamlamaz — kabul eden yolcudur."
     ),
     "eslesme_genel": (
-        "1) Yolcu talep\n"
-        "2) Sürücü teklif\n"
-        "3) Yolcu kabul → eşleşme\n\n"
-        "Yolcu teklif göndermez."
+        "1) Yolcu talep oluşturur.\n"
+        "2) Yakındaki sürücüler talebi görür.\n"
+        "3) Sürücü teklif gönderir.\n"
+        "4) Yolcu bir teklifi kabul ederse eşleşme olur.\n\n"
+        "Yolcu teklif göndermez; sürücü kabul etmez."
     ),
     "teklif": (
         "1) Teklifi sürücü gönderir.\n"
-        "2) Yolcu gelen tekliflerden birini kabul veya red eder.\n\n"
-        "Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur."
+        "2) Yolcu gelen tekliflerden birini kabul veya reddeder.\n\n"
+        "Eşleşme yalnızca yolcunun bir teklifi kabul etmesiyle oluşur; yolcu teklif göndermez."
     ),
     "motor_araba": (
         "LeylekTag’te talebini veya sürücü profilini oluştururken araç tipini (örneğin motor veya otomobil) "
@@ -179,17 +181,22 @@ _REPLIES: dict[str, str] = {
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
     ),
     "surucu_sec": (
-        "Yolcuysan: gelen sürücü tekliflerinden birini kabul edince eşleşme olur; yolcu teklif göndermez.\n"
-        "Kabul öncesi özeti kontrol et."
+        "Yolcuysan: talep oluşturursun; gelen sürücü tekliflerinden birini kabul edince eşleşme olur. "
+        "Yolcu teklif göndermez.\n"
+        "Sürücüysen: yakın talepleri görüp uygun olana teklif gönderirsin; eşleşmeyi yolcu kabulü tamamlar."
     ),
     "yolcu_sec": (
         "Sürücüysen: talepleri görüp uygun olana teklif gönderirsin.\n"
-        "Eşleşme, yolcunun teklifi kabul etmesiyle oluşur."
+        "Yolcuysan: talep açarsın; teklif göndermezsin — gelen tekliflerden birini kabul edersin."
     ),
     "kim_teklif": (
         "1) Teklifi sürücü gönderir.\n"
         "2) Yolcu talep oluşturur; teklif göndermez.\n\n"
-        "Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur."
+        "Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur. Sürücü teklifi kabul ederek eşleşmez."
+    ),
+    "rol_kabul_netligi": (
+        "Eşleşmeyi tamamlayan taraf yolcudur: yolcu, gelen tekliflerden birini kabul eder.\n"
+        "Sürücü teklif gönderir; sürücü ‘eşleşmeyi kabul eden’ taraf değildir. Yolcu teklif göndermez."
     ),
     "guvenlik": (
         "LeylekTag’te yolculuğu uygulama üzerinden takip etmeni, karşı tarafın profil ve araç bilgilerini "
@@ -238,11 +245,34 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
     if any(
         p in t
         for p in (
+            "kim kabul",
+            "kabul eden kim",
+            "yolcu mu kabul",
+            "sürücü mü kabul",
+            "surucu mu kabul",
+            "sürücü kabul eder",
+            "surucu kabul eder",
+            "sürücü onaylar",
+            "surucu onaylar",
+            "eşleşmeyi kim",
+            "eslesmeyi kim",
+        )
+    ):
+        return _REPLIES["rol_kabul_netligi"]
+
+    if any(
+        p in t
+        for p in (
             "kim teklif",
             "teklifi kim",
             "teklif kimden",
             "hangi taraf teklif",
             "teklif hangi taraftan",
+            "yolcu teklif",
+            "yolcu gönderir mi teklif",
+            "yolcu gonderir mi teklif",
+            "yolcu teklif gönder",
+            "yolcu teklif gonder",
         )
     ):
         return _REPLIES["kim_teklif"]
@@ -290,6 +320,11 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
     if "araba" in t or "otomobil" in t:
         return _REPLIES["araba"]
 
+    if ("sürücü" in t or "surucu" in t) and any(
+        k in t for k in ("kabul", "onay", "onayla", "tamaml")
+    ):
+        return _REPLIES["rol_kabul_netligi"]
+
     if "sürücü" in t or "surucu" in t:
         return _REPLIES["surucu_sec"]
 
@@ -312,6 +347,54 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
         return _REPLIES["eslesme_genel"]
 
     return _FALLBACK_GENERIC
+
+
+def _high_confidence_flow_reply(user_message: str) -> str | None:
+    """
+    Answer engine eşleşmezse bile akış/rol sorularında sabit, doğru Türkçe yanıt.
+    OpenAI çağrılmadan önce get_leylek_zeka_reply içinde kullanılır (hallüsinasyon riskini azaltır).
+    """
+    t = _normalize_for_match(user_message)
+    if not t:
+        return None
+    if any(
+        p in t
+        for p in (
+            "kim kabul",
+            "kabul eden kim",
+            "yolcu mu kabul",
+            "sürücü mü kabul",
+            "surucu mu kabul",
+            "sürücü kabul eder",
+            "surucu kabul eder",
+            "sürücü onaylar",
+            "surucu onaylar",
+            "eşleşmeyi kim",
+            "eslesmeyi kim",
+        )
+    ):
+        return _REPLIES["rol_kabul_netligi"]
+    if any(
+        p in t
+        for p in (
+            "kim teklif",
+            "teklifi kim",
+            "teklif kimden",
+            "hangi taraf teklif",
+            "teklif hangi taraftan",
+            "yolcu teklif",
+            "yolcu gönderir mi teklif",
+            "yolcu gonderir mi teklif",
+            "yolcu teklif gönder",
+            "yolcu teklif gonder",
+        )
+    ):
+        return _REPLIES["kim_teklif"]
+    if _has_eslesme(t) and any(
+        w in t for w in ("nasıl", "nasil", "çalışır", "calisir", "çalış", "calis", "nedir")
+    ):
+        return _REPLIES["eslesme_nasil"]
+    return None
 
 
 def _build_chat_messages(history: list[dict[str, Any]], user_message: str) -> list[dict[str, Any]]:
@@ -452,6 +535,17 @@ async def get_leylek_zeka_reply(
             user_message=text,
         )
         return resolved["text"], "answer_engine", meta
+
+    flow_hit = _high_confidence_flow_reply(text)
+    if flow_hit is not None:
+        _emit_answer_engine_telemetry(
+            hit=False,
+            intent_id=None,
+            response_source="fallback",
+            context=context,
+            user_message=text,
+        )
+        return flow_hit, "fallback", None
 
     system_extra = _context_system_addon(context)
 
