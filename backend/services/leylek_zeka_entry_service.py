@@ -130,6 +130,26 @@ def publish_draft(draft: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
+def insert_kb_faq(question: str, answer: str) -> dict[str, Any] | None:
+    """Doğrudan onaylı FAQ kaydı — body yalnızca question/answer (ek alan yok)."""
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if not q or not a:
+        return None
+    entry_id = f"entry-live-{uuid.uuid4()}"
+    entry = {
+        "id": entry_id,
+        "record_type": "faq",
+        "body": {"question": q, "answer": a},
+        "is_active": True,
+    }
+    if _insert_supabase(entry):
+        return entry
+    logger.warning("leylek_zeka_entry_service: FAQ Supabase’e yazılamadı, geçici bellek: %s", entry_id)
+    _runtime_entries.append(dict(entry))
+    return entry
+
+
 def deactivate_entry(entry_id: str) -> dict[str, Any] | None:
     sb = _supabase()
     if sb is not None:

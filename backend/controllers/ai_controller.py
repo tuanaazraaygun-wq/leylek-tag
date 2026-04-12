@@ -15,6 +15,10 @@ import httpx
 
 from services.answer_engine import try_resolve
 from services.answer_engine.telemetry import emit_answer_engine_resolution
+from services.leylek_zeka_live_training import (
+    is_admin_teaching_statement,
+    rule_based_question_from_statement,
+)
 from services.leylek_zeka_response_engine import generate_response
 from services.leylek_zeka_training_engine import process_admin_message
 
@@ -494,8 +498,8 @@ async def get_leylek_zeka_reply(
     user_message: str,
     history: list[dict[str, Any]] | None,
     context: dict[str, Any] | None = None,
-    is_admin: bool = False,
-) -> tuple[str, Source, AnswerEngineMeta | None]:
+    admin_authenticated: bool = False,
+) -> tuple[str, Source, AnswerEngineMeta | None, dict[str, Any] | None]:
     """
     Öncelik: admin onaylı KB (Supabase) → ürün kilidi (yüksek güven sabit akış) → answer_engine (katalog)
     → OpenAI (anahtar varsa) → Türkçe fallback.
@@ -504,19 +508,20 @@ async def get_leylek_zeka_reply(
 
     Katalogdan önce _high_confidence_flow_reply ile tek doğru eşleşme/teklif metni korunur.
     """
-    if is_admin and (not user_message or str(user_message).strip() == ""):
+    if admin_authenticated and (not user_message or str(user_message).strip() == ""):
         return (
             "Hoş geldin patron. Bugün beni ne konuda eğitmek istersin?\n\nÖrnek:\nsoru: güven al butonu nedir\ncevap: güven al butonu kullanıcıyı korur",
             "kb",
+            None,
             None,
         )
 
     text = (user_message or "").strip()
     if not text:
-        return _FALLBACK_GENERIC, "fallback", None
+        return _FALLBACK_GENERIC, "fallback", None, None
 
     tl = text.lower()
-    if is_admin and ("soru:" in tl or "cevap:" in tl):
+    if admin_authenticated and ("soru:" in tl or "cevap:" in tl):
         training = process_admin_message(text)
         if training.get("created_drafts"):
             from services.leylek_zeka_draft_service import approve_draft
@@ -533,6 +538,7 @@ async def get_leylek_zeka_reply(
                 "Kaydettim patron. Artık bunu öğrendim.",
                 "kb",
                 None,
+                None,
             )
         outcome = training.get("outcome")
         if outcome == "invalid_same":
@@ -548,6 +554,7 @@ async def get_leylek_zeka_reply(
                 "soru: ve cevap: satırlarını doldurup tekrar dene.",
                 "kb",
                 None,
+                None,
             )
         if outcome == "soru_stored":
             _emit_answer_engine_telemetry(
@@ -560,6 +567,7 @@ async def get_leylek_zeka_reply(
             return (
                 "Soruyu aldım patron. Şimdi cevabı gönder.",
                 "kb",
+                None,
                 None,
             )
         if outcome == "cevap_no_question":
@@ -574,6 +582,28 @@ async def get_leylek_zeka_reply(
                 "Önce soruyu gönder patron. Sonra cevabı kaydedeyim.",
                 "kb",
                 None,
+                None,
+            )
+
+    if admin_authenticated and is_admin_teaching_statement(text):
+        q_auto = rule_based_question_from_statement(text)
+        if q_auto:
+            extra = {
+                "learning_candidate": {"question": q_auto, "answer": text.strip()},
+                "requires_approval": True,
+            }
+            _emit_answer_engine_telemetry(
+                hit=False,
+                intent_id=None,
+                response_source="kb",
+                context=context,
+                user_message=text,
+            )
+            return (
+                "Patron bunu öğreneyim mi?",
+                "kb",
+                None,
+                extra,
             )
 
     kb_hit = generate_response(text)
@@ -587,7 +617,7 @@ async def get_leylek_zeka_reply(
                 context=context,
                 user_message=text,
             )
-            return kb_text, "kb", None
+            return kb_text, "kb", None, None
 
     flow_hit = _high_confidence_flow_reply(text)
     if flow_hit is not None:
@@ -598,7 +628,7 @@ async def get_leylek_zeka_reply(
             context=context,
             user_message=text,
         )
-        return flow_hit, "fallback", None
+        return flow_hit, "fallback", None, None
 
     resolved = try_resolve(text, context)
     if resolved is not None:
@@ -613,7 +643,7 @@ async def get_leylek_zeka_reply(
             context=context,
             user_message=text,
         )
-        return resolved["text"], "answer_engine", meta
+        return resolved["text"], "answer_engine", meta, None
 
     system_extra = _context_system_addon(context)
 
@@ -628,7 +658,7 @@ async def get_leylek_zeka_reply(
             context=context,
             user_message=text,
         )
-        return fallback_reply(text, context), "fallback", None
+        return fallback_reply(text, context), "fallback", None, None
 
     try:
         reply = await _call_openai(
@@ -644,7 +674,7 @@ async def get_leylek_zeka_reply(
             context=context,
             user_message=text,
         )
-        return reply, "openai", None
+        return reply, "openai", None, None
     except LeylekZekaError as e:
         logger.info("Leylek Zeka: OpenAI kullanılamadı (%s) — fallback", e)
         _emit_answer_engine_telemetry(
@@ -654,7 +684,7 @@ async def get_leylek_zeka_reply(
             context=context,
             user_message=text,
         )
-        return fallback_reply(text, context), "fallback", None
+        return fallback_reply(text, context), "fallback", None, None
 
 
 async def call_leylek_zeka(
@@ -662,9 +692,12 @@ async def call_leylek_zeka(
     user_message: str,
     history: list[dict[str, Any]] | None,
     context: dict[str, Any] | None = None,
-    is_admin: bool = False,
+    admin_authenticated: bool = False,
 ) -> str:
-    reply, _src, _meta = await get_leylek_zeka_reply(
-        user_message=user_message, history=history, context=context, is_admin=is_admin
+    reply, _src, _meta, _extra = await get_leylek_zeka_reply(
+        user_message=user_message,
+        history=history,
+        context=context,
+        admin_authenticated=admin_authenticated,
     )
     return reply

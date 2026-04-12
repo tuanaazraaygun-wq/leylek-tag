@@ -84,3 +84,9 @@ export function getLeylekZekaChatUrl(): string {
   const path = getLeylekZekaApiPath();
   return `${base}/api/${path}`;
 }
+
+/** Canlı öğrenme onayı — POST JSON { question, answer } + Authorization Bearer */
+export function getLeylekZekaApproveLearningUrl(): string {
+  const base = getLeylekZekaBackendBaseUrl();
+  return `${base}/api/ai/approve-learning`;
+}

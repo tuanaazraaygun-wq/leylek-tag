@@ -119,7 +119,17 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
   const pathname = usePathname();
   const segments = useSegments();
   const { homeFlowScreen, flowHint, leylekZekaChatOpen, setLeylekZekaChatOpen } = useLeylekZekaChrome();
-  const { messages, isTyping, error, sendMessage, clearError, lastReplySource } = useLeylekZeka();
+  const {
+    messages,
+    isTyping,
+    error,
+    sendMessage,
+    clearError,
+    lastReplySource,
+    pendingLearning,
+    approvePendingLearning,
+    cancelPendingLearning,
+  } = useLeylekZeka();
 
   const [reduceMotion, setReduceMotion] = useState(false);
   const [keyboardUp, setKeyboardUp] = useState(false);
@@ -769,6 +779,9 @@ const LeylekZekaWidget = memo(function LeylekZekaWidget() {
             onSend={sendMessage}
             onClearError={clearError}
             lastReplySource={lastReplySource}
+            pendingLearning={pendingLearning}
+            onApproveLearning={approvePendingLearning}
+            onCancelLearning={cancelPendingLearning}
           />
         </React.Suspense>
       ) : null}

@@ -26,7 +26,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, BorderRadius, Spacing } from '../constants/Colors';
-import { type LeylekZekaMessage, type LeylekZekaReplySource } from '../hooks/useLeylekZeka';
+import {
+  type LeylekZekaLearningCandidate,
+  type LeylekZekaMessage,
+  type LeylekZekaReplySource,
+} from '../hooks/useLeylekZeka';
 
 const BETA_HINT_KEY = 'leylek_zeka_beta_hint_dismissed_v1';
 const LOGO = require('../assets/images/logo.png');
@@ -61,6 +65,9 @@ type Props = {
   onSend: (text: string) => void;
   onClearError: () => void;
   lastReplySource: LeylekZekaReplySource | null;
+  pendingLearning?: LeylekZekaLearningCandidate | null;
+  onApproveLearning?: () => void;
+  onCancelLearning?: () => void;
 };
 
 const TypingBars = memo(function TypingBars() {
@@ -266,6 +273,9 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   onSend,
   onClearError,
   lastReplySource,
+  pendingLearning = null,
+  onApproveLearning,
+  onCancelLearning,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [input, setInput] = useState('');
@@ -704,6 +714,36 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
             </Pressable>
           ) : null}
 
+          {pendingLearning && onApproveLearning && onCancelLearning ? (
+            <View style={styles.learningApprovalBar} accessibilityRole="toolbar">
+              <Text style={styles.learningApprovalHint}>Patron onayı bekliyorum.</Text>
+              <View style={styles.learningApprovalRow}>
+                <Pressable
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    onApproveLearning();
+                  }}
+                  style={({ pressed }) => [styles.learningBtn, styles.learningBtnApprove, pressed && { opacity: 0.88 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Onayla"
+                >
+                  <Text style={styles.learningBtnText}>Onayla ✅</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    onCancelLearning();
+                  }}
+                  style={({ pressed }) => [styles.learningBtn, styles.learningBtnCancel, pressed && { opacity: 0.88 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="İptal"
+                >
+                  <Text style={styles.learningBtnTextDark}>İptal ❌</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.listWrap}>
             <FlatList
               ref={listRef}
@@ -1116,6 +1156,55 @@ const styles = StyleSheet.create({
   },
   betaDismiss: {
     paddingTop: 2,
+  },
+  learningApprovalBar: {
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: 'rgba(224, 242, 254, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  learningApprovalHint: {
+    fontFamily: DIGITAL_MONO,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#0f172a',
+    marginBottom: Spacing.sm,
+    fontWeight: '600',
+  },
+  learningApprovalRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  learningBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: BorderRadius.sm,
+    minWidth: 112,
+    alignItems: 'center',
+  },
+  learningBtnApprove: {
+    backgroundColor: '#2563EB',
+  },
+  learningBtnCancel: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.8)',
+  },
+  learningBtnText: {
+    fontFamily: DIGITAL_MONO,
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  learningBtnTextDark: {
+    fontFamily: DIGITAL_MONO,
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 12,
   },
   errorBanner: {
     backgroundColor: '#FFEBEE',

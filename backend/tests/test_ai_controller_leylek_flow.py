@@ -59,13 +59,14 @@ def test_get_leylek_flow_when_engine_disabled(monkeypatch: pytest.MonkeyPatch) -
 
     async def _run() -> None:
         with patch.object(ai_controller, "try_resolve", return_value=None):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, extra = await ai_controller.get_leylek_zeka_reply(
                 user_message="Eşleşme nasıl çalışır?",
                 history=[],
                 context=None,
             )
         assert source == "fallback"
         assert meta is None
+        assert extra is None
         assert isinstance(reply, str) and len(reply) > 20
         assert "Sistem trafik" in reply
 
@@ -79,13 +80,14 @@ def test_get_leylek_eslesme_canonical_before_answer_engine(monkeypatch: pytest.M
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     async def _run() -> None:
-        reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+        reply, source, meta, extra = await ai_controller.get_leylek_zeka_reply(
             user_message="Eşleşme nasıl çalışır?",
             history=[],
             context=None,
         )
         assert source == "fallback"
         assert meta is None
+        assert extra is None
         assert reply == ai_controller._ESLESME_VE_ROL
         assert "3.\tYolcu teklifini gönderir." in reply
 
@@ -99,13 +101,14 @@ def test_get_leylek_generic_fallback_no_engine_no_openai(monkeypatch: pytest.Mon
 
     async def _run() -> None:
         with patch.object(ai_controller, "try_resolve", return_value=None):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, extra = await ai_controller.get_leylek_zeka_reply(
                 user_message="__leylek_unique_nohit_xyz_99123__",
                 history=[],
                 context=None,
             )
         assert source == "fallback"
         assert meta is None
+        assert extra is None
         assert isinstance(reply, str) and len(reply) > 5
 
     asyncio.run(_run())
@@ -145,13 +148,14 @@ def test_get_leylek_openai_success_source_openai(monkeypatch: pytest.MonkeyPatch
             patch.object(ai_controller, "try_resolve", return_value=None),
             patch.object(ai_controller, "_call_openai", new=fake_openai),
         ):
-            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+            reply, source, meta, extra = await ai_controller.get_leylek_zeka_reply(
                 user_message="__leylek_unique_nohit_xyz_openai_src__",
                 history=[],
                 context=None,
             )
         assert source == "openai"
         assert meta is None
+        assert extra is None
         assert reply == "Merhaba, OpenAI."
 
     asyncio.run(_run())
@@ -170,3 +174,42 @@ def test_extract_openai_text_sample() -> None:
         ]
     }
     assert _extract_openai_text(sample) == "Merhaba"
+
+
+def test_admin_live_learning_candidate_requires_approval() -> None:
+    from controllers import ai_controller
+
+    async def _run() -> None:
+        reply, source, meta, extra = await ai_controller.get_leylek_zeka_reply(
+            user_message="LeylekTag taşıma değildir, paylaşımlı yolculuk platformudur.",
+            history=[],
+            context=None,
+            admin_authenticated=True,
+        )
+        assert source == "kb"
+        assert meta is None
+        assert extra is not None
+        assert extra.get("requires_approval") is True
+        assert "öğreneyim" in (reply or "").lower()
+        cand = extra.get("learning_candidate") or {}
+        assert "question" in cand and "answer" in cand
+        assert "taşıma" in cand["answer"].lower() or "tasima" in cand["answer"].lower()
+
+    asyncio.run(_run())
+
+
+def test_non_admin_no_learning_candidate_on_same_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    from controllers import ai_controller
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    async def _run() -> None:
+        reply, source, meta, extra = await ai_controller.get_leylek_zeka_reply(
+            user_message="LeylekTag taşıma değildir, paylaşımlı yolculuk platformudur.",
+            history=[],
+            context=None,
+            admin_authenticated=False,
+        )
+        assert extra is None
+
+    asyncio.run(_run())
