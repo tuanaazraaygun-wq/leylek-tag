@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useSegments } from 'expo-router';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 import { getLeylekZekaChatUrl } from '../lib/backendConfig';
 
@@ -8,15 +9,15 @@ export type LeylekZekaMessage = {
   text: string;
 };
 
-export type LeylekZekaReplySource = 'openai' | 'fallback' | 'answer_engine';
+export type LeylekZekaReplySource = 'openai' | 'fallback' | 'answer_engine' | 'kb';
 
 const LEYLEK_ZEKA_FETCH_TIMEOUT_MS = 28_000;
 
 function normalizeReplySource(raw: string | undefined): LeylekZekaReplySource {
-  if (raw === 'openai' || raw === 'answer_engine' || raw === 'fallback') {
+  if (raw === 'openai' || raw === 'answer_engine' || raw === 'fallback' || raw === 'kb') {
     return raw;
   }
-  // Eski backend uyumu: LLM yanıtı "claude" etiketiyle geliyordu; gerçek sağlayıcı OpenAI idi.
+  // Eski backend uyumu: LLM yanıtı "claude" etiketiyle geliyordu; gerçek sağlayıcı Leylek AI idi.
   if (raw === 'claude') {
     return 'openai';
   }
@@ -44,7 +45,9 @@ function buildHistory(prev: LeylekZekaMessage[]): HistoryItem[] {
   return prev.map((m) => ({ role: m.role, content: m.text }));
 }
 
-export function useLeylekZeka() {
+export function useLeylekZeka(options?: { isAdmin?: boolean }) {
+  const segments = useSegments();
+  const isAdminUser = options?.isAdmin === true || segments[0] === 'admin';
   const { homeFlowScreen, flowHint } = useLeylekZekaChrome();
 
   const leylekContext = useMemo(() => {
@@ -77,20 +80,20 @@ export function useLeylekZeka() {
   const clearError = useCallback(() => setError(null), []);
 
   const sendMessage = useCallback(async (raw: string) => {
-    const text = raw.trim();
-    if (!text || inFlightRef.current) return;
+    const text = isAdminUser && raw.trim() === '' ? '' : raw.trim();
+    if ((!text && !isAdminUser) || inFlightRef.current) return;
     inFlightRef.current = true;
 
     const userMsg: LeylekZekaMessage = {
       id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
-      text,
+      text: text || raw,
     };
 
     let historyPayload: HistoryItem[] = [];
     setMessages((prev) => {
       historyPayload = buildHistory(prev);
-      return [...prev, userMsg];
+      return text ? [...prev, userMsg] : prev;
     });
 
     setError(null);
@@ -103,12 +106,13 @@ export function useLeylekZeka() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), LEYLEK_ZEKA_FETCH_TIMEOUT_MS);
     try {
+      const payload: Record<string, unknown> = { message, history };
+      if (leylekContext) payload.context = leylekContext;
+      if (isAdminUser) payload.is_admin = true;
       const res = await fetch(chatUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          leylekContext ? { message, history, context: leylekContext } : { message, history },
-        ),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
@@ -127,7 +131,7 @@ export function useLeylekZeka() {
       if (!res.ok) {
         if (res.status === 404) {
           setError(
-            'Leylek Zeka servisi bulunamadı (404). Sunucu adresi veya endpoint (ör. /api/ai/chat) kontrol edilmeli.',
+            'Leylek Zeka servisi bulunamadı (404). Sunucu adresi veya endpoint (ör. /api/ai/leylekzeka) kontrol edilmeli.',
           );
           return;
         }
@@ -177,7 +181,7 @@ export function useLeylekZeka() {
       setIsTyping(false);
       inFlightRef.current = false;
     }
-  }, [leylekContext]);
+  }, [leylekContext, isAdminUser]);
 
   return { messages, isTyping, error, sendMessage, clearError, lastReplySource };
 }

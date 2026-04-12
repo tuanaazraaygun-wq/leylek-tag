@@ -406,7 +406,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   }, [visible]);
 
   useEffect(() => {
-    if (lastReplySource !== 'openai') return;
+    if (lastReplySource !== 'openai' && lastReplySource !== 'kb') return;
     void AsyncStorage.setItem(BETA_HINT_KEY, '1').catch(() => {});
     setShowBetaHint(false);
   }, [lastReplySource]);
@@ -551,8 +551,8 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
   const modeCaption =
     lastReplySource === 'fallback'
       ? 'Hazır yanıtlarla destekleniyorsunuz.'
-      : lastReplySource === 'openai'
-        ? 'Yapay zeka yanıtı (OpenAI).'
+      : lastReplySource === 'openai' || lastReplySource === 'kb'
+        ? 'Yapay zeka yanıtı (Leylek AI).'
         : lastReplySource === 'answer_engine'
           ? 'Resmi adım adım yanıt.'
           : null;

@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
+import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system';
 import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
@@ -15,6 +16,8 @@ import QRTripEndModal from '../components/QRTripEndModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
+import { RoleSelectLeylekAIFloating } from '../screens/RoleSelectScreen';
+import { DriverWaitingLeylekAIFloating } from '../screens/DriverWaitingScreen';
 import CallScreenV2 from '../components/CallScreenV2';
 import { agoraVoiceService } from '../services/agoraVoiceService';
 import { agoraUidFromUserId } from '../lib/agoraUid';
@@ -59,6 +62,7 @@ import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/of
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { playMatchChimeSound } from '../utils/sound';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
+import { useTrust } from '../contexts/TrustContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -342,6 +346,16 @@ export default function App() {
   const insets = useSafeAreaInsets();
   const loginLayout = useLoginAuthLayout();
   const leylekChrome = useLeylekZekaChrome();
+  const openLeylekZekaChat = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* ignore */
+      }
+    }
+    leylekChrome.setLeylekZekaChatOpen(true);
+  }, [leylekChrome]);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<AppScreen>('login');
@@ -442,7 +456,7 @@ export default function App() {
       roleSelectBannerShimmer.setValue(1);
     };
   }, [roleSelectTripExitBanner, roleSelectBannerShimmer]);
-  
+
   // GPS & Map states
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [locationPermission, setLocationPermission] = useState(false);
@@ -2601,36 +2615,13 @@ export default function App() {
                     </Text>
                   </TouchableOpacity>
                 </View>
-
-                <View style={styles.roleLeylekZekaRow}>
-                  <TouchableOpacity
-                    style={styles.roleLeylekZekaBtn}
-                    onPress={() => {
-                      roleScreenHaptic();
-                      leylekChrome.setLeylekZekaChatOpen(true);
-                    }}
-                    activeOpacity={0.88}
-                    accessibilityRole="button"
-                    accessibilityLabel="Leylek Zeka"
-                  >
-                    <Image
-                      source={require('../assets/images/logo.png')}
-                      style={styles.roleLeylekZekaLogo}
-                      resizeMode="contain"
-                    />
-                    <View style={styles.roleLeylekZekaTextCol}>
-                      <Text style={styles.roleLeylekZekaTitle}>Leylek Zeka</Text>
-                      <Text style={styles.roleLeylekZekaSub}>Sorularınız için dokunun</Text>
-                    </View>
-                    <Ionicons name="chatbubble-ellipses-outline" size={22} color="#2563EB" />
-                  </TouchableOpacity>
-                </View>
               </View>
             )}
           </View>
 
           {/* Devam Et + Leylek Muhabbeti — altta, arka plandaki görsel daha görünür kalsın */}
           <View style={styles.roleBottomFooterColumn}>
+            <RoleSelectLeylekAIFloating />
             <TouchableOpacity
               style={[
                 styles.roleContinueBtnLarge,
@@ -2671,6 +2662,29 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+
+        <Pressable
+          style={[
+            styles.roleLzFab,
+            {
+              bottom: 24 + insets.bottom,
+              left: 16 + insets.left,
+            },
+          ]}
+          onPress={openLeylekZekaChat}
+          accessibilityRole="button"
+          accessibilityLabel="Leylek Zeka yapay zeka desteği"
+        >
+          <LinearGradient
+            colors={['#22D3EE', '#3FA9F5', '#6366F1', '#8B5CF6']}
+            locations={[0, 0.35, 0.65, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.roleLzFabGrad}
+          >
+            <Ionicons name="sparkles" size={28} color="#FFF" />
+          </LinearGradient>
+        </Pressable>
         
         {/* Admin Panel Modal */}
         {isAdmin && (
@@ -5357,6 +5371,7 @@ function PassengerDashboard({
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
 }) {
+  const { requestTrust } = useTrust();
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -5760,6 +5775,16 @@ function PassengerDashboard({
   const offers = [...realtimeOffers].sort((a, b) => (a.price || 0) - (b.price || 0));
 
   const leylekChromePassenger = useLeylekZekaChrome();
+  const openLeylekZekaFromMap = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* ignore */
+      }
+    }
+    leylekChromePassenger.setLeylekZekaChatOpen(true);
+  }, [leylekChromePassenger]);
   useEffect(() => {
     if (!activeTag) {
       leylekChromePassenger.setFlowHint('passenger_home');
@@ -7800,10 +7825,15 @@ function PassengerDashboard({
                   onCall={async (type) => {
                     await startTripCallAsPassenger(type);
                   }}
+                  onTrustRequest={() => {
+                    if (activeTag?.id) void requestTrust(activeTag.id);
+                  }}
+                  trustRequestLabel="Sürücüden Güven Al"
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
                     setPassengerChatVisible(true);
                   }}
+                  onOpenLeylekZekaSupport={openLeylekZekaFromMap}
                   onRequestTripEnd={async () => {
                     // Karşılıklı iptal isteği gönder - YOLCU
                     try {
@@ -8476,6 +8506,7 @@ interface DriverDashboardProps {
 }
 
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
+  const { requestTrust } = useTrust();
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
@@ -9701,6 +9732,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [offerSent, setOfferSent] = useState(false); // Teklif gönderildi mi?
 
   const leylekChromeDriver = useLeylekZekaChrome();
+  const openLeylekZekaFromMapDriver = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      try {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* ignore */
+      }
+    }
+    leylekChromeDriver.setLeylekZekaChatOpen(true);
+  }, [leylekChromeDriver]);
   const driverTripActiveForHint = !!(
     activeTag &&
     (activeTag.status === 'matched' || activeTag.status === 'in_progress')
@@ -10052,7 +10093,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               />
             </View>
           </SafeAreaView>
-          <View style={{ flex: 1, minHeight: 0 }}>
+          <View style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            <DriverWaitingLeylekAIFloating
+              profileCity={user?.city}
+              addressContext={
+                (requests[0]?.pickup_location as string | undefined) ||
+                (requests[0]?.passenger_address as string | undefined) ||
+                null
+              }
+            />
             <DriverOfferScreen
               embedded
               vehicleKind={driverVehicleKind}
@@ -10289,10 +10338,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             onCall={async (type) => {
               await startTripCallAsDriver(type);
             }}
+            onTrustRequest={() => {
+              if (activeTag?.id) void requestTrust(activeTag.id);
+            }}
+            trustRequestLabel="Yolcudan Güven Al"
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
               setDriverChatVisible(true);
             }}
+            onOpenLeylekZekaSupport={openLeylekZekaFromMapDriver}
             onForceEnd={async () => {
               // 🔥 API İLE ANINDA BİTİR - Önce veritabanı güncellenir
               console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
@@ -14476,8 +14530,9 @@ const styles = StyleSheet.create({
   },
   roleBottomFooterColumn: {
     paddingHorizontal: 14,
-    paddingTop: 4,
-    paddingBottom: Platform.OS === 'ios' ? 26 : 20,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 18,
+    gap: 0,
   },
   roleCardsRow: {
     flexDirection: 'row',
@@ -14567,54 +14622,29 @@ const styles = StyleSheet.create({
   roleVehicleChipTextActive: {
     color: '#FFF',
   },
-  roleLeylekZekaRow: {
-    width: '100%',
-    marginTop: 14,
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
-  roleLeylekZekaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    width: '100%',
-    maxWidth: 400,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    borderWidth: 2,
-    borderColor: 'rgba(63, 169, 245, 0.5)',
+  /** Leylek Zeka — yüzen yuvarlak AI (ImageBackground üzerinde) */
+  roleLzFab: {
+    position: 'absolute',
+    zIndex: 999,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: '#0c4a6e',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 12,
       },
-      android: { elevation: 4 },
+      android: { elevation: 10 },
     }),
   },
-  roleLeylekZekaLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-  },
-  roleLeylekZekaTextCol: {
-    flex: 1,
-    minWidth: 0,
-  },
-  roleLeylekZekaTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0c4a6e',
-  },
-  roleLeylekZekaSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 2,
+  roleLzFabGrad: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   roleCardLabel: {
     fontSize: 18,

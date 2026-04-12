@@ -22,10 +22,12 @@ import {
   Modal,
   Image,
 } from 'react-native';
+import { getPassengerMarkerImage, getDriverMarkerImage } from '../lib/mapNavMarkers';
+import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // react-native-maps
 let MapView: any = null;
@@ -47,8 +49,39 @@ if (Platform.OS !== 'web') {
 
 import { API_BASE_URL } from '../lib/backendConfig';
 import { displayFirstName } from '../lib/displayName';
+import LeylekAIFloating from './LeylekAIFloating';
 
 const API_URL = API_BASE_URL;
+
+/** Android: Marker içi Image bazen collapsable yüzünden 0×0 kalır — DriverOfferScreen ile aynı sarmalayıcı. */
+function MarkerPinWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <View
+      collapsable={false}
+      pointerEvents="none"
+      style={{ alignItems: 'center', justifyContent: 'center' }}
+    >
+      {children}
+    </View>
+  );
+}
+
+function parseMarkerCoord(
+  lat: unknown,
+  lng: unknown,
+): { latitude: number; longitude: number } | null {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+}
+
+/** Bekleme haritası: MARKER_PIXEL ile aynı hedef boyutlar (harita ölçeği). */
+const WAIT_MAP_PIN = {
+  passenger: 30,
+  car: 32,
+  motor: 28,
+} as const;
 
 export interface NearbyDriver {
   id: string;
@@ -58,6 +91,7 @@ export interface NearbyDriver {
   rating?: number;
   vehicle?: string;
   distance_km?: number;
+  vehicle_kind?: 'car' | 'motorcycle';
 }
 
 interface DispatchStatus {
@@ -78,20 +112,10 @@ interface Props {
   onMatch: (driverData: any) => void;
   /** Yolcu araç/motor tercihi — yakındaki sürücü sayısı dispatch ile aynı filtreyi kullanır */
   passengerVehicleKind?: 'car' | 'motorcycle';
+  /** Harita: yolcu kendi pini (kadın/erkek PNG) */
+  passengerGender?: 'female' | 'male' | null;
+  selfUserId?: string | null;
 }
-
-// Koyu harita stili
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
 
 export default function PassengerWaitingScreen({
   userLocation,
@@ -103,6 +127,8 @@ export default function PassengerWaitingScreen({
   onCancel,
   onMatch,
   passengerVehicleKind = 'car',
+  passengerGender = null,
+  selfUserId = null,
 }: Props) {
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
   const [nearbyDriverCount, setNearbyDriverCount] = useState(0);
@@ -117,44 +143,14 @@ export default function PassengerWaitingScreen({
   const [showDriverProfile, setShowDriverProfile] = useState(false);
   
   const mapRef = useRef<any>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pulseOpacity = useRef(new Animated.Value(0.6)).current;
   const dotScale = useRef(new Animated.Value(1)).current;
-  
-  // Zonklama animasyonu
+  /** Android: özel marker görünümü ilk karede çizilsin */
+  const [waitingMapTracks, setWaitingMapTracks] = useState(true);
   useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(pulseAnim, {
-            toValue: 1.5,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseOpacity, {
-            toValue: 0,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseOpacity, {
-            toValue: 0.6,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
+    const t = setTimeout(() => setWaitingMapTracks(false), 2200);
+    return () => clearTimeout(t);
   }, []);
-  
+
   // Nokta animasyonu
   useEffect(() => {
     const dotPulse = Animated.loop(
@@ -300,18 +296,20 @@ export default function PassengerWaitingScreen({
     return `${nearbyDriverCount} sürücü 20 km içinde`;
   };
 
+  const destinationMarkerCoord = destinationLocation
+    ? parseMarkerCoord(destinationLocation.latitude, destinationLocation.longitude)
+    : null;
+
   return (
     <View style={styles.container}>
-      {/* Gradient Arka Plan */}
       <LinearGradient
-        colors={['#0a1628', '#1a365d', '#2d4a6f']}
+        colors={['#F8FAFC', '#EFF6FF', '#DBEAFE', '#E0F2FE']}
         style={StyleSheet.absoluteFillObject}
       />
       
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {}} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={28} color="#60a5fa" />
+          <Ionicons name="chevron-back" size={28} color="#3FA9F5" />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
@@ -323,16 +321,20 @@ export default function PassengerWaitingScreen({
         </View>
         
         <TouchableOpacity onPress={onCancel} style={styles.cancelButton}>
-          <Ionicons name="close" size={28} color="#ef4444" />
+          <Ionicons name="close" size={28} color="#DC2626" />
         </TouchableOpacity>
       </View>
       
-      {/* Harita */}
+      {/* Harita — GMS yoksa MapView mount edilmez (Huawei çökme önlemi) */}
       <View style={styles.mapContainer}>
-        {MapView && userLocation ? (
+        <LeylekAIFloating
+          position="top-left"
+          message="Teklif sürecini hızlandırmak için Leylek'ten öneri alabilirsin."
+        />
+        {MapView && userLocation && isNativeGoogleMapsSupported() ? (
           <MapView
             ref={mapRef}
-            style={styles.map}
+            style={[styles.map, { zIndex: 2 }]}
             provider={PROVIDER_GOOGLE}
             initialRegion={{
               latitude: userLocation.latitude,
@@ -340,7 +342,6 @@ export default function PassengerWaitingScreen({
               latitudeDelta: 0.15,
               longitudeDelta: 0.15,
             }}
-            customMapStyle={darkMapStyle}
             showsUserLocation={false}
             showsCompass={false}
             showsScale={false}
@@ -365,56 +366,81 @@ export default function PassengerWaitingScreen({
               strokeWidth={1}
             />
             
-            {/* Kullanıcı konumu */}
-            <Marker coordinate={userLocation}>
-              <View style={styles.userMarker}>
-                <View style={styles.userMarkerInner}>
-                  <Ionicons name="person" size={16} color="#fff" />
-                </View>
-              </View>
+            {/* Yolcu — kadın/erkek PNG (sürücü ekranındaki yolcu pini ile aynı kaynak) */}
+            <Marker
+              coordinate={userLocation}
+              anchor={{ x: 0.5, y: 1 }}
+              flat={false}
+              tracksViewChanges={waitingMapTracks}
+              zIndex={5000}
+            >
+              <MarkerPinWrap>
+                <Image
+                  source={getPassengerMarkerImage(passengerGender ?? null, selfUserId)}
+                  style={{
+                    width: WAIT_MAP_PIN.passenger,
+                    height: WAIT_MAP_PIN.passenger,
+                  }}
+                  resizeMode="contain"
+                />
+              </MarkerPinWrap>
             </Marker>
             
             {/* Hedef konumu */}
-            {destinationLocation && (
-              <Marker coordinate={destinationLocation}>
-                <View style={styles.destinationMarker}>
-                  <Ionicons name="flag" size={18} color="#fff" />
-                </View>
-              </Marker>
-            )}
-            
-            {/* Yakındaki sürücüler */}
-            {nearbyDrivers.map((driver, index) => (
+            {destinationMarkerCoord ? (
               <Marker
-                key={driver.id || index}
-                coordinate={{ latitude: driver.latitude, longitude: driver.longitude }}
-                onPress={() => handleDriverPress(driver)}
+                coordinate={destinationMarkerCoord}
+                zIndex={4500}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={waitingMapTracks}
               >
-                <TouchableOpacity style={styles.driverMarker}>
-                  <Ionicons name="car-sport" size={18} color="#fff" />
-                </TouchableOpacity>
+                <MarkerPinWrap>
+                  <View style={styles.destinationMarker}>
+                    <Ionicons name="flag" size={13} color="#fff" />
+                  </View>
+                </MarkerPinWrap>
               </Marker>
-            ))}
+            ) : null}
+            
+            {/* Yakındaki sürücüler — araç/motor PNG (repo’da car+motor seti; cinsiyet ayrı asset yok) */}
+            {nearbyDrivers.map((driver, index) => {
+              const coord = parseMarkerCoord(driver.latitude, driver.longitude);
+              if (!coord) return null;
+              const isM = driver.vehicle_kind === 'motorcycle';
+              const src = getDriverMarkerImage(isM ? 'motorcycle' : 'car');
+              const px = isM ? WAIT_MAP_PIN.motor : WAIT_MAP_PIN.car;
+              return (
+                <Marker
+                  key={driver.id || String(index)}
+                  coordinate={coord}
+                  onPress={() => handleDriverPress(driver)}
+                  anchor={{ x: 0.5, y: 1 }}
+                  flat={false}
+                  tracksViewChanges={waitingMapTracks}
+                  zIndex={4000 + (index % 40)}
+                >
+                  <MarkerPinWrap>
+                    <Image source={src} style={{ width: px, height: px }} resizeMode="contain" />
+                  </MarkerPinWrap>
+                </Marker>
+              );
+            })}
           </MapView>
         ) : (
           <View style={styles.mapPlaceholder}>
             <Ionicons name="map" size={48} color="#60a5fa" />
-            <Text style={styles.mapPlaceholderText}>Harita yükleniyor...</Text>
+            <Text style={styles.mapPlaceholderText}>
+              {userLocation && !isNativeGoogleMapsSupported()
+                ? 'Bu cihazda harita kapalı; eşleşme ve sürücü listesi normal çalışır.'
+                : 'Harita yükleniyor...'}
+            </Text>
+            {userLocation && !isNativeGoogleMapsSupported() && nearbyDrivers.length > 0 ? (
+              <Text style={styles.mapPlaceholderSub}>
+                {nearbyDrivers.length} sürücü yakınınızda
+              </Text>
+            ) : null}
           </View>
         )}
-        
-        {/* Zonklama Efekti Overlay */}
-        <View style={styles.pulseOverlay} pointerEvents="none">
-          <Animated.View
-            style={[
-              styles.pulseCircle,
-              {
-                transform: [{ scale: pulseAnim }],
-                opacity: pulseOpacity,
-              },
-            ]}
-          />
-        </View>
         
         {/* Sürücü Sayısı Badge */}
         <View style={styles.driverCountBadge}>
@@ -449,7 +475,7 @@ export default function PassengerWaitingScreen({
         </View>
         
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-outline" size={18} color="#60a5fa" />
+          <Ionicons name="share-outline" size={18} color="#2563EB" />
           <Text style={styles.shareButtonText}>Paylaş</Text>
         </TouchableOpacity>
       </View>
@@ -552,7 +578,7 @@ export default function PassengerWaitingScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a1628',
+    backgroundColor: '#F0F9FF',
   },
   
   // Header
@@ -568,7 +594,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(96, 165, 250, 0.15)',
+    backgroundColor: 'rgba(63, 169, 245, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -577,32 +603,37 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: '800',
+    color: '#0F172A',
   },
   headerSubtitle: {
     fontSize: 13,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '600',
+    color: '#64748B',
     marginTop: 2,
   },
   priceTag: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#10B981',
     paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 20,
-    marginTop: 4,
+    marginTop: 6,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
   priceText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#fff',
   },
   cancelButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -614,6 +645,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(63, 169, 245, 0.25)',
+    shadowColor: '#3FA9F5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
   map: {
     ...StyleSheet.absoluteFillObject,
@@ -622,13 +660,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1e3a5f',
+    backgroundColor: '#E2E8F0',
   },
   mapPlaceholderText: {
-    color: '#60a5fa',
+    color: '#3FA9F5',
     marginTop: 8,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
-  
+  mapPlaceholderSub: {
+    color: '#64748B',
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   // Zonklama
   pulseOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -640,7 +687,7 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 3,
-    borderColor: '#60a5fa',
+    borderColor: 'rgba(63, 169, 245, 0.65)',
     backgroundColor: 'transparent',
   },
   
@@ -664,9 +711,9 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
   },
   destinationMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#ef4444',
     justifyContent: 'center',
     alignItems: 'center',
@@ -718,11 +765,16 @@ const styles = StyleSheet.create({
   locationCard: {
     marginHorizontal: 16,
     marginTop: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(63, 169, 245, 0.2)',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   locationRow: {
     flexDirection: 'row',
@@ -741,7 +793,8 @@ const styles = StyleSheet.create({
   locationText: {
     flex: 1,
     fontSize: 14,
-    color: '#fff',
+    color: '#1E293B',
+    fontWeight: '600',
     marginLeft: 12,
   },
   locationDivider: {
@@ -751,7 +804,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     width: 2,
     height: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(148, 163, 184, 0.45)',
     marginLeft: 5,
   },
   shareButton: {
@@ -760,14 +813,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12,
     paddingVertical: 10,
-    backgroundColor: 'rgba(96, 165, 250, 0.15)',
+    backgroundColor: 'rgba(63, 169, 245, 0.12)',
     borderRadius: 10,
     gap: 6,
   },
   shareButtonText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#60a5fa',
+    fontWeight: '700',
+    color: '#2563EB',
   },
   
   // Durum Paneli
@@ -783,16 +836,16 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: 'rgba(96, 165, 250, 0.2)',
+    backgroundColor: 'rgba(63, 169, 245, 0.14)',
     borderWidth: 3,
-    borderColor: '#60a5fa',
+    borderColor: '#3FA9F5',
     justifyContent: 'center',
     alignItems: 'center',
   },
   countdownNumber: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#60a5fa',
+    color: '#2563EB',
   },
   loadingContainer: {
     marginBottom: 16,
@@ -805,7 +858,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#60a5fa',
+    backgroundColor: '#3FA9F5',
   },
   loadingDotDelay1: {
     opacity: 0.6,
@@ -815,13 +868,14 @@ const styles = StyleSheet.create({
   },
   statusTitle: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: '800',
+    color: '#0F172A',
     textAlign: 'center',
   },
   statusSubtitle: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '600',
+    color: '#64748B',
     marginTop: 6,
     textAlign: 'center',
   },
@@ -839,8 +893,8 @@ const styles = StyleSheet.create({
   },
   dispatchBadgeText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#f97316',
+    fontWeight: '700',
+    color: '#C2410C',
   },
   
   // İptal Butonu
@@ -849,16 +903,16 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     marginBottom: Platform.OS === 'ios' ? 40 : 24,
     paddingVertical: 16,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(254, 226, 226, 0.95)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(239, 68, 68, 0.35)',
     alignItems: 'center',
   },
   cancelTagButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#ef4444',
+    fontWeight: '700',
+    color: '#DC2626',
   },
   
   // Modal

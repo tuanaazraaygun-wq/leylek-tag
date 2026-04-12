@@ -52,7 +52,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
-      "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.RECORD_AUDIO",
@@ -152,7 +152,7 @@
     "extra": {
       "router": {},
       "backendUrl": "https://api.leylektag.com",
-      "leylekZekaPath": "ai/chat",
+      "leylekZekaPath": "ai/leylekzeka",
       "eas": {
         "projectId": "08db7f23-ccd6-4e54-a2ce-5ab599335d0c"
       }
