@@ -22,8 +22,8 @@ def test_high_confidence_eslesme_nasil() -> None:
     r = ai_controller._high_confidence_flow_reply("Eşleşme nasıl çalışır?")
     assert r is not None
     assert r == ai_controller._ESLESME_VE_ROL
-    assert r.count("Yakındaki") == 1
-    assert "eşleşme olur" not in r.lower()
+    assert "2.\tSistem trafik" in r
+    assert "yolcu teklifini" in r.lower() or "yolcu teklif" in r.lower()
 
 
 def test_high_confidence_kim_teklif() -> None:
@@ -40,7 +40,7 @@ def test_high_confidence_kim_kabul() -> None:
 
     r = _high_confidence_flow_reply("Eşleşmeyi kim kabul eder?")
     assert r is not None
-    assert "yolcu" in r.lower()
+    assert "sürücü" in r.lower()
 
 
 def test_fallback_surucu_kabul_not_passenger_offer() -> None:
@@ -67,7 +67,7 @@ def test_get_leylek_flow_when_engine_disabled(monkeypatch: pytest.MonkeyPatch) -
         assert source == "fallback"
         assert meta is None
         assert isinstance(reply, str) and len(reply) > 20
-        assert "Yakındaki" in reply
+        assert "Sistem trafik" in reply
 
     asyncio.run(_run())
 
@@ -87,7 +87,7 @@ def test_get_leylek_eslesme_canonical_before_answer_engine(monkeypatch: pytest.M
         assert source == "fallback"
         assert meta is None
         assert reply == ai_controller._ESLESME_VE_ROL
-        assert "2.\tYakındaki sürücüler bu talebi görür." in reply
+        assert "3.\tYolcu teklifini gönderir." in reply
 
     asyncio.run(_run())
 
@@ -128,7 +128,7 @@ def test_route_post_leylekzeka_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
     data = res.json()
     assert data.get("success") is True
     assert data.get("source") == "fallback"
-    assert "2.\tYakındaki sürücüler bu talebi görür." in data.get("reply", "")
+    assert "5.\tBir sürücü teklifi kabul ederse eşleşme oluşur." in data.get("reply", "")
 
 
 def test_get_leylek_openai_success_source_openai(monkeypatch: pytest.MonkeyPatch) -> None:

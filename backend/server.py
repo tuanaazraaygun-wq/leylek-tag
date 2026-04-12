@@ -62,6 +62,7 @@ from route_service import get_route_cached
 import trust_service as _trust_service
 from routes.admin_ai import router as admin_ai_router
 from routes.admin_answer_engine import router as admin_answer_engine_router
+from routes.admin_leylek_zeka_train import router as admin_leylek_zeka_train_router
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -2429,6 +2430,7 @@ fastapi_app = FastAPI(title="Leylek TAG API - Supabase", version="3.0.0")
 app = fastapi_app
 app.include_router(admin_ai_router, prefix="/api")
 app.include_router(admin_answer_engine_router, prefix="/api")
+app.include_router(admin_leylek_zeka_train_router, prefix="/api")
 
 api_router = APIRouter(prefix="/api")
 

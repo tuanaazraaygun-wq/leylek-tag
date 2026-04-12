@@ -15,6 +15,8 @@ import httpx
 
 from services.answer_engine import try_resolve
 from services.answer_engine.telemetry import emit_answer_engine_resolution
+from services.leylek_zeka_response_engine import generate_response
+from services.leylek_zeka_training_engine import process_admin_message
 
 logger = logging.getLogger("server")
 
@@ -25,7 +27,7 @@ REQUEST_TIMEOUT_SEC = 20.0
 RATE_LIMIT_SEC = 5.0
 
 # Leylek Zeka kullanıcı sohbeti: yalnızca OpenAI (OPENAI_API_KEY). Kaynak etiketi gerçeği yansıtır.
-Source = Literal["openai", "fallback", "answer_engine"]
+Source = Literal["openai", "fallback", "answer_engine", "kb"]
 
 
 def _emit_answer_engine_telemetry(
@@ -55,23 +57,35 @@ class AnswerEngineMeta(TypedDict):
     deterministic: Literal[True]
 
 
-# Tek kaynak: system prompt + eşleşme/teklif/rol ile ilgili fallback’lerde aynı metin (1–4 tekrarlanmaz).
+# Tek kaynak: system prompt + eşleşme/teklif/rol ile ilgili fallback’lerde aynı metin (tekrar etme).
 _ESLESME_AKISI_CANONICAL = (
     "Eşleşme şu şekilde çalışır:\n"
-    "1.\tYolcu talep oluşturur.\n"
-    "2.\tYakındaki sürücüler bu talebi görür.\n"
-    "3.\tSürücü teklif gönderir.\n"
-    "4.\tYolcu teklifi kabul ederse eşleşme gerçekleşir."
+    "1.\tYolcu yolculuk talebi oluşturur.\n"
+    "2.\tSistem trafik, yoğunluk vb. verilere göre öneri veya alt limit sunar.\n"
+    "3.\tYolcu teklifini gönderir.\n"
+    "4.\tSürücüler bu teklifi görür.\n"
+    "5.\tBir sürücü teklifi kabul ederse eşleşme oluşur."
 )
 _ROL_KURAL_TEK = (
-    "Yolcu teklif göndermez. Sürücü teklif gönderir; eşleşmeyi yolcu bir teklifi kabul ederek tamamlar."
+    "Kısa kural: Yolcu teklifini gönderir; sürücüler görür ve biri yolcu teklifini kabul ederse eşleşme tamamlanır."
 )
 _ESLESME_VE_ROL = _ESLESME_AKISI_CANONICAL + "\n\n" + _ROL_KURAL_TEK
 
+LEYLEK_ZEKA_OFFICIAL_BLURB = (
+    "LeylekTag, yolcu ile sürücüyü teklif bazlı paylaşımlı yolculuk eşleştirmesi için bir platformdur. "
+    "Yolcu teklifini gönderir; sürücüler teklifi görür ve biri kabul edince eşleşme oluşur."
+)
+
 LEYLEK_ZEKA_SYSTEM = (
-    "Sen LeylekTag asistanı Leylek Zeka'sın. Türkçe, kısa, net; ücret veya ekran adı uydurma.\n"
-    "Eşleşme veya roller hakkında soruda yalnızca aşağıdaki metni kullan; başka sıra veya ifade ekleme.\n\n"
+    "Sen LeylekTag asistanı Leylek Zeka'sın. "
+    "LeylekTag paylaşımlı yolculuk eşleştirme platformudur; yolcu ile sürücüyü teklif bazlı eşleştirir. "
+    "Türkçe, kısa, net; ücret veya ekran adı uydurma.\n"
+    "Asla kullanma: taşıma hizmeti; sürücü teklif verir; yolcu sürücü teklifini kabul eder.\n"
+    f"{LEYLEK_ZEKA_OFFICIAL_BLURB}\n"
+    "Eşleşme veya roller hakkında soruda yalnızca aşağıdaki numaralı akışı kullan; başka sıra veya ifade ekleme.\n\n"
     + _ESLESME_VE_ROL
+    + "\n\nEşleşme sonrası örnek adımlar: mesajlaşma, sesli arama, güven isteği, sürücünün yolcuyu alması, hedefe gidiş, "
+    "QR ile eşleşmenin sonlandırılması, puanlama. Sıra ve adlar ekrana göre değişebilir."
 )
 
 USER_HELP_MODE = "USER_HELP_MODE"
@@ -144,7 +158,7 @@ _REPLIES: dict[str, str] = {
     "teklif": _ESLESME_VE_ROL,
     "motor_araba": (
         "LeylekTag’te talebini veya sürücü profilini oluştururken araç tipini (örneğin motor veya otomobil) "
-        "ilgili alandan seçebilirsin; böylece sistem seni doğru tekliflerle eşleştirir.\n\n"
+        "ilgili alandan seçebilirsin; böylece sistem seni uygun yolcu veya sürücü önerileriyle eşleştirir.\n\n"
         "Şehir içinde trafik, park ve yolcu kapasitesi açısından ihtiyacına en uygun türü işaretlemen "
         "hem eşleşmeyi hem buluşmayı kolaylaştırır.\n\n"
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
@@ -152,7 +166,7 @@ _REPLIES: dict[str, str] = {
     "motor": (
         "Motor tercihini yolcu talebinde veya sürücü tarafındaki araç bilgilerinde, listeden motoru "
         "işaretleyerek kaydedebilirsin.\n\n"
-        "Seçimini kaydettikten sonra gelen teklifler bu profile göre filtrelenir.\n\n"
+        "Seçimini kaydettikten sonra öneriler ve eşleşme havuzu bu profile göre şekillenir.\n\n"
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
     ),
     "araba": (
@@ -161,8 +175,10 @@ _REPLIES: dict[str, str] = {
         "Kapasite veya bagaj ihtiyacın varsa bunu not düşmek eşleşmeyi netleştirir.\n\n"
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
     ),
-    "surucu_sec": _ESLESME_VE_ROL + "\nYolcuysan talep oluşturursun; sürücüysen yakın taleplere teklif gönderirsin.",
-    "yolcu_sec": _ESLESME_VE_ROL + "\nSürücüysen teklif gönderirsin; yolcuysan talep açıp teklifleri kabul edersin.",
+    "surucu_sec": _ESLESME_VE_ROL
+    + "\nSürücüysen: yolcu tekliflerini listeler veya haritadan görürsün; uygun olana kabul ile eşleşirsin.",
+    "yolcu_sec": _ESLESME_VE_ROL
+    + "\nYolcuysan: talep açar, sistem önerisini/alt limiti görür, teklifini gönderirsin; bir sürücü kabul edince eşleşirsin.",
     "kim_teklif": _ESLESME_VE_ROL,
     "rol_kabul_netligi": _ESLESME_VE_ROL,
     "guvenlik": (
@@ -192,7 +208,7 @@ _REPLIES: dict[str, str] = {
 }
 
 _FALLBACK_GENERIC = (
-    "Şu an sana LeylekTag içindeki akışlara göre kısa yanıtlar veriyorum. "
+    "Şu an sana LeylekTag paylaşımlı yolculuk eşleştirme akışına göre kısa yanıtlar veriyorum. "
     "Eşleşme, teklif, araç tipi, güvenlik, iptal veya şehir içi kullanım için sorunu birkaç kelimeyle yazabilir "
     "veya alttaki önerilen sorulardan birine dokunabilirsin.\n\n"
     "İstersen adım adım anlatayım."
@@ -254,7 +270,7 @@ def fallback_reply(user_message: str, context: Optional[dict[str, Any]] = None) 
         if ctx.get("flowHint") == "role-select" and ("rol" in t or "sürücü" in t or "yolcu" in t):
             return (
                 _ESLESME_VE_ROL
-                + "\nRol seçimi menüleri buna göre düzenlenir; ardından araç veya talep tercihlerini netleştirmen eşleşmeyi kolaylaştırır."
+                + "\nRol seçimi menüleri buna göre düzenlenir; yolcu talep ve teklif, sürücü teklif görüntüleme ve kabul ekranlarına göre ilerler."
             )
 
     if _has_eslesme(t) and any(
@@ -478,18 +494,39 @@ async def get_leylek_zeka_reply(
     user_message: str,
     history: list[dict[str, Any]] | None,
     context: dict[str, Any] | None = None,
+    is_admin: bool = False,
 ) -> tuple[str, Source, AnswerEngineMeta | None]:
     """
-    Öncelik: yüksek güven akışı → answer_engine (katalog) → OpenAI (anahtar varsa) → Türkçe fallback.
+    Öncelik: admin onaylı KB (Supabase) → ürün kilidi (yüksek güven sabit akış) → answer_engine (katalog)
+    → OpenAI (anahtar varsa) → Türkçe fallback.
     context: opsiyonel bağlama duyarlı yardım (USER_HELP_MODE).
     Üçüncü dönüş: yalnızca Answer Engine eşleşmesinde intent_id + deterministic (HTTP opsiyonel alanları).
 
-    Kritik eşleşme/teklif/rol sorularında answer_engine kataloğundan önce _ESLESME_VE_ROL dönülür
-    (katalog metni farklı olsa bile tek doğru akış metni korunur; answer_engine dosyalarına dokunulmadan).
+    Katalogdan önce _high_confidence_flow_reply ile tek doğru eşleşme/teklif metni korunur.
     """
+    if is_admin and (not user_message or str(user_message).strip() == ""):
+        return (
+            "Hoş geldin patron. Bugün beni ne konuda eğitmek istersin?\n\nÖrnek:\nsoru: güven al butonu nedir\ncevap: güven al butonu kullanıcıyı korur",
+            "kb",
+            None,
+        )
+
     text = (user_message or "").strip()
     if not text:
         return _FALLBACK_GENERIC, "fallback", None
+
+    kb_hit = generate_response(text)
+    if kb_hit is not None:
+        kb_text = str(kb_hit.get("reply_text") or "").strip()
+        if kb_text:
+            _emit_answer_engine_telemetry(
+                hit=False,
+                intent_id=None,
+                response_source="kb",
+                context=context,
+                user_message=text,
+            )
+            return kb_text, "kb", None
 
     flow_hit = _high_confidence_flow_reply(text)
     if flow_hit is not None:
@@ -518,6 +555,18 @@ async def get_leylek_zeka_reply(
         return resolved["text"], "answer_engine", meta
 
     system_extra = _context_system_addon(context)
+
+    if is_admin:
+        training = process_admin_message(text)
+        if training["created_drafts"]:
+            from services.leylek_zeka_draft_service import approve_draft
+
+            approve_draft(training["created_drafts"][0]["id"])
+            return (
+                "Kaydettim patron. Artık bunu öğrendim.",
+                "kb",
+                None,
+            )
 
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     logger.info("Leylek Zeka: OPENAI_API_KEY %s", "var" if api_key else "yok")
@@ -564,8 +613,9 @@ async def call_leylek_zeka(
     user_message: str,
     history: list[dict[str, Any]] | None,
     context: dict[str, Any] | None = None,
+    is_admin: bool = False,
 ) -> str:
     reply, _src, _meta = await get_leylek_zeka_reply(
-        user_message=user_message, history=history, context=context
+        user_message=user_message, history=history, context=context, is_admin=is_admin
     )
     return reply

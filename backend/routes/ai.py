@@ -47,9 +47,10 @@ class LeylekZekaClientContext(BaseModel):
 
 
 class LeylekZekaRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=8000)
+    message: str = Field(default="", max_length=8000)
     history: list[LeylekZekaHistoryItem] | None = None
     context: LeylekZekaClientContext | None = None
+    is_admin: bool = False
 
 
 def _client_key(request: Request) -> str:
@@ -83,6 +84,7 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
             user_message=body.message,
             history=hist,
             context=ctx_dict,
+            is_admin=body.is_admin,
         )
     except Exception as e:
         logger.exception("Leylek Zeka beklenmeyen hata: %s", e)

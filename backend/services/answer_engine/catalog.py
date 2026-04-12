@@ -49,80 +49,80 @@ def _dedupe_phrases(*groups: tuple[str, ...]) -> tuple[str, ...]:
 
 # --- how_to_send_offer ---
 
-NEUTRAL_SEND_OFFER = """Teklif mi, talep mi?
+NEUTRAL_SEND_OFFER = """Talep ve teklif (LeylekTag)
 
 Özet
-Yolcu talep yayınlar, sürücüler teklif gönderir; yolcu bir teklifi kabul eder. Sürücü harita veya listeden talep seçip teklif yazar.
+LeylekTag paylaşımlı yolculuk eşleştirme platformudur; yolcu ile sürücüyü teklif bazlı eşleştirir. Yolcu yolculuk talebi açar, sistem öneri veya alt limit sunar, yolcu teklifini gönderir; sürücüler teklifi görür ve biri yolcu teklifini kabul edince eşleşme oluşur.
 
 Adımlar
-1) Önce rolünü netleştir (yolcu / sürücü ana akışı); menüler buna göre değişir.
-2) Yolcuysan: talep oluştur → kalkış/varış ve araç tipi (motor / otomobil) → ödeme ve fiyat özetini oku → yayınla → gelen kartlardan birine Kabul / Onay.
-3) Sürücüysen: müsait ol → uygun talebi aç → rota ve tutarı oku → teklif ekranında ücreti yaz → Gönder → yanıtı bekle.
+1) Rolünü netleştir (yolcu / sürücü); menüler buna göre değişir.
+2) Yolcuysan: talep oluştur → sistem önerisini/alt limiti incele → teklifini netleştirip gönder → bir sürücünün kabulünü bekle.
+3) Sürücüysen: müsait ol → yolcu tekliflerini harita veya listeden aç → özeti oku → uygunsa Kabul ile eşleş.
 
 Dikkat
-Yanlış talep veya araç tipine teklif gönderme; göndermeden özeti bir kez daha oku.
+Yanlış talep veya araç tipiyle ilerleme eşleşmeyi zorlaştırır; göndermeden özeti bir kez daha oku.
 
 Sonraki adım
-Bulunduğun ekrandaki ana düğmeyi kullan (Talep oluştur, Teklif ver, Kabul). Takılırsan rolünü ve talep/teklif ekranını kontrol et."""
+Bulunduğun ekrandaki ana düğmeyi kullan (Talep oluştur, Teklif gönder, Kabul). Takılırsan rolünü ve ilgili kartı kontrol et."""
 
-DRIVER_SEND_OFFER = """Sürücü: talebe teklif gönderme
+DRIVER_SEND_OFFER = """Sürücü: yolcu teklifini görme ve kabul
 
 Özet
-Uygun talebi açarsın, tutarı netleştirip teklif ekranından gönderirsin; yolcu kabul edince eşleşme tamamlanır.
+Yolcu teklifini gönderdikten sonra teklif sürücülere düşer; uygun gördüğün kartı kabul ederek eşleşirsin.
 
 Adımlar
-1) Harita veya listeden talebi seç; kalkış–varış ve araç tipini (motor / otomobil) doğrula. Aracına uymuyorsa girme.
-2) Rota, süre, mesafe ve tutar satırlarını oku; ek ücret / ödeme notu varsa kontrol et.
-3) “Teklif ver / oluştur” ile düzenleme ekranına geç; net ücreti ve varsa bekleme süresini yaz; notu kısa tut.
-4) Onay / Gönder ile ilet. Teklif beklemede kalır; red veya süre dolarsa listeden yeniden dene.
+1) Müsait modunu aç; harita veya listeden yolcu teklifini seç.
+2) Kalkış–varış, rota, süre ve tutar satırlarını oku; araç tipin uyuyorsa devam et.
+3) Kabul / Onay ile eşleşmeyi kilitle; aksi halde başka teklife geç veya bekle.
 
 Dikkat
-Yanlış gönderdiyse iptal/düzeltme ekranda varsa kullan; yoksa red bekleyip gerekirse yeni teklif hazırla.
+Yanlış kabul sonrası iptal kuralları ekranda ne diyorsa odur.
 
 Sonraki adım
-Bekleme ekranında kal; kabul gelince buluşma ve yolculuk adımlarını uygulama sırayla gösterir."""
+Kabul sonrası buluşma ve yolculuk adımlarını uygulama sırayla gösterir."""
 
-PASSENGER_SEND_OFFER = """Yolcu: teklif göndermezsin, talep açarsın
+PASSENGER_SEND_OFFER = """Yolcu: talep ve teklif gönderme
 
 Özet
-Sürücüye doğrudan teklif yazmazsın. Talebi yayınlarsın; sürücüler teklif gönderir, sen birini kabul edersin.
+Önce yolculuk talebini oluşturursun; sistem trafik ve yoğunluk gibi verilere göre öneri veya alt limit sunabilir. Ardından teklifini gönderirsin; sürücüler görür ve bir sürücü kabul edince eşleşme oluşur.
 
 Adımlar
-1) “Talep oluştur” veya yolculuk başlat adımına gir.
-2) Haritada kalkış ve varışı seç; üstteki özet doğru mu bak.
-3) Motor veya otomobili işaretle; ödeme seçeneğini ve ücret satırını oku, sonra yayınla.
-4) Gelen kartlarda ücret, süre ve rotayı karşılaştır; uygun olana Kabul / Onay’a bas.
+1) Talep oluştur / yolculuk başlat adımına gir.
+2) Kalkış ve varışı seç; araç tipini (motor / otomobil) ve ödeme özetini kontrol et.
+3) Sistem önerisini veya alt limiti oku; teklifini netleştirip gönder.
+4) Bir sürücünün kabulünü bekle; bildirim veya ekran güncellenince eşleşme tamamlanır.
 
 Dikkat
-Talep yayında değilse teklif gelmez; iptal veya yanlış ekrandaysan talep akışına dön.
+Talep veya teklif yayında değilse sürücü tarafı görmez; iptal veya yanlış ekrandaysan akışa dön.
 
 Sonraki adım
-Kabul sonrası buluşma ve yolculuk ekranlarını izle; adres için uygulama içi mesajı kullan."""
+Eşleşme sonrası mesaj, arama veya buluşma ekranlarını izle; adresi mümkünse uygulama içi mesajla netleştir."""
 
 MATCHING_WORKS = """LeylekTag eşleşme akışı
 
-1) Yolcu talep oluşturur.
-2) Sürücüler talepleri görür.
-3) Sürücü teklif gönderir.
-4) Yolcu bir teklifi kabul ederse eşleşme olur.
+1) Yolcu yolculuk talebi oluşturur.
+2) Sistem trafik, yoğunluk vb. verilere göre öneri veya alt limit sunar.
+3) Yolcu teklifini gönderir.
+4) Sürücüler bu teklifi görür.
+5) Yolcu teklifini bir sürücü kabul ederse eşleşme oluşur.
 
 Notlar
-- Yolcu teklif göndermez.
-- Eşleşme, yolcunun bir teklifi kabul etmesiyle tamamlanır (sürücü teklifi gönderir; eşleşmeyi yolcu kabulü tamamlar)."""
+- Teklifi yolcu gönderir; sürücü tarafında ayrı bir “sürücü teklifi gönderme” adımı yoktur.
+- Eşleşme, bir sürücünün yolcu teklifini kabul etmesiyle tamamlanır."""
 
 WHO_SENDS_OFFER_SHORT = """Kim teklif gönderir?
 
-1) Teklifi sürücü gönderir.
-2) Yolcu talep oluşturur; teklif göndermez.
+1) Teklifi yolcu gönderir (talep ve sistem önerisinden sonra).
+2) Sürücüler yolcu teklifini görür; biri kabul ederek eşleşir.
 
-Kısaca: talep yolcuda, teklif sürücüde."""
+Kısaca: talep ve yolcu teklifi yolcuda; kabul sürücüde."""
 
 TEKLIF_BRIEF = """Teklif
 
-1) Teklifi sürücü gönderir.
-2) Yolcu gelen tekliflerden birini kabul veya red eder.
+1) Yolcu teklifini gönderir.
+2) Sürücüler yolcu teklifini görür; biri kabul ederse eşleşme oluşur.
 
-Eşleşme, yolcunun bir teklifi kabul etmesiyle oluşur."""
+Eşleşme, bir sürücünün yolcu teklifini kabul etmesiyle tamamlanır."""
 
 MATCH_NOT_HAPPENING = """Eşleşme veya teklif gecikiyor
 
@@ -133,8 +133,8 @@ Adımlar
 1) Konum izni ve GPS; pin doğru adreste mi?
 2) İnternet; gerekirse uygulamayı kapatıp aç.
 3) Talep veya teklif bekleme ekranındasın; yanlışlıkla iptal veya başka sekmeye düşmedin mi?
-4) Yolcuysan: talep yayında mı; araç tipi ve adresler doğru mu? Liste boşsa bekle veya adresi sadeleştirip talebi yenile.
-5) Sürücüysen: müsait mod açık mı; listede talep var mı? Boşsa bölge veya saati değiştirmeyi dene.
+4) Yolcuysan: talep ve teklif adımlarını tamamladın mı; sistem önerisi/alt limit göründü mü? Sürücü kabulü bekliyorsan bir süre bekle veya adresi sadeleştirip yeniden dene.
+5) Sürücüysen: müsait mod açık mı; listede yolcu teklifi var mı? Boşsa bölge veya saati değiştirmeyi dene.
 
 Dikkat
 Adresi gereğinden geniş bırakmak veya araç tipini yanlış seçmek eşleşmeyi yavaşlatır.
@@ -142,38 +142,37 @@ Adresi gereğinden geniş bırakmak veya araç tipini yanlış seçmek eşleşme
 Sonraki adım
 Kısa süre bekle; düzelmezse talebi net adresle yeniden aç veya müsaitliği kapat-aç. Devam ederse desteğe yaz."""
 
-PASSENGER_ACCEPT_DRIVER = """Yolcu: gelen teklifi kabul etme
+PASSENGER_ACCEPT_DRIVER = """Yolcu: teklifini gönderdikten sonra
 
 Özet
-Talebine gelen sürücü kartlarından birini seçip onaylarsın; sonra eşleşme kilitlenir.
+Teklifini gönderdikten sonra uygun sürücüler görür; bir sürücü yolcu teklifini kabul ettiğinde eşleşme kilitlenir. Senin tarafında “sürücüden gelen ayrı bir teklifi seçme” adımı yoktur; kabul sürücüdedir.
 
 Adımlar
-1) Talebin açık ve teklif listesinde olduğundan emin ol.
-2) Kartlarda ücret, süre ve rotayı karşılaştır; yalnızca en düşük fiyata göre seçme.
-3) Özeti son kez oku; yanlış karta çift dokunma.
-4) Seçtiğin kartta Kabul / Onay’a bas; ekran buluşma / yolculuğa geçer.
+1) Talep ve teklifinin yayında olduğunu kontrol et.
+2) Bildirimleri açık tut; kabul gelince ekran otomatik güncellenir.
+3) Gecikme varsa interneti ve konumu kontrol et; gerekirse teklifi güncelle veya talebi netleştirip yeniden dene.
 
 Dikkat
-İptal ve ücret kuralları ekranda yazdığı gibidir.
+Ücret ve iptal kuralları ekranda yazdığı gibidir.
 
 Sonraki adım
-Buluşmayı mesajdan netleştir; ardından yolculuk adımlarını uygulamada izle."""
+Eşleşme sonrası buluşma ve yolculuk ekranlarını izle; adres için uygulama içi mesajı kullan."""
 
-DRIVER_ACCEPT_REQUEST = """Sürücü: talebe teklif gönderme
+DRIVER_ACCEPT_REQUEST = """Sürücü: yolcu teklifini kabul etme
 
 Özet
-Uygun talebi açıp teklif yazıp gönderirsin. Kesin eşleşme, yolcunun bu teklifi kabul etmesiyle oluşur.
+Yolcu talep ve teklifini gönderir; sen listeden veya haritadan teklifi açıp Kabul ile eşleşirsin.
 
 Adımlar
-1) Harita veya listeden talebi aç; kalkış ve varışı doğrula.
-2) Ücret ve rota özetini oku; teklif ekranında tutarı netleştirip gönder.
-3) Yolcu kabul edene kadar bekle; kabul gelince yolculuk adımları başlar.
+1) Müsait modda olduğundan emin ol; yolcu teklifini seç.
+2) Rota, süre ve tutar özetini oku; araç tipin uygun mu kontrol et.
+3) Kabul / Onay’a bas; eşleşme anında oluşur, yolculuk adımları başlar.
 
 Dikkat
-Yolcu teklif göndermez; eşleşmeyi yolcunun kabulü tamamlar.
+Yanlış kabul sonrası iptal ekrandaki kurallara bağlıdır.
 
 Sonraki adım
-Teklif bekleme ekranında kal; kabul gelince ekranlar ilerler."""
+Buluşma ve yolculuk ekranlarını sırayla takip et."""
 
 # --- Faz 2: iptal / mesaj / güvenlik (supported_roles: any) ---
 
@@ -349,9 +348,9 @@ _H2SO_EXAMPLE_QUERIES: tuple[str, ...] = (
     "nasıl teklif atılır",
     "teklif atamıyorum",
     "fiyat nasıl gönderiyorum",
-    "sürücü teklif nasıl yollar",
-    "müşteriye teklif nasıl verilir",
-    "yolcuya teklif nasıl iletirim",
+    "yolcu teklifi nasıl gönderilir",
+    "yolcu teklif nasıl atılır",
+    "sürücü teklifi nasıl kabul edilir",
     "motor seçip teklif nasıl gönderirim",
     "ücreti nasıl yazıyorum",
     "teklif verme ekranı nerede",
@@ -375,12 +374,11 @@ _H2SO_MATCH_CORE: tuple[str, ...] = (
     "teklif gönderemiyorum",
     "fiyat nasıl gönder",
     "ücret nasıl gönder",
-    "sürücü teklif nasıl",
-    "surucu teklif nasil",
-    "müşteriye teklif nasıl verilir",
-    "musteriye teklif nasil verilir",
-    "yolcuya teklif nasıl",
-    "yolcuya teklif nasıl iletirim",
+    "yolcu teklif nasıl",
+    "yolcu teklif nasıl gönder",
+    "sürücü teklif kabul",
+    "surucu teklif kabul",
+    "yolcu teklif gönder",
     "teklif nasıl verilir",
     "motor seçip teklif",
 )
@@ -424,10 +422,10 @@ _H2SO_MATCH_EXTENDED: tuple[str, ...] = (
 _H2SO_PHRASE_WEIGHTS: tuple[tuple[str, int], ...] = (
     ("teklif nasıl gönderilir", 12),
     ("nasıl teklif atılır", 12),
-    ("müşteriye teklif nasıl verilir", 11),
-    ("yolcuya teklif nasıl", 11),
+    ("yolcu teklifi nasıl gönderilir", 11),
+    ("yolcu teklif nasıl", 11),
     ("motor seçip teklif", 9),
-    ("sürücü teklif nasıl", 9),
+    ("sürücü teklif kabul", 9),
     ("teklif gönderemiyorum", 10),
     ("fiyat nasıl gönder", 9),
     ("teklif butonu nerede", 10),
@@ -497,7 +495,7 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
             "teklifi kim yollar",
             "hangi taraf teklif veriyor",
         ),
-        description="Teklif sürücüdedir; yolcu talep oluşturur.",
+        description="Teklif yolcuda; kabul bir sürücüdedir.",
         match_phrases=(
             "kim teklif",
             "teklifi kim",
@@ -519,7 +517,7 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
         title="Teklifi nasıl gönderirim?",
         supported_roles=("passenger", "driver"),
         example_queries=_H2SO_EXAMPLE_QUERIES,
-        description="Yolcu talep oluşturur; sürücü teklif gönderir. Rol net değilse nötr özet.",
+        description="Yolcu talep ve teklif gönderir; sürücü kabul eder. Rol net değilse nötr özet.",
         match_phrases=_dedupe_phrases(_H2SO_MATCH_CORE, _H2SO_MATCH_EXTENDED),
         phrase_weights=_H2SO_PHRASE_WEIGHTS,
         role_specific_templates={
@@ -530,34 +528,35 @@ INTENT_DEFINITIONS: tuple[IntentDefinition, ...] = (
     ),
     IntentDefinition(
         id="how_passenger_accepts_driver",
-        title="Yolcu sürücüyü nasıl seçer / kabul eder?",
+        title="Yolcu: teklif sonrası bekleme ve eşleşme",
         supported_roles=("passenger",),
         example_queries=(
-            "sürücü nasıl seçerim",
-            "teklifi nasıl kabul ederim",
-            "hangi sürücüyü seçeyim",
+            "teklifimi gönderdim ne olacak",
+            "sürücü ne zaman kabul eder",
+            "eşleşme ne zaman oluşur",
         ),
-        description="Yolcu tarafında teklif inceleme ve kabul.",
+        description="Yolcu teklifinden sonra sürücü kabulü ile eşleşme.",
         match_phrases=(
-            "sürücü nasıl seç",
-            "surucu nasıl seç",
-            "hangi sürücü",
-            "teklifi nasıl kabul",
-            "teklif kabul",
+            "teklif gönderdim",
+            "teklifimi gönderdim",
+            "ne zaman eşleş",
+            "sürücü kabul",
+            "surucu kabul",
+            "bekliyorum eşleş",
             "onaylayınca ne olur",
         ),
         phrase_weights=(
-            ("sürücü nasıl seçerim", 9),
-            ("teklifi nasıl kabul", 9),
+            ("teklifimi gönderdim", 9),
+            ("sürücü ne zaman kabul", 9),
         ),
         default_template=PASSENGER_ACCEPT_DRIVER,
     ),
     IntentDefinition(
         id="how_driver_accepts_request",
-        title="Sürücü talebe teklif gönderme",
+        title="Sürücü: yolcu teklifini kabul etme",
         supported_roles=("driver",),
-        example_queries=("talep nasıl kabul edilir", "yolcuyu nasıl alırım", "işi nasıl kabul ediyorum"),
-        description="Sürücü talebi seçip teklif gönderir; eşleşme yolcunun kabulüyle olur.",
+        example_queries=("yolcu teklifini nasıl kabul ederim", "talep nasıl kabul edilir", "işi nasıl kabul ediyorum"),
+        description="Sürücü yolcu teklifini görür ve kabul ederek eşleşir.",
         match_phrases=(
             "talep nasıl kabul",
             "talebi nasıl kabul",
