@@ -515,6 +515,67 @@ async def get_leylek_zeka_reply(
     if not text:
         return _FALLBACK_GENERIC, "fallback", None
 
+    tl = text.lower()
+    if is_admin and ("soru:" in tl or "cevap:" in tl):
+        training = process_admin_message(text)
+        if training.get("created_drafts"):
+            from services.leylek_zeka_draft_service import approve_draft
+
+            approve_draft(training["created_drafts"][0]["id"])
+            _emit_answer_engine_telemetry(
+                hit=False,
+                intent_id=None,
+                response_source="kb",
+                context=context,
+                user_message=text,
+            )
+            return (
+                "Kaydettim patron. Artık bunu öğrendim.",
+                "kb",
+                None,
+            )
+        outcome = training.get("outcome")
+        if outcome == "invalid_same":
+            _emit_answer_engine_telemetry(
+                hit=False,
+                intent_id=None,
+                response_source="kb",
+                context=context,
+                user_message=text,
+            )
+            return (
+                "Soru ve cevap birlikte gözüküyor ama ayıklayamadım patron. "
+                "soru: ve cevap: satırlarını doldurup tekrar dene.",
+                "kb",
+                None,
+            )
+        if outcome == "soru_stored":
+            _emit_answer_engine_telemetry(
+                hit=False,
+                intent_id=None,
+                response_source="kb",
+                context=context,
+                user_message=text,
+            )
+            return (
+                "Soruyu aldım patron. Şimdi cevabı gönder.",
+                "kb",
+                None,
+            )
+        if outcome == "cevap_no_question":
+            _emit_answer_engine_telemetry(
+                hit=False,
+                intent_id=None,
+                response_source="kb",
+                context=context,
+                user_message=text,
+            )
+            return (
+                "Önce soruyu gönder patron. Sonra cevabı kaydedeyim.",
+                "kb",
+                None,
+            )
+
     kb_hit = generate_response(text)
     if kb_hit is not None:
         kb_text = str(kb_hit.get("reply_text") or "").strip()
@@ -555,18 +616,6 @@ async def get_leylek_zeka_reply(
         return resolved["text"], "answer_engine", meta
 
     system_extra = _context_system_addon(context)
-
-    if is_admin:
-        training = process_admin_message(text)
-        if training["created_drafts"]:
-            from services.leylek_zeka_draft_service import approve_draft
-
-            approve_draft(training["created_drafts"][0]["id"])
-            return (
-                "Kaydettim patron. Artık bunu öğrendim.",
-                "kb",
-                None,
-            )
 
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     logger.info("Leylek Zeka: OPENAI_API_KEY %s", "var" if api_key else "yok")

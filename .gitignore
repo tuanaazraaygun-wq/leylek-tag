@@ -77,87 +77,24 @@ agenthub/agents/youtube/db
 .cache/
 
 # Mobile development
-android-sdk/ model.patch
+android-sdk/
 model.patch
--e 
-# Environment files
--e 
+
 # Environment files
 *.env
 *.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
+
+# Google / Firebase / Play credentials (local or EAS/CI secrets only; do not commit)
+# Not: google-services.json istemci yapılandırmasıdır; EAS Build yükleme akışı için repoda tutulur (API anahtarı uygulamada zaten yer alır).
+**/firebase-service-account.json
+**/GoogleService-Info.plist
+**/*service-account*.json
+**/*-service-account.json
+**/client_secret*.json
+
+frontend/.metro-cache/
+frontend/android/local.properties.txt
+frontend/eas-log*.txt
+frontend/eas-*.txt
+frontend/buildmeta.json
+backend/firebase-service-account.json
