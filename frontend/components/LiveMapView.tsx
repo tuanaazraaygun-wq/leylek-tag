@@ -6,7 +6,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
-import type { PassengerGender } from '../lib/passengerFieldHelpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 
@@ -83,16 +82,6 @@ interface LiveMapViewProps {
   passengerPaymentMethod?: 'cash' | 'card';
   /** Sürücü uygulama-içi navigasyon açıkken üst bileşen GPS aralığını kısaltır */
   onNavigationModeChange?: (active: boolean) => void;
-  /** Yolculuk: karşı taraftan güven isteği */
-  onTrustRequest?: () => void;
-  trustRequestLabel?: string;
-  /** Harita ekranından Leylek Zeka sohbeti (global widget ayrı kalır) */
-  onOpenLeylekZekaSupport?: () => void;
-  /** Karşı taraf marker ölçümü (index ile uyumlu; varsayılan 1) */
-  peerMapPinScale?: number;
-  selfGender?: PassengerGender;
-  /** Sürücü haritasında yolcu cinsiyeti — marker ikonu */
-  otherPassengerGender?: PassengerGender;
 }
 
 /** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
@@ -914,12 +903,6 @@ export default function LiveMapView({
   otherTripVehicleKind = 'car',
   passengerPaymentMethod,
   onNavigationModeChange,
-  onTrustRequest,
-  trustRequestLabel,
-  onOpenLeylekZekaSupport,
-  peerMapPinScale = 1,
-  selfGender = null,
-  otherPassengerGender = null,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
@@ -1731,14 +1714,6 @@ export default function LiveMapView({
   
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
-
-  const selfMapIconName = isDriver
-    ? 'car'
-    : selfGender === 'female'
-      ? 'woman'
-      : selfGender === 'male'
-        ? 'man'
-        : 'person';
   const themeLightColor = isDriver ? '#DBEAFE' : '#EDE9FE';
   const themeGradient = isDriver ? ['#3B82F6', '#2563EB'] : ['#8B5CF6', '#7C3AED'];
   
@@ -2537,7 +2512,7 @@ export default function LiveMapView({
             <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.9 }}>
               <View style={styles.proMarkerContainer}>
                 <View style={[styles.proMarkerHead, { backgroundColor: themeColor }]}>
-                  <Ionicons name={selfMapIconName as 'car' | 'woman' | 'man' | 'person'} size={20} color="#FFF" />
+                  <Ionicons name={isDriver ? "car" : "person"} size={20} color="#FFF" />
                 </View>
                 <View style={[styles.proMarkerTail, { borderTopColor: themeColor }]} />
                 <View style={styles.proMarkerShadow} />
@@ -2552,20 +2527,11 @@ export default function LiveMapView({
               anchor={{ x: 0.5, y: 0.9 }}
               onPress={() => setShowInfoCard(true)}
             >
-              <View
-                style={[
-                  styles.proMarkerContainer,
-                  peerMapPinScale !== 1 ? { transform: [{ scale: peerMapPinScale }] } : null,
-                ]}
-              >
+              <View style={styles.proMarkerContainer}>
                 <View style={[styles.proMarkerHead, { backgroundColor: isDriver ? '#8B5CF6' : '#059669' }]}>
                   {isDriver ? (
                     passMotor ? (
                       <MaterialCommunityIcons name="motorbike" size={20} color="#FFF" />
-                    ) : otherPassengerGender === 'female' ? (
-                      <Ionicons name="woman" size={20} color="#FFF" />
-                    ) : otherPassengerGender === 'male' ? (
-                      <Ionicons name="man" size={20} color="#FFF" />
                     ) : (
                       <Ionicons name="person" size={20} color="#FFF" />
                     )
@@ -2946,60 +2912,6 @@ export default function LiveMapView({
               </LinearGradient>
             </TouchableOpacity>
             ) : null}
-
-          {/* Yolculuk: Güven Al + harita kapsamında Leylek Zeka */}
-          {!driverNavImmersive && (onTrustRequest || onOpenLeylekZekaSupport) ? (
-            <View style={styles.tripTrustLeylekRow}>
-              {onTrustRequest && trustRequestLabel ? (
-                <TouchableOpacity
-                  style={styles.mapTripAuxBtn}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    onTrustRequest();
-                  }}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel={trustRequestLabel}
-                >
-                  <LinearGradient
-                    colors={['#059669', '#047857']}
-                    style={styles.mapTripAuxBtnGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="shield-checkmark" size={18} color="#FFF" />
-                    <Text style={styles.mapTripAuxBtnText} numberOfLines={2}>
-                      {trustRequestLabel}
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : null}
-              {onOpenLeylekZekaSupport ? (
-                <TouchableOpacity
-                  style={styles.mapTripAuxBtn}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    onOpenLeylekZekaSupport();
-                  }}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel="Leylek Zeka"
-                >
-                  <LinearGradient
-                    colors={['#3FA9F5', '#2563EB']}
-                    style={styles.mapTripAuxBtnGradient}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="sparkles" size={18} color="#FFF" />
-                    <Text style={styles.mapTripAuxBtnText} numberOfLines={1}>
-                      Leylek Zeka
-                    </Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
 
           {/* 🆕 ALT BUTONLAR - Destek ve Bitir */}
           {!driverNavImmersive ? (
@@ -3980,34 +3892,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#FFF',
-  },
-  tripTrustLeylekRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-    width: SCREEN_WIDTH - 48,
-    alignSelf: 'center',
-  },
-  mapTripAuxBtn: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  mapTripAuxBtnGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    gap: 6,
-  },
-  mapTripAuxBtnText: {
-    flexShrink: 1,
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFF',
-    textAlign: 'center',
   },
   chatButton: {
     flexDirection: 'row',
