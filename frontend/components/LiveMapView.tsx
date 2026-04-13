@@ -1,15 +1,59 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Linking, Alert, Dimensions, Animated, Easing, Modal, Image, ImageBackground } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  TouchableOpacity,
+  Pressable,
+  Linking,
+  Alert,
+  Dimensions,
+  Animated,
+  Easing,
+  Modal,
+  Image,
+  ImageBackground,
+} from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapButtonHaptic } from '../utils/touchHaptics';
+import { callCheck } from '../lib/callCheck';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
+import type { PassengerGender } from '../lib/passengerFieldHelpers';
+import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/** Android: `tracksViewChanges` kısa süre true — sürekli true iken özel PNG bazen çizilmez (bekleme ekranıyla aynı mantık). */
+function TripMapMarkerImage({
+  source,
+  scale = 1,
+  size = 40,
+}: {
+  source: number;
+  scale?: number;
+  /** NAV_MARKER_IMG / MARKER_PIXEL ile APK ile aynı ölçü */
+  size?: number;
+}) {
+  return (
+    <View
+      collapsable={false}
+      pointerEvents="none"
+      style={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: scale !== 1 ? [{ scale }] : undefined,
+      }}
+    >
+      <Image source={source} style={{ width: size, height: size }} resizeMode="contain" />
+    </View>
+  );
+}
 
 // Google Maps için değişkenler
 let MapView: any = null;
@@ -82,6 +126,16 @@ interface LiveMapViewProps {
   passengerPaymentMethod?: 'cash' | 'card';
   /** Sürücü uygulama-içi navigasyon açıkken üst bileşen GPS aralığını kısaltır */
   onNavigationModeChange?: (active: boolean) => void;
+  /** Yolculuk: karşı taraftan güven isteği */
+  onTrustRequest?: () => void;
+  trustRequestLabel?: string;
+  /** Harita ekranından Leylek Zeka sohbeti (global widget ayrı kalır) */
+  onOpenLeylekZekaSupport?: () => void;
+  /** Karşı taraf marker ölçümü (index ile uyumlu; varsayılan 1) */
+  peerMapPinScale?: number;
+  selfGender?: PassengerGender | null;
+  /** Sürücü haritasında yolcu cinsiyeti — marker ikonu */
+  otherPassengerGender?: PassengerGender | null;
 }
 
 /** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
@@ -299,6 +353,60 @@ function formatTurkishManeuver(step: OsrmNavStepParsed): string {
   return `İlerleyin${street}`;
 }
 
+/** TTS: cadde/sokak adı yok — kısa Türkçe manevra */
+function formatTurkishManeuverNoStreet(step: OsrmNavStepParsed): string {
+  const typ = String(step.maneuver?.type || '').toLowerCase();
+  const mod = String(step.maneuver?.modifier || '').toLowerCase();
+  if (typ === 'arrive') return 'hedefe var';
+  if (typ === 'depart') return 'yola çık';
+
+  const dir =
+    mod === 'sharp right'
+      ? 'keskin sağa'
+      : mod === 'right'
+        ? 'sağa'
+        : mod === 'slight right'
+          ? 'hafif sağa'
+          : mod === 'straight'
+            ? 'düz'
+            : mod === 'slight left'
+              ? 'hafif sola'
+              : mod === 'left'
+                ? 'sola'
+                : mod === 'sharp left'
+                  ? 'keskin sola'
+                  : mod === 'uturn'
+                    ? 'U dönüşü yap'
+                    : '';
+
+  if (typ === 'roundabout' || typ === 'rotary') return 'kavşağa gir';
+  if (typ === 'exit roundabout' || typ === 'exit rotary') return 'kavşaktan çık';
+  if (typ === 'merge') return 'şeride gir';
+  if (typ === 'fork') return `${dir || 'gösterilen'} yöne sap`;
+  if (typ === 'end of road') return `${dir || 'uygun'} yöne dön`;
+  if (typ === 'continue' || typ === 'new name') return 'devam et';
+  if (typ === 'turn' && dir) return `${dir} dön`;
+  if (dir) return `${dir} dön`;
+  return 'ilerle';
+}
+
+/** Ses anonsu için yuvarlanmış mesafe metni (cadde okunmaz) */
+function metersTurkishTts(meters: number): string {
+  const m = Math.max(10, Math.round(meters / 10) * 10);
+  if (m >= 1000) {
+    const km = meters / 1000;
+    const k = Math.round(km * 10) / 10;
+    return `${k} kilometre`;
+  }
+  if (m === 30) return 'otuz metre';
+  if (m === 50) return 'elli metre';
+  if (m === 100) return 'yüz metre';
+  if (m === 200) return 'iki yüz metre';
+  if (m === 300) return 'üç yüz metre';
+  if (m === 500) return 'beş yüz metre';
+  return `${m} metre`;
+}
+
 function pointSegmentClosestT(
   p: MapLatLng,
   a: MapLatLng,
@@ -397,6 +505,10 @@ type NavManeuverUi = {
   speechKey: string;
   /** Sonraki manevraya kalan mesafe (m); yoksa mesafe anonsu yapılmaz */
   metersToManeuver: number | null;
+  /** TTS tam cümle — kısa, cadde yok, doğal Türkçe (sesli asistan) */
+  ttsLine: string;
+  /** TTS mesafe bantları: “X metre sonra …” için yalın manevra */
+  ttsAction: string;
 };
 
 function buildNavManeuverUiFromSteps(
@@ -413,6 +525,8 @@ function buildNavManeuverUiFromSteps(
       arrowKind: 'unknown',
       speechKey: `${stage}-noroute`,
       metersToManeuver: null,
+      ttsLine: 'Rotayı takip et',
+      ttsAction: 'rotayı takip et',
     };
   }
   if (k >= steps.length) {
@@ -423,6 +537,8 @@ function buildNavManeuverUiFromSteps(
       arrowKind: 'straight',
       speechKey: `${stage}-arrive-end`,
       metersToManeuver: null,
+      ttsLine: 'Hedefe yaklaşıyorsun',
+      ttsAction: 'hedefe yaklaş',
     };
   }
   const step = steps[k];
@@ -433,7 +549,9 @@ function buildNavManeuverUiFromSteps(
   const streetName = step.name?.trim() || null;
   const arrowKind = stepToArrowKind(step);
   const speechKey = `${stage}-step${k}-${step.maneuver?.type || ''}-${step.maneuver?.modifier || ''}`;
-  return { instructionLine, streetName, arrowKind, speechKey, metersToManeuver: d };
+  const actionSp = formatTurkishManeuverNoStreet(step);
+  const ttsLine = `${metersTurkishTts(d)} sonra ${actionSp}`;
+  return { instructionLine, streetName, arrowKind, speechKey, metersToManeuver: d, ttsLine, ttsAction: actionSp };
 }
 
 const ROUTE_HIGHLIGHT_AHEAD_M = 200;
@@ -589,12 +707,12 @@ function offsetCameraCenterForward(
   remainKm: number,
   zoom: number,
 ): MapLatLng {
-  let forwardM = 255;
-  if (remainKm > 5) forwardM = 328;
-  else if (remainKm >= 1) forwardM = 285;
-  else forwardM = 242;
+  let forwardM = 248;
+  if (remainKm > 5) forwardM = 312;
+  else if (remainKm >= 1) forwardM = 272;
+  else forwardM = 228;
   const z = Number.isFinite(zoom) ? Math.max(14.8, Math.min(18.5, zoom)) : 16.5;
-  forwardM *= Math.min(1.1, Math.max(0.88, 17 / z));
+  forwardM *= Math.min(1.06, Math.max(0.9, 17 / z));
   const R = 6378137;
   const brng = (bearingDeg * Math.PI) / 180;
   const lat1 = (from.latitude * Math.PI) / 180;
@@ -687,27 +805,28 @@ function lerpLatLng(a: MapLatLng, b: MapLatLng, t: number): MapLatLng {
   };
 }
 
-const NAV_CAMERA_THROTTLE_MS = 72;
+/** Git 3fff2416 / d58ad083 çizgisi: biraz daha seyrek + yumuşak kamera (titreme az) */
+const NAV_CAMERA_THROTTLE_MS = 88;
 const NAV_CAMERA_MIN_MOVE_M = 8;
 const NAV_CAMERA_MIN_HEADING_DEG = 5;
 /** GPS gürültüsünde <5 m adımda kamera animasyonu yok (yalnız marker) */
 const NAV_MARKER_ONLY_MOVE_M = 5;
-const NAV_CAMERA_ANIM_MS = 460;
+const NAV_CAMERA_ANIM_MS = 520;
 /** Araç dururken sadece pusula: ~4,5 km/h altı = kırmızı ışık; üstü = sürüşte gereksiz dönüş azalır */
 const NAV_CAMERA_STATIONARY_SPEED_MPS = 1.25;
 const NAV_CAMERA_STATIONARY_HEADING_DEG = 8;
 const NAV_CAMERA_HEADING_ONLY_MS = 260;
-const NAV_CENTER_LERP_HEADING_ONLY = 0.66;
-const NAV_CENTER_LERP_FULL = 0.84;
-/** Mikro GPS / heading gürültüsü — çok agresif olursa araç ekranda zıplar */
-const NAV_JITTER_MAX_STEP_M = 0.55;
-const NAV_JITTER_MAX_HEADING_DEG = 1.45;
-const NAV_JITTER_MIN_CENTER_MOVE_M = 0.38;
-const NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG = 0.95;
+const NAV_CENTER_LERP_HEADING_ONLY = 0.645;
+const NAV_CENTER_LERP_FULL = 0.82;
+/** Mikro GPS / heading gürültüsü — çok agresif atlama kullanıcıyı “kilitli” hissettirir */
+const NAV_JITTER_MAX_STEP_M = 0.72;
+const NAV_JITTER_MAX_HEADING_DEG = 1.65;
+const NAV_JITTER_MIN_CENTER_MOVE_M = 0.42;
+const NAV_JITTER_MIN_HEADING_FOR_ANIM_DEG = 1.05;
 const NAV_HEADING_PULSE_MIN_MS = 100;
 const NAV_ZOOM_SMOOTH = 0.18;
 /** Manevra mesafe anonsları arası minimum süre (ms) */
-const NAV_SPEECH_MIN_GAP_MS = 2800;
+const NAV_SPEECH_MIN_GAP_MS = 3300;
 /** Sürücü–yolcu bu kadar yakın + varış var → trip (turuncu) navigasyon aşaması */
 const NAV_HANDOFF_TO_DESTINATION_M = 45;
 
@@ -903,7 +1022,17 @@ export default function LiveMapView({
   otherTripVehicleKind = 'car',
   passengerPaymentMethod,
   onNavigationModeChange,
+  onTrustRequest,
+  trustRequestLabel,
+  onOpenLeylekZekaSupport,
+  peerMapPinScale = 1,
+  selfGender = null,
+  otherPassengerGender = null,
 }: LiveMapViewProps) {
+  const logPax = useCallback((label: string, fn: unknown) => {
+    if (!isDriver) callCheck(label, fn);
+  }, [isDriver]);
+
   const mapRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
 
@@ -912,6 +1041,48 @@ export default function LiveMapView({
   
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
+
+  /** Özel PNG marker: Android’de tracksViewChanges sürekli true kalınca pin kaybolabiliyor — bekleme ekranı gibi kısa süre sonra kapat */
+  const [pinTracks, setPinTracks] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setPinTracks(false), 2400);
+    return () => clearTimeout(id);
+  }, []);
+
+  /** Nav açılınca PNG marker bir kez daha çizilsin (tracksViewChanges kısa true) */
+  useEffect(() => {
+    if (!isDriver || !navigationMode) return;
+    setPinTracks(true);
+    const id = setTimeout(() => setPinTracks(false), 3200);
+    return () => clearTimeout(id);
+  }, [isDriver, navigationMode]);
+
+  /** Güven Al — küçük kalkan, yumuşak nabız (yalnız sürücü) */
+  const guvenShieldPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isDriver || !onTrustRequest) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(guvenShieldPulse, {
+          toValue: 1.08,
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(guvenShieldPulse, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      guvenShieldPulse.setValue(1);
+    };
+  }, [isDriver, onTrustRequest, guvenShieldPulse]);
   
   // YEŞİL ROTA: Şoför → Yolcu (buluşma) — koordinatlar yalnız OSRM polyline / düz çizgi
   const [meetingRouteCoordinates, setMeetingRouteCoordinates] = useState<
@@ -975,6 +1146,10 @@ export default function LiveMapView({
   const navRemainKmRef = useRef<number | null>(null);
   const navCamLastManeuverKeyRef = useRef('');
   const navCamInitializedRef = useRef(false);
+  /** Kullanıcı haritayı kaydırdı / yakınlaştırdı — otomatik kamera kısa süre durur */
+  const navUserMapGestureUntilRef = useRef(0);
+  const navProgrammaticCameraRef = useRef(false);
+  const navCameraAnimClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Son GPS örneği — <5 m adım için kamera atlama */
   const navLastTickUserRef = useRef<MapLatLng | null>(null);
   /** GPS hızı (m/s); yoksa veya <0 ise null */
@@ -1006,6 +1181,12 @@ export default function LiveMapView({
   /** Sürücü navigasyonu kapatınca buluşma polyline’ını kaldır (yolcu ekranı etkilenmez) */
   useEffect(() => {
     if (!navigationMode && isDriver) {
+      if (navCameraAnimClearTimerRef.current) {
+        clearTimeout(navCameraAnimClearTimerRef.current);
+        navCameraAnimClearTimerRef.current = null;
+      }
+      navProgrammaticCameraRef.current = false;
+      navUserMapGestureUntilRef.current = 0;
       setMeetingRouteCoordinates([]);
       meetingHasOsrmPolylineRef.current = false;
       lastNavRefreshDedupeKeyRef.current = '';
@@ -1210,6 +1391,9 @@ export default function LiveMapView({
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
       return;
     }
+    if (Date.now() < navUserMapGestureUntilRef.current) {
+      return;
+    }
     const prevTick = navLastTickUserRef.current;
     const stepMovedM =
       prevTick != null ? haversineMeters(prevTick, userLocation) : Infinity;
@@ -1329,6 +1513,15 @@ export default function LiveMapView({
     const headingForCamera = smoothHeading;
     const duration = isMoving ? NAV_CAMERA_ANIM_MS : NAV_CAMERA_HEADING_ONLY_MS;
 
+    navProgrammaticCameraRef.current = true;
+    if (navCameraAnimClearTimerRef.current) {
+      clearTimeout(navCameraAnimClearTimerRef.current);
+    }
+    navCameraAnimClearTimerRef.current = setTimeout(() => {
+      navProgrammaticCameraRef.current = false;
+      navCameraAnimClearTimerRef.current = null;
+    }, duration + 220);
+
     mapRef.current.animateCamera(
       {
         center: { ...centerAfterLerp },
@@ -1379,6 +1572,8 @@ export default function LiveMapView({
           arrowKind: 'straight',
           speechKey: 'pickup-fallback-approach',
           metersToManeuver: d,
+          ttsLine: `${metersTurkishTts(d)} sonra yolcuya yaklaş`,
+          ttsAction: 'yolcuya yaklaş',
         });
       } else {
         setNavManeuverUi({
@@ -1387,6 +1582,8 @@ export default function LiveMapView({
           arrowKind: 'unknown',
           speechKey: 'pickup-nolocation',
           metersToManeuver: null,
+          ttsLine: 'Rotayı takip et',
+          ttsAction: 'rotayı takip et',
         });
       }
       return;
@@ -1406,6 +1603,8 @@ export default function LiveMapView({
           arrowKind: 'straight',
           speechKey: 'dest-fallback-approach',
           metersToManeuver: d,
+          ttsLine: `${metersTurkishTts(d)} sonra hedefe yaklaş`,
+          ttsAction: 'hedefe yaklaş',
         });
       } else {
         setNavManeuverUi({
@@ -1414,6 +1613,8 @@ export default function LiveMapView({
           arrowKind: 'unknown',
           speechKey: 'dest-nodropoff',
           metersToManeuver: null,
+          ttsLine: 'Hedefe yaklaş',
+          ttsAction: 'hedefe ilerle',
         });
       }
     }
@@ -1434,7 +1635,10 @@ export default function LiveMapView({
   useEffect(() => {
     if (!navigationMode) {
       if (Platform.OS !== 'web') {
-        Speech.stop();
+        callCheck('Speech.stop', Speech.stop);
+        if (typeof Speech.stop === 'function') {
+          Speech.stop();
+        }
       }
       navSpeechStateRef.current = { key: '', bands: new Set() };
       navSpeechLastAtRef.current = 0;
@@ -1452,20 +1656,27 @@ export default function LiveMapView({
     const key = navManeuverUi.speechKey;
     if (!key) return;
 
-    const line = navManeuverUi.instructionLine.trim();
-    const street = navManeuverUi.streetName?.trim();
-    const baseUtterance = street ? `${line}. ${street}` : line;
-    const streetSuffix = street ? `. ${street}` : '';
-
     const speak = (utterance: string) => {
-      Speech.stop();
-      Speech.speak(utterance, { language: 'tr-TR', rate: 0.92, pitch: 1.0 });
+      callCheck('Speech.stop', Speech.stop);
+      if (typeof Speech.stop === 'function') Speech.stop();
+      callCheck('Speech.speak', Speech.speak);
+      if (typeof Speech.speak === 'function') {
+        Speech.speak(utterance, {
+          language: 'tr-TR',
+          rate: 0.9,
+          pitch: 1.0,
+          volume: 1,
+        });
+      }
     };
+
+    const ttsMain = navManeuverUi.ttsLine.trim();
+    const act = navManeuverUi.ttsAction.trim();
 
     if (key !== navSpeechStateRef.current.key) {
       navSpeechStateRef.current = { key, bands: new Set() };
       navSpeechLastAtRef.current = Date.now();
-      speak(baseUtterance);
+      speak(ttsMain);
       navSpeechPrevMetersRef.current = navManeuverUi.metersToManeuver ?? null;
       return;
     }
@@ -1491,10 +1702,10 @@ export default function LiveMapView({
         navSpeechLastAtRef.current = now;
         const hint =
           th === 300
-            ? `Yaklaşık üç yüz metre sonra manevraya hazırlanın${streetSuffix}`
+            ? `Üç yüz metre sonra ${act}`
             : th === 100
-              ? `Yüz metre kaldı${streetSuffix}`
-              : `Otuz metre sonra. ${line}${street ? ` ${street}` : ''}`;
+              ? `Yüz metre sonra ${act}`
+              : `Otuz metre sonra ${act}`;
         speak(hint);
         return;
       }
@@ -1516,6 +1727,58 @@ export default function LiveMapView({
 
   const passMotor = otherTripVehicleKind === 'motorcycle';
   const riderNoun = passMotor ? 'Motor yolcusu' : 'Yolcu';
+
+  const tripCompassSpin = useRef(new Animated.Value(0)).current;
+  const tripCompassRotate = tripCompassSpin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+  useEffect(() => {
+    if (!isDriver || navigationMode) return;
+    const loop = Animated.loop(
+      Animated.timing(tripCompassSpin, {
+        toValue: 1,
+        duration: 14000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      tripCompassSpin.setValue(0);
+    };
+  }, [isDriver, navigationMode, tripCompassSpin]);
+
+  const handleYolcuyaGitPress = useCallback(() => {
+    void tapButtonHaptic();
+    if (!userLocation || !otherLocation) {
+      Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
+      return;
+    }
+    if (!navigationMode) {
+      const dM = haversineMeters(userLocation, otherLocation);
+      const handoff = !!destinationLocation && dM < NAV_HANDOFF_TO_DESTINATION_M;
+      setNavigationStage(handoff ? 'destination' : 'pickup');
+      setNavigationMode(true);
+      if (userId && tagId) {
+        const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
+        void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
+      }
+    } else {
+      lastNavCameraAtRef.current = 0;
+      void loadDriverNavMeetingRouteRef.current();
+    }
+  }, [
+    userLocation,
+    otherLocation,
+    destinationLocation,
+    navigationMode,
+    userId,
+    tagId,
+    setNavigationMode,
+    setNavigationStage,
+  ]);
   
   useEffect(() => {
     // Sürekli yanıp sönen animasyon
@@ -1628,8 +1891,9 @@ export default function LiveMapView({
 
   /** Tek satır: "SÜRÜCÜ AHMET ARA" / "YOLCU MEHMET ARA" — kalın parlak yeşil */
   const callPromptLine = useMemo(() => {
-    const role = isDriver ? 'YOLCU' : 'SÜRÜCÜ';
-    const name = displayFirstName(otherUserName, isDriver ? 'Yolcu' : 'Sürücü').toLocaleUpperCase('tr-TR');
+    if (isDriver) return 'Yolcuyu Ara';
+    const role = 'SÜRÜCÜ';
+    const name = displayFirstName(otherUserName, 'Sürücü').toLocaleUpperCase('tr-TR');
     return `${role} ${name} ARA`;
   }, [isDriver, otherUserName]);
 
@@ -1738,6 +2002,7 @@ export default function LiveMapView({
     setIsCallLoading(true);
     
     try {
+      if (!isDriver) callCheck('onCall', onCall);
       await onCall?.(type);
     } finally {
       setTimeout(() => {
@@ -2050,6 +2315,9 @@ export default function LiveMapView({
     );
     if (navigationModeRef.current) {
       setMeetingRouteCoordinates(coords);
+      setTimeout(() => {
+        fitNavigationViewport(coords);
+      }, 100);
     } else {
       fitNavigationViewport(coords);
       setTimeout(() => {
@@ -2108,7 +2376,6 @@ export default function LiveMapView({
   ]);
 
   const onDriverNavMapReady = useCallback(() => {
-    if (isDriver && navigationMode) return;
     if (
       isDriver &&
       meetingRouteCoordinates.length > 1 &&
@@ -2216,10 +2483,21 @@ export default function LiveMapView({
       if (destinationLocation) {
         coordinates.push(destinationLocation);
       }
-      mapRef.current?.fitToCoordinates(coordinates, {
-        edgePadding: { top: 210, right: 48, bottom: 300, left: 48 },
-        animated: true,
-      });
+      const map = mapRef.current;
+      // `map?.fitToCoordinates(...)` still calls undefined if ref exists but native method not bound yet (Android).
+      callCheck('mapRef.current.fitToCoordinates', map?.fitToCoordinates);
+      const fit = map && typeof map.fitToCoordinates === 'function' ? map.fitToCoordinates.bind(map) : null;
+      console.log('[PAX_DEBUG] LiveMapView passenger fit', { hasMap: !!map, fitToCoordinates: typeof map?.fitToCoordinates });
+      if (fit) {
+        try {
+          fit(coordinates, {
+            edgePadding: { top: 210, right: 48, bottom: 300, left: 48 },
+            animated: true,
+          });
+        } catch (e) {
+          if (__DEV__) console.warn('[LiveMapView] fitToCoordinates', e);
+        }
+      }
       mapFitRef.current.initialDone = true;
     }, 650);
     return () => clearTimeout(t);
@@ -2363,10 +2641,14 @@ export default function LiveMapView({
           showsUserLocation={false}
           showsMyLocationButton={false}
           showsCompass={false}
-          scrollEnabled={!driverNavImmersive}
-          zoomEnabled={!driverNavImmersive}
+          scrollEnabled
+          zoomEnabled
           rotateEnabled={!driverNavActive}
           pitchEnabled={driverNavActive}
+          onPanDrag={() => {
+            if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
+            navUserMapGestureUntilRef.current = Date.now() + 5400;
+          }}
           minZoomLevel={4}
           maxZoomLevel={22}
           customMapStyle={mapStyle}
@@ -2491,64 +2773,80 @@ export default function LiveMapView({
           {userLocation && driverNavActive && (
             <Marker
               coordinate={userLocation}
-              anchor={{ x: 0.5, y: 0.58 }}
+              anchor={{ x: 0.5, y: 0.5 }}
               flat={true}
               rotation={navHeadingUi}
-              tracksViewChanges={false}
+              tracksViewChanges={pinTracks}
               zIndex={3500}
             >
-              <View style={styles.driverNavVehicleMark}>
-                {passMotor ? (
-                  <MaterialCommunityIcons name="motorbike" size={26} color="#FFF" />
-                ) : (
-                  <MaterialCommunityIcons name="car" size={26} color="#FFF" />
-                )}
-              </View>
+              <TripMapMarkerImage
+                source={getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')}
+                size={passMotor ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar}
+              />
             </Marker>
           )}
 
-          {/* BEN — nav dışı özel marker */}
+          {/* BEN — PNG (bekleme ekranı ile aynı ölçü / tracks kuralı) */}
           {userLocation && !driverNavActive && (
-            <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.9 }}>
-              <View style={styles.proMarkerContainer}>
-                <View style={[styles.proMarkerHead, { backgroundColor: themeColor }]}>
-                  <Ionicons name={isDriver ? "car" : "person"} size={20} color="#FFF" />
-                </View>
-                <View style={[styles.proMarkerTail, { borderTopColor: themeColor }]} />
-                <View style={styles.proMarkerShadow} />
-              </View>
+            <Marker
+              coordinate={userLocation}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={pinTracks}
+              zIndex={isDriver ? 5000 : 5200}
+            >
+              <TripMapMarkerImage
+                source={
+                  isDriver
+                    ? getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')
+                    : getPassengerMarkerImage(selfGender ?? null, userId ?? null)
+                }
+                size={
+                  isDriver
+                    ? passMotor
+                      ? MARKER_PIXEL.driverMotor
+                      : MARKER_PIXEL.driverCar
+                    : MARKER_PIXEL.passenger
+                }
+              />
             </Marker>
           )}
 
-          {/* KARŞI TARAF - Profesyonel Marker - Tıklanabilir */}
+          {/* KARŞI TARAF — sürücü: yolcu PNG; yolcu: sürücü araç PNG */}
           {otherLocation && (
             <Marker 
               coordinate={otherLocation} 
-              anchor={{ x: 0.5, y: 0.9 }}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={pinTracks}
+              zIndex={isDriver ? 4800 : 4100}
               onPress={() => setShowInfoCard(true)}
             >
-              <View style={styles.proMarkerContainer}>
-                <View style={[styles.proMarkerHead, { backgroundColor: isDriver ? '#8B5CF6' : '#059669' }]}>
-                  {isDriver ? (
-                    passMotor ? (
-                      <MaterialCommunityIcons name="motorbike" size={20} color="#FFF" />
-                    ) : (
-                      <Ionicons name="person" size={20} color="#FFF" />
-                    )
-                  ) : (
-                    <Ionicons name="car" size={20} color="#FFF" />
-                  )}
-                </View>
-                <View style={[styles.proMarkerTail, { borderTopColor: isDriver ? '#8B5CF6' : '#059669' }]} />
-                <View style={styles.proMarkerShadow} />
-              </View>
+              <TripMapMarkerImage
+                source={
+                  isDriver
+                    ? getPassengerMarkerImage(otherPassengerGender ?? null, otherUserId ?? null)
+                    : getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')
+                }
+                scale={peerMapPinScale}
+                size={
+                  isDriver
+                    ? MARKER_PIXEL.passenger
+                    : passMotor
+                      ? MARKER_PIXEL.driverMotor
+                      : MARKER_PIXEL.driverCar
+                }
+              />
             </Marker>
           )}
 
           {/* HEDEF - Bayrak Stili */}
           {destinationLocation && (
-            <Marker coordinate={destinationLocation} anchor={{ x: 0.15, y: 0.95 }}>
-              <View style={styles.proFlagMarker}>
+            <Marker
+              coordinate={destinationLocation}
+              anchor={{ x: 0.15, y: 0.95 }}
+              tracksViewChanges={pinTracks}
+              zIndex={3000}
+            >
+              <View style={styles.proFlagMarker} collapsable={false}>
                 <View style={styles.proFlagPole} />
                 <View style={styles.proFlagBody}>
                   <Ionicons name="flag" size={14} color="#FFF" />
@@ -2674,40 +2972,64 @@ export default function LiveMapView({
                       {formatRouteKmMin(destinationDistance, destinationDuration)}
                     </Text>
                   </View>
-                  <View style={styles.routeRowTrail}>
-                    {nearDestination ? (
-                      <View
-                        style={[
-                          styles.nearBadge,
-                          driverNavImmersive ? styles.nearBadgeNav : null,
-                        ]}
-                      >
-                        <Text
+                  <View style={styles.routeRowTrailColumn}>
+                    <View style={styles.routeRowTrail}>
+                      {nearDestination ? (
+                        <View
                           style={[
-                            styles.nearBadgeText,
-                            driverNavImmersive ? styles.nearBadgeTextNav : null,
+                            styles.nearBadge,
+                            driverNavImmersive ? styles.nearBadgeNav : null,
                           ]}
                         >
-                          YAKIN!
-                        </Text>
-                      </View>
-                    ) : null}
-                    {offeredPrice ? (
-                      <View
-                        style={[
-                          styles.offeredPriceBadge,
-                          driverNavImmersive ? styles.offeredPriceBadgeNav : null,
-                        ]}
-                      >
-                        <Text
+                          <Text
+                            style={[
+                              styles.nearBadgeText,
+                              driverNavImmersive ? styles.nearBadgeTextNav : null,
+                            ]}
+                          >
+                            YAKIN!
+                          </Text>
+                        </View>
+                      ) : null}
+                      {offeredPrice ? (
+                        <View
                           style={[
-                            styles.offeredPriceText,
-                            driverNavImmersive ? styles.offeredPriceTextNav : null,
+                            styles.offeredPriceBadge,
+                            driverNavImmersive ? styles.offeredPriceBadgeNav : null,
                           ]}
                         >
-                          ₺{offeredPrice}
-                        </Text>
-                      </View>
+                          <Text
+                            style={[
+                              styles.offeredPriceText,
+                              driverNavImmersive ? styles.offeredPriceTextNav : null,
+                            ]}
+                          >
+                            ₺{offeredPrice}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {isDriver && !driverNavImmersive ? (
+                      <TouchableOpacity
+                        onPress={handleYolcuyaGitPress}
+                        activeOpacity={0.82}
+                        accessibilityRole="button"
+                        accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
+                      >
+                        <LinearGradient
+                          colors={['#0D9488', '#10B981', '#34D399']}
+                          style={styles.driverYolcuyaGitChip}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Animated.View style={{ transform: [{ rotate: tripCompassRotate }] }}>
+                            <Ionicons name="compass" size={16} color="#ECFDF5" />
+                          </Animated.View>
+                          <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
+                            {navigationMode ? 'Ortala' : 'Yolcuya Git'}
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
                     ) : null}
                   </View>
                 </View>
@@ -2728,14 +3050,38 @@ export default function LiveMapView({
                   >
                     Ücret
                   </Text>
-                  <Text
-                    style={[
-                      styles.priceValue,
-                      driverNavImmersive ? styles.priceValueNav : null,
-                    ]}
-                  >
-                    ₺{price}
-                  </Text>
+                  <View style={styles.priceRowRightCol}>
+                    <Text
+                      style={[
+                        styles.priceValue,
+                        driverNavImmersive ? styles.priceValueNav : null,
+                      ]}
+                    >
+                      ₺{price}
+                    </Text>
+                    {isDriver && !driverNavImmersive ? (
+                      <TouchableOpacity
+                        onPress={handleYolcuyaGitPress}
+                        activeOpacity={0.82}
+                        accessibilityRole="button"
+                        accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
+                      >
+                        <LinearGradient
+                          colors={['#0D9488', '#10B981', '#34D399']}
+                          style={styles.driverYolcuyaGitChip}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Animated.View style={{ transform: [{ rotate: tripCompassRotate }] }}>
+                            <Ionicons name="compass" size={16} color="#ECFDF5" />
+                          </Animated.View>
+                          <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
+                            {navigationMode ? 'Ortala' : 'Yolcuya Git'}
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                 </View>
               ) : null}
 
@@ -2798,159 +3144,169 @@ export default function LiveMapView({
       {/* ALT BUTONLAR */}
       <View style={styles.bottomPanel}>
         <View style={styles.bottomGradient}>
-          {/* Ara: alt panelde, Yaz butonunun hemen üstünde — yeşil yanıp sönen etiket + FAB (sol) */}
-          {MapView && onCall ? (
-            <View style={styles.callPromptRow} pointerEvents="box-none">
-              <View style={styles.callPromptColumn}>
-                <Animated.View style={{ opacity: callLabelBlink }}>
-                  <Text style={styles.callPromptLabelSingle} numberOfLines={1}>
-                    {callPromptLine}
+          {/* Ara (sol) · pusula Yolcuya Git (orta) · Güven Al (sağ) — aynı hat */}
+          {MapView && onCall && !driverNavImmersive ? (
+            <View style={styles.tripActionBar} pointerEvents="box-none">
+              <View style={styles.tripActionBarCol}>
+                {isDriver ? (
+                  <Text style={styles.driverTripCallTitle} numberOfLines={1}>
+                    Yolcuyu Ara
                   </Text>
-                </Animated.View>
-                <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
-                  <TouchableOpacity
-                    style={[styles.mapCallFabCircle, isCallLoading && styles.mapCallFabCircleDisabled]}
-                    onPress={() => {
-                      void tapButtonHaptic();
-                      void handleCall('audio');
-                    }}
-                    activeOpacity={0.88}
-                    disabled={isCallLoading}
-                    accessibilityRole="button"
-                    accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
-                  >
-                    <Ionicons name="call" size={22} color="#FFF" />
-                  </TouchableOpacity>
-                </Animated.View>
+                ) : (
+                  <Animated.View style={{ opacity: callLabelBlink }}>
+                    <Text style={styles.callPromptLabelSingle} numberOfLines={1}>
+                      {callPromptLine}
+                    </Text>
+                  </Animated.View>
+                )}
+                <View style={styles.tripCallGuvenRow}>
+                  <View style={styles.tripCallChatCluster}>
+                    <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
+                      <TouchableOpacity
+                        style={[styles.mapCallFabCircle, isCallLoading && styles.mapCallFabCircleDisabled]}
+                        onPress={() => {
+                          logPax('tapButtonHaptic', tapButtonHaptic);
+                          void tapButtonHaptic();
+                          void handleCall('audio');
+                        }}
+                        activeOpacity={0.88}
+                        disabled={isCallLoading}
+                        accessibilityRole="button"
+                        accessibilityLabel={isDriver ? 'Yolcuyu ara' : 'Sürücüyü ara'}
+                      >
+                        <Ionicons name="call" size={22} color="#FFF" />
+                      </TouchableOpacity>
+                    </Animated.View>
+                    {onChat ? (
+                      <TouchableOpacity
+                        style={styles.tripInlineChatBtn}
+                        onPress={() => {
+                          logPax('tapButtonHaptic', tapButtonHaptic);
+                          void tapButtonHaptic();
+                          logPax('onChat', onChat);
+                          onChat();
+                        }}
+                        activeOpacity={0.85}
+                        accessibilityRole="button"
+                        accessibilityLabel={isDriver ? 'Yolcuya yaz' : 'Sürücüye yaz'}
+                      >
+                        <LinearGradient
+                          colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']}
+                          style={styles.tripInlineChatBtnGrad}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Ionicons name="chatbubble-ellipses" size={18} color="#FFF" />
+                          <Text style={styles.tripInlineChatBtnText} numberOfLines={1}>
+                            {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
+                          </Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                  {onTrustRequest && trustRequestLabel ? (
+                    <View style={styles.tripGuvenMirrorWrap}>
+                      <TouchableOpacity
+                        style={styles.tripGuvenFabCompact}
+                        onPress={() => {
+                          logPax('tapButtonHaptic', tapButtonHaptic);
+                          void tapButtonHaptic();
+                          logPax('onTrustRequest', onTrustRequest);
+                          onTrustRequest();
+                        }}
+                        activeOpacity={0.88}
+                        accessibilityRole="button"
+                        accessibilityLabel={trustRequestLabel}
+                      >
+                        <LinearGradient
+                          colors={['#047857', '#059669', '#10B981']}
+                          style={styles.tripGuvenFabCompactInner}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        >
+                          <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                            <Ionicons name="shield-checkmark" size={22} color="#FFF" />
+                          </Animated.View>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.tripGuvenMirrorSpacer} />
+                  )}
+                </View>
               </View>
             </View>
           ) : null}
 
-          {/* 🆕 SÜRÜCÜ İÇİN - YOLCUYA GİT BUTONU (Ortalı, Yaz butonunun üstünde) */}
-          {isDriver && !driverNavImmersive && (
-            <Animated.View
-              style={[
-                styles.centeredNavButton,
-                {
-                  opacity: pulseAnim,
-                  transform: [{ scale: navBreathAnim }],
-                },
-              ]}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  void tapButtonHaptic();
-                  if (!userLocation || !otherLocation) {
-                    Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
-                    return;
-                  }
-                  if (!navigationMode) {
-                    const dM = haversineMeters(userLocation, otherLocation);
-                    const handoff =
-                      !!destinationLocation && dM < NAV_HANDOFF_TO_DESTINATION_M;
-                    setNavigationStage(handoff ? 'destination' : 'pickup');
-                    setNavigationMode(true);
-                    if (userId && tagId) {
-                      const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
-                      void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
-                    }
-                  } else {
-                    lastNavCameraAtRef.current = 0;
-                    void loadDriverNavMeetingRouteRef.current();
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <LinearGradient 
-                  colors={['#10B981', '#22C55E', '#34D399']} 
-                  style={styles.centeredNavBtnPurple}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <View style={styles.nav3dIconWrap}>
-                    {/* 3D hissi için arka gölge katmanı */}
-                    <Ionicons
-                      name="navigate"
-                      size={22}
-                      color="rgba(4, 120, 87, 0.35)"
-                      style={{ position: 'absolute', left: 2, top: 4 }}
-                    />
-                    <Ionicons name="navigate" size={22} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.centeredNavBtnText}>
-                    {navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
-          )}
-
-            {/* 🆕 YAZ BUTONU - Ana Buton Olarak */}
-            {!driverNavImmersive ? (
-            <TouchableOpacity
-              style={styles.mainChatButton}
-              onPress={() => {
-                void tapButtonHaptic();
-                onChat?.();
-              }}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']}
-                style={styles.mainChatButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <View style={styles.chatButtonContent}>
-                  <View style={styles.chatIconWrapperLarge}>
-                    <Ionicons name="chatbubble-ellipses" size={26} color="#FFF" />
-                  </View>
-                  <Text style={styles.mainChatButtonText}>
-                    {isDriver ? 'Yolcuya Yaz' : 'Sürücüye Yaz'}
-                  </Text>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-            ) : null}
-
-          {/* 🆕 ALT BUTONLAR - Destek ve Bitir */}
+          {/* 🆕 ALT BUTONLAR — AI (eski Destek köşesi) + Bitir */}
           {!driverNavImmersive ? (
           <View style={styles.actionButtons}>
-            {/* Destek — aynı WhatsApp linki; görünüm: yeşil sohbet + sarı uyarı, logo yok */}
-            <TouchableOpacity
-              style={styles.supportDestekTouch}
-              onPress={() => {
-                const phoneNumber = '905326497412';
-                const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
-                const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-
-                Linking.canOpenURL(whatsappUrl)
-                  .then((supported) => {
-                    if (supported) {
-                      Linking.openURL(whatsappUrl);
-                    } else {
-                      Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
-                    }
-                  })
-                  .catch(() => {
-                    Linking.openURL(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`);
-                  });
-              }}
-              activeOpacity={0.75}
-              accessibilityLabel="Destek — WhatsApp"
-            >
-              <View style={styles.supportSplitIcon} pointerEvents="none">
-                <View style={styles.supportSplitLeft}>
-                  <Ionicons name="chatbubbles" size={13} color="#FFF" />
+            {onOpenLeylekZekaSupport ? (
+              <Pressable
+                style={({ pressed }) => [styles.tripAiFabWrap, pressed && { opacity: 0.92 }]}
+                onPress={() => {
+                  void tapButtonHaptic();
+                  onOpenLeylekZekaSupport();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="AI — Leylek Zeka"
+              >
+                <LinearGradient
+                  colors={['#22D3EE', '#3FA9F5', '#6366F1', '#8B5CF6']}
+                  locations={[0, 0.35, 0.65, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.tripAiFabGrad}
+                >
+                  <Ionicons name="sparkles" size={26} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.tripAiFabLabel} numberOfLines={1}>
+                  AI
+                </Text>
+              </Pressable>
+            ) : (
+              <TouchableOpacity
+                style={styles.supportDestekTouch}
+                onPress={() => {
+                  const phoneNumber = '905326497412';
+                  const message = 'Merhaba, Leylek Tag uygulaması hakkında destek almak istiyorum.';
+                  const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
+                  const fallbackUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+                  const canOpen = Linking.canOpenURL;
+                  const openUrl = Linking.openURL;
+                  callCheck('Linking.canOpenURL', canOpen);
+                  callCheck('Linking.openURL', openUrl);
+                  if (typeof canOpen !== 'function' || typeof openUrl !== 'function') {
+                    return;
+                  }
+                  canOpen(whatsappUrl)
+                    .then((supported) => {
+                      if (supported) {
+                        void openUrl(whatsappUrl);
+                      } else {
+                        void openUrl(fallbackUrl);
+                      }
+                    })
+                    .catch(() => {
+                      void openUrl(fallbackUrl);
+                    });
+                }}
+                activeOpacity={0.75}
+                accessibilityLabel="Destek — WhatsApp"
+              >
+                <View style={styles.supportSplitIcon} pointerEvents="none">
+                  <View style={styles.supportSplitLeft}>
+                    <Ionicons name="chatbubbles" size={13} color="#FFF" />
+                  </View>
+                  <View style={styles.supportSplitRight}>
+                    <Ionicons name="alert" size={15} color="#713F12" />
+                  </View>
                 </View>
-                <View style={styles.supportSplitRight}>
-                  <Ionicons name="alert" size={15} color="#713F12" />
-                </View>
-              </View>
-              <Text style={styles.supportDestekLabel} numberOfLines={1}>
-                Destek
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.supportDestekLabel} numberOfLines={1}>
+                  Destek
+                </Text>
+              </TouchableOpacity>
+            )}
 
             {/* 🆕 YOL PAYLAŞIMINI BİTİR BUTONU - QR ile + KONUM KONTROLÜ */}
             <Animated.View style={{ 
@@ -3309,21 +3665,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  driverNavVehicleMark: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#15803D',
-    borderWidth: 2,
-    borderColor: '#FFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    elevation: 6,
-  },
   driverNavCloseFab: {
     position: 'absolute',
     right: 10,
@@ -3348,6 +3689,203 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
     marginBottom: 10,
+  },
+  tripActionBar: {
+    width: '100%',
+    marginBottom: 10,
+  },
+  tripActionBarCol: {
+    width: '100%',
+    paddingHorizontal: 2,
+  },
+  tripCallGuvenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  tripCallChatCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 1,
+  },
+  tripInlineChatBtn: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    maxWidth: SCREEN_WIDTH * 0.48,
+    flexShrink: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  tripInlineChatBtnGrad: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+  },
+  tripInlineChatBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.15,
+  },
+  tripGuvenMirrorWrap: {
+    marginTop: -4,
+  },
+  tripGuvenMirrorSpacer: {
+    width: 48,
+    height: 48,
+  },
+  tripActionBarRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  tripActionBarRowDriver: {
+    alignItems: 'center',
+  },
+  tripActionLeft: {
+    width: 118,
+    alignItems: 'flex-start',
+  },
+  tripActionLeftDriver: {
+    width: 92,
+  },
+  driverTripCallTitle: {
+    color: '#4ADE80',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginBottom: 6,
+  },
+  tripActionCenter: {
+    flex: 1,
+    alignItems: 'center',
+    minHeight: 96,
+    justifyContent: 'flex-start',
+  },
+  tripActionCenterDriver: {
+    minHeight: 52,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tripNavCtaHorizontal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    shadowColor: '#064e3b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 10,
+    maxWidth: SCREEN_WIDTH * 0.42,
+  },
+  tripNavCtaHorizontalLabel: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  tripActionCenterSpacer: {
+    flex: 1,
+    minHeight: 8,
+  },
+  tripActionRight: {
+    width: 118,
+    alignItems: 'flex-end',
+  },
+  tripActionRightDriver: {
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripGuvenFabCompact: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#064e3b',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  tripGuvenFabCompactInner: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  tripActionRightSpacer: {
+    width: 88,
+    height: 88,
+  },
+  tripCompassCta: {
+    width: 122,
+    minHeight: 100,
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.38)',
+    shadowColor: '#064e3b',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.38,
+    shadowRadius: 14,
+    elevation: 14,
+  },
+  tripCompassCtaLabel: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    lineHeight: 15,
+  },
+  tripGuvenFab: {
+    marginTop: 14,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#064e3b',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  tripGuvenFabInner: {
+    width: 88,
+    minHeight: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  tripGuvenFabText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   callPromptColumn: {
     alignItems: 'flex-start',
@@ -3604,6 +4142,39 @@ const styles = StyleSheet.create({
     gap: 6,
     marginLeft: 4,
   },
+  routeRowTrailColumn: {
+    alignItems: 'flex-end',
+    gap: 8,
+    marginLeft: 4,
+    flexShrink: 0,
+  },
+  driverYolcuyaGitChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    minWidth: 118,
+    shadowColor: '#064e3b',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  driverYolcuyaGitChipLabel: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  priceRowRightCol: {
+    alignItems: 'flex-end',
+    gap: 8,
+  },
   routeLabel: { fontSize: 13, color: '#666', fontWeight: '500' },
   routeValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   routeLabelModern: {
@@ -3802,8 +4373,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: 15,
+    borderRadius: 18,
   },
   
   // 🆕 Animated Border
@@ -3864,15 +4435,17 @@ const styles = StyleSheet.create({
   // 🆕 Chat Button (Ana Buton)
   mainChatButton: {
     width: SCREEN_WIDTH - 48,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
+    borderRadius: 18,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 9,
     marginBottom: 10,
     alignSelf: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   chatButtonContent: {
     flexDirection: 'row',
@@ -3889,9 +4462,38 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   mainChatButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#FFF',
+    letterSpacing: 0.2,
+  },
+  tripTrustLeylekRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+    width: SCREEN_WIDTH - 48,
+    alignSelf: 'center',
+  },
+  mapTripAuxBtn: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  mapTripAuxBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    gap: 6,
+  },
+  mapTripAuxBtnText: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFF',
+    textAlign: 'center',
   },
   chatButton: {
     flexDirection: 'row',
@@ -3920,6 +4522,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     alignItems: 'flex-end',
+  },
+  tripAiFabWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 52,
+    maxWidth: 56,
+  },
+  tripAiFabGrad: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  tripAiFabLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#334155',
+    marginTop: 4,
+    letterSpacing: 0.6,
   },
   supportDestekTouch: {
     alignItems: 'center',

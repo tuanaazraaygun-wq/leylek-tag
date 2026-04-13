@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 
 import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
+import { callAlertPrompt } from '../lib/alertPrompt';
 
 function tripStatusLabel(status: string | undefined) {
   const s = String(status || '');
@@ -614,7 +615,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
                     <TouchableOpacity
                       style={[styles.kycBtn, styles.kycRejectBtn]}
                       onPress={() => {
-                        Alert.prompt(
+                        const ok = callAlertPrompt(
                           'Red Sebebi',
                           'Başvurunun reddedilme sebebini yazın:',
                           [
@@ -623,6 +624,13 @@ function AdminContent({ adminPhone, onClose }: Props) {
                           ],
                           'plain-text'
                         );
+                        if (!ok) {
+                          Alert.alert(
+                            'Red sebebi',
+                            'Metin girişi bu cihazda kullanılamıyor. Red işlemi için iOS veya alternatif kanalı kullanın.',
+                            [{ text: 'Tamam' }],
+                          );
+                        }
                       }}
                     >
                       <Text style={styles.kycBtnText}>✗ Reddet</Text>

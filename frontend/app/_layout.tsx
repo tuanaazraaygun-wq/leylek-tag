@@ -24,6 +24,7 @@ import { StatusBar } from 'expo-status-bar';
 import { RootErrorBoundary } from '../components/RootErrorBoundary';
 import { AppAlertProvider } from '../contexts/AppAlertContext';
 import { LeylekZekaChromeProvider } from '../contexts/LeylekZekaChromeContext';
+import { TrustProvider } from '../contexts/TrustContext';
 import LeylekZekaWidget from '../components/LeylekZekaWidget';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -80,19 +81,21 @@ export default function RootLayout() {
             <NotificationProvider>
               <SocketProvider>
                 <StatusBar style="dark" />
-                <LeylekZekaChromeProvider>
-                  <GestureHandlerRootView style={{ flex: 1 }}>
-                    <View style={{ flex: 1 }}>
-                      <Stack
-                        screenOptions={{
-                          headerShown: false,
-                          animation: 'fade',
-                        }}
-                      />
-                      <LeylekZekaWidget />
-                    </View>
-                  </GestureHandlerRootView>
-                </LeylekZekaChromeProvider>
+                <TrustProvider>
+                  <LeylekZekaChromeProvider>
+                    <GestureHandlerRootView style={{ flex: 1 }}>
+                      <View style={{ flex: 1 }}>
+                        <Stack
+                          screenOptions={{
+                            headerShown: false,
+                            animation: 'fade',
+                          }}
+                        />
+                        <LeylekZekaWidget />
+                      </View>
+                    </GestureHandlerRootView>
+                  </LeylekZekaChromeProvider>
+                </TrustProvider>
               </SocketProvider>
             </NotificationProvider>
           </PushNotificationsProvider>

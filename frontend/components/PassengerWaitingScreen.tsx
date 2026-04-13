@@ -22,6 +22,7 @@ import {
   Modal,
   Image,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { getPassengerMarkerImage, getDriverMarkerImage } from '../lib/mapNavMarkers';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,8 +49,9 @@ if (Platform.OS !== 'web') {
 }
 
 import { API_BASE_URL } from '../lib/backendConfig';
+import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
-import LeylekAIFloating from './LeylekAIFloating';
+import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 
 const API_URL = API_BASE_URL;
 
@@ -109,6 +111,8 @@ interface Props {
   tagId: string;
   offeredPrice: number;
   onCancel: () => void;
+  /** Geri — rol seçimine; yapay zeka girişi yalnızca üst sağdaki Leylek Zeka satırı */
+  onPressBack?: () => void;
   onMatch: (driverData: any) => void;
   /** Yolcu araç/motor tercihi — yakındaki sürücü sayısı dispatch ile aynı filtreyi kullanır */
   passengerVehicleKind?: 'car' | 'motorcycle';
@@ -125,11 +129,32 @@ export default function PassengerWaitingScreen({
   tagId,
   offeredPrice,
   onCancel,
+  onPressBack,
   onMatch,
   passengerVehicleKind = 'car',
   passengerGender = null,
   selfUserId = null,
 }: Props) {
+  const { setLeylekZekaChatOpen } = useLeylekZekaChrome();
+  const openMatchScreenAi = () => {
+    console.log('[PAX_DEBUG] PassengerWaitingScreen openMatchScreenAi');
+    callCheck('Haptics.impactAsync', Haptics?.impactAsync);
+    if (Platform.OS !== 'web') {
+      try {
+        const impact = Haptics?.impactAsync;
+        if (typeof impact === 'function') {
+          void impact(Haptics.ImpactFeedbackStyle.Light);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    callCheck('setLeylekZekaChatOpen', setLeylekZekaChatOpen);
+    if (typeof setLeylekZekaChatOpen === 'function') {
+      setLeylekZekaChatOpen(true);
+    }
+  };
+
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
   const [nearbyDriverCount, setNearbyDriverCount] = useState(0);
   const [dispatchStatus, setDispatchStatus] = useState<DispatchStatus>({
@@ -247,7 +272,10 @@ export default function PassengerWaitingScreen({
   
   // Paylaş
   const handleShare = async () => {
+    console.log('[PAX_DEBUG] PassengerWaitingScreen handleShare');
     try {
+      callCheck('Share.share', Share.share);
+      if (typeof Share.share !== 'function') return;
       await Share.share({
         message: `LeylekTag ile yolculuk arıyorum!\n\n📍 ${pickupAddress}\n📍 ${dropoffAddress}\n💰 ${offeredPrice} TL`,
       });
@@ -308,7 +336,12 @@ export default function PassengerWaitingScreen({
       />
       
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => {}} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => (onPressBack ? onPressBack() : onCancel())}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Geri"
+        >
           <Ionicons name="chevron-back" size={28} color="#3FA9F5" />
         </TouchableOpacity>
         
@@ -320,17 +353,37 @@ export default function PassengerWaitingScreen({
           </View>
         </View>
         
-        <TouchableOpacity onPress={onCancel} style={styles.cancelButton}>
-          <Ionicons name="close" size={28} color="#DC2626" />
-        </TouchableOpacity>
+        <View style={styles.headerRightCluster}>
+          <TouchableOpacity
+            onPress={openMatchScreenAi}
+            style={styles.headerAiPill}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Leylek Zeka — yapay zeka desteği"
+          >
+            <LinearGradient
+              colors={['#22D3EE', '#3FA9F5', '#6366F1']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.headerAiPillGradient}
+            >
+              <Ionicons name="sparkles" size={18} color="#FFF" />
+              <Text style={styles.headerAiPillText} numberOfLines={1}>
+                Leylek Zeka
+              </Text>
+            </LinearGradient>
+            <View style={styles.headerAiBadge} pointerEvents="none">
+              <Text style={styles.headerAiBadgeText}>AI</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onCancel} style={styles.cancelButton} accessibilityRole="button" accessibilityLabel="Teklifi iptal et">
+            <Ionicons name="close" size={28} color="#DC2626" />
+          </TouchableOpacity>
+        </View>
       </View>
       
       {/* Harita — GMS yoksa MapView mount edilmez (Huawei çökme önlemi) */}
       <View style={styles.mapContainer}>
-        <LeylekAIFloating
-          position="top-left"
-          message="Teklif sürecini hızlandırmak için Leylek'ten öneri alabilirsin."
-        />
         {MapView && userLocation && isNativeGoogleMapsSupported() ? (
           <MapView
             ref={mapRef}
@@ -441,6 +494,7 @@ export default function PassengerWaitingScreen({
             ) : null}
           </View>
         )}
+        {/* Tek AI girişi: üst sağdaki Leylek Zeka — harita üzerinde ek FAB yok */}
         
         {/* Sürücü Sayısı Badge */}
         <View style={styles.driverCountBadge}>
@@ -637,6 +691,56 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerAiPill: {
+    maxWidth: 172,
+    borderRadius: 22,
+    overflow: 'visible',
+  },
+  headerAiPillGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 12,
+    paddingRight: 12,
+    paddingVertical: 10,
+    borderRadius: 22,
+    gap: 8,
+    shadowColor: '#312e81',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  headerAiPillText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.15,
+    flexShrink: 1,
+  },
+  headerAiBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 24,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#F0ABFC',
+    borderWidth: 1.5,
+    borderColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAiBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#4C1D95',
+  },
   
   // Harita
   mapContainer: {
@@ -741,6 +845,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     right: 12,
+    zIndex: 40,
+    elevation: 14,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(16, 185, 129, 0.95)',

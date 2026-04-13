@@ -58,6 +58,14 @@ function resolveCityDataKey(raw: string): string | null {
   return null;
 }
 
+/** Kayıtlı şehir adından merkez koordinatı — yolcu hedef modalı harita merkezi için (`app/index.tsx` PassengerDashboard). */
+export function getRegisteredCityCenter(raw: string): { latitude: number; longitude: number } | null {
+  const key = resolveCityDataKey(raw);
+  if (!key) return null;
+  const d = CITY_DATA[key];
+  return { latitude: d.lat, longitude: d.lng };
+}
+
 // Mahalle popüler aramaları - her şehir için
 const POPULAR_PLACES: { [key: string]: string[] } = {
   'İstanbul': ['Kadıköy', 'Beşiktaş', 'Şişli', 'Bakırköy', 'Ümraniye', 'Üsküdar', 'Fatih', 'Beyoğlu', 'Ataşehir', 'Maltepe'],

@@ -11,7 +11,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, Dimensions, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
+import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -40,6 +42,21 @@ export interface DriverLocation {
   longitude: number;
   vehicle_model?: string;
   price?: number;
+  /** Teklif / socket — LiveMapView / bekleme ekranı ile aynı araç–motor PNG seçimi */
+  vehicle_kind?: 'car' | 'motorcycle';
+}
+
+/** Android: Marker içi Image ilk karede çizilsin */
+function MarkerPinWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <View
+      collapsable={false}
+      pointerEvents="none"
+      style={{ alignItems: 'center', justifyContent: 'center' }}
+    >
+      {children}
+    </View>
+  );
 }
 
 interface SearchingMapViewProps {
@@ -48,6 +65,9 @@ interface SearchingMapViewProps {
   driverLocations: DriverLocation[];
   height?: number;
   nearbyDriverCount?: number; // 20 km içindeki toplam sürücü sayısı
+  /** index.tsx’ten — PassengerWaitingScreen / LiveMapView ile aynı yolcu PNG mantığı */
+  selfGender?: 'female' | 'male' | null;
+  selfUserId?: string | null;
 }
 
 export default function SearchingMapView({
@@ -56,9 +76,16 @@ export default function SearchingMapView({
   driverLocations,
   height = SCREEN_HEIGHT * 0.35,
   nearbyDriverCount = 0,
+  selfGender = null,
+  selfUserId = null,
 }: SearchingMapViewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [searchingMapTracks, setSearchingMapTracks] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setSearchingMapTracks(false), 2200);
+    return () => clearTimeout(t);
+  }, []);
   
   // 🎭 Hayali sürücüler - Gerçek sürücü yoksa göster
   const [fakeDrivers, setFakeDrivers] = useState<DriverLocation[]>([]);
@@ -109,10 +136,20 @@ export default function SearchingMapView({
 
     if (coordinates.length > 1) {
       setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: true,
-        });
+        const map = mapRef.current;
+        callCheck('mapRef.current.fitToCoordinates', map?.fitToCoordinates);
+        const fit = map && typeof map.fitToCoordinates === 'function' ? map.fitToCoordinates.bind(map) : null;
+        console.log('[PAX_DEBUG] SearchingMapView fit', { hasMap: !!map, fitToCoordinates: typeof map?.fitToCoordinates });
+        if (fit) {
+          try {
+            fit(coordinates, {
+              edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+              animated: true,
+            });
+          } catch (e) {
+            if (__DEV__) console.warn('[SearchingMapView] fitToCoordinates', e);
+          }
+        }
       }, 300);
     }
   }, [mapReady, userLocation, destinationLocation, displayDrivers.length]);
@@ -169,17 +206,21 @@ export default function SearchingMapView({
           <Marker
             coordinate={userLocation}
             title="Konumunuz"
-            anchor={{ x: 0.5, y: 0.9 }}
+            anchor={{ x: 0.5, y: 1 }}
+            flat={false}
+            tracksViewChanges={searchingMapTracks}
+            zIndex={5000}
           >
-            <View style={styles.passengerMarker}>
-              <View style={styles.passengerPin}>
-                <View style={styles.passengerPinHead}>
-                  <Ionicons name="person" size={18} color="#FFF" />
-                </View>
-                <View style={styles.passengerPinTail} />
-              </View>
-              <View style={styles.markerShadow} />
-            </View>
+            <MarkerPinWrap>
+              <Image
+                source={getPassengerMarkerImage(selfGender ?? null, selfUserId)}
+                style={{
+                  width: MARKER_PIXEL.passenger,
+                  height: MARKER_PIXEL.passenger,
+                }}
+                resizeMode="contain"
+              />
+            </MarkerPinWrap>
           </Marker>
         )}
 
@@ -201,26 +242,34 @@ export default function SearchingMapView({
         )}
 
         {/* Sürücüler - Profesyonel Araç Görünümü */}
-        {displayDrivers.map((driver) => (
-          <Marker
-            key={driver.driver_id}
-            coordinate={{ latitude: driver.latitude, longitude: driver.longitude }}
-            title={displayFirstName(driver.driver_name, 'Sürücü')}
-            description={driver.vehicle_model || (driver.price ? `₺${driver.price}` : undefined)}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={styles.carMarker}>
-              <View style={styles.carBody}>
-                <Ionicons name="car" size={22} color="#FFF" />
-              </View>
-              {driver.price && (
-                <View style={styles.carPriceTag}>
+        {displayDrivers.map((driver, index) => {
+          const isM = driver.vehicle_kind === 'motorcycle';
+          const src = getDriverMarkerImage(isM ? 'motorcycle' : 'car');
+          const px = isM ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar;
+          return (
+            <Marker
+              key={driver.driver_id}
+              coordinate={{ latitude: driver.latitude, longitude: driver.longitude }}
+              title={displayFirstName(driver.driver_name, 'Sürücü')}
+              description={driver.vehicle_model || (driver.price ? `₺${driver.price}` : undefined)}
+              anchor={{ x: 0.5, y: 1 }}
+              flat={false}
+              tracksViewChanges={searchingMapTracks}
+              zIndex={4000 + (index % 40)}
+            >
+              <View style={{ alignItems: 'center' }} collapsable={false}>
+              <MarkerPinWrap>
+                <Image source={src} style={{ width: px, height: px }} resizeMode="contain" />
+              </MarkerPinWrap>
+              {driver.price ? (
+                <View style={styles.carPriceTag} pointerEvents="none">
                   <Text style={styles.carPriceText}>₺{driver.price}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
-          </Marker>
-        ))}
+            </Marker>
+          );
+        })}
       </MapView>
 
       {/* Sürücü Sayısı Badge */}

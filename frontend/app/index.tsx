@@ -36,6 +36,8 @@ import { useSocketContext } from '../contexts/SocketContext'; // 🔥 MERKEZİ A
 import PlacesAutocomplete, { getRegisteredCityCenter } from '../components/PlacesAutocomplete';
 import { DEFAULT_TR_MAP_FALLBACK_CENTER } from '../lib/mapDefaults';
 import { isNativeGoogleMapsSupported } from '../lib/nativeGoogleMaps';
+import { callAlertPrompt, isAlertPromptCallable } from '../lib/alertPrompt';
+import { callCheck } from '../lib/callCheck';
 import AdminPanel from '../components/AdminPanel';
 import { LegalConsentModal, LegalPage, LocationWarningModal } from '../components/LegalPages';
 import SplashScreen from '../components/SplashScreen';
@@ -62,7 +64,6 @@ import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/of
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { playMatchChimeSound } from '../utils/sound';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
-import { useTrust } from '../contexts/TrustContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -108,6 +109,8 @@ async function joinTripCallAgoraAsCaller(
       appAlert('Hata', 'Arama bileti (token) alınamadı');
       return false;
     }
+    callCheck('agoraVoiceService.initialize', agoraVoiceService.initialize);
+    callCheck('agoraVoiceService.joinChannel', agoraVoiceService.joinChannel);
     await agoraVoiceService.initialize();
     agoraVoiceService.joinChannel(channelName, tok, agoraUidFromUserId(userId));
     return true;
@@ -258,6 +261,8 @@ interface Tag {
   passenger_payment_method?: 'cash' | 'card';
   /** Sürücü haritası: yolcu cinsiyeti (marker PNG) */
   passenger_gender?: string;
+  /** Yolcu haritasında sürücü marker (PNG): araç / motor */
+  driver_vehicle_kind?: 'car' | 'motorcycle' | string;
   /** Backend tek kaynak: yolcu–şoför buluşma (yol) */
   pickup_distance_km?: number | null;
   pickup_eta_min?: number | null;
@@ -787,6 +792,21 @@ export default function App() {
           void clearSessionStorage();
           setLoading(false);
           return;
+        }
+
+        try {
+          const lr = await AsyncStorage.getItem(`last_role_${parsedUser.id}`);
+          if (lr === 'passenger' || lr === 'driver') {
+            if (parsedUser.role !== lr) {
+              parsedUser = { ...parsedUser, role: lr };
+              await setPersistedUserJson(JSON.stringify(parsedUser));
+            }
+          } else if (parsedUser.role !== 'passenger' && parsedUser.role !== 'driver') {
+            parsedUser = { ...parsedUser, role: 'passenger' };
+            await setPersistedUserJson(JSON.stringify(parsedUser));
+          }
+        } catch {
+          /* ignore storage reconcile */
         }
 
         setUser(parsedUser);
@@ -2408,7 +2428,7 @@ export default function App() {
           const kycData = await kycResponse.json();
           
           if (kycData.kyc_status === 'none' || kycData.kyc_status === 'rejected') {
-            if (user) setUser(mergeVehicleIntoUser(user));
+            if (user) await saveUser(mergeVehicleIntoUser(user));
             setScreen('driver-kyc');
             return;
           } else if (kycData.kyc_status === 'pending') {
@@ -2418,7 +2438,7 @@ export default function App() {
               submitted_at: kycData.submitted_at
             });
             await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
-            if (user) setUser(mergeVehicleIntoUser(user));
+            if (user) await saveUser(mergeVehicleIntoUser(user));
             setScreen('dashboard');
             return;
           }
@@ -2429,7 +2449,7 @@ export default function App() {
         await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
         if (selectedRole && user) {
           const updatedUser = mergeVehicleIntoUser(user);
-          setUser(updatedUser);
+          await saveUser(updatedUser);
           
           // 📍 Hemen konum izni iste
           console.log('📍 Rol seçildi, konum izni isteniyor...');
@@ -2441,7 +2461,7 @@ export default function App() {
         console.error('Role kaydedilemedi:', error);
         if (selectedRole && user) {
           const updatedUser = mergeVehicleIntoUser(user);
-          setUser(updatedUser);
+          await saveUser(updatedUser);
           
           // 📍 Konum izni iste
           requestLocationPermission();
@@ -5371,7 +5391,13 @@ function PassengerDashboard({
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
 }) {
-  const { requestTrust } = useTrust();
+  /** Geçici: yolcu panelinde olası `undefined is not a function` — doğrudan PassengerDashboard içinde */
+  const __paxFn = (label: string, fn: unknown) => {
+    if (typeof fn !== 'function') {
+      console.warn(`[PAX_UNDEFINED_FN] ${label} typeof=${typeof fn}`);
+    }
+  };
+
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -5545,6 +5571,10 @@ function PassengerDashboard({
   );
   const passengerDestinationAutoOpenedRef = useRef(false);
   const prevHadActiveTagRef = useRef(!!activeTag);
+  const prevPaxUserLocRef = useRef<{ lat: number | undefined; lng: number | undefined }>({
+    lat: undefined,
+    lng: undefined,
+  });
 
   useEffect(() => {
     const c = user?.city && String(user.city).trim();
@@ -5552,10 +5582,26 @@ function PassengerDashboard({
   }, [user?.city]);
 
   useEffect(() => {
+    const lat = userLocation?.latitude;
+    const lng = userLocation?.longitude;
+    const prev = prevPaxUserLocRef.current;
+    const hadCoords = prev.lat != null && prev.lng != null;
+    const hasCoords = lat != null && lng != null;
+    if (!hadCoords && hasCoords) {
+      console.log('[PAX_LOC] userLocation coords first available', { lat, lng });
+    }
+    prevPaxUserLocRef.current = { lat, lng };
+  }, [userLocation?.latitude, userLocation?.longitude]);
+
+  useEffect(() => {
     if (user?.city?.trim() || !userLocation?.latitude || !userLocation?.longitude) return;
     let cancelled = false;
     (async () => {
       try {
+        console.log('[PAX_LOC] reverse-geocode (city from GPS) start', {
+          lat: userLocation.latitude,
+          lng: userLocation.longitude,
+        });
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.latitude}&lon=${userLocation.longitude}&accept-language=tr&addressdetails=1`;
         const r = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
         const j = await r.json();
@@ -5776,6 +5822,8 @@ function PassengerDashboard({
 
   const leylekChromePassenger = useLeylekZekaChrome();
   const openLeylekZekaFromMap = useCallback(() => {
+    console.log('[PAX_DEBUG] openLeylekZekaFromMap');
+    callCheck('Haptics.impactAsync', Haptics?.impactAsync);
     if (Platform.OS !== 'web') {
       try {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -5783,27 +5831,33 @@ function PassengerDashboard({
         /* ignore */
       }
     }
-    leylekChromePassenger.setLeylekZekaChatOpen(true);
+    const setOpen = leylekChromePassenger?.setLeylekZekaChatOpen;
+    callCheck('setLeylekZekaChatOpen', setOpen);
+    if (typeof setOpen === 'function') {
+      setOpen(true);
+    }
   }, [leylekChromePassenger]);
   useEffect(() => {
+    const setHint = leylekChromePassenger?.setFlowHint;
+    if (typeof setHint !== 'function') return;
     if (!activeTag) {
-      leylekChromePassenger.setFlowHint('passenger_home');
+      setHint('passenger_home');
       return;
     }
     if (activeTag.status === 'matched' || activeTag.status === 'in_progress') {
-      leylekChromePassenger.setFlowHint('passenger_trip');
+      setHint('passenger_trip');
       return;
     }
     if (activeTag.status === 'offers_received' || (activeTag.status === 'pending' && offers.length > 0)) {
-      leylekChromePassenger.setFlowHint('passenger_offer_waiting');
+      setHint('passenger_offer_waiting');
       return;
     }
     if (activeTag.status === 'pending') {
-      leylekChromePassenger.setFlowHint('passenger_matching');
+      setHint('passenger_matching');
       return;
     }
-    leylekChromePassenger.setFlowHint('passenger_home');
-  }, [activeTag, offers.length, leylekChromePassenger.setFlowHint]);
+    setHint('passenger_home');
+  }, [activeTag, offers.length, leylekChromePassenger?.setFlowHint]);
 
   // 🆕 Teklif veren sürücülerin konumlarını offers'tan güncelle
   useEffect(() => {
@@ -5860,6 +5914,7 @@ function PassengerDashboard({
     setCallRejected(false);
     setCallEnded(false);
     setReceiverOffline(false);
+    callCheck('clearIncomingCall', clearIncomingCall);
     clearIncomingCall();
   }, [clearIncomingCall]);
   
@@ -5886,10 +5941,12 @@ function PassengerDashboard({
     userRole: 'passenger',
     onCallCancelled: (data) => {
       console.log('🚫 YOLCU - ARAMA İPTAL EDİLDİ:', data);
+      callCheck('clearIncomingCall', clearIncomingCall);
       clearIncomingCall();
     },
     onCallEndedNew: (data) => {
       console.log('📴 YOLCU - CALL_ENDED (Backend-driven):', data);
+      callCheck('clearIncomingCall', clearIncomingCall);
       clearIncomingCall();
     },
     onIncomingCall: (data) => {
@@ -5993,6 +6050,10 @@ function PassengerDashboard({
           status: 'matched',
           matched_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
+          driver_vehicle_kind:
+            d.driver_vehicle_kind === 'motorcycle' || d.vehicle_kind === 'motorcycle'
+              ? 'motorcycle'
+              : 'car',
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
@@ -6043,6 +6104,10 @@ function PassengerDashboard({
           status: 'matched',
           matched_at: data.matched_at || new Date().toISOString(),
           created_at: new Date().toISOString(),
+          driver_vehicle_kind:
+            d.driver_vehicle_kind === 'motorcycle' || d.vehicle_kind === 'motorcycle'
+              ? 'motorcycle'
+              : 'car',
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
@@ -6091,6 +6156,10 @@ function PassengerDashboard({
           status: 'matched' as const,
           matched_at: data.matched_at || new Date().toISOString(),
           created_at: new Date().toISOString(),
+          driver_vehicle_kind:
+            d.driver_vehicle_kind === 'motorcycle' || d.vehicle_kind === 'motorcycle'
+              ? 'motorcycle'
+              : 'car',
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
@@ -6124,6 +6193,7 @@ function PassengerDashboard({
       // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE - Her halükarda bitirilecek
       setActiveTag(null);
       setDestination(null);
+      callCheck('clearIncomingCall', clearIncomingCall);
       clearIncomingCall();
       setShowCallScreen(false);
       setCallScreenData(null);
@@ -6402,6 +6472,7 @@ function PassengerDashboard({
           setActiveTag(null);
           setDestination(null);
           setPassengerChatVisible(false);
+          callCheck('clearIncomingCall', clearIncomingCall);
           clearIncomingCall();
           setShowCallScreen(false);
           setCallScreenData(null);
@@ -6461,7 +6532,8 @@ function PassengerDashboard({
   useEffect(() => {
     const d = paxChatNotifData;
     if (!d || d.type !== 'first_chat_message' || !d.tag_id) return;
-    paxClearChatNotif();
+    __paxFn('paxClearChatNotif', paxClearChatNotif);
+    if (typeof paxClearChatNotif === 'function') paxClearChatNotif();
     if (!activeTag?.id || String(d.tag_id) !== String(activeTag.id)) {
       void loadActiveTag();
     }
@@ -6553,8 +6625,10 @@ function PassengerDashboard({
     
     // GPS konumu yoksa önce konum izni iste
     if (!userLocation) {
+      __paxFn('requestLocationPermission', requestLocationPermission);
       const granted = await requestLocationPermission();
       if (!granted) {
+        console.log('[PAX_LOC] requestLocationPermission → denied or false');
         appAlert(
           'Konum İzni Gerekli',
           'Fiyat hesaplamak için konum izninize ihtiyacımız var. Lütfen ayarlardan konum iznini açın.',
@@ -6563,6 +6637,7 @@ function PassengerDashboard({
         setPriceLoading(false);
         return;
       }
+      console.log('[PAX_LOC] requestLocationPermission → granted (userLocation may update async)');
       // Konum izni alındı, userLocation güncellenene kadar bekle
       setPriceLoading(false);
       return;
@@ -6867,6 +6942,7 @@ function PassengerDashboard({
         }
       } else {
         // Android/iOS için native Share
+        callCheck('Share.share', Share.share);
         await Share.share({
           message: `${message}\n\nUygulama linki: ${webAppUrl}`,
           title: 'Leylek TAG - Yolculuk Teklifi',
@@ -6879,6 +6955,7 @@ function PassengerDashboard({
 
   /** Eşleşmiş yolculukta Agora araması — POST /voice/start-call + CallScreenV2 */
   const startTripCallAsPassenger = async (callType: 'audio' | 'video') => {
+    console.log('[PAX_DEBUG] startTripCallAsPassenger enter', callType);
     if (!user?.id || !activeTag?.id) {
       appAlert('Hata', 'Yolculuk bilgisi bulunamadı');
       return;
@@ -6896,7 +6973,10 @@ function PassengerDashboard({
       appAlert('Uyarı', 'Zaten bir arama devam ediyor');
       return;
     }
-    clearIncomingCall();
+    callCheck('clearIncomingCall', clearIncomingCall);
+    if (typeof clearIncomingCall === 'function') {
+      clearIncomingCall();
+    }
     setCalling(true);
     try {
       const response = await fetch(`${API_URL}/voice/start-call`, {
@@ -7160,6 +7240,9 @@ function PassengerDashboard({
     latitude: number;
     longitude: number;
   }) => {
+    __paxFn('tapButtonHaptic', tapButtonHaptic);
+    __paxFn('isNativeGoogleMapsSupported', isNativeGoogleMapsSupported);
+    __paxFn('commitDestinationFromMap', commitDestinationFromMap);
     void tapButtonHaptic();
     /** GMS yok (Huawei vb.): MapView mount = crash; arama sonucunu doğrudan hedef kabul et */
     if (!isNativeGoogleMapsSupported()) {
@@ -7175,6 +7258,7 @@ function PassengerDashboard({
     setDestinationPickerPhase('map');
     const { latitude: lat, longitude: lng } = place;
     setDestinationPickerPin({ latitude: lat, longitude: lng });
+    __paxFn('requestAnimationFrame', globalThis.requestAnimationFrame as unknown);
     requestAnimationFrame(() => {
       try {
         destinationPickerMapRef.current?.animateToRegion?.(
@@ -7191,6 +7275,7 @@ function PassengerDashboard({
   };
 
   const closeDestinationPickerModal = () => {
+    __paxFn('tapButtonHaptic', tapButtonHaptic);
     void tapButtonHaptic();
     if (destinationAwaitingMapTap) {
       setDestination(destinationSnapshotOnPickerOpenRef.current);
@@ -7203,6 +7288,7 @@ function PassengerDashboard({
   useEffect(() => {
     if (showDestinationPicker) {
       setDestinationPickerGeocoding(false);
+      __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
       const cityLL = getRegisteredCityCenter(
         (passengerSearchCityLabel || user?.city || '').trim(),
       );
@@ -7267,6 +7353,7 @@ function PassengerDashboard({
     setDestinationPickerPin({ latitude, longitude });
     setDestinationPickerGeocoding(true);
     try {
+      __paxFn('tapButtonHaptic', tapButtonHaptic);
       await tapButtonHaptic();
     } catch (_) {}
     try {
@@ -7277,6 +7364,7 @@ function PassengerDashboard({
       const data = await response.json();
       const address =
         data?.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      __paxFn('commitDestinationFromMap', commitDestinationFromMap);
       await commitDestinationFromMap(address, latitude, longitude);
     } catch {
       appAlert('Hata', 'Adres okunamadı. İşareti sürükleyip tekrar deneyin.');
@@ -7299,6 +7387,7 @@ function PassengerDashboard({
     await applyDestinationFromCoordinate(latitude, longitude);
   };
 
+  __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
   const destinationPickerCityLLResolved = getRegisteredCityCenter(
     (passengerSearchCityLabel || user?.city || '').trim(),
   );
@@ -7335,6 +7424,10 @@ function PassengerDashboard({
           passengerVehicleKind={rideVehiclePreference}
           passengerGender={parseGender(user?.gender)}
           selfUserId={user?.id}
+          onPressBack={() => {
+            playTapSound();
+            setScreen('role-select');
+          }}
           onCancel={handleCancelTag}
           onMatch={(driverData) => {
             // Eşleşme olduğunda
@@ -7794,6 +7887,11 @@ function PassengerDashboard({
                   otherLocation={driverLocation || activeTag?.driver_location || null}
                   destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : (activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null)}
                   isDriver={false}
+                  otherTripVehicleKind={
+                    /motor/i.test(String(activeTag?.driver_vehicle_kind ?? ''))
+                      ? 'motorcycle'
+                      : 'car'
+                  }
                   peerMapPinScale={1.04}
                   selfGender={parseGender(user?.gender)}
                   userName={user.name}
@@ -7826,7 +7924,7 @@ function PassengerDashboard({
                     await startTripCallAsPassenger(type);
                   }}
                   onTrustRequest={() => {
-                    if (activeTag?.id) void requestTrust(activeTag.id);
+                    void startTripCallAsPassenger('video');
                   }}
                   trustRequestLabel="Sürücüden Güven Al"
                   onChat={() => {
@@ -7920,26 +8018,36 @@ function PassengerDashboard({
                         { 
                           text: 'Diğer (Açıklama Yaz)', 
                           onPress: () => {
-                            Alert.prompt(
-                              'Şikayet Açıklaması',
-                              'Lütfen şikayet sebebinizi açıklayın:',
-                              [
-                                { text: 'İptal', style: 'cancel' },
-                                { 
-                                  text: 'Gönder', 
-                                  onPress: (text: string | undefined) => {
-                                    if (text && text.trim()) {
-                                      reportUser('other', text.trim());
-                                    } else {
-                                      appAlert('Hata', 'Lütfen açıklama yazın');
+                            console.log('[PAX_DEBUG] passenger LiveMap onReport > Diğer');
+                            const ok =
+                              isAlertPromptCallable() &&
+                              callAlertPrompt(
+                                'Şikayet Açıklaması',
+                                'Lütfen şikayet sebebinizi açıklayın:',
+                                [
+                                  { text: 'İptal', style: 'cancel' },
+                                  { 
+                                    text: 'Gönder', 
+                                    onPress: (text: string | undefined) => {
+                                      if (text && text.trim()) {
+                                        reportUser('other', text.trim());
+                                      } else {
+                                        appAlert('Hata', 'Lütfen açıklama yazın');
+                                      }
                                     }
-                                  }
-                                },
-                              ],
-                              'plain-text',
-                              '',
-                              'default'
-                            );
+                                  },
+                                ],
+                                'plain-text',
+                                '',
+                                'default',
+                              );
+                            if (!ok) {
+                              appAlert(
+                                'Diğer şikayet',
+                                'Metin girişi bu cihazda kullanılamıyor. Lütfen “Kötü Davranış” veya “Güvensiz Sürüş” seçeneklerinden birini kullanın.',
+                                [{ text: 'Tamam' }],
+                              );
+                            }
                           }
                         },
                       ]
@@ -7981,6 +8089,7 @@ function PassengerDashboard({
                     
                     // Socket ile de bildir (opsiyonel - bağlıysa)
                     try {
+                      callCheck('passengerForceEndTrip', passengerForceEndTrip);
                       passengerForceEndTrip({
                         tag_id: activeTag.id,
                         ender_id: user.id,
@@ -7999,6 +8108,7 @@ function PassengerDashboard({
                     setActiveTag(null);
                     setDestination(null);
                     setPassengerChatVisible(false);
+                    callCheck('clearIncomingCall', clearIncomingCall);
                     clearIncomingCall();
                     setShowCallScreen(false);
                     setCallScreenData(null);
@@ -8033,6 +8143,7 @@ function PassengerDashboard({
                     }
                     if (passengerEmitSendMessage) {
                       console.log('📤 [YOLCU] passengerEmitSendMessage çağrılıyor...');
+                      callCheck('passengerEmitSendMessage', passengerEmitSendMessage);
                       passengerEmitSendMessage({
                         sender_id: user?.id || '',
                         sender_name: user?.name || 'Yolcu',
@@ -8506,7 +8617,6 @@ interface DriverDashboardProps {
 }
 
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
-  const { requestTrust } = useTrust();
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
     rawVk === 'motor' || rawVk === 'motorcycle' ? 'motorcycle' : 'car';
@@ -10300,8 +10410,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             destinationLocation={activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null}
             peerMapPinScale={1.04}
             otherTripVehicleKind={
-              activeTag?.passenger_vehicle_kind === 'motorcycle' ||
-              activeTag?.passenger_preferred_vehicle === 'motorcycle'
+              /motor/i.test(
+                String(activeTag?.passenger_vehicle_kind ?? activeTag?.passenger_preferred_vehicle ?? ''),
+              )
                 ? 'motorcycle'
                 : 'car'
             }
@@ -10339,7 +10450,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               await startTripCallAsDriver(type);
             }}
             onTrustRequest={() => {
-              if (activeTag?.id) void requestTrust(activeTag.id);
+              void startTripCallAsDriver('video');
             }}
             trustRequestLabel="Yolcudan Güven Al"
             onChat={() => {
@@ -10476,26 +10587,36 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   { 
                     text: 'Diğer (Açıklama Yaz)', 
                     onPress: () => {
-                      Alert.prompt(
-                        'Şikayet Açıklaması',
-                        'Lütfen şikayet sebebinizi açıklayın:',
-                        [
-                          { text: 'İptal', style: 'cancel' },
-                          { 
-                            text: 'Gönder', 
-                            onPress: (text: string | undefined) => {
-                              if (text && text.trim()) {
-                                reportPassenger('other', text.trim());
-                              } else {
-                                appAlert('Hata', 'Lütfen açıklama yazın');
+                      console.log('[PAX_DEBUG] driver trip onReport passenger > Diğer');
+                      const ok =
+                        isAlertPromptCallable() &&
+                        callAlertPrompt(
+                          'Şikayet Açıklaması',
+                          'Lütfen şikayet sebebinizi açıklayın:',
+                          [
+                            { text: 'İptal', style: 'cancel' },
+                            { 
+                              text: 'Gönder', 
+                              onPress: (text: string | undefined) => {
+                                if (text && text.trim()) {
+                                  reportPassenger('other', text.trim());
+                                } else {
+                                  appAlert('Hata', 'Lütfen açıklama yazın');
+                                }
                               }
-                            }
-                          },
-                        ],
-                        'plain-text',
-                        '',
-                        'default'
-                      );
+                            },
+                          ],
+                          'plain-text',
+                          '',
+                          'default',
+                        );
+                      if (!ok) {
+                        appAlert(
+                          'Diğer şikayet',
+                          'Metin girişi bu cihazda kullanılamıyor. Lütfen hazır şikayet seçeneklerinden birini kullanın.',
+                          [{ text: 'Tamam' }],
+                        );
+                      }
                     }
                   },
                 ]
