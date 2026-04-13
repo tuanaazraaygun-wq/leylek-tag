@@ -1,0 +1,29 @@
+---
+description: Android / Hermes hata ayıklama — stack trace önceliği (yolcu akışı)
+alwaysApply: true
+---
+
+# Android runtime + Hermes stack trace
+
+`undefined is not a function` veya benzeri üretim hatalarında **tahminden önce** şunu yap:
+
+## 1) Stack trace kaynağı
+
+- **Logcat** (filtre: `ReactNativeJS`, `Hermes`, uygulama paket adı, `FATAL`, `Error`).
+- Expo / dev client: Metro önündeki kırmızı ekran veya terminaldeki **Hermes** stack.
+- Olabiliyorsa **Release** APK’da da aynı hatayı yakalayıp tam stack’i al (satır numaraları bundle source map ile eşleşir).
+
+## 2) Çerçeve önceliği (yolcu çökmesi)
+
+1. Stack’te **en üstteki** (çoğu zaman **ilk uygulama çerçevesi**) `file:line` — `index.bundle` / `main.jsbundle` içindeki satır.
+2. **Yolcu-özel** kaynaklara öncelik ver (sürücü veya ortak koddan önce şunları kontrol et):
+   - `frontend/app/index.tsx` içinde `PassengerDashboard` / yolcu dalları
+   - `frontend/components/PassengerWaitingScreen.tsx`
+   - `frontend/components/SearchingMapView.tsx`
+   - `frontend/components/LiveMapView.tsx` — özellikle `isDriver === false` dalları
+3. `node_modules` ve minify edilmiş tek satırlı çerçeveleri **ikincil** say; önce **repo dosya adı** taşıyan çerçeveyi eşleştir.
+4. Stack’te görünen **sembol adı** (ör. `fitToCoordinates`, `Alert.prompt`) ile satırdaki çağrıyı doğrula; tahmini kök nedenleri stack ile **çelişiyorsa** stack kazanır.
+
+## 3) Tahmin yasağı
+
+Stack yokken yapılan kök neden listesi **“olasılık”** olarak kalsın; **kesin satır** iddiası için Hermes/Android stack veya eşleşen source map gerekir.
