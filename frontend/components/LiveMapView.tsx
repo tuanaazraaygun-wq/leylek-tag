@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
+import type { PassengerGender } from '../lib/passengerFieldHelpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 
@@ -82,6 +83,15 @@ interface LiveMapViewProps {
   passengerPaymentMethod?: 'cash' | 'card';
   /** Sürücü uygulama-içi navigasyon açıkken üst bileşen GPS aralığını kısaltır */
   onNavigationModeChange?: (active: boolean) => void;
+  /** index uyumu — harita üstü Güven/Leylek satırı bu adımda eklenmedi */
+  onTrustRequest?: () => void;
+  trustRequestLabel?: string;
+  onOpenLeylekZekaSupport?: () => void;
+  /** Karşı taraf marker ölçümü (index ile uyumlu; varsayılan 1) */
+  peerMapPinScale?: number;
+  selfGender?: PassengerGender;
+  /** Sürücü haritasında yolcu cinsiyeti — marker ikonu */
+  otherPassengerGender?: PassengerGender;
 }
 
 /** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
@@ -903,6 +913,12 @@ export default function LiveMapView({
   otherTripVehicleKind = 'car',
   passengerPaymentMethod,
   onNavigationModeChange,
+  onTrustRequest: _onTrustRequest,
+  trustRequestLabel: _trustRequestLabel,
+  onOpenLeylekZekaSupport: _onOpenLeylekZekaSupport,
+  peerMapPinScale = 1,
+  selfGender = null,
+  otherPassengerGender = null,
 }: LiveMapViewProps) {
   const mapRef = useRef<any>(null);
   const insets = useSafeAreaInsets();
@@ -1714,6 +1730,13 @@ export default function LiveMapView({
   
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
+  const selfMapIconName = isDriver
+    ? 'car'
+    : selfGender === 'female'
+      ? 'woman'
+      : selfGender === 'male'
+        ? 'man'
+        : 'person';
   const themeLightColor = isDriver ? '#DBEAFE' : '#EDE9FE';
   const themeGradient = isDriver ? ['#3B82F6', '#2563EB'] : ['#8B5CF6', '#7C3AED'];
   
@@ -2512,7 +2535,7 @@ export default function LiveMapView({
             <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.9 }}>
               <View style={styles.proMarkerContainer}>
                 <View style={[styles.proMarkerHead, { backgroundColor: themeColor }]}>
-                  <Ionicons name={isDriver ? "car" : "person"} size={20} color="#FFF" />
+                  <Ionicons name={selfMapIconName as 'car' | 'woman' | 'man' | 'person'} size={20} color="#FFF" />
                 </View>
                 <View style={[styles.proMarkerTail, { borderTopColor: themeColor }]} />
                 <View style={styles.proMarkerShadow} />
@@ -2527,11 +2550,20 @@ export default function LiveMapView({
               anchor={{ x: 0.5, y: 0.9 }}
               onPress={() => setShowInfoCard(true)}
             >
-              <View style={styles.proMarkerContainer}>
+              <View
+                style={[
+                  styles.proMarkerContainer,
+                  peerMapPinScale !== 1 ? { transform: [{ scale: peerMapPinScale }] } : null,
+                ]}
+              >
                 <View style={[styles.proMarkerHead, { backgroundColor: isDriver ? '#8B5CF6' : '#059669' }]}>
                   {isDriver ? (
                     passMotor ? (
                       <MaterialCommunityIcons name="motorbike" size={20} color="#FFF" />
+                    ) : otherPassengerGender === 'female' ? (
+                      <Ionicons name="woman" size={20} color="#FFF" />
+                    ) : otherPassengerGender === 'male' ? (
+                      <Ionicons name="man" size={20} color="#FFF" />
                     ) : (
                       <Ionicons name="person" size={20} color="#FFF" />
                     )
