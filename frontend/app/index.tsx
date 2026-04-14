@@ -971,20 +971,24 @@ export default function App() {
 
   // ==================== AUTH FUNCTIONS ====================
   const handleSendOTP = async () => {
-    // 🔒 TELEFON NUMARASI VALİDASYONU
-    const cleanPhone = phone.replace(/\D/g, ''); // Sadece rakamlar
-    
-    // 10 hane kontrolü
-    if (cleanPhone.length !== 10) {
-      appAlert('Hata', 'Telefon numarası 10 haneli olmalıdır (5XX XXX XX XX)');
+    // 🔒 Önce normalize, sonra yalnızca cleanPhone üzerinden doğrula
+    let cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.startsWith('90') && cleanPhone.length >= 12) {
+      cleanPhone = cleanPhone.slice(2);
+    }
+    if (cleanPhone.startsWith('0') && cleanPhone.length === 11 && cleanPhone.charAt(1) === '5') {
+      cleanPhone = cleanPhone.slice(1);
+    }
+    console.log("PHONE_RAW", phone);
+    console.log("PHONE_CLEAN", cleanPhone);
+    if (!/^5\d{9}$/.test(cleanPhone)) {
+      appAlert(
+        'Hata',
+        'Geçerli bir Türkiye cep numarası girin (10 hane, 5 ile başlar; örn. 5XX XXX XX XX veya 05XX… / +90…)',
+      );
       return;
     }
-    
-    // 5 ile başlama kontrolü
-    if (!cleanPhone.startsWith('5')) {
-      appAlert('Hata', 'Telefon numarası 5 ile başlamalıdır');
-      return;
-    }
+    setPhone(cleanPhone);
 
     /** Sabit iki test hattı: OTP atlanır; sunucu yine allowlist doğrular (ALLOW_TEST_LOGIN_BYPASS=0 ile kapanır). */
     if (isTestUser(cleanPhone)) {
