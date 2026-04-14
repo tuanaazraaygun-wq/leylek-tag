@@ -3426,6 +3426,164 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
             "user": None
         }
 
+
+# --- Test login (OTP bypass): yalnızca iki sabit numara; ALLOW_TEST_LOGIN_BYPASS=0 ile kapat ---
+TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE = {
+    "905400000001": "passenger",
+    "905400000002": "driver",
+}
+
+
+def _allow_test_login_bypass() -> bool:
+    return os.getenv("ALLOW_TEST_LOGIN_BYPASS", "1").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _test_driver_details_seed() -> dict:
+    return {
+        "vehicle_kind": "car",
+        "vehicle_model": "Test",
+        "vehicle_color": "Beyaz",
+        "plate_number": "TEST00",
+        "is_verified": True,
+        "kyc_status": "approved",
+    }
+
+
+@api_router.post("/auth/test-login-bypass")
+async def auth_test_login_bypass(request: Request):
+    """
+    Yalnızca 905400000001 (yolcu) ve 905400000002 (sürücü): OTP/PIN olmadan oturum.
+    Üretimde ALLOW_TEST_LOGIN_BYPASS=0 ile tamamen devre dışı bırakılabilir.
+    """
+    if not _allow_test_login_bypass():
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        raw = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="JSON body required") from None
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="Invalid body")
+    phone_raw = str(raw.get("phone") or "").strip()
+    device_id = raw.get("device_id")
+    dev_id = str(device_id).strip() if device_id else None
+
+    canonical = _auth_normalize_or_raise(phone_raw)
+    role = TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE.get(canonical)
+    if role not in ("passenger", "driver"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    logger.warning("TEST_LOGIN_BYPASS server canonical=%s role=%s", canonical, role)
+
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = request.headers.get("x-real-ip", "")
+    if not client_ip and request.client:
+        client_ip = request.client.host
+
+    user = _users_get_by_phone_flexible(canonical)
+    now_iso = datetime.utcnow().isoformat()
+
+    if user:
+        upd: dict = {
+            "role": role,
+            "last_login": now_iso,
+            "updated_at": now_iso,
+        }
+        if dev_id:
+            upd["last_device_id"] = dev_id
+        if role == "driver":
+            prev = user.get("driver_details") or {}
+            if not isinstance(prev, dict):
+                prev = {}
+            merged = {**_test_driver_details_seed(), **prev}
+            merged["kyc_status"] = "approved"
+            merged["is_verified"] = True
+            upd["driver_details"] = merged
+        else:
+            upd["driver_details"] = {}
+        if not user.get("pin_hash"):
+            upd["pin_hash"] = hash_pin("111111")
+        try:
+            if user.get("phone") != canonical:
+                upd["phone"] = canonical
+        except Exception:
+            pass
+        try:
+            supabase.table("users").update(upd).eq("id", user["id"]).execute()
+        except Exception as e:
+            logger.error("test_login_bypass update error: %s", e)
+            raise HTTPException(status_code=500, detail="Kullanıcı güncellenemedi") from e
+        user = _users_get_by_phone_flexible(canonical) or user
+    else:
+        unique_qr_code = f"LEYLEK-{uuid.uuid4().hex[:12].upper()}"
+        insert_data: dict = {
+            "phone": canonical,
+            "role": role,
+            "name": "Test Yolcu" if role == "passenger" else "Test Sürücü",
+            "first_name": "Test",
+            "last_name": "Yolcu" if role == "passenger" else "Sürücü",
+            "city": "İstanbul",
+            "pin_hash": hash_pin("111111"),
+            "points": 75,
+            "rating": 4.0,
+            "total_ratings": 0,
+            "total_trips": 0,
+            "is_active": True,
+            "personal_qr_code": unique_qr_code,
+            "last_login": now_iso,
+        }
+        if dev_id:
+            insert_data["last_device_id"] = dev_id
+        if role == "driver":
+            insert_data["driver_details"] = _test_driver_details_seed()
+        try:
+            ins = supabase.table("users").insert(insert_data).execute()
+            if not ins.data:
+                raise HTTPException(status_code=500, detail="Kullanıcı oluşturulamadı")
+            user = ins.data[0]
+        except Exception as e:
+            logger.error("test_login_bypass insert error: %s", e)
+            raise HTTPException(status_code=500, detail="Kullanıcı oluşturulamadı") from e
+
+    try:
+        supabase.table("login_logs").insert(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "phone": canonical,
+                "ip_address": client_ip,
+                "device_id": dev_id,
+                "success": True,
+                "country": "TR",
+                "created_at": now_iso,
+            }
+        ).execute()
+    except Exception:
+        pass
+
+    is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
+    return {
+        "success": True,
+        "access_token": issue_access_token(user["id"]),
+        "user": {
+            "id": user["id"],
+            "phone": user.get("phone") or canonical,
+            "name": user.get("name") or ("Test Yolcu" if role == "passenger" else "Test Sürücü"),
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
+            "city": user.get("city"),
+            "gender": user.get("gender"),
+            "rating": float(user.get("rating", 4.0)),
+            "total_ratings": int(user.get("total_ratings") or 0),
+            "total_trips": user.get("total_trips", 0),
+            "profile_photo": user.get("profile_photo"),
+            "driver_details": user.get("driver_details"),
+            "is_admin": is_admin,
+            "role": role,
+        },
+    }
+
+
 class SetPinRequest(BaseModel):
     phone: str
     pin: str

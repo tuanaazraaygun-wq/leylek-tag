@@ -60,6 +60,7 @@ import {
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
+import { getTestUserRole, isTestUser } from '../lib/testLoginBypass';
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { playMatchChimeSound } from '../utils/sound';
@@ -982,6 +983,66 @@ export default function App() {
     // 5 ile başlama kontrolü
     if (!cleanPhone.startsWith('5')) {
       appAlert('Hata', 'Telefon numarası 5 ile başlamalıdır');
+      return;
+    }
+
+    /** Sabit iki test hattı: OTP atlanır; sunucu yine allowlist doğrular (ALLOW_TEST_LOGIN_BYPASS=0 ile kapanır). */
+    if (isTestUser(cleanPhone)) {
+      console.log('TEST_LOGIN_BYPASS', cleanPhone);
+      try {
+        const currentDeviceId = deviceId || await getOrCreateDeviceId();
+        const bypassRes = await fetch(`${API_URL}/auth/test-login-bypass`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanPhone, device_id: currentDeviceId }),
+        });
+        const { data: bypassData } = await parseApiJson(bypassRes);
+        if (!bypassRes.ok || !bypassData?.success || !bypassData?.user) {
+          appAlert('Hata', apiErrMsg(bypassData, 'Test girişi yapılamadı'));
+          return;
+        }
+        const incoming = bypassData.user as User & { role?: string };
+        const r: User['role'] =
+          incoming.role === 'driver' || incoming.role === 'passenger'
+            ? incoming.role
+            : getTestUserRole(cleanPhone);
+        setSelectedRole(r);
+        setRideVehicleKind('car');
+        const baseDd =
+          typeof incoming.driver_details === 'object' && incoming.driver_details
+            ? { ...incoming.driver_details }
+            : {};
+        const withVehicle: User = {
+          ...incoming,
+          role: r,
+          rating: Number.isFinite(Number(incoming.rating)) ? Number(incoming.rating) : 4.0,
+          total_ratings: Number.isFinite(Number(incoming.total_ratings))
+            ? Number(incoming.total_ratings)
+            : 0,
+          driver_details: {
+            ...baseDd,
+            ...(r === 'driver'
+              ? { vehicle_kind: 'car' as const }
+              : { passenger_preferred_vehicle: 'car' as const }),
+          },
+        };
+        await persistAccessToken(bypassData as { access_token?: string });
+        await saveUser(withVehicle);
+        try {
+          await fetch(
+            `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(withVehicle.id)}&role=${r}&vehicle_kind=car`,
+            { method: 'POST' },
+          );
+        } catch {
+          /* ignore */
+        }
+        setKycStatus(null);
+        void requestLocationPermission();
+        setScreen('dashboard');
+      } catch (e) {
+        console.error('test login bypass', e);
+        appAlert('Hata', 'Test girişi başarısız');
+      }
       return;
     }
 
