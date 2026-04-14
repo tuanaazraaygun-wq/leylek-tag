@@ -625,21 +625,21 @@ function pickupNavRouteStrokeColors(level: NavTrafficLevel): { dim: string; brig
   switch (level) {
     case 'free':
       return {
-        dim: 'rgba(20, 83, 45, 0.32)',
-        bright: '#16A34A',
-        hot: 'rgba(255,255,255,0.9)',
+        dim: 'rgba(4, 120, 87, 0.42)',
+        bright: '#22C55E',
+        hot: 'rgba(220, 252, 231, 0.95)',
       };
     case 'slow':
       return {
-        dim: 'rgba(120, 53, 15, 0.34)',
-        bright: '#EA580C',
-        hot: 'rgba(255, 247, 237, 0.92)',
+        dim: 'rgba(4, 120, 87, 0.42)',
+        bright: '#22C55E',
+        hot: 'rgba(220, 252, 231, 0.95)',
       };
     case 'heavy':
       return {
-        dim: 'rgba(127, 29, 29, 0.38)',
-        bright: '#DC2626',
-        hot: 'rgba(254, 242, 242, 0.92)',
+        dim: 'rgba(4, 120, 87, 0.42)',
+        bright: '#22C55E',
+        hot: 'rgba(220, 252, 231, 0.95)',
       };
   }
 }
@@ -649,21 +649,21 @@ function destinationNavRouteStrokeColors(level: NavTrafficLevel): { dim: string;
   switch (level) {
     case 'free':
       return {
-        dim: 'rgba(154, 52, 18, 0.36)',
-        bright: '#FB923C',
-        hot: '#FFFBEB',
+        dim: 'rgba(194, 65, 12, 0.42)',
+        bright: '#F97316',
+        hot: '#FFEDD5',
       };
     case 'slow':
       return {
-        dim: 'rgba(124, 45, 18, 0.4)',
-        bright: '#EA580C',
-        hot: '#FED7AA',
+        dim: 'rgba(194, 65, 12, 0.42)',
+        bright: '#F97316',
+        hot: '#FFEDD5',
       };
     case 'heavy':
       return {
-        dim: 'rgba(127, 29, 29, 0.4)',
-        bright: '#DC2626',
-        hot: '#FECACA',
+        dim: 'rgba(194, 65, 12, 0.42)',
+        bright: '#F97316',
+        hot: '#FFEDD5',
       };
   }
 }
@@ -711,7 +711,7 @@ function offsetCameraCenterForward(
   const z = Number.isFinite(zoom) ? Math.max(14.8, Math.min(18.5, zoom)) : 16.5;
   forwardM *= Math.min(1.05, Math.max(0.9, 17 / z));
   /** Önceki 1.12’den düşük: araç ekranda biraz daha “altta”, kamera daha az agresif */
-  forwardM *= 1.04;
+  forwardM *= 1.11;
   const R = 6378137;
   const brng = (bearingDeg * Math.PI) / 180;
   const lat1 = (from.latitude * Math.PI) / 180;
@@ -835,7 +835,7 @@ const NAV_SPEECH_MIN_GAP_MS = 4100;
 /** Sürücü–yolcu bu kadar yakın + varış var → trip (turuncu) navigasyon aşaması */
 const NAV_HANDOFF_TO_DESTINATION_M = 45;
 /** Harita sürükleme / dokunma sonrası otomatik takip bu kadar ms durur; sonra yumuşakça devam */
-const NAV_MAP_GESTURE_MS = 10_000;
+const NAV_MAP_GESTURE_MS = 9_000;
 
 function smoothZoomToward(prev: number | null, target: number): number {
   if (prev == null || !Number.isFinite(prev)) return target;
@@ -2750,7 +2750,7 @@ export default function LiveMapView({
               ? {
                   top: Math.max(insets.top, 12) + 152,
                   right: 12,
-                  bottom: Math.min(200, Math.max(64, SCREEN_HEIGHT * 0.14)),
+                  bottom: Math.min(260, Math.max(132, SCREEN_HEIGHT * 0.18)),
                   left: 12,
                 }
               : driverNavActive
@@ -2763,7 +2763,7 @@ export default function LiveMapView({
           showsCompass={false}
           scrollEnabled
           zoomEnabled
-          rotateEnabled={!driverNavActive}
+          rotateEnabled
           pitchEnabled={driverNavActive}
           onPanDrag={() => {
             if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
@@ -2771,6 +2771,12 @@ export default function LiveMapView({
           }}
           onPress={() => {
             if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
+            scheduleNavMapGesturePause();
+          }}
+          onRegionChangeComplete={(_region: any, details?: { isGesture?: boolean }) => {
+            if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
+            if (navProgrammaticCameraRef.current) return;
+            if (details && details.isGesture === false) return;
             scheduleNavMapGesturePause();
           }}
           minZoomLevel={4}
@@ -2786,7 +2792,7 @@ export default function LiveMapView({
                 {driverNavRouteLayers.dim.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.dim}
-                    strokeWidth={5}
+                    strokeWidth={6}
                     strokeColor={pickupNavStroke.dim}
                     lineCap="round"
                     lineJoin="round"
@@ -2796,7 +2802,7 @@ export default function LiveMapView({
                 {driverNavRouteLayers.bright.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.bright}
-                    strokeWidth={11}
+                    strokeWidth={12}
                     strokeColor={pickupNavStroke.bright}
                     lineCap="round"
                     lineJoin="round"
@@ -2806,7 +2812,7 @@ export default function LiveMapView({
                 {driverNavRouteLayers.hot.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.hot}
-                    strokeWidth={14}
+                    strokeWidth={16}
                     strokeColor={pickupNavStroke.hot}
                     lineCap="round"
                     lineJoin="round"
@@ -2823,7 +2829,7 @@ export default function LiveMapView({
             meetingRouteCoordinates.length > 1 && (
               <Polyline
                 coordinates={meetingRouteCoordinates}
-                strokeWidth={8}
+                strokeWidth={11}
                 strokeColor={pickupNavStroke.bright}
                 lineCap="round"
                 lineJoin="round"
@@ -2851,7 +2857,7 @@ export default function LiveMapView({
                 {driverNavRouteLayers.dim.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.dim}
-                    strokeWidth={5}
+                    strokeWidth={6}
                     strokeColor={destNavStroke.dim}
                     lineCap="round"
                     lineJoin="round"
@@ -2861,7 +2867,7 @@ export default function LiveMapView({
                 {driverNavRouteLayers.bright.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.bright}
-                    strokeWidth={10}
+                    strokeWidth={12}
                     strokeColor={destNavStroke.bright}
                     lineCap="round"
                     lineJoin="round"
@@ -2871,7 +2877,7 @@ export default function LiveMapView({
                 {driverNavRouteLayers.hot.length >= 2 ? (
                   <Polyline
                     coordinates={driverNavRouteLayers.hot}
-                    strokeWidth={13}
+                    strokeWidth={16}
                     strokeColor={destNavStroke.hot}
                     lineCap="round"
                     lineJoin="round"
@@ -2887,7 +2893,7 @@ export default function LiveMapView({
               <Polyline
                 coordinates={destinationRoute}
                 strokeColor="#EA580C"
-                strokeWidth={6}
+                strokeWidth={8}
                 lineDashPattern={[12, 6]}
                 lineJoin="round"
                 lineCap="round"
@@ -2897,7 +2903,7 @@ export default function LiveMapView({
           {userLocation && driverNavActive && (
             <Marker
               coordinate={userLocation}
-              anchor={{ x: 0.5, y: 0.61 }}
+              anchor={{ x: 0.5, y: 0.57 }}
               flat={true}
               rotation={navHeadingUi}
               tracksViewChanges={pinTracks}
@@ -3031,7 +3037,7 @@ export default function LiveMapView({
                     : null,
                 ]}
               >
-                <View style={[styles.routeDot, { backgroundColor: '#059669' }]} />
+                <View style={[styles.routeDot, { backgroundColor: '#22C55E' }]} />
                 <View style={styles.routeTextStack}>
                   <Text
                     style={[
@@ -3062,7 +3068,7 @@ export default function LiveMapView({
                       : null,
                   ]}
                 >
-                  <View style={[styles.routeDot, { backgroundColor: '#EA580C' }]} />
+                  <View style={[styles.routeDot, { backgroundColor: '#F97316' }]} />
                   <View style={styles.routeTextStack}>
                     <Text
                       style={[
@@ -3279,30 +3285,6 @@ export default function LiveMapView({
                 { paddingTop: Math.max(insets.top, 8) + 124 },
               ]}
             >
-              {onTrustRequest ? (
-                <TouchableOpacity
-                  style={styles.navImmersiveGuvenBtn}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    onTrustRequest();
-                  }}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel={trustRequestLabel || 'Güven AL'}
-                >
-                  <LinearGradient
-                    colors={['#047857', '#059669', '#10B981']}
-                    style={styles.navImmersiveGuvenGrad}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="shield-checkmark" size={18} color="#FFF" />
-                    <Text style={styles.navImmersiveGuvenText}>Güven AL</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.navImmersiveTopSpacer} />
-              )}
               {onCall ? (
                 <TouchableOpacity
                   style={styles.navImmersiveAraBtn}
@@ -3328,33 +3310,49 @@ export default function LiveMapView({
               ) : (
                 <View style={styles.navImmersiveTopSpacer} />
               )}
-            </View>
-            <Animated.View
-              style={[styles.navFloatYgitWrap, { transform: [{ scale: navGitPulse }] }]}
-              pointerEvents="box-none"
-            >
-              <TouchableOpacity
-                onPress={handleYolcuyaGitPress}
-                activeOpacity={0.9}
-                accessibilityRole="button"
-                accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
-              >
-                <LinearGradient
-                  colors={['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA']}
-                  style={styles.navFloatYgitGrad}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+              {onTrustRequest ? (
+                <TouchableOpacity
+                  style={styles.navImmersiveGuvenBtn}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    onTrustRequest();
+                  }}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel={trustRequestLabel || 'Güven AL'}
                 >
-                  <Animated.View style={{ transform: [{ rotate: navGitCompassRotate }] }}>
-                    <Ionicons name="compass" size={34} color="#EFF6FF" />
-                  </Animated.View>
-                  <Text style={styles.navFloatYgitLabel} numberOfLines={1}>
-                    {navigationMode ? 'Yeniden ortala' : 'Yolcuya Git'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
+                  <LinearGradient
+                    colors={['#047857', '#059669', '#10B981']}
+                    style={styles.navImmersiveGuvenGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                    <Text style={styles.navImmersiveGuvenText}>Güven AL</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.navImmersiveTopSpacer} />
+              )}
+            </View>
           </View>
+          <Animated.View
+            style={[styles.driverNavRecenterFabWrap, { transform: [{ scale: navGitPulse }] }]}
+            pointerEvents="box-none"
+          >
+            <TouchableOpacity
+              style={styles.driverNavRecenterFab}
+              onPress={handleYolcuyaGitPress}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
+            >
+              <Animated.View style={{ transform: [{ rotate: navGitCompassRotate }] }}>
+                <Ionicons name="compass" size={18} color="#DBEAFE" />
+              </Animated.View>
+              <Text style={styles.driverNavRecenterFabText}>Yeniden ortala</Text>
+            </TouchableOpacity>
+          </Animated.View>
           <TouchableOpacity
             style={styles.driverNavCloseFab}
             onPress={() => {
@@ -3905,14 +3903,14 @@ const styles = StyleSheet.create({
   },
   navImmersiveTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     width: '100%',
   },
   navImmersiveTopSpacer: {
-    minWidth: 108,
-    minHeight: 40,
+    minWidth: 122,
+    minHeight: 42,
   },
   navImmersiveGuvenBtn: {
     borderRadius: 14,
@@ -3928,9 +3926,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    minWidth: 108,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    minWidth: 122,
   },
   navImmersiveGuvenText: {
     color: '#FFF',
@@ -3952,9 +3950,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    minWidth: 108,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    minWidth: 122,
   },
   navImmersiveAraText: {
     color: '#FFF',
@@ -3962,36 +3960,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.2,
   },
-  navFloatYgitWrap: {
+  driverNavRecenterFabWrap: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 100,
-    alignItems: 'center',
-    zIndex: 32,
+    left: 10,
+    bottom: 18,
+    zIndex: 40,
   },
-  navFloatYgitGrad: {
+  driverNavRecenterFab: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
-    paddingVertical: 18,
-    paddingHorizontal: 28,
-    minWidth: 236,
-    borderRadius: 26,
+    gap: 8,
+    backgroundColor: 'rgba(29, 78, 216, 0.9)',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.38)',
+    borderColor: 'rgba(191, 219, 254, 0.75)',
     shadowColor: '#1e3a8a',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  navFloatYgitLabel: {
-    color: '#EFF6FF',
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: 0.25,
+  driverNavRecenterFabText: {
+    color: '#DBEAFE',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   driverNavCloseFab: {
     position: 'absolute',

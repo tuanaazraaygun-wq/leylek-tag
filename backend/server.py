@@ -2354,6 +2354,14 @@ FAKE_NUMBER_PATTERNS = [
     "1231231234", "1234512345", "1111122222", "1112223334", "1234554321",
 ]
 
+# test-login-bypass ile aynı iki numara (905…); aşağıdaki heuristikten muaf
+TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE = {
+    "905321111111": "passenger",
+    "905322222222": "driver",
+}
+TEST_LOGIN_BYPASS_ALLOWED_10 = frozenset(k[2:] for k in TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE)
+
+
 def validate_turkish_phone(phone: str) -> tuple[bool, str]:
     """
     Türk telefon numarası doğrulama
@@ -2379,7 +2387,11 @@ def validate_turkish_phone(phone: str) -> tuple[bool, str]:
     # 5 ile başlamalı (mobil)
     if not cleaned.startswith('5'):
         return False, "Geçerli bir mobil numara girin (5XX ile başlamalı)"
-    
+
+    # OTP bypass test hatları: çok tekrarlı rakam heuristiği (ör. 5322222222) burada reddedilmesin
+    if cleaned in TEST_LOGIN_BYPASS_ALLOWED_10:
+        return True, cleaned
+
     # Sahte numara kontrolü
     if cleaned in FAKE_NUMBER_PATTERNS:
         return False, "Geçersiz telefon numarası"
@@ -3427,13 +3439,6 @@ async def verify_otp(request: VerifyOtpRequest = None, phone: str = None, otp: s
         }
 
 
-# --- Test login (OTP bypass): yalnızca iki sabit numara; ALLOW_TEST_LOGIN_BYPASS=0 ile kapat ---
-TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE = {
-    "905400000001": "passenger",
-    "905400000002": "driver",
-}
-
-
 def _allow_test_login_bypass() -> bool:
     return os.getenv("ALLOW_TEST_LOGIN_BYPASS", "1").strip().lower() in ("1", "true", "yes", "on")
 
@@ -3452,7 +3457,7 @@ def _test_driver_details_seed() -> dict:
 @api_router.post("/auth/test-login-bypass")
 async def auth_test_login_bypass(request: Request):
     """
-    Yalnızca 905400000001 (yolcu) ve 905400000002 (sürücü): OTP/PIN olmadan oturum.
+    Yalnızca 905321111111 (yolcu) ve 905322222222 (sürücü): OTP/PIN olmadan oturum.
     Üretimde ALLOW_TEST_LOGIN_BYPASS=0 ile tamamen devre dışı bırakılabilir.
     """
     if not _allow_test_login_bypass():

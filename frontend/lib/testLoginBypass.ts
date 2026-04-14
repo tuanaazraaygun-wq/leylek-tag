@@ -2,8 +2,8 @@
  * Production-safe test login: only two fixed E.164-equivalent numbers may skip OTP.
  * Server enforces the same allowlist; this module is for client UX + parity checks.
  */
-const E164_TR_PASSENGER = '905400000001';
-const E164_TR_DRIVER = '905400000002';
+const E164_TR_PASSENGER = '905321111111';
+const E164_TR_DRIVER = '905322222222';
 
 /** Digits-only canonical TR mobile: 905XXXXXXXXX */
 export function normalizePhoneDigitsForTestLogin(phone: string): string {
