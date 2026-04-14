@@ -6131,7 +6131,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
         # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)").in_("status", ["waiting", "pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(100).execute()
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)").in_("status", ["waiting", "pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(150).execute()
         
         driver_eff = _effective_driver_vehicle_kind(
             driver_result.data[0] if driver_result.data else {}
