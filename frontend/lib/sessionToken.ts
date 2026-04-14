@@ -44,3 +44,23 @@ export async function persistAccessToken(payload: TokenPayload): Promise<void> {
     if (token) await AsyncStorage.setItem('access_token', token);
   }
 }
+
+/** Socket `register` ve korumalı istekler için — önce düz key, sonra kullanıcı JSON. */
+export async function getPersistedAccessToken(): Promise<string | null> {
+  try {
+    const direct = await AsyncStorage.getItem('access_token');
+    if (direct?.trim()) return direct.trim();
+  } catch {
+    /* ignore */
+  }
+  const raw = await getPersistedUserRaw();
+  if (!raw) return null;
+  try {
+    const u = JSON.parse(raw) as Record<string, unknown>;
+    const t = u.access_token ?? u.accessToken;
+    if (typeof t === 'string' && t.trim()) return t.trim();
+  } catch {
+    /* ignore */
+  }
+  return null;
+}

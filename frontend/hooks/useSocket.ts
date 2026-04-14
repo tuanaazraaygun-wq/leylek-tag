@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSocketContext } from '../contexts/SocketContext';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 import { AppState, AppStateStatus } from 'react-native';
 
 // ════════════════════════════════════════════════════════════════════
@@ -512,11 +513,18 @@ export default function useSocket({
   // ════════════════════════════════════════════════════════════════════
 
   const registerUser = useCallback((uid: string, role?: string) => {
-    if (socket?.connected) {
-      console.log('📱 [useSocket] Kullanıcı kaydediliyor:', uid, role);
-      socket.emit('register', { user_id: uid, role });
-    }
-  }, [socket]);
+    if (!socket?.connected) return;
+    void (async () => {
+      const token = await getPersistedAccessToken();
+      if (!token) {
+        console.warn('[useSocket] register atlandı: access_token yok');
+        return;
+      }
+      const r = role ?? userRole ?? 'driver';
+      console.log('📱 [useSocket] Kullanıcı kaydediliyor (JWT):', uid, r);
+      socket.emit('register', { token, role: r });
+    })();
+  }, [socket, userRole]);
 
   // ══════════ ARAMA FONKSİYONLARI ══════════
 

@@ -9194,7 +9194,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         return [...filtered, {
           id: data.tag_id,
           tag_id: data.tag_id,
-          request_id: data.request_id,  // 🔥 KRİTİK - ZORUNLU
+          request_id: data.request_id ?? data.tag_id,
           passenger_id: data.passenger_id,
           passenger_name: data.passenger_name,
           passenger_vehicle_kind: pvkNorm,

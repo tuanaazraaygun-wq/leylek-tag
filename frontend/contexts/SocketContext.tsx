@@ -18,6 +18,7 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 import { BACKEND_BASE_URL } from '../lib/backendConfig';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 import { useNotifications } from './NotificationContext';
 
 // REST ile aynı origin (lib/backendConfig) — ayrı sunucu = teklif görünmez
@@ -277,20 +278,33 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const handleConnect = () => {
       console.log('✅ [SocketProvider] Socket bağlandı:', socket.id);
       setIsConnected(true);
-      
-      // Otomatik register (+1s sonra tekrar: race / ilk bağlantı kaçırılmasın)
-      if (userIdRef.current && userRoleRef.current) {
+
+      // Backend register: JWT zorunlu (user_id payload'dan değil token sub'dan)
+      void (async () => {
         const uid = userIdRef.current;
         const role = userRoleRef.current;
-        console.log('📱 [SocketProvider] Auto-register:', uid, role);
-        socket.emit('register', { user_id: uid, role });
+        if (!uid || !role) return;
+        const token = await getPersistedAccessToken();
+        if (!token) {
+          console.warn('[SocketProvider] register atlandı: access_token yok');
+          return;
+        }
+        console.log('📱 [SocketProvider] Auto-register (JWT):', uid, role);
+        socket.emit('register', { token, role });
         setTimeout(() => {
-          if (socket.connected && userIdRef.current === uid && userRoleRef.current === role) {
-            console.log('📱 [SocketProvider] Re-register (1s):', uid, role);
-            socket.emit('register', { user_id: uid, role });
+          if (
+            socket.connected &&
+            userIdRef.current === uid &&
+            userRoleRef.current === role
+          ) {
+            void getPersistedAccessToken().then((t) => {
+              if (!t || !socket.connected) return;
+              console.log('📱 [SocketProvider] Re-register (1s, JWT)');
+              socket.emit('register', { token: t, role });
+            });
           }
         }, 1000);
-      }
+      })();
     };
 
     const handleDisconnect = (reason: string) => {
@@ -301,10 +315,14 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     const handleReconnect = (attemptNumber: number) => {
       console.log('🔄 [SocketProvider] Reconnect başarılı, attempt:', attemptNumber);
-      // Reconnect'te de register yap
-      if (userIdRef.current && userRoleRef.current) {
-        socket.emit('register', { user_id: userIdRef.current, role: userRoleRef.current });
-      }
+      void (async () => {
+        const role = userRoleRef.current;
+        const uid = userIdRef.current;
+        if (!uid || !role) return;
+        const token = await getPersistedAccessToken();
+        if (!token) return;
+        socket.emit('register', { token, role });
+      })();
     };
 
     const handleRegistered = (data: any) => {
@@ -388,7 +406,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
             // 🔥 Bağlıysa bile 30 saniyeden fazla arka plandaysa yeniden register ol
             if (backgroundDuration > 30000 && userIdRef.current && userRoleRef.current) {
               console.log('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');
-              socket.emit('register', { user_id: userIdRef.current, role: userRoleRef.current });
+              void getPersistedAccessToken().then((token) => {
+                if (!token || !socket.connected) return;
+                socket.emit('register', {
+                  token,
+                  role: userRoleRef.current as string,
+                });
+              });
             }
           }
         }
@@ -438,7 +462,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
       socket.connect();
     } else {
       console.log('🔌 [SocketProvider] Socket zaten bağlı, register yapılıyor...');
-      socket.emit('register', { user_id: newUserId, role: newUserRole });
+      void getPersistedAccessToken().then((token) => {
+        if (!token || !socket.connected) {
+          console.warn('[SocketProvider] register atlandı: token yok veya socket kapalı');
+          return;
+        }
+        socket.emit('register', { token, role: newUserRole });
+      });
     }
   }, []);
 
