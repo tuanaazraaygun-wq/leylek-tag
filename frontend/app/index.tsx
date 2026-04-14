@@ -60,11 +60,10 @@ import {
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
-import { getTestUserRole, isTestUser } from '../lib/testLoginBypass';
 import { formatOfferKmBadge, offerDropoffLine, offerPickupLine } from '../lib/offerTextHelpers';
 import { normalizePassengerPaymentMethod, parseGender } from '../lib/passengerFieldHelpers';
 import { playMatchChimeSound } from '../utils/sound';
-import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
+import { useLeylekZekaChrome, type LeylekZekaHomeFlowScreen } from '../contexts/LeylekZekaChromeContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -89,6 +88,19 @@ const API_URL = API_BASE_URL;
 
 /** PIN ekranına geçerken phone state kaybolursa verify-pin boş phone göndermesin */
 const PENDING_PIN_LOGIN_PHONE_KEY = 'pending_pin_login_phone';
+
+/** Giriş / OTP / yeniden gönder: `handleSendOTP` ile aynı 10 haneli 5… normalize */
+function loginPhoneToCleanTen(raw: string): string {
+  let c = raw.replace(/\D/g, '');
+  if (c.startsWith('90') && c.length >= 12) c = c.slice(2);
+  if (c.startsWith('0') && c.length === 11 && c.charAt(1) === '5') c = c.slice(1);
+  return c;
+}
+
+/** Sabit test hatları — OTP yok, şifre ile /auth/test-password-login */
+function isTestLoginPhone(phone: string) {
+  return phone === '5321111111' || phone === '5322222222';
+}
 
 /** start-call sonrası arayan tarafı Agora kanalına alır (receiver ekranı açılmadan önce). */
 async function joinTripCallAgoraAsCaller(
@@ -285,6 +297,7 @@ interface Tag {
 
 type AppScreen =
   | 'login'
+  | 'test-password'
   | 'otp'
   | 'register'
   | 'set-pin'
@@ -368,7 +381,7 @@ export default function App() {
 
   /** Leylek Zeka FAB pathname/ekran ile aynı karede senkron olsun (useEffect gecikmesi yok). */
   useLayoutEffect(() => {
-    leylekChrome.setHomeFlowScreen(screen);
+    leylekChrome.setHomeFlowScreen(screen as LeylekZekaHomeFlowScreen);
   }, [screen, leylekChrome.setHomeFlowScreen]);
 
   useEffect(() => {
@@ -395,6 +408,8 @@ export default function App() {
 
   // Auth states
   const [phone, setPhone] = useState('');
+  const [testLoginPassword, setTestLoginPassword] = useState('');
+  const [testLoginUserExists, setTestLoginUserExists] = useState(false);
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
@@ -967,18 +982,89 @@ export default function App() {
     setPhone('');
     setOtp('');
     setName('');
+    setTestLoginPassword('');
+    setTestLoginUserExists(false);
   };
 
   // ==================== AUTH FUNCTIONS ====================
+  const handleTestPasswordSubmit = async () => {
+    const pw = testLoginPassword.trim();
+    if (pw.length < 6) {
+      appAlert('Hata', 'Şifre en az 6 karakter olmalı');
+      return;
+    }
+    const cleanTen = loginPhoneToCleanTen(phone);
+    if (!/^5\d{9}$/.test(cleanTen) || !isTestLoginPhone(cleanTen)) {
+      appAlert('Hata', 'Geçersiz test numarası');
+      setScreen('login');
+      return;
+    }
+    try {
+      const currentDeviceId = deviceId || await getOrCreateDeviceId();
+      const res = await fetch(`${API_URL}/auth/test-password-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanTen, password: pw, device_id: currentDeviceId }),
+      });
+      const { data } = await parseApiJson(res);
+      if (!res.ok || !(data as { success?: boolean })?.success || !(data as { user?: User })?.user) {
+        appAlert('Hata', apiErrMsg(data, 'Giriş yapılamadı'));
+        return;
+      }
+      const d = data as { user: User; token?: string; access_token?: string };
+      const incoming = d.user as User & { role?: string };
+      const r: User['role'] =
+        incoming.role === 'driver' || incoming.role === 'passenger' ? incoming.role : 'passenger';
+      setSelectedRole(r);
+      setRideVehicleKind('car');
+      const baseDd =
+        typeof incoming.driver_details === 'object' && incoming.driver_details
+          ? { ...incoming.driver_details }
+          : {};
+      const withVehicle: User = {
+        ...incoming,
+        role: r,
+        rating: Number.isFinite(Number(incoming.rating)) ? Number(incoming.rating) : 4.0,
+        total_ratings: Number.isFinite(Number(incoming.total_ratings))
+          ? Number(incoming.total_ratings)
+          : 0,
+        driver_details: {
+          ...baseDd,
+          ...(r === 'driver'
+            ? { vehicle_kind: 'car' as const }
+            : { passenger_preferred_vehicle: 'car' as const }),
+        },
+      };
+      const rawTok = d.token ?? d.access_token;
+      const tokStr = typeof rawTok === 'string' ? rawTok.trim() : '';
+      await persistAccessToken(tokStr ? { access_token: tokStr } : {});
+      await saveUser(withVehicle);
+      try {
+        await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
+      } catch {
+        /* ignore */
+      }
+      try {
+        await fetch(
+          `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(withVehicle.id)}&role=${r}&vehicle_kind=car`,
+          { method: 'POST' },
+        );
+      } catch {
+        /* ignore */
+      }
+      setKycStatus(null);
+      void requestLocationPermission();
+      setTestLoginPassword('');
+      setScreen('dashboard');
+    } catch (e) {
+      console.error('test password login', e);
+      appAlert('Hata', 'Bağlantı hatası');
+    }
+  };
+
   const handleSendOTP = async () => {
     // 🔒 Önce normalize, sonra yalnızca cleanPhone üzerinden doğrula
-    let cleanPhone = phone.replace(/\D/g, '');
-    if (cleanPhone.startsWith('90') && cleanPhone.length >= 12) {
-      cleanPhone = cleanPhone.slice(2);
-    }
-    if (cleanPhone.startsWith('0') && cleanPhone.length === 11 && cleanPhone.charAt(1) === '5') {
-      cleanPhone = cleanPhone.slice(1);
-    }
+    const cleanPhone = loginPhoneToCleanTen(phone);
     console.log("PHONE_RAW", phone);
     console.log("PHONE_CLEAN", cleanPhone);
     if (!/^5\d{9}$/.test(cleanPhone)) {
@@ -990,62 +1076,27 @@ export default function App() {
     }
     setPhone(cleanPhone);
 
-    /** Sabit iki test hattı: OTP atlanır; sunucu yine allowlist doğrular (ALLOW_TEST_LOGIN_BYPASS=0 ile kapanır). */
-    if (isTestUser(cleanPhone)) {
-      console.log('TEST_LOGIN_BYPASS', cleanPhone);
+    /** Sabit test hatları: OTP yok — şifre ekranı (sunucu: /auth/test-password-login). */
+    if (isTestLoginPhone(cleanPhone)) {
       try {
         const currentDeviceId = deviceId || await getOrCreateDeviceId();
-        const bypassRes = await fetch(`${API_URL}/auth/test-login-bypass`, {
+        const checkResponse = await fetch(`${API_URL}/auth/check-user`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: cleanPhone, device_id: currentDeviceId }),
         });
-        const { data: bypassData } = await parseApiJson(bypassRes);
-        if (!bypassRes.ok || !bypassData?.success || !bypassData?.user) {
-          appAlert('Hata', apiErrMsg(bypassData, 'Test girişi yapılamadı'));
+        const { data: checkData } = await parseApiJson(checkResponse);
+        if (!checkResponse.ok) {
+          appAlert('Hata', apiErrMsg(checkData, `Sunucu hatası (${checkResponse.status})`));
           return;
         }
-        const incoming = bypassData.user as User & { role?: string };
-        const r: User['role'] =
-          incoming.role === 'driver' || incoming.role === 'passenger'
-            ? incoming.role
-            : getTestUserRole(cleanPhone);
-        setSelectedRole(r);
-        setRideVehicleKind('car');
-        const baseDd =
-          typeof incoming.driver_details === 'object' && incoming.driver_details
-            ? { ...incoming.driver_details }
-            : {};
-        const withVehicle: User = {
-          ...incoming,
-          role: r,
-          rating: Number.isFinite(Number(incoming.rating)) ? Number(incoming.rating) : 4.0,
-          total_ratings: Number.isFinite(Number(incoming.total_ratings))
-            ? Number(incoming.total_ratings)
-            : 0,
-          driver_details: {
-            ...baseDd,
-            ...(r === 'driver'
-              ? { vehicle_kind: 'car' as const }
-              : { passenger_preferred_vehicle: 'car' as const }),
-          },
-        };
-        await persistAccessToken(bypassData as { access_token?: string });
-        await saveUser(withVehicle);
-        try {
-          await fetch(
-            `${API_URL}/user/set-ride-vehicle-kind?user_id=${encodeURIComponent(withVehicle.id)}&role=${r}&vehicle_kind=car`,
-            { method: 'POST' },
-          );
-        } catch {
-          /* ignore */
-        }
-        setKycStatus(null);
-        void requestLocationPermission();
-        setScreen('dashboard');
+        const exists = !!(checkData as { user_exists?: boolean }).user_exists;
+        setTestLoginUserExists(exists);
+        setTestLoginPassword('');
+        setScreen('test-password');
       } catch (e) {
-        console.error('test login bypass', e);
-        appAlert('Hata', 'Test girişi başarısız');
+        console.error('test login check-user', e);
+        appAlert('Hata', 'Bağlantı hatası');
       }
       return;
     }
@@ -1407,6 +1458,124 @@ export default function App() {
         onPressSupport={() => setShowSupportModal(true)}
         styles={styles}
       />
+    );
+  }
+
+  if (screen === 'test-password') {
+    const tpW = Dimensions.get('window').width;
+    const tpH = Dimensions.get('window').height;
+    const tpColumnW = Math.min(loginLayout.colMax, tpW - loginLayout.padH * 2);
+    return (
+      <View style={{ flex: 1, width: '100%', height: '100%' }}>
+        {Platform.OS !== 'web' && (
+          <Image
+            source={require('../assets/images/login-background.png')}
+            style={{ position: 'absolute', top: 0, left: 0, width: tpW, height: tpH }}
+            resizeMode="cover"
+          />
+        )}
+        {Platform.OS !== 'web' && (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(255,255,255,0.03)',
+            }}
+          />
+        )}
+        <SafeAreaView style={{ flex: 1, backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent' }}>
+          <AnimatedClouds />
+          <View style={styles.loginLayerAboveClouds}>
+            <KeyboardAvoidingView
+              style={styles.loginKavFlex}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              enabled
+              keyboardVerticalOffset={
+                Platform.OS === 'ios'
+                  ? insets.top + 4
+                  : (StatusBar.currentHeight ?? 0) + insets.top
+              }
+            >
+              <View
+                style={[
+                  styles.loginPageShell,
+                  {
+                    paddingTop: loginLayout.isCompact ? 6 : 12,
+                    paddingBottom: Math.max(insets.bottom, 8),
+                  },
+                ]}
+              >
+                <View style={[styles.loginPageColumn, { width: tpColumnW }]}>
+                  <LoginBrandHeader
+                    usableWidth={tpColumnW}
+                    isCompact={loginLayout.isCompact}
+                    isShort={loginLayout.isShort}
+                    subtitle={`${phone} — test hesabı (SMS yok)`}
+                  />
+                  <View
+                    style={[
+                      styles.loginV2Card,
+                      styles.loginV2CardTight,
+                      {
+                        paddingTop: loginLayout.isShort ? 6 : 8,
+                        paddingBottom: loginLayout.isShort ? 6 : 8,
+                        paddingHorizontal: loginLayout.isShort ? 10 : 12,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.modernLabel, styles.loginV2Label]}>
+                      {testLoginUserExists ? 'Şifre gir' : 'Şifre oluştur'}
+                    </Text>
+                    <Text style={[styles.heroSubtitle, { marginBottom: 10, fontSize: 13 }]}>
+                      {testLoginUserExists
+                        ? 'Bu numara kayıtlı. Test şifrenizi girin.'
+                        : 'İlk kez giriş: en az 6 karakterlik bir şifre belirleyin.'}
+                    </Text>
+                    <View style={[styles.modernInputContainer, styles.loginV2InputWrap]}>
+                      <Ionicons name="lock-closed-outline" size={18} color="#2196F3" style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.modernInput, styles.loginV2Input]}
+                        placeholder="••••••"
+                        placeholderTextColor="#A0A0A0"
+                        secureTextEntry
+                        value={testLoginPassword}
+                        onChangeText={setTestLoginPassword}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.modernPrimaryButton, styles.loginPrimaryTight]}
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        void handleTestPasswordSubmit();
+                      }}
+                      activeOpacity={0.88}
+                    >
+                      <Text style={styles.modernPrimaryButtonText}>Devam et</Text>
+                      <Ionicons name="arrow-forward-circle" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modernSecondaryButton, styles.loginBackRowTight]}
+                      onPress={() => {
+                        void tapButtonHaptic();
+                        setTestLoginPassword('');
+                        setScreen('login');
+                      }}
+                    >
+                      <Ionicons name="arrow-back" size={18} color="#2196F3" />
+                      <Text style={styles.modernSecondaryButtonText}>Geri Dön</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -1837,6 +2006,7 @@ export default function App() {
                 <PlacesAutocomplete
                   placeholder="Adres, sokak veya mekan ara..."
                   city={user?.city || ''}
+                  strictCityBounds={!!(user?.city || '').trim()}
                   onPlaceSelected={(place) => {
                     setDestination({
                       address: place.address,
@@ -2871,6 +3041,7 @@ export default function App() {
     guardScreen !== 'login' &&
     guardScreen !== 'register' &&
     guardScreen !== 'otp' &&
+    guardScreen !== 'test-password' &&
     guardScreen !== 'forgot-password' &&
     guardScreen !== 'reset-pin'
   ) {
@@ -5881,6 +6052,13 @@ function PassengerDashboard({
     isDriver: false,
     enabled: !!(user?.id)
   });
+
+  /** DB’deki pending teklifleri çek — socket kaçırıldıysa veya uygulama yeniden açıldıysa liste dolu kalsın */
+  useEffect(() => {
+    if (!user?.id || !activeTag?.id) return;
+    if (activeTag.status !== 'pending' && activeTag.status !== 'offers_received') return;
+    void refreshOffersForTag(activeTag.id);
+  }, [user?.id, activeTag?.id, activeTag?.status, refreshOffersForTag]);
   
   // Teklifleri fiyata göre sırala (ucuzdan pahalıya)
   const offers = [...realtimeOffers].sort((a, b) => (a.price || 0) - (b.price || 0));
@@ -6290,7 +6468,7 @@ function PassengerDashboard({
 
       if (enderType === 'driver') {
         appAlert(
-          'Eşleşme sonlandırıldı',
+          'Uyarı: Eşleşme sonlandırıldı',
           `Sürücü ${enderFirst} eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
             {
@@ -6332,7 +6510,7 @@ function PassengerDashboard({
         });
       } else {
         appAlert(
-          'Eşleşme sonlandırıldı',
+          'Uyarı: Eşleşme sonlandırıldı',
           `Karşı taraf eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
             {
@@ -7237,7 +7415,7 @@ function PassengerDashboard({
 
     appAlert(
       'İptal Et',
-      'İsteğinizi iptal etmek istediğinizden emin misiniz? Sürücülere bildirim gönderilecek.',
+      'İsteğinizi iptal etmek istediğinizden emin misiniz? Sürücülere bildirim gönderilir. İptal ederseniz yeniden hedef seçip teklif gönderebilirsiniz.',
       [
         { text: 'Vazgeç', style: 'cancel' },
         {
@@ -7254,6 +7432,7 @@ function PassengerDashboard({
               const data = await response.json();
               if (data.success) {
                 setActiveTag(null);
+                setDestination(null);
                 // offers artık useOffers hook'u tarafından yönetiliyor - otomatik temizlenecek
               } else {
                 appAlert('Hata', data.detail || 'İptal edilemedi');
@@ -7489,10 +7668,7 @@ function PassengerDashboard({
           passengerVehicleKind={rideVehiclePreference}
           passengerGender={parseGender(user?.gender)}
           selfUserId={user?.id}
-          onPressBack={() => {
-            playTapSound();
-            setScreen('role-select');
-          }}
+          onPressBack={handleCancelTag}
           onCancel={handleCancelTag}
           onMatch={(driverData) => {
             // Eşleşme olduğunda
@@ -7628,6 +7804,7 @@ function PassengerDashboard({
       
       <ScrollView 
         style={styles.contentFullScreen}
+        contentContainerStyle={styles.passengerHomeScrollContent}
         keyboardShouldPersistTaps="handled"
       >
         {!activeTag ? (
@@ -7661,7 +7838,11 @@ function PassengerDashboard({
               <View style={styles.destinationIconBig}>
                 <Ionicons name="navigate" size={32} color="#FFF" />
               </View>
-              <Text style={styles.destinationTextBig}>
+              <Text
+                style={styles.destinationTextBig}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {destination ? destination.address : 'Hedef Seçin'}
               </Text>
               <View style={styles.destinationArrowBig}>
@@ -7673,13 +7854,6 @@ function PassengerDashboard({
             {showArrowHint && (
               <View style={styles.arrowHintSky}>
                 <Text style={styles.arrowTextSky}>☝️ Önce hedef seçin!</Text>
-              </View>
-            )}
-            
-            {destination && (
-              <View style={styles.destinationInfo}>
-                <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-                <Text style={styles.destinationConfirm}>Hedef: {destination.address.substring(0, 30)}...</Text>
               </View>
             )}
             
@@ -8466,6 +8640,9 @@ function PassengerDashboard({
                         visualVariant="tech"
                         suggestionsFirst={false}
                         strictCityBounds={!!(passengerSearchCityLabel || user?.city || '').trim()}
+                        biasLatitude={userLocation?.latitude}
+                        biasLongitude={userLocation?.longitude}
+                        biasDeltaDeg={0.34}
                         inputSize="large"
                         predictionMaxHeightBonus={56}
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
@@ -8736,7 +8913,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     try {
       const res = await fetch(`${API_URL}/trip/${tagId}`);
       const json = await res.json();
-      if (!json.success || !json.tag || json.tag.status !== 'waiting') return;
+      const st = String(json.tag?.status || '');
+      if (
+        !json.success ||
+        !json.tag ||
+        !['waiting', 'pending', 'offers_received'].includes(st)
+      ) {
+        return;
+      }
       const tag = json.tag;
       const tagPvk = tag.passenger_preferred_vehicle;
       if (tagPvk !== undefined && tagPvk !== null && String(tagPvk).trim() !== '') {
@@ -9214,7 +9398,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
       if (enderType === 'passenger') {
         appAlert(
-          'Eşleşme sonlandırıldı',
+          'Uyarı: Eşleşme sonlandırıldı',
           `Yolcu ${enderFirst} eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
             {
@@ -9256,7 +9440,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         });
       } else {
         appAlert(
-          'Eşleşme sonlandırıldı',
+          'Uyarı: Eşleşme sonlandırıldı',
           `Karşı taraf eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
           [
             {
@@ -9894,10 +10078,109 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   };
 
   const loadRequests = async () => {
-    // 🆕 MARTI TAG: API'den yükleme devre dışı - sadece socket'ten alıyoruz
-    // Socket'ten gelen tekliflerin ezilmesini önlemek için API çağrısı kaldırıldı
-    // Teklifler onNewTag callback'i ile geliyor
-    console.log('📡 MARTI TAG: Teklifler socket üzerinden alınıyor');
+    if (!user?.id) return;
+    try {
+      const q = new URLSearchParams({ user_id: String(user.id) });
+      const lat = userLocation?.latitude;
+      const lng = userLocation?.longitude;
+      if (lat != null && lng != null) {
+        q.set('latitude', String(lat));
+        q.set('longitude', String(lng));
+      }
+      const res = await fetch(`${API_URL}/driver/requests?${q.toString()}`);
+      const data = await res.json();
+      if (!data?.success || !Array.isArray(data.requests)) return;
+
+      setRequests((prev) => {
+        const existing = new Set(
+          prev
+            .map((r) => String(r.id || r.tag_id || r.request_id || '').trim())
+            .filter(Boolean),
+        );
+        const additions: any[] = [];
+        for (const raw of data.requests as Record<string, unknown>[]) {
+          const id = String(raw.id ?? '').trim();
+          if (!id || existing.has(id)) continue;
+
+          const pvkSocket = raw.passenger_vehicle_kind ?? raw.passenger_preferred_vehicle;
+          if (pvkSocket !== undefined && pvkSocket !== null && String(pvkSocket).trim() !== '') {
+            const pvkS = String(pvkSocket).trim().toLowerCase();
+            const tripVk: 'car' | 'motorcycle' =
+              pvkS === 'motorcycle' || pvkS === 'motor' ? 'motorcycle' : 'car';
+            if (tripVk !== driverVehicleKind) continue;
+          }
+
+          const rawDrop = raw.dropoff_location;
+          const dropStr = typeof rawDrop === 'string' ? rawDrop.trim() : '';
+          const dLat = Number(raw.dropoff_lat);
+          const dLng = Number(raw.dropoff_lng);
+          const dropLabel =
+            dropStr ||
+            (Number.isFinite(dLat) &&
+            Number.isFinite(dLng) &&
+            (Math.abs(dLat) > 1e-6 || Math.abs(dLng) > 1e-6)
+              ? `Hedef (${dLat.toFixed(4)}, ${dLng.toFixed(4)})`
+              : 'Hedef (haritada işaretli)');
+
+          const pkKmN = Number(
+            raw.pickup_distance_km ?? raw.distance_to_passenger_km ?? raw.distance_km,
+          );
+          const pkKm = Number.isFinite(pkKmN) && pkKmN > 0 ? pkKmN : null;
+          const pkMinN = Number(
+            raw.pickup_eta_min ?? raw.time_to_passenger_min ?? raw.duration_min,
+          );
+          const pkMin = Number.isFinite(pkMinN) && pkMinN > 0 ? pkMinN : null;
+          const tripKmN = Number(raw.trip_distance_km ?? raw.distance_km);
+          const tripKm = Number.isFinite(tripKmN) && tripKmN > 0 ? tripKmN : null;
+          const tripDurN = Number(raw.trip_duration_min ?? raw.estimated_minutes);
+          const tripDur = Number.isFinite(tripDurN) && tripDurN > 0 ? tripDurN : null;
+          const offN = Number(raw.offered_price ?? raw.final_price);
+          const offeredPrice = Number.isFinite(offN) && offN >= 0 ? offN : 0;
+
+          const row: any = {
+            id,
+            tag_id: id,
+            request_id: String(raw.request_id || id),
+            passenger_id: String(raw.passenger_id || ''),
+            passenger_name: String(raw.passenger_name || 'Yolcu'),
+            pickup_lat: Number(raw.pickup_lat),
+            pickup_lng: Number(raw.pickup_lng),
+            pickup_address: String(raw.pickup_location || ''),
+            pickup_location: String(raw.pickup_location || ''),
+            dropoff_lat: raw.dropoff_lat != null ? Number(raw.dropoff_lat) : undefined,
+            dropoff_lng: raw.dropoff_lng != null ? Number(raw.dropoff_lng) : undefined,
+            dropoff_address: dropLabel,
+            dropoff_location: dropLabel,
+            offered_price: offeredPrice,
+            distance_km: tripKm ?? 0,
+            estimated_minutes: tripDur ?? 0,
+            distance_to_pickup: pkKm ?? 0,
+            status: String(raw.status || 'pending'),
+            created_at: String(raw.created_at || new Date().toISOString()),
+            pickup_distance_km: pkKm,
+            pickup_eta_min: pkMin,
+            distance_to_passenger_km: pkKm,
+            time_to_passenger_min: pkMin,
+            trip_distance_km: tripKm,
+            trip_duration_min: tripDur,
+          };
+          const pvkRaw = raw.passenger_vehicle_kind ?? raw.passenger_preferred_vehicle;
+          if (pvkRaw !== undefined && pvkRaw !== null && String(pvkRaw).trim() !== '') {
+            const pvkStr = String(pvkRaw).trim().toLowerCase();
+            row.passenger_vehicle_kind =
+              pvkStr === 'motorcycle' || pvkStr === 'motor' ? 'motorcycle' : 'car';
+          }
+          if (!Number.isFinite(row.pickup_lat) || !Number.isFinite(row.pickup_lng)) continue;
+
+          existing.add(id);
+          additions.push(row);
+        }
+        if (additions.length === 0) return prev;
+        return [...prev, ...additions];
+      });
+    } catch (e) {
+      console.warn('driver/requests:', e);
+    }
   };
 
   const [offerModalVisible, setOfferModalVisible] = useState(false);
@@ -11612,6 +11895,8 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
     gap: 15,
+    maxWidth: '100%',
+    overflow: 'hidden',
   },
   destinationIconBig: {
     width: 60,
@@ -11628,6 +11913,7 @@ const styles = StyleSheet.create({
   },
   destinationTextBig: {
     flex: 1,
+    minWidth: 0,
     fontSize: 18,
     color: '#1B1B1E',
     fontWeight: '700',
@@ -13322,10 +13608,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
+  passengerHomeScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 28,
+  },
   emptyStateContainerFull: {
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 10,
+    minHeight: 0,
   },
   fullScreenTopBar: {
     flexDirection: 'row',

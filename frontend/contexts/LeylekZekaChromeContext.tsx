@@ -16,6 +16,7 @@ export type LeylekZekaFlowHint =
 /** Ana akıştaki `AppScreen` ile aynı stringler; index.tsx’ten senkronlanır. */
 export type LeylekZekaHomeFlowScreen =
   | 'login'
+  | 'test-password'
   | 'otp'
   | 'register'
   | 'set-pin'

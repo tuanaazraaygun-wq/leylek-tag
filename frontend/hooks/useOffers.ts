@@ -14,12 +14,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
-import Constants from 'expo-constants';
-
-const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || 
-                    process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://leylektag-debug.preview.emergentagent.com';
-const API_URL = `${BACKEND_URL}/api`;
+import { API_BASE_URL } from '../lib/backendConfig';
 
 // ==================== TYPES ====================
 
@@ -154,49 +149,67 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     async (tId: string) => {
       if (!userId || !tId) return;
       try {
-        const url = `${API_URL}/passenger/offers?user_id=${encodeURIComponent(userId)}&tag_id=${encodeURIComponent(tId)}`;
+        const url = `${API_BASE_URL}/passenger/offers?user_id=${encodeURIComponent(userId)}&tag_id=${encodeURIComponent(tId)}`;
         const response = await fetch(url);
         const data = await response.json();
         if (!data.success || !Array.isArray(data.offers)) return;
 
+        const mapRow = (u: Record<string, unknown>): Offer => {
+          const id = String(u.id ?? '');
+          const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+          const dtp = num(u.distance_to_passenger_km);
+          const earr = num(u.estimated_arrival_min);
+          const tdk = num(u.trip_distance_km);
+          const tdm = num(u.trip_duration_min);
+          return {
+            id,
+            offer_id: id,
+            request_id: requestId,
+            tag_id: tId,
+            driver_id: String(u.driver_id ?? ''),
+            driver_name: String(u.driver_name ?? 'Şoför'),
+            driver_rating: typeof u.driver_rating === 'number' ? u.driver_rating : 5,
+            driver_photo: typeof u.driver_photo === 'string' ? u.driver_photo : undefined,
+            price: typeof u.price === 'number' ? u.price : Number(u.price) || 0,
+            notes: typeof u.notes === 'string' ? u.notes : undefined,
+            status: String(u.status || 'pending'),
+            vehicle_model: typeof u.vehicle_model === 'string' ? u.vehicle_model : undefined,
+            vehicle_color: typeof u.vehicle_color === 'string' ? u.vehicle_color : undefined,
+            distance_to_passenger_km: dtp ?? undefined,
+            estimated_arrival_min: earr ?? undefined,
+            trip_distance_km: tdk ?? undefined,
+            trip_duration_min: tdm != null ? Math.round(tdm) : undefined,
+            created_at: typeof u.created_at === 'string' ? u.created_at : new Date().toISOString(),
+          };
+        };
+
         setOffers((prev) => {
-          const updates = new Map<string, Record<string, unknown>>(
-            (data.offers as Record<string, unknown>[]).map((o) => [String(o.id), o]),
-          );
-          return prev.map((p) => {
-            const u = updates.get(p.id);
-            if (!u) return p;
-            const dtp = u.distance_to_passenger_km;
-            const earr = u.estimated_arrival_min;
-            const tdk = u.trip_distance_km;
-            const tdm = u.trip_duration_min;
-            return {
-              ...p,
-              distance_to_passenger_km:
-                typeof dtp === 'number' && Number.isFinite(dtp)
-                  ? dtp
-                  : p.distance_to_passenger_km,
-              estimated_arrival_min:
-                typeof earr === 'number' && Number.isFinite(earr)
-                  ? earr
-                  : p.estimated_arrival_min,
-              trip_distance_km:
-                typeof tdk === 'number' && Number.isFinite(tdk) ? tdk : p.trip_distance_km,
-              trip_duration_min:
-                typeof tdm === 'number' && Number.isFinite(tdm) ? tdm : p.trip_duration_min,
-              notes: typeof u.notes === 'string' ? u.notes : p.notes,
-              driver_rating:
-                typeof u.driver_rating === 'number' ? u.driver_rating : p.driver_rating,
-              vehicle_model:
-                typeof u.vehicle_model === 'string' ? u.vehicle_model : p.vehicle_model,
-            };
-          });
+          const fromApi = (data.offers as Record<string, unknown>[]).map((row) => mapRow(row));
+          const apiById = new Map(fromApi.map((o) => [o.id, o]));
+          const merged = new Map<string, Offer>();
+
+          for (const o of fromApi) {
+            const loc = prev.find((p) => p.id === o.id || p.offer_id === o.id);
+            merged.set(o.id, { ...(loc || {}), ...o, tag_id: tId } as Offer);
+          }
+          for (const p of prev) {
+            if (apiById.has(p.id) || apiById.has(p.offer_id || '')) continue;
+            if (p.status === 'pending' || p.status === 'accepting') {
+              merged.set(p.id, p);
+            }
+          }
+          return Array.from(merged.values());
         });
+
+        for (const row of data.offers as { id?: string }[]) {
+          const oid = row.id != null ? String(row.id) : '';
+          if (oid) seenOfferIdsRef.current.add(oid);
+        }
       } catch (e) {
         console.warn('[useOffers] refreshOffersForTag:', e);
       }
     },
-    [userId],
+    [userId, requestId],
   );
 
   // ==================== REMOVE OFFER ====================
@@ -242,7 +255,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
       console.log('🔥 [useOffers] Accept offer API call:', params.toString());
       
       const response = await fetch(
-        `${API_URL}/passenger/accept-offer?${params.toString()}`,
+        `${API_BASE_URL}/passenger/accept-offer?${params.toString()}`,
         { method: 'POST' }
       );
       
@@ -286,7 +299,7 @@ export function useOffers(options: UseOffersOptions): UseOffersReturn {
     
     try {
       await fetch(
-        `${API_URL}/passenger/dismiss-offer?user_id=${userId}&offer_id=${offerId}`,
+        `${API_BASE_URL}/passenger/dismiss-offer?user_id=${userId}&offer_id=${offerId}`,
         { method: 'POST' }
       );
       console.log('❌ [useOffers] Offer rejected via API:', offerId);

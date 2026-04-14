@@ -98,6 +98,29 @@ interface PlaceDetails {
   longitude: number;
 }
 
+/** strictCityBounds: OSM address alanlarında şehir adı (İstanbul’da Ankara sonucu elenir) */
+function nominatimResultInCityLabel(item: PlaceResult, cityNeedle: string): boolean {
+  const nl = cityNeedle.trim().toLocaleLowerCase('tr-TR');
+  if (!nl) return true;
+  const dn = (item.display_name || '').toLocaleLowerCase('tr-TR');
+  if (dn.includes(nl)) return true;
+  const a = (item.address || {}) as Record<string, string | undefined>;
+  for (const k of [
+    'city',
+    'town',
+    'municipality',
+    'county',
+    'village',
+    'suburb',
+    'state',
+    'province',
+  ] as const) {
+    const v = a[k];
+    if (typeof v === 'string' && v.trim().toLocaleLowerCase('tr-TR').includes(nl)) return true;
+  }
+  return false;
+}
+
 /** Sokak / cadde / mahalle önceliği — hedef aramada üstte göster */
 function nominatimStreetRank(item: PlaceResult): number {
   const t = (item.type || '').toLowerCase();
@@ -138,6 +161,11 @@ interface PlacesAutocompleteProps {
   widerSearch?: boolean;
   /** true: şehir biliniyorsa her zaman viewbox ile sınırla (hedef seçim — tüm TR önerilerini kes) */
   strictCityBounds?: boolean;
+  /** Şehir CITY_DATA’da yoksa bile bounded kutu: bulunduğu konum etrafı (mahalle önerileri yerelde kalsın) */
+  biasLatitude?: number;
+  biasLongitude?: number;
+  /** bias kutusu yarı genişliği (derece); ~0.34 ≈ 35–40 km */
+  biasDeltaDeg?: number;
   /** Hedef modalı: arama kutusu daha yüksek */
   inputSize?: 'default' | 'large';
   /** Öneri listesi tavanına eklenecek piksel */
@@ -154,6 +182,9 @@ export default function PlacesAutocomplete({
   suggestionsFirst = false,
   widerSearch = false,
   strictCityBounds = false,
+  biasLatitude,
+  biasLongitude,
+  biasDeltaDeg = 0.34,
   inputSize = 'default',
   predictionMaxHeightBonus = 0,
 }: PlacesAutocompleteProps) {
@@ -199,7 +230,7 @@ export default function PlacesAutocomplete({
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, widerSearch, city, strictCityBounds]);
+  }, [query, widerSearch, city, strictCityBounds, biasLatitude, biasLongitude, biasDeltaDeg]);
 
   // Nominatim API ile arama (ÜCRETSİZ)
   const searchPlaces = async (input: string) => {
@@ -218,10 +249,29 @@ export default function PlacesAutocomplete({
       // Nominatim API - OpenStreetMap ücretsiz servisi
       const limit = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 15 : 10;
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=tr&addressdetails=1&limit=${limit}&accept-language=tr`;
-      
-      const useBbox = cityData && (!widerSearch || strictCityBounds);
-      if (useBbox) {
-        url += `&viewbox=${cityData.bbox}&bounded=1`;
+
+      let bboxParam: string | null = null;
+      const useRegisteredCityBbox = !!(cityData && (!widerSearch || strictCityBounds));
+      let usedBiasOnlyBbox = false;
+      if (useRegisteredCityBbox) {
+        bboxParam = cityData!.bbox;
+      } else if (
+        strictCityBounds &&
+        biasLatitude != null &&
+        biasLongitude != null &&
+        Number.isFinite(biasLatitude) &&
+        Number.isFinite(biasLongitude)
+      ) {
+        const d = biasDeltaDeg;
+        const left = biasLongitude - d;
+        const right = biasLongitude + d;
+        const top = biasLatitude + d;
+        const bottom = biasLatitude - d;
+        bboxParam = `${left},${top},${right},${bottom}`;
+        usedBiasOnlyBbox = true;
+      }
+      if (bboxParam) {
+        url += `&viewbox=${bboxParam}&bounded=1`;
       }
       
       console.log('🔍 Nominatim arama:', searchQuery);
@@ -245,10 +295,9 @@ export default function PlacesAutocomplete({
           // Ülke, il gibi çok geniş sonuçları çıkar
           return !['country', 'state', 'county'].includes(item.type);
         });
-        if (strictCityBounds && cityNeedle) {
-          filtered = filtered.filter((item) =>
-            item.display_name.toLocaleLowerCase('tr-TR').includes(cityNeedle),
-          );
+        // Kayıtlı il bbox’ı: metin + adres alanında şehir doğrula. Sadece GPS kutusu: bounded sonuçlar yeter.
+        if (strictCityBounds && cityNeedle && !usedBiasOnlyBbox) {
+          filtered = filtered.filter((item) => nominatimResultInCityLabel(item, cityLabel));
         }
 
         filtered.sort((a, b) => {

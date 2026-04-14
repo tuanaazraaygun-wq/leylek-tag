@@ -836,6 +836,8 @@ const NAV_SPEECH_MIN_GAP_MS = 4100;
 const NAV_HANDOFF_TO_DESTINATION_M = 45;
 /** Harita sürükleme / dokunma sonrası otomatik takip bu kadar ms durur; sonra yumuşakça devam */
 const NAV_MAP_GESTURE_MS = 9_000;
+/** PNG burun aşağıda (ön tam alt); rotation 0’da üst=kuzey → burun güneye bakar; burunu rotaya hizalamak için −180°. */
+const DRIVER_NAV_MARKER_ROTATION_OFFSET = -180;
 
 function smoothZoomToward(prev: number | null, target: number): number {
   if (prev == null || !Number.isFinite(prev)) return target;
@@ -1156,6 +1158,10 @@ export default function LiveMapView({
   /** Kullanıcı haritayı kaydırdı / yakınlaştırdı — otomatik kamera kısa süre durur */
   const navUserMapGestureUntilRef = useRef(0);
   const navGestureResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Yeniden ortala: bir kare jitter/throttle atla, merkezi GPS’e göre tazele */
+  const navForceRecenterOnceRef = useRef(false);
+  /** Nav başına bir kez Güven ipucu animasyonu */
+  const guvenNavHintShownRef = useRef(false);
   /** Takip yeniden başladıktan sonra kısa süre: daha yumuşak merkez lerp + uzun anim */
   const navFollowResumeSoftUntilRef = useRef(0);
   /** Son gönderilen kamera heading — çok yavaşta titremeyi keser */
@@ -1236,6 +1242,8 @@ export default function LiveMapView({
       navCamLastManeuverKeyRef.current = '';
       navCamInitializedRef.current = false;
       navLastTickUserRef.current = null;
+      navForceRecenterOnceRef.current = false;
+      guvenNavHintShownRef.current = false;
       navSmoothHeadingRef.current = 0;
       navGpsSpeedMpsRef.current = null;
       navSmoothZoomRef.current = null;
@@ -1429,7 +1437,12 @@ export default function LiveMapView({
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !userLocation || !mapRef.current) {
       return;
     }
-    if (Date.now() < navUserMapGestureUntilRef.current) {
+    const bypassCameraGuards = navForceRecenterOnceRef.current;
+    if (bypassCameraGuards) {
+      navForceRecenterOnceRef.current = false;
+      navSmoothCenterRef.current = null;
+    }
+    if (Date.now() < navUserMapGestureUntilRef.current && !bypassCameraGuards) {
       return;
     }
     const prevTick = navLastTickUserRef.current;
@@ -1551,6 +1564,7 @@ export default function LiveMapView({
       prevSmoothCenter == null ? Infinity : haversineMeters(prevSmoothCenter, centerAfterLerp);
 
     if (
+      !bypassCameraGuards &&
       navCamInitializedRef.current &&
       !maneuverChanged &&
       stepMovedM < NAV_JITTER_MAX_STEP_M &&
@@ -1561,6 +1575,7 @@ export default function LiveMapView({
     }
 
     if (
+      !bypassCameraGuards &&
       navCamInitializedRef.current &&
       !maneuverChanged &&
       centerMovedM < NAV_JITTER_MIN_CENTER_MOVE_M &&
@@ -1571,7 +1586,7 @@ export default function LiveMapView({
     }
 
     const now = Date.now();
-    if (!maneuverChanged && now - navCamLastTimeRef.current < NAV_CAMERA_THROTTLE_MS) {
+    if (!bypassCameraGuards && !maneuverChanged && now - navCamLastTimeRef.current < NAV_CAMERA_THROTTLE_MS) {
       return;
     }
 
@@ -1862,6 +1877,74 @@ export default function LiveMapView({
     };
   }, [isDriver, navigationMode, navGitPulse]);
 
+  const matchYgitGlowAnim = useRef(new Animated.Value(0.35)).current;
+  const matchYgitBreathAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isDriver || navigationMode) {
+      matchYgitGlowAnim.setValue(0.35);
+      matchYgitBreathAnim.setValue(1);
+      return;
+    }
+    const glowLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(matchYgitGlowAnim, {
+          toValue: 0.95,
+          duration: 1200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(matchYgitGlowAnim, {
+          toValue: 0.28,
+          duration: 1200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    const breathLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(matchYgitBreathAnim, {
+          toValue: 1.05,
+          duration: 950,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(matchYgitBreathAnim, {
+          toValue: 1,
+          duration: 950,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    glowLoop.start();
+    breathLoop.start();
+    return () => {
+      glowLoop.stop();
+      breathLoop.stop();
+      matchYgitGlowAnim.setValue(0.35);
+      matchYgitBreathAnim.setValue(1);
+    };
+  }, [isDriver, navigationMode, matchYgitGlowAnim, matchYgitBreathAnim]);
+
+  const guvenHintOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isDriver || !navigationMode || !onTrustRequest || guvenNavHintShownRef.current) {
+      return;
+    }
+    guvenNavHintShownRef.current = true;
+    guvenHintOpacity.setValue(0);
+    const seq = Animated.sequence([
+      Animated.timing(guvenHintOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.delay(2000),
+      Animated.timing(guvenHintOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]);
+    seq.start();
+    return () => {
+      seq.stop();
+    };
+  }, [isDriver, navigationMode, onTrustRequest, guvenHintOpacity]);
+
   const handleYolcuyaGitPress = useCallback(() => {
     void tapButtonHaptic();
     if (!userLocation || !otherLocation) {
@@ -1882,11 +1965,13 @@ export default function LiveMapView({
     } else {
       lastNavCameraAtRef.current = 0;
       navUserMapGestureUntilRef.current = 0;
+      navForceRecenterOnceRef.current = true;
       navFollowResumeSoftUntilRef.current = Date.now() + NAV_RESUME_SOFT_MS;
       if (navGestureResumeTimerRef.current) {
         clearTimeout(navGestureResumeTimerRef.current);
         navGestureResumeTimerRef.current = null;
       }
+      setNavFollowResumeTick((x) => x + 1);
       void loadDriverNavMeetingRouteRef.current();
     }
   }, [
@@ -1898,6 +1983,7 @@ export default function LiveMapView({
     tagId,
     setNavigationMode,
     setNavigationStage,
+    setNavFollowResumeTick,
   ]);
   
   useEffect(() => {
@@ -2674,6 +2760,8 @@ export default function LiveMapView({
   const driverNavActive = isDriver && navigationMode;
   /** Tam ekran sürücü navigasyonu: yalnızca arama + üst kart + harita */
   const driverNavImmersive = isDriver && navigationMode;
+  const driverNavMarkerRotationDeg =
+    (((navHeadingUi % 360) + 360) % 360) + DRIVER_NAV_MARKER_ROTATION_OFFSET;
 
   return (
     <View style={styles.container}>
@@ -2905,7 +2993,7 @@ export default function LiveMapView({
               coordinate={userLocation}
               anchor={{ x: 0.5, y: 0.57 }}
               flat={true}
-              rotation={navHeadingUi}
+              rotation={driverNavMarkerRotationDeg}
               tracksViewChanges={pinTracks}
               zIndex={4000}
             >
@@ -3001,7 +3089,7 @@ export default function LiveMapView({
       <View
         style={[
           styles.topInfoPanel,
-          driverNavImmersive ? { paddingTop: Math.max(insets.top, 8) + 112 } : null,
+          driverNavImmersive ? { paddingTop: Math.max(insets.top, 8) + 100 } : null,
         ]}
       >
         <View
@@ -3124,38 +3212,6 @@ export default function LiveMapView({
                         </View>
                       ) : null}
                     </View>
-                    {isDriver && !driverNavImmersive ? (
-                      <TouchableOpacity
-                        onPress={handleYolcuyaGitPress}
-                        activeOpacity={0.82}
-                        accessibilityRole="button"
-                        accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
-                      >
-                        <Animated.View
-                          style={{ transform: [{ scale: navigationMode ? navGitPulse : navBreathAnim }] }}
-                        >
-                          <LinearGradient
-                            colors={['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA']}
-                            style={styles.driverYolcuyaGitChip}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                          >
-                            <Animated.View
-                              style={{
-                                transform: [
-                                  { rotate: navigationMode ? navGitCompassRotate : tripCompassRotate },
-                                ],
-                              }}
-                            >
-                              <Ionicons name="compass" size={22} color="#EFF6FF" />
-                            </Animated.View>
-                            <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
-                              {navigationMode ? 'Ortala' : 'Yolcuya Git'}
-                            </Text>
-                          </LinearGradient>
-                        </Animated.View>
-                      </TouchableOpacity>
-                    ) : null}
                   </View>
                 </View>
               ) : null}
@@ -3184,38 +3240,6 @@ export default function LiveMapView({
                     >
                       ₺{price}
                     </Text>
-                    {isDriver && !driverNavImmersive ? (
-                      <TouchableOpacity
-                        onPress={handleYolcuyaGitPress}
-                        activeOpacity={0.82}
-                        accessibilityRole="button"
-                        accessibilityLabel={navigationMode ? 'Rotayı yeniden ortala' : 'Yolcuya Git'}
-                      >
-                        <Animated.View
-                          style={{ transform: [{ scale: navigationMode ? navGitPulse : navBreathAnim }] }}
-                        >
-                          <LinearGradient
-                            colors={['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA']}
-                            style={styles.driverYolcuyaGitChip}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                          >
-                            <Animated.View
-                              style={{
-                                transform: [
-                                  { rotate: navigationMode ? navGitCompassRotate : tripCompassRotate },
-                                ],
-                              }}
-                            >
-                              <Ionicons name="compass" size={22} color="#EFF6FF" />
-                            </Animated.View>
-                            <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
-                              {navigationMode ? 'Ortala' : 'Yolcuya Git'}
-                            </Text>
-                          </LinearGradient>
-                        </Animated.View>
-                      </TouchableOpacity>
-                    ) : null}
                   </View>
                 </View>
               ) : null}
@@ -3246,12 +3270,125 @@ export default function LiveMapView({
           </LinearGradient>
         </View>
 
-        {/* 🆕 MATRIX DURUM YAZISI - kutuların hemen altına */}
-        {matrixStatus && isDriver && !driverNavImmersive && (
-          <View style={styles.matrixContainerDriver} pointerEvents="none">
-            <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
+        {driverNavImmersive && MapView && (onCall || onTrustRequest) ? (
+          <View style={styles.navImmersiveBelowCard} pointerEvents="box-none">
+            <View style={styles.navImmersiveBelowCardRow}>
+              {onCall ? (
+                <TouchableOpacity
+                  style={styles.navImmersiveAraBtn}
+                  onPress={() => {
+                    void tapButtonHaptic();
+                    void handleCall('audio');
+                  }}
+                  disabled={isCallLoading}
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel="Yolcuyu ara"
+                >
+                  <LinearGradient
+                    colors={['#16A34A', '#22C55E', '#4ADE80']}
+                    style={styles.navImmersiveAraGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="call" size={18} color="#FFF" />
+                    <Text style={styles.navImmersiveAraText}>Ara</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.navImmersiveBelowCardSpacer} />
+              )}
+              {onTrustRequest ? (
+                <View style={styles.navImmersiveBelowCardGuvenCol}>
+                  <Animated.Text
+                    pointerEvents="none"
+                    style={[
+                      styles.navImmersiveTrustHint,
+                      {
+                        opacity: guvenHintOpacity.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 0.68],
+                        }),
+                      },
+                    ]}
+                  >
+                    Güven mi istiyorsun? Yolcudan güven al
+                  </Animated.Text>
+                  <TouchableOpacity
+                    style={styles.navImmersiveGuvenBtn}
+                    onPress={() => {
+                      void tapButtonHaptic();
+                      onTrustRequest();
+                    }}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel={trustRequestLabel || 'Güven AL'}
+                  >
+                    <LinearGradient
+                      colors={['#047857', '#059669', '#10B981']}
+                      style={styles.navImmersiveGuvenGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                      <Text style={styles.navImmersiveGuvenText}>Güven AL</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.navImmersiveBelowCardSpacer} />
+              )}
+            </View>
           </View>
-        )}
+        ) : null}
+
+        {/* Sürücü matrix + Yolcuya Git (aynı satır) — kart düzeni değişmez, yalnızca alt şerit */}
+        {isDriver && !driverNavImmersive ? (
+          <View style={styles.driverMatchMatrixRow} pointerEvents="box-none">
+            {matrixStatus ? (
+              <View style={[styles.matrixContainerDriver, styles.matrixContainerDriverInRow]} pointerEvents="none">
+                <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
+              </View>
+            ) : (
+              <View style={styles.driverMatchMatrixRowFlex1} />
+            )}
+            <View style={styles.driverMatchYgitOuter}>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.driverMatchYgitGlowAura,
+                  {
+                    opacity: matchYgitGlowAnim,
+                    transform: [{ scale: matchYgitBreathAnim }],
+                  },
+                ]}
+              />
+              <TouchableOpacity
+                onPress={handleYolcuyaGitPress}
+                activeOpacity={0.82}
+                accessibilityRole="button"
+                accessibilityLabel="Yolcuya Git"
+                style={styles.driverMatchYgitTouch}
+              >
+                <Animated.View style={{ transform: [{ scale: matchYgitBreathAnim }] }}>
+                  <LinearGradient
+                    colors={['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA']}
+                    style={styles.driverYolcuyaGitChip}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Animated.View style={{ transform: [{ rotate: tripCompassRotate }] }}>
+                      <Ionicons name="compass" size={22} color="#EFF6FF" />
+                    </Animated.View>
+                    <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
+                      Yolcuya Git
+                    </Text>
+                  </LinearGradient>
+                </Animated.View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         {matrixStatus && !isDriver && (
           <View style={styles.matrixContainerPassenger} pointerEvents="none">
@@ -3278,68 +3415,7 @@ export default function LiveMapView({
 
       {driverNavImmersive && MapView ? (
         <View style={styles.navImmersiveLayerRoot} pointerEvents="box-none">
-          <View style={styles.navImmersiveOverlay} pointerEvents="box-none">
-            <View
-              style={[
-                styles.navImmersiveTopRow,
-                { paddingTop: Math.max(insets.top, 8) + 124 },
-              ]}
-            >
-              {onCall ? (
-                <TouchableOpacity
-                  style={styles.navImmersiveAraBtn}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    void handleCall('audio');
-                  }}
-                  disabled={isCallLoading}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel="Yolcuyu ara"
-                >
-                  <LinearGradient
-                    colors={['#16A34A', '#22C55E', '#4ADE80']}
-                    style={styles.navImmersiveAraGrad}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="call" size={18} color="#FFF" />
-                    <Text style={styles.navImmersiveAraText}>Ara</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.navImmersiveTopSpacer} />
-              )}
-              {onTrustRequest ? (
-                <TouchableOpacity
-                  style={styles.navImmersiveGuvenBtn}
-                  onPress={() => {
-                    void tapButtonHaptic();
-                    onTrustRequest();
-                  }}
-                  activeOpacity={0.88}
-                  accessibilityRole="button"
-                  accessibilityLabel={trustRequestLabel || 'Güven AL'}
-                >
-                  <LinearGradient
-                    colors={['#047857', '#059669', '#10B981']}
-                    style={styles.navImmersiveGuvenGrad}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <Ionicons name="shield-checkmark" size={18} color="#FFF" />
-                    <Text style={styles.navImmersiveGuvenText}>Güven AL</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.navImmersiveTopSpacer} />
-              )}
-            </View>
-          </View>
-          <Animated.View
-            style={[styles.driverNavRecenterFabWrap, { transform: [{ scale: navGitPulse }] }]}
-            pointerEvents="box-none"
-          >
+          <View style={styles.driverNavRecenterFabWrap} pointerEvents="box-none">
             <TouchableOpacity
               style={styles.driverNavRecenterFab}
               onPress={handleYolcuyaGitPress}
@@ -3352,7 +3428,7 @@ export default function LiveMapView({
               </Animated.View>
               <Text style={styles.driverNavRecenterFabText}>Yeniden ortala</Text>
             </TouchableOpacity>
-          </Animated.View>
+          </View>
           <TouchableOpacity
             style={styles.driverNavCloseFab}
             onPress={() => {
@@ -3912,6 +3988,77 @@ const styles = StyleSheet.create({
     minWidth: 122,
     minHeight: 42,
   },
+  navImmersiveBelowCard: {
+    width: '100%',
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 4,
+    zIndex: 91,
+  },
+  navImmersiveBelowCardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  navImmersiveBelowCardGuvenCol: {
+    alignItems: 'flex-end',
+    maxWidth: '52%',
+  },
+  navImmersiveBelowCardSpacer: {
+    minWidth: 122,
+    minHeight: 1,
+  },
+  navImmersiveTrustHint: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'right',
+    marginBottom: 4,
+    paddingRight: 2,
+    maxWidth: 220,
+    lineHeight: 13,
+  },
+  driverMatchMatrixRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    marginTop: 6,
+    zIndex: 91,
+  },
+  driverMatchMatrixRowFlex1: {
+    flex: 1,
+    minWidth: 8,
+  },
+  matrixContainerDriverInRow: {
+    marginLeft: 0,
+    marginTop: 0,
+    flexShrink: 1,
+    maxWidth: '58%',
+  },
+  driverMatchYgitOuter: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  driverMatchYgitGlowAura: {
+    position: 'absolute',
+    width: 152,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(37, 99, 235, 0.38)',
+    shadowColor: '#60A5FA',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  driverMatchYgitTouch: {
+    zIndex: 2,
+  },
   navImmersiveGuvenBtn: {
     borderRadius: 14,
     overflow: 'hidden',
@@ -3982,6 +4129,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    minHeight: 44,
   },
   driverNavRecenterFabText: {
     color: '#DBEAFE',
@@ -3999,8 +4147,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.35)',
     zIndex: 40,
     elevation: 8,
+    minHeight: 44,
   },
   driverNavCloseFabText: {
     marginLeft: 8,

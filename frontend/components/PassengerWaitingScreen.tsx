@@ -21,6 +21,8 @@ import {
   Share,
   Modal,
   Image,
+  ScrollView,
+  BackHandler,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { getPassengerMarkerImage, getDriverMarkerImage } from '../lib/mapNavMarkers';
@@ -52,6 +54,7 @@ import { API_BASE_URL } from '../lib/backendConfig';
 import { callCheck } from '../lib/callCheck';
 import { displayFirstName } from '../lib/displayName';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const API_URL = API_BASE_URL;
 
@@ -135,6 +138,7 @@ export default function PassengerWaitingScreen({
   passengerGender = null,
   selfUserId = null,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const { setLeylekZekaChatOpen } = useLeylekZekaChrome();
   const openMatchScreenAi = () => {
     console.log('[PAX_DEBUG] PassengerWaitingScreen openMatchScreenAi');
@@ -175,6 +179,17 @@ export default function PassengerWaitingScreen({
     const t = setTimeout(() => setWaitingMapTracks(false), 2200);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (onPressBack) {
+        onPressBack();
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [onPressBack]);
 
   // Nokta animasyonu
   useEffect(() => {
@@ -334,7 +349,13 @@ export default function PassengerWaitingScreen({
         colors={['#F8FAFC', '#EFF6FF', '#DBEAFE', '#E0F2FE']}
         style={StyleSheet.absoluteFillObject}
       />
-      
+
+      <ScrollView
+        style={styles.waitingScroll}
+        contentContainerStyle={styles.waitingScrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => (onPressBack ? onPressBack() : onCancel())}
@@ -392,8 +413,8 @@ export default function PassengerWaitingScreen({
             initialRegion={{
               latitude: userLocation.latitude,
               longitude: userLocation.longitude,
-              latitudeDelta: 0.15,
-              longitudeDelta: 0.15,
+              latitudeDelta: 0.22,
+              longitudeDelta: 0.22,
             }}
             showsUserLocation={false}
             showsCompass={false}
@@ -572,11 +593,18 @@ export default function PassengerWaitingScreen({
           </View>
         )}
       </View>
-      
-      {/* İptal Butonu */}
-      <TouchableOpacity style={styles.cancelTagButton} onPress={onCancel}>
-        <Text style={styles.cancelTagButtonText}>Teklifi İptal Et</Text>
-      </TouchableOpacity>
+      </ScrollView>
+
+      <View
+        style={[
+          styles.cancelTagFooter,
+          { paddingBottom: Math.max(insets.bottom, 12) + 6 },
+        ]}
+      >
+        <TouchableOpacity style={styles.cancelTagButton} onPress={onCancel} activeOpacity={0.88}>
+          <Text style={styles.cancelTagButtonText}>Teklifi İptal Et</Text>
+        </TouchableOpacity>
+      </View>
       
       {/* Sürücü Profil Modal */}
       <Modal
@@ -633,6 +661,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F0F9FF',
+  },
+  waitingScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  waitingScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 8,
+  },
+  cancelTagFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    backgroundColor: 'transparent',
   },
   
   // Header
@@ -1005,11 +1046,8 @@ const styles = StyleSheet.create({
   
   // İptal Butonu
   cancelTagButton: {
-    marginHorizontal: 16,
-    marginTop: 'auto',
-    marginBottom: Platform.OS === 'ios' ? 40 : 24,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(254, 226, 226, 0.95)',
+    paddingVertical: 14,
+    backgroundColor: 'rgba(254, 226, 226, 0.98)',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.35)',

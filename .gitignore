@@ -161,3 +161,6 @@ model.patch
 # Environment files
 *.env
 *.env.*
+frontend/.metro-cache 
+node_modules 
+.env 

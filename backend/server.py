@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError, field_validator
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Tuple
 import os
 import logging
 import uuid
@@ -19,6 +19,7 @@ import hashlib
 import httpx
 import json
 import time
+import bcrypt
 import math
 import asyncio
 import sys
@@ -742,13 +743,60 @@ def _driver_details_as_dict(user_row: dict) -> dict:
         return dd
     if isinstance(dd, str) and dd.strip():
         try:
-            import json
             parsed = json.loads(dd)
             if isinstance(parsed, dict):
                 return parsed
         except Exception:
             pass
     return {}
+
+
+def _safe_jsonb_dict(d: dict) -> dict:
+    """PostgREST/JSONB: Decimal, datetime, UUID iç içe değerleri güvenli serileştirir."""
+    if not isinstance(d, dict) or not d:
+        return {}
+    try:
+        out = json.loads(json.dumps(d, default=str))
+        return out if isinstance(out, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+# Yalnızca allowlist test hatları — driver_details içinde saklanır (ayrı kolon gerektirmez)
+_TEST_LOGIN_BCRYPT_KEY = "_leylek_test_pwd_bcrypt"
+
+
+def _hash_test_login_password_bcrypt(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("ascii")
+
+
+def _verify_test_login_password_bcrypt(plain: str, stored: str) -> bool:
+    if not plain or not stored:
+        return False
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def _test_login_bcrypt_hash_from_user_row(row: dict) -> Optional[str]:
+    v = _driver_details_as_dict(row).get(_TEST_LOGIN_BCRYPT_KEY)
+    return v if isinstance(v, str) and v.startswith("$2") else None
+
+
+def _merge_test_pw_hash_into_driver_details(user_row: dict, plain_password: str) -> dict:
+    h = _hash_test_login_password_bcrypt(plain_password)
+    dd = _driver_details_as_dict(user_row)
+    dd[_TEST_LOGIN_BCRYPT_KEY] = h
+    return _safe_jsonb_dict(dd)
+
+
+def _driver_details_public_for_api(row: dict) -> Optional[dict]:
+    d = _driver_details_as_dict(row)
+    if not d:
+        return None
+    out = {k: v for k, v in d.items() if k != _TEST_LOGIN_BCRYPT_KEY}
+    return out or None
 
 
 def _driver_vehicle_kind_from_row(user_row: dict) -> Optional[str]:
@@ -966,7 +1014,9 @@ async def find_eligible_drivers(
         no_loc = excluded = vehicle_mismatch = too_far = 0
 
         plat_f, plng_f = float(pickup_lat), float(pickup_lng)
-        candidates: list = []
+        _match_t0 = time.time()
+        origin_points: list[tuple[str, float, float]] = []
+        driver_by_id: dict[str, dict] = {}
         for driver in result.data:
             if str(driver["id"]).strip().lower() in exclude_set:
                 excluded += 1
@@ -997,40 +1047,62 @@ async def find_eligible_drivers(
                 no_loc += 1
                 continue
 
-            if not _bbox_road_prefilter_ok(d_la, d_lo, plat_f, plng_f, r_km):
+            if not _match_bbox_prefilter_deg(plat_f, plng_f, d_la, d_lo):
                 too_far += 1
                 continue
 
-            candidates.append(driver)
+            did = str(driver["id"]).strip().lower()
+            origin_points.append((did, d_la, d_lo))
+            driver_by_id[did] = driver
 
-        sem = asyncio.Semaphore(12)
-
-        async def _road_row(drv: dict):
-            async with sem:
-                try:
-                    d_la = float(drv["latitude"])
-                    d_lo = float(drv["longitude"])
-                except (TypeError, ValueError):
-                    return None
-                ri = await get_route_info(d_la, d_lo, plat_f, plng_f)
-                if not ri:
-                    return None
-                road_km = float(ri["distance_km"])
-                if road_km > r_km:
-                    return None
-                return {
-                    "driver_id": str(drv["id"]).strip().lower(),
+        try:
+            meta = await get_real_route_meta_batch_origins_to_dest(plat_f, plng_f, origin_points)
+        except Exception as e:
+            logger.error("[MATCH] find_eligible_drivers batch failed: %s", e, exc_info=True)
+            meta = {}
+        logger.info("[MATCH] MATCH_TIME find_eligible_drivers_batch_s: %.4f", time.time() - _match_t0)
+        eligible_drivers = []
+        for did, row in meta.items():
+            road_km = float(row.get("distance_km", 0))
+            if road_km > r_km:
+                continue
+            drv = driver_by_id.get(did)
+            if not drv:
+                continue
+            eligible_drivers.append(
+                {
+                    "driver_id": did,
                     "driver_name": drv.get("name", "Sürücü"),
                     "distance_km": round(road_km, 2),
-                    "duration_min": int(max(1, round(float(ri["duration_min"])))),
+                    "duration_min": int(max(1, round(float(row.get("duration_min", 1))))),
                     "rating": drv.get("rating", 4.0) or 4.0,
                 }
-
-        rows = await asyncio.gather(*[_road_row(d) for d in candidates])
-        eligible_drivers = [x for x in rows if x is not None]
+            )
         eligible_drivers.sort(key=lambda x: (x["distance_km"], -x["rating"]))
-
+        logger.info(
+            "[MATCH] final_included driver_ids=%s count=%d pickup=(%.5f,%.5f)",
+            [e["driver_id"] for e in eligible_drivers],
+            len(eligible_drivers),
+            plat_f,
+            plng_f,
+        )
         if not eligible_drivers:
+            if not origin_points:
+                logger.info(
+                    "[MATCH] find_eligible empty reason=no_origin_points online_rows=%s",
+                    online_count,
+                )
+            elif not meta:
+                logger.info(
+                    "[MATCH] find_eligible empty reason=no_routing_results origins=%d",
+                    len(origin_points),
+                )
+            else:
+                logger.info(
+                    "[MATCH] find_eligible empty reason=all_gt_radius_r_km=%s meta_keys=%d",
+                    r_km,
+                    len(meta),
+                )
             logger.warning(
                 "find_eligible_drivers: 0 uygun — online=%s no_latlng=%s excluded=%s vehicle_mismatch=%s "
                 "too_far=%s pref=%s r_km=%s pickup=(%.5f,%.5f) vehicle_filter=%s",
@@ -1285,23 +1357,49 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
         if not waiting_tags.data:
             return
 
+        d_la_f = float(driver_lat)
+        d_lo_f = float(driver_lng)
+        _match_t0 = time.time()
+        tag_points: list[tuple[str, float, float]] = []
+        tag_by_id: dict[str, dict] = {}
         for tag in waiting_tags.data:
             tag_lat = tag.get("pickup_lat")
             tag_lng = tag.get("pickup_lng")
             if tag_lat is None or tag_lng is None:
                 continue
-
             passenger_pref = _canonical_vehicle_kind(tag.get("passenger_preferred_vehicle")) or "car"
             if not _driver_matches_passenger_vehicle_pref(driver_eff, passenger_pref):
                 continue
-
-            ri_pk = await get_route_info(
-                float(driver_lat), float(driver_lng), float(tag_lat), float(tag_lng)
-            )
-            if not ri_pk or float(ri_pk["distance_km"]) > matching_radius_km:
+            try:
+                tla = float(tag_lat)
+                tlo = float(tag_lng)
+            except (TypeError, ValueError):
                 continue
-            pu_km = round(float(ri_pk["distance_km"]), 1)
-            pu_min = int(max(1, round(float(ri_pk["duration_min"]))))
+            tid = str(tag.get("id")).strip()
+            tag_points.append((tid, tla, tlo))
+            tag_by_id[tid] = tag
+
+        try:
+            pickup_meta = await get_real_route_meta_batch(d_la_f, d_lo_f, tag_points)
+        except Exception as e:
+            logger.error("[MATCH] emit_existing_waiting_offers batch failed: %s", e, exc_info=True)
+            pickup_meta = {}
+        logger.info(
+            "[MATCH] MATCH_TIME emit_existing_waiting_offers_batch_s: %.4f driver=%s",
+            time.time() - _match_t0,
+            resolved_driver_id,
+        )
+        accepted_tag_ids: list[str] = []
+        for tid, row in pickup_meta.items():
+            road_km = float(row.get("distance_km", 0))
+            if road_km > matching_radius_km:
+                continue
+            tag = tag_by_id.get(tid)
+            if not tag:
+                continue
+            passenger_pref = _canonical_vehicle_kind(tag.get("passenger_preferred_vehicle")) or "car"
+            pu_km = round(road_km, 1)
+            pu_min = int(max(1, round(float(row.get("duration_min", 1)))))
 
             offer_data = {
                 "tag_id": str(tag.get("id")).strip(),
@@ -1328,7 +1426,31 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
                 "passenger_payment_method": tag.get("passenger_payment_method"),
             }
 
-            await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+            try:
+                await emit_new_passenger_offer_to_driver(driver_id, offer_data)
+                accepted_tag_ids.append(str(tag.get("id")))
+            except Exception as e:
+                logger.error(
+                    "[MATCH] emit_existing_waiting_offers emit failed tag_id=%s: %s",
+                    tid,
+                    e,
+                    exc_info=True,
+                )
+        logger.info("[MATCH] emit_existing final_included tag_ids=%s", accepted_tag_ids)
+        if not accepted_tag_ids and tag_points:
+            if not pickup_meta:
+                logger.info(
+                    "[MATCH] emit_existing empty reason=no_routing_results driver=%s points=%d",
+                    resolved_driver_id,
+                    len(tag_points),
+                )
+            else:
+                logger.info(
+                    "[MATCH] emit_existing empty reason=all_gt_radius driver=%s radius_km=%s meta=%d",
+                    resolved_driver_id,
+                    matching_radius_km,
+                    len(pickup_meta),
+                )
     except Exception as e:
         logger.warning(f"emit_existing_waiting_offers_to_driver error: {e}")
 
@@ -1775,47 +1897,66 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
         
         passenger_pid = tag_data.get("passenger_id")
         plat_b, plng_b = float(pickup_lat), float(pickup_lng)
-        sem_b = asyncio.Semaphore(12)
+        origin_points: list[tuple[str, float, float]] = []
+        for driver in drivers_result.data:
+            d_lat = driver.get("latitude")
+            d_lng = driver.get("longitude")
+            if not d_lat or not d_lng:
+                continue
+            if passenger_pid and str(driver["id"]) == str(passenger_pid):
+                continue
+            eff = _effective_driver_vehicle_kind(driver)
+            if not _driver_matches_passenger_vehicle_pref(eff, pref):
+                continue
+            try:
+                d_laf = float(d_lat)
+                d_log = float(d_lng)
+            except (TypeError, ValueError):
+                continue
+            if not _match_bbox_prefilter_deg(plat_b, plng_b, d_laf, d_log):
+                continue
+            origin_points.append((str(driver["id"]).strip().lower(), d_laf, d_log))
 
-        async def _broadcast_pickup_row(driver: dict):
-            async with sem_b:
-                d_lat = driver.get("latitude")
-                d_lng = driver.get("longitude")
-                if not d_lat or not d_lng:
-                    return None
-                if passenger_pid and str(driver["id"]) == str(passenger_pid):
-                    return None
-                eff = _effective_driver_vehicle_kind(driver)
-                if not _driver_matches_passenger_vehicle_pref(eff, pref):
-                    return None
-                try:
-                    d_laf = float(d_lat)
-                    d_log = float(d_lng)
-                except (TypeError, ValueError):
-                    return None
-                if not _bbox_road_prefilter_ok(
-                    d_laf, d_log, plat_b, plng_b, BROADCAST_RADIUS_KM
-                ):
-                    return None
-                ri = await get_route_info(d_laf, d_log, plat_b, plng_b)
-                if not ri or float(ri["distance_km"]) > BROADCAST_RADIUS_KM:
-                    return None
-                return (
-                    str(driver["id"]).strip().lower(),
-                    float(ri["distance_km"]),
-                    int(max(1, round(float(ri["duration_min"])))),
-                )
-
-        br_rows = await asyncio.gather(
-            *[_broadcast_pickup_row(d) for d in drivers_result.data]
-        )
-        with_distance = [x for x in br_rows if x is not None]
+        _match_t0 = time.time()
+        try:
+            meta_br = await get_real_route_meta_batch_origins_to_dest(plat_b, plng_b, origin_points)
+        except Exception as e:
+            logger.error("[MATCH] broadcast batch failed tag_id=%s: %s", tag_id, e, exc_info=True)
+            meta_br = {}
+        logger.info("[MATCH] MATCH_TIME broadcast_offer_batch_s: %.4f tag_id=%s", time.time() - _match_t0, tag_id)
+        with_distance = []
+        for did, row in meta_br.items():
+            road_km = float(row.get("distance_km", 0))
+            if road_km > BROADCAST_RADIUS_KM:
+                continue
+            r_eta = int(max(1, round(float(row.get("duration_min", 1)))))
+            with_distance.append((did, road_km, r_eta))
         if not with_distance:
+            if not origin_points:
+                logger.info("[MATCH] broadcast empty reason=no_origin_points tag_id=%s", tag_id)
+            elif not meta_br:
+                logger.info(
+                    "[MATCH] broadcast empty reason=no_routing_results tag_id=%s origins=%d",
+                    tag_id,
+                    len(origin_points),
+                )
+            else:
+                logger.info(
+                    "[MATCH] broadcast empty reason=all_gt_radius tag_id=%s radius_km=%s meta=%d",
+                    tag_id,
+                    BROADCAST_RADIUS_KM,
+                    len(meta_br),
+                )
             logger.info(f"📢 Broadcast: {BROADCAST_RADIUS_KM} km yol içinde sürücü yok")
             return 0
 
         with_distance.sort(key=lambda x: x[1])
         top = with_distance[:BROADCAST_MAX_RECIPIENTS]
+        logger.info(
+            "[MATCH] broadcast final_included driver_ids=%s tag_id=%s",
+            [t[0] for t in top],
+            tag_id,
+        )
 
         timeout_sec = BROADCAST_ACCEPT_WINDOW_SECONDS
         price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
@@ -2711,6 +2852,450 @@ def _bbox_road_prefilter_ok(
     return abs(lat1 - lat2) <= dlat_max and abs(lng1 - lng2) <= dlng_max
 
 
+# ==================== DRIVER–PASSENGER ROAD MATCHING (BATCH + CACHE) ====================
+# Tek gerçek yol mesafesi: Google Distance Matrix (varsa) veya OSRM. Haversine ile eşleşme yok.
+_MATCH_ROUTE_BBOX_DEG = 0.25
+_MATCH_ROUTE_TOP_N = 10
+_MATCH_ROUTE_CACHE_TTL_SEC = 30.0
+_MATCH_ROUTE_CACHE_MAX = 4096
+_MATCH_ROUTE_CACHE: dict[str, tuple[float, float, float]] = {}
+
+
+def _match_route_cache_key(ola: float, olo: float, dla: float, dlo: float) -> str:
+    return f"{round(float(ola), 5)},{round(float(olo), 5)}:{round(float(dla), 5)},{round(float(dlo), 5)}"
+
+
+def _match_bbox_prefilter_deg(ala: float, alo: float, bla: float, blo: float) -> bool:
+    return abs(ala - bla) <= _MATCH_ROUTE_BBOX_DEG and abs(alo - blo) <= _MATCH_ROUTE_BBOX_DEG
+
+
+def _match_approx_sort_metric(ala: float, alo: float, bla: float, blo: float) -> float:
+    dx = float(ala) - float(bla)
+    dy = float(alo) - float(blo)
+    return dx * dx + dy * dy
+
+
+def _match_route_cache_get(ola: float, olo: float, dla: float, dlo: float) -> Optional[Tuple[float, float]]:
+    key = _match_route_cache_key(ola, olo, dla, dlo)
+    ent = _MATCH_ROUTE_CACHE.get(key)
+    if not ent:
+        return None
+    km, dur, exp = ent
+    if time.monotonic() > exp:
+        try:
+            del _MATCH_ROUTE_CACHE[key]
+        except KeyError:
+            pass
+        return None
+    return (float(km), float(dur))
+
+
+def _match_route_cache_set(ola: float, olo: float, dla: float, dlo: float, km: float, dur_min: float) -> None:
+    if len(_MATCH_ROUTE_CACHE) > _MATCH_ROUTE_CACHE_MAX:
+        for k in list(_MATCH_ROUTE_CACHE.keys())[:512]:
+            try:
+                del _MATCH_ROUTE_CACHE[k]
+            except KeyError:
+                pass
+    key = _match_route_cache_key(ola, olo, dla, dlo)
+    _MATCH_ROUTE_CACHE[key] = (
+        float(km),
+        float(dur_min),
+        time.monotonic() + _MATCH_ROUTE_CACHE_TTL_SEC,
+    )
+
+
+async def _osrm_road_leg_km_min(
+    origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float
+) -> Optional[Tuple[float, int]]:
+    """Yalnızca OSRM — Google çağrısı yok (batch OSRM yolu)."""
+    try:
+        url = (
+            f"https://router.project-osrm.org/route/v1/driving/"
+            f"{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
+        )
+        async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
+            response = await client.get(url)
+            data = response.json()
+        if data.get("code") == "Ok" and data.get("routes"):
+            route = data["routes"][0]
+            distance_m = route.get("distance", 0)
+            duration_s = route.get("duration", 0)
+            distance_km = float(distance_m) / 1000.0
+            duration_min = int(max(1, round(float(duration_s) / 60.0)))
+            return (round(distance_km, 3), duration_min)
+    except Exception as e:
+        logger.warning("_osrm_road_leg_km_min: %s", e)
+    return None
+
+
+def _match_narrow_top_candidates(
+    anchor_lat: float,
+    anchor_lng: float,
+    points: list[tuple[str, float, float]],
+    top_n: int = _MATCH_ROUTE_TOP_N,
+) -> list[tuple[str, float, float]]:
+    input_n = len(points)
+    scored: list[tuple[float, str, float, float]] = []
+    for pid, la, lo in points:
+        try:
+            plat = float(la)
+            plng = float(lo)
+        except (TypeError, ValueError):
+            continue
+        if not _match_bbox_prefilter_deg(anchor_lat, anchor_lng, plat, plng):
+            continue
+        scored.append((_match_approx_sort_metric(anchor_lat, anchor_lng, plat, plng), str(pid), plat, plng))
+    bbox_n = len(scored)
+    logger.info(
+        "[MATCH] after_bbox input_points=%d candidates_after_bbox=%d anchor=(%.5f,%.5f)",
+        input_n,
+        bbox_n,
+        float(anchor_lat),
+        float(anchor_lng),
+    )
+    scored.sort(key=lambda x: x[0])
+    top = scored[:top_n]
+    top_ids = [t[1] for t in top]
+    logger.info("[MATCH] after_approx_sort top_n=%d ids=%s", len(top_ids), top_ids)
+    return [(t[1], t[2], t[3]) for t in top]
+
+
+async def _google_dm_one_origin_many_dests(
+    origin_lat: float,
+    origin_lng: float,
+    dests: list[tuple[str, float, float]],
+) -> dict[str, tuple[float, int]]:
+    api_key = (os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
+    if not api_key or not dests:
+        return {}
+    try:
+        dest_str = "|".join(f"{la},{lo}" for _, la, lo in dests)
+        url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+        params = {
+            "origins": f"{origin_lat},{origin_lng}",
+            "destinations": dest_str,
+            "mode": "driving",
+            "key": api_key,
+        }
+        try:
+            async with httpx.AsyncClient(http2=False, timeout=12.0) as client:
+                r = await client.get(url, params=params)
+                data = r.json()
+        except Exception as e:
+            logger.error("[MATCH] Distance Matrix (1→N) HTTP error: %s", e, exc_info=True)
+            return {}
+        if data.get("status") != "OK":
+            logger.warning("Distance Matrix (1→N): status=%s", data.get("status"))
+            return {}
+        row0 = (data.get("rows") or [{}])[0]
+        els = row0.get("elements") or []
+        out: dict[str, tuple[float, int]] = {}
+        for i, el in enumerate(els):
+            try:
+                if i >= len(dests):
+                    break
+                did, _, _ = dests[i]
+                if el.get("status") != "OK":
+                    continue
+                dist = el.get("distance") or {}
+                dur = el.get("duration") or {}
+                meters = float(dist.get("value", 0))
+                sec = float(dur.get("value", 0))
+                km = round(meters / 1000.0, 3)
+                dmin = int(max(1, round(sec / 60.0)))
+                out[str(did)] = (km, dmin)
+            except Exception as e:
+                logger.error("[MATCH] Distance Matrix (1→N) element parse error i=%s: %s", i, e, exc_info=True)
+                continue
+        return out
+    except Exception as e:
+        logger.error("[MATCH] Distance Matrix (1→N) error: %s", e, exc_info=True)
+    return {}
+
+
+async def _google_dm_many_origins_one_dest(
+    origins: list[tuple[str, float, float]],
+    dest_lat: float,
+    dest_lng: float,
+) -> dict[str, tuple[float, int]]:
+    api_key = (os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
+    if not api_key or not origins:
+        return {}
+    try:
+        ori_str = "|".join(f"{la},{lo}" for _, la, lo in origins)
+        url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+        params = {
+            "origins": ori_str,
+            "destinations": f"{dest_lat},{dest_lng}",
+            "mode": "driving",
+            "key": api_key,
+        }
+        try:
+            async with httpx.AsyncClient(http2=False, timeout=12.0) as client:
+                r = await client.get(url, params=params)
+                data = r.json()
+        except Exception as e:
+            logger.error("[MATCH] Distance Matrix (N→1) HTTP error: %s", e, exc_info=True)
+            return {}
+        if data.get("status") != "OK":
+            logger.warning("Distance Matrix (N→1): status=%s", data.get("status"))
+            return {}
+        rows = data.get("rows") or []
+        out: dict[str, tuple[float, int]] = {}
+        for i, row in enumerate(rows):
+            try:
+                if i >= len(origins):
+                    break
+                did, _, _ = origins[i]
+                els = row.get("elements") or [{}]
+                el = els[0] if els else {}
+                if el.get("status") != "OK":
+                    continue
+                dist = el.get("distance") or {}
+                dur = el.get("duration") or {}
+                meters = float(dist.get("value", 0))
+                sec = float(dur.get("value", 0))
+                km = round(meters / 1000.0, 3)
+                dmin = int(max(1, round(sec / 60.0)))
+                out[str(did)] = (km, dmin)
+            except Exception as e:
+                logger.error("[MATCH] Distance Matrix (N→1) row parse error i=%s: %s", i, e, exc_info=True)
+                continue
+        return out
+    except Exception as e:
+        logger.error("[MATCH] Distance Matrix (N→1) error: %s", e, exc_info=True)
+    return {}
+
+
+async def _resolve_road_legs_single_origin(
+    ola: float,
+    olo: float,
+    dests: list[tuple[str, float, float]],
+) -> dict[str, tuple[float, int]]:
+    """Bir çıkış → çok varış; en fazla len(dests) yol çözümü (cache + tek DM veya OSRM sırası)."""
+    if not dests:
+        return {}
+    resolved: dict[str, tuple[float, int]] = {}
+    pending: list[tuple[str, float, float]] = []
+    for did, dla, dlo in dests:
+        try:
+            hit = _match_route_cache_get(ola, olo, dla, dlo)
+            if hit is not None:
+                resolved[str(did)] = (hit[0], int(hit[1]))
+            else:
+                pending.append((str(did), float(dla), float(dlo)))
+        except Exception as e:
+            logger.error("[MATCH] route cache read error dest=%s: %s", did, e, exc_info=True)
+            pending.append((str(did), float(dla), float(dlo)))
+
+    if pending:
+        try:
+            dm = await _google_dm_one_origin_many_dests(ola, olo, pending)
+        except Exception as e:
+            logger.error("[MATCH] DM 1→N invoke error: %s", e, exc_info=True)
+            dm = {}
+        for pid, dla, dlo in pending:
+            try:
+                if pid in dm:
+                    km, dmin = dm[pid]
+                    resolved[pid] = (km, dmin)
+                    _match_route_cache_set(ola, olo, dla, dlo, km, float(dmin))
+                else:
+                    try:
+                        osr = await _osrm_road_leg_km_min(ola, olo, dla, dlo)
+                    except Exception as e:
+                        logger.error("[MATCH] OSRM leg error origin→%s: %s", pid, e, exc_info=True)
+                        continue
+                    if osr:
+                        km, dmin = osr
+                        resolved[pid] = (km, dmin)
+                        _match_route_cache_set(ola, olo, dla, dlo, km, float(dmin))
+            except Exception as e:
+                logger.error("[MATCH] leg resolve error dest=%s: %s", pid, e, exc_info=True)
+                continue
+    dist_log = {k: round(float(v[0]), 3) for k, v in resolved.items()}
+    logger.info("[MATCH] after_distance_api legs=%d distances_km=%s", len(dist_log), dist_log)
+    return resolved
+
+
+async def _resolve_road_legs_many_origins_one_dest(
+    dest_lat: float,
+    dest_lng: float,
+    origins: list[tuple[str, float, float]],
+) -> dict[str, tuple[float, int]]:
+    if not origins:
+        return {}
+    resolved: dict[str, tuple[float, int]] = {}
+    pending: list[tuple[str, float, float]] = []
+    for oid, ola, olo in origins:
+        try:
+            hit = _match_route_cache_get(ola, olo, dest_lat, dest_lng)
+            if hit is not None:
+                resolved[str(oid)] = (hit[0], int(hit[1]))
+            else:
+                pending.append((str(oid), float(ola), float(olo)))
+        except Exception as e:
+            logger.error("[MATCH] route cache read error origin=%s: %s", oid, e, exc_info=True)
+            pending.append((str(oid), float(ola), float(olo)))
+
+    if pending:
+        try:
+            dm = await _google_dm_many_origins_one_dest(pending, dest_lat, dest_lng)
+        except Exception as e:
+            logger.error("[MATCH] DM N→1 invoke error: %s", e, exc_info=True)
+            dm = {}
+        for oid, ola, olo in pending:
+            try:
+                if oid in dm:
+                    km, dmin = dm[oid]
+                    resolved[oid] = (km, dmin)
+                    _match_route_cache_set(ola, olo, dest_lat, dest_lng, km, float(dmin))
+                else:
+                    try:
+                        osr = await _osrm_road_leg_km_min(ola, olo, dest_lat, dest_lng)
+                    except Exception as e:
+                        logger.error("[MATCH] OSRM leg error %s→dest: %s", oid, e, exc_info=True)
+                        continue
+                    if osr:
+                        km, dmin = osr
+                        resolved[oid] = (km, dmin)
+                        _match_route_cache_set(ola, olo, dest_lat, dest_lng, km, float(dmin))
+            except Exception as e:
+                logger.error("[MATCH] leg resolve error origin=%s: %s", oid, e, exc_info=True)
+                continue
+    dist_log = {k: round(float(v[0]), 3) for k, v in resolved.items()}
+    logger.info("[MATCH] after_distance_api (N→1) legs=%d distances_km=%s", len(dist_log), dist_log)
+    return resolved
+
+
+async def get_real_distance_batch(
+    driver_lat: float,
+    driver_lng: float,
+    passengers: list[tuple[str, float, float]],
+) -> dict[str, float]:
+    """
+    Tek sürücü konumundan çoklu hedeflere yol mesafesi (km).
+    0.25° bbox + yaklaşık sıralama → en fazla 10 hedef için yol mesafesi (DM veya OSRM).
+    """
+    t0 = time.time()
+    try:
+        ola = float(driver_lat)
+        olo = float(driver_lng)
+    except (TypeError, ValueError):
+        logger.info("[MATCH] MATCH_TIME get_real_distance_batch_s: %.4f (invalid_anchor)", time.time() - t0)
+        return {}
+    narrowed = _match_narrow_top_candidates(ola, olo, passengers, _MATCH_ROUTE_TOP_N)
+    if not narrowed:
+        logger.info("[MATCH] MATCH_TIME get_real_distance_batch_s: %.4f (empty_narrow)", time.time() - t0)
+        return {}
+    legs = await _resolve_road_legs_single_origin(ola, olo, narrowed)
+    logger.info("[MATCH] MATCH_TIME get_real_distance_batch_s: %.4f", time.time() - t0)
+    return {pid: float(km) for pid, (km, _) in legs.items()}
+
+
+async def get_real_distance_batch_origins_to_dest(
+    dest_lat: float,
+    dest_lng: float,
+    origins: list[tuple[str, float, float]],
+) -> dict[str, float]:
+    """Çoklu sürücü konumundan tek pickup’a yol mesafesi (km). Dispatch / broadcast için."""
+    t0 = time.time()
+    try:
+        dla = float(dest_lat)
+        dlo = float(dest_lng)
+    except (TypeError, ValueError):
+        logger.info("[MATCH] MATCH_TIME get_real_distance_batch_origins_to_dest_s: %.4f (invalid_dest)", time.time() - t0)
+        return {}
+    narrowed = _match_narrow_top_candidates(dla, dlo, origins, _MATCH_ROUTE_TOP_N)
+    if not narrowed:
+        logger.info("[MATCH] MATCH_TIME get_real_distance_batch_origins_to_dest_s: %.4f (empty_narrow)", time.time() - t0)
+        return {}
+    legs = await _resolve_road_legs_many_origins_one_dest(dla, dlo, narrowed)
+    logger.info("[MATCH] MATCH_TIME get_real_distance_batch_origins_to_dest_s: %.4f", time.time() - t0)
+    return {oid: float(km) for oid, (km, _) in legs.items()}
+
+
+async def get_real_route_meta_batch(
+    driver_lat: float,
+    driver_lng: float,
+    passengers: list[tuple[str, float, float]],
+) -> dict[str, dict]:
+    """{id: {distance_km, duration_min}} — sürücü→hedef."""
+    t0 = time.time()
+    try:
+        ola = float(driver_lat)
+        olo = float(driver_lng)
+    except (TypeError, ValueError):
+        logger.info("[MATCH] empty_route_batch reason=invalid_anchor")
+        logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_s: %.4f", time.time() - t0)
+        return {}
+    narrowed = _match_narrow_top_candidates(ola, olo, passengers, _MATCH_ROUTE_TOP_N)
+    if not narrowed:
+        if passengers:
+            logger.info(
+                "[MATCH] empty_route_batch reason=bbox_filtered_all input_points=%d",
+                len(passengers),
+            )
+        else:
+            logger.info("[MATCH] empty_route_batch reason=no_input_points")
+        logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_s: %.4f", time.time() - t0)
+        return {}
+    try:
+        legs = await _resolve_road_legs_single_origin(ola, olo, narrowed)
+    except Exception as e:
+        logger.error("[MATCH] resolve_road_legs_single_origin failed: %s", e, exc_info=True)
+        logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_s: %.4f", time.time() - t0)
+        return {}
+    if not legs:
+        logger.info(
+            "[MATCH] empty_route_batch reason=routing_failed narrowed=%d",
+            len(narrowed),
+        )
+    logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_s: %.4f", time.time() - t0)
+    return {pid: {"distance_km": float(km), "duration_min": int(dur)} for pid, (km, dur) in legs.items()}
+
+
+async def get_real_route_meta_batch_origins_to_dest(
+    dest_lat: float,
+    dest_lng: float,
+    origins: list[tuple[str, float, float]],
+) -> dict[str, dict]:
+    """{driver_id: {distance_km, duration_min}} — sürücü→pickup."""
+    t0 = time.time()
+    try:
+        dla = float(dest_lat)
+        dlo = float(dest_lng)
+    except (TypeError, ValueError):
+        logger.info("[MATCH] empty_route_batch_origins reason=invalid_dest")
+        logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
+        return {}
+    narrowed = _match_narrow_top_candidates(dla, dlo, origins, _MATCH_ROUTE_TOP_N)
+    if not narrowed:
+        if origins:
+            logger.info(
+                "[MATCH] empty_route_batch_origins reason=bbox_filtered_all input_origins=%d",
+                len(origins),
+            )
+        else:
+            logger.info("[MATCH] empty_route_batch_origins reason=no_input_origins")
+        logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
+        return {}
+    try:
+        legs = await _resolve_road_legs_many_origins_one_dest(dla, dlo, narrowed)
+    except Exception as e:
+        logger.error("[MATCH] resolve_road_legs_many_origins_one_dest failed: %s", e, exc_info=True)
+        logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
+        return {}
+    if not legs:
+        logger.info(
+            "[MATCH] empty_route_batch_origins reason=routing_failed narrowed=%d",
+            len(narrowed),
+        )
+    logger.info("[MATCH] MATCH_TIME get_real_route_meta_batch_origins_to_dest_s: %.4f", time.time() - t0)
+    return {oid: {"distance_km": float(km), "duration_min": int(dur)} for oid, (km, dur) in legs.items()}
+
+
 async def _enrich_tag_trip_distance_if_missing(tag: dict) -> None:
     """Yanıtta distance_km boş/0 ise pickup–dropoff ile yol mesafesini doldur (salt okuma yanıtı)."""
     try:
@@ -3257,6 +3842,18 @@ async def send_otp(request: SendOtpBodyRequest = None, phone: str = None):
     # Normalize to 905XXXXXXXXX format
     cleaned_phone = normalize_turkish_phone(result)
     logger.info(f"📱 OTP request for: {cleaned_phone}")
+    # Test bypass hatları: SMS gönderme; depoda sabit kod (verify ile uyumlu, maliyet yok)
+    if _allow_test_login_bypass() and cleaned_phone in TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE:
+        current_time = time.time()
+        otp_storage[cleaned_phone] = {
+            "code": "000000",
+            "expires": current_time + OTP_TTL_SECONDS,
+            "last_sms_ok": current_time,
+            "last_api_attempt": current_time,
+        }
+        logger.warning("TEST_LINE send_otp: SMS atlandı, kod=000000 %s", cleaned_phone)
+        return {"success": True, "message": "OTP gönderildi"}
+
     sender = os.getenv("NETGSM_MSGHEADER")
     logger.info(f"📱 OTP sender env NETGSM_MSGHEADER: {sender!r}")
     
@@ -3489,13 +4086,14 @@ async def auth_test_login_bypass(request: Request):
     now_iso = datetime.utcnow().isoformat()
 
     if user:
+        # updated_at: çoğu şemada BEFORE UPDATE tetikleyicisi set eder; manuel ISO bazen sorun çıkarır
         upd: dict = {
             "role": role,
             "last_login": now_iso,
-            "updated_at": now_iso,
         }
         if dev_id:
             upd["last_device_id"] = dev_id
+        dd_payload: Optional[dict] = None
         if role == "driver":
             prev = user.get("driver_details") or {}
             if not isinstance(prev, dict):
@@ -3503,21 +4101,64 @@ async def auth_test_login_bypass(request: Request):
             merged = {**_test_driver_details_seed(), **prev}
             merged["kyc_status"] = "approved"
             merged["is_verified"] = True
-            upd["driver_details"] = merged
+            dd_payload = _safe_jsonb_dict(merged)
+            upd["driver_details"] = dd_payload
         else:
-            upd["driver_details"] = {}
+            # Boş {} yerine tercih alanı; DB’den gelen iç içe tipleri JSON-güvenli yap
+            dd_prev = _driver_details_as_dict(user)
+            pref = _canonical_vehicle_kind(dd_prev.get("passenger_preferred_vehicle")) or "car"
+            merged_p = {**dd_prev, "passenger_preferred_vehicle": pref}
+            cleaned = {k: v for k, v in merged_p.items() if v is not None}
+            dd_payload = _safe_jsonb_dict(cleaned)
+            upd["driver_details"] = dd_payload
         if not user.get("pin_hash"):
             upd["pin_hash"] = hash_pin("111111")
+        if user.get("phone") != canonical:
+            try:
+                clash = (
+                    supabase.table("users").select("id").eq("phone", canonical).limit(1).execute().data
+                    or []
+                )
+                if not clash or str(clash[0].get("id")) == str(user.get("id")):
+                    upd["phone"] = canonical
+                else:
+                    logger.warning(
+                        "test_login_bypass: canonical telefon başka satırda, phone güncellenmedi canonical=%s user_id=%s",
+                        canonical,
+                        user.get("id"),
+                    )
+            except Exception as _ph_err:
+                logger.warning("test_login_bypass phone çakışma kontrolü: %s", _ph_err)
+        uid = str(user.get("id", "")).strip()
         try:
-            if user.get("phone") != canonical:
-                upd["phone"] = canonical
-        except Exception:
-            pass
-        try:
-            supabase.table("users").update(upd).eq("id", user["id"]).execute()
+            supabase.table("users").update(upd).eq("id", uid).execute()
         except Exception as e:
-            logger.error("test_login_bypass update error: %s", e)
-            raise HTTPException(status_code=500, detail="Kullanıcı güncellenemedi") from e
+            logger.error(
+                "test_login_bypass update error: %r user_id=%s upd_keys=%s",
+                e,
+                uid,
+                list(upd.keys()),
+            )
+            minimal: dict = {"role": role, "last_login": now_iso}
+            if not user.get("pin_hash"):
+                minimal["pin_hash"] = hash_pin("111111")
+            if "phone" in upd:
+                minimal["phone"] = upd["phone"]
+            if dev_id:
+                minimal["last_device_id"] = dev_id
+            try:
+                supabase.table("users").update(minimal).eq("id", uid).execute()
+            except Exception as e2:
+                logger.error("test_login_bypass minimal update error: %r user_id=%s", e2, uid)
+                raise HTTPException(status_code=500, detail="Kullanıcı güncellenemedi") from e2
+            if dd_payload:
+                try:
+                    supabase.table("users").update({"driver_details": dd_payload}).eq("id", uid).execute()
+                except Exception as e3:
+                    logger.warning(
+                        "test_login_bypass driver_details ayrı yazım başarısız (oturum yine açılır): %r",
+                        e3,
+                    )
         user = _users_get_by_phone_flexible(canonical) or user
     else:
         unique_qr_code = f"LEYLEK-{uuid.uuid4().hex[:12].upper()}"
@@ -3541,6 +4182,8 @@ async def auth_test_login_bypass(request: Request):
             insert_data["last_device_id"] = dev_id
         if role == "driver":
             insert_data["driver_details"] = _test_driver_details_seed()
+        elif role == "passenger":
+            insert_data["driver_details"] = {"passenger_preferred_vehicle": "car"}
         try:
             ins = supabase.table("users").insert(insert_data).execute()
             if not ins.data:
@@ -3583,6 +4226,141 @@ async def auth_test_login_bypass(request: Request):
             "total_trips": user.get("total_trips", 0),
             "profile_photo": user.get("profile_photo"),
             "driver_details": user.get("driver_details"),
+            "is_admin": is_admin,
+            "role": role,
+        },
+    }
+
+
+@api_router.post("/auth/test-password-login")
+async def auth_test_password_login(request: Request):
+    """
+    Üretim güvenli test girişi: yalnızca 905321111111 / 905322222222 — OTP yok, bcrypt şifre.
+    ALLOW_TEST_LOGIN_BYPASS=0 ise 404. Düz şifre saklanmaz; bcrypt driver_details içinde.
+    """
+    if not _allow_test_login_bypass():
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        raw = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="JSON body required") from None
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="Invalid body")
+    phone_raw = str(raw.get("phone") or "").strip()
+    password = str(raw.get("password") or "")
+    dev_id_raw = raw.get("device_id")
+    dev_id = str(dev_id_raw).strip() if dev_id_raw else None
+
+    if len(password) < 6:
+        raise HTTPException(status_code=422, detail="Şifre en az 6 karakter olmalı")
+
+    canonical = _auth_normalize_or_raise(phone_raw)
+    role = TEST_LOGIN_BYPASS_CANONICAL_TO_ROLE.get(canonical)
+    if role not in ("passenger", "driver"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    now_iso = datetime.utcnow().isoformat()
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = request.headers.get("x-real-ip", "")
+    if not client_ip and request.client:
+        client_ip = request.client.host
+
+    user = _users_get_by_phone_flexible(canonical)
+
+    if user:
+        stored = _test_login_bcrypt_hash_from_user_row(user)
+        new_dd: Optional[dict] = None
+        if stored:
+            if not _verify_test_login_password_bcrypt(password, stored):
+                raise HTTPException(status_code=401, detail="Şifre hatalı")
+        else:
+            new_dd = _merge_test_pw_hash_into_driver_details(user, password)
+
+        upd_final: dict = {"last_login": now_iso, "role": role}
+        if dev_id:
+            upd_final["last_device_id"] = dev_id
+        if new_dd is not None:
+            upd_final["driver_details"] = new_dd
+        try:
+            supabase.table("users").update(upd_final).eq("id", str(user["id"]).strip()).execute()
+        except Exception as e:
+            logger.error("test_password_login update error: %r", e)
+            raise HTTPException(status_code=500, detail="Kullanıcı güncellenemedi") from e
+        user = _users_get_by_phone_flexible(canonical) or user
+    else:
+        unique_qr_code = f"LEYLEK-{uuid.uuid4().hex[:12].upper()}"
+        insert_data: dict = {
+            "phone": canonical,
+            "role": role,
+            "name": "Test Yolcu" if role == "passenger" else "Test Sürücü",
+            "first_name": "Test",
+            "last_name": "Yolcu" if role == "passenger" else "Sürücü",
+            "city": "İstanbul",
+            "pin_hash": hash_pin("111111"),
+            "points": 75,
+            "rating": 4.0,
+            "total_ratings": 0,
+            "total_trips": 0,
+            "is_active": True,
+            "personal_qr_code": unique_qr_code,
+            "last_login": now_iso,
+        }
+        if dev_id:
+            insert_data["last_device_id"] = dev_id
+        pw_h = _hash_test_login_password_bcrypt(password)
+        if role == "driver":
+            dd0 = {**_test_driver_details_seed(), _TEST_LOGIN_BCRYPT_KEY: pw_h}
+            insert_data["driver_details"] = _safe_jsonb_dict(dd0)
+        else:
+            insert_data["driver_details"] = _safe_jsonb_dict(
+                {"passenger_preferred_vehicle": "car", _TEST_LOGIN_BCRYPT_KEY: pw_h}
+            )
+        try:
+            ins = supabase.table("users").insert(insert_data).execute()
+            if not ins.data:
+                raise HTTPException(status_code=500, detail="Kullanıcı oluşturulamadı")
+            user = ins.data[0]
+        except Exception as e:
+            logger.error("test_password_login insert error: %s", e)
+            raise HTTPException(status_code=500, detail="Kullanıcı oluşturulamadı") from e
+
+    try:
+        supabase.table("login_logs").insert(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "phone": canonical,
+                "ip_address": client_ip,
+                "device_id": dev_id,
+                "success": True,
+                "country": "TR",
+                "created_at": now_iso,
+            }
+        ).execute()
+    except Exception:
+        pass
+
+    tok = issue_access_token(user["id"])
+    is_admin = _phone_10_for_admin_check(canonical) in ADMIN_PHONE_NUMBERS
+    dd_pub = _driver_details_public_for_api(user)
+    return {
+        "success": True,
+        "token": tok,
+        "access_token": tok,
+        "user": {
+            "id": user["id"],
+            "phone": user.get("phone") or canonical,
+            "name": user.get("name") or ("Test Yolcu" if role == "passenger" else "Test Sürücü"),
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
+            "city": user.get("city"),
+            "gender": user.get("gender"),
+            "rating": float(user.get("rating", 4.0)),
+            "total_ratings": int(user.get("total_ratings") or 0),
+            "total_trips": user.get("total_trips", 0),
+            "profile_photo": user.get("profile_photo"),
+            "driver_details": dd_pub,
             "is_admin": is_admin,
             "role": role,
         },
@@ -5303,7 +6081,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
 
 @api_router.get("/driver/requests")
 async def get_driver_requests(driver_id: str = None, user_id: str = None, latitude: float = None, longitude: float = None):
-    """Şoför için yakındaki istekleri getir - ŞEHİR BAZLI (aynı şehirdeki tüm teklifler)"""
+    """Şoför için yakındaki istekleri getir — yalnızca mesafe (DISPATCH_RADIUS_KM), durum, engel ve araç tipi."""
     try:
         # driver_id veya user_id kabul et
         did = driver_id or user_id
@@ -5320,18 +6098,30 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         except:
             pass  # Hata olursa devam et
         
-        # Sürücünün şehrini al
-        driver_result = supabase.table("users").select("city, latitude, longitude, driver_details").eq("id", resolved_id).execute()
-        driver_city = None
+        # Sürücü konumu (query veya profil) — şehir alanı eşleştirmede kullanılmaz
+        driver_result = supabase.table("users").select("latitude, longitude, driver_details").eq("id", resolved_id).execute()
         driver_lat = latitude
         driver_lng = longitude
         
         if driver_result.data:
-            driver_city = driver_result.data[0].get("city")
             if not driver_lat:
                 driver_lat = driver_result.data[0].get("latitude")
             if not driver_lng:
                 driver_lng = driver_result.data[0].get("longitude")
+
+        try:
+            dlf = float(driver_lat)
+            dlof = float(driver_lng)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[MATCH] driver_location_invalid user_id=%s raw_lat=%r raw_lng=%r — empty requests",
+                resolved_id,
+                driver_lat,
+                driver_lng,
+            )
+            return {"success": True, "requests": []}
+
+        _match_t0 = time.time()
         
         # Engellenen kullanıcıları al
         blocked_result = supabase.table("blocked_users").select("blocked_user_id").eq("user_id", resolved_id).execute()
@@ -5341,64 +6131,96 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
         # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)").in_("status", ["pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(100).execute()
+        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)").in_("status", ["waiting", "pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(100).execute()
         
         driver_eff = _effective_driver_vehicle_kind(
             driver_result.data[0] if driver_result.data else {}
         )
-        requests = []
+        tag_points: list[tuple[str, float, float]] = []
+        tag_ctx: dict[str, tuple] = {}
         for tag in result.data:
-            # Engelli kontrolü
             if tag.get("passenger_id") in all_blocked:
                 continue
-            
             passenger_info = tag.get("users", {}) or {}
             trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
             if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
                 continue
+            if tag.get("pickup_lat") is None or tag.get("pickup_lng") is None:
+                continue
+            try:
+                tlat = float(tag["pickup_lat"])
+                tlng = float(tag["pickup_lng"])
+            except (TypeError, ValueError):
+                continue
+            tid = str(tag["id"])
+            tag_points.append((tid, tlat, tlng))
+            tag_ctx[tid] = (tag, passenger_info, trip_pref)
+
+        try:
+            pickup_meta = await get_real_route_meta_batch(dlf, dlof, tag_points)
+        except Exception as e:
+            logger.error("[MATCH] get_driver_requests pickup batch failed: %s", e, exc_info=True)
+            pickup_meta = {}
+        req_r_km = float(DISPATCH_RADIUS_KM)
+        requests = []
+        for tid, meta_row in pickup_meta.items():
+            road_pick_km = float(meta_row.get("distance_km", 0))
+            if road_pick_km > req_r_km:
+                continue
+            ctx = tag_ctx.get(tid)
+            if not ctx:
+                continue
+            tag, passenger_info, trip_pref = ctx
             passenger_city = passenger_info.get("city")
-            
-            # ŞEHİR KONTROLÜ - Sadece aynı şehirdeki teklifleri göster
-            if driver_city and passenger_city:
-                if driver_city.lower().strip() != passenger_city.lower().strip():
-                    continue
-            
-            # Mesafe hesapla (OSRM)
-            distance_km = None
-            duration_min = None
-            
-            target_lat = float(tag["pickup_lat"]) if tag.get("pickup_lat") else None
-            target_lng = float(tag["pickup_lng"]) if tag.get("pickup_lng") else None
-            
-            if driver_lat and driver_lng and target_lat and target_lng:
-                route_info = await get_route_info(driver_lat, driver_lng, target_lat, target_lng)
-                if route_info:
-                    distance_km = route_info["distance_km"]
-                    duration_min = route_info["duration_min"]
-            
-            # Yolculuk mesafesi (pickup -> dropoff)
+            pk_km = round(road_pick_km, 1)
+            pk_min = int(max(1, round(float(meta_row.get("duration_min", 1)))))
+
             trip_distance_km = None
             trip_duration_min = None
             if tag.get("pickup_lat") and tag.get("dropoff_lat"):
-                trip_route = await get_route_info(
-                    float(tag["pickup_lat"]), float(tag["pickup_lng"]),
-                    float(tag["dropoff_lat"]), float(tag["dropoff_lng"])
-                )
+                try:
+                    trip_route = await get_route_info(
+                        float(tag["pickup_lat"]),
+                        float(tag["pickup_lng"]),
+                        float(tag["dropoff_lat"]),
+                        float(tag["dropoff_lng"]),
+                    )
+                except Exception as e:
+                    logger.error(
+                        "[MATCH] get_route_info trip_leg error tag_id=%s: %s",
+                        tid,
+                        e,
+                        exc_info=True,
+                    )
+                    trip_route = None
                 if trip_route:
                     trip_distance_km = trip_route["distance_km"]
                     trip_duration_min = trip_route["duration_min"]
-            
-            pk_km = round(distance_km, 1) if distance_km else None
-            pk_min = int(round(duration_min)) if duration_min else None
+
             tr_km = round(trip_distance_km, 1) if trip_distance_km else None
             tr_min = int(round(trip_duration_min)) if trip_duration_min else None
+            try:
+                op_raw = tag.get("offered_price")
+                fp_raw = tag.get("final_price")
+                if op_raw is not None and str(op_raw).strip() != "":
+                    offered_price = float(op_raw)
+                elif fp_raw is not None and str(fp_raw).strip() != "":
+                    offered_price = float(fp_raw)
+                else:
+                    offered_price = 0.0
+            except (TypeError, ValueError):
+                offered_price = 0.0
+            pvk_out = "motorcycle" if trip_pref == "motorcycle" else "car"
             requests.append({
                 "id": tag["id"],
+                "tag_id": tag["id"],
+                "request_id": tag["id"],
                 "passenger_id": tag["passenger_id"],
                 "passenger_name": passenger_info.get("name", tag.get("passenger_name", "Yolcu")),
                 "passenger_rating": float(passenger_info.get("rating", 4.0)),
                 "passenger_photo": passenger_info.get("profile_photo"),
                 "passenger_city": passenger_city,
+                "passenger_vehicle_kind": pvk_out,
                 "pickup_location": tag["pickup_location"],
                 "pickup_lat": float(tag["pickup_lat"]) if tag.get("pickup_lat") else None,
                 "pickup_lng": float(tag["pickup_lng"]) if tag.get("pickup_lng") else None,
@@ -5407,6 +6229,7 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 "dropoff_lng": float(tag["dropoff_lng"]) if tag.get("dropoff_lng") else None,
                 "notes": tag.get("notes"),
                 "status": tag["status"],
+                "offered_price": offered_price,
                 "pickup_distance_km": pk_km,
                 "pickup_eta_min": pk_min,
                 "trip_distance_km": tr_km,
@@ -5418,7 +6241,45 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
                 "duration_min": pk_min,
                 "created_at": tag["created_at"]
             })
-        
+
+        accepted_pax = [str(r.get("passenger_id")) for r in requests if r.get("passenger_id")]
+        logger.info(
+            "[MATCH] final_included passenger_ids=%s tag_ids=%s count=%d",
+            accepted_pax,
+            [str(r.get("id")) for r in requests],
+            len(requests),
+        )
+        logger.info("[MATCH] MATCH_TIME get_driver_requests_s: %.4f", time.time() - _match_t0)
+
+        if not requests:
+            n_db = len(result.data or [])
+            n_pts = len(tag_points)
+            n_meta = len(pickup_meta)
+            n_leq = sum(
+                1
+                for _tid, mr in pickup_meta.items()
+                if float(mr.get("distance_km", 0)) <= req_r_km
+            )
+            if n_db == 0:
+                empty_reason = "no_db_tags"
+            elif n_pts == 0:
+                empty_reason = "no_candidates_after_filters"
+            elif n_meta == 0:
+                empty_reason = "bbox_filtered_all_or_routing_failed"
+            elif n_leq == 0:
+                empty_reason = "all_gt_radius"
+            else:
+                empty_reason = "unexpected_empty_after_meta"
+            logger.info(
+                "[MATCH] empty_requests reason=%s db_tags=%d tag_points=%d pickup_meta=%d within_radius=%d radius_km=%s",
+                empty_reason,
+                n_db,
+                n_pts,
+                n_meta,
+                n_leq,
+                req_r_km,
+            )
+
         return {"success": True, "requests": requests}
     except Exception as e:
         logger.error(f"Get driver requests error: {e}")
@@ -5456,6 +6317,12 @@ async def get_driver_nearby_passengers_map(
                 driver_lng = driver_result.data[0].get("longitude")
 
         if driver_lat is None or driver_lng is None:
+            logger.warning(
+                "[MATCH] nearby_map driver_location_invalid user_id=%s query_lat=%r query_lng=%r",
+                resolved_id,
+                latitude,
+                longitude,
+            )
             return {
                 "success": True,
                 "radius_km": rk,
@@ -5492,7 +6359,8 @@ async def get_driver_nearby_passengers_map(
 
         seeking = []
         active_passenger_ids = set()
-
+        seek_points: list[tuple[str, float, float]] = []
+        seek_ctx: dict[str, dict] = {}
         for tag in tag_res.data or []:
             if tag.get("passenger_id") in all_blocked:
                 continue
@@ -5500,7 +6368,6 @@ async def get_driver_nearby_passengers_map(
             trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
             if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
                 continue
-
             plat = tag.get("pickup_lat")
             plng = tag.get("pickup_lng")
             if plat is None or plng is None:
@@ -5510,22 +6377,41 @@ async def get_driver_nearby_passengers_map(
                 plng_f = float(plng)
             except (TypeError, ValueError):
                 continue
+            tid = str(tag["id"])
+            seek_points.append((tid, plat_f, plng_f))
+            seek_ctx[tid] = {"tag": tag, "passenger_info": passenger_info, "trip_pref": trip_pref, "plat_f": plat_f, "plng_f": plng_f}
 
-            if not _bbox_road_prefilter_ok(driver_lat, driver_lng, plat_f, plng_f, rk):
+        _match_t0_seek = time.time()
+        try:
+            seek_meta = await get_real_route_meta_batch(driver_lat, driver_lng, seek_points)
+        except Exception as e:
+            logger.error("[MATCH] nearby_map seek batch failed user=%s: %s", resolved_id, e, exc_info=True)
+            seek_meta = {}
+        logger.info(
+            "[MATCH] MATCH_TIME nearby_map_seeking_batch_s: %.4f user=%s seek_points=%d",
+            time.time() - _match_t0_seek,
+            resolved_id,
+            len(seek_points),
+        )
+        for tid, row in seek_meta.items():
+            road_km = float(row.get("distance_km", 0))
+            if road_km > rk:
                 continue
-            ri_seek = await get_route_info(driver_lat, driver_lng, plat_f, plng_f)
-            if not ri_seek or float(ri_seek["distance_km"]) > rk:
+            ctx = seek_ctx.get(tid)
+            if not ctx:
                 continue
-            road_km = round(float(ri_seek["distance_km"]), 2)
-
+            tag = ctx["tag"]
+            passenger_info = ctx["passenger_info"]
+            trip_pref = ctx["trip_pref"]
+            plat_f = ctx["plat_f"]
+            plng_f = ctx["plng_f"]
+            road_km_r = round(road_km, 2)
             pid = tag.get("passenger_id")
             if pid:
                 active_passenger_ids.add(str(pid).strip().lower())
-
             pname = passenger_info.get("name", "Yolcu") or "Yolcu"
             label = (pname.split() or ["Yolcu"])[0][:20]
-
-            pvk = _trip_passenger_vehicle_pref(tag, passenger_info)
+            pvk = trip_pref
             pg = passenger_info.get("gender") if isinstance(passenger_info, dict) else None
             seeking.append(
                 {
@@ -5535,14 +6421,20 @@ async def get_driver_nearby_passengers_map(
                     "pickup_lng": plng_f,
                     "pickup_location": (tag.get("pickup_location") or "")[:80],
                     "status": tag.get("status"),
-                    "distance_km": road_km,
-                    "pickup_distance_km": road_km,
+                    "distance_km": road_km_r,
+                    "pickup_distance_km": road_km_r,
                     "offered_price": tag.get("final_price") or tag.get("offered_price"),
                     "label": label,
                     "passenger_gender": pg if pg in ("female", "male") else None,
                     "passenger_vehicle_kind": "motorcycle" if pvk == "motorcycle" else "car",
                 }
             )
+        logger.info(
+            "[MATCH] nearby_map final_included_seeking passenger_ids=%s tag_ids=%s count=%d",
+            [s.get("passenger_id") for s in seeking],
+            [s.get("tag_id") for s in seeking],
+            len(seeking),
+        )
 
         nearby_app_users = []
         forty_five_min_ago = (datetime.utcnow() - timedelta(minutes=45)).isoformat()
@@ -5572,13 +6464,12 @@ async def get_driver_nearby_passengers_map(
                 .execute()
             )
 
-        driver_city_norm = ""
+        # UI: profil şehri (eşleştirme / harita filtresi için kullanılmaz)
         driver_city_label = ""
         if driver_result.data:
             driver_city_label = str(driver_result.data[0].get("city") or "").strip()
-            driver_city_norm = driver_city_label.lower()
 
-        # Şehir içi ~20x20 km hücre yoğunluğu (Türkiye enlemi için lat/lng adımı)
+        # Yoğunluk grid — yalnızca sürücü yarıçapı (bbox) içindeki talep / kullanıcı konumları
         GRID_STEP_LAT = 0.18
         GRID_STEP_LNG = 0.26
         city_grid_counts: dict = {}
@@ -5589,27 +6480,25 @@ async def get_driver_nearby_passengers_map(
             k = (gi, gj)
             city_grid_counts[k] = city_grid_counts.get(k, 0) + 1
 
-        if driver_city_norm:
-            for tag in tag_res.data or []:
-                if tag.get("passenger_id") in all_blocked:
-                    continue
-                passenger_info = tag.get("users", {}) or {}
-                pcity = str(passenger_info.get("city") or "").strip().lower()
-                if pcity != driver_city_norm:
-                    continue
-                try:
-                    plat_f = float(tag.get("pickup_lat"))
-                    plng_f = float(tag.get("pickup_lng"))
-                except (TypeError, ValueError):
-                    continue
-                _grid_add(plat_f, plng_f)
+        for tag in tag_res.data or []:
+            if tag.get("passenger_id") in all_blocked:
+                continue
+            passenger_info = tag.get("users", {}) or {}
+            trip_pref = _trip_passenger_vehicle_pref(tag, passenger_info)
+            if not _driver_matches_passenger_vehicle_pref(driver_eff, trip_pref):
+                continue
+            try:
+                plat_f = float(tag.get("pickup_lat"))
+                plng_f = float(tag.get("pickup_lng"))
+            except (TypeError, ValueError):
+                continue
+            if not _match_bbox_prefilter_deg(driver_lat, driver_lng, plat_f, plng_f):
+                continue
+            _grid_add(plat_f, plng_f)
 
-        seen_light = 0
-        max_light = 55
-
+        light_points: list[tuple[str, float, float]] = []
+        light_row_by_id: dict[str, dict] = {}
         for row in pu.data or []:
-            if seen_light >= max_light:
-                break
             uid = str(row.get("id") or "").strip().lower()
             if uid in all_blocked:
                 continue
@@ -5620,45 +6509,71 @@ async def get_driver_nearby_passengers_map(
                 ulng = float(row["longitude"])
             except (TypeError, ValueError, KeyError):
                 continue
-            if driver_city_norm:
-                uc = str(row.get("city") or "").strip().lower()
-                if uc != driver_city_norm:
-                    continue
-            if not _bbox_road_prefilter_ok(driver_lat, driver_lng, ulat, ulng, rk):
+            if not _match_bbox_prefilter_deg(driver_lat, driver_lng, ulat, ulng):
                 continue
-            ri_u = await get_route_info(driver_lat, driver_lng, ulat, ulng)
-            if not ri_u or float(ri_u["distance_km"]) > rk:
+            light_points.append((uid, ulat, ulng))
+            light_row_by_id[uid] = row
+
+        _match_t0_light = time.time()
+        try:
+            light_meta = await get_real_route_meta_batch(driver_lat, driver_lng, light_points)
+        except Exception as e:
+            logger.error("[MATCH] nearby_map light batch failed user=%s: %s", resolved_id, e, exc_info=True)
+            light_meta = {}
+        logger.info(
+            "[MATCH] MATCH_TIME nearby_map_light_batch_s: %.4f user=%s light_points=%d",
+            time.time() - _match_t0_light,
+            resolved_id,
+            len(light_points),
+        )
+        light_candidates: list[tuple[float, dict, float, float, float]] = []
+        for uid, row in light_meta.items():
+            km = float(row.get("distance_km", 0))
+            if km > rk:
                 continue
-            road_u = round(float(ri_u["distance_km"]), 2)
-            nm = row.get("name") or "Yolcu"
+            rdata = light_row_by_id.get(uid)
+            if not rdata:
+                continue
+            try:
+                ulat = float(rdata["latitude"])
+                ulng = float(rdata["longitude"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            light_candidates.append((km, rdata, ulat, ulng, float(row.get("duration_min", 1))))
+        light_candidates.sort(key=lambda x: x[0])
+        max_light = 55
+        for km, rdata, ulat, ulng, _dur in light_candidates[:max_light]:
+            nm = rdata.get("name") or "Yolcu"
             label = (nm.split() or ["Yakında"])[0][:12]
-            g = row.get("gender")
+            g = rdata.get("gender")
             nearby_app_users.append(
                 {
-                    "user_id": row["id"],
+                    "user_id": rdata["id"],
                     "latitude": ulat,
                     "longitude": ulng,
-                    "distance_km": road_u,
+                    "distance_km": round(km, 2),
                     "label": label,
                     "passenger_gender": g if g in ("female", "male") else None,
                 }
             )
-            seen_light += 1
+        logger.info(
+            "[MATCH] nearby_map final_included_light user_ids=%s count=%d",
+            [u.get("user_id") for u in nearby_app_users],
+            len(nearby_app_users),
+        )
 
-        if driver_city_norm:
-            for row in pu.data or []:
-                uid = str(row.get("id") or "").strip().lower()
-                if uid in all_blocked:
-                    continue
-                uc = str(row.get("city") or "").strip().lower()
-                if uc != driver_city_norm:
-                    continue
-                try:
-                    ulat = float(row["latitude"])
-                    ulng = float(row["longitude"])
-                except (TypeError, ValueError, KeyError):
-                    continue
-                _grid_add(ulat, ulng)
+        for row in pu.data or []:
+            uid = str(row.get("id") or "").strip().lower()
+            if uid in all_blocked:
+                continue
+            try:
+                ulat = float(row["latitude"])
+                ulng = float(row["longitude"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if not _match_bbox_prefilter_deg(driver_lat, driver_lng, ulat, ulng):
+                continue
+            _grid_add(ulat, ulng)
 
         city_grid = []
         if city_grid_counts:

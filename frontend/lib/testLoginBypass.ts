@@ -1,6 +1,6 @@
 /**
- * Production-safe test login: only two fixed E.164-equivalent numbers may skip OTP.
- * Server enforces the same allowlist; this module is for client UX + parity checks.
+ * Test hatları (5321111111 / 5322222222) için yardımcılar.
+ * Giriş: OTP yerine şifre — POST /api/auth/test-password-login (bcrypt, sunucu allowlist).
  */
 const E164_TR_PASSENGER = '905321111111';
 const E164_TR_DRIVER = '905322222222';
