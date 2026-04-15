@@ -24,7 +24,14 @@ import * as Location from 'expo-location';
 import { displayFirstName } from '../lib/displayName';
 import { API_BASE_URL } from '../lib/backendConfig';
 import type { PassengerGender } from '../lib/passengerFieldHelpers';
-import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
+import {
+  getDriverMarkerImage,
+  getPassengerMarkerImage,
+  getDriverNavMarkerAnchor,
+  getDriverNavRotationOffsetDeg,
+  MARKER_PIXEL,
+  type DriverNavMapVehicleKind,
+} from '../lib/mapNavMarkers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 
@@ -137,6 +144,21 @@ interface LiveMapViewProps {
   selfGender?: PassengerGender | null;
   /** Sürücü haritasında yolcu cinsiyeti — marker ikonu */
   otherPassengerGender?: PassengerGender | null;
+}
+
+/**
+ * Sunucu (tag / teklif) pickup→destination km/dk — fiyatlandırma ile aynı kaynak.
+ * Eşleşme haritasında OSRM yalnız çizgi; bu alanlar doluysa üst panel km/dk buradan kalır.
+ */
+function readAuthoritativeTripKmMinFromRouteInfo(
+  routeInfo: LiveMapViewProps['routeInfo'],
+): { km: number; min: number } | null {
+  if (!routeInfo) return null;
+  const km = Number(routeInfo.trip_distance_km);
+  const min = Number(routeInfo.trip_duration_min);
+  if (!Number.isFinite(km) || km <= 0) return null;
+  if (!Number.isFinite(min) || min <= 0) return null;
+  return { km, min: Math.max(1, Math.round(min)) };
 }
 
 /** Yolcu ekranı — buluşma kartının altındaki kırmızı ipucu (rota süresi + mesafe + periyodik hatırlatma) */
@@ -402,6 +424,103 @@ function metersTurkishTts(meters: number): string {
   return `${m} metre`;
 }
 
+/** Ses: hafif dönüş / düz devam / kalkış — anons yok (UI okları kalır). Fork’ta slight yine konuşulur. */
+function navStepTtsMuted(step: OsrmNavStepParsed): boolean {
+  const typ = String(step.maneuver?.type || '').toLowerCase();
+  const mod = String(step.maneuver?.modifier || '').toLowerCase();
+  if (typ === 'fork') return false;
+  if (typ === 'continue' || typ === 'new name') return true;
+  if (typ === 'depart') return true;
+  if (mod === 'slight right' || mod === 'slight left') return true;
+  return false;
+}
+
+/** Marka tonu: ~%20 anonslarda, spam yok */
+function maybeLeylekPrefix(salt: string): string {
+  let h = 0;
+  for (let i = 0; i < salt.length; i++) h = (h * 31 + salt.charCodeAt(i)) | 0;
+  const pick = Math.abs(h) % 5;
+  if (pick === 0) return 'Leylek, ';
+  return '';
+}
+
+function ttsArrivalEndPhrases(stage: 'pickup' | 'destination', salt: string): { ttsLine: string; ttsAction: string } {
+  if (stage === 'destination') {
+    const lines = [
+      'Leylek, hedefe yaklaştın',
+      'Hedefe yaklaştın, sağa sola bak',
+      'Leylek, buralarda bir yerde',
+    ];
+    let h = 0;
+    for (let i = 0; i < salt.length; i++) h = (h * 37 + salt.charCodeAt(i)) | 0;
+    const ttsLine = lines[Math.abs(h) % lines.length];
+    return { ttsLine, ttsAction: 'hedefe yaklaş' };
+  }
+  const lines = ['Leylek, yolcuya yaklaştın', 'Yolcu buralarda, sağa sola bak', 'Yolcuya yaklaş'];
+  let h = 0;
+  for (let i = 0; i < salt.length; i++) h = (h * 41 + salt.charCodeAt(i)) | 0;
+  const ttsLine = lines[Math.abs(h) % lines.length];
+  return { ttsLine, ttsAction: 'yolcuya yaklaş' };
+}
+
+/**
+ * Tek stil TTS: kısa emir; slight/continue sessiz.
+ */
+function buildNavTtsPhrases(
+  step: OsrmNavStepParsed,
+  d: number,
+  stage: 'pickup' | 'destination',
+): { ttsLine: string; ttsAction: string; ttsMuted: boolean } {
+  const muted = navStepTtsMuted(step);
+  if (muted) {
+    return { ttsLine: '', ttsAction: '', ttsMuted: true };
+  }
+  const typ = String(step.maneuver?.type || '').toLowerCase();
+  const mod = String(step.maneuver?.modifier || '').toLowerCase();
+
+  if (typ === 'arrive') {
+    const act = stage === 'destination' ? 'hedefe yaklaş' : 'yolcuya yaklaş';
+    return {
+      ttsLine: `${metersTurkishTts(d)} sonra ${act}`,
+      ttsAction: act,
+      ttsMuted: false,
+    };
+  }
+
+  let action = '';
+  if (typ === 'roundabout' || typ === 'rotary') action = 'kavşağa gir';
+  else if (typ === 'exit roundabout' || typ === 'exit rotary') action = 'kavşaktan çık';
+  else if (typ === 'merge') action = 'şeride gir';
+  else if (typ === 'fork') {
+    if (mod.includes('right')) action = 'yol ayrımından sağdan devam et';
+    else if (mod.includes('left')) action = 'yol ayrımından soldan devam et';
+    else action = 'yol ayrımından devam et';
+  } else if (typ === 'end of road') {
+    if (mod.includes('right')) action = 'sağa dön';
+    else if (mod.includes('left')) action = 'sola dön';
+    else if (mod === 'uturn') action = 'u dönüşü yap';
+    else action = 'uygun yöne dön';
+  } else if (typ === 'turn' || typ === 'on ramp' || typ === 'off ramp') {
+    if (mod === 'uturn') action = 'u dönüşü yap';
+    else if (mod === 'sharp right') action = 'keskin sağa dön';
+    else if (mod === 'sharp left') action = 'keskin sola dön';
+    else if (mod === 'right') action = 'sağa dön';
+    else if (mod === 'left') action = 'sola dön';
+    else if (mod === 'straight') action = '';
+    else action = formatTurkishManeuverNoStreet(step);
+  } else {
+    action = formatTurkishManeuverNoStreet(step);
+  }
+
+  if (!action || action === 'ilerle' || action === 'düz devam et') {
+    return { ttsLine: '', ttsAction: '', ttsMuted: true };
+  }
+
+  const prefix = maybeLeylekPrefix(`${stage}|${d}|${typ}|${mod}`);
+  const line = `${prefix}${metersTurkishTts(d)} sonra ${action}`;
+  return { ttsLine: line, ttsAction: action, ttsMuted: false };
+}
+
 function pointSegmentClosestT(
   p: MapLatLng,
   a: MapLatLng,
@@ -496,6 +615,15 @@ const NAV_MARKER_SOFT_BLEND_MAX_M = 22;
 /** Yumuşak yaklaşmada her karede hedefe yaklaşma oranı */
 const NAV_MARKER_LERP = 0.15;
 
+/** Marker yönü: rota üzerinde ileri bakış (m) — pusula kullanılmaz */
+const NAV_ROUTE_BEARING_LOOKAHEAD_MIN_M = 14;
+const NAV_ROUTE_BEARING_LOOKAHEAD_MAX_M = 48;
+const NAV_ROUTE_BEARING_MIN_SEP_M = 5.5;
+/** Bearing yumuşatma (0–1), küçük bearing zıplamasını keser */
+const NAV_MARKER_BEARING_LERP = 0.26;
+/** Bu kadar dereceden az ham değişimde smoothing girdiği değiştirme */
+const NAV_MARKER_BEARING_RAW_DEADBAND_DEG = 2.4;
+
 function findNextStepIndex(progressM: number, steps: OsrmNavStepParsed[], cumStart: number[]): number {
   if (!steps.length || cumStart.length < 2) return -1;
   const eps = 12;
@@ -554,6 +682,8 @@ type NavManeuverUi = {
   ttsLine: string;
   /** TTS mesafe bantları: “X metre sonra …” için yalın manevra */
   ttsAction: string;
+  /** true: manevra sesi yok (hafif dönüş vb.); UI ok metni kalır */
+  ttsMuted?: boolean;
 };
 
 function buildNavManeuverUiFromSteps(
@@ -572,21 +702,21 @@ function buildNavManeuverUiFromSteps(
       metersToManeuver: null,
       ttsLine: 'Rotayı takip et',
       ttsAction: 'rotayı takip et',
+      ttsMuted: false,
     };
   }
   if (k >= steps.length) {
     const last = steps[steps.length - 1];
-    const ttsEnd =
-      stage === 'destination' ? 'birazdan varış noktasındasın' : 'yolcuya çok yakınsın';
-    const ttsAct = stage === 'destination' ? 'varışa yaklaş' : 'yolcuya yaklaş';
+    const end = ttsArrivalEndPhrases(stage, `${stage}-${last.name || 'x'}`);
     return {
       instructionLine: stage === 'destination' ? 'Hedefe yaklaşın' : 'Yolcuya yaklaşın',
       streetName: last.name?.trim() || null,
       arrowKind: 'straight',
       speechKey: `${stage}-arrive-end`,
       metersToManeuver: null,
-      ttsLine: ttsEnd,
-      ttsAction: ttsAct,
+      ttsLine: end.ttsLine,
+      ttsAction: end.ttsAction,
+      ttsMuted: false,
     };
   }
   const step = steps[k];
@@ -597,9 +727,17 @@ function buildNavManeuverUiFromSteps(
   const streetName = step.name?.trim() || null;
   const arrowKind = stepToArrowKind(step);
   const speechKey = `${stage}-step${k}-${step.maneuver?.type || ''}-${step.maneuver?.modifier || ''}`;
-  const actionSp = formatTurkishManeuverNoStreet(step);
-  const ttsLine = `${metersTurkishTts(d)} sonra ${actionSp}`;
-  return { instructionLine, streetName, arrowKind, speechKey, metersToManeuver: d, ttsLine, ttsAction: actionSp };
+  const { ttsLine, ttsAction, ttsMuted } = buildNavTtsPhrases(step, d, stage);
+  return {
+    instructionLine,
+    streetName,
+    arrowKind,
+    speechKey,
+    metersToManeuver: d,
+    ttsLine,
+    ttsAction,
+    ttsMuted,
+  };
 }
 
 const ROUTE_HIGHLIGHT_AHEAD_M = 200;
@@ -815,6 +953,15 @@ function clampNavZoom(z: number): number {
   return Math.min(18.5, Math.max(14.8, z));
 }
 
+/** Turn-by-turn aktif: zoom şehir ölçeğine (≤14.8) düşmesin — sokak bandı */
+const ACTIVE_NAV_MIN_STREET_ZOOM = 16.15;
+const ACTIVE_NAV_MAX_STREET_ZOOM = 17.85;
+
+function clampActiveNavFollowZoom(z: number): number {
+  if (!Number.isFinite(z)) return 17.1;
+  return Math.min(ACTIVE_NAV_MAX_STREET_ZOOM, Math.max(ACTIVE_NAV_MIN_STREET_ZOOM, z));
+}
+
 function bearingDegrees(from: MapLatLng, to: MapLatLng): number {
   const φ1 = (from.latitude * Math.PI) / 180;
   const φ2 = (to.latitude * Math.PI) / 180;
@@ -823,6 +970,69 @@ function bearingDegrees(from: MapLatLng, to: MapLatLng): number {
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   const θ = Math.atan2(y, x);
   return ((θ * 180) / Math.PI + 360) % 360;
+}
+
+function polylineLengthMeters(polyline: MapLatLng[]): number {
+  if (polyline.length < 2) return 0;
+  let acc = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    acc += haversineMeters(polyline[i], polyline[i + 1]);
+  }
+  return acc;
+}
+
+/** Rota başından `distanceM` mesafedeki nokta (polyline üzerinde). */
+function pointAtDistanceAlongPolyline(polyline: MapLatLng[], distanceM: number): MapLatLng | null {
+  if (polyline.length < 2) return null;
+  const d = Math.max(0, distanceM);
+  let acc = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    const len = haversineMeters(a, b);
+    if (acc + len >= d) {
+      const t = len > 1e-9 ? (d - acc) / len : 0;
+      const u = Math.max(0, Math.min(1, t));
+      return {
+        latitude: a.latitude + u * (b.latitude - a.latitude),
+        longitude: a.longitude + u * (b.longitude - a.longitude),
+      };
+    }
+    acc += len;
+  }
+  const last = polyline[polyline.length - 1];
+  return { latitude: last.latitude, longitude: last.longitude };
+}
+
+/**
+ * Snap noktasından rota boyunca ileri bakış — pusula değil, polyline ekseni.
+ * Marker.rotation = bearing + `getDriverNavRotationOffsetDeg(kind)` (mapNavMarkers).
+ */
+function bearingAlongRouteAheadDeg(
+  anchor: MapLatLng,
+  polyline: MapLatLng[],
+  lookaheadM: number,
+  fallbackTo: MapLatLng | null,
+): number | null {
+  if (polyline.length < 2) {
+    return fallbackTo ? bearingDegrees(anchor, fallbackTo) : null;
+  }
+  const progressM = distanceAlongPolylineM(anchor, polyline);
+  const totalM = polylineLengthMeters(polyline);
+  const want = progressM + Math.max(NAV_ROUTE_BEARING_LOOKAHEAD_MIN_M, lookaheadM);
+  let ahead = pointAtDistanceAlongPolyline(polyline, want);
+  if (!ahead) return fallbackTo ? bearingDegrees(anchor, fallbackTo) : null;
+  let sep = haversineMeters(anchor, ahead);
+  if (sep < NAV_ROUTE_BEARING_MIN_SEP_M && want < totalM - 2) {
+    ahead = pointAtDistanceAlongPolyline(polyline, Math.min(totalM - 0.5, progressM + NAV_ROUTE_BEARING_LOOKAHEAD_MAX_M));
+    if (ahead) sep = haversineMeters(anchor, ahead);
+  }
+  if (sep < NAV_ROUTE_BEARING_MIN_SEP_M && polyline.length >= 2) {
+    const tail = polyline[polyline.length - 1];
+    const pre = polyline[polyline.length - 2];
+    return bearingDegrees(pre, tail);
+  }
+  return bearingDegrees(anchor, ahead);
 }
 
 /** En kısa yönde açı farkı (-180, 180] */
@@ -1096,7 +1306,10 @@ export default function LiveMapView({
   const fitNavigationViewportRef = useRef<
     ((routeCoords?: MapLatLng[] | null) => void) | null
   >(null);
+  const applyDriverActiveFollowViewportRef = useRef<(() => void) | null>(null);
   const insets = useSafeAreaInsets();
+  const routeInfoRef = useRef(routeInfo);
+  routeInfoRef.current = routeInfo;
 
   // BİLGİ KARTI STATE'İ
   const [showInfoCard, setShowInfoCard] = useState(false);
@@ -1150,8 +1363,22 @@ export default function LiveMapView({
   
   // TURUNCU ROTA: Yolcu → Hedef (varış)
   const [destinationRoute, setDestinationRoute] = useState<{latitude: number, longitude: number}[]>([]);
-  const [destinationDistance, setDestinationDistance] = useState<number | null>(null);
-  const [destinationDuration, setDestinationDuration] = useState<number | null>(null);
+  const [destinationDistance, setDestinationDistance] = useState<number | null>(() => {
+    const a = readAuthoritativeTripKmMinFromRouteInfo(routeInfo);
+    return a ? a.km : null;
+  });
+  const [destinationDuration, setDestinationDuration] = useState<number | null>(() => {
+    const a = readAuthoritativeTripKmMinFromRouteInfo(routeInfo);
+    return a ? a.min : null;
+  });
+
+  /** Tag’deki sunucu trip km/dk — ilk kare + socket/refresh sonrası anında */
+  useEffect(() => {
+    const a = readAuthoritativeTripKmMinFromRouteInfo(routeInfo);
+    if (!a) return;
+    setDestinationDistance(a.km);
+    setDestinationDuration(a.min);
+  }, [routeInfo?.trip_distance_km, routeInfo?.trip_duration_min, tagId]);
   
   // Hedefe yaklaşma kontrolü
   const [nearDestination, setNearDestination] = useState(false);
@@ -1241,7 +1468,10 @@ export default function LiveMapView({
   /** GPS hızı (m/s); yoksa veya <0 ise null */
   const navGpsSpeedMpsRef = useRef<number | null>(null);
   const navSmoothZoomRef = useRef<number | null>(null);
-  const navSpeechStateRef = useRef<{ key: string; bands: Set<number> }>({ key: '', bands: new Set() });
+  /** Rota eksenine göre marker dönüşü (pusula değil) */
+  const navDriverMarkerSmoothedBearingRef = useRef<number | null>(null);
+  const [driverNavMarkerRotation, setDriverNavMarkerRotation] = useState(0);
+  const navSpeechStateRef = useRef<{ key: string; bands: Set<string> }>({ key: '', bands: new Set() });
   const navSpeechLastAtRef = useRef(0);
   const navSpeechPrevMetersRef = useRef<number | null>(null);
   const navStagePrevRef = useRef<'pickup' | 'destination'>('pickup');
@@ -1305,6 +1535,8 @@ export default function LiveMapView({
       navSpeechPrevMetersRef.current = null;
       navDriverStableRef.current = null;
       setNavDriverMapCoord(null);
+      navDriverMarkerSmoothedBearingRef.current = null;
+      setDriverNavMarkerRotation(0);
     }
   }, [navigationMode, isDriver]);
 
@@ -1437,6 +1669,8 @@ export default function LiveMapView({
     }
     navDriverStableRef.current = null;
     setNavDriverMapCoord(null);
+    navDriverMarkerSmoothedBearingRef.current = null;
+    setDriverNavMarkerRotation(0);
   }, [tagId]);
 
   useEffect(() => {
@@ -1507,7 +1741,7 @@ export default function LiveMapView({
       navSmoothZoomRef.current != null && Number.isFinite(navSmoothZoomRef.current)
         ? navSmoothZoomRef.current
         : zoomTargetSpeed;
-    const zoom = clampNavZoom(zoomRaw);
+    const zoom = clampActiveNavFollowZoom(clampNavZoom(zoomRaw));
 
     const targetCenter = { ...centerBase };
     const prevSmoothCenter = navSmoothCenterRef.current;
@@ -1643,6 +1877,69 @@ export default function LiveMapView({
     destinationRoute,
   ]);
 
+  /** Nav araç marker: rota polyline ileri ekseni + PNG offset (burnu bitmap altı). */
+  useEffect(() => {
+    if (!isDriver || !navigationMode) {
+      navDriverMarkerSmoothedBearingRef.current = null;
+      setDriverNavMarkerRotation(0);
+      return;
+    }
+    const anchor = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
+    if (!anchor || !isValidMapCoord(anchor)) return;
+
+    const poly =
+      navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
+        ? meetingRouteCoordinates
+        : navigationStage === 'destination' && destinationRoute.length >= 2
+          ? destinationRoute
+          : [];
+    const dest =
+      navigationStage === 'pickup'
+        ? otherLocation
+        : destinationLocation && isValidMapCoord(destinationLocation)
+          ? destinationLocation
+          : null;
+
+    const rawBearing =
+      poly.length >= 2
+        ? bearingAlongRouteAheadDeg(anchor, poly, 28, dest)
+        : dest
+          ? bearingDegrees(anchor, dest)
+          : null;
+    if (rawBearing == null || !Number.isFinite(rawBearing)) return;
+
+    const prevSm = navDriverMarkerSmoothedBearingRef.current;
+    let smoothed = rawBearing;
+    if (prevSm != null) {
+      if (absAngleDiffDeg(prevSm, rawBearing) < NAV_MARKER_BEARING_RAW_DEADBAND_DEG) {
+        smoothed = prevSm;
+      } else {
+        smoothed = interpolateHeading(prevSm, rawBearing, NAV_MARKER_BEARING_LERP);
+      }
+    }
+    navDriverMarkerSmoothedBearingRef.current = smoothed;
+    const driverNavVehicleKind: DriverNavMapVehicleKind =
+      otherTripVehicleKind === 'motorcycle' ? 'motorcycle' : 'car';
+    const offsetDeg = getDriverNavRotationOffsetDeg(driverNavVehicleKind);
+    const rotation = (smoothed + offsetDeg + 360) % 360;
+    setDriverNavMarkerRotation(rotation);
+  }, [
+    isDriver,
+    navigationMode,
+    navigationStage,
+    otherTripVehicleKind,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    navDriverMapCoord?.latitude,
+    navDriverMapCoord?.longitude,
+    meetingRouteCoordinates,
+    destinationRoute,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+  ]);
+
   /** Turn-by-turn kartı (ok + mesafe + sokak) */
   useEffect(() => {
     const navPos = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
@@ -1667,6 +1964,7 @@ export default function LiveMapView({
           metersToManeuver: d,
           ttsLine: `${metersTurkishTts(d)} sonra yolcuya yaklaş`,
           ttsAction: 'yolcuya yaklaş',
+          ttsMuted: false,
         });
       } else {
         setNavManeuverUi({
@@ -1677,6 +1975,7 @@ export default function LiveMapView({
           metersToManeuver: null,
           ttsLine: 'Rotayı takip et',
           ttsAction: 'rotayı takip et',
+          ttsMuted: false,
         });
       }
       return;
@@ -1698,6 +1997,7 @@ export default function LiveMapView({
           metersToManeuver: d,
           ttsLine: `${metersTurkishTts(d)} sonra hedefe yaklaş`,
           ttsAction: 'hedefe yaklaş',
+          ttsMuted: false,
         });
       } else {
         setNavManeuverUi({
@@ -1708,6 +2008,7 @@ export default function LiveMapView({
           metersToManeuver: null,
           ttsLine: 'Hedefe yaklaş',
           ttsAction: 'hedefe ilerle',
+          ttsMuted: false,
         });
       }
     }
@@ -1742,7 +2043,7 @@ export default function LiveMapView({
   }, [navigationMode]);
 
   /**
-   * Manevra değişince tam anons; aynı manevrada 350 / 120 / 45 m kısa anonslar (tekrar yok, throttle).
+   * Manevra değişince tam anons; aynı manevrada ~280 m / ~100 m hatırlatma + “şimdi …” (sessiz manevrada yok).
    */
   useEffect(() => {
     if (Platform.OS === 'web' || !isDriver || !navigationMode || !navManeuverUi) {
@@ -1752,13 +2053,14 @@ export default function LiveMapView({
     if (!key) return;
 
     const speak = (utterance: string) => {
+      if (!utterance.trim()) return;
       callCheck('Speech.stop', Speech.stop);
       if (typeof Speech.stop === 'function') Speech.stop();
       callCheck('Speech.speak', Speech.speak);
       if (typeof Speech.speak === 'function') {
         Speech.speak(utterance, {
           language: 'tr-TR',
-          rate: 0.91,
+          rate: 0.92,
           pitch: 1.0,
           volume: 1,
         });
@@ -1767,12 +2069,19 @@ export default function LiveMapView({
 
     const ttsMain = navManeuverUi.ttsLine.trim();
     const act = navManeuverUi.ttsAction.trim();
+    const muted = !!navManeuverUi.ttsMuted;
 
     if (key !== navSpeechStateRef.current.key) {
       navSpeechStateRef.current = { key, bands: new Set() };
       navSpeechLastAtRef.current = Date.now();
-      speak(ttsMain);
       navSpeechPrevMetersRef.current = navManeuverUi.metersToManeuver ?? null;
+      if (!muted && ttsMain.length > 0) {
+        speak(ttsMain);
+      }
+      return;
+    }
+
+    if (muted || !act) {
       return;
     }
 
@@ -1789,16 +2098,26 @@ export default function LiveMapView({
     if (now - navSpeechLastAtRef.current < NAV_SPEECH_MIN_GAP_MS) return;
 
     const bands = navSpeechStateRef.current.bands;
-    const hysteresisM = 14;
-    for (const th of [350, 120, 45]) {
+    const hysteresisM = 12;
+    const farBands: { id: string; th: number }[] = [
+      { id: '280', th: 280 },
+      { id: '100', th: 100 },
+    ];
+    for (const { id, th } of farBands) {
       const crossed = prevM > th + hysteresisM && m <= th;
-      if (crossed && !bands.has(th)) {
-        bands.add(th);
+      if (crossed && !bands.has(id)) {
+        bands.add(id);
         navSpeechLastAtRef.current = now;
-        const hint = `${metersTurkishTts(th)} sonra ${act}`;
-        speak(hint);
+        const approxM = Math.max(th - 8, Math.min(th + 8, Math.round(m / 5) * 5));
+        speak(`${metersTurkishTts(approxM)} sonra ${act}`);
         return;
       }
+    }
+    const nowTh = 34;
+    if (prevM > nowTh + hysteresisM + 6 && m <= nowTh && !bands.has('now')) {
+      bands.add('now');
+      navSpeechLastAtRef.current = now;
+      speak(`Şimdi ${act}`);
     }
   }, [navManeuverUi, isDriver, navigationMode]);
   
@@ -1968,6 +2287,7 @@ export default function LiveMapView({
       setNavigationStage(handoff ? 'destination' : 'pickup');
       navDriverStableRef.current = null;
       setNavDriverMapCoord(null);
+      navDriverMarkerSmoothedBearingRef.current = null;
       setNavigationMode(true);
       navCamHeadingSentRef.current = null;
       navFollowResumeSoftUntilRef.current = Date.now() + NAV_RESUME_SOFT_MS;
@@ -1987,8 +2307,7 @@ export default function LiveMapView({
       setNavFollowResumeTick((x) => x + 1);
       void loadDriverNavMeetingRouteRef.current();
       InteractionManager.runAfterInteractions(() => {
-        const mr = meetingRouteCoordinatesRef.current;
-        fitNavigationViewportRef.current?.(mr.length >= 2 ? mr : undefined);
+        applyDriverActiveFollowViewportRef.current?.();
       });
     }
   }, [
@@ -2364,7 +2683,10 @@ export default function LiveMapView({
     );
   }, [routeInfo, isDriver, navigationMode]);
 
-  /** Hedef ETA: yolcu konumu → trip varışı (OSRM veya düz mesafe / 40 km/h) */
+  /**
+   * Hedef polyline / yedek ETA: OSRM (harita çizgisi için).
+   * `routeInfo.trip_distance_km` + `trip_duration_min` doluysa üst panel km/dk OSRM ile güncellenmez (tag = fiyat temeli).
+   */
   useEffect(() => {
     if (!destinationLocation) return;
     const passengerLoc = isDriver ? otherLocation : userLocation;
@@ -2387,9 +2709,16 @@ export default function LiveMapView({
         km = straightLineKm(passengerLoc, destinationLocation);
         min = fallbackDurationMinFromKm(km);
       }
-      setDestinationDistance(km);
-      setDestinationDuration(Math.max(0, min));
-      console.log('DEST ETA', km, min);
+      const serverTrip = readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current);
+      /** Tag’de trip km/dk varsa (yolcu + sürücü) üst panel sunucu değerinde kalır; OSRM yalnız polyline. */
+      const preserveQuotedTrip = serverTrip != null;
+      if (!preserveQuotedTrip) {
+        setDestinationDistance(km);
+        setDestinationDuration(Math.max(0, min));
+      }
+      if (__DEV__) {
+        console.log('DEST ETA', km, min, preserveQuotedTrip ? '(quoted trip from server)' : '');
+      }
     })();
     return () => {
       cancelled = true;
@@ -2447,23 +2776,68 @@ export default function LiveMapView({
   ]);
 
   /**
-   * Önce viewport’u rota noktalarına oturt; polyline state’i bundan sonra verilmeli (viewport gecikmesi).
-   * @param routeCoords Verilirse fit bu noktalara (ve gerekiyorsa hedefe) göre yapılır.
+   * Aktif turn-by-turn: uzun polyline fitToCoordinates yok — sokak zoom + hafif ileri merkez (north-up).
+   * “Yeniden ortala” ve rota yenileme bu yolu kullanır; şehir ölçekli zoom oluşmaz.
+   */
+  const applyDriverActiveFollowViewport = useCallback(() => {
+    if (Platform.OS === 'web' || !mapRef.current) return;
+    const anchor = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
+    if (!anchor || !otherLocation) return;
+    const dest =
+      navigationStage === 'destination' && destinationLocation
+        ? destinationLocation
+        : otherLocation;
+    const head = bearingDegrees(anchor, dest);
+    const remainKm = straightLineKm(anchor, dest);
+    const speedMps = navGpsSpeedMpsRef.current;
+    const zoom = clampActiveNavFollowZoom(clampNavZoom(zoomTargetForSpeedMps(speedMps)));
+    const center = offsetCameraCenterForward(anchor, head, remainKm, zoom);
+    navProgrammaticCameraRef.current = true;
+    if (navCameraAnimClearTimerRef.current) {
+      clearTimeout(navCameraAnimClearTimerRef.current);
+    }
+    mapRef.current.animateCamera(
+      { center, heading: 0, pitch: 0, zoom },
+      { duration: 450 },
+    );
+    navCameraAnimClearTimerRef.current = setTimeout(() => {
+      navProgrammaticCameraRef.current = false;
+      navCameraAnimClearTimerRef.current = null;
+    }, 580);
+    lastNavCameraAtRef.current = Date.now();
+  }, [
+    navigationStage,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    navDriverMapCoord?.latitude,
+    navDriverMapCoord?.longitude,
+  ]);
+
+  /**
+   * Özet / önizleme: rota sınırlarına fit (sürücü navigasyon kapalıyken veya harita genel görünümü).
+   * Aktif navigasyon açıkken fitToCoordinates çağrılmaz — applyDriverActiveFollowViewport kullanılır.
    */
   const fitNavigationViewport = useCallback(
     (routeCoords?: MapLatLng[] | null) => {
       const anchor = resolveNavigationAnchor(navDriverStableRef, navDriverMapCoord, userLocation);
       if (!mapRef.current || !anchor || !otherLocation) return;
+
+      if (isDriver && navigationMode) {
+        applyDriverActiveFollowViewport();
+        return;
+      }
+
       const navMeetingOnly = isDriver && navigationMode && navigationStage === 'pickup';
       const legKm = straightLineKm(anchor, otherLocation);
-      /** OSRM öncesi / hata: sadece 2 nokta — tüm mesafeyi fit etmek şehir zoom’u (ekrandaki bug) */
       const polyForSlice =
         routeCoords && routeCoords.length >= 2 ? routeCoords : [anchor, otherLocation];
-      /** OSRM en az bir ara düğüm döndüyse (≥3 nokta) segment dilimle; 2 nokta = düz çizgi = şehir zoom’u */
       const hasRichPolyline = polyForSlice.length >= 3;
       const longPickupLeg = navMeetingOnly && legKm >= 2.2;
 
-      /** Sürücü navigasyon açıkken kamera follow effect’e ait; burada yalnızca fit */
       if (longPickupLeg && !hasRichPolyline && !(isDriver && navigationMode)) {
         mapRef.current.animateCamera(
           { center: anchor, pitch: 0, heading: 0, zoom: 17.4 },
@@ -2511,12 +2885,17 @@ export default function LiveMapView({
       navigationStage,
       navDriverMapCoord?.latitude,
       navDriverMapCoord?.longitude,
+      applyDriverActiveFollowViewport,
     ],
   );
 
   useEffect(() => {
     fitNavigationViewportRef.current = fitNavigationViewport;
   }, [fitNavigationViewport]);
+
+  useEffect(() => {
+    applyDriverActiveFollowViewportRef.current = applyDriverActiveFollowViewport;
+  }, [applyDriverActiveFollowViewport]);
 
   const loadDriverNavMeetingRoute = useCallback(async () => {
     if (!isDriver || !userLocation || !otherLocation) return;
@@ -2558,9 +2937,7 @@ export default function LiveMapView({
     );
     if (navigationModeRef.current) {
       setMeetingRouteCoordinates(coords);
-      InteractionManager.runAfterInteractions(() => {
-        fitNavigationViewport(coords);
-      });
+      /** Aktif navigasyonda fitToCoordinates yok — kamera yalnızca follow effect + “Yeniden ortala” */
     } else {
       fitNavigationViewport(coords);
       setTimeout(() => {
@@ -2627,16 +3004,20 @@ export default function LiveMapView({
       otherLocation
     ) {
       InteractionManager.runAfterInteractions(() => {
-        fitNavigationViewport(meetingRouteCoordinates);
+        if (navigationModeRef.current) {
+          applyDriverActiveFollowViewportRef.current?.();
+        } else {
+          fitNavigationViewport(meetingRouteCoordinates);
+        }
       });
     }
   }, [
     isDriver,
-    navigationMode,
     meetingRouteCoordinates,
     fitNavigationViewport,
     userLocation,
     otherLocation,
+    applyDriverActiveFollowViewport,
   ]);
 
   // Buluşma: OSRM polyline; sürücü nav pickup aşamasında steps ile
@@ -3038,9 +3419,9 @@ export default function LiveMapView({
               identifier="driverVehicle"
               key="driver-nav-vehicle"
               coordinate={driverNavMarkerCoord}
-              anchor={{ x: 0.5, y: 0.57 }}
-              flat={false}
-              rotation={0}
+              anchor={getDriverNavMarkerAnchor(passMotor ? 'motorcycle' : 'car')}
+              flat
+              rotation={driverNavMarkerRotation}
               tracksViewChanges={false}
               zIndex={4000}
             >

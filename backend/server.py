@@ -912,7 +912,12 @@ if os.getenv("DISPATCH_VEHICLE_FILTER_DISABLED", "").strip().lower() in ("1", "t
 
 # Rolling batch: bellek + dispatch_queue tablosu (sürücü polling / çoklu worker toleransı)
 BATCH_SIZE = 5
-DISPATCH_TIMEOUT = 20
+try:
+    _rbt = float(os.getenv("DISPATCH_BATCH_TIMEOUT_SECONDS", "13").strip().replace(",", "."))
+    ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = max(12.0, min(15.0, _rbt))
+except (TypeError, ValueError):
+    ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS = 13.0
+DISPATCH_TIMEOUT = int(round(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS))
 try:
     _dr = float(os.getenv("DISPATCH_RADIUS_KM", "20").strip().replace(",", "."))
     DISPATCH_RADIUS_KM = max(5.0, min(100.0, _dr))
@@ -2106,7 +2111,10 @@ async def rolling_dispatch_stop(
 
 
 async def rolling_dispatch_batch(tag_id: str) -> None:
-    """Önceki batch'e remove_offer; sonraki 5'e new_passenger_offer; 20s sonra waiting ise tekrar."""
+    """
+    Önceki batch'e remove_offer; sıradaki en yakın BATCH_SIZE sürücüye teklif;
+    DISPATCH_TIMEOUT sn sonra tag hâlâ waiting ise bir sonraki batch (cursor sarmalanmaz — tekrar teklif yok).
+    """
     state = rolling_dispatch_index.get(tag_id)
     if not state:
         return
@@ -2134,18 +2142,51 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
 
     start = int(state.get("cursor", 0))
     if start >= n:
-        start = 0
+        logger.info(
+            "[DISPATCH_BATCH] tag=%s event=exhausted cursor=%s total_eligible=%s (tüm sıra tükendi, tekrar yayın yok)",
+            tag_id,
+            start,
+            n,
+        )
+        pid = (tag_data or {}).get("passenger_id")
+        await rolling_dispatch_stop(tag_id, revoke_offers=False)
+        if pid:
+            try:
+                pid_r = await resolve_user_id(str(pid).strip())
+                await sio.emit(
+                    "dispatch_exhausted",
+                    {"tag_id": tag_id, "message": "Yakında uygun sürücü kalmadı"},
+                    room=_normalize_user_room(pid_r),
+                )
+            except Exception as ex:
+                logger.warning("[DISPATCH_BATCH] tag=%s dispatch_exhausted_emit_err=%s", tag_id, ex)
+        return
+
     end = min(start + BATCH_SIZE, n)
     batch_entries = drivers[start:end]
-    next_idx = end
-    if next_idx >= n:
-        next_idx = 0
-    state["cursor"] = next_idx
+    state["cursor"] = end
+    state["batch_seq"] = int(state.get("batch_seq") or 0) + 1
+    bseq = state["batch_seq"]
 
     if not batch_entries:
         return
 
     state["current_batch"] = [e["driver_id"] for e in batch_entries]
+
+    logger.info(
+        "[DISPATCH_BATCH] tag=%s event=batch_start batch_seq=%s driver_ids=%s idx_range=%s-%s/%s "
+        "next_cursor=%s timeout_sec=%s batch_size=%s radius_km=%s",
+        tag_id,
+        bseq,
+        state["current_batch"],
+        start,
+        end - 1,
+        n,
+        state["cursor"],
+        DISPATCH_TIMEOUT,
+        BATCH_SIZE,
+        DISPATCH_RADIUS_KM,
+    )
 
     pref = _canonical_vehicle_kind(tag_data.get("passenger_preferred_vehicle")) or "car"
     if tag_data.get("passenger_id"):
@@ -2167,7 +2208,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
     price_int = int(price) if price else 0
     distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
-    body = f"{price_int} TL • {distance_str} - {DISPATCH_TIMEOUT} sn içinde kabul et"
+    body = f"{price_int} TL • {distance_str} - {DISPATCH_TIMEOUT} sn içinde kabul et (batch {bseq})"
 
     offer_base = {
         "tag_id": tag_id,
@@ -2238,22 +2279,35 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
         start,
         end - 1,
         n,
-        next_idx,
+        state["cursor"],
     )
     logger.info(
-        f"📦 rolling_dispatch_batch tag={tag_id} batch={len(batch_entries)} "
-        f"idx {start}-{end - 1}/{n} next_cursor={next_idx}"
+        "[DISPATCH_BATCH] tag=%s event=batch_emit_done batch_seq=%s sent_slots=%s next_cursor=%s",
+        tag_id,
+        bseq,
+        n_queue_ok,
+        state["cursor"],
     )
 
     async def _timeout_tick():
         try:
-            await asyncio.sleep(DISPATCH_TIMEOUT)
+            await asyncio.sleep(ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS)
             if tag_id not in rolling_dispatch_index:
                 return
             tr = supabase.table("tags").select("status").eq("id", tag_id).limit(1).execute()
             if not tr.data or tr.data[0].get("status") != "waiting":
+                logger.info(
+                    "[DISPATCH_BATCH] tag=%s event=batch_timeout_skip status=%s (matched/cancelled/non-waiting)",
+                    tag_id,
+                    (tr.data[0].get("status") if tr.data else None),
+                )
                 await rolling_dispatch_stop(tag_id, revoke_offers=False)
                 return
+            logger.info(
+                "[DISPATCH_BATCH] tag=%s event=batch_timeout_fired after_s=%.2f next_batch_scheduled=1",
+                tag_id,
+                ROLLING_DISPATCH_BATCH_TIMEOUT_SECONDS,
+            )
             await rolling_dispatch_batch(tag_id)
         except asyncio.CancelledError:
             raise
@@ -2382,10 +2436,17 @@ async def rolling_dispatch_start(tag_id: str) -> int:
         "drivers": eligible,
         "full_tag": full_tag_data,
         "current_batch": [],
+        "batch_seq": 0,
     }
     logger.info(
-        f"rolling_dispatch_start tag={tag_id} eligible={len(eligible)} "
-        f"batch={BATCH_SIZE} timeout={DISPATCH_TIMEOUT}s radius={DISPATCH_RADIUS_KM}km"
+        "[DISPATCH_BATCH] tag=%s event=pipeline_start eligible=%s batch_size=%s timeout_sec=%s "
+        "radius_km=%s ordered_driver_ids=%s",
+        tag_id,
+        len(eligible),
+        BATCH_SIZE,
+        DISPATCH_TIMEOUT,
+        DISPATCH_RADIUS_KM,
+        [e["driver_id"] for e in eligible],
     )
     await rolling_dispatch_batch(tag_id)
     return len(eligible)
@@ -2642,8 +2703,10 @@ async def startup():
     # Deploy doğrulama: bu satır yoksa ride/create hâlâ eski imza ile çalışıyordur (422, logda Pydantic uyarısı yok)
     logger.info("ride/create handler: manual Request.json parse + explicit validation (2026-03-31)")
     logger.info(
-        "Teklif pipeline: POST /api/ride/create → tags.insert → rolling_dispatch_start → "
-        "rolling_dispatch_batch → emit new_passenger_offer → dispatch_queue rolling sync (DISPATCH_RADIUS_KM=%s)",
+        "Teklif pipeline: ride/create → rolling_dispatch_start → rolling_dispatch_batch "
+        "(batch_size=%s timeout_s=%s radius_km=%s, cursor wrap yok; yedek: broadcast_offer_to_all)",
+        BATCH_SIZE,
+        DISPATCH_TIMEOUT,
         DISPATCH_RADIUS_KM,
     )
 
@@ -5994,6 +6057,7 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
             pass
         try:
             await rolling_dispatch_stop(tag_id, revoke_offers=True)
+            logger.info("[DISPATCH_BATCH] tag=%s event=passenger_cancelled rolling_dispatch_stopped=1", tag_id)
         except Exception:
             pass
         
@@ -6059,6 +6123,7 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
             logger.warning(f"Dispatch queue temizleme hatası: {dq_err}")
         try:
             await rolling_dispatch_stop(tid, revoke_offers=True)
+            logger.info("[DISPATCH_BATCH] tag=%s event=passenger_cancelled rolling_dispatch_stopped=1", tid)
         except Exception:
             pass
         
@@ -11441,6 +11506,11 @@ async def handle_driver_accept_offer(sid, data):
         try:
             await rolling_dispatch_stop(
                 tid, revoke_offers=True, except_driver_id=resolved_driver_id
+            )
+            logger.info(
+                "[DISPATCH_BATCH] tag=%s event=matched_accepted driver=%s rolling_dispatch_stopped=1",
+                tid,
+                resolved_driver_id,
             )
         except Exception as _rds:
             logger.warning(f"rolling_dispatch_stop after driver_accept_offer (non-fatal): {_rds}")
