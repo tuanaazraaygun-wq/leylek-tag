@@ -3,7 +3,7 @@
  * Web, Android ve iOS için tam uyumlu
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import type { AiMockResult, AiTier } from '../lib/driverKycAiMock';
+import {
+  analyzeLicenseMock,
+  analyzeVehicleMock,
+  combineAiTier,
+  combineAiWarnings,
+} from '../lib/driverKycAiMock';
 
 // Türkiye'de popüler araç markaları ve modelleri
 const CAR_BRANDS: { [key: string]: string[] } = {
@@ -78,6 +85,105 @@ interface DriverKYCScreenProps {
 
 type PhotoPickKind = 'vehicle' | 'license' | 'motorcycle' | 'selfie';
 
+const CAR_STEP_TITLES = ['Araç bilgileri', 'Araç fotoğrafı', 'Ehliyet', 'Özet', 'Başvuru'];
+const MOTOR_STEP_TITLES = ['Motor bilgileri', 'Motor fotoğrafı', 'Ehliyet', 'Selfie', 'Başvuru'];
+
+/** KYC submit yanıt gövdesi: JSON değilse veya boşsa anlamlı hata (proxy HTML / 413 vb.). */
+function parseKycSubmitResponseJson(raw: string, httpStatus: number, contentType: string | null): unknown {
+  const trimmed = raw.replace(/^\uFEFF/, '').trim();
+  if (!trimmed.length) {
+    throw new Error(
+      `Sunucu boş yanıt döndü (HTTP ${httpStatus}). Bağlantı veya zaman aşımı olabilir; tekrar deneyin.`,
+    );
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const flat = trimmed.replace(/\s+/g, ' ');
+    const snippet = flat.length > 220 ? `${flat.slice(0, 220)}…` : flat;
+    const ct = contentType || '';
+    const looks413 =
+      httpStatus === 413 ||
+      /request entity too large|payload too large|413/i.test(flat) ||
+      /too large|çok büyük/i.test(flat);
+    const hint = looks413
+      ? ' Büyük ihtimalle fotoğraflar istek boyutu limitini aşıyor; kamera kalitesini düşürüp tekrar deneyin.'
+      : !/application\/json/i.test(ct) && /<\s*html[\s>]/i.test(trimmed)
+        ? ' Sunucu JSON yerine HTML döndü (CDN / proxy / bakım sayfası).'
+        : '';
+    throw new Error(
+      `Sunucu yanıtı JSON olarak okunamadı (HTTP ${httpStatus}).${hint} Özet: ${snippet}`,
+    );
+  }
+}
+
+/** FastAPI: detail string | dizi; özel cevaplarda message. */
+function pickKycSubmitErrorMessage(data: unknown, httpStatus: number): string {
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    if (typeof d.message === 'string' && d.message.trim()) return d.message.trim();
+    const detail = d.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+    if (Array.isArray(detail)) {
+      const parts = detail.map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          const o = item as Record<string, unknown>;
+          if (typeof o.msg === 'string') return o.msg;
+          if (typeof o.message === 'string') return o.message;
+        }
+        return '';
+      });
+      const t = parts.filter(Boolean).join(' — ');
+      if (t) return t;
+    }
+    if (typeof d.error === 'string' && d.error.trim()) return d.error.trim();
+  }
+  if (httpStatus === 413) {
+    return 'İstek çok büyük (413). Fotoğrafları daha düşük çözünürlükte yükleyin.';
+  }
+  if (httpStatus >= 500) {
+    return `Sunucu hatası (HTTP ${httpStatus}). Lütfen bir süre sonra tekrar deneyin.`;
+  }
+  return 'Başvuru gönderilemedi';
+}
+
+function AiResultCard({ result, subtitle }: { result: AiMockResult; subtitle?: string }) {
+  const palette: Record<AiTier, { bg: string; border: string; accent: string }> = {
+    green: { bg: '#ECFDF5', border: '#6EE7B7', accent: '#047857' },
+    yellow: { bg: '#FFFBEB', border: '#FCD34D', accent: '#B45309' },
+    red: { bg: '#FEF2F2', border: '#FCA5A5', accent: '#B91C1C' },
+  };
+  const c = palette[result.status];
+  return (
+    <View style={[aiCardStyles.wrap, { backgroundColor: c.bg, borderColor: c.border }]}>
+      {subtitle ? <Text style={[aiCardStyles.sub, { color: c.accent }]}>{subtitle}</Text> : null}
+      <Text style={[aiCardStyles.badge, { color: c.accent }]}>
+        {result.status === 'green' ? 'Ön kontrol: iyi' : result.status === 'yellow' ? 'Ön kontrol: uyarı' : 'Ön kontrol: sorun'}
+      </Text>
+      <Text style={aiCardStyles.title}>{result.title}</Text>
+      {result.messages.map((m, idx) => (
+        <Text key={idx} style={aiCardStyles.line}>
+          • {m}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+const aiCardStyles = StyleSheet.create({
+  wrap: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 12,
+  },
+  sub: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  badge: { fontSize: 13, fontWeight: '800', marginBottom: 6 },
+  title: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 6 },
+  line: { fontSize: 13, color: '#374151', lineHeight: 18, marginBottom: 4 },
+});
+
 export default function DriverKYCScreen({
   userId,
   userName,
@@ -103,6 +209,14 @@ export default function DriverKYCScreen({
   const [brandSearch, setBrandSearch] = useState('');
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
+
+  const [step, setStep] = useState(0);
+  const [vehicleAi, setVehicleAi] = useState<AiMockResult | null>(null);
+  const [licenseAi, setLicenseAi] = useState<AiMockResult | null>(null);
+  const [analyzingVehicle, setAnalyzingVehicle] = useState(false);
+  const [analyzingLicense, setAnalyzingLicense] = useState(false);
+
+  const stepTitles = isMotorKyc ? MOTOR_STEP_TITLES : CAR_STEP_TITLES;
 
   // Filtrelenmiş markalar
   const filteredBrands = useMemo(() => {
@@ -194,18 +308,132 @@ export default function DriverKYCScreen({
     }
   };
 
-  // Validasyon kontrolü
-  const isFormValid = () => {
+  useEffect(() => {
+    if (isMotorKyc) return;
+    let cancelled = false;
+    if (!vehiclePhoto) {
+      setVehicleAi(null);
+      setAnalyzingVehicle(false);
+      return;
+    }
+    setAnalyzingVehicle(true);
+    setVehicleAi(null);
+    (async () => {
+      try {
+        const r = await analyzeVehicleMock(vehiclePhoto);
+        if (!cancelled) setVehicleAi(r);
+      } finally {
+        if (!cancelled) setAnalyzingVehicle(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vehiclePhoto, isMotorKyc]);
+
+  useEffect(() => {
+    if (!isMotorKyc) return;
+    let cancelled = false;
+    if (!motorcyclePhoto) {
+      setVehicleAi(null);
+      setAnalyzingVehicle(false);
+      return;
+    }
+    setAnalyzingVehicle(true);
+    setVehicleAi(null);
+    (async () => {
+      try {
+        const r = await analyzeVehicleMock(motorcyclePhoto);
+        if (!cancelled) setVehicleAi(r);
+      } finally {
+        if (!cancelled) setAnalyzingVehicle(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [motorcyclePhoto, isMotorKyc]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!licensePhoto) {
+      setLicenseAi(null);
+      setAnalyzingLicense(false);
+      return;
+    }
+    setAnalyzingLicense(true);
+    setLicenseAi(null);
+    (async () => {
+      try {
+        const r = await analyzeLicenseMock(licensePhoto);
+        if (!cancelled) setLicenseAi(r);
+      } finally {
+        if (!cancelled) setAnalyzingLicense(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [licensePhoto]);
+
+  const vehiclePhotoForAi = isMotorKyc ? motorcyclePhoto : vehiclePhoto;
+  const vehicleDocReady =
+    !!vehiclePhotoForAi &&
+    !analyzingVehicle &&
+    !!vehicleAi &&
+    vehicleAi.status !== 'red';
+  const licenseDocReady =
+    !!licensePhoto && !analyzingLicense && !!licenseAi && licenseAi.status !== 'red';
+
+  const canGoNext = (): boolean => {
+    if (isMotorKyc) {
+      if (step === 0) return !!(vehicleBrand.trim() && vehicleModel.trim());
+      if (step === 1) return vehicleDocReady;
+      if (step === 2) return licenseDocReady;
+      if (step === 3) return !!selfiePhoto;
+      return false;
+    }
+    if (step === 0) return !!(plateNumber.trim() && vehicleBrand && vehicleModel);
+    if (step === 1) return vehicleDocReady;
+    if (step === 2) return licenseDocReady;
+    if (step === 3) return true;
+    return false;
+  };
+
+  const canSubmitFinal = (): boolean => {
     if (isMotorKyc) {
       return (
         vehicleBrand.trim() &&
         vehicleModel.trim() &&
-        licensePhoto &&
-        motorcyclePhoto &&
-        selfiePhoto
+        !!motorcyclePhoto &&
+        !!licensePhoto &&
+        !!selfiePhoto &&
+        !!vehicleAi &&
+        !!licenseAi &&
+        vehicleAi.status !== 'red' &&
+        licenseAi.status !== 'red'
       );
     }
-    return plateNumber.trim() && vehicleBrand && vehicleModel && vehiclePhoto && licensePhoto;
+    return (
+      !!plateNumber.trim() &&
+      !!vehicleBrand &&
+      !!vehicleModel &&
+      !!vehiclePhoto &&
+      !!licensePhoto &&
+      !!vehicleAi &&
+      !!licenseAi &&
+      vehicleAi.status !== 'red' &&
+      licenseAi.status !== 'red'
+    );
+  };
+
+  const goNext = () => {
+    if (!canGoNext()) return;
+    if (step < 4) setStep((s) => s + 1);
+  };
+
+  const goBackStep = () => {
+    if (step > 0) setStep((s) => s - 1);
   };
 
   // KYC gönder
@@ -276,6 +504,20 @@ export default function DriverKYCScreen({
       }
     }
 
+    if (!vehicleAi || !licenseAi) {
+      const msg = 'Ön kontrol tamamlanmadı. Lütfen sihirbaz adımlarını tamamlayın.';
+      Platform.OS === 'web' ? alert(msg) : Alert.alert('Hata', msg);
+      return;
+    }
+    if (vehicleAi.status === 'red' || licenseAi.status === 'red') {
+      const msg = 'Kırmızı ön kontrol sonucu varken başvuru gönderilemez. Fotoğrafları güncelleyin.';
+      Platform.OS === 'web' ? alert(msg) : Alert.alert('Hata', msg);
+      return;
+    }
+
+    const aiStatus = combineAiTier(vehicleAi, licenseAi);
+    const aiWarnings = combineAiWarnings(vehicleAi, licenseAi);
+
     setLoading(true);
     setSubmitStatus('Başvuru gönderiliyor...');
 
@@ -296,6 +538,8 @@ export default function DriverKYCScreen({
             license_photo_base64: licensePhoto,
             motorcycle_photo_base64: motorcyclePhoto,
             selfie_photo_base64: selfiePhoto,
+            ai_status: aiStatus,
+            ai_warnings: aiWarnings,
           }
         : {
             user_id: userId,
@@ -307,6 +551,8 @@ export default function DriverKYCScreen({
             vehicle_color: vehicleColor || null,
             vehicle_photo_base64: vehiclePhoto,
             license_photo_base64: licensePhoto,
+            ai_status: aiStatus,
+            ai_warnings: aiWarnings,
           };
 
       setSubmitStatus('Sunucuya bağlanılıyor...');
@@ -323,19 +569,17 @@ export default function DriverKYCScreen({
       setSubmitStatus('Yanıt işleniyor...');
 
       const responseText = await response.text();
-      console.log('Response Text:', responseText);
+      const contentType = response.headers.get('content-type');
+      console.log('Response Text (first 500):', responseText.slice(0, 500));
 
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (e) {
-        console.error('JSON parse error:', e);
-        throw new Error('Sunucu yanıtı işlenemedi');
-      }
+      const data = parseKycSubmitResponseJson(responseText, response.status, contentType) as Record<
+        string,
+        unknown
+      >;
 
       console.log('Response Data:', data);
 
-      if (response.ok && data.success) {
+      if (response.ok && data.success === true) {
         setSubmitStatus('Başvuru başarılı!');
         console.log('========== KYC SUBMIT BAŞARILI ==========');
         
@@ -351,7 +595,7 @@ export default function DriverKYCScreen({
           );
         }
       } else {
-        throw new Error(data.message || data.detail || 'Başvuru gönderilemedi');
+        throw new Error(pickKycSubmitErrorMessage(data, response.status));
       }
     } catch (error: any) {
       console.error('========== KYC SUBMIT HATA ==========');
@@ -376,9 +620,14 @@ export default function DriverKYCScreen({
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#3FA9F5" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {isMotorKyc ? 'Motor Sürücü Kaydı' : 'Sürücü Kaydı'}
-        </Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>
+            {isMotorKyc ? 'Motor Sürücü Kaydı' : 'Sürücü Kaydı'}
+          </Text>
+          <Text style={styles.headerStep}>
+            Adım {step + 1}/5 · {stepTitles[step]}
+          </Text>
+        </View>
         <View style={{ width: 40 }} />
       </View>
 
@@ -389,227 +638,407 @@ export default function DriverKYCScreen({
         <ScrollView 
           style={styles.content} 
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
         >
           {/* Bilgi Kartı */}
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={24} color="#3FA9F5" />
             <Text style={styles.infoText}>
               {isMotorKyc
-                ? 'Motor sürücüsü olarak marka, model, ehliyet, motor ve yüz fotoğrafı gerekir. Başvurunuz admin tarafından incelenir.'
-                : 'Sürücü olarak kayıt olmak için araç ve ehliyet bilgilerinizi girin. Başvurunuz admin tarafından incelenecektir.'}
+                ? 'Adım adım motor bilgilerinizi ve belgelerinizi yükleyin. Ön kontroller mock AI ile yapılır; nihai onay admin tarafındadır.'
+                : 'Adım adım araç ve ehliyet bilgilerinizi tamamlayın. Fotoğraf yükledikten sonra mock ön kontrol çalışır; nihai onay admin tarafındadır.'}
             </Text>
           </View>
 
-          {isMotorKyc ? (
-            <>
-              <Text style={styles.label}>Motor Markası *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Örn: Honda"
-                placeholderTextColor="#999"
-                value={vehicleBrand}
-                onChangeText={setVehicleBrand}
-              />
-              <Text style={styles.label}>Motor Modeli *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Örn: PCX 125"
-                placeholderTextColor="#999"
-                value={vehicleModel}
-                onChangeText={setVehicleModel}
-              />
-              <Text style={styles.label}>Plaka (isteğe bağlı)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Varsa yazın"
-                placeholderTextColor="#999"
-                value={plateNumber}
-                onChangeText={setPlateNumber}
-                autoCapitalize="characters"
-              />
-            </>
-          ) : (
-            <>
-              <Text style={styles.label}>Plaka Numarası *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Örn: 34 ABC 123"
-                placeholderTextColor="#999"
-                value={plateNumber}
-                onChangeText={setPlateNumber}
-                autoCapitalize="characters"
-              />
-              <Text style={styles.label}>Araç Markası *</Text>
-              <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
-                <Ionicons name="car" size={20} color={vehicleBrand ? '#3FA9F5' : '#999'} />
-                <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
-                  {vehicleBrand || 'Marka seçin...'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#999" />
-              </TouchableOpacity>
-              <Text style={styles.label}>Araç Modeli *</Text>
-              <TouchableOpacity
-                style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
-                onPress={() => vehicleBrand && setShowModelModal(true)}
-                disabled={!vehicleBrand}
-              >
-                <Ionicons name="construct" size={20} color={vehicleModel ? '#3FA9F5' : '#999'} />
-                <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
-                  {vehicleModel || 'Model seçin...'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#999" />
-              </TouchableOpacity>
-              <Text style={styles.label}>Araç Yılı</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Örn: 2020"
-                placeholderTextColor="#999"
-                value={vehicleYear}
-                onChangeText={setVehicleYear}
-                keyboardType="numeric"
-                maxLength={4}
-              />
-              <Text style={styles.label}>Araç Rengi</Text>
-              <View style={styles.colorGrid}>
-                {CAR_COLORS.map((color) => (
-                  <TouchableOpacity
-                    key={color.name}
-                    style={[styles.colorItem, vehicleColor === color.name && styles.colorItemActive]}
-                    onPress={() => setVehicleColor(color.name)}
-                  >
-                    <View style={[styles.colorCircle, { backgroundColor: color.code, borderColor: color.border }]} />
-                    <Text style={[styles.colorName, vehicleColor === color.name && styles.colorNameActive]}>
-                      {color.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.label}>Araç Fotoğrafı * (Plaka görünmeli)</Text>
-              {vehiclePhoto ? (
-                <View style={styles.photoPreview}>
-                  <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
-                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setVehiclePhoto(null)}>
-                    <Ionicons name="close-circle" size={28} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.photoButtons}>
-                  {Platform.OS === 'web' ? (
-                    <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('vehicle')}>
-                      <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
-                      <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <>
-                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'camera')}>
-                        <Ionicons name="camera" size={28} color="#3FA9F5" />
-                        <Text style={styles.photoBtnText}>Çek</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'gallery')}>
-                        <Ionicons name="images" size={28} color="#3FA9F5" />
-                        <Text style={styles.photoBtnText}>Galeri</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              )}
-            </>
-          )}
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: `${((step + 1) / 5) * 100}%` }]} />
+          </View>
 
-          {/* Ehliyet Fotoğrafı */}
-          <Text style={styles.label}>Ehliyet Fotoğrafı *</Text>
-          {licensePhoto ? (
-            <View style={styles.photoPreview}>
-              <Image source={{ uri: licensePhoto }} style={styles.previewImage} />
-              <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setLicensePhoto(null)}>
-                <Ionicons name="close-circle" size={28} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.photoButtons}>
-              {Platform.OS === 'web' ? (
-                <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('license')}>
-                  <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
-                  <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
-                </TouchableOpacity>
-              ) : (
+          {!isMotorKyc ? (
+            <>
+              {step === 0 && (
                 <>
-                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'camera')}>
-                    <Ionicons name="camera" size={28} color="#3FA9F5" />
-                    <Text style={styles.photoBtnText}>Çek</Text>
+                  <Text style={styles.label}>Plaka Numarası *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Örn: 34 ABC 123"
+                    placeholderTextColor="#999"
+                    value={plateNumber}
+                    onChangeText={setPlateNumber}
+                    autoCapitalize="characters"
+                  />
+                  <Text style={styles.label}>Araç Markası *</Text>
+                  <TouchableOpacity style={styles.selectButton} onPress={() => setShowBrandModal(true)}>
+                    <Ionicons name="car" size={20} color={vehicleBrand ? '#3FA9F5' : '#999'} />
+                    <Text style={[styles.selectText, vehicleBrand && styles.selectTextActive]}>
+                      {vehicleBrand || 'Marka seçin...'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="#999" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'gallery')}>
-                    <Ionicons name="images" size={28} color="#3FA9F5" />
-                    <Text style={styles.photoBtnText}>Galeri</Text>
+                  <Text style={styles.label}>Araç Modeli *</Text>
+                  <TouchableOpacity
+                    style={[styles.selectButton, !vehicleBrand && styles.selectDisabled]}
+                    onPress={() => vehicleBrand && setShowModelModal(true)}
+                    disabled={!vehicleBrand}
+                  >
+                    <Ionicons name="construct" size={20} color={vehicleModel ? '#3FA9F5' : '#999'} />
+                    <Text style={[styles.selectText, vehicleModel && styles.selectTextActive]}>
+                      {vehicleModel || 'Model seçin...'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="#999" />
                   </TouchableOpacity>
+                  <Text style={styles.label}>Araç Yılı</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Örn: 2020"
+                    placeholderTextColor="#999"
+                    value={vehicleYear}
+                    onChangeText={setVehicleYear}
+                    keyboardType="numeric"
+                    maxLength={4}
+                  />
+                  <Text style={styles.label}>Araç Rengi</Text>
+                  <View style={styles.colorGrid}>
+                    {CAR_COLORS.map((color) => (
+                      <TouchableOpacity
+                        key={color.name}
+                        style={[styles.colorItem, vehicleColor === color.name && styles.colorItemActive]}
+                        onPress={() => setVehicleColor(color.name)}
+                      >
+                        <View style={[styles.colorCircle, { backgroundColor: color.code, borderColor: color.border }]} />
+                        <Text style={[styles.colorName, vehicleColor === color.name && styles.colorNameActive]}>
+                          {color.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </>
               )}
-            </View>
-          )}
-
-          {isMotorKyc ? (
-            <>
-              <Text style={styles.label}>Motor Fotoğrafı *</Text>
-              {motorcyclePhoto ? (
-                <View style={styles.photoPreview}>
-                  <Image source={{ uri: motorcyclePhoto }} style={styles.previewImage} />
-                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setMotorcyclePhoto(null)}>
-                    <Ionicons name="close-circle" size={28} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.photoButtons}>
-                  {Platform.OS === 'web' ? (
-                    <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('motorcycle')}>
-                      <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
-                      <Text style={styles.uploadText}>Motor Fotoğrafı</Text>
-                    </TouchableOpacity>
+              {step === 1 && (
+                <>
+                  <Text style={styles.stepHelp}>
+                    Plaka ve aracın tamamı görünsün; gölgede veya çok uzaktan çekmeyin.
+                  </Text>
+                  <Text style={styles.label}>Araç Fotoğrafı *</Text>
+                  {vehiclePhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Image source={{ uri: vehiclePhoto }} style={styles.previewImage} />
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setVehiclePhoto(null)}>
+                        <Ionicons name="close-circle" size={28} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
                   ) : (
-                    <>
-                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('motorcycle', 'camera')}>
-                        <Ionicons name="camera" size={28} color="#3FA9F5" />
-                        <Text style={styles.photoBtnText}>Çek</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('motorcycle', 'gallery')}>
-                        <Ionicons name="images" size={28} color="#3FA9F5" />
-                        <Text style={styles.photoBtnText}>Galeri</Text>
-                      </TouchableOpacity>
-                    </>
+                    <View style={styles.photoButtons}>
+                      {Platform.OS === 'web' ? (
+                        <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('vehicle')}>
+                          <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                          <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'camera')}>
+                            <Ionicons name="camera" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Çek</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('vehicle', 'gallery')}>
+                            <Ionicons name="images" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Galeri</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
                   )}
-                </View>
+                  {analyzingVehicle ? (
+                    <View style={styles.analyzeRow}>
+                      <ActivityIndicator color="#3FA9F5" />
+                      <Text style={styles.analyzeText}>Fotoğraf analiz ediliyor…</Text>
+                    </View>
+                  ) : null}
+                  {vehicleAi?.status === 'red' ? (
+                    <View style={styles.blockBanner}>
+                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Text style={styles.blockBannerText}>
+                        Bu fotoğrafla ilerlenemez. Lütfen daha net bir görüntü yükleyin.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {vehicleAi?.status === 'yellow' ? (
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Text style={styles.warnBannerText}>
+                        Ön kontrol uyarısı: yine de devam edebilirsiniz; mümkünse daha iyi bir fotoğraf tercih edin.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {vehicleAi ? <AiResultCard result={vehicleAi} subtitle="Araç fotoğrafı (mock)" /> : null}
+                </>
               )}
-              <Text style={styles.label}>Selfie (yüzünüz görünsün) *</Text>
-              {selfiePhoto ? (
-                <View style={styles.photoPreview}>
-                  <Image source={{ uri: selfiePhoto }} style={styles.previewImage} />
-                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setSelfiePhoto(null)}>
-                    <Ionicons name="close-circle" size={28} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.photoButtons}>
-                  {Platform.OS === 'web' ? (
-                    <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('selfie')}>
-                      <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
-                      <Text style={styles.uploadText}>Selfie Yükle</Text>
-                    </TouchableOpacity>
+              {step === 2 && (
+                <>
+                  <Text style={styles.stepHelp}>
+                    Ehliyetin dört köşesi ve tüm yazılar okunaklı görünmeli.
+                  </Text>
+                  <Text style={styles.label}>Ehliyet Fotoğrafı *</Text>
+                  {licensePhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Image source={{ uri: licensePhoto }} style={styles.previewImage} />
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setLicensePhoto(null)}>
+                        <Ionicons name="close-circle" size={28} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
                   ) : (
-                    <>
-                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('selfie', 'camera')}>
-                        <Ionicons name="camera" size={28} color="#3FA9F5" />
-                        <Text style={styles.photoBtnText}>Çek</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('selfie', 'gallery')}>
-                        <Ionicons name="images" size={28} color="#3FA9F5" />
-                        <Text style={styles.photoBtnText}>Galeri</Text>
-                      </TouchableOpacity>
-                    </>
+                    <View style={styles.photoButtons}>
+                      {Platform.OS === 'web' ? (
+                        <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('license')}>
+                          <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                          <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'camera')}>
+                            <Ionicons name="camera" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Çek</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'gallery')}>
+                            <Ionicons name="images" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Galeri</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
                   )}
-                </View>
+                  {analyzingLicense ? (
+                    <View style={styles.analyzeRow}>
+                      <ActivityIndicator color="#3FA9F5" />
+                      <Text style={styles.analyzeText}>Ehliyet analiz ediliyor…</Text>
+                    </View>
+                  ) : null}
+                  {licenseAi?.status === 'red' ? (
+                    <View style={styles.blockBanner}>
+                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Text style={styles.blockBannerText}>
+                        Ehliyet fotoğrafı yetersiz. Lütfen net ve kadrajı tam bir görüntü yükleyin.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {licenseAi?.status === 'yellow' ? (
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Text style={styles.warnBannerText}>
+                        Ön kontrol uyarısı: devam edebilirsiniz; mümkünse belgeyi daha net çekin.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {licenseAi ? <AiResultCard result={licenseAi} subtitle="Ehliyet (mock)" /> : null}
+                </>
+              )}
+              {step === 3 && (
+                <>
+                  <Text style={styles.summaryTitle}>Özet</Text>
+                  <Text style={styles.summaryLine}>Plaka: {plateNumber.toUpperCase().trim() || '—'}</Text>
+                  <Text style={styles.summaryLine}>
+                    Araç: {vehicleBrand} {vehicleModel}
+                    {vehicleYear ? ` (${vehicleYear})` : ''}
+                    {vehicleColor ? ` · ${vehicleColor}` : ''}
+                  </Text>
+                  {vehicleAi ? <AiResultCard result={vehicleAi} subtitle="Araç fotoğrafı" /> : null}
+                  {licenseAi ? <AiResultCard result={licenseAi} subtitle="Ehliyet" /> : null}
+                </>
+              )}
+              {step === 4 && (
+                <>
+                  <Text style={styles.summaryTitle}>Başvuruyu gönderin</Text>
+                  <Text style={styles.stepHelp}>
+                    Bilgileriniz ve mock ön kontrol sonuçları admin incelemesine gidecek. Son karar her zaman admin
+                    tarafındadır.
+                  </Text>
+                </>
               )}
             </>
-          ) : null}
+          ) : (
+            <>
+              {step === 0 && (
+                <>
+                  <Text style={styles.label}>Motor Markası *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Örn: Honda"
+                    placeholderTextColor="#999"
+                    value={vehicleBrand}
+                    onChangeText={setVehicleBrand}
+                  />
+                  <Text style={styles.label}>Motor Modeli *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Örn: PCX 125"
+                    placeholderTextColor="#999"
+                    value={vehicleModel}
+                    onChangeText={setVehicleModel}
+                  />
+                  <Text style={styles.label}>Plaka (isteğe bağlı)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Varsa yazın"
+                    placeholderTextColor="#999"
+                    value={plateNumber}
+                    onChangeText={setPlateNumber}
+                    autoCapitalize="characters"
+                  />
+                </>
+              )}
+              {step === 1 && (
+                <>
+                  <Text style={styles.stepHelp}>Motorunuz ve varsa plaka net görünsün.</Text>
+                  <Text style={styles.label}>Motor Fotoğrafı *</Text>
+                  {motorcyclePhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Image source={{ uri: motorcyclePhoto }} style={styles.previewImage} />
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setMotorcyclePhoto(null)}>
+                        <Ionicons name="close-circle" size={28} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.photoButtons}>
+                      {Platform.OS === 'web' ? (
+                        <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('motorcycle')}>
+                          <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                          <Text style={styles.uploadText}>Motor Fotoğrafı</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('motorcycle', 'camera')}>
+                            <Ionicons name="camera" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Çek</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('motorcycle', 'gallery')}>
+                            <Ionicons name="images" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Galeri</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
+                  {analyzingVehicle ? (
+                    <View style={styles.analyzeRow}>
+                      <ActivityIndicator color="#3FA9F5" />
+                      <Text style={styles.analyzeText}>Motor fotoğrafı analiz ediliyor…</Text>
+                    </View>
+                  ) : null}
+                  {vehicleAi?.status === 'red' ? (
+                    <View style={styles.blockBanner}>
+                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Text style={styles.blockBannerText}>Bu fotoğrafla ilerlenemez. Lütfen daha net bir görüntü yükleyin.</Text>
+                    </View>
+                  ) : null}
+                  {vehicleAi?.status === 'yellow' ? (
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Text style={styles.warnBannerText}>Ön kontrol uyarısı: devam edebilirsiniz.</Text>
+                    </View>
+                  ) : null}
+                  {vehicleAi ? <AiResultCard result={vehicleAi} subtitle="Motor fotoğrafı (mock)" /> : null}
+                </>
+              )}
+              {step === 2 && (
+                <>
+                  <Text style={styles.stepHelp}>Ehliyetin tüm köşeleri görünmeli.</Text>
+                  <Text style={styles.label}>Ehliyet Fotoğrafı *</Text>
+                  {licensePhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Image source={{ uri: licensePhoto }} style={styles.previewImage} />
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setLicensePhoto(null)}>
+                        <Ionicons name="close-circle" size={28} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.photoButtons}>
+                      {Platform.OS === 'web' ? (
+                        <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('license')}>
+                          <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                          <Text style={styles.uploadText}>Fotoğraf Yükle</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'camera')}>
+                            <Ionicons name="camera" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Çek</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('license', 'gallery')}>
+                            <Ionicons name="images" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Galeri</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
+                  {analyzingLicense ? (
+                    <View style={styles.analyzeRow}>
+                      <ActivityIndicator color="#3FA9F5" />
+                      <Text style={styles.analyzeText}>Ehliyet analiz ediliyor…</Text>
+                    </View>
+                  ) : null}
+                  {licenseAi?.status === 'red' ? (
+                    <View style={styles.blockBanner}>
+                      <Ionicons name="close-circle" size={22} color="#B91C1C" />
+                      <Text style={styles.blockBannerText}>Ehliyet fotoğrafı yetersiz. Lütfen net bir görüntü yükleyin.</Text>
+                    </View>
+                  ) : null}
+                  {licenseAi?.status === 'yellow' ? (
+                    <View style={styles.warnBanner}>
+                      <Ionicons name="warning" size={20} color="#B45309" />
+                      <Text style={styles.warnBannerText}>Ön kontrol uyarısı: devam edebilirsiniz.</Text>
+                    </View>
+                  ) : null}
+                  {licenseAi ? <AiResultCard result={licenseAi} subtitle="Ehliyet (mock)" /> : null}
+                </>
+              )}
+              {step === 3 && (
+                <>
+                  <Text style={styles.label}>Selfie (yüzünüz görünsün) *</Text>
+                  {selfiePhoto ? (
+                    <View style={styles.photoPreview}>
+                      <Image source={{ uri: selfiePhoto }} style={styles.previewImage} />
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setSelfiePhoto(null)}>
+                        <Ionicons name="close-circle" size={28} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.photoButtons}>
+                      {Platform.OS === 'web' ? (
+                        <TouchableOpacity style={styles.uploadBtn} onPress={() => handleWebFileSelect('selfie')}>
+                          <Ionicons name="cloud-upload" size={32} color="#3FA9F5" />
+                          <Text style={styles.uploadText}>Selfie Yükle</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('selfie', 'camera')}>
+                            <Ionicons name="camera" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Çek</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.photoBtn} onPress={() => pickImageMobile('selfie', 'gallery')}>
+                            <Ionicons name="images" size={28} color="#3FA9F5" />
+                            <Text style={styles.photoBtnText}>Galeri</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
+                </>
+              )}
+              {step === 4 && (
+                <>
+                  <Text style={styles.summaryTitle}>Özet ve gönderim</Text>
+                  <Text style={styles.summaryLine}>
+                    {vehicleBrand} {vehicleModel}
+                    {plateNumber.trim() ? ` · ${plateNumber.toUpperCase().trim()}` : ''}
+                  </Text>
+                  {vehicleAi ? <AiResultCard result={vehicleAi} subtitle="Motor fotoğrafı" /> : null}
+                  {licenseAi ? <AiResultCard result={licenseAi} subtitle="Ehliyet" /> : null}
+                  <Text style={styles.stepHelp}>Selfie admin incelemesinde kullanılacaktır.</Text>
+                </>
+              )}
+            </>
+          )}
 
           {/* Submit Status */}
           {submitStatus ? (
@@ -619,21 +1048,39 @@ export default function DriverKYCScreen({
             </View>
           ) : null}
 
-          {/* Gönder Butonu */}
-          <TouchableOpacity
-            style={[styles.submitBtn, (!isFormValid() || loading) && styles.submitBtnDisabled]}
-            onPress={submitKYC}
-            disabled={!isFormValid() || loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFF" size="small" />
+          <View style={styles.wizardFooter}>
+            {step > 0 ? (
+              <TouchableOpacity style={styles.navBtnSecondary} onPress={goBackStep}>
+                <Text style={styles.navBtnSecondaryText}>Geri</Text>
+              </TouchableOpacity>
             ) : (
-              <>
-                <Ionicons name="send" size={20} color="#FFF" />
-                <Text style={styles.submitBtnText}>Başvuruyu Gönder</Text>
-              </>
+              <View style={{ flex: 1 }} />
             )}
-          </TouchableOpacity>
+            {step < 4 ? (
+              <TouchableOpacity
+                style={[styles.navBtnPrimary, !canGoNext() && styles.navBtnDisabled]}
+                onPress={goNext}
+                disabled={!canGoNext()}
+              >
+                <Text style={styles.navBtnPrimaryText}>İleri</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.submitBtnFooter, (!canSubmitFinal() || loading) && styles.submitBtnDisabled]}
+                onPress={submitKYC}
+                disabled={!canSubmitFinal() || loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={20} color="#FFF" />
+                    <Text style={styles.submitBtnText}>Başvuruyu Gönder</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -734,6 +1181,142 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#1B1B1E',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  headerStep: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E5E7EB',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#3FA9F5',
+  },
+  stepHelp: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+    marginBottom: 10,
+    backgroundColor: '#F1F5F9',
+    padding: 10,
+    borderRadius: 8,
+  },
+  analyzeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  analyzeText: {
+    fontSize: 14,
+    color: '#3FA9F5',
+    fontWeight: '500',
+  },
+  blockBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  blockBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#991B1B',
+    lineHeight: 18,
+  },
+  warnBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  warnBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
+  },
+  summaryTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1B1B1E',
+    marginBottom: 10,
+  },
+  summaryLine: {
+    fontSize: 15,
+    color: '#334155',
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  wizardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20,
+    paddingTop: 8,
+  },
+  navBtnSecondary: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+  },
+  navBtnSecondaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  navBtnPrimary: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#3FA9F5',
+    alignItems: 'center',
+  },
+  navBtnPrimaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  navBtnDisabled: {
+    opacity: 0.45,
+  },
+  submitBtnFooter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#22C55E',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 10,
   },
   content: {
     flex: 1,

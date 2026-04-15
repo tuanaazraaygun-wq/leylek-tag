@@ -17,9 +17,15 @@ import {
   Platform,
   Alert,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
 
 import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
+import {
+  type PendingKycRequest,
+  isSafeKycImageUrl,
+  kycVehicleKindLabel,
+} from '../types/adminKyc';
 import { callAlertPrompt } from '../lib/alertPrompt';
 
 function tripStatusLabel(status: string | undefined) {
@@ -42,6 +48,21 @@ function formatApiDetail(d: unknown): string {
     return (d[0] as { msg: string }).msg;
   }
   return '';
+}
+
+function kycDisplayField(v: unknown): string {
+  if (v == null || v === '') return '—';
+  const s = String(v).trim();
+  return s.length ? s : '—';
+}
+
+function formatKycSubmittedAt(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('tr-TR');
+  } catch {
+    return '—';
+  }
 }
 
 // Error Boundary
@@ -100,7 +121,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [sendingNotif, setSendingNotif] = useState(false);
   
   // KYC states
-  const [pendingKYC, setPendingKYC] = useState<any[]>([]);
+  const [pendingKYC, setPendingKYC] = useState<PendingKycRequest[]>([]);
   const [approvingKYC, setApprovingKYC] = useState<string | null>(null);
   const [communityCityRequests, setCommunityCityRequests] = useState<any[]>([]);
 
@@ -113,7 +134,8 @@ function AdminContent({ adminPhone, onClose }: Props) {
       const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/pending?admin_phone=${encodeURIComponent(adminPhoneNorm)}`);
       const data = await res.json();
       if (data.success) {
-        setPendingKYC(data.requests || []);
+        const raw = Array.isArray(data.requests) ? data.requests : [];
+        setPendingKYC(raw as PendingKycRequest[]);
       }
     } catch (e) {
       console.log('KYC yüklenemedi:', e);
@@ -574,31 +596,126 @@ function AdminContent({ adminPhone, onClose }: Props) {
                 <Text style={styles.emptyText}>Bekleyen başvuru yok</Text>
               </View>
             ) : (
-              pendingKYC.map((kyc, i) => (
+              pendingKYC.map((kyc, i) => {
+                const kind = (kyc.vehicle_kind || 'car').toLowerCase();
+                const isMotor = kind === 'motorcycle' || kind === 'motor';
+                const carUrl = kyc.vehicle_photo_url;
+                const motorUrl = kyc.motorcycle_photo_url;
+                const hasCarPhoto = isSafeKycImageUrl(carUrl);
+                const hasMotorPhoto = isSafeKycImageUrl(motorUrl);
+                const hasPrimaryVehicle = isMotor ? hasMotorPhoto : hasCarPhoto;
+                const hasLicense = isSafeKycImageUrl(kyc.license_photo_url);
+                const hasSelfie = isSafeKycImageUrl(kyc.selfie_url);
+                const line1 = `${kycDisplayField(kyc.vehicle_brand)} ${kycDisplayField(kyc.vehicle_model)} (${kycDisplayField(kyc.vehicle_year)})`;
+                const line2 = `${kycDisplayField(kyc.vehicle_color)} · ${kycDisplayField(kyc.plate_number)}`;
+                const thumbSlots: { label: string; url: string | null | undefined }[] = [
+                  { label: 'Otomobil', url: carUrl },
+                  { label: 'Motosiklet', url: motorUrl },
+                  { label: 'Ehliyet', url: kyc.license_photo_url },
+                  { label: 'Selfie', url: kyc.selfie_url },
+                ];
+                return (
                 <View key={kyc.user_id || i} style={styles.kycCard}>
                   <Text style={styles.kycName}>{kyc.name || 'İsimsiz'}</Text>
-                  <Text style={styles.kycPhone}>{kyc.phone}</Text>
-                  <Text style={styles.kycCity}>{kyc.city}</Text>
-                  
-                  {/* Araç Bilgileri */}
-                  {kyc.driver_details && (
-                    <View style={styles.kycVehicle}>
-                      <Text style={styles.kycVehicleText}>
-                        {kyc.driver_details.brand} {kyc.driver_details.model} - {kyc.driver_details.color}
-                      </Text>
-                      <Text style={styles.kycVehicleText}>
-                        Plaka: {kyc.driver_details.plate}
-                      </Text>
-                    </View>
-                  )}
-                  
-                  {/* Belgeler */}
-                  <View style={styles.kycDocs}>
-                    <Text style={styles.kycDocLabel}>Selfie: {kyc.driver_details?.selfie_url ? '✅' : '❌'}</Text>
-                    <Text style={styles.kycDocLabel}>Araç Fotoğrafı: {kyc.driver_details?.car_photo_url ? '✅' : '❌'}</Text>
-                    <Text style={styles.kycDocLabel}>Ehliyet: {kyc.driver_details?.license_url ? '✅' : '❌'}</Text>
+                  <Text style={styles.kycPhone}>{kyc.phone || '—'}</Text>
+                  <Text style={styles.kycSubmitted}>
+                    Başvuru: {formatKycSubmittedAt(kyc.submitted_at ?? undefined)}
+                  </Text>
+                  <Text style={styles.kycKindLine}>
+                    Kayıt tipi: {kycVehicleKindLabel(kyc.vehicle_kind)}
+                  </Text>
+
+                  <View style={styles.kycVehicle}>
+                    <Text style={styles.kycVehicleText}>{line1}</Text>
+                    <Text style={styles.kycVehicleText}>{line2}</Text>
                   </View>
-                  
+
+                  <Text style={styles.kycImageSectionTitle}>Belgeler (önizleme)</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.kycThumbScroll}
+                    contentContainerStyle={styles.kycThumbScrollContent}
+                  >
+                    {thumbSlots.map((slot) => {
+                      const ok = isSafeKycImageUrl(slot.url);
+                      return (
+                        <View key={slot.label} style={styles.kycThumbCell}>
+                          <Text style={styles.kycThumbLabel}>{slot.label}</Text>
+                          {ok ? (
+                            <Image
+                              source={{ uri: slot.url!.trim() }}
+                              style={styles.kycThumbImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.kycThumbPlaceholder}>
+                              <Text style={styles.kycThumbPlaceholderText}>—</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {(kyc.ai_status || (Array.isArray(kyc.ai_warnings) && kyc.ai_warnings.length > 0)) ? (
+                    <View style={styles.kycAiBlock}>
+                      <Text style={styles.kycAiBlockTitle}>AI Ön Değerlendirme</Text>
+                      <Text style={styles.kycAiStatusLine}>
+                        Durum:{' '}
+                        <Text style={styles.kycAiStatusValue}>
+                          {(() => {
+                            const s = String(kyc.ai_status || '—').toLowerCase();
+                            if (s === 'green') return 'YEŞİL (iyi)';
+                            if (s === 'yellow') return 'SARI (dikkat)';
+                            if (s === 'red') return 'KIRMIZI (sorunlu)';
+                            return String(kyc.ai_status || '—').toUpperCase();
+                          })()}
+                        </Text>
+                      </Text>
+                      {(() => {
+                        const raw = kyc.ai_warnings;
+                        const list = Array.isArray(raw)
+                          ? raw
+                          : typeof raw === 'string'
+                            ? (() => {
+                                try {
+                                  const p = JSON.parse(raw);
+                                  return Array.isArray(p) ? p : [];
+                                } catch {
+                                  return [];
+                                }
+                              })()
+                            : [];
+                        return list.length > 0 ? (
+                          <View style={styles.kycAiWarnings}>
+                            {list.map((w: string, wi: number) => (
+                              <Text key={wi} style={styles.kycAiWarningLine}>
+                                • {w}
+                              </Text>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={styles.kycAiNoWarnings}>Uyarı listesi yok</Text>
+                        );
+                      })()}
+                    </View>
+                  ) : null}
+
+                  <View style={styles.kycDocs}>
+                    <Text style={styles.kycDocLabel}>
+                      {isMotor ? 'Motosiklet fotoğrafı' : 'Otomobil fotoğrafı'}: {hasPrimaryVehicle ? '✅' : '❌'}
+                    </Text>
+                    {!isMotor && hasMotorPhoto ? (
+                      <Text style={styles.kycDocLabel}>Motosiklet fotoğrafı: ✅</Text>
+                    ) : null}
+                    {isMotor && hasCarPhoto ? (
+                      <Text style={styles.kycDocLabel}>Otomobil fotoğrafı: ✅</Text>
+                    ) : null}
+                    <Text style={styles.kycDocLabel}>Ehliyet: {hasLicense ? '✅' : '❌'}</Text>
+                    <Text style={styles.kycDocLabel}>Selfie: {hasSelfie ? '✅' : '❌'}</Text>
+                  </View>
+
                   {/* Butonlar */}
                   <View style={styles.kycBtnRow}>
                     <TouchableOpacity
@@ -637,7 +754,8 @@ function AdminContent({ adminPhone, onClose }: Props) {
                     </TouchableOpacity>
                   </View>
                 </View>
-              ))
+                );
+              })
             )}
           </View>
         )}
@@ -1125,10 +1243,59 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 2,
   },
-  kycCity: {
-    color: '#3B82F6',
+  kycSubmitted: {
+    color: '#64748B',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  kycKindLine: {
+    color: '#94A3B8',
     fontSize: 13,
+    fontWeight: '600',
     marginBottom: 10,
+  },
+  kycImageSectionTitle: {
+    color: '#CBD5E1',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  kycThumbScroll: {
+    marginBottom: 12,
+    maxHeight: 120,
+  },
+  kycThumbScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingRight: 8,
+  },
+  kycThumbCell: {
+    width: 104,
+  },
+  kycThumbLabel: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  kycThumbImage: {
+    width: 104,
+    height: 88,
+    borderRadius: 8,
+    backgroundColor: '#334155',
+  },
+  kycThumbPlaceholder: {
+    width: 104,
+    height: 88,
+    borderRadius: 8,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kycThumbPlaceholderText: {
+    color: '#64748B',
+    fontSize: 20,
   },
   kycVehicle: {
     backgroundColor: '#334155',
@@ -1140,6 +1307,44 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 13,
     marginBottom: 2,
+  },
+  kycAiBlock: {
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  kycAiBlockTitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  kycAiStatusLine: {
+    color: '#CBD5E1',
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  kycAiStatusValue: {
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  kycAiWarnings: {
+    marginTop: 4,
+  },
+  kycAiWarningLine: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  kycAiNoWarnings: {
+    color: '#64748B',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   kycDocs: {
     flexDirection: 'row',

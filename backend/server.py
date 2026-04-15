@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError, field_validator
-from typing import Annotated, Optional, Tuple
+from typing import Annotated, List, Optional, Tuple
 import os
 import logging
 import uuid
@@ -5030,6 +5030,8 @@ class DriverKYCSubmit(BaseModel):
     vehicle_color: Optional[str] = None
     vehicle_kind: Optional[str] = "car"  # car | motorcycle | motor
     motorcycle_photo_base64: Optional[str] = None  # Motor fotoğrafı
+    ai_status: Optional[str] = None  # green | yellow | red (istemci ön kontrol özeti)
+    ai_warnings: Optional[List[str]] = None
 
 @api_router.post("/driver/kyc/submit")
 async def submit_driver_kyc(data: DriverKYCSubmit):
@@ -5137,6 +5139,13 @@ async def submit_driver_kyc(data: DriverKYCSubmit):
             "kyc_submitted_at": datetime.utcnow().isoformat(),
             "is_verified": False,
         })
+        if data.ai_status is not None and str(data.ai_status).strip():
+            s = str(data.ai_status).strip().lower()[:16]
+            if s in ("green", "yellow", "red"):
+                driver_details["ai_status"] = s
+        if data.ai_warnings is not None:
+            w = [str(x).strip() for x in data.ai_warnings if str(x).strip()][:40]
+            driver_details["ai_warnings"] = w
         if vehicle_url:
             driver_details["vehicle_photo_url"] = vehicle_url
         if motorcycle_url:
@@ -5229,7 +5238,9 @@ async def get_pending_kyc_requests(admin_phone: str):
                     "motorcycle_photo_url": driver_details.get("motorcycle_photo_url"),
                     "license_photo_url": driver_details.get("license_photo_url"),
                     "selfie_url": driver_details.get("selfie_url"),
-                    "submitted_at": driver_details.get("kyc_submitted_at")
+                    "submitted_at": driver_details.get("kyc_submitted_at"),
+                    "ai_status": driver_details.get("ai_status"),
+                    "ai_warnings": driver_details.get("ai_warnings"),
                 })
         
         return {"success": True, "pending_count": len(pending_kycs), "requests": pending_kycs}
@@ -5364,7 +5375,9 @@ async def get_all_kyc_requests(admin_phone: str):
                     "license_photo_url": driver_details.get("license_photo_url"),
                     "selfie_url": driver_details.get("selfie_url"),
                     "submitted_at": driver_details.get("kyc_submitted_at"),
-                    "kyc_status": kyc_status
+                    "kyc_status": kyc_status,
+                    "ai_status": driver_details.get("ai_status"),
+                    "ai_warnings": driver_details.get("ai_warnings"),
                 }
                 
                 if kyc_status == "pending":
