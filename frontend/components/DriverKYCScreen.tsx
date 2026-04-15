@@ -150,40 +150,41 @@ function pickKycSubmitErrorMessage(data: unknown, httpStatus: number): string {
   return 'Başvuru gönderilemedi';
 }
 
+/** Önizleme + sağ üst beyaz “Kırp” chip; onCrop = mevcut galeri/düzenleme akışı (allowsEditing). */
+function PhotoCropHintAndPreview({ uri, onCrop }: { uri: string; onCrop: () => void }) {
+  return (
+    <View style={photoHeroStyles.previewColumn}>
+      <Text style={photoHeroStyles.cropGuide}>Fotoğrafı kırpın ve kadrajı düzeltin</Text>
+      <View style={photoHeroStyles.previewFrame}>
+        <Image source={{ uri }} style={photoHeroStyles.previewImage} resizeMode="cover" />
+        <TouchableOpacity
+          style={photoHeroStyles.cropFabOuter}
+          onPress={onCrop}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Kırp"
+        >
+          <View style={photoHeroStyles.cropFabInner}>
+            <Ionicons name="crop-outline" size={20} color="#0369A1" />
+            <Text style={photoHeroStyles.cropFabLabel}>Kırp</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function PhotoHeroActions({
-  onCropAdjust,
   onRetake,
   onReplace,
   onClear,
 }: {
-  onCropAdjust: () => void;
   onRetake: () => void;
   onReplace: () => void;
   onClear: () => void;
 }) {
   return (
     <View style={photoHeroStyles.wrap}>
-      <TouchableOpacity onPress={onCropAdjust} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Kırp ve kadrajı düzenle">
-        <LinearGradient
-          colors={['#0C4A6E', '#075985', '#0369A1', '#0284C7']}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={photoHeroStyles.ctaGradient}
-        >
-          <View style={photoHeroStyles.ctaIconCircle}>
-            <Ionicons name="crop-outline" size={24} color="#0369A1" />
-          </View>
-          <View style={photoHeroStyles.ctaTextCol}>
-            <Text style={photoHeroStyles.ctaMainTitle}>Kırp ve kadrajı düzenle</Text>
-            <Text style={photoHeroStyles.ctaMainSub}>
-              {Platform.OS === 'web'
-                ? 'Dosyayı yeniden seçerek güncelleyin'
-                : 'Galeriden seçin; düzenleme ve kırpma adımı otomatik açılır'}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.92)" />
-        </LinearGradient>
-      </TouchableOpacity>
       <View style={photoHeroStyles.row2}>
         <TouchableOpacity style={photoHeroStyles.pill} onPress={onRetake} activeOpacity={0.88}>
           <Ionicons name="camera-outline" size={18} color="#0369A1" />
@@ -202,36 +203,71 @@ function PhotoHeroActions({
 }
 
 const photoHeroStyles = StyleSheet.create({
-  wrap: { marginBottom: 16 },
-  ctaGradient: {
+  wrap: { marginBottom: 12 },
+  previewColumn: {
+    marginBottom: 10,
+  },
+  cropGuide: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0369A1',
+    marginBottom: 8,
+    lineHeight: 17,
+    letterSpacing: 0.15,
+  },
+  previewFrame: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: '#38BDF8',
+    backgroundColor: '#0C4A6E',
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  previewImage: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    minHeight: 232,
+    backgroundColor: '#1E293B',
+  },
+  cropFabOuter: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 4,
+    borderRadius: 999,
+    overflow: 'hidden',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+  },
+  cropFabInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    gap: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(125, 211, 252, 0.45)',
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(56, 189, 248, 0.85)',
     shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  ctaIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F0F9FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
+  cropFabLabel: {
+    color: '#0C4A6E',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.35,
   },
-  ctaTextCol: { flex: 1, minWidth: 0 },
-  ctaMainTitle: { fontSize: 17, fontWeight: '800', color: '#F8FAFC', letterSpacing: 0.15 },
-  ctaMainSub: { fontSize: 12, color: 'rgba(224, 242, 254, 0.92)', marginTop: 4, lineHeight: 17, fontWeight: '600' },
   row2: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   pill: {
     flexDirection: 'row',
@@ -1154,12 +1190,15 @@ export default function DriverKYCScreen({
                   {vehiclePhoto ? (
                     <>
                       <PhotoUploadedStatusBar />
-                      <PhotoHeroActions
-                        onCropAdjust={() =>
+                      <PhotoCropHintAndPreview
+                        uri={vehiclePhoto}
+                        onCrop={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('vehicle')
                             : void pickImageMobile('vehicle', 'gallery')
                         }
+                      />
+                      <PhotoHeroActions
                         onRetake={() => void pickImageMobile('vehicle', 'camera')}
                         onReplace={() =>
                           Platform.OS === 'web'
@@ -1168,9 +1207,6 @@ export default function DriverKYCScreen({
                         }
                         onClear={() => setVehiclePhoto(null)}
                       />
-                      <View style={styles.photoHeroFrame}>
-                        <Image source={{ uri: vehiclePhoto }} style={styles.photoHeroImage} resizeMode="cover" />
-                      </View>
                     </>
                   ) : (
                     <EmptyPhotoAddCard
@@ -1216,12 +1252,15 @@ export default function DriverKYCScreen({
                   {licensePhoto ? (
                     <>
                       <PhotoUploadedStatusBar />
-                      <PhotoHeroActions
-                        onCropAdjust={() =>
+                      <PhotoCropHintAndPreview
+                        uri={licensePhoto}
+                        onCrop={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('license')
                             : void pickImageMobile('license', 'gallery')
                         }
+                      />
+                      <PhotoHeroActions
                         onRetake={() => void pickImageMobile('license', 'camera')}
                         onReplace={() =>
                           Platform.OS === 'web'
@@ -1230,9 +1269,6 @@ export default function DriverKYCScreen({
                         }
                         onClear={() => setLicensePhoto(null)}
                       />
-                      <View style={styles.photoHeroFrame}>
-                        <Image source={{ uri: licensePhoto }} style={styles.photoHeroImage} resizeMode="cover" />
-                      </View>
                     </>
                   ) : (
                     <EmptyPhotoAddCard
@@ -1330,12 +1366,15 @@ export default function DriverKYCScreen({
                   {motorcyclePhoto ? (
                     <>
                       <PhotoUploadedStatusBar />
-                      <PhotoHeroActions
-                        onCropAdjust={() =>
+                      <PhotoCropHintAndPreview
+                        uri={motorcyclePhoto}
+                        onCrop={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('motorcycle')
                             : void pickImageMobile('motorcycle', 'gallery')
                         }
+                      />
+                      <PhotoHeroActions
                         onRetake={() => void pickImageMobile('motorcycle', 'camera')}
                         onReplace={() =>
                           Platform.OS === 'web'
@@ -1344,9 +1383,6 @@ export default function DriverKYCScreen({
                         }
                         onClear={() => setMotorcyclePhoto(null)}
                       />
-                      <View style={styles.photoHeroFrame}>
-                        <Image source={{ uri: motorcyclePhoto }} style={styles.photoHeroImage} resizeMode="cover" />
-                      </View>
                     </>
                   ) : (
                     <EmptyPhotoAddCard
@@ -1386,12 +1422,15 @@ export default function DriverKYCScreen({
                   {licensePhoto ? (
                     <>
                       <PhotoUploadedStatusBar />
-                      <PhotoHeroActions
-                        onCropAdjust={() =>
+                      <PhotoCropHintAndPreview
+                        uri={licensePhoto}
+                        onCrop={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('license')
                             : void pickImageMobile('license', 'gallery')
                         }
+                      />
+                      <PhotoHeroActions
                         onRetake={() => void pickImageMobile('license', 'camera')}
                         onReplace={() =>
                           Platform.OS === 'web'
@@ -1400,9 +1439,6 @@ export default function DriverKYCScreen({
                         }
                         onClear={() => setLicensePhoto(null)}
                       />
-                      <View style={styles.photoHeroFrame}>
-                        <Image source={{ uri: licensePhoto }} style={styles.photoHeroImage} resizeMode="cover" />
-                      </View>
                     </>
                   ) : (
                     <EmptyPhotoAddCard
@@ -1441,12 +1477,15 @@ export default function DriverKYCScreen({
                   {selfiePhoto ? (
                     <>
                       <PhotoUploadedStatusBar />
-                      <PhotoHeroActions
-                        onCropAdjust={() =>
+                      <PhotoCropHintAndPreview
+                        uri={selfiePhoto}
+                        onCrop={() =>
                           Platform.OS === 'web'
                             ? handleWebFileSelect('selfie')
                             : void pickImageMobile('selfie', 'gallery')
                         }
+                      />
+                      <PhotoHeroActions
                         onRetake={() => void pickImageMobile('selfie', 'camera')}
                         onReplace={() =>
                           Platform.OS === 'web'
@@ -1455,9 +1494,6 @@ export default function DriverKYCScreen({
                         }
                         onClear={() => setSelfiePhoto(null)}
                       />
-                      <View style={styles.photoHeroFrame}>
-                        <Image source={{ uri: selfiePhoto }} style={styles.photoHeroImage} resizeMode="cover" />
-                      </View>
                     </>
                   ) : (
                     <EmptyPhotoAddCard
@@ -1763,25 +1799,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     lineHeight: 19,
     marginBottom: 12,
-  },
-  photoHeroFrame: {
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#38BDF8',
-    backgroundColor: '#0C4A6E',
-    marginBottom: 4,
-    shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.22,
-    shadowRadius: 24,
-    elevation: 10,
-  },
-  photoHeroImage: {
-    width: '100%',
-    aspectRatio: 4 / 3,
-    minHeight: 232,
-    backgroundColor: '#1E293B',
   },
   stepHelp: {
     fontSize: 13,
