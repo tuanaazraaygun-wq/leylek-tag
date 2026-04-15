@@ -150,26 +150,36 @@ function pickKycSubmitErrorMessage(data: unknown, httpStatus: number): string {
   return 'Başvuru gönderilemedi';
 }
 
-/** Önizleme + sağ üst beyaz “Kırp” chip; onCrop = mevcut galeri/düzenleme akışı (allowsEditing). */
+/** Önizleme + önizlemenin altında büyük kırp CTA; onCrop = mevcut galeri/düzenleme akışı (allowsEditing). */
 function PhotoCropHintAndPreview({ uri, onCrop }: { uri: string; onCrop: () => void }) {
   return (
     <View style={photoHeroStyles.previewColumn}>
-      <Text style={photoHeroStyles.cropGuide}>Fotoğrafı kırpın ve kadrajı düzeltin</Text>
+      <Text style={photoHeroStyles.cropGuide}>Önizlemeyi kontrol edin; gerekirse aşağıdan kırpın.</Text>
       <View style={photoHeroStyles.previewFrame}>
         <Image source={{ uri }} style={photoHeroStyles.previewImage} resizeMode="cover" />
-        <TouchableOpacity
-          style={photoHeroStyles.cropFabOuter}
-          onPress={onCrop}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Kırp"
-        >
-          <View style={photoHeroStyles.cropFabInner}>
-            <Ionicons name="crop-outline" size={20} color="#0369A1" />
-            <Text style={photoHeroStyles.cropFabLabel}>Kırp</Text>
-          </View>
-        </TouchableOpacity>
       </View>
+      <TouchableOpacity
+        style={photoHeroStyles.cropBarOuter}
+        onPress={onCrop}
+        activeOpacity={0.9}
+        accessibilityRole="button"
+        accessibilityLabel="Fotoğrafı kırp ve kadrajı düzelt"
+      >
+        <LinearGradient
+          colors={['#0C4A6E', '#0369A1', '#0284C7']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={photoHeroStyles.cropBarGradient}
+        >
+          <Ionicons name="crop-outline" size={22} color="#FFFFFF" />
+          <Text style={photoHeroStyles.cropBarTitle}>Fotoğrafı kırp ve kadrajı düzelt</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+      <Text style={photoHeroStyles.cropBarHint}>
+        {Platform.OS === 'web'
+          ? 'Dosyayı yeniden seçerek kadrajı güncellersiniz.'
+          : 'Galeri açılır; düzenleme ekranında kırpabilirsiniz.'}
+      </Text>
     </View>
   );
 }
@@ -209,16 +219,15 @@ const photoHeroStyles = StyleSheet.create({
   },
   cropGuide: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0369A1',
     marginBottom: 8,
     lineHeight: 17,
-    letterSpacing: 0.15,
+    letterSpacing: 0.1,
   },
   previewFrame: {
     borderRadius: 22,
     overflow: 'hidden',
-    position: 'relative',
     borderWidth: 2,
     borderColor: '#38BDF8',
     backgroundColor: '#0C4A6E',
@@ -234,39 +243,41 @@ const photoHeroStyles = StyleSheet.create({
     minHeight: 232,
     backgroundColor: '#1E293B',
   },
-  cropFabOuter: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 4,
-    borderRadius: 999,
+  cropBarOuter: {
+    marginTop: 12,
+    borderRadius: 16,
     overflow: 'hidden',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    alignSelf: 'stretch',
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
-    shadowRadius: 10,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  cropFabInner: {
+  cropBarGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(56, 189, 248, 0.85)',
-    shadowColor: '#0369A1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(125, 211, 252, 0.5)',
   },
-  cropFabLabel: {
-    color: '#0C4A6E',
-    fontSize: 14,
+  cropBarTitle: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '800',
-    letterSpacing: 0.35,
+    letterSpacing: 0.2,
+  },
+  cropBarHint: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    lineHeight: 15,
+    textAlign: 'center',
   },
   row2: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   pill: {
@@ -1110,8 +1121,8 @@ export default function DriverKYCScreen({
               <Text style={styles.infoTitlePremium}>AI destekli ön kontrol</Text>
               <Text style={styles.infoBodyPremium}>
                 {isMotorKyc
-                  ? 'Belgeleriniz güvenli şekilde işlenir; her fotoğrafta otomatik kalite ve okunabilirlik kontrolü yapılır. Son onay yine ekip tarafından verilir.'
-                  : 'Plaka ve belge netliği otomatik taranır; bulanık veya eksik kadrajda sizi uyarırız. Bu aşama sizi hızlandırmak içindir — nihai karar insandadır.'}
+                  ? 'Belgeler güvenle işlenir; fotoğraflarda otomatik kalite kontrolü yapılır. Son onay ekiptedir.'
+                  : 'Plaka ve belge netliği taranır; bulanık veya eksik kadrajda uyarı verilir.'}
               </Text>
             </View>
           </View>

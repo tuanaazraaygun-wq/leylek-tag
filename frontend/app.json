@@ -48,7 +48,7 @@
       "versionCode": 24,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
+        "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
@@ -131,7 +131,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/notification-icon.png",
+          "icon": "./assets/images/logo.png",
           "color": "#3FA9F5",
           "sounds": [],
           "defaultChannelId": "default"
@@ -144,7 +144,7 @@
     },
 
     "splash": {
-      "image": "./assets/images/splash-image.png",
+      "image": "./assets/images/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
