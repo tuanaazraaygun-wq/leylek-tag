@@ -18,8 +18,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   Image,
+  Modal,
+  Dimensions,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
 import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
 import {
   type PendingKycRequest,
@@ -27,6 +30,105 @@ import {
   kycVehicleKindLabel,
 } from '../types/adminKyc';
 import { callAlertPrompt } from '../lib/alertPrompt';
+
+type KycAiTier = 'green' | 'yellow' | 'red' | 'unknown';
+
+function kycAiWarningsList(kyc: PendingKycRequest): string[] {
+  const raw = kyc.ai_warnings;
+  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p) ? p.filter((x: unknown): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function kycAiTierFromRequest(kyc: PendingKycRequest): KycAiTier {
+  const s = String(kyc.ai_status || '').toLowerCase().trim();
+  if (s === 'green') return 'green';
+  if (s === 'yellow') return 'yellow';
+  if (s === 'red') return 'red';
+  if (kycAiWarningsList(kyc).length > 0) return 'yellow';
+  return 'unknown';
+}
+
+function kycQuickDecisionBanner(tier: KycAiTier): {
+  label: string;
+  sub: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  bg: string;
+  border: string;
+  accent: string;
+  subColor: string;
+} {
+  switch (tier) {
+    case 'green':
+      return {
+        label: 'Onay önerilir',
+        sub: 'AI ön kontrolü olumlu',
+        icon: 'checkmark-circle',
+        bg: '#052E16',
+        border: '#22C55E',
+        accent: '#4ADE80',
+        subColor: '#86EFAC',
+      };
+    case 'yellow':
+      return {
+        label: 'Dikkatli incele',
+        sub: 'AI uyarı veya belirsizlik',
+        icon: 'alert-circle',
+        bg: '#422006',
+        border: '#FBBF24',
+        accent: '#FDE047',
+        subColor: '#FDE68A',
+      };
+    case 'red':
+      return {
+        label: 'Reddet önerilir',
+        sub: 'AI ciddi sorun işaretledi',
+        icon: 'close-circle',
+        bg: '#450A0A',
+        border: '#F87171',
+        accent: '#FCA5A5',
+        subColor: '#FECACA',
+      };
+    default:
+      return {
+        label: 'AI özeti yok',
+        sub: 'Manuel inceleme',
+        icon: 'analytics-outline',
+        bg: '#1E293B',
+        border: '#64748B',
+        accent: '#E2E8F0',
+        subColor: '#94A3B8',
+      };
+  }
+}
+
+function kycApproveHintLine(tier: KycAiTier): string {
+  switch (tier) {
+    case 'green':
+      return 'AI sonucu iyi, hızlı onaylayabilirsiniz';
+    case 'yellow':
+      return 'AI uyarı verdi; belgeleri dikkatlice doğrulayın';
+    case 'red':
+      return 'AI sorun işaretledi; red veya ek inceleme önerilir';
+    default:
+      return 'Ön kontrol özeti yok; standart inceleme yapın';
+  }
+}
+
+const KYC_REJECT_PRESET_REASONS = [
+  'Belge kalitesi yetersiz',
+  'Bilgi tutarsızlığı',
+  'Ehliyet tipi uygun değil',
+  'Selfie / kimlik doğrulanamadı',
+  'Plaka veya araç uyumsuzluğu',
+] as const;
 
 function tripStatusLabel(status: string | undefined) {
   const s = String(status || '');
@@ -123,7 +225,25 @@ function AdminContent({ adminPhone, onClose }: Props) {
   // KYC states
   const [pendingKYC, setPendingKYC] = useState<PendingKycRequest[]>([]);
   const [approvingKYC, setApprovingKYC] = useState<string | null>(null);
+  const [kycRejectModalUserId, setKycRejectModalUserId] = useState<string | null>(null);
   const [communityCityRequests, setCommunityCityRequests] = useState<any[]>([]);
+
+  type KycDocPreviewItem = { label: string; url: string };
+  const [kycDocPreview, setKycDocPreview] = useState<{
+    items: KycDocPreviewItem[];
+    index: number;
+    subtitle: string;
+  } | null>(null);
+
+  const closeKycDocPreview = () => setKycDocPreview(null);
+
+  const shiftKycDocPreview = (delta: number) => {
+    setKycDocPreview((prev) => {
+      if (!prev || prev.items.length === 0) return prev;
+      const n = (prev.index + delta + prev.items.length) % prev.items.length;
+      return { ...prev, index: n };
+    });
+  };
 
   useEffect(() => {
     loadAll();
@@ -161,7 +281,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
     setApprovingKYC(null);
   };
   
-  const rejectKYC = async (userId: string, reason: string) => {
+  const rejectKYC = async (userId: string, reason: string): Promise<boolean> => {
     try {
       const res = await fetch(`${ADMIN_API_BASE}/admin/kyc/reject?admin_phone=${encodeURIComponent(adminPhoneNorm)}&user_id=${encodeURIComponent(userId)}&reason=${encodeURIComponent(reason)}`, {
         method: 'POST'
@@ -170,11 +290,13 @@ function AdminContent({ adminPhone, onClose }: Props) {
       if (data.success) {
         Alert.alert('Başarılı', 'Başvuru reddedildi');
         loadKYC();
-      } else {
-        Alert.alert('Hata', data.detail || 'Red başarısız');
+        return true;
       }
+      Alert.alert('Hata', data.detail || 'Red başarısız');
+      return false;
     } catch (e: any) {
       Alert.alert('Hata', e.message || 'Red başarısız');
+      return false;
     }
   };
   
@@ -614,8 +736,30 @@ function AdminContent({ adminPhone, onClose }: Props) {
                   { label: 'Ehliyet', url: kyc.license_photo_url },
                   { label: 'Selfie', url: kyc.selfie_url },
                 ];
+                const kycPreviewItems: KycDocPreviewItem[] = thumbSlots
+                  .filter((s) => isSafeKycImageUrl(s.url))
+                  .map((s) => ({ label: s.label, url: String(s.url).trim() }));
+                const kycPreviewSubtitle = [kyc.name, kyc.phone].filter(Boolean).join(' · ') || 'Başvuru';
+                const aiTier = kycAiTierFromRequest(kyc);
+                const quickBanner = kycQuickDecisionBanner(aiTier);
+                const approveHint = kycApproveHintLine(aiTier);
                 return (
                 <View key={kyc.user_id || i} style={styles.kycCard}>
+                  <View
+                    style={[
+                      styles.kycQuickBanner,
+                      { backgroundColor: quickBanner.bg, borderColor: quickBanner.border },
+                    ]}
+                  >
+                    <Ionicons name={quickBanner.icon} size={28} color={quickBanner.accent} />
+                    <View style={styles.kycQuickBannerTextCol}>
+                      <Text style={[styles.kycQuickBannerTitle, { color: quickBanner.accent }]}>
+                        {quickBanner.label}
+                      </Text>
+                      <Text style={[styles.kycQuickBannerSub, { color: quickBanner.subColor }]}>{quickBanner.sub}</Text>
+                    </View>
+                  </View>
+
                   <Text style={styles.kycName}>{kyc.name || 'İsimsiz'}</Text>
                   <Text style={styles.kycPhone}>{kyc.phone || '—'}</Text>
                   <Text style={styles.kycSubmitted}>
@@ -639,15 +783,32 @@ function AdminContent({ adminPhone, onClose }: Props) {
                   >
                     {thumbSlots.map((slot) => {
                       const ok = isSafeKycImageUrl(slot.url);
+                      const openPreview = () => {
+                        if (kycPreviewItems.length === 0) return;
+                        const idx = Math.max(0, kycPreviewItems.findIndex((p) => p.label === slot.label));
+                        setKycDocPreview({
+                          items: kycPreviewItems,
+                          index: idx >= 0 ? idx : 0,
+                          subtitle: kycPreviewSubtitle,
+                        });
+                      };
                       return (
                         <View key={slot.label} style={styles.kycThumbCell}>
                           <Text style={styles.kycThumbLabel}>{slot.label}</Text>
                           {ok ? (
-                            <Image
-                              source={{ uri: slot.url!.trim() }}
-                              style={styles.kycThumbImage}
-                              resizeMode="cover"
-                            />
+                            <TouchableOpacity
+                              activeOpacity={0.88}
+                              onPress={openPreview}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${slot.label} belgesini büyüt`}
+                            >
+                              <Image
+                                source={{ uri: slot.url!.trim() }}
+                                style={styles.kycThumbImage}
+                                resizeMode="cover"
+                              />
+                              <Text style={styles.kycThumbTapHint}>Dokun → büyüt</Text>
+                            </TouchableOpacity>
                           ) : (
                             <View style={styles.kycThumbPlaceholder}>
                               <Text style={styles.kycThumbPlaceholderText}>—</Text>
@@ -716,39 +877,25 @@ function AdminContent({ adminPhone, onClose }: Props) {
                     <Text style={styles.kycDocLabel}>Selfie: {hasSelfie ? '✅' : '❌'}</Text>
                   </View>
 
-                  {/* Butonlar */}
+                  {/* Butonlar — AI hızlı karar */}
                   <View style={styles.kycBtnRow}>
+                    <View style={styles.kycApproveCol}>
+                      <TouchableOpacity
+                        style={[styles.kycBtn, styles.kycApproveBtn, styles.kycBtnStretch]}
+                        onPress={() => approveKYC(kyc.user_id)}
+                        disabled={approvingKYC === kyc.user_id}
+                      >
+                        {approvingKYC === kyc.user_id ? (
+                          <ActivityIndicator color="#FFF" size="small" />
+                        ) : (
+                          <Text style={styles.kycBtnText}>✓ Onayla</Text>
+                        )}
+                      </TouchableOpacity>
+                      <Text style={styles.kycApproveHint}>{approveHint}</Text>
+                    </View>
                     <TouchableOpacity
-                      style={[styles.kycBtn, styles.kycApproveBtn]}
-                      onPress={() => approveKYC(kyc.user_id)}
-                      disabled={approvingKYC === kyc.user_id}
-                    >
-                      {approvingKYC === kyc.user_id ? (
-                        <ActivityIndicator color="#FFF" size="small" />
-                      ) : (
-                        <Text style={styles.kycBtnText}>✓ Onayla</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.kycBtn, styles.kycRejectBtn]}
-                      onPress={() => {
-                        const ok = callAlertPrompt(
-                          'Red Sebebi',
-                          'Başvurunun reddedilme sebebini yazın:',
-                          [
-                            { text: 'İptal', style: 'cancel' },
-                            { text: 'Reddet', onPress: (reason) => rejectKYC(kyc.user_id, reason || 'Belirtilmedi') }
-                          ],
-                          'plain-text'
-                        );
-                        if (!ok) {
-                          Alert.alert(
-                            'Red sebebi',
-                            'Metin girişi bu cihazda kullanılamıyor. Red işlemi için iOS veya alternatif kanalı kullanın.',
-                            [{ text: 'Tamam' }],
-                          );
-                        }
-                      }}
+                      style={[styles.kycBtn, styles.kycRejectBtn, styles.kycRejectBtnNarrow]}
+                      onPress={() => setKycRejectModalUserId(kyc.user_id)}
                     >
                       <Text style={styles.kycBtnText}>✗ Reddet</Text>
                     </TouchableOpacity>
@@ -862,6 +1009,145 @@ function AdminContent({ adminPhone, onClose }: Props) {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      <Modal
+        visible={kycDocPreview !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeKycDocPreview}
+      >
+        <View style={styles.kycPreviewOverlay}>
+          <View style={styles.kycPreviewTopBar}>
+            <View style={styles.kycPreviewTitleCol}>
+              <Text style={styles.kycPreviewDocTitle}>
+                {kycDocPreview?.items[kycDocPreview.index]?.label ?? ''}
+              </Text>
+              <Text style={styles.kycPreviewSubtitle} numberOfLines={1}>
+                {kycDocPreview?.subtitle ?? ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={closeKycDocPreview}
+              style={styles.kycPreviewCloseBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Kapat"
+            >
+              <Text style={styles.kycPreviewCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {kycDocPreview && kycDocPreview.items.length > 0 ? (
+            <View style={styles.kycPreviewImageWrap}>
+              <Image
+                source={{ uri: kycDocPreview.items[kycDocPreview.index].url }}
+                style={styles.kycPreviewImage}
+                resizeMode="contain"
+              />
+            </View>
+          ) : null}
+
+          {kycDocPreview && kycDocPreview.items.length > 1 ? (
+            <View style={styles.kycPreviewNavRow}>
+              <TouchableOpacity
+                onPress={() => shiftKycDocPreview(-1)}
+                style={styles.kycPreviewNavBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Önceki belge"
+              >
+                <Text style={styles.kycPreviewNavBtnText}>‹ Önceki</Text>
+              </TouchableOpacity>
+              <Text style={styles.kycPreviewNavHint}>
+                {kycDocPreview.index + 1} / {kycDocPreview.items.length}
+              </Text>
+              <TouchableOpacity
+                onPress={() => shiftKycDocPreview(1)}
+                style={styles.kycPreviewNavBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Sonraki belge"
+              >
+                <Text style={styles.kycPreviewNavBtnText}>Sonraki ›</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.kycPreviewNavSpacer} />
+          )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={kycRejectModalUserId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setKycRejectModalUserId(null)}
+      >
+        <View style={styles.kycRejectModalOverlay}>
+          <View style={styles.kycRejectModalCard}>
+            <Text style={styles.kycRejectModalTitle}>Red sebebi</Text>
+            <Text style={styles.kycRejectModalHelp}>
+              Hazır seçeneklerden birini kullanın veya özel metin yazın. İsterseniz sebep eklemeden de reddedebilirsiniz.
+            </Text>
+            <ScrollView style={styles.kycRejectModalScroll} keyboardShouldPersistTaps="handled">
+              {KYC_REJECT_PRESET_REASONS.map((reason) => (
+                <TouchableOpacity
+                  key={reason}
+                  style={styles.kycRejectPresetRow}
+                  onPress={async () => {
+                    if (!kycRejectModalUserId) return;
+                    const ok = await rejectKYC(kycRejectModalUserId, reason);
+                    if (ok) setKycRejectModalUserId(null);
+                  }}
+                >
+                  <Ionicons name="chevron-forward-outline" size={20} color="#F87171" />
+                  <Text style={styles.kycRejectPresetText}>{reason}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={styles.kycRejectPresetRow}
+                onPress={async () => {
+                  if (!kycRejectModalUserId) return;
+                  const ok = await rejectKYC(kycRejectModalUserId, 'Belirtilmedi');
+                  if (ok) setKycRejectModalUserId(null);
+                }}
+              >
+                <Ionicons name="remove-circle-outline" size={18} color="#94A3B8" />
+                <Text style={[styles.kycRejectPresetText, styles.kycRejectPresetMuted]}>
+                  Sebep eklemeden reddet
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.kycRejectPresetRow, styles.kycRejectCustomRow]}
+                onPress={() => {
+                  const uid = kycRejectModalUserId;
+                  if (!uid) return;
+                  setKycRejectModalUserId(null);
+                  const ok = callAlertPrompt(
+                    'Özel red sebebi',
+                    'Başvurunun reddedilme sebebini yazın:',
+                    [
+                      { text: 'İptal', style: 'cancel' },
+                      { text: 'Reddet', onPress: (reason) => void rejectKYC(uid, reason || 'Belirtilmedi') },
+                    ],
+                    'plain-text',
+                  );
+                  if (!ok) {
+                    Alert.alert(
+                      'Red sebebi',
+                      'Metin girişi bu cihazda kullanılamıyor. Hazır sebeplerden birini seçmek için Reddet’e tekrar dokunun.',
+                      [{ text: 'Tamam' }],
+                    );
+                  }
+                }}
+              >
+                <Ionicons name="create-outline" size={18} color="#38BDF8" />
+                <Text style={[styles.kycRejectPresetText, styles.kycRejectCustomText]}>Özel sebep yaz…</Text>
+              </TouchableOpacity>
+            </ScrollView>
+            <TouchableOpacity style={styles.kycRejectModalClose} onPress={() => setKycRejectModalUserId(null)}>
+              <Text style={styles.kycRejectModalCloseText}>Vazgeç</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1232,6 +1518,31 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#F59E0B',
   },
+  kycQuickBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    marginBottom: 14,
+    gap: 12,
+  },
+  kycQuickBannerTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  kycQuickBannerTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  kycQuickBannerSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    lineHeight: 17,
+  },
   kycName: {
     color: '#FFF',
     fontSize: 16,
@@ -1296,6 +1607,90 @@ const styles = StyleSheet.create({
   kycThumbPlaceholderText: {
     color: '#64748B',
     fontSize: 20,
+  },
+  kycThumbTapHint: {
+    marginTop: 4,
+    fontSize: 10,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  kycPreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.94)',
+    paddingTop: Platform.OS === 'ios' ? 52 : 28,
+    paddingBottom: 20,
+    paddingHorizontal: 12,
+  },
+  kycPreviewTopBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  kycPreviewTitleCol: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  kycPreviewDocTitle: {
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  kycPreviewSubtitle: {
+    color: '#94A3B8',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  kycPreviewCloseBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kycPreviewCloseText: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  kycPreviewImageWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 200,
+  },
+  kycPreviewImage: {
+    width: '100%',
+    height: Math.min(Dimensions.get('window').height * 0.62, Dimensions.get('window').width * 1.35),
+    maxHeight: Dimensions.get('window').height * 0.68,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+  },
+  kycPreviewNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 14,
+    paddingHorizontal: 4,
+  },
+  kycPreviewNavSpacer: {
+    height: 20,
+  },
+  kycPreviewNavBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  kycPreviewNavBtnText: {
+    color: '#E2E8F0',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  kycPreviewNavHint: {
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: '600',
   },
   kycVehicle: {
     backgroundColor: '#334155',
@@ -1363,6 +1758,11 @@ const styles = StyleSheet.create({
   kycBtnRow: {
     flexDirection: 'row',
     gap: 10,
+    alignItems: 'flex-start',
+  },
+  kycApproveCol: {
+    flex: 1,
+    minWidth: 0,
   },
   kycBtn: {
     flex: 1,
@@ -1370,15 +1770,100 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  kycBtnStretch: {
+    flex: 0,
+    alignSelf: 'stretch',
+    width: '100%',
+  },
   kycApproveBtn: {
     backgroundColor: '#10B981',
   },
   kycRejectBtn: {
     backgroundColor: '#EF4444',
   },
+  kycRejectBtnNarrow: {
+    flex: 0,
+    minWidth: 108,
+    paddingHorizontal: 10,
+  },
+  kycApproveHint: {
+    marginTop: 8,
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 16,
+    fontWeight: '600',
+  },
   kycBtnText: {
     color: '#FFF',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  kycRejectModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  kycRejectModalCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#334155',
+    maxHeight: Math.min(Dimensions.get('window').height * 0.88, 560),
+  },
+  kycRejectModalTitle: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  kycRejectModalHelp: {
+    color: '#94A3B8',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  kycRejectModalScroll: {
+    maxHeight: 320,
+  },
+  kycRejectPresetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#334155',
+    marginBottom: 8,
+  },
+  kycRejectCustomRow: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#0EA5E9',
+  },
+  kycRejectPresetText: {
+    flex: 1,
+    color: '#F1F5F9',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  kycRejectPresetMuted: {
+    color: '#CBD5E1',
+  },
+  kycRejectCustomText: {
+    color: '#7DD3FC',
+  },
+  kycRejectModalClose: {
+    marginTop: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: '#334155',
+  },
+  kycRejectModalCloseText: {
+    color: '#E2E8F0',
+    fontSize: 15,
     fontWeight: '700',
   },
   emptyBox: {
