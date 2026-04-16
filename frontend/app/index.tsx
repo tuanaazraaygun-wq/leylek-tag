@@ -407,6 +407,19 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   return base;
 }
 
+/** `trip_force_ended` sonrası active-tag / check-end polling eski eşleşmeyi geri getirmesin */
+const forceEndLockRef = { current: false };
+let forceEndUnlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+function armForceEndLock() {
+  forceEndLockRef.current = true;
+  if (forceEndUnlockTimer) clearTimeout(forceEndUnlockTimer);
+  forceEndUnlockTimer = setTimeout(() => {
+    forceEndLockRef.current = false;
+    forceEndUnlockTimer = null;
+  }, 5000);
+}
+
 type AppScreen =
   | 'login'
   | 'test-password'
@@ -6338,6 +6351,7 @@ function PassengerDashboard({
   }, [clearIncomingCall]);
 
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const passengerCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isPollingActiveRef = useRef<boolean>(true);
 
   // ==================== SOCKET.IO HOOK - YOLCU ====================
@@ -6631,6 +6645,24 @@ function PassengerDashboard({
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
 
+      armForceEndLock();
+      isPollingActiveRef.current = false;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      if (passengerCheckEndIntervalRef.current) {
+        clearInterval(passengerCheckEndIntervalRef.current);
+        passengerCheckEndIntervalRef.current = null;
+      }
+      try {
+        clearOffers();
+      } catch {
+        /* noop */
+      }
+      setMatchingInProgress(false);
+      setCurrentRequestId(null);
+
       setRatingModalData(null);
       setPassengerDriverForceReview(null);
       passengerForceEndModalHandledTagIdsRef.current.clear();
@@ -6728,6 +6760,10 @@ function PassengerDashboard({
       
       // İlk yükleme
       const fetchDriverLocation = async () => {
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return;
+        }
         try {
           const response = await fetch(`${API_URL}/passenger/driver-location/${activeTag.driver_id}`);
           const data = await response.json();
@@ -6754,6 +6790,10 @@ function PassengerDashboard({
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
     
     const checkTripEndRequest = async () => {
+      if (forceEndLockRef.current) {
+        console.log('POLLING BLOCKED AFTER FORCE END');
+        return;
+      }
       try {
         const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
         const data = await response.json();
@@ -6769,10 +6809,14 @@ function PassengerDashboard({
         console.log('Check trip end error:', error);
       }
     };
-    
+
     checkTripEndRequest();
     const interval = setInterval(checkTripEndRequest, 1000); // 1 saniyede bir kontrol - HIZLI
-    return () => clearInterval(interval);
+    passengerCheckEndIntervalRef.current = interval;
+    return () => {
+      clearInterval(interval);
+      passengerCheckEndIntervalRef.current = null;
+    };
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
   useEffect(() => {
@@ -6784,6 +6828,10 @@ function PassengerDashboard({
       // 🔥 Polling aktif değilse çalıştırma
       if (!isPollingActiveRef.current) {
         console.log('🔄 Polling durdurulmuş, skip...');
+        return;
+      }
+      if (forceEndLockRef.current) {
+        console.log('POLLING BLOCKED AFTER FORCE END');
         return;
       }
       console.log('🔄 Yolcu TAG ve teklifler yükleniyor...');
@@ -6801,6 +6849,10 @@ function PassengerDashboard({
   }, [user?.id]);
 
   const loadActiveTag = async () => {
+    if (forceEndLockRef.current) {
+      console.log('POLLING BLOCKED AFTER FORCE END');
+      return;
+    }
     try {
       const response = await fetch(`${API_URL}/passenger/active-tag?user_id=${user.id}`);
       const data = await response.json();
@@ -6808,6 +6860,10 @@ function PassengerDashboard({
       if (data.success && data.tag) {
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
+          if (forceEndLockRef.current) {
+            console.log('POLLING BLOCKED AFTER FORCE END');
+            return;
+          }
           console.log('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
           
           // 🔥 POLLING'İ DURDUR - sonsuz döngüyü engelle
@@ -6872,9 +6928,17 @@ function PassengerDashboard({
         }
         
         // Aktif tag varsa, cancelled flag'i sıfırla
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return;
+        }
         setCancelledAlertShown(false);
         setActiveTag((prev) => mergeTripTagState(prev, data.tag as Tag));
       } else {
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return;
+        }
         setActiveTag((prev) => {
           if (data.success === false && prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
             return prev;
@@ -8579,6 +8643,7 @@ function PassengerDashboard({
                   onConfirm={async () => {
                     if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
+                    console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
                       console.log('FRONTEND_FORCE_END_CONFIRM_START', {
@@ -8596,6 +8661,12 @@ function PassengerDashboard({
                       });
                       const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
                       const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+                      console.log('FORCE_END_CONFIRM_SENT', {
+                        tag_id: tid,
+                        ok: !!r?.ok,
+                        status: r?.status ?? null,
+                        role: 'passenger',
+                      });
                       if (!r) {
                         appAlert('Hata', 'Onay gönderilemedi (bağlantı zaman aşımı).');
                         return;
@@ -8621,6 +8692,7 @@ function PassengerDashboard({
                   onReject={async () => {
                     if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
+                    console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'passenger' });
                     setPassengerForceEndReviewSubmitting(true);
                     try {
                       console.log('FRONTEND_FORCE_END_CONFIRM_START', {
@@ -8638,6 +8710,12 @@ function PassengerDashboard({
                       });
                       const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
                       const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+                      console.log('FORCE_END_CONFIRM_SENT', {
+                        tag_id: tid,
+                        ok: !!r?.ok,
+                        status: r?.status ?? null,
+                        role: 'passenger',
+                      });
                       if (!r) {
                         appAlert('Hata', 'Yanıt gönderilemedi (bağlantı zaman aşımı).');
                         return;
@@ -9202,6 +9280,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
+  const driverDataPollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
   
@@ -9246,6 +9326,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const lastOfferPushNotificationIdRef = useRef<string | null>(null);
 
   const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string) => {
+    if (forceEndLockRef.current) {
+      console.log('POLLING BLOCKED AFTER FORCE END');
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/trip/${tagId}`);
       const json = await res.json();
@@ -9746,6 +9830,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
 
+      armForceEndLock();
+      if (driverDataPollingIntervalRef.current) {
+        clearInterval(driverDataPollingIntervalRef.current);
+        driverDataPollingIntervalRef.current = null;
+      }
+      if (driverCheckEndIntervalRef.current) {
+        clearInterval(driverCheckEndIntervalRef.current);
+        driverCheckEndIntervalRef.current = null;
+      }
+
       setRatingModalData(null);
       setDriverPassengerForceEndReview(null);
       driverForceEndModalHandledTagIdsRef.current.clear();
@@ -9970,9 +10064,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     const interval = setInterval(() => {
       loadData().catch((e) => console.log('loadData polling error:', e));
     }, 2500); // Socket kaçırırsa dispatch-pending-offer ile yakala
+    driverDataPollingIntervalRef.current = interval;
     return () => {
       console.log('🔄 Sürücü polling durduruldu');
       clearInterval(interval);
+      driverDataPollingIntervalRef.current = null;
     };
   }, [user?.id]);
 
@@ -9996,6 +10092,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   useEffect(() => {
     if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
       const interval = setInterval(async () => {
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return;
+        }
         try {
           // Yolcu konumunu backend'den al
           const response = await fetch(`${API_URL}/driver/passenger-location/${activeTag.passenger_id}`);
@@ -10018,6 +10118,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
     
     const checkTripEndRequest = async () => {
+      if (forceEndLockRef.current) {
+        console.log('POLLING BLOCKED AFTER FORCE END');
+        return;
+      }
       try {
         const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
         const data = await response.json();
@@ -10033,10 +10137,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         console.log('Check trip end error:', error);
       }
     };
-    
+
     checkTripEndRequest();
     const interval = setInterval(checkTripEndRequest, 1000); // 1 saniyede bir kontrol - HIZLI
-    return () => clearInterval(interval);
+    driverCheckEndIntervalRef.current = interval;
+    return () => {
+      clearInterval(interval);
+      driverCheckEndIntervalRef.current = null;
+    };
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
   // 🆕 Yolcu detaylarını çek (Harita Bilgi Kartı için)
@@ -10197,6 +10305,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   }, [user?.id, emitDriverLocationUpdate, driverLiveMapNavigationMode]);
 
   const loadData = async () => {
+    if (forceEndLockRef.current) {
+      console.log('POLLING BLOCKED AFTER FORCE END');
+      return;
+    }
     const trip = await loadActiveTag();
     const busy = trip && ['matched', 'in_progress'].includes(String(trip.status || ''));
     if (!busy) {
@@ -10207,6 +10319,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   /** Sıralı dispatch: uygulama resume / polling ile DB'deki aktif teklifi listeye ekle */
   const loadDispatchPendingOffer = async () => {
+    if (forceEndLockRef.current) {
+      console.log('POLLING BLOCKED AFTER FORCE END');
+      return;
+    }
     if (!user?.id) return;
     try {
       const res = await fetch(
@@ -10289,6 +10405,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   };
 
   const loadActiveTag = async (): Promise<Record<string, unknown> | null> => {
+    if (forceEndLockRef.current) {
+      console.log('POLLING BLOCKED AFTER FORCE END');
+      return null;
+    }
     try {
       const response = await fetch(`${API_URL}/driver/active-tag?user_id=${user.id}`);
       const data = await response.json();
@@ -10296,6 +10416,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       if (data.success && data.tag) {
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
+          if (forceEndLockRef.current) {
+            console.log('POLLING BLOCKED AFTER FORCE END');
+            return null;
+          }
           console.log('🛑 ŞOFÖR loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
           
           // 🔥 Alert'i sadece bir kez göster - aynı tag için tekrar gösterme
@@ -10348,10 +10472,18 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         }
         
         // Aktif tag varsa, cancelled flag'i sıfırla
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return null;
+        }
         setCancelledAlertShown(false);
         setActiveTag((prev) => mergeTripTagState(prev, data.tag as Tag));
         return data.tag;
       } else {
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return null;
+        }
         setActiveTag((prev) => {
           if (data.success === false && prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
             return prev;
@@ -10408,6 +10540,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   }, [user?.id, activeTag?.id, driverEndReqSig, driverPassengerForceEndReview?.tagId]);
 
   const loadRequests = async () => {
+    if (forceEndLockRef.current) {
+      console.log('POLLING BLOCKED AFTER FORCE END');
+      return;
+    }
     if (!user?.id) return;
     try {
       const q = new URLSearchParams({ user_id: String(user.id) });
@@ -11695,6 +11831,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         onConfirm={async () => {
           if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
+          console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: true, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
             console.log('FRONTEND_FORCE_END_CONFIRM_START', {
@@ -11712,6 +11849,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             });
             const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
             const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+            console.log('FORCE_END_CONFIRM_SENT', {
+              tag_id: tid,
+              ok: !!r?.ok,
+              status: r?.status ?? null,
+              role: 'driver',
+            });
             if (!r) {
               appAlert('Hata', 'Onay gönderilemedi (bağlantı zaman aşımı).');
               return;
@@ -11737,6 +11880,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         onReject={async () => {
           if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
+          console.log('FORCE_END_CONFIRM_CLICKED', { tag_id: tid, approved: false, role: 'driver' });
           setDriverForceEndReviewSubmitting(true);
           try {
             console.log('FRONTEND_FORCE_END_CONFIRM_START', {
@@ -11754,6 +11898,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             });
             const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
             const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+            console.log('FORCE_END_CONFIRM_SENT', {
+              tag_id: tid,
+              ok: !!r?.ok,
+              status: r?.status ?? null,
+              role: 'driver',
+            });
             if (!r) {
               appAlert('Hata', 'Yanıt gönderilemedi (bağlantı zaman aşımı).');
               return;
