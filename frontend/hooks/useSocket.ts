@@ -544,10 +544,7 @@ export default function useSocket({
     })();
   }, [socket, userRole]);
 
-  useEffect(() => {
-    if (!socket?.connected || !userId || !userRole) return;
-    registerUser(userId, userRole);
-  }, [socket?.connected, socket?.id, userId, userRole, registerUser]);
+  // register: yalnızca SocketProvider (scheduleSocketRegister) — çift emit / yarış önlenir
 
   // ══════════ ARAMA FONKSİYONLARI ══════════
 

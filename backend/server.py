@@ -299,9 +299,10 @@ async def register(sid, data):
         data = {}
     client_declares_uid = str(data.get("user_id") or "").strip()
     logger.info(
-        "SOCKET_REGISTER_ATTEMPT sid=%s client_declares_user_id=%s",
+        "SOCKET_REGISTER_ATTEMPT sid=%s client_declares_user_id=%s role=%s",
         sid,
         client_declares_uid or None,
+        (data.get("role") if isinstance(data, dict) else None),
     )
     token = (data.get("token") or "").strip()
     if not token:
@@ -355,7 +356,11 @@ async def register(sid, data):
     await sio.enter_room(sid, room_name)
 
     logger.info("SOCKET_USER_ID sid=%s user_id=%s", sid, resolved_uid)
-    logger.info("SOCKET_JOIN_ROOM sid=%s room=%s", sid, room_name)
+    try:
+        _rc = sum(1 for _ in sio.manager.get_participants("/", room_name))
+    except Exception:
+        _rc = -1
+    logger.info("SOCKET_JOIN_ROOM sid=%s room=%s room_member_count=%s", sid, room_name, _rc)
 
     _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
     logger.info(
@@ -368,8 +373,8 @@ async def register(sid, data):
         "registered",
         {
             "success": True,
-            "user_id": resolved_uid,
             "room": room_name,
+            "user_id": resolved_uid,
             "resolved_user_id": resolved_uid,
         },
         room=sid,
@@ -1518,6 +1523,73 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         logger.warning(f"{event_name} emit hatası: {e}")
 
 
+def _socketio_room_member_count(room: str) -> int:
+    """user_<id> odasındaki socket sayısı (bilinmiyorsa -1)."""
+    try:
+        return sum(1 for _ in sio.manager.get_participants("/", room))
+    except Exception:
+        pass
+    return -1
+
+
+def _connected_sid_for_user(user_id: str) -> str | None:
+    """connected_users içinde esnek anahtar eşleşmesi ile sid bul."""
+    if user_id is None:
+        return None
+    u = str(user_id).strip()
+    if not u:
+        return None
+    ul = u.lower()
+    sid = connected_users.get(u) or connected_users.get(ul)
+    if sid:
+        return sid
+    for k, s in list(connected_users.items()):
+        if isinstance(k, str) and k.strip().lower() == ul:
+            return s
+    return None
+
+
+async def emit_trip_force_ended_to_party(
+    target_user_id: str,
+    payload: dict,
+    log_label: str,
+    tag_id: str,
+) -> bool:
+    """
+    Zorla bitir sonrası trip_force_ended: önce user room, sonra sid map (room boş / üyelik drift ihtimali).
+    Dönüş: en az bir alıcı yolu (oda dolu veya sid biliniyor) varsa ve emit'ler exception vermediyse True.
+    """
+    raw_display = str(target_user_id).strip()
+    raw_l = raw_display.lower()
+    room = _normalize_user_room(raw_l)
+    room_n = _socketio_room_member_count(room)
+    sid_hit = _connected_sid_for_user(raw_display) or _connected_sid_for_user(raw_l)
+    # room_n < 0: sayım başarısız — room emit yine denendiği için iyimser kabul
+    had_recipient = bool(sid_hit) or (room_n > 0) or (room_n < 0)
+    err = False
+    try:
+        await sio.emit("trip_force_ended", payload, room=room)
+    except Exception as ex:
+        err = True
+        logger.warning("%s room_emit_fail tag_id=%s room=%s err=%s", log_label, tag_id, room, ex)
+    if sid_hit:
+        try:
+            await sio.emit("trip_force_ended", payload, to=sid_hit)
+        except Exception as ex:
+            err = True
+            logger.warning("%s sid_emit_fail tag_id=%s sid=%s err=%s", log_label, tag_id, sid_hit, ex)
+    logger.info(
+        "%s tag_id=%s target_user=%s room=%s room_member_count=%s sid=%s",
+        log_label,
+        tag_id,
+        raw_display,
+        room,
+        room_n,
+        sid_hit or "none",
+    )
+    return bool(had_recipient and not err)
+
+
 FORCE_END_COUNTERPARTY_KIND = "force_end_counterparty"
 
 
@@ -1690,24 +1762,14 @@ async def resolve_force_end_counterparty(
         pid_r,
         did_r,
     )
-    emit_ok = 0
-    emit_fail = 0
+    passenger_emit_ok = False
+    driver_emit_ok = False
     for uid in [pid_r, did_r]:
         if not uid:
             continue
         raw_l = str(uid).strip().lower()
-        room = _normalize_user_room(raw_l)
-        sid_hit = connected_users.get(raw_l) or connected_users.get(str(uid).strip())
         is_passenger_target = raw_l == str(pid_r).strip().lower()
         _emit_label = "FORCE_END_EMIT_PASSENGER_ROOM" if is_passenger_target else "FORCE_END_EMIT_DRIVER_ROOM"
-        logger.info(
-            "%s tag_id=%s target_user=%s room=%s sid=%s",
-            _emit_label,
-            tid,
-            uid,
-            room,
-            sid_hit or "none",
-        )
         is_initiator = str(uid).strip().lower() == ini_r.lower()
         penalty = 0 if approved else 5
         pl = {
@@ -1717,17 +1779,20 @@ async def resolve_force_end_counterparty(
             "new_rating": new_rating if (is_initiator and not approved) else None,
         }
         try:
-            await emit_socket_event_to_user(uid, "trip_force_ended", pl)
-            emit_ok += 1
+            ok = await emit_trip_force_ended_to_party(uid, pl, _emit_label, tid)
         except Exception as emit_err:
-            emit_fail += 1
-            logger.warning(f"resolve_force_end_counterparty trip_force_ended: {emit_err}")
+            ok = False
+            logger.warning("resolve_force_end_counterparty trip_force_ended: %s", emit_err)
+        if is_passenger_target:
+            passenger_emit_ok = ok
+        else:
+            driver_emit_ok = ok
 
     logger.info(
-        "FORCE_END_EMIT_DONE tag_id=%s trip_force_ended emit_ok=%s emit_fail=%s",
+        "FORCE_END_EMIT_DONE tag_id=%s passenger_emit_ok=%s driver_emit_ok=%s",
         tid,
-        emit_ok,
-        emit_fail,
+        passenger_emit_ok,
+        driver_emit_ok,
     )
 
     return {
@@ -6074,22 +6139,67 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
 # Aksi halde "check-end-request" path segmenti tag_id sanılır ve Supabase id=eq.check-end-request hatası oluşur.
 @api_router.get("/trip/check-end-request")
 async def check_end_request(tag_id: str, user_id: str):
-    """Sonlandırma isteği var mı kontrol et - Supabase'den oku"""
+    """Sonlandırma isteği var mı — eski mutual end_request veya force_end_counterparty."""
     try:
         result = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
 
-        if result.data and len(result.data) > 0:
-            request = result.data[0].get("end_request")
+        if not result.data:
+            return {"success": True, "has_request": False}
 
-            if request and request.get("status") == "pending" and request.get("requester_id") != user_id:
-                return {
-                    "success": True,
-                    "has_request": True,
-                    "requester_id": request["requester_id"],
-                    "requester_type": request.get("user_type", "unknown"),
-                }
+        er = result.data[0].get("end_request")
+        if not er or not isinstance(er, dict):
+            return {"success": True, "has_request": False}
 
-        return {"success": True, "has_request": False}
+        if str(er.get("status") or "").lower() != "pending":
+            return {"success": True, "has_request": False}
+
+        try:
+            viewer = await resolve_user_id(str(user_id).strip()) or str(user_id).strip()
+        except Exception:
+            viewer = str(user_id).strip()
+        viewer_l = str(viewer).strip().lower()
+
+        kind = str(er.get("kind") or "").strip()
+        if kind == FORCE_END_COUNTERPARTY_KIND:
+            ini = str(er.get("initiator_id") or "").strip()
+            try:
+                ini_r = await resolve_user_id(ini) if ini else None
+                if ini_r:
+                    ini_r = str(ini_r).strip()
+                else:
+                    ini_r = ini
+            except Exception:
+                ini_r = ini
+            ini_l = str(ini_r or "").strip().lower()
+            if not ini_l:
+                return {"success": True, "has_request": False}
+            if ini_l == viewer_l:
+                return {"success": True, "has_request": False}
+            it = er.get("initiator_type") or "unknown"
+            return {
+                "success": True,
+                "has_request": True,
+                "requester_id": ini_r,
+                "requester_type": str(it),
+                "request_kind": "force_end_counterparty",
+            }
+
+        rid = er.get("requester_id")
+        if not rid:
+            return {"success": True, "has_request": False}
+        try:
+            rq_r = await resolve_user_id(str(rid).strip()) or str(rid).strip()
+        except Exception:
+            rq_r = str(rid).strip()
+        if str(rq_r).strip().lower() == viewer_l:
+            return {"success": True, "has_request": False}
+        return {
+            "success": True,
+            "has_request": True,
+            "requester_id": rq_r,
+            "requester_type": er.get("user_type", "unknown"),
+            "request_kind": "trip_end",
+        }
     except Exception as e:
         logger.error(f"Check end request error: {e}")
         return {"success": False, "has_request": False}

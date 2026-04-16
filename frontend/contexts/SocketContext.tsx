@@ -94,10 +94,6 @@ function getOrCreateSocket(): Socket {
       reconnectAttempts = 0;
     });
 
-    singletonSocket.on('registered', (data) => {
-      console.log('✅ [SocketContext] Kayıt başarılı:', data);
-    });
-
     singletonSocket.on('pong_keepalive', () => {});
   }
   return singletonSocket;
@@ -218,6 +214,9 @@ export function SocketProvider({ children }: SocketProviderProps) {
   /** JWT + user_<id> room: token veya user ref’leri gecikirse birkaç kez dene (ilk açılış / reconnect / resume). */
   const registerGenRef = useRef(0);
   const registerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSocketIdRef = useRef<string | null>(null);
+  /** Son register emit'inden sonra `registered` success ack geldi mi (watchdog için). */
+  const registerAckOkRef = useRef(false);
 
   const scheduleSocketRegister = useCallback((reason: string) => {
     registerGenRef.current += 1;
@@ -226,34 +225,52 @@ export function SocketProvider({ children }: SocketProviderProps) {
       clearTimeout(registerTimerRef.current);
       registerTimerRef.current = null;
     }
+    const maxAttempts = 80;
+    const baseDelayMs = 400;
     const tryOnce = (attempt: number) => {
       void (async () => {
         if (myGen !== registerGenRef.current) return;
         const sock = socketRef.current;
         if (!sock?.connected) {
-          if (attempt < 28) {
-            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), 350);
+          if (attempt < maxAttempts) {
+            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
           }
           return;
         }
         const uid = userIdRef.current;
         const role = userRoleRef.current;
         if (!uid || !role) {
-          if (attempt < 28) {
-            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), 350);
+          if (attempt < maxAttempts) {
+            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
           }
           return;
         }
         const token = await getPersistedAccessToken();
         if (!token) {
-          if (attempt < 28) {
-            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), 350);
+          if (attempt < maxAttempts) {
+            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
           }
           return;
         }
         if (myGen !== registerGenRef.current) return;
-        console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role, reason, attempt });
+        if (attempt === 0) {
+          console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role, reason, attempt });
+        } else {
+          console.log('FRONTEND_SOCKET_REGISTER_RETRY', { userId: uid, role, reason, attempt });
+        }
+        registerAckOkRef.current = false;
         sock.emit('register', { token, role, user_id: uid });
+        registerTimerRef.current = setTimeout(() => {
+          if (myGen !== registerGenRef.current) return;
+          if (!registerAckOkRef.current && socketRef.current?.connected && userIdRef.current && userRoleRef.current) {
+            console.log('FRONTEND_SOCKET_REGISTER_RETRY', {
+              userId: userIdRef.current,
+              role: userRoleRef.current,
+              reason: 'register_no_ack_within_8s',
+            });
+            scheduleSocketRegister('register_no_ack_within_8s');
+          }
+        }, 8000);
       })();
     };
     tryOnce(0);
@@ -320,8 +337,17 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // Bağlantı durumu listener'ları
     const handleConnect = () => {
-      console.log('✅ [SocketProvider] Socket bağlandı:', socket.id);
+      const sid = socket.id ?? null;
+      console.log('✅ [SocketProvider] Socket bağlandı:', sid);
       setIsConnected(true);
+      setIsRegistered(false);
+      registerAckOkRef.current = false;
+      if (sid && lastSocketIdRef.current !== sid) {
+        console.log('FRONTEND_SOCKET_ID_CHANGED', { socket_id: sid, prev: lastSocketIdRef.current });
+        lastSocketIdRef.current = sid;
+      } else if (sid) {
+        lastSocketIdRef.current = sid;
+      }
       scheduleSocketRegister('socket_connect');
     };
 
@@ -329,17 +355,32 @@ export function SocketProvider({ children }: SocketProviderProps) {
       console.log('⚠️ [SocketProvider] Socket koptu:', reason);
       setIsConnected(false);
       setIsRegistered(false);
+      lastSocketIdRef.current = null;
     };
 
     const handleReconnect = (attemptNumber: number) => {
       console.log('🔄 [SocketProvider] Reconnect başarılı, attempt:', attemptNumber);
+      setIsRegistered(false);
       scheduleSocketRegister('socket_reconnect');
     };
 
     const handleRegistered = (data: any) => {
       console.log('FRONTEND_SOCKET_REGISTER_ACK', data);
-      console.log('✅ [SocketProvider] Kayıt başarılı:', data);
-      setIsRegistered(true);
+      if (data?.success === true && data?.room) {
+        registerAckOkRef.current = true;
+        setIsRegistered(true);
+        if (registerTimerRef.current) {
+          clearTimeout(registerTimerRef.current);
+          registerTimerRef.current = null;
+        }
+        return;
+      }
+      registerAckOkRef.current = false;
+      setIsRegistered(false);
+      console.warn('⚠️ [SocketProvider] register başarısız veya room yok:', data);
+      registerTimerRef.current = setTimeout(() => {
+        scheduleSocketRegister('register_ack_failed');
+      }, 1500);
     };
 
     socket.on('connect', handleConnect);
