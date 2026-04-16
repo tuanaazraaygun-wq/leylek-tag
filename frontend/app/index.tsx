@@ -6940,6 +6940,11 @@ function PassengerDashboard({
           return;
         }
         setActiveTag((prev) => {
+          if (data.success === true && !data.tag)
+            if (prev) setPassengerChatVisible(false);
+            return null;
+          }
+
           if (data.success === false && prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
             return prev;
           }
