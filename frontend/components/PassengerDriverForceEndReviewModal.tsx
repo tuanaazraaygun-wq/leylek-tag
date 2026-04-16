@@ -17,12 +17,15 @@ export type PassengerDriverForceEndReviewModalProps = {
   visible: boolean;
   onConfirm: () => void;
   onReject: () => void;
+  /** Varsayılan: sürücü zorla bitirdi metni */
+  title?: string;
 };
 
 export default function PassengerDriverForceEndReviewModal({
   visible,
   onConfirm,
   onReject,
+  title,
 }: PassengerDriverForceEndReviewModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -74,7 +77,9 @@ export default function PassengerDriverForceEndReviewModal({
               <Ionicons name="alert-circle" size={40} color="#FFF" />
             </LinearGradient>
           </View>
-          <Text style={styles.title}>Sürücü eşleşmeyi zorla bitirdi</Text>
+          <Text style={styles.title}>
+            {title?.trim() ? title.trim() : 'Sürücü eşleşmeyi zorla bitirdi'}
+          </Text>
           <Text style={styles.description}>Bu bitişi onaylıyor musunuz?</Text>
           <View style={styles.buttonColumn}>
             <TouchableOpacity style={styles.primaryBtn} onPress={onConfirm} activeOpacity={0.88}>

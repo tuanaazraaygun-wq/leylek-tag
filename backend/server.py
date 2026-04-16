@@ -510,43 +510,27 @@ async def deduct_points(user_id: str, points: int, reason: str):
 
 @sio.event
 async def force_end_trip(sid, data):
-    """Yolculuğu ANINDA bitir — HTTP ile aynı; sürücü için yolcu onayı beklenir."""
+    """Yolculuğu ANINDA bitir — HTTP ile aynı (karşı taraf onayı sonradan)."""
     data = data or {}
     tag_id = data.get("tag_id")
     ender_id = data.get("ender_id")
     ender_type = data.get("ender_type")
     logger.info(f"🔚 FORCE END TRIP (socket): {tag_id} by {ender_id} ({ender_type})")
     try:
-        et = (ender_type or "").strip().lower()
-        if et == "driver":
-            result = await request_driver_force_end_review(str(tag_id).strip(), str(ender_id).strip())
-        else:
-            result = await apply_force_end_trip_and_notify(tag_id, ender_id, ender_type)
+        result = await apply_force_end_trip_and_notify(str(tag_id).strip(), str(ender_id).strip(), ender_type)
         if result.get("success"):
-            if result.get("pending_passenger_review"):
-                await sio.emit(
-                    "trip_end_confirmed",
-                    {
-                        "success": True,
-                        "tag_id": tag_id,
-                        "pending_passenger_review": True,
-                        "idempotent": result.get("idempotent"),
-                    },
-                    room=sid,
-                )
-            else:
-                await sio.emit(
-                    "trip_end_confirmed",
-                    {
-                        "success": True,
-                        "tag_id": tag_id,
-                        "points_deducted": 3 if not result.get("idempotent") else 0,
-                        "new_points": result.get("new_points"),
-                        "new_rating": result.get("new_rating"),
-                        "idempotent": result.get("idempotent"),
-                    },
-                    room=sid,
-                )
+            await sio.emit(
+                "trip_end_confirmed",
+                {
+                    "success": True,
+                    "tag_id": tag_id,
+                    "points_deducted": 0,
+                    "new_points": result.get("new_points"),
+                    "new_rating": result.get("new_rating"),
+                    "idempotent": result.get("idempotent"),
+                },
+                room=sid,
+            )
         else:
             await sio.emit(
                 "trip_end_confirmed",
@@ -1516,172 +1500,72 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         logger.warning(f"{event_name} emit hatası: {e}")
 
 
-FORCE_END_REVIEW_KIND = "driver_force_end_review"
+FORCE_END_COUNTERPARTY_KIND = "force_end_counterparty"
 
 
-async def request_driver_force_end_review(tag_id: str, driver_id: str) -> dict:
-    """
-    Sürücü zorla bitir — yolcu onayı beklenir (tag matched kalır, end_request ile işaretlenir).
-    Idempotent: aynı tag'de zaten bekleyen inceleme varsa success döner.
-    """
-    tid = str(tag_id).strip()
-    try:
-        resolved_driver = await resolve_user_id(str(driver_id).strip())
-        if resolved_driver:
-            resolved_driver = str(resolved_driver).strip()
-        else:
-            resolved_driver = str(driver_id).strip()
-    except Exception:
-        resolved_driver = str(driver_id).strip()
-
-    try:
-        tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
-    except Exception as e:
-        logger.error(f"request_driver_force_end_review: tag okunamadı: {e}")
-        return {"success": False, "error": "TAG okunamadı"}
-
-    if not tr.data:
-        return {"success": False, "error": "TAG bulunamadı"}
-
-    tag = tr.data[0]
-    pid_raw = tag.get("passenger_id")
-    did_raw = tag.get("driver_id")
-
-    passenger_id = None
-    driver_row_id = None
-    if pid_raw:
-        try:
-            passenger_id = await resolve_user_id(str(pid_raw).strip())
-            if passenger_id:
-                passenger_id = str(passenger_id).strip()
-        except Exception:
-            passenger_id = str(pid_raw).strip()
-    if did_raw:
-        try:
-            driver_row_id = await resolve_user_id(str(did_raw).strip())
-            if driver_row_id:
-                driver_row_id = str(driver_row_id).strip()
-        except Exception:
-            driver_row_id = str(did_raw).strip()
-
-    if not passenger_id or not driver_row_id:
-        return {"success": False, "error": "Eşleşme bilgisi eksik"}
-
-    if resolved_driver.lower() != driver_row_id.lower():
-        return {"success": False, "error": "Bu işlem için sürücü olmalısınız"}
-
-    st = (tag.get("status") or "").lower()
-    if st in ("completed", "cancelled"):
-        return {"success": True, "idempotent": True, "pending_passenger_review": False, "message": "Yolculuk zaten sonlanmış"}
-
-    if st not in ("matched", "in_progress"):
-        return {"success": False, "error": "Aktif eşleşme yok (zorla bitirilemez)"}
-
-    existing = tag.get("end_request")
-    if isinstance(existing, dict) and existing.get("kind") != FORCE_END_REVIEW_KIND:
-        if existing.get("status") == "pending" and existing.get("requester_id"):
-            return {"success": False, "error": "Bekleyen bir sonlandırma isteği var"}
-
-    if isinstance(existing, dict) and existing.get("kind") == FORCE_END_REVIEW_KIND:
-        if str(existing.get("driver_id", "")).lower() == resolved_driver.lower():
-            logger.info("driver_forced_end_requested (idempotent) tag=%s driver=%s", tid, resolved_driver[:12])
-            return {
-                "success": True,
-                "idempotent": True,
-                "pending_passenger_review": True,
-                "tag_id": tid,
-                "driver_id": driver_row_id,
-                "passenger_id": passenger_id,
-            }
-
-    now_iso = datetime.utcnow().isoformat()
-    review = {
-        "kind": FORCE_END_REVIEW_KIND,
-        "driver_id": driver_row_id,
-        "passenger_id": passenger_id,
-        "requested_at": now_iso,
-        "status": "awaiting_passenger",
-    }
-    try:
-        supabase.table("tags").update({"end_request": review}).eq("id", tid).execute()
-    except Exception as e:
-        logger.error(f"request_driver_force_end_review: güncellenemedi: {e}")
-        return {"success": False, "error": str(e)}
-
-    logger.info("driver_forced_end_requested tag=%s driver=%s passenger=%s", tid, resolved_driver[:12], (passenger_id or "")[:12])
-
-    ender_name = ""
-    try:
-        _en = supabase.table("users").select("name").eq("id", resolved_driver).limit(1).execute()
-        if _en.data:
-            ender_name = (str(_en.data[0].get("name") or "")).strip()
-    except Exception:
-        pass
-
-    await emit_socket_event_to_user(
-        passenger_id,
-        "driver_forced_end_requested",
-        {
-            "tag_id": tid,
-            "driver_id": driver_row_id,
-            "driver_name": ender_name,
-            "passenger_id": passenger_id,
-        },
-    )
-    await emit_socket_event_to_user(
-        driver_row_id,
-        "driver_forced_end_pending",
-        {"tag_id": tid, "passenger_id": passenger_id},
-    )
-
-    return {
-        "success": True,
-        "pending_passenger_review": True,
-        "tag_id": tid,
-        "driver_id": driver_row_id,
-        "passenger_id": passenger_id,
-    }
-
-
-async def resolve_driver_force_end_from_passenger(
+async def resolve_force_end_counterparty(
     tag_id: str,
-    passenger_responder_id: str,
-    driver_id: str,
+    responder_id: str,
+    initiator_id: str,
     approved: bool,
 ) -> dict:
-    """Yolcu onayı / reddi sonrası tag'i tamamlar; reddedilirse sürücüye -5 puan."""
+    """Zorla bitirmede karşı taraf onayı: onay=0 ceza, red=zorla bitirene -5. end_request.status resolved ise idempotent."""
     tid = str(tag_id).strip()
     try:
-        pr = await resolve_user_id(str(passenger_responder_id).strip())
-        if pr:
-            pr = str(pr).strip()
+        rr = await resolve_user_id(str(responder_id).strip())
+        if rr:
+            rr = str(rr).strip()
         else:
-            pr = str(passenger_responder_id).strip()
+            rr = str(responder_id).strip()
     except Exception:
-        pr = str(passenger_responder_id).strip()
+        rr = str(responder_id).strip()
 
     try:
-        dr = await resolve_user_id(str(driver_id).strip())
-        if dr:
-            dr = str(dr).strip()
+        ir = await resolve_user_id(str(initiator_id).strip())
+        if ir:
+            ir = str(ir).strip()
         else:
-            dr = str(driver_id).strip()
+            ir = str(initiator_id).strip()
     except Exception:
-        dr = str(driver_id).strip()
+        ir = str(initiator_id).strip()
 
     try:
         tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
     except Exception as e:
-        logger.error(f"resolve_driver_force_end_from_passenger: tag okunamadı: {e}")
+        logger.error(f"resolve_force_end_counterparty: tag okunamadı: {e}")
         return {"success": False, "error": "TAG okunamadı"}
 
     if not tr.data:
         return {"success": False, "error": "TAG bulunamadı"}
 
     tag = tr.data[0]
-    st = (tag.get("status") or "").lower()
-    if st in ("completed", "cancelled"):
-        return {"success": True, "idempotent": True, "message": "Yolculuk zaten sonlanmış"}
+    st_tag = (tag.get("status") or "").lower()
+    if st_tag in ("completed", "cancelled"):
+        return {"success": True, "idempotent": True, "approved": approved, "message": "Yolculuk zaten sonlanmış"}
+
+    req = tag.get("end_request")
+    if not isinstance(req, dict) or req.get("kind") != FORCE_END_COUNTERPARTY_KIND:
+        return {"success": False, "error": "Bekleyen zorla bitir onayı yok"}
+
+    if str(req.get("status") or "").lower() == "resolved":
+        return {"success": True, "idempotent": True, "approved": approved}
+
+    ini = str(req.get("initiator_id") or "").strip()
+    ini_type = str(req.get("initiator_type") or "").strip().lower()
+    try:
+        ini_r = await resolve_user_id(ini) if ini else None
+        if ini_r:
+            ini_r = str(ini_r).strip()
+        else:
+            ini_r = ini
+    except Exception:
+        ini_r = ini
+
+    if not ini_r or ini_r.lower() != ir.lower():
+        return {"success": False, "error": "Zorla bitiren bilgisi uyuşmuyor"}
+
+    if ini_type not in ("driver", "passenger"):
+        return {"success": False, "error": "Geçersiz zorla bitiren rolü"}
 
     pid = tag.get("passenger_id")
     did = tag.get("driver_id")
@@ -1698,48 +1582,72 @@ async def resolve_driver_force_end_from_passenger(
     except Exception:
         did_r = str(did).strip() if did else None
 
-    if not pid_r or not did_r or pr.lower() != pid_r.lower() or dr.lower() != did_r.lower():
-        return {"success": False, "error": "Onay için yetkiniz yok veya eşleşme uyuşmuyor"}
+    if not pid_r or not did_r:
+        return {"success": False, "error": "Eşleşme bilgisi eksik"}
 
-    req = tag.get("end_request")
-    if not isinstance(req, dict) or req.get("kind") != FORCE_END_REVIEW_KIND:
-        return {"success": False, "error": "Bekleyen sürücü zorla bitir incelemesi yok"}
-
-    if str(req.get("driver_id", "")).lower() != dr.lower():
-        return {"success": False, "error": "Sürücü bilgisi uyuşmuyor"}
+    counterparty = pid_r if ini_type == "driver" else did_r
+    if str(counterparty).strip().lower() != rr.lower():
+        return {"success": False, "error": "Onay için yetkiniz yok"}
 
     now_iso = datetime.utcnow().isoformat()
+    new_points, new_rating = None, None
+    if not approved:
+        new_points, new_rating = await deduct_points(ini_r, 5, "Zorla bitirme karşı tarafça onaylanmadı")
+        logger.info("force_end_penalty_minus_5 user=%s new_points=%s", ini_r[:12], new_points)
 
-    if approved:
-        logger.info("passenger_forced_end_confirmed tag=%s driver=%s", tid, dr[:12])
-        new_points, new_rating = None, None
-    else:
-        logger.info("passenger_forced_end_rejected tag=%s driver=%s", tid, dr[:12])
-        new_points, new_rating = await deduct_points(dr, 5, "Yolcu zorla bitiri onaylamadı")
-        logger.info("driver_penalty_applied_minus_5 user=%s new_points=%s", dr[:12], new_points)
+    pending_req_snapshot = dict(req) if isinstance(req, dict) else {}
+    prev_status = tag.get("status") or "matched"
+    prev_completed_at = tag.get("completed_at")
+    prev_ended_by = tag.get("ended_by")
+    prev_end_type = tag.get("end_type")
 
+    resolved_req = {
+        **req,
+        "status": "resolved",
+        "resolved_at": now_iso,
+        "responder_approved": approved,
+    }
     try:
         supabase.table("tags").update(
             {
                 "status": "completed",
                 "completed_at": now_iso,
-                "ended_by": dr,
+                "ended_by": ini_r,
                 "end_type": "force",
-                "end_request": None,
+                "end_request": resolved_req,
             }
         ).eq("id", tid).execute()
     except Exception as e:
-        logger.error(f"resolve_driver_force_end_from_passenger: tag güncellenemedi: {e}")
+        logger.error(f"resolve_force_end_counterparty: tag güncellenemedi: {e}")
         return {"success": False, "error": str(e)}
 
     try:
         supabase.table("chat_messages").delete().eq("tag_id", tid).execute()
     except Exception as chat_err:
-        logger.warning(f"resolve_driver_force_end_from_passenger: chat silinemedi: {chat_err}")
+        logger.error(
+            "resolve_force_end_counterparty: sohbet silinemedi, tag tamamlanması geri alınıyor: %s",
+            chat_err,
+        )
+        try:
+            rollback_er = dict(pending_req_snapshot)
+            supabase.table("tags").update(
+                {
+                    "status": prev_status,
+                    "completed_at": prev_completed_at,
+                    "ended_by": prev_ended_by,
+                    "end_type": prev_end_type,
+                    "end_request": rollback_er,
+                }
+            ).eq("id", tid).execute()
+        except Exception as rb_err:
+            logger.error("resolve_force_end_counterparty: rollback başarısız tag=%s err=%s", tid, rb_err)
+        return {"success": False, "error": "Sohbet silinemedi; yolculuk durumu geri alındı"}
+
+    invalidate_tag_cache(tid, pid_r, did_r)
 
     ender_name = ""
     try:
-        _en = supabase.table("users").select("name").eq("id", dr).limit(1).execute()
+        _en = supabase.table("users").select("name").eq("id", ini_r).limit(1).execute()
         if _en.data:
             ender_name = (str(_en.data[0].get("name") or "")).strip()
     except Exception:
@@ -1747,36 +1655,108 @@ async def resolve_driver_force_end_from_passenger(
 
     payload_base = {
         "tag_id": tid,
-        "ended_by": dr,
-        "ender_id": dr,
-        "ender_type": "driver",
+        "ended_by": ini_r,
+        "ender_id": ini_r,
+        "ender_type": ini_type,
         "ender_name": ender_name,
         "passenger_id": pid_r,
         "driver_id": did_r,
         "completed_at": now_iso,
-        "passenger_reviewed_driver_force_end": True,
-        "passenger_approved_driver_force_end": approved,
+        "should_rate": False,
+        "force_end_resolved": True,
+        "passenger_approved_force_end": approved,
     }
-
     for uid in [pid_r, did_r]:
         if not uid:
             continue
-        is_driver = str(uid).strip().lower() == dr.lower()
+        is_initiator = str(uid).strip().lower() == ini_r.lower()
         penalty = 0 if approved else 5
         pl = {
             **payload_base,
-            "points_deducted": penalty if is_driver else 0,
-            "new_points": new_points if (is_driver and not approved) else None,
-            "new_rating": new_rating if (is_driver and not approved) else None,
+            "points_deducted": penalty if is_initiator else 0,
+            "new_points": new_points if (is_initiator and not approved) else None,
+            "new_rating": new_rating if (is_initiator and not approved) else None,
         }
-        await emit_socket_event_to_user(uid, "trip_force_ended", pl)
+        try:
+            await emit_socket_event_to_user(uid, "trip_force_ended", pl)
+        except Exception as emit_err:
+            logger.warning(f"resolve_force_end_counterparty trip_force_ended: {emit_err}")
 
     return {
         "success": True,
         "approved": approved,
         "new_points": new_points,
         "new_rating": new_rating,
+        "idempotent": False,
     }
+
+
+FORCE_END_PENDING_TIMEOUT_MINUTES = 5
+
+
+async def expire_stale_pending_force_ends() -> int:
+    """
+    Zorla bitir: karşı taraf 5 dk içinde yanıtlamazsa otomatik onaylı (approved) tamamlanır.
+    """
+    n_done = 0
+    try:
+        r = supabase.table("tags").select("id, passenger_id, driver_id, status, end_request").in_(
+            "status", ["matched", "in_progress"]
+        ).execute()
+    except Exception as e:
+        logger.warning("expire_stale_pending_force_ends: select %s", e)
+        return 0
+
+    now_utc = datetime.now(timezone.utc)
+    for tag in r.data or []:
+        er = tag.get("end_request")
+        if not isinstance(er, dict) or er.get("kind") != FORCE_END_COUNTERPARTY_KIND:
+            continue
+        if str(er.get("status") or "").lower() != "pending":
+            continue
+        req_at = er.get("requested_at")
+        if not req_at:
+            continue
+        try:
+            raw = str(req_at).replace("Z", "+00:00")
+            rt = datetime.fromisoformat(raw)
+            if rt.tzinfo is None:
+                rt = rt.replace(tzinfo=timezone.utc)
+            age_sec = (now_utc - rt.astimezone(timezone.utc)).total_seconds()
+        except Exception:
+            continue
+        if age_sec < FORCE_END_PENDING_TIMEOUT_MINUTES * 60:
+            continue
+
+        tid = str(tag.get("id") or "").strip()
+        ini_id = str(er.get("initiator_id") or "").strip()
+        ini_type = str(er.get("initiator_type") or "").strip().lower()
+        if not tid or not ini_id or ini_type not in ("driver", "passenger"):
+            continue
+        pid = tag.get("passenger_id")
+        did = tag.get("driver_id")
+        counterparty = pid if ini_type == "driver" else did
+        if not counterparty:
+            continue
+        try:
+            cp_r = await resolve_user_id(str(counterparty).strip())
+            if cp_r:
+                cp_r = str(cp_r).strip()
+            else:
+                cp_r = str(counterparty).strip()
+            ini_resolved = await resolve_user_id(ini_id) if ini_id else None
+            ini_r = str(ini_resolved).strip() if ini_resolved else ini_id
+            res = await resolve_force_end_counterparty(tid, cp_r, ini_r, True)
+            if res.get("success"):
+                n_done += 1
+                logger.info(
+                    "⏱️ force_end pending timeout (>%sm) auto-approved tag=%s",
+                    FORCE_END_PENDING_TIMEOUT_MINUTES,
+                    tid[:8],
+                )
+        except Exception as ex:
+            logger.warning("expire_stale_pending_force_ends tag=%s: %s", tid[:8], ex)
+    return n_done
 
 
 async def apply_force_end_trip_and_notify(
@@ -1785,8 +1765,8 @@ async def apply_force_end_trip_and_notify(
     ender_type: Optional[str] = None,
 ) -> dict:
     """
-    Zorla bitir — tek kaynak: tags güncelle, puan kes, trip_force_ended ile iki tarafa bildir.
-    Idempotent: tag zaten completed/cancelled ise tekrar ceza veya socket göndermez.
+    Zorla bitir — istek aşaması: tag status matched/in_progress kalır, yalnızca end_request (pending).
+    Karşı tarafa force_end_counterparty_prompt. trip_force_ended yalnızca resolve_force_end_counterparty sonrası gider.
     """
     if not tag_id or not ender_id:
         return {"success": False, "error": "tag_id ve ender_id gerekli"}
@@ -1856,26 +1836,34 @@ async def apply_force_end_trip_and_notify(
     if st not in ("matched", "in_progress"):
         return {"success": False, "error": "Aktif eşleşme yok (zorla bitirilemez)"}
 
-    now_iso = datetime.utcnow().isoformat()
-    try:
-        supabase.table("tags").update(
-            {
-                "status": "completed",
-                "completed_at": now_iso,
-                "ended_by": resolved_ender,
-                "end_type": "force",
+    existing_er = tag.get("end_request")
+    if isinstance(existing_er, dict) and str(existing_er.get("status") or "").lower() == "pending":
+        if existing_er.get("kind") == FORCE_END_COUNTERPARTY_KIND:
+            logger.info(f"apply_force_end_trip: idempotent pending force-end tag={tid}")
+            return {
+                "success": True,
+                "idempotent": True,
+                "pending_counterparty_review": True,
+                "message": "Zorla bitir onayı zaten bekleniyor",
             }
-        ).eq("id", tid).execute()
+        logger.info(f"apply_force_end_trip: başka pending end_request var, zorla bitir reddedildi tag={tid}")
+        return {"success": False, "error": "Başka bir yolculuk bitirme isteği zaten beklemede"}
+
+    now_iso = datetime.utcnow().isoformat()
+    end_request_payload = {
+        "kind": FORCE_END_COUNTERPARTY_KIND,
+        "status": "pending",
+        "initiator_id": resolved_ender,
+        "initiator_type": et,
+        "requested_at": now_iso,
+    }
+    try:
+        supabase.table("tags").update({"end_request": end_request_payload}).eq("id", tid).execute()
     except Exception as e:
         logger.error(f"apply_force_end_trip: tag güncellenemedi: {e}")
         return {"success": False, "error": str(e)}
 
-    new_points, new_rating = await deduct_points(resolved_ender, 3, "Tek taraflı yolculuk bitirme")
-
-    try:
-        supabase.table("chat_messages").delete().eq("tag_id", tid).execute()
-    except Exception as chat_err:
-        logger.warning(f"apply_force_end_trip: chat silinemedi: {chat_err}")
+    invalidate_tag_cache(tid, passenger_id, driver_id)
 
     ender_name = ""
     try:
@@ -1905,34 +1893,27 @@ async def apply_force_end_trip_and_notify(
         except Exception as push_err:
             logger.warning(f"apply_force_end_trip push: {push_err}")
 
-    payload_base = {
-        "tag_id": tid,
-        "ended_by": resolved_ender,
-        "ender_id": resolved_ender,
-        "ender_type": et,
-        "ender_name": ender_name,
-        "passenger_id": passenger_id,
-        "driver_id": driver_id,
-        "completed_at": now_iso,
-    }
-
-    for uid in [passenger_id, driver_id]:
-        if not uid:
-            continue
-        is_ender = str(uid).strip().lower() == str(resolved_ender).strip().lower()
-        pl = {
-            **payload_base,
-            "points_deducted": 3 if is_ender else 0,
-            "new_points": new_points if is_ender else None,
-            "new_rating": new_rating if is_ender else None,
-        }
-        await emit_socket_event_to_user(uid, "trip_force_ended", pl)
+    counterparty_id = passenger_id if et == "driver" else driver_id
+    if counterparty_id:
+        try:
+            await emit_socket_event_to_user(
+                counterparty_id,
+                "force_end_counterparty_prompt",
+                {
+                    "tag_id": tid,
+                    "initiator_id": resolved_ender,
+                    "initiator_type": et,
+                    "initiator_name": ender_name,
+                },
+            )
+        except Exception as prompt_err:
+            logger.warning(f"apply_force_end_trip force_end_counterparty_prompt: {prompt_err}")
 
     logger.info(f"✅ apply_force_end_trip: tag={tid} ender_type={et} ender={resolved_ender[:12]}…")
     return {
         "success": True,
-        "new_points": new_points,
-        "new_rating": new_rating,
+        "new_points": None,
+        "new_rating": None,
         "ender_type": et,
         "passenger_id": passenger_id,
         "driver_id": driver_id,
@@ -3010,8 +2991,11 @@ async def auto_cleanup_inactive_tags():
         cleaned_count = 0
         for tag in result.data:
             er = tag.get("end_request")
-            if isinstance(er, dict) and er.get("kind") == FORCE_END_REVIEW_KIND:
-                # Sürücü zorla bitir — yolcu onayı bekleniyor; inaktivite ile iptal etme
+            if (
+                isinstance(er, dict)
+                and er.get("kind") == FORCE_END_COUNTERPARTY_KIND
+                and str(er.get("status") or "").lower() == "pending"
+            ):
                 continue
             last_activity = tag.get("last_activity") or tag.get("matched_at") or tag.get("created_at")
             
@@ -6054,7 +6038,11 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
     try:
         # Arka planda inaktif TAG'leri temizle
         await auto_cleanup_inactive_tags()
-        
+        try:
+            await expire_stale_pending_force_ends()
+        except Exception as _ex:
+            logger.warning("expire_stale_pending_force_ends (passenger active-tag): %s", _ex)
+
         # passenger_id veya user_id kabul et
         uid = passenger_id or user_id
         if not uid:
@@ -7101,8 +7089,8 @@ async def send_offer(
             try:
                 asyncio.create_task(send_push_notification(
                     passenger_id,
-                    "💰 Yeni teklif geldi",
-                    f"{driver['name']} teklifinize ₺{int(p)} önerdi.",
+                    "Yeni teklif geldi",
+                    "Sürücü teklif gönderdi",
                     {
                         "type": "new_offer",
                         "tag_id": tid,
@@ -7436,7 +7424,12 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         did = driver_id or user_id
         if not did:
             return {"success": True, "trip": None, "tag": None}
-        
+
+        try:
+            await expire_stale_pending_force_ends()
+        except Exception as _ex:
+            logger.warning("expire_stale_pending_force_ends (driver active-trip): %s", _ex)
+
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
         
@@ -7939,8 +7932,8 @@ async def force_end_trip_http(
     ender_type: Optional[str] = Query(None, description="passenger veya driver (opsiyonel, tag'den çıkarılır)"),
 ):
     """
-    Yolculuğu zorla bitir — socket ile aynı: apply_force_end_trip_and_notify (-3 puan deduct_points),
-    trip_force_ended her iki tarafa emit_socket_event_to_user ile gider.
+    Yolculuğu zorla bitir — socket ile aynı: apply_force_end_trip_and_notify,
+    trip_force_ended (should_rate=false) ve karşı tarafa force_end_counterparty_prompt.
     """
     try:
         if not tag_id or not user_id:
@@ -7987,26 +7980,11 @@ async def force_end_trip_http(
         elif et != inferred:
             raise HTTPException(status_code=403, detail="Rol uyuşmuyor")
 
-        if et == "driver":
-            result = await request_driver_force_end_review(str(tag_id).strip(), resolved_id)
-        else:
-            result = await apply_force_end_trip_and_notify(str(tag_id).strip(), resolved_id, et)
+        result = await apply_force_end_trip_and_notify(str(tag_id).strip(), resolved_id, et)
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "İşlem başarısız"))
 
-        if result.get("pending_passenger_review"):
-            return {
-                "success": True,
-                "pending_passenger_review": True,
-                "message": "Yolcu onayı bekleniyor.",
-                "idempotent": result.get("idempotent"),
-            }
-
-        msg = (
-            "Yolculuk zaten sonlanmış"
-            if result.get("idempotent")
-            else "Yolculuk zorla bitirildi. Bitiren kullanıcıya puan cezası uygulandı."
-        )
+        msg = "Yolculuk zaten sonlanmış" if result.get("idempotent") else "Yolculuk zorla bitirildi."
         return {
             "success": True,
             "message": msg,
@@ -8024,11 +8002,11 @@ async def force_end_trip_http(
 @api_router.post("/trip/force-end-confirm")
 async def force_end_confirm(
     tag_id: str = Query(...),
-    ender_id: str = Query(..., description="Zorla bitiren sürücü id"),
+    ender_id: str = Query(..., description="Zorla bitiren kullanıcı id (sürücü veya yolcu)"),
     approved: bool = Query(True),
-    user_id: str = Query(..., description="Onay veren yolcu id"),
+    user_id: str = Query(..., description="Onay veren karşı taraf id"),
 ):
-    """Yolcu: sürücünün zorla bitirmesini onaylar / reddeder (ender_id = sürücü)."""
+    """Karşı taraf: zorla bitirmeyi onaylar / reddeder (ender_id = zorla bitiren)."""
     try:
         if not tag_id or not ender_id or not user_id:
             raise HTTPException(status_code=422, detail="tag_id, ender_id ve user_id gerekli")
@@ -8039,7 +8017,7 @@ async def force_end_confirm(
         else:
             resolved_passenger = str(user_id).strip()
 
-        result = await resolve_driver_force_end_from_passenger(
+        result = await resolve_force_end_counterparty(
             str(tag_id).strip(),
             resolved_passenger,
             str(ender_id).strip(),
@@ -8275,20 +8253,28 @@ async def register_push_token_endpoint(
             logger.warning(f"❌ Kullanıcı bulunamadı (push token register): {_user_id}")
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
         
-        # Users tablosuna kaydet (push_token_type kolonu yoksa sadece token kaydet)
+        # users.push_token + users.expo_push_token (kolon yoksa kademeli fallback)
         try:
             supabase.table("users").update({
                 "push_token": _push_token,
+                "expo_push_token": _push_token,
                 "push_token_type": "expo",
                 "push_token_updated_at": datetime.utcnow().isoformat()
             }).eq("id", resolved_user_id).execute()
         except Exception as col_err:
-            # push_token_type kolonu yoksa sadece token'ı kaydet
-            logger.warning(f"⚠️ push_token_type kolonu yok, sadece token kaydediliyor: {col_err}")
-            supabase.table("users").update({
-                "push_token": _push_token,
-                "push_token_updated_at": datetime.utcnow().isoformat()
-            }).eq("id", resolved_user_id).execute()
+            logger.warning(f"⚠️ push_token tam alan güncellemesi başarısız, daraltılıyor: {col_err}")
+            try:
+                supabase.table("users").update({
+                    "push_token": _push_token,
+                    "expo_push_token": _push_token,
+                    "push_token_updated_at": datetime.utcnow().isoformat()
+                }).eq("id", resolved_user_id).execute()
+            except Exception as col_err2:
+                logger.warning(f"⚠️ expo_push_token yok, yalnızca push_token: {col_err2}")
+                supabase.table("users").update({
+                    "push_token": _push_token,
+                    "push_token_updated_at": datetime.utcnow().isoformat()
+                }).eq("id", resolved_user_id).execute()
         
         logger.info(f"✅ Push token kaydedildi: {user_name} ({resolved_user_id}) - {_platform} - expo")
         return {
@@ -8304,14 +8290,28 @@ async def register_push_token_endpoint(
         logger.error(traceback.format_exc())
         return {"success": False, "detail": str(e)}
 
+
+@api_router.post("/user/save-push-token")
+async def save_push_token_alias(request: PushTokenRequest):
+    """Expo token kaydı — register-push-token ile aynı gövde (POST /user/save-push-token)."""
+    return await register_push_token_endpoint(request)
+
+
 @api_router.delete("/user/remove-push-token")
 async def remove_push_token(user_id: str):
     """Push token sil"""
     try:
-        supabase.table("users").update({
-            "push_token": None,
-            "push_token_updated_at": None
-        }).eq("id", user_id).execute()
+        try:
+            supabase.table("users").update({
+                "push_token": None,
+                "expo_push_token": None,
+                "push_token_updated_at": None
+            }).eq("id", user_id).execute()
+        except Exception:
+            supabase.table("users").update({
+                "push_token": None,
+                "push_token_updated_at": None
+            }).eq("id", user_id).execute()
         
         return {"success": True}
     except Exception as e:
@@ -8376,8 +8376,8 @@ async def test_match_notification(
     """
     try:
         tag_id = tag_id or str(uuid.uuid4())
-        passenger_title = "Paylaşımlı yolculuk başladı"
-        passenger_body = "Sürücüye yazmak için tıklayın."
+        passenger_title = "Sürücü bulundu"
+        passenger_body = "Eşleşme sağlandı"
         driver_body = f"Yolcuya {eta_min} dk. Yolcuya git için tıklayın." if eta_min else "Yolcuya git için tıklayın."
         results = {}
         # Yolcu
@@ -8435,7 +8435,11 @@ async def test_push_notification_by_phone(
                 "user_id": user_id,
             }
         success, receipt = await _send_expo_and_get_receipt(
-            token, title, body, {"type": "test", "timestamp": datetime.utcnow().isoformat()}
+            token,
+            title,
+            body,
+            {"type": "test", "timestamp": datetime.utcnow().isoformat()},
+            db_user_id=str(user_id) if user_id else None,
         )
         ticket_id = receipt.get("id") if isinstance(receipt, dict) else None
         expo_delivery = await _expo_get_push_receipts([ticket_id]) if ticket_id else {}
@@ -8518,7 +8522,7 @@ async def test_match_push_by_ids(driver_id: str, passenger_id: str, tag_id: str 
             driver_id, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
         )
         passenger_ok = await send_push_notification(
-            passenger_id, "Sürücü bulundu", "Sürücünüz yola çıktı.", match_data,
+            passenger_id, "Sürücü bulundu", "Eşleşme sağlandı", match_data,
         )
         return {
             "success": True,
@@ -8553,7 +8557,7 @@ async def test_match_push_by_phone(
         passenger_ok = await send_push_notification(
             passenger_phone,
             "Sürücü bulundu",
-            "Sürücünüz yola çıktı.",
+            "Eşleşme sağlandı",
             match_data,
         )
         return {
@@ -8964,7 +8968,7 @@ async def admin_push_test_by_phone(admin_phone: str, phone: str):
         except Exception as log_err:
             logger.warning(f"push-test notifications_log: {log_err}")
         success, receipt = await _send_expo_and_get_receipt(
-            token, test_title, test_body, test_data
+            token, test_title, test_body, test_data, db_user_id=str(user_id) if user_id else None
         )
         ticket_id = receipt.get("id") if isinstance(receipt, dict) else None
         expo_delivery = await _expo_get_push_receipts([ticket_id]) if ticket_id else {}
@@ -10621,11 +10625,19 @@ async def get_cached_user(user_id: str) -> dict | None:
         return user
     return None
 
-def invalidate_tag_cache(tag_id: str):
-    """Tag cache'ini temizle"""
-    cache_key = f"tag:{tag_id}"
-    if cache_key in _qr_cache:
-        del _qr_cache[cache_key]
+def invalidate_tag_cache(tag_id: str, passenger_id: Optional[str] = None, driver_id: Optional[str] = None):
+    """Tag QR cache + ilgili yolcu/sürücü user önbelleğini temizle (aktif tag tutarlılığı)."""
+    tid = str(tag_id).strip() if tag_id else ""
+    if tid:
+        cache_key = f"tag:{tid}"
+        if cache_key in _qr_cache:
+            del _qr_cache[cache_key]
+    for uid in (passenger_id, driver_id):
+        if not uid:
+            continue
+        uk = f"user:{str(uid).strip()}"
+        if uk in _user_cache:
+            del _user_cache[uk]
 
 def calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """İki konum arasındaki mesafeyi metre olarak hesapla (Haversine)"""
@@ -10852,7 +10864,8 @@ async def verify_trip_qr(
                 "tag_id": tag_id,
                 "rate_user_id": driver_id,
                 "rate_user_name": driver_name,
-                "message": "Yolculuk tamamlandı! Sürücüyü puanlayın."
+                "message": "Yolculuk tamamlandı! Sürücüyü puanlayın.",
+                "should_rate": True,
             }, room=_normalize_user_room(passenger_id))
             
             # Şoföre: Yolcuyu puanla
@@ -10860,7 +10873,8 @@ async def verify_trip_qr(
                 "tag_id": tag_id,
                 "rate_user_id": passenger_id,
                 "rate_user_name": passenger_name,
-                "message": "Yolculuk tamamlandı! Yolcuyu puanlayın."
+                "message": "Yolculuk tamamlandı! Yolcuyu puanlayın.",
+                "should_rate": True,
             }, room=_normalize_user_room(driver_id))
             
             logger.info(f"✅ Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
@@ -11031,7 +11045,8 @@ async def complete_trip_with_qr(request: Request):
                 "tag_id": tag_id,
                 "rate_user_id": driver_id,
                 "rate_user_name": driver_name,
-                "message": "Yolculuk tamamlandı!"
+                "message": "Yolculuk tamamlandı!",
+                "should_rate": True,
             }, room=_normalize_user_room(passenger_id))
             
             # Şoföre: Yolcuyu puanla
@@ -11039,7 +11054,8 @@ async def complete_trip_with_qr(request: Request):
                 "tag_id": tag_id,
                 "rate_user_id": passenger_id,
                 "rate_user_name": passenger_name,
-                "message": "Yolculuk tamamlandı!"
+                "message": "Yolculuk tamamlandı!",
+                "should_rate": True,
             }, room=_normalize_user_room(driver_id))
             
             logger.info(f"✅ QR Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
@@ -11170,7 +11186,8 @@ async def scan_qr_for_trip_end(
                 "tag_id": tag_id,
                 "rate_user_id": driver_id,
                 "rate_user_name": scanned_name if scanner_user_id == passenger_id else scanner_name,
-                "message": "Yolculuk tamamlandı! Şoförü puanlayın."
+                "message": "Yolculuk tamamlandı! Şoförü puanlayın.",
+                "should_rate": True,
             }, room=_normalize_user_room(passenger_id))
             
             # Şoföre: Yolcuyu puanla
@@ -11178,7 +11195,8 @@ async def scan_qr_for_trip_end(
                 "tag_id": tag_id,
                 "rate_user_id": passenger_id,
                 "rate_user_name": scanner_name if scanner_user_id == passenger_id else scanned_name,
-                "message": "Yolculuk tamamlandı! Yolcuyu puanlayın."
+                "message": "Yolculuk tamamlandı! Yolcuyu puanlayın.",
+                "should_rate": True,
             }, room=_normalize_user_room(driver_id))
             
             logger.info(f"✅ Puanlama modalları gönderildi: yolcu={passenger_id}, şoför={driver_id}")
@@ -11914,14 +11932,14 @@ async def handle_driver_accept_offer(sid, data):
             push_p_ok = await send_push_notification(
                 passenger_id,
                 "Sürücü bulundu",
-                "Sürücünüz yola çıktı.",
+                "Eşleşme sağlandı",
                 match_data,
             )
             if not push_p_ok and passenger_phone and _looks_like_phone(passenger_phone):
                 push_p_ok = await send_push_notification(
                     passenger_phone,
                     "Sürücü bulundu",
-                    "Sürücünüz yola çıktı.",
+                    "Eşleşme sağlandı",
                     match_data,
                 )
                 if push_p_ok:
@@ -12021,20 +12039,18 @@ class ChatMessageCreate(BaseModel):
 async def send_chat_message(msg: ChatMessageCreate):
     """
     HYBRID CHAT:
-    1. Bu gönderen için bu tag'de ilk mesaj mı kontrol et
-    2. Supabase'e kaydet
-    3. Yalnızca ilk mesajda push + first_chat_message socket (karşı taraf)
+    1. Supabase'e kaydet
+    2. tags.first_message_sent atomik claim — başarılıysa push + first_chat_message socket (kolon zorunlu)
     """
     try:
-        prior = (
+        prior_any = (
             supabase.table("chat_messages")
             .select("id")
             .eq("tag_id", msg.tag_id)
-            .eq("sender_id", msg.sender_id)
             .limit(1)
             .execute()
         )
-        is_first_from_sender = not (prior.data and len(prior.data) > 0)
+        is_first_in_thread = not (prior_any.data and len(prior_any.data) > 0)
 
         message_data = {
             "tag_id": msg.tag_id,
@@ -12069,18 +12085,36 @@ async def send_chat_message(msg: ChatMessageCreate):
         if tag_row.data:
             driver_uid = str(tag_row.data[0].get("driver_id") or "").strip() or None
         from_driver = bool(driver_uid and str(msg.sender_id).strip().lower() == driver_uid.lower())
-        push_title = "Sürücü size yazdı" if from_driver else "Yolcu size yazdı"
         preview = (msg.message or "").strip()
         if len(preview) > 72:
             preview = preview[:69] + "..."
-        push_body = f"{preview}\nMesajı görmek için tıklayın." if preview else "Mesajı görmek için tıklayın."
 
-        if is_first_from_sender:
+        should_first_push = False
+        try:
+            claim = (
+                supabase.table("tags")
+                .update({"first_message_sent": True})
+                .eq("id", msg.tag_id)
+                .or_("first_message_sent.is.null,first_message_sent.eq.false")
+                .select("id")
+                .execute()
+            )
+            if claim.data is not None:
+                should_first_push = bool(claim.data and len(claim.data) > 0)
+        except Exception as tag_flag_err:
+            logger.error(
+                "tags.first_message_sent gerekli — kolon yok veya güncellenemedi; ilk mesaj push atlanır. "
+                "Migration uygulayın: backend/migrations/add_expo_push_and_first_message_sent.sql | hata=%s",
+                tag_flag_err,
+            )
+            should_first_push = False
+
+        if should_first_push:
             asyncio.create_task(
                 send_push_notification(
                     msg.receiver_id,
-                    push_title,
-                    push_body,
+                    "Yeni mesaj",
+                    "Mesaj geldi, görmek için tıklayın",
                     {
                         "type": "first_chat_message",
                         "tag_id": msg.tag_id,
@@ -12112,7 +12146,8 @@ async def send_chat_message(msg: ChatMessageCreate):
             "success": True,
             "message_id": saved_message["id"],
             "created_at": saved_message["created_at"],
-            "first_from_sender": is_first_from_sender,
+            "first_from_sender": is_first_in_thread,
+            "first_in_thread": is_first_in_thread,
         }
         
     except HTTPException:
@@ -13537,16 +13572,20 @@ async def register_push_token(user_id: str, token: str, platform: str = "android
 
         update_payload = {
             "push_token": token,
+            "expo_push_token": token,
             "push_token_updated_at": datetime.utcnow().isoformat()
         }
 
-        # push_token_type kolonu yoksa geriye dönük uyumluluk için fallback
         try:
             update_payload["push_token_type"] = "expo"
             supabase.table("users").update(update_payload).eq("id", user_id).execute()
         except Exception:
             update_payload.pop("push_token_type", None)
-            supabase.table("users").update(update_payload).eq("id", user_id).execute()
+            try:
+                supabase.table("users").update(update_payload).eq("id", user_id).execute()
+            except Exception:
+                update_payload.pop("expo_push_token", None)
+                supabase.table("users").update(update_payload).eq("id", user_id).execute()
 
         logger.info(f"📱 Push token kaydedildi: {user_id}")
         return {"success": True, "platform": platform, "token_type": "expo"}
@@ -13562,6 +13601,85 @@ def _looks_like_phone(uid: str) -> bool:
     return len(digits) >= 10 and digits[:1] in "59"  # 5xxxxxxxxx veya 9xxxxxxxxx
 
 
+_PUSH_CANONICAL_EXEMPT_TYPES = frozenset(
+    {
+        "incoming_call",
+        "missed_call",
+        "call_ended",
+        "call_missed",
+        "test",
+        "admin_push_test",
+    }
+)
+
+
+def _canonical_push_routing_data(data: Optional[dict]) -> dict:
+    """
+    Client yönlendirme: data.type ∈ {chat, match, offer} ve tag_id (varsa).
+    Eski `type` değeri detail_type olarak saklanır (arama / test tipleri aynen bırakılır).
+    """
+    d = dict(data or {})
+    legacy = str(d.get("type") or "").strip()
+    if legacy in _PUSH_CANONICAL_EXEMPT_TYPES:
+        return d
+
+    tid = d.get("tag_id") or d.get("trip_id")
+    tid_s = str(tid).strip() if tid else ""
+
+    leg_l = legacy.lower()
+    route = "offer"
+    if leg_l == "first_chat_message" or d.get("sender_id"):
+        route = "chat"
+    elif (
+        d.get("event") == "match"
+        or leg_l
+        in (
+            "match_confirmed",
+            "match_found",
+            "matched",
+            "new_ride_request",
+            "match",
+            "tag_matched",
+        )
+    ):
+        route = "match"
+    elif leg_l in ("new_offer", "offer") or d.get("offer_id"):
+        route = "offer"
+    elif leg_l == "force_ended" and tid_s:
+        route = "match"
+
+    if legacy and legacy not in ("chat", "match", "offer"):
+        d["detail_type"] = legacy
+    d["type"] = route
+    if tid_s:
+        d["tag_id"] = tid_s
+    return d
+
+
+def _receipt_device_not_registered(receipt: Optional[dict]) -> bool:
+    if not receipt or not isinstance(receipt, dict):
+        return False
+    blob = json.dumps(receipt, ensure_ascii=False).lower()
+    return "devicenotregistered" in blob
+
+
+async def _clear_user_expo_push_tokens(user_id: str) -> None:
+    """Expo DeviceNotRegistered — kullanıcı satırındaki push token alanlarını temizle."""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return
+    logger.warning("📴 Expo DeviceNotRegistered — DB push token temizleniyor user_id=%s", uid[:12])
+    try:
+        try:
+            supabase.table("users").update(
+                {"push_token": None, "expo_push_token": None, "push_token_updated_at": None}
+            ).eq("id", uid).execute()
+        except Exception:
+            supabase.table("users").update({"push_token": None, "push_token_updated_at": None}).eq("id", uid).execute()
+    except Exception as e:
+        logger.error("push token DB temizliği başarısız: %s", e)
+
+
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
     """Tek kullanıcıya Expo push bildirim gönder (users.push_token). user_id = UUID veya telefon (fallback)."""
     try:
@@ -13569,10 +13687,16 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
         if not uid:
             logger.warning("❌ Push: user_id boş")
             return False
-        user_result = supabase.table("users").select("push_token, name, id, phone").eq("id", uid).limit(1).execute()
+        try:
+            user_result = supabase.table("users").select("push_token, expo_push_token, name, id, phone").eq("id", uid).limit(1).execute()
+        except Exception:
+            user_result = supabase.table("users").select("push_token, name, id, phone").eq("id", uid).limit(1).execute()
         # UUID büyük/küçük harf farkı
         if not user_result.data and "-" in uid:
-            user_result = supabase.table("users").select("push_token, name, id, phone").eq("id", uid.lower()).limit(1).execute()
+            try:
+                user_result = supabase.table("users").select("push_token, expo_push_token, name, id, phone").eq("id", uid.lower()).limit(1).execute()
+            except Exception:
+                user_result = supabase.table("users").select("push_token, name, id, phone").eq("id", uid.lower()).limit(1).execute()
         # Telefon ile fallback: E.164 normalize et, tüm olası DB formatlarını dene
         if not user_result.data and _looks_like_phone(uid):
             phone_e164 = normalize_phone_e164(uid)
@@ -13591,13 +13715,19 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
                     if not candidate or candidate in seen:
                         continue
                     seen.add(candidate)
-                    user_result = supabase.table("users").select("push_token, name, id, phone").eq("phone", candidate).limit(1).execute()
+                    try:
+                        user_result = supabase.table("users").select("push_token, expo_push_token, name, id, phone").eq("phone", candidate).limit(1).execute()
+                    except Exception:
+                        user_result = supabase.table("users").select("push_token, name, id, phone").eq("phone", candidate).limit(1).execute()
                     if user_result.data:
                         logger.info(f"📱 Push: kullanıcı telefon ile bulundu (E.164={phone_e164})")
                         break
                 # Son deneme: phone içinde bu 10 rakam geçen (boşluk/tire ile kayıtlı olabilir)
                 if not user_result.data and len(ten_digit) >= 10:
-                    like_r = supabase.table("users").select("push_token, name, id, phone").like("phone", f"%{ten_digit}%").limit(5).execute()
+                    try:
+                        like_r = supabase.table("users").select("push_token, expo_push_token, name, id, phone").like("phone", f"%{ten_digit}%").limit(5).execute()
+                    except Exception:
+                        like_r = supabase.table("users").select("push_token, name, id, phone").like("phone", f"%{ten_digit}%").limit(5).execute()
                     if like_r.data:
                         for row in like_r.data:
                             if ten_digit in "".join(c for c in (row.get("phone") or "") if c.isdigit()):
@@ -13611,7 +13741,7 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             return False
         row = user_result.data[0]
         uid = row.get("id") or uid
-        token = row.get("push_token")
+        token = (row.get("expo_push_token") or row.get("push_token") or "").strip() or None
         user_name = row.get("name", "Unknown")
         user_phone = row.get("phone") or ""
 
@@ -13620,10 +13750,11 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             return False
 
         if not ExpoPushService.is_valid_token(token):
-            logger.warning(f"⚠️ Geçersiz Expo token: {user_name} (id={uid[:8]}...) – Token ExponentPushToken/ExpoPushToken ile başlamalı.")
+            logger.warning(f"⚠️ Geçersiz Expo token: {user_name} (id={uid[:8]}...) – Token ExponentPushToken[...] veya ExpoPushToken[...] ile başlamalı.")
             return False
 
-        ok = await send_expo_notification(token, title, body, data)
+        payload = _canonical_push_routing_data(data)
+        ok = await send_expo_notification(token, title, body, payload, db_user_id=str(uid))
         if not ok:
             logger.warning(f"⚠️ Expo API bildirim göndermedi: {user_name} (id={uid[:8]}...)")
         return ok
@@ -13663,8 +13794,8 @@ async def send_match_notification_to_both(tag_id: str, driver_id: str, passenger
         except Exception:
             pass
         driver_body = f"Yolcuya {eta_min} dk. Yolcuya git için tıklayın." if eta_min else "Yolcuya git için tıklayın."
-        passenger_title = "Paylaşımlı yolculuk başladı"
-        passenger_body = "Sürücüye yazmak için tıklayın."
+        passenger_title = "Sürücü bulundu"
+        passenger_body = "Eşleşme sağlandı"
         # Teklif bildirimi gibi type=new_offer kullan (cihazda aynı kanal/aynı davranış); event=match ile uygulama eşleşme ekranına gidebilir
         base_data = {"type": "new_offer", "event": "match", "tag_id": tag_id, "eta_min": eta_min}
         if d_id:
@@ -13771,67 +13902,105 @@ async def _expo_get_push_receipts(ticket_ids: list) -> dict:
         return {"exception": str(e)}
 
 
-async def _send_expo_and_get_receipt(token: str, title: str, body: str, data: dict = None):
-    """Expo Push API'ye istek atar; (success, receipt_dict) döner. receipt Expo'nun data[0] objesidir."""
+def _expo_push_send_requests_sync(
+    token: str, title: str, body: str, data: Optional[dict] = None
+) -> Tuple[bool, dict]:
+    """
+    Expo Push HTTP API — requests.post (exp.host).
+    Yanıt gövdesi loglanır; (success, receipt_or_error) döner.
+    """
+    import requests
+
+    tok = (token or "").strip()
+    if not tok:
+        logger.warning("Expo push: token boş — gönderilmedi")
+        return False, {"error": "token_empty"}
+    if not ExpoPushService.is_valid_token(tok):
+        logger.warning(
+            "Expo push: geçersiz token formatı (ExponentPushToken[...] veya ExpoPushToken[...]) — gönderilmedi"
+        )
+        return False, {"error": "invalid_token_format"}
+
+    payload = _expo_push_data_stringify(data or {})
+    notification_type = payload.get("type")
+    channel_id = expo_android_channel_id_for_type(notification_type)
+    message = {
+        "to": tok,
+        "title": title,
+        "body": body,
+        "sound": "default",
+        "priority": "high",
+        "channelId": channel_id,
+    }
+    if payload:
+        message["data"] = payload
+    messages_payload = [message]
+
+    response = requests.post(
+        "https://exp.host/--/api/v2/push/send",
+        json=messages_payload,
+        headers=_expo_push_request_headers(),
+        timeout=25,
+    )
     try:
-        import httpx
-        payload = _expo_push_data_stringify(data or {})
-        notification_type = payload.get("type")
-        channel_id = expo_android_channel_id_for_type(notification_type)
-        message = {
-            "to": token,
-            "title": title,
-            "body": body,
-            "sound": "default",
-            "priority": "high",
-            "channelId": channel_id,
-        }
-        if payload:
-            message["data"] = payload
-        messages_payload = [message]
+        response_data = response.json()
+    except Exception:
+        response_data = {"_non_json": True, "text": (response.text or "")[:1500]}
+    try:
+        print(response_data)
+    except Exception:
+        pass
+    logger.info("Expo push (requests) HTTP %s body=%s", response.status_code, str(response_data)[:2500])
+    if response.status_code != 200:
+        return False, {"http_status": response.status_code, "body": response_data}
+    receipts = response_data.get("data") or []
+    if not receipts:
+        return False, {"error": "boş receipt listesi", "raw": response_data}
+    first = receipts[0]
+    if first.get("status") == "error":
+        err_msg = first.get("message", "bilinmeyen hata")
+        logger.error(
+            "❌ Expo push receipt status=error | message=%s | full=%s",
+            err_msg,
+            json.dumps(first, ensure_ascii=False)[:2000],
+        )
+        return False, first
+    tid = first.get("id")
+    if tid:
+        logger.info("✅ Expo push bilet id=%s", tid)
+    else:
+        logger.info("✅ Expo push receipt status=%s", first.get("status", "ok"))
+    return True, first
 
-        logger.info(f"🔔 Expo API'ye gönderiliyor: type={notification_type}, channelId={channel_id}, token={token[:50]}...")
-        logger.info(f"🚀 Sending Expo push to {token}")
 
-        headers = _expo_push_request_headers()
-
-        async with httpx.AsyncClient(http2=False, timeout=30) as client:
-            response = await client.post(
-                "https://exp.host/--/api/v2/push/send",
-                json=messages_payload,
-                headers=headers,
-            )
-
-            logger.info(f"🔔 Expo API yanıtı: status={response.status_code}")
-            logger.info(f"📨 Expo response: {response.status_code} {response.text[:1000]}")
-
-            if response.status_code != 200:
-                return False, {"http_status": response.status_code, "body": response.text[:500]}
-
-            response_data = response.json()
-            receipts = response_data.get("data") or []
-            if not receipts:
-                return False, {"error": "boş receipt listesi"}
-            first = receipts[0]
-            if first.get("status") == "error":
-                err_msg = first.get("message", "bilinmeyen hata")
-                err_details = first.get("details") or first
-                logger.error(f"❌ Expo API hatası: {err_msg} | details={err_details}")
-                return False, first
-            tid = first.get("id")
-            if tid:
-                logger.info(f"✅ Expo push bilet id={tid} (FCM gerçek sonuç için getReceipts kullanın)")
-            else:
-                logger.info(f"✅ Expo push başarılı (receipt status={first.get('status', 'ok')})")
-            return True, first
+async def _send_expo_and_get_receipt(
+    token: str, title: str, body: str, data: dict = None, db_user_id: Optional[str] = None
+):
+    """Expo Push API'ye istek atar; (success, receipt_dict) döner."""
+    try:
+        if not token or not str(token).strip():
+            return False, {"error": "token boş"}
+        if not ExpoPushService.is_valid_token(str(token).strip()):
+            return False, {"error": "invalid_token_format"}
+        logger.info("🔔 Expo push (async thread): token=%s...", (token[:50] if token else ""))
+        ok, receipt = await asyncio.to_thread(_expo_push_send_requests_sync, token, title, body, data)
+        if (
+            not ok
+            and db_user_id
+            and _receipt_device_not_registered(receipt if isinstance(receipt, dict) else None)
+        ):
+            await _clear_user_expo_push_tokens(db_user_id)
+        return ok, receipt
     except Exception as e:
         logger.error(f"❌ Expo API exception: {e}")
         return False, {"exception": str(e)}
 
 
-async def send_expo_notification(token: str, title: str, body: str, data: dict = None):
+async def send_expo_notification(
+    token: str, title: str, body: str, data: dict = None, db_user_id: Optional[str] = None
+):
     """Expo Push API ile bildirim gönder"""
-    success, _ = await _send_expo_and_get_receipt(token, title, body, data)
+    success, _ = await _send_expo_and_get_receipt(token, title, body, data, db_user_id=db_user_id)
     return success
 
 
@@ -13846,12 +14015,16 @@ async def send_expo_push(token: str, title: str, body: str) -> bool:
             return False
 
         # 5 saniyelik hard timeout: expo tarafı takılırsa event-loop bloke olmasın.
+        if not ExpoPushService.is_valid_token(str(token).strip()):
+            logger.warning("send_expo_push: geçersiz Expo token formatı")
+            return False
         ok, _ = await asyncio.wait_for(
             _send_expo_and_get_receipt(
                 token=token,
                 title=title,
                 body=body,
                 data={"type": "new_offer"},
+                db_user_id=None,
             ),
             timeout=5.0,
         )
@@ -15342,6 +15515,7 @@ async def admin_test_push(payload: AdminTestPushRequest):
             title=payload.title,
             body=payload.body,
             data={"type": "admin_push_test"},
+            db_user_id=str(user.get("id") or "") or None,
         )
 
         return {

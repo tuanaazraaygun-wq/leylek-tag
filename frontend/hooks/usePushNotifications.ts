@@ -111,23 +111,25 @@ function runRegisterForPushNotificationsChain(
         return PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS').then(
           (postResult) => {
             if (postResult !== PermissionsAndroid.RESULTS.GRANTED) {
-              return Promise.reject();
+              return Promise.reject(new Error('POST_NOTIFICATIONS denied'));
             }
           }
         );
       }
       return Promise.resolve();
     })
-    .then(() =>
-      Notifications.getPermissionsAsync().then(({ status }) => {
-        if (status === 'granted') return Promise.resolve();
-        return Notifications.requestPermissionsAsync().then(({ status: next }) => {
-          if (next !== 'granted') return Promise.reject();
-        });
-      })
-    )
+    .then(() => Notifications.requestPermissionsAsync())
+    .then(({ status }) => {
+      if (status !== 'granted') {
+        console.warn('[PUSH] Bildirim izni verilmedi:', status);
+        return Promise.reject(new Error('notification permission denied'));
+      }
+    })
     .then(() => {
-      if (!projectId) return Promise.reject();
+      if (!projectId) {
+        console.warn('[PUSH] EAS projectId yok — app.json extra.eas.projectId gerekli');
+        return Promise.reject(new Error('missing projectId'));
+      }
       return Notifications.getExpoPushTokenAsync({ projectId });
     })
     .then((expoToken) => {
@@ -137,10 +139,12 @@ function runRegisterForPushNotificationsChain(
         setTokenType('expo');
         onToken(token);
       } else {
+        console.warn('[PUSH] Expo push token alınamadı (getExpoPushTokenAsync boş data)');
         fail();
       }
     })
-    .catch(() => {
+    .catch((e) => {
+      console.warn('[PUSH] Token zinciri başarısız:', e);
       fail();
     });
 }
@@ -171,10 +175,11 @@ function usePushNotificationsState(): PushNotificationHook {
       }
       acquireTokenNonBlocking((token) => {
         if (!token) {
+          console.warn('[PUSH] Token yok — backend’e gönderilmedi (userId=', userId, ')');
           onComplete?.(false);
           return;
         }
-        fetch(`${API_URL}/user/register-push-token`, {
+        fetch(`${API_URL}/user/save-push-token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -183,14 +188,25 @@ function usePushNotificationsState(): PushNotificationHook {
             platform: Platform.OS,
           }),
         })
-          .then((response) => response.json().catch(() => ({})))
-          .then((data: { success?: boolean; detail?: string; message?: string }) => {
-            if (!data.success) {
-              console.warn('[PUSH] register-push-token başarısız:', data.detail || data.message || data);
+          .then(async (response) => {
+            const data = (await response.json().catch(() => ({}))) as {
+              success?: boolean;
+              detail?: string;
+              message?: string;
+            };
+            if (!response.ok || !data.success) {
+              console.warn(
+                '[PUSH] save-push-token başarısız:',
+                data.detail || data.message || response.status,
+                data,
+              );
+              onComplete?.(false);
+              return;
             }
-            onComplete?.(!!data.success);
+            onComplete?.(true);
           })
-          .catch(() => {
+          .catch((err) => {
+            console.warn('[PUSH] save-push-token ağ hatası:', err);
             onComplete?.(false);
           });
       });

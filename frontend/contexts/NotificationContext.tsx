@@ -9,7 +9,7 @@ export type TappedNotificationData = { type?: string; tag_id?: string; action?: 
 interface NotificationContextType {
   expoPushToken: string | null;
   notification: Notifications.Notification | null;
-  /** Bildirime tıklandığında set edilir (örn. new_offer → tag_id ile teklif ekranına git) */
+  /** Bildirime tıklandığında set edilir; backend `type`: chat | match | offer (+ `detail_type`, `tag_id`) */
   lastTappedNotificationData: TappedNotificationData;
   clearLastTappedNotification: () => void;
   sendLocalNotification: (title: string, body: string, data?: any) => Promise<void>;

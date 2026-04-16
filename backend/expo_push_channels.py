@@ -36,6 +36,11 @@ def expo_android_channel_id_for_type(notification_type: Optional[Any]) -> str:
     if notification_type is None:
         return "default"
     s = str(notification_type).strip()
+    # Uygulama yönlendirme payload'ı (client: chat | match | offer)
+    if s == "chat":
+        return "default"
+    if s in ("match", "offer"):
+        return "offers"
     if s in EXPO_CALLS_CHANNEL_TYPES:
         return "calls"
     if s in EXPO_OFFERS_CHANNEL_TYPES:
