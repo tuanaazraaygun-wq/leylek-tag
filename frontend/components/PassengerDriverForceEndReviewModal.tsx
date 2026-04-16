@@ -15,10 +15,12 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export type PassengerDriverForceEndReviewModalProps = {
   visible: boolean;
-  onConfirm: () => void;
-  onReject: () => void;
+  onConfirm: () => void | Promise<void>;
+  onReject: () => void | Promise<void>;
   /** Varsayılan: sürücü zorla bitirdi metni */
   title?: string;
+  /** true iken butonlar devre dışı — HTTP bitmeden kapanmaz */
+  submitting?: boolean;
 };
 
 export default function PassengerDriverForceEndReviewModal({
@@ -26,6 +28,7 @@ export default function PassengerDriverForceEndReviewModal({
   onConfirm,
   onReject,
   title,
+  submitting = false,
 }: PassengerDriverForceEndReviewModalProps) {
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -82,11 +85,21 @@ export default function PassengerDriverForceEndReviewModal({
           </Text>
           <Text style={styles.description}>Bu bitişi onaylıyor musunuz?</Text>
           <View style={styles.buttonColumn}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={onConfirm} activeOpacity={0.88}>
-              <Text style={styles.primaryBtnText}>Onaylıyorum</Text>
+            <TouchableOpacity
+              style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+              onPress={() => void onConfirm()}
+              activeOpacity={0.88}
+              disabled={submitting}
+            >
+              <Text style={styles.primaryBtnText}>{submitting ? 'Gönderiliyor…' : 'Onaylıyorum'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={onReject} activeOpacity={0.88}>
-              <Text style={styles.secondaryBtnText}>Onaylamıyorum</Text>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+              onPress={() => void onReject()}
+              activeOpacity={0.88}
+              disabled={submitting}
+            >
+              <Text style={styles.secondaryBtnText}>{submitting ? 'Gönderiliyor…' : 'Onaylamıyorum'}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -170,5 +183,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#334155',
+  },
+  btnDisabled: {
+    opacity: 0.55,
   },
 });

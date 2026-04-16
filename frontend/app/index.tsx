@@ -5879,6 +5879,7 @@ function PassengerDashboard({
     initiatorType: 'driver' | 'passenger';
     initiatorName: string;
   } | null>(null);
+  const [passengerForceEndReviewSubmitting, setPassengerForceEndReviewSubmitting] = useState(false);
   /** Aynı tag için zorla-bitir onay modalı yalnızca bir kez (poll/useEffect tekrar açmasın) */
   const passengerForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
 
@@ -8569,27 +8570,42 @@ function PassengerDashboard({
                 
                 <PassengerDriverForceEndReviewModal
                   visible={!!passengerDriverForceReview}
+                  submitting={passengerForceEndReviewSubmitting}
                   title={
                     passengerDriverForceReview?.initiatorType === 'passenger'
                       ? 'Yolcu eşleşmeyi zorla bitirdi'
                       : undefined
                   }
                   onConfirm={async () => {
-                    if (!passengerDriverForceReview || !user?.id) return;
+                    if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
+                    setPassengerForceEndReviewSubmitting(true);
                     try {
+                      console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+                        tag_id: tid,
+                        user_id: user.id,
+                        ender_id: passengerDriverForceReview.initiatorId,
+                        approved: true,
+                        role: 'passenger',
+                      });
                       const q = new URLSearchParams({
                         tag_id: tid,
                         ender_id: passengerDriverForceReview.initiatorId,
                         approved: 'true',
                         user_id: user.id,
                       });
-                      const r = await fetch(`${API_URL}/trip/force-end-confirm?${q.toString()}`, { method: 'POST' });
+                      const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
+                      const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+                      if (!r) {
+                        appAlert('Hata', 'Onay gönderilemedi (bağlantı zaman aşımı).');
+                        return;
+                      }
                       const j = await r.json().catch(() => ({}));
-                      if (!r.ok || j.success === false) {
+                      if (!r.ok || (j as { success?: boolean }).success === false) {
                         appAlert('Hata', (j as { detail?: string }).detail || 'Onay gönderilemedi.');
                         return;
                       }
+                      console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'passenger' });
                       passengerForceEndModalHandledTagIdsRef.current.delete(tid);
                       setPassengerDriverForceReview(null);
                       setRatingModalData(null);
@@ -8598,24 +8614,40 @@ function PassengerDashboard({
                       setScreen('role-select');
                     } catch {
                       appAlert('Hata', 'Onay gönderilemedi.');
+                    } finally {
+                      setPassengerForceEndReviewSubmitting(false);
                     }
                   }}
                   onReject={async () => {
-                    if (!passengerDriverForceReview || !user?.id) return;
+                    if (!passengerDriverForceReview || !user?.id || passengerForceEndReviewSubmitting) return;
                     const tid = passengerDriverForceReview.tagId;
+                    setPassengerForceEndReviewSubmitting(true);
                     try {
+                      console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+                        tag_id: tid,
+                        user_id: user.id,
+                        ender_id: passengerDriverForceReview.initiatorId,
+                        approved: false,
+                        role: 'passenger',
+                      });
                       const q = new URLSearchParams({
                         tag_id: tid,
                         ender_id: passengerDriverForceReview.initiatorId,
                         approved: 'false',
                         user_id: user.id,
                       });
-                      const r = await fetch(`${API_URL}/trip/force-end-confirm?${q.toString()}`, { method: 'POST' });
+                      const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
+                      const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+                      if (!r) {
+                        appAlert('Hata', 'Yanıt gönderilemedi (bağlantı zaman aşımı).');
+                        return;
+                      }
                       const j = await r.json().catch(() => ({}));
-                      if (!r.ok || j.success === false) {
+                      if (!r.ok || (j as { success?: boolean }).success === false) {
                         appAlert('Hata', (j as { detail?: string }).detail || 'Yanıt gönderilemedi.');
                         return;
                       }
+                      console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'passenger' });
                       passengerForceEndModalHandledTagIdsRef.current.delete(tid);
                       setPassengerDriverForceReview(null);
                       setRatingModalData(null);
@@ -8624,6 +8656,8 @@ function PassengerDashboard({
                       setScreen('role-select');
                     } catch {
                       appAlert('Hata', 'Yanıt gönderilemedi.');
+                    } finally {
+                      setPassengerForceEndReviewSubmitting(false);
                     }
                   }}
                 />
@@ -9307,6 +9341,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     initiatorType: 'driver' | 'passenger';
     initiatorName: string;
   } | null>(null);
+  const [driverForceEndReviewSubmitting, setDriverForceEndReviewSubmitting] = useState(false);
   const driverForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
 
   /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın */
@@ -11651,27 +11686,42 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       
       <PassengerDriverForceEndReviewModal
         visible={!!driverPassengerForceEndReview}
+        submitting={driverForceEndReviewSubmitting}
         title={
           driverPassengerForceEndReview?.initiatorType === 'passenger'
             ? 'Yolcu eşleşmeyi zorla bitirdi'
             : undefined
         }
         onConfirm={async () => {
-          if (!driverPassengerForceEndReview || !user?.id) return;
+          if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
+          setDriverForceEndReviewSubmitting(true);
           try {
+            console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+              tag_id: tid,
+              user_id: user.id,
+              ender_id: driverPassengerForceEndReview.initiatorId,
+              approved: true,
+              role: 'driver',
+            });
             const q = new URLSearchParams({
               tag_id: tid,
               ender_id: driverPassengerForceEndReview.initiatorId,
               approved: 'true',
               user_id: user.id,
             });
-            const r = await fetch(`${API_URL}/trip/force-end-confirm?${q.toString()}`, { method: 'POST' });
+            const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
+            const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+            if (!r) {
+              appAlert('Hata', 'Onay gönderilemedi (bağlantı zaman aşımı).');
+              return;
+            }
             const j = await r.json().catch(() => ({}));
-            if (!r.ok || j.success === false) {
+            if (!r.ok || (j as { success?: boolean }).success === false) {
               appAlert('Hata', (j as { detail?: string }).detail || 'Onay gönderilemedi.');
               return;
             }
+            console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'driver' });
             driverForceEndModalHandledTagIdsRef.current.delete(tid);
             setDriverPassengerForceEndReview(null);
             setRatingModalData(null);
@@ -11680,24 +11730,40 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             setScreen('role-select');
           } catch {
             appAlert('Hata', 'Onay gönderilemedi.');
+          } finally {
+            setDriverForceEndReviewSubmitting(false);
           }
         }}
         onReject={async () => {
-          if (!driverPassengerForceEndReview || !user?.id) return;
+          if (!driverPassengerForceEndReview || !user?.id || driverForceEndReviewSubmitting) return;
           const tid = driverPassengerForceEndReview.tagId;
+          setDriverForceEndReviewSubmitting(true);
           try {
+            console.log('FRONTEND_FORCE_END_CONFIRM_START', {
+              tag_id: tid,
+              user_id: user.id,
+              ender_id: driverPassengerForceEndReview.initiatorId,
+              approved: false,
+              role: 'driver',
+            });
             const q = new URLSearchParams({
               tag_id: tid,
               ender_id: driverPassengerForceEndReview.initiatorId,
               approved: 'false',
               user_id: user.id,
             });
-            const r = await fetch(`${API_URL}/trip/force-end-confirm?${q.toString()}`, { method: 'POST' });
+            const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
+            const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+            if (!r) {
+              appAlert('Hata', 'Yanıt gönderilemedi (bağlantı zaman aşımı).');
+              return;
+            }
             const j = await r.json().catch(() => ({}));
-            if (!r.ok || j.success === false) {
+            if (!r.ok || (j as { success?: boolean }).success === false) {
               appAlert('Hata', (j as { detail?: string }).detail || 'Yanıt gönderilemedi.');
               return;
             }
+            console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'driver' });
             driverForceEndModalHandledTagIdsRef.current.delete(tid);
             setDriverPassengerForceEndReview(null);
             setRatingModalData(null);
@@ -11706,6 +11772,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             setScreen('role-select');
           } catch {
             appAlert('Hata', 'Yanıt gönderilemedi.');
+          } finally {
+            setDriverForceEndReviewSubmitting(false);
           }
         }}
       />

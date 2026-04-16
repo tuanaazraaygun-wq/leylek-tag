@@ -6069,6 +6069,32 @@ async def create_request_alias(request: CreateTagRequest, user_id: str = None):
     """Yolcu TAG oluştur (alias)"""
     return await create_tag(request, user_id)
 
+
+# ÖNEMLİ: Bu route, aşağıdaki GET /trip/{tag_id} catch-all'ından ÖNCE tanımlanmalı.
+# Aksi halde "check-end-request" path segmenti tag_id sanılır ve Supabase id=eq.check-end-request hatası oluşur.
+@api_router.get("/trip/check-end-request")
+async def check_end_request(tag_id: str, user_id: str):
+    """Sonlandırma isteği var mı kontrol et - Supabase'den oku"""
+    try:
+        result = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
+
+        if result.data and len(result.data) > 0:
+            request = result.data[0].get("end_request")
+
+            if request and request.get("status") == "pending" and request.get("requester_id") != user_id:
+                return {
+                    "success": True,
+                    "has_request": True,
+                    "requester_id": request["requester_id"],
+                    "requester_type": request.get("user_type", "unknown"),
+                }
+
+        return {"success": True, "has_request": False}
+    except Exception as e:
+        logger.error(f"Check end request error: {e}")
+        return {"success": False, "has_request": False}
+
+
 @api_router.get("/trip/{tag_id}")
 async def get_trip_status(tag_id: str):
     """Yolculuk durumunu al - polling için"""
@@ -8056,6 +8082,13 @@ async def force_end_confirm(
 ):
     """Karşı taraf: zorla bitirmeyi onaylar / reddeder (ender_id = zorla bitiren)."""
     try:
+        logger.info(
+            "FORCE_END_CONFIRM_HTTP tag_id=%s user_id=%s ender_id=%s approved=%s",
+            tag_id,
+            user_id,
+            ender_id,
+            approved,
+        )
         if not tag_id or not ender_id or not user_id:
             raise HTTPException(status_code=422, detail="tag_id, ender_id ve user_id gerekli")
 
@@ -10547,28 +10580,6 @@ async def request_trip_end(tag_id: str, user_id: str = None, requester_id: str =
     except Exception as e:
         logger.error(f"Request end error: {e}")
         return {"success": False, "detail": str(e)}
-
-@api_router.get("/trip/check-end-request")
-async def check_end_request(tag_id: str, user_id: str):
-    """Sonlandırma isteği var mı kontrol et - Supabase'den oku"""
-    try:
-        result = supabase.table("tags").select("end_request").eq("id", tag_id).execute()
-        
-        if result.data and len(result.data) > 0:
-            request = result.data[0].get("end_request")
-            
-            if request and request.get("status") == "pending" and request.get("requester_id") != user_id:
-                return {
-                    "success": True,
-                    "has_request": True,
-                    "requester_id": request["requester_id"],
-                    "requester_type": request.get("user_type", "unknown")
-                }
-        
-        return {"success": True, "has_request": False}
-    except Exception as e:
-        logger.error(f"Check end request error: {e}")
-        return {"success": False, "has_request": False}
 
 @api_router.post("/trip/respond-end-request")
 async def respond_end_request(tag_id: str, user_id: str, approved: bool = True):
