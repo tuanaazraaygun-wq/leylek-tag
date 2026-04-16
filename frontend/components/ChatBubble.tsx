@@ -15,6 +15,8 @@ import {
   Platform,
   Keyboard,
   Vibration,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -217,6 +219,21 @@ export default function ChatBubble({
     return () => clearTimeout(t);
   }, [keyboardPad]);
 
+  useEffect(() => {
+    if (!visible) {
+      setIsMinimized(false);
+      setUnreadCount(0);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    setMessages([]);
+    setInputText('');
+    setIsMinimized(false);
+    setUnreadCount(0);
+    setSpamWarning('');
+  }, [tagId]);
+
   // ═══════════════════════════════════════════════════════════════
   // MESAJ GÖNDER - BROADCAST İLE (DATABASE YOK!)
   // ═══════════════════════════════════════════════════════════════
@@ -393,14 +410,17 @@ export default function ChatBubble({
     );
   }
 
-  // Full chat panel
+  // Tam panel — Modal + backdrop (dışarı dokununca kapanır; eşleşme bitince parent visible=false)
   return (
-    <Animated.View 
-      style={[
-        styles.container,
-        { transform: [{ translateY: slideAnim }] }
-      ]}
-    >
+    <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Sohbeti kapat" />
+        <Animated.View
+          style={[
+            styles.container,
+            { transform: [{ translateY: slideAnim }] },
+          ]}
+        >
       <View style={styles.keyboardView}>
         {/* Header */}
         <View style={styles.header}>
@@ -529,16 +549,24 @@ export default function ChatBubble({
           </TouchableOpacity>
         </View>
       </View>
-    </Animated.View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    width: '100%',
+    maxHeight: SCREEN_HEIGHT * 0.6,
     height: SCREEN_HEIGHT * 0.6,
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,

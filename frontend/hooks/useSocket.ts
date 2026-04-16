@@ -124,6 +124,13 @@ interface UseSocketProps {
     new_points?: number;
     new_rating?: number;
   }) => void;
+  /** Sürücü zorla bitir — yolcu onayı bekleniyor */
+  onDriverForcedEndRequested?: (data: {
+    tag_id: string;
+    driver_id: string;
+    driver_name?: string;
+    passenger_id?: string;
+  }) => void;
   // 🆕 QR ile yolculuk bitirme - Puanlama modalı
   onShowRatingModal?: (data: {
     tag_id: string;
@@ -181,6 +188,7 @@ export default function useSocket({
   onTripEndRequested,
   onTripEndResponse,
   onTripForceEnded,
+  onDriverForcedEndRequested,
   onShowRatingModal,  // 🆕 QR puanlama modalı
   onCallCancelled,
   onCallEndedNew,
@@ -222,7 +230,7 @@ export default function useSocket({
     onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
-    onTripForceEnded, onShowRatingModal,
+    onTripForceEnded, onDriverForcedEndRequested, onShowRatingModal,
     onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
   });
   
@@ -233,7 +241,7 @@ export default function useSocket({
       onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
-      onTripForceEnded, onShowRatingModal,
+      onTripForceEnded, onDriverForcedEndRequested, onShowRatingModal,
       onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
     };
   });
@@ -379,6 +387,11 @@ export default function useSocket({
       callbackRefs.current.onTripForceEnded?.(data);
     };
 
+    const handleDriverForcedEndRequested = (data: any) => {
+      console.log('⚡ [useSocket] driver_forced_end_requested:', data);
+      callbackRefs.current.onDriverForcedEndRequested?.(data);
+    };
+
     // ══════════ MESAJLAŞMA EVENTLERİ ══════════
 
     const handleNewMessage = (data: any) => {
@@ -434,6 +447,7 @@ export default function useSocket({
     socket.on('trip_end_requested', handleTripEndRequested);
     socket.on('trip_end_response', handleTripEndResponse);
     socket.on('trip_force_ended', handleTripForceEnded);
+    socket.on('driver_forced_end_requested', handleDriverForcedEndRequested);
     
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı
     socket.on('show_rating_modal', (data: any) => {
@@ -486,6 +500,7 @@ export default function useSocket({
       socket.off('trip_end_requested', handleTripEndRequested);
       socket.off('trip_end_response', handleTripEndResponse);
       socket.off('trip_force_ended', handleTripForceEnded);
+      socket.off('driver_forced_end_requested', handleDriverForcedEndRequested);
       
       // 🆕 QR ile puanlama modalı
       socket.off('show_rating_modal');

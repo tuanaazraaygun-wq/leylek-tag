@@ -510,27 +510,43 @@ async def deduct_points(user_id: str, points: int, reason: str):
 
 @sio.event
 async def force_end_trip(sid, data):
-    """Yolculuğu ANINDA bitir — apply_force_end_trip_and_notify ile HTTP ile aynı mantık."""
+    """Yolculuğu ANINDA bitir — HTTP ile aynı; sürücü için yolcu onayı beklenir."""
     data = data or {}
     tag_id = data.get("tag_id")
     ender_id = data.get("ender_id")
     ender_type = data.get("ender_type")
     logger.info(f"🔚 FORCE END TRIP (socket): {tag_id} by {ender_id} ({ender_type})")
     try:
-        result = await apply_force_end_trip_and_notify(tag_id, ender_id, ender_type)
+        et = (ender_type or "").strip().lower()
+        if et == "driver":
+            result = await request_driver_force_end_review(str(tag_id).strip(), str(ender_id).strip())
+        else:
+            result = await apply_force_end_trip_and_notify(tag_id, ender_id, ender_type)
         if result.get("success"):
-            await sio.emit(
-                "trip_end_confirmed",
-                {
-                    "success": True,
-                    "tag_id": tag_id,
-                    "points_deducted": 3 if not result.get("idempotent") else 0,
-                    "new_points": result.get("new_points"),
-                    "new_rating": result.get("new_rating"),
-                    "idempotent": result.get("idempotent"),
-                },
-                room=sid,
-            )
+            if result.get("pending_passenger_review"):
+                await sio.emit(
+                    "trip_end_confirmed",
+                    {
+                        "success": True,
+                        "tag_id": tag_id,
+                        "pending_passenger_review": True,
+                        "idempotent": result.get("idempotent"),
+                    },
+                    room=sid,
+                )
+            else:
+                await sio.emit(
+                    "trip_end_confirmed",
+                    {
+                        "success": True,
+                        "tag_id": tag_id,
+                        "points_deducted": 3 if not result.get("idempotent") else 0,
+                        "new_points": result.get("new_points"),
+                        "new_rating": result.get("new_rating"),
+                        "idempotent": result.get("idempotent"),
+                    },
+                    room=sid,
+                )
         else:
             await sio.emit(
                 "trip_end_confirmed",
@@ -1498,6 +1514,269 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
             logger.info(f"📤 {event_name} room={room} (sid yok)")
     except Exception as e:
         logger.warning(f"{event_name} emit hatası: {e}")
+
+
+FORCE_END_REVIEW_KIND = "driver_force_end_review"
+
+
+async def request_driver_force_end_review(tag_id: str, driver_id: str) -> dict:
+    """
+    Sürücü zorla bitir — yolcu onayı beklenir (tag matched kalır, end_request ile işaretlenir).
+    Idempotent: aynı tag'de zaten bekleyen inceleme varsa success döner.
+    """
+    tid = str(tag_id).strip()
+    try:
+        resolved_driver = await resolve_user_id(str(driver_id).strip())
+        if resolved_driver:
+            resolved_driver = str(resolved_driver).strip()
+        else:
+            resolved_driver = str(driver_id).strip()
+    except Exception:
+        resolved_driver = str(driver_id).strip()
+
+    try:
+        tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+    except Exception as e:
+        logger.error(f"request_driver_force_end_review: tag okunamadı: {e}")
+        return {"success": False, "error": "TAG okunamadı"}
+
+    if not tr.data:
+        return {"success": False, "error": "TAG bulunamadı"}
+
+    tag = tr.data[0]
+    pid_raw = tag.get("passenger_id")
+    did_raw = tag.get("driver_id")
+
+    passenger_id = None
+    driver_row_id = None
+    if pid_raw:
+        try:
+            passenger_id = await resolve_user_id(str(pid_raw).strip())
+            if passenger_id:
+                passenger_id = str(passenger_id).strip()
+        except Exception:
+            passenger_id = str(pid_raw).strip()
+    if did_raw:
+        try:
+            driver_row_id = await resolve_user_id(str(did_raw).strip())
+            if driver_row_id:
+                driver_row_id = str(driver_row_id).strip()
+        except Exception:
+            driver_row_id = str(did_raw).strip()
+
+    if not passenger_id or not driver_row_id:
+        return {"success": False, "error": "Eşleşme bilgisi eksik"}
+
+    if resolved_driver.lower() != driver_row_id.lower():
+        return {"success": False, "error": "Bu işlem için sürücü olmalısınız"}
+
+    st = (tag.get("status") or "").lower()
+    if st in ("completed", "cancelled"):
+        return {"success": True, "idempotent": True, "pending_passenger_review": False, "message": "Yolculuk zaten sonlanmış"}
+
+    if st not in ("matched", "in_progress"):
+        return {"success": False, "error": "Aktif eşleşme yok (zorla bitirilemez)"}
+
+    existing = tag.get("end_request")
+    if isinstance(existing, dict) and existing.get("kind") != FORCE_END_REVIEW_KIND:
+        if existing.get("status") == "pending" and existing.get("requester_id"):
+            return {"success": False, "error": "Bekleyen bir sonlandırma isteği var"}
+
+    if isinstance(existing, dict) and existing.get("kind") == FORCE_END_REVIEW_KIND:
+        if str(existing.get("driver_id", "")).lower() == resolved_driver.lower():
+            logger.info("driver_forced_end_requested (idempotent) tag=%s driver=%s", tid, resolved_driver[:12])
+            return {
+                "success": True,
+                "idempotent": True,
+                "pending_passenger_review": True,
+                "tag_id": tid,
+                "driver_id": driver_row_id,
+                "passenger_id": passenger_id,
+            }
+
+    now_iso = datetime.utcnow().isoformat()
+    review = {
+        "kind": FORCE_END_REVIEW_KIND,
+        "driver_id": driver_row_id,
+        "passenger_id": passenger_id,
+        "requested_at": now_iso,
+        "status": "awaiting_passenger",
+    }
+    try:
+        supabase.table("tags").update({"end_request": review}).eq("id", tid).execute()
+    except Exception as e:
+        logger.error(f"request_driver_force_end_review: güncellenemedi: {e}")
+        return {"success": False, "error": str(e)}
+
+    logger.info("driver_forced_end_requested tag=%s driver=%s passenger=%s", tid, resolved_driver[:12], (passenger_id or "")[:12])
+
+    ender_name = ""
+    try:
+        _en = supabase.table("users").select("name").eq("id", resolved_driver).limit(1).execute()
+        if _en.data:
+            ender_name = (str(_en.data[0].get("name") or "")).strip()
+    except Exception:
+        pass
+
+    await emit_socket_event_to_user(
+        passenger_id,
+        "driver_forced_end_requested",
+        {
+            "tag_id": tid,
+            "driver_id": driver_row_id,
+            "driver_name": ender_name,
+            "passenger_id": passenger_id,
+        },
+    )
+    await emit_socket_event_to_user(
+        driver_row_id,
+        "driver_forced_end_pending",
+        {"tag_id": tid, "passenger_id": passenger_id},
+    )
+
+    return {
+        "success": True,
+        "pending_passenger_review": True,
+        "tag_id": tid,
+        "driver_id": driver_row_id,
+        "passenger_id": passenger_id,
+    }
+
+
+async def resolve_driver_force_end_from_passenger(
+    tag_id: str,
+    passenger_responder_id: str,
+    driver_id: str,
+    approved: bool,
+) -> dict:
+    """Yolcu onayı / reddi sonrası tag'i tamamlar; reddedilirse sürücüye -5 puan."""
+    tid = str(tag_id).strip()
+    try:
+        pr = await resolve_user_id(str(passenger_responder_id).strip())
+        if pr:
+            pr = str(pr).strip()
+        else:
+            pr = str(passenger_responder_id).strip()
+    except Exception:
+        pr = str(passenger_responder_id).strip()
+
+    try:
+        dr = await resolve_user_id(str(driver_id).strip())
+        if dr:
+            dr = str(dr).strip()
+        else:
+            dr = str(driver_id).strip()
+    except Exception:
+        dr = str(driver_id).strip()
+
+    try:
+        tr = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+    except Exception as e:
+        logger.error(f"resolve_driver_force_end_from_passenger: tag okunamadı: {e}")
+        return {"success": False, "error": "TAG okunamadı"}
+
+    if not tr.data:
+        return {"success": False, "error": "TAG bulunamadı"}
+
+    tag = tr.data[0]
+    st = (tag.get("status") or "").lower()
+    if st in ("completed", "cancelled"):
+        return {"success": True, "idempotent": True, "message": "Yolculuk zaten sonlanmış"}
+
+    pid = tag.get("passenger_id")
+    did = tag.get("driver_id")
+    try:
+        pid_r = await resolve_user_id(str(pid).strip()) if pid else None
+        if pid_r:
+            pid_r = str(pid_r).strip()
+    except Exception:
+        pid_r = str(pid).strip() if pid else None
+    try:
+        did_r = await resolve_user_id(str(did).strip()) if did else None
+        if did_r:
+            did_r = str(did_r).strip()
+    except Exception:
+        did_r = str(did).strip() if did else None
+
+    if not pid_r or not did_r or pr.lower() != pid_r.lower() or dr.lower() != did_r.lower():
+        return {"success": False, "error": "Onay için yetkiniz yok veya eşleşme uyuşmuyor"}
+
+    req = tag.get("end_request")
+    if not isinstance(req, dict) or req.get("kind") != FORCE_END_REVIEW_KIND:
+        return {"success": False, "error": "Bekleyen sürücü zorla bitir incelemesi yok"}
+
+    if str(req.get("driver_id", "")).lower() != dr.lower():
+        return {"success": False, "error": "Sürücü bilgisi uyuşmuyor"}
+
+    now_iso = datetime.utcnow().isoformat()
+
+    if approved:
+        logger.info("passenger_forced_end_confirmed tag=%s driver=%s", tid, dr[:12])
+        new_points, new_rating = None, None
+    else:
+        logger.info("passenger_forced_end_rejected tag=%s driver=%s", tid, dr[:12])
+        new_points, new_rating = await deduct_points(dr, 5, "Yolcu zorla bitiri onaylamadı")
+        logger.info("driver_penalty_applied_minus_5 user=%s new_points=%s", dr[:12], new_points)
+
+    try:
+        supabase.table("tags").update(
+            {
+                "status": "completed",
+                "completed_at": now_iso,
+                "ended_by": dr,
+                "end_type": "force",
+                "end_request": None,
+            }
+        ).eq("id", tid).execute()
+    except Exception as e:
+        logger.error(f"resolve_driver_force_end_from_passenger: tag güncellenemedi: {e}")
+        return {"success": False, "error": str(e)}
+
+    try:
+        supabase.table("chat_messages").delete().eq("tag_id", tid).execute()
+    except Exception as chat_err:
+        logger.warning(f"resolve_driver_force_end_from_passenger: chat silinemedi: {chat_err}")
+
+    ender_name = ""
+    try:
+        _en = supabase.table("users").select("name").eq("id", dr).limit(1).execute()
+        if _en.data:
+            ender_name = (str(_en.data[0].get("name") or "")).strip()
+    except Exception:
+        pass
+
+    payload_base = {
+        "tag_id": tid,
+        "ended_by": dr,
+        "ender_id": dr,
+        "ender_type": "driver",
+        "ender_name": ender_name,
+        "passenger_id": pid_r,
+        "driver_id": did_r,
+        "completed_at": now_iso,
+        "passenger_reviewed_driver_force_end": True,
+        "passenger_approved_driver_force_end": approved,
+    }
+
+    for uid in [pid_r, did_r]:
+        if not uid:
+            continue
+        is_driver = str(uid).strip().lower() == dr.lower()
+        penalty = 0 if approved else 5
+        pl = {
+            **payload_base,
+            "points_deducted": penalty if is_driver else 0,
+            "new_points": new_points if (is_driver and not approved) else None,
+            "new_rating": new_rating if (is_driver and not approved) else None,
+        }
+        await emit_socket_event_to_user(uid, "trip_force_ended", pl)
+
+    return {
+        "success": True,
+        "approved": approved,
+        "new_points": new_points,
+        "new_rating": new_rating,
+    }
 
 
 async def apply_force_end_trip_and_notify(
@@ -2724,10 +3003,16 @@ async def auto_cleanup_inactive_tags():
         cutoff_time = (datetime.utcnow() - timedelta(minutes=max_inactive_minutes)).isoformat()
         
         # Aktif TAG'leri bul (matched veya in_progress)
-        result = supabase.table("tags").select("id, passenger_id, driver_id, status, last_activity, matched_at, created_at").in_("status", ["matched", "in_progress"]).execute()
+        result = supabase.table("tags").select(
+            "id, passenger_id, driver_id, status, last_activity, matched_at, created_at, end_request"
+        ).in_("status", ["matched", "in_progress"]).execute()
         
         cleaned_count = 0
         for tag in result.data:
+            er = tag.get("end_request")
+            if isinstance(er, dict) and er.get("kind") == FORCE_END_REVIEW_KIND:
+                # Sürücü zorla bitir — yolcu onayı bekleniyor; inaktivite ile iptal etme
+                continue
             last_activity = tag.get("last_activity") or tag.get("matched_at") or tag.get("created_at")
             
             if last_activity:
@@ -7216,6 +7501,8 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
 
             tag_data = {
                 "id": tag["id"],
+                "driver_id": tag.get("driver_id"),
+                "driver_name": tag.get("driver_name"),
                 "passenger_id": tag["passenger_id"],
                 "passenger_name": passenger_info.get("name"),
                 "passenger_phone": passenger_info.get("phone"),
@@ -7240,6 +7527,7 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                 "pickup_eta_min": pickup_min_i,
                 "passenger_preferred_vehicle": tag.get("passenger_preferred_vehicle"),
                 "passenger_payment_method": tag.get("passenger_payment_method"),
+                "end_request": tag.get("end_request"),
             }
             
             return {
@@ -7699,9 +7987,20 @@ async def force_end_trip_http(
         elif et != inferred:
             raise HTTPException(status_code=403, detail="Rol uyuşmuyor")
 
-        result = await apply_force_end_trip_and_notify(str(tag_id).strip(), resolved_id, et)
+        if et == "driver":
+            result = await request_driver_force_end_review(str(tag_id).strip(), resolved_id)
+        else:
+            result = await apply_force_end_trip_and_notify(str(tag_id).strip(), resolved_id, et)
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "İşlem başarısız"))
+
+        if result.get("pending_passenger_review"):
+            return {
+                "success": True,
+                "pending_passenger_review": True,
+                "message": "Yolcu onayı bekleniyor.",
+                "idempotent": result.get("idempotent"),
+            }
 
         msg = (
             "Yolculuk zaten sonlanmış"
@@ -7725,12 +8024,35 @@ async def force_end_trip_http(
 @api_router.post("/trip/force-end-confirm")
 async def force_end_confirm(
     tag_id: str = Query(...),
-    ender_id: str = Query(...),
+    ender_id: str = Query(..., description="Zorla bitiren sürücü id"),
     approved: bool = Query(True),
+    user_id: str = Query(..., description="Onay veren yolcu id"),
 ):
-    """Karşı tarafın zorla bitirmeyi onaylaması / reddi (ileride puan düzeltmesi için)."""
-    logger.info(f"force_end_confirm tag={tag_id} ender={ender_id} approved={approved}")
-    return {"success": True}
+    """Yolcu: sürücünün zorla bitirmesini onaylar / reddeder (ender_id = sürücü)."""
+    try:
+        if not tag_id or not ender_id or not user_id:
+            raise HTTPException(status_code=422, detail="tag_id, ender_id ve user_id gerekli")
+
+        resolved_passenger = await resolve_user_id(str(user_id).strip())
+        if resolved_passenger:
+            resolved_passenger = str(resolved_passenger).strip()
+        else:
+            resolved_passenger = str(user_id).strip()
+
+        result = await resolve_driver_force_end_from_passenger(
+            str(tag_id).strip(),
+            resolved_passenger,
+            str(ender_id).strip(),
+            approved,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "İşlem başarısız"))
+        return {"success": True, "approved": approved, "idempotent": result.get("idempotent")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"force_end_confirm error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== RATING SYSTEM ====================
 

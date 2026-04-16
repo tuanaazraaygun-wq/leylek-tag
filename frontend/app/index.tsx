@@ -24,6 +24,7 @@ import { agoraUidFromUserId } from '../lib/agoraUid';
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
+import PassengerDriverForceEndReviewModal from '../components/PassengerDriverForceEndReviewModal';
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
@@ -135,8 +136,51 @@ async function joinTripCallAgoraAsCaller(
 }
 
 /** Rol ekranındayken şikayet — eşleşme zorla bitti / iptal sonrası */
-/** Eşleşme (matched / in_progress) varken uygulama yeniden açılınca rol ekranına düşmemek için */
-const MATCH_SESSION_STATUSES = ['matched', 'in_progress'] as const;
+/** App açılışında aktif tag varsa rol ekranını atla — passenger/active-tag ile aynı status seti */
+const PASSENGER_RESUME_STATUSES = ['waiting', 'pending', 'offers_received', 'matched', 'in_progress'] as const;
+const DRIVER_RESUME_STATUSES = ['matched', 'in_progress'] as const;
+
+const MATCH_RESUME_UI_RESET_KEY = 'leylek_match_resume_ui_reset_v1';
+
+function _normTagStatus(st: unknown): string {
+  return String(st ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+function _sameUserId(a: unknown, b: unknown): boolean {
+  return String(a ?? '')
+    .trim()
+    .toLowerCase() === String(b ?? '').trim().toLowerCase();
+}
+
+function _passengerTagResumable(pj: Record<string, unknown>, pTag: Record<string, unknown>, uid: string): boolean {
+  if (!pj?.success || !pTag || pj.was_cancelled === true) return false;
+  const st = _normTagStatus(pTag.status);
+  if (!(PASSENGER_RESUME_STATUSES as readonly string[]).includes(st)) return false;
+  return _sameUserId(pTag.passenger_id, uid);
+}
+
+function _driverTagResumable(dj: Record<string, unknown>, dTag: Record<string, unknown>, uid: string): boolean {
+  if (!dj?.success || !dTag || dj.was_cancelled === true) return false;
+  const st = _normTagStatus(dTag.status);
+  if (!(DRIVER_RESUME_STATUSES as readonly string[]).includes(st)) return false;
+  return _sameUserId(dTag.driver_id, uid);
+}
+
+/** İki tarafta da aktif varsa önce daha ileri aşama (matched > teklif aşaması). */
+function _resumePriorityForPassenger(st: string): number {
+  if (st === 'matched' || st === 'in_progress') return 4;
+  if (st === 'offers_received') return 3;
+  if (st === 'pending') return 2;
+  if (st === 'waiting') return 1;
+  return 0;
+}
+
+function _resumePriorityForDriver(st: string): number {
+  if (st === 'matched' || st === 'in_progress') return 4;
+  return 0;
+}
 
 async function tryResumeActiveMatchSession(
   parsedUser: User,
@@ -155,34 +199,42 @@ async function tryResumeActiveMatchSession(
       fetch(`${API_URL}/passenger/active-tag?user_id=${enc}`),
       fetch(`${API_URL}/driver/active-tag?user_id=${enc}`),
     ]);
-    const pj = await pr.json().catch(() => ({}));
-    const dj = await dr.json().catch(() => ({}));
-    const pTag = pj?.tag;
-    const dTag = dj?.tag;
-    const pOk =
-      pj?.success &&
-      pTag &&
-      MATCH_SESSION_STATUSES.includes(pTag.status) &&
-      String(pTag.passenger_id) === String(uid);
-    const dOk =
-      dj?.success &&
-      dTag &&
-      MATCH_SESSION_STATUSES.includes(dTag.status) &&
-      String(dTag.driver_id) === String(uid);
-    if (pOk) {
-      const u: User = { ...parsedUser, role: 'passenger' };
-      await deps.saveUser(u);
-      deps.setUser(u);
-      deps.setSelectedRole('passenger');
-      deps.setScreen('dashboard');
-      return true;
+    const pj = (await pr.json().catch(() => ({}))) as Record<string, unknown>;
+    const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
+    const pTag = pj?.tag as Record<string, unknown> | undefined;
+    const dTag = dj?.tag as Record<string, unknown> | undefined;
+    const pOk = pTag ? _passengerTagResumable(pj, pTag, uid) : false;
+    const dOk = dTag ? _driverTagResumable(dj, dTag, uid) : false;
+
+    let role: 'passenger' | 'driver' | null = null;
+    if (pOk && dOk) {
+      const ps = _normTagStatus(pTag!.status);
+      const ds = _normTagStatus(dTag!.status);
+      const pp = _resumePriorityForPassenger(ps);
+      const dp = _resumePriorityForDriver(ds);
+      if (dp > pp) role = 'driver';
+      else if (pp > dp) role = 'passenger';
+      else {
+        const lr = await AsyncStorage.getItem(`last_role_${uid}`);
+        role = lr === 'driver' ? 'driver' : 'passenger';
+      }
+    } else if (pOk) {
+      role = 'passenger';
+    } else if (dOk) {
+      role = 'driver';
     }
-    if (dOk) {
-      const u: User = { ...parsedUser, role: 'driver' };
+
+    if (role) {
+      const u: User = { ...parsedUser, role };
       await deps.saveUser(u);
       deps.setUser(u);
-      deps.setSelectedRole('driver');
+      deps.setSelectedRole(role);
       deps.setScreen('dashboard');
+      try {
+        await AsyncStorage.setItem(MATCH_RESUME_UI_RESET_KEY, uid);
+      } catch {
+        /* ignore */
+      }
       return true;
     }
   } catch (e) {
@@ -293,6 +345,14 @@ interface Tag {
   driver_longitude?: number;
   passenger_latitude?: number;
   passenger_longitude?: number;
+  /** Sürücü zorla bitir — yolcu onayı beklerken (backend tags.end_request) */
+  end_request?: {
+    kind?: string;
+    status?: string;
+    driver_id?: string;
+    passenger_id?: string;
+    requested_at?: string;
+  } | null;
 }
 
 type AppScreen =
@@ -365,18 +425,10 @@ export default function App() {
   const insets = useSafeAreaInsets();
   const loginLayout = useLoginAuthLayout();
   const leylekChrome = useLeylekZekaChrome();
-  const openLeylekZekaChat = useCallback(() => {
-    if (Platform.OS !== 'web') {
-      try {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch {
-        /* ignore */
-      }
-    }
-    leylekChrome.setLeylekZekaChatOpen(true);
-  }, [leylekChrome]);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Aktif eşleşme oturumu restore edilirken kısa açıklama (splash sonrası spinner) */
+  const [bootSubtitle, setBootSubtitle] = useState<string | null>(null);
   const [screen, setScreen] = useState<AppScreen>('login');
 
   /** Leylek Zeka FAB pathname/ekran ile aynı karede senkron olsun (useEffect gecikmesi yok). */
@@ -835,12 +887,17 @@ export default function App() {
 
         let resumedMatch = false;
         if (!isMainAdmin) {
-          resumedMatch = await tryResumeActiveMatchSession(parsedUser, {
-            saveUser,
-            setUser,
-            setSelectedRole,
-            setScreen,
-          });
+          setBootSubtitle('Devam eden eşleşmeye bağlanılıyor...');
+          try {
+            resumedMatch = await tryResumeActiveMatchSession(parsedUser, {
+              saveUser,
+              setUser,
+              setSelectedRole,
+              setScreen,
+            });
+          } finally {
+            setBootSubtitle(null);
+          }
         }
 
         if (!resumedMatch) {
@@ -1437,6 +1494,11 @@ export default function App() {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#3FA9F5" />
+        {bootSubtitle ? (
+          <Text style={{ color: '#64748B', marginTop: 14, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 }}>
+            {bootSubtitle}
+          </Text>
+        ) : null}
       </SafeAreaView>
     );
   }
@@ -2917,29 +2979,6 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
-
-        <Pressable
-          style={[
-            styles.roleLzFab,
-            {
-              bottom: 24 + insets.bottom,
-              left: 16 + insets.left,
-            },
-          ]}
-          onPress={openLeylekZekaChat}
-          accessibilityRole="button"
-          accessibilityLabel="Leylek Zeka yapay zeka desteği"
-        >
-          <LinearGradient
-            colors={['#22D3EE', '#3FA9F5', '#6366F1', '#8B5CF6']}
-            locations={[0, 0.35, 0.65, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.roleLzFabGrad}
-          >
-            <Ionicons name="sparkles" size={28} color="#FFF" />
-          </LinearGradient>
-        </Pressable>
         
         {/* Admin Panel Modal */}
         {isAdmin && (
@@ -5725,6 +5764,31 @@ function PassengerDashboard({
   // 🆕 End Trip Modal State'leri (Yolcu)
   const [passengerEndTripModalVisible, setPassengerEndTripModalVisible] = useState(false);
   const [passengerForceEndConfirmVisible, setPassengerForceEndConfirmVisible] = useState(false);
+  /** Sürücü zorla bitir — yolcu onay modalı */
+  const [passengerDriverForceReview, setPassengerDriverForceReview] = useState<{
+    tagId: string;
+    driverId: string;
+    driverName: string;
+  } | null>(null);
+
+  /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın (force-end modal loadActiveTag ile tekrar kurulur) */
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    void (async () => {
+      try {
+        const v = await AsyncStorage.getItem(MATCH_RESUME_UI_RESET_KEY);
+        if (!v || v !== uid) return;
+        await AsyncStorage.removeItem(MATCH_RESUME_UI_RESET_KEY);
+        setPassengerChatVisible(false);
+        setPassengerEndTripModalVisible(false);
+        setPassengerForceEndConfirmVisible(false);
+        setFirstChatTapBanner(null);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [user?.id]);
   
   // 🆕 MARTI TAG - Fiyat Teklifi State'leri
   const [showPriceModal, setShowPriceModal] = useState(false);
@@ -6429,11 +6493,20 @@ function PassengerDashboard({
           'Mesajı görmek için tıklayın',
       });
     },
-    // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
+    onDriverForcedEndRequested: (data) => {
+      if (!data?.tag_id || !data?.driver_id) return;
+      if (activeTag?.id && String(data.tag_id) !== String(activeTag.id)) return;
+      setPassengerDriverForceReview({
+        tagId: String(data.tag_id),
+        driverId: String(data.driver_id),
+        driverName: displayFirstName(data.driver_name, 'Sürücü'),
+      });
+    },
+    // 🆕 ZORLA BİTİRME — tamamlandıktan sonra (yolcu onayı zaten alındı veya yolcu zorla bitirdi)
     onTripForceEnded: (data) => {
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ:', data);
-      
-      // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE - Her halükarda bitirilecek
+
+      setPassengerDriverForceReview(null);
       setActiveTag(null);
       setDestination(null);
       callCheck('clearIncomingCall', clearIncomingCall);
@@ -6442,110 +6515,18 @@ function PassengerDashboard({
       setCallScreenData(null);
       setPassengerChatVisible(false);
       setPassengerEndTripModalVisible(false);
-      
-      // ROL SEÇİM EKRANINA GİT
-      setScreen('role-select');
-      
-      // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
-      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
-      const tagId = data.tag_id;
-      const pid = String((data as { passenger_id?: string }).passenger_id ?? '').trim();
-      const did = String((data as { driver_id?: string }).driver_id ?? '').trim();
-      const eid = enderId.toLowerCase();
-      const pidL = pid.toLowerCase();
-      const didL = did.toLowerCase();
-      let enderType = data.ender_type as string | undefined;
-      if (!enderType && enderId) {
-        if (pid && eid === pidL) enderType = 'passenger';
-        else if (did && eid === didL) enderType = 'driver';
-      }
-      const enderFirst = displayFirstName(
-        (data as { ender_name?: string }).ender_name,
-        enderType === 'driver' ? 'Sürücü' : 'Yolcu',
-      );
-      const selfEnded = user?.id && String(user.id).toLowerCase() === eid;
-      const uid = String(user?.id || '');
 
-      if (enderType === 'driver') {
-        appAlert(
-          'Uyarı: Eşleşme sonlandırıldı',
-          `Sürücü ${enderFirst} eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
-          [
-            {
-              text: 'Onaylıyorum (0 puan)',
-              style: 'default',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Onay gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Onaylamıyorum (-5 puan)',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Red gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Şikayet et',
-              style: 'destructive',
-              onPress: async () => {
-                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
-                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
-              },
-            },
-          ],
-          { cancelable: false, variant: 'warning' },
-        );
-      } else if (selfEnded) {
+      setScreen('role-select');
+
+      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
+      const eid = enderId.toLowerCase();
+      const selfEnded = user?.id && String(user.id).toLowerCase() === eid;
+      if (selfEnded) {
         appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
           variant: 'info',
         });
       } else {
-        appAlert(
-          'Uyarı: Eşleşme sonlandırıldı',
-          `Karşı taraf eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
-          [
-            {
-              text: 'Onaylıyorum (0 puan)',
-              style: 'default',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Onay gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Onaylamıyorum (-5 puan)',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Red gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Şikayet et',
-              style: 'destructive',
-              onPress: async () => {
-                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
-                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
-              },
-            },
-          ],
-          { cancelable: false, variant: 'warning' },
-        );
+        onShowTripEndedBanner?.('Eşleşme sonlandı.');
       }
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
@@ -6715,6 +6696,7 @@ function PassengerDashboard({
           setActiveTag(null);
           setDestination(null);
           setPassengerChatVisible(false);
+          setPassengerDriverForceReview(null);
           callCheck('clearIncomingCall', clearIncomingCall);
           clearIncomingCall();
           setShowCallScreen(false);
@@ -6765,12 +6747,31 @@ function PassengerDashboard({
         // 🔥 Sadece mevcut tag varsa ve artık yoksa temizle
         if (activeTag) {
           setActiveTag(null);
+          setPassengerChatVisible(false);
+          setPassengerDriverForceReview(null);
         }
       }
     } catch (error) {
       console.error('TAG yüklenemedi:', error);
     }
   };
+
+  useEffect(() => {
+    const t = activeTag;
+    const er = t?.end_request;
+    if (!t?.id || !user?.id) return;
+    if (er?.kind !== 'driver_force_end_review' || er?.status !== 'awaiting_passenger') return;
+    const pid = String(t.passenger_id || '').toLowerCase();
+    if (pid !== String(user.id).toLowerCase()) return;
+    setPassengerDriverForceReview((prev) => {
+      if (prev?.tagId === t.id) return prev;
+      return {
+        tagId: t.id,
+        driverId: String(er.driver_id || t.driver_id || ''),
+        driverName: displayFirstName(t.driver_name, 'Sürücü'),
+      };
+    });
+  }, [activeTag, user?.id]);
 
   useEffect(() => {
     const d = paxChatNotifData;
@@ -8347,6 +8348,7 @@ function PassengerDashboard({
                     setActiveTag(null);
                     setDestination(null);
                     setPassengerChatVisible(false);
+                    setPassengerDriverForceReview(null);
                     callCheck('clearIncomingCall', clearIncomingCall);
                     clearIncomingCall();
                     setShowCallScreen(false);
@@ -8356,6 +8358,50 @@ function PassengerDashboard({
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
                 
+                <PassengerDriverForceEndReviewModal
+                  visible={!!passengerDriverForceReview}
+                  onConfirm={async () => {
+                    if (!passengerDriverForceReview || !user?.id) return;
+                    try {
+                      const q = new URLSearchParams({
+                        tag_id: passengerDriverForceReview.tagId,
+                        ender_id: passengerDriverForceReview.driverId,
+                        approved: 'true',
+                        user_id: user.id,
+                      });
+                      const r = await fetch(`${API_URL}/trip/force-end-confirm?${q.toString()}`, { method: 'POST' });
+                      const j = await r.json().catch(() => ({}));
+                      if (!r.ok || j.success === false) {
+                        appAlert('Hata', (j as { detail?: string }).detail || 'Onay gönderilemedi.');
+                        return;
+                      }
+                      setPassengerDriverForceReview(null);
+                    } catch {
+                      appAlert('Hata', 'Onay gönderilemedi.');
+                    }
+                  }}
+                  onReject={async () => {
+                    if (!passengerDriverForceReview || !user?.id) return;
+                    try {
+                      const q = new URLSearchParams({
+                        tag_id: passengerDriverForceReview.tagId,
+                        ender_id: passengerDriverForceReview.driverId,
+                        approved: 'false',
+                        user_id: user.id,
+                      });
+                      const r = await fetch(`${API_URL}/trip/force-end-confirm?${q.toString()}`, { method: 'POST' });
+                      const j = await r.json().catch(() => ({}));
+                      if (!r.ok || j.success === false) {
+                        appAlert('Hata', (j as { detail?: string }).detail || 'Yanıt gönderilemedi.');
+                        return;
+                      }
+                      setPassengerDriverForceReview(null);
+                    } catch {
+                      appAlert('Hata', 'Yanıt gönderilemedi.');
+                    }
+                  }}
+                />
+
                 {/* 🆕 Chat Bubble - Yolcu → Sürücüye Yaz (PURE SOCKET - ANLIK) */}
                 <ChatBubble
                   visible={passengerChatVisible}
@@ -8413,6 +8459,8 @@ function PassengerDashboard({
                       if (data.success) {
                         setActiveTag(null);
                         setDestination(null);
+                        setPassengerChatVisible(false);
+                        setPassengerDriverForceReview(null);
                         setScreen('role-select');
                       } else {
                         appAlert('Hata', data.detail);
@@ -8438,22 +8486,44 @@ function PassengerDashboard({
                     }
                   }}
                   onForceEnd={async () => {
+                    if (!activeTag?.id || !user?.id) {
+                      appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
+                      return;
+                    }
                     try {
                       const response = await fetch(
-                        `${API_URL}/trip/force-end?tag_id=${activeTag?.id}&user_id=${user?.id}`,
-                        { method: 'POST' }
+                        `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`,
+                        { method: 'POST' },
                       );
                       const data = await response.json();
-                      if (data.success) {
-                        onShowTripEndedBanner?.(
-                          'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
-                        );
-                        setActiveTag(null);
-                        setDestination(null);
-                        setScreen('role-select');
-                      } else {
-                        appAlert('Hata', data.detail);
+                      if (!response.ok || data.success === false) {
+                        appAlert('Hata', data.detail || data.message || 'İşlem başarısız');
+                        return;
                       }
+                      try {
+                        callCheck('passengerForceEndTrip', passengerForceEndTrip);
+                        passengerForceEndTrip({
+                          tag_id: activeTag.id,
+                          ender_id: user.id,
+                          ender_type: 'passenger',
+                          passenger_id: user.id,
+                          driver_id: activeTag.driver_id || '',
+                        });
+                      } catch (socketErr) {
+                        console.log('Socket force end hatası:', socketErr);
+                      }
+                      onShowTripEndedBanner?.(
+                        'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
+                      );
+                      setActiveTag(null);
+                      setDestination(null);
+                      setPassengerChatVisible(false);
+                      setPassengerDriverForceReview(null);
+                      callCheck('clearIncomingCall', clearIncomingCall);
+                      clearIncomingCall();
+                      setShowCallScreen(false);
+                      setCallScreenData(null);
+                      setScreen('role-select');
                     } catch (error) {
                       appAlert('Hata', 'İşlem başarısız');
                     }
@@ -8999,6 +9069,26 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   // 🆕 End Trip Modal State'leri (Sürücü)
   const [driverEndTripModalVisible, setDriverEndTripModalVisible] = useState(false);
   const [driverForceEndConfirmVisible, setDriverForceEndConfirmVisible] = useState(false);
+
+  /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın */
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    void (async () => {
+      try {
+        const v = await AsyncStorage.getItem(MATCH_RESUME_UI_RESET_KEY);
+        if (!v || v !== uid) return;
+        await AsyncStorage.removeItem(MATCH_RESUME_UI_RESET_KEY);
+        setDriverChatVisible(false);
+        setDriverEndTripModalVisible(false);
+        setDriverForceEndConfirmVisible(false);
+        setDriverFirstChatTapBanner(null);
+        setShowQRModal(false);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [user?.id]);
   
   // 🔥 Cancelled Alert'in bir kez gösterilmesi için flag
   const [cancelledAlertShown, setCancelledAlertShown] = useState(false);
@@ -9360,11 +9450,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           'Mesajı görmek için tıklayın',
       });
     },
-    // 🆕 ZORLA BİTİRME - Karşı taraf bitirdi
     onTripForceEnded: (data) => {
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ:', data);
-      
-      // 🔥 ANINDA TÜM STATE'LERİ TEMİZLE - Her halükarda bitirilecek
+
       setActiveTag(null);
       setRequests([]);
       driverClearIncomingCall();
@@ -9372,110 +9460,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       setCallScreenData(null);
       setDriverChatVisible(false);
       setDriverEndTripModalVisible(false);
-      
-      // ROL SEÇİM EKRANINA GİT
-      setScreen('role-select');
-      
-      // 🔥 ONAY SİSTEMİ: Karşı taraf onaylarsa 0 puan, onaylamazsa -5 puan
-      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
-      const tagId = data.tag_id;
-      const pid = String((data as { passenger_id?: string }).passenger_id ?? '').trim();
-      const did = String((data as { driver_id?: string }).driver_id ?? '').trim();
-      const eid = enderId.toLowerCase();
-      const pidL = pid.toLowerCase();
-      const didL = did.toLowerCase();
-      let enderType = data.ender_type as string | undefined;
-      if (!enderType && enderId) {
-        if (pid && eid === pidL) enderType = 'passenger';
-        else if (did && eid === didL) enderType = 'driver';
-      }
-      const enderFirst = displayFirstName(
-        (data as { ender_name?: string }).ender_name,
-        enderType === 'driver' ? 'Sürücü' : 'Yolcu',
-      );
-      const selfEnded = user?.id && String(user.id).toLowerCase() === eid;
-      const uid = String(user?.id || '');
 
-      if (enderType === 'passenger') {
-        appAlert(
-          'Uyarı: Eşleşme sonlandırıldı',
-          `Yolcu ${enderFirst} eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
-          [
-            {
-              text: 'Onaylıyorum (0 puan)',
-              style: 'default',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Onay gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Onaylamıyorum (-5 puan)',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Red gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Şikayet et',
-              style: 'destructive',
-              onPress: async () => {
-                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
-                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
-              },
-            },
-          ],
-          { cancelable: false, variant: 'warning' },
-        );
-      } else if (selfEnded) {
+      setScreen('role-select');
+
+      const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
+      const eid = enderId.toLowerCase();
+      const selfEnded = user?.id && String(user.id).toLowerCase() === eid;
+      if (selfEnded) {
         appAlert('İşlem tamam', 'Eşleşmeyi siz sonlandırdınız.', [{ text: 'Tamam', style: 'default' }], {
           variant: 'info',
         });
-      } else {
-        appAlert(
-          'Uyarı: Eşleşme sonlandırıldı',
-          `Karşı taraf eşleşmeyi zorla bitirdi.\n\nİşlemi onaylıyor musunuz? Şikayet için "Şikayet et"e dokunun.`,
-          [
-            {
-              text: 'Onaylıyorum (0 puan)',
-              style: 'default',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=true`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Onay gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Onaylamıyorum (-5 puan)',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  await fetch(`${API_URL}/trip/force-end-confirm?tag_id=${tagId}&ender_id=${enderId}&approved=false`, { method: 'POST' });
-                } catch (e) {
-                  console.log('Red gönderilemedi:', e);
-                }
-              },
-            },
-            {
-              text: 'Şikayet et',
-              style: 'destructive',
-              onPress: async () => {
-                const r = await submitUserReport(uid, enderId, 'trip_force_ended');
-                appAlert(r.ok ? 'Şikayet alındı' : 'Hata', r.message || (r.ok ? 'İletildi.' : 'Gönderilemedi.'));
-              },
-            },
-          ],
-          { cancelable: false, variant: 'warning' },
-        );
       }
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
@@ -10807,27 +10801,33 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             }}
             onOpenLeylekZekaSupport={openLeylekZekaFromMapDriver}
             onForceEnd={async () => {
-              // 🔥 API İLE ANINDA BİTİR - Önce veritabanı güncellenir
               console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
-              
+
               if (!activeTag?.id) {
                 appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
                 return;
               }
-              
-              // 🔥 ÖNCELİKLE API'YE ZORLA BİTİR GÖNDERİYORUZ
+
               try {
                 const response = await fetch(
-                  `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`, 
-                  { method: 'POST' }
+                  `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`,
+                  { method: 'POST' },
                 );
                 const result = await response.json();
                 console.log('🔥 Force end API yanıtı:', result);
+                if (result.pending_passenger_review) {
+                  return;
+                }
+                if (!response.ok || result.success === false) {
+                  appAlert('Hata', result.detail || result.message || 'İşlem başarısız');
+                  return;
+                }
               } catch (err) {
                 console.log('Force end API hatası:', err);
+                appAlert('Hata', 'İşlem başarısız');
+                return;
               }
-              
-              // Socket ile de bildir (opsiyonel - bağlıysa)
+
               try {
                 driverForceEndTrip({
                   tag_id: activeTag.id,
@@ -10839,11 +10839,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               } catch (socketErr) {
                 console.log('Socket force end hatası:', socketErr);
               }
-              
+
               onShowTripEndedBanner?.(
                 'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
               );
-              // Anında local state temizle
               setActiveTag(null);
               setRequests([]);
               setDriverChatVisible(false);
@@ -10885,6 +10884,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                         if (data.success) {
                           appAlert('🎉 Yolculuk Tamamlandı!', 'İyi yolculuklar dileriz!');
                           setActiveTag(null);
+                          setRequests([]);
+                          setDriverChatVisible(false);
                           setScreen('role-select');
                         }
                       } catch (error) {
@@ -10906,6 +10907,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 if (data.success) {
                   appAlert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
                   setActiveTag(null);
+                  setRequests([]);
+                  setDriverChatVisible(false);
                   setScreen('role-select');
                 }
               } catch (error) {
@@ -11041,6 +11044,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 const data = await response.json();
                 if (data.success) {
                   setActiveTag(null);
+                  setRequests([]);
+                  setDriverChatVisible(false);
                   setScreen('role-select');
                 } else {
                   appAlert('Hata', data.detail);
@@ -11066,21 +11071,42 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               }
             }}
             onForceEnd={async () => {
+              if (!activeTag?.id || !user?.id) {
+                appAlert('Hata', 'Eşleşme bilgisi bulunamadı');
+                return;
+              }
               try {
                 const response = await fetch(
-                  `${API_URL}/trip/force-end?tag_id=${activeTag?.id}&user_id=${user?.id}`,
-                  { method: 'POST' }
+                  `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`,
+                  { method: 'POST' },
                 );
                 const data = await response.json();
-                if (data.success) {
-                  onShowTripEndedBanner?.(
-                    'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
-                  );
-                  setActiveTag(null);
-                  setScreen('role-select');
-                } else {
-                  appAlert('Hata', data.detail);
+                if (data.pending_passenger_review) {
+                  return;
                 }
+                if (!response.ok || data.success === false) {
+                  appAlert('Hata', data.detail || data.message || 'İşlem başarısız');
+                  return;
+                }
+                try {
+                  driverForceEndTrip({
+                    tag_id: activeTag.id,
+                    ender_id: user.id,
+                    ender_type: 'driver',
+                    passenger_id: activeTag.passenger_id || '',
+                    driver_id: user.id,
+                  });
+                } catch (socketErr) {
+                  console.log('Socket force end hatası:', socketErr);
+                }
+                onShowTripEndedBanner?.(
+                  'Teklifi sonlandırdınız tekrar teklif göndermek için lütfen birazcık bekleyin...',
+                );
+                setActiveTag(null);
+                setRequests([]);
+                setDriverChatVisible(false);
+                driverClearIncomingCall();
+                setScreen('role-select');
               } catch (error) {
                 appAlert('Hata', 'İşlem başarısız');
               }

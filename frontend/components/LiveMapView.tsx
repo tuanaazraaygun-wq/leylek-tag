@@ -165,9 +165,7 @@ function readAuthoritativeTripKmMinFromRouteInfo(
 function buildPassengerDriverHint(
   meters: number,
   meetingDurationMin: number | null,
-  meetingDistanceKm: number | null,
   otherUserName: string,
-  reminderCycle: number,
 ): string {
   const name = displayFirstName(otherUserName, 'Sürücünüz');
   if (meters <= 80) {
@@ -176,25 +174,20 @@ function buildPassengerDriverHint(
   if (meters <= 220) {
     return 'Sürücü geldi — buluşabilirsiniz';
   }
-  const dur = meetingDurationMin;
+  const dur =
+    meetingDurationMin != null && Number.isFinite(meetingDurationMin)
+      ? Math.max(1, Math.round(meetingDurationMin))
+      : null;
   if (dur != null && dur <= 1) {
-    return `${name} yaklaşık 1 dk içinde yanınızda`;
+    return `${name} yolda · 1 dk`;
   }
-  if (dur != null && dur === 2) {
-    return `${name} yaklaşık 2 dk içinde yanınızda`;
+  if (dur === 2) {
+    return `${name} yolda · 2 dk`;
   }
   if (dur != null && dur > 2) {
-    return `${name} yaklaşık ${dur} dk sonra yanınızda`;
+    return `${name} yolda · ${dur} dk`;
   }
-  const km = meetingDistanceKm;
-  if (km != null && km < 8) {
-    return `${name} yaklaşık ${km.toFixed(1)} km uzağınızda — yolda`;
-  }
-  const alt = [
-    `${name} size doğru geliyor`,
-    'Konumunuz açık kalsın — sürücü sizi görsün',
-  ];
-  return alt[reminderCycle % alt.length];
+  return `${name} yolda`;
 }
 
 function formatRouteKmMin(distanceKm: number | null, durationMin: number | null): string {
@@ -2132,7 +2125,6 @@ export default function LiveMapView({
   const callLabelBlink = useRef(new Animated.Value(1)).current;
 
   const [passengerEtaTick, setPassengerEtaTick] = useState(0);
-  const [passengerReminderCycle, setPassengerReminderCycle] = useState(0);
 
   const passMotor = otherTripVehicleKind === 'motorcycle';
   const riderNoun = passMotor ? 'Motor yolcusu' : 'Yolcu';
@@ -2445,28 +2437,16 @@ export default function LiveMapView({
     return () => clearInterval(id);
   }, [isDriver]);
 
-  useEffect(() => {
-    if (isDriver) return;
-    const id = setInterval(() => setPassengerReminderCycle((c) => c + 1), 120_000);
-    return () => clearInterval(id);
-  }, [isDriver]);
-
   const passengerDriverHint = useMemo(() => {
     if (isDriver || !userLocation || !otherLocation) {
       return '';
     }
     if (meetingDistance == null || !Number.isFinite(meetingDistance)) {
       const name = displayFirstName(otherUserName, 'Sürücünüz');
-      return `${name} yolda — tahmini süre backend güncellemesiyle gösterilecek`;
+      return `${name} yolda`;
     }
     const meters = meetingDistance * 1000;
-    return buildPassengerDriverHint(
-      meters,
-      meetingDuration,
-      meetingDistance,
-      otherUserName,
-      passengerReminderCycle,
-    );
+    return buildPassengerDriverHint(meters, meetingDuration, otherUserName);
   }, [
     isDriver,
     userLocation,
@@ -2475,7 +2455,6 @@ export default function LiveMapView({
     meetingDistance,
     otherUserName,
     passengerEtaTick,
-    passengerReminderCycle,
   ]);
   
   // Matrix durumları — yalnızca backend meetingDistance (km); yoksa nötr metin
