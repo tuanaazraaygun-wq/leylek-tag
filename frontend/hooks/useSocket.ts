@@ -539,9 +539,15 @@ export default function useSocket({
       }
       const r = role ?? userRole ?? 'driver';
       console.log('📱 [useSocket] Kullanıcı kaydediliyor (JWT):', uid, r);
-      socket.emit('register', { token, role: r });
+      console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role: r, reason: 'registerUser' });
+      socket.emit('register', { token, role: r, user_id: uid });
     })();
   }, [socket, userRole]);
+
+  useEffect(() => {
+    if (!socket?.connected || !userId || !userRole) return;
+    registerUser(userId, userRole);
+  }, [socket?.connected, socket?.id, userId, userRole, registerUser]);
 
   // ══════════ ARAMA FONKSİYONLARI ══════════
 

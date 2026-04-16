@@ -297,6 +297,12 @@ async def register(sid, data):
     """Kullanıcı kaydı — JWT (delete-account ile aynı access token) zorunlu; user_id yalnızca token sub."""
     if not isinstance(data, dict):
         data = {}
+    client_declares_uid = str(data.get("user_id") or "").strip()
+    logger.info(
+        "SOCKET_REGISTER_ATTEMPT sid=%s client_declares_user_id=%s",
+        sid,
+        client_declares_uid or None,
+    )
     token = (data.get("token") or "").strip()
     if not token:
         logger.warning("Socket register reddedildi sid=%s: token yok", sid)
@@ -333,6 +339,14 @@ async def register(sid, data):
         resolved_uid = raw
     resolved_uid = str(resolved_uid).strip()
     resolved_lower = resolved_uid.lower()
+
+    if client_declares_uid and client_declares_uid.lower() != resolved_lower:
+        logger.warning(
+            "SOCKET_REGISTER_USER_ID_MISMATCH sid=%s client_user_id=%s token_resolved=%s",
+            sid,
+            client_declares_uid,
+            resolved_uid,
+        )
 
     connected_users[resolved_uid] = sid
     connected_users[resolved_lower] = sid

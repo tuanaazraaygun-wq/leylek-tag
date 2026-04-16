@@ -215,6 +215,50 @@ export function SocketProvider({ children }: SocketProviderProps) {
     userRoleRef.current = userRole;
   }, [userId, userRole]);
 
+  /** JWT + user_<id> room: token veya user ref’leri gecikirse birkaç kez dene (ilk açılış / reconnect / resume). */
+  const registerGenRef = useRef(0);
+  const registerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleSocketRegister = useCallback((reason: string) => {
+    registerGenRef.current += 1;
+    const myGen = registerGenRef.current;
+    if (registerTimerRef.current) {
+      clearTimeout(registerTimerRef.current);
+      registerTimerRef.current = null;
+    }
+    const tryOnce = (attempt: number) => {
+      void (async () => {
+        if (myGen !== registerGenRef.current) return;
+        const sock = socketRef.current;
+        if (!sock?.connected) {
+          if (attempt < 28) {
+            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), 350);
+          }
+          return;
+        }
+        const uid = userIdRef.current;
+        const role = userRoleRef.current;
+        if (!uid || !role) {
+          if (attempt < 28) {
+            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), 350);
+          }
+          return;
+        }
+        const token = await getPersistedAccessToken();
+        if (!token) {
+          if (attempt < 28) {
+            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), 350);
+          }
+          return;
+        }
+        if (myGen !== registerGenRef.current) return;
+        console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role, reason, attempt });
+        sock.emit('register', { token, role, user_id: uid });
+      })();
+    };
+    tryOnce(0);
+  }, []);
+
   /** Push / bildirim / socket: aynı payload şeması; arayan === ben ise yok say */
   const applyIncomingCallPayload = useCallback((data: any, source: string) => {
     if (!data || data.type !== 'incoming_call') return;
@@ -278,33 +322,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const handleConnect = () => {
       console.log('✅ [SocketProvider] Socket bağlandı:', socket.id);
       setIsConnected(true);
-
-      // Backend register: JWT zorunlu (user_id payload'dan değil token sub'dan)
-      void (async () => {
-        const uid = userIdRef.current;
-        const role = userRoleRef.current;
-        if (!uid || !role) return;
-        const token = await getPersistedAccessToken();
-        if (!token) {
-          console.warn('[SocketProvider] register atlandı: access_token yok');
-          return;
-        }
-        console.log('📱 [SocketProvider] Auto-register (JWT):', uid, role);
-        socket.emit('register', { token, role });
-        setTimeout(() => {
-          if (
-            socket.connected &&
-            userIdRef.current === uid &&
-            userRoleRef.current === role
-          ) {
-            void getPersistedAccessToken().then((t) => {
-              if (!t || !socket.connected) return;
-              console.log('📱 [SocketProvider] Re-register (1s, JWT)');
-              socket.emit('register', { token: t, role });
-            });
-          }
-        }, 1000);
-      })();
+      scheduleSocketRegister('socket_connect');
     };
 
     const handleDisconnect = (reason: string) => {
@@ -315,17 +333,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     const handleReconnect = (attemptNumber: number) => {
       console.log('🔄 [SocketProvider] Reconnect başarılı, attempt:', attemptNumber);
-      void (async () => {
-        const role = userRoleRef.current;
-        const uid = userIdRef.current;
-        if (!uid || !role) return;
-        const token = await getPersistedAccessToken();
-        if (!token) return;
-        socket.emit('register', { token, role });
-      })();
+      scheduleSocketRegister('socket_reconnect');
     };
 
     const handleRegistered = (data: any) => {
+      console.log('FRONTEND_SOCKET_REGISTER_ACK', data);
       console.log('✅ [SocketProvider] Kayıt başarılı:', data);
       setIsRegistered(true);
     };
@@ -365,6 +377,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // Cleanup - AMA SOCKET'İ KAPATMA!
     return () => {
+      if (registerTimerRef.current) {
+        clearTimeout(registerTimerRef.current);
+        registerTimerRef.current = null;
+      }
+      registerGenRef.current += 1;
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('reconnect', handleReconnect);
@@ -372,7 +389,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
       socket.off('incoming_call', handleIncomingCall);
       // Socket'i KAPATMIYORUZ - singleton kalıcı
     };
-  }, []);
+  }, [scheduleSocketRegister]);
 
   // ══════════════════════════════════════════════════════════════════
   // APP STATE - Arka plan / Ön plan - 🔥 GELİŞTİRİLMİŞ
@@ -403,16 +420,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
             console.log('🔄 [SocketProvider] Socket bağlı değil, bağlanıyor...');
             socket.connect();
           } else {
+            scheduleSocketRegister('app_foreground');
             // 🔥 Bağlıysa bile 30 saniyeden fazla arka plandaysa yeniden register ol
             if (backgroundDuration > 30000 && userIdRef.current && userRoleRef.current) {
               console.log('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');
-              void getPersistedAccessToken().then((token) => {
-                if (!token || !socket.connected) return;
-                socket.emit('register', {
-                  token,
-                  role: userRoleRef.current as string,
-                });
-              });
+              scheduleSocketRegister('app_foreground_long_bg');
             }
           }
         }
@@ -437,7 +449,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
       subscription.remove();
       if (backgroundTimer) clearTimeout(backgroundTimer);
     };
-  }, []);
+  }, [scheduleSocketRegister]);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    if (!userId || !userRole) return;
+    scheduleSocketRegister('provider_user_or_role');
+  }, [isConnected, userId, userRole, scheduleSocketRegister]);
 
   // ══════════════════════════════════════════════════════════════════
   // CONNECT FONKSİYONU
@@ -461,16 +479,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
       console.log('🔌 [SocketProvider] Socket.connect() çağrılıyor...');
       socket.connect();
     } else {
-      console.log('🔌 [SocketProvider] Socket zaten bağlı, register yapılıyor...');
-      void getPersistedAccessToken().then((token) => {
-        if (!token || !socket.connected) {
-          console.warn('[SocketProvider] register atlandı: token yok veya socket kapalı');
-          return;
-        }
-        socket.emit('register', { token, role: newUserRole });
-      });
+      console.log('🔌 [SocketProvider] Socket zaten bağlı, register planlanıyor...');
     }
-  }, []);
+    scheduleSocketRegister('connect_function');
+  }, [scheduleSocketRegister]);
 
   // ══════════════════════════════════════════════════════════════════
   // DISCONNECT - ASLA ÇAĞIRILMAMALI (sadece logout için)
