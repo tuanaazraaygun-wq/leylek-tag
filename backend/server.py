@@ -269,6 +269,7 @@ connected_users = {}
 @sio.event
 async def connect(sid, environ):
     print("🔥 SOCKET CLIENT CONNECTED:", sid)
+    logger.info("SOCKET_CONNECT sid=%s", sid)
     logger.info(f"🔌 Socket bağlandı: {sid}")
     logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
 
@@ -338,6 +339,9 @@ async def register(sid, data):
 
     room_name = _normalize_user_room(resolved_uid)
     await sio.enter_room(sid, room_name)
+
+    logger.info("SOCKET_USER_ID sid=%s user_id=%s", sid, resolved_uid)
+    logger.info("SOCKET_JOIN_ROOM sid=%s room=%s", sid, room_name)
 
     _ru_short = (resolved_uid[:12] + "…") if len(resolved_uid) > 12 else resolved_uid
     logger.info(
@@ -1666,9 +1670,30 @@ async def resolve_force_end_counterparty(
         "force_end_resolved": True,
         "passenger_approved_force_end": approved,
     }
+    logger.info(
+        "FORCE_END_RESOLVE_START tag_id=%s passenger_id=%s driver_id=%s",
+        tid,
+        pid_r,
+        did_r,
+    )
+    emit_ok = 0
+    emit_fail = 0
     for uid in [pid_r, did_r]:
         if not uid:
             continue
+        raw_l = str(uid).strip().lower()
+        room = _normalize_user_room(raw_l)
+        sid_hit = connected_users.get(raw_l) or connected_users.get(str(uid).strip())
+        is_passenger_target = raw_l == str(pid_r).strip().lower()
+        _emit_label = "FORCE_END_EMIT_PASSENGER_ROOM" if is_passenger_target else "FORCE_END_EMIT_DRIVER_ROOM"
+        logger.info(
+            "%s tag_id=%s target_user=%s room=%s sid=%s",
+            _emit_label,
+            tid,
+            uid,
+            room,
+            sid_hit or "none",
+        )
         is_initiator = str(uid).strip().lower() == ini_r.lower()
         penalty = 0 if approved else 5
         pl = {
@@ -1679,8 +1704,17 @@ async def resolve_force_end_counterparty(
         }
         try:
             await emit_socket_event_to_user(uid, "trip_force_ended", pl)
+            emit_ok += 1
         except Exception as emit_err:
+            emit_fail += 1
             logger.warning(f"resolve_force_end_counterparty trip_force_ended: {emit_err}")
+
+    logger.info(
+        "FORCE_END_EMIT_DONE tag_id=%s trip_force_ended emit_ok=%s emit_fail=%s",
+        tid,
+        emit_ok,
+        emit_fail,
+    )
 
     return {
         "success": True,
@@ -13746,7 +13780,13 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
         user_phone = row.get("phone") or ""
 
         if not token:
-            logger.warning(f"📭 Push token yok: {user_name} (id={uid[:8]}... phone={user_phone[:4] if user_phone else '?'}) – Giriş yapıp bildirim izni verilmeli.")
+            logger.warning(
+                "PUSH_SEND_SKIP_NO_TOKEN user=%s name=%s phone=%s title=%r",
+                str(uid)[:12],
+                user_name,
+                (user_phone[:6] + "…") if user_phone else "?",
+                (title or "")[:80],
+            )
             return False
 
         if not ExpoPushService.is_valid_token(token):
@@ -13754,9 +13794,33 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
             return False
 
         payload = _canonical_push_routing_data(data)
-        ok = await send_expo_notification(token, title, body, payload, db_user_id=str(uid))
+        token_dbg = f"{token[:28]}…" if len(token) > 32 else token
+        logger.info(
+            "PUSH_SEND_START user=%s token_prefix=%s title=%r body_preview=%r",
+            str(uid)[:12],
+            token_dbg,
+            (title or "")[:120],
+            (body or "")[:200],
+        )
+        ok, receipt = await _send_expo_and_get_receipt(
+            token, title, body, payload, db_user_id=str(uid)
+        )
+        logger.info(
+            "PUSH_SEND_RESPONSE user=%s ok=%s expo_response=%s",
+            str(uid)[:12],
+            ok,
+            receipt,
+        )
+        logger.info(
+            "📤 push_send user=%s ok=%s token=%s title=%r receipt=%s",
+            str(uid)[:12],
+            ok,
+            token_dbg,
+            (title or "")[:80],
+            receipt,
+        )
         if not ok:
-            logger.warning(f"⚠️ Expo API bildirim göndermedi: {user_name} (id={uid[:8]}...)")
+            logger.warning(f"⚠️ Expo push başarısız: {user_name} (id={uid[:8]}...) receipt={receipt}")
         return ok
     except Exception as e:
         logger.error(f"❌ Send push exception: {e}")

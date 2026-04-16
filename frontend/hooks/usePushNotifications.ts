@@ -137,6 +137,10 @@ function runRegisterForPushNotificationsChain(
       if (token) {
         setPushToken(token);
         setTokenType('expo');
+        console.log('PUSH_TOKEN_ACQUIRED', { tokenPrefix: `${token.slice(0, 36)}…` });
+        console.log('[PUSH] Expo device token acquired', {
+          tokenPrefix: `${token.slice(0, 36)}…`,
+        });
         onToken(token);
       } else {
         console.warn('[PUSH] Expo push token alınamadı (getExpoPushTokenAsync boş data)');
@@ -175,6 +179,7 @@ function usePushNotificationsState(): PushNotificationHook {
       }
       acquireTokenNonBlocking((token) => {
         if (!token) {
+          console.warn('PUSH_TOKEN_SAVE_FAIL', { userId, reason: 'no_device_token' });
           console.warn('[PUSH] Token yok — backend’e gönderilmedi (userId=', userId, ')');
           onComplete?.(false);
           return;
@@ -195,6 +200,11 @@ function usePushNotificationsState(): PushNotificationHook {
               message?: string;
             };
             if (!response.ok || !data.success) {
+              console.warn('PUSH_TOKEN_SAVE_FAIL', {
+                userId,
+                reason: data.detail || data.message || String(response.status),
+                data,
+              });
               console.warn(
                 '[PUSH] save-push-token başarısız:',
                 data.detail || data.message || response.status,
@@ -203,9 +213,18 @@ function usePushNotificationsState(): PushNotificationHook {
               onComplete?.(false);
               return;
             }
+            console.log('PUSH_TOKEN_SAVE_OK', {
+              userId,
+              tokenPrefix: `${token.slice(0, 36)}…`,
+            });
+            console.log('[PUSH] save-push-token OK', {
+              userId: userId,
+              tokenPrefix: `${token.slice(0, 36)}…`,
+            });
             onComplete?.(true);
           })
           .catch((err) => {
+            console.warn('PUSH_TOKEN_SAVE_FAIL', { userId, reason: 'network', err });
             console.warn('[PUSH] save-push-token ağ hatası:', err);
             onComplete?.(false);
           });

@@ -182,6 +182,22 @@ function _resumePriorityForDriver(st: string): number {
   return 0;
 }
 
+type TryResumeActiveMatchResult = { resumed: boolean; role?: 'passenger' | 'driver' };
+
+/** loadUser / resume: dashboard `loadActiveTag` ile aynı API (ön bellek / CDN); state yine dashboard effect ile dolar. */
+async function loadActiveTagForUserResume(
+  userId: string,
+  role: 'passenger' | 'driver',
+): Promise<void> {
+  const enc = encodeURIComponent(userId);
+  const url =
+    role === 'passenger'
+      ? `${API_URL}/passenger/active-tag?user_id=${enc}`
+      : `${API_URL}/driver/active-tag?user_id=${enc}`;
+  console.log('LOAD_ACTIVE_TAG_AFTER_RESUME', { userId, role, url });
+  await fetch(url).catch((e) => console.warn('[resume] loadActiveTag (network)', e));
+}
+
 async function tryResumeActiveMatchSession(
   parsedUser: User,
   deps: {
@@ -190,9 +206,10 @@ async function tryResumeActiveMatchSession(
     setSelectedRole: (r: 'passenger' | 'driver') => void;
     setScreen: (s: AppScreen) => void;
   },
-): Promise<boolean> {
+): Promise<TryResumeActiveMatchResult> {
   const uid = parsedUser.id;
-  if (!uid) return false;
+  if (!uid) return { resumed: false };
+  console.log('TRY_RESUME_START', { userId: uid });
   const enc = encodeURIComponent(uid);
   try {
     const [pr, dr] = await Promise.all([
@@ -225,6 +242,8 @@ async function tryResumeActiveMatchSession(
     }
 
     if (role) {
+      console.log('TRY_RESUME_SUCCESS', { userId: uid });
+      console.log('TRY_RESUME_ROLE', role);
       const u: User = { ...parsedUser, role };
       await deps.saveUser(u);
       deps.setUser(u);
@@ -235,12 +254,12 @@ async function tryResumeActiveMatchSession(
       } catch {
         /* ignore */
       }
-      return true;
+      return { resumed: true, role };
     }
   } catch (e) {
     console.warn('tryResumeActiveMatchSession', e);
   }
-  return false;
+  return { resumed: false };
 }
 
 async function submitUserReport(
@@ -603,7 +622,14 @@ export default function App() {
     const uid = user.id;
     const t = setTimeout(() => {
       registerPushToken(uid, (ok) => {
-        if (ok) lastPushRegisterTimeRef.current = Date.now();
+        if (ok) {
+          lastPushRegisterTimeRef.current = Date.now();
+          console.log('[PUSH] splash-deferred register OK (token saved)', { userId: uid });
+        } else {
+          console.warn('[PUSH] splash-deferred register finished without confirmed save', {
+            userId: uid,
+          });
+        }
       });
     }, 500);
     return () => clearTimeout(t);
@@ -918,11 +944,11 @@ export default function App() {
           cleanPhone === '05326497412' ||
           cleanPhone.endsWith('5326497412');
 
-        let resumedMatch = false;
+        let resumeResult: TryResumeActiveMatchResult = { resumed: false };
         if (!isMainAdmin) {
           setBootSubtitle('Devam eden eşleşmeye bağlanılıyor...');
           try {
-            resumedMatch = await tryResumeActiveMatchSession(parsedUser, {
+            resumeResult = await tryResumeActiveMatchSession(parsedUser, {
               saveUser,
               setUser,
               setSelectedRole,
@@ -932,6 +958,7 @@ export default function App() {
             setBootSubtitle(null);
           }
         }
+        const resumedMatch = resumeResult.resumed;
 
         if (!resumedMatch) {
           if (isMainAdmin) {
@@ -950,8 +977,34 @@ export default function App() {
         }
 
         setTimeout(() => {
-          void runDeferredSessionBootstrap(parsedUser, isMainAdmin, legalWasAccepted);
+          void (async () => {
+            let uForBootstrap = parsedUser;
+            if (resumedMatch) {
+              try {
+                const raw = await getPersistedUserRaw();
+                if (raw) uForBootstrap = JSON.parse(raw) as User;
+              } catch {
+                /* keep parsedUser */
+              }
+            }
+            await runDeferredSessionBootstrap(uForBootstrap, isMainAdmin, legalWasAccepted);
+          })();
         }, 0);
+
+        if (resumedMatch) {
+          try {
+            const r = resumeResult.role;
+            if (parsedUser.id && r) {
+              await loadActiveTagForUserResume(parsedUser.id, r);
+            }
+          } catch (e) {
+            console.warn('[resume] loadActiveTagForUserResume', e);
+          }
+          registerPushToken(parsedUser.id, (ok) => {
+            console.log('[PUSH] after session resume', ok ? 'token saved OK' : 'token save skipped or failed');
+          });
+          return;
+        }
       }
     } catch (error) {
       console.error('Kullanıcı yüklenemedi:', error);
@@ -985,13 +1038,25 @@ export default function App() {
         const cleanPhone = user.phone?.replace(/\D/g, '');
         const isMainAdmin = cleanPhone === '5326497412' || cleanPhone === '05326497412';
         if (!isMainAdmin) {
-          const resumed = await tryResumeActiveMatchSession(user as User, {
+          const resumeRes = await tryResumeActiveMatchSession(user as User, {
             saveUser,
             setUser,
             setSelectedRole,
             setScreen,
           });
-          if (resumed) return;
+          if (resumeRes.resumed) {
+            try {
+              if (user.id && resumeRes.role) {
+                await loadActiveTagForUserResume(user.id, resumeRes.role);
+              }
+            } catch (e) {
+              console.warn('[resume] loadActiveTagForUserResume (legal)', e);
+            }
+            registerPushToken(user.id, (ok) => {
+              console.log('[PUSH] after legal resume', ok ? 'token saved OK' : 'token save skipped or failed');
+            });
+            return;
+          }
         }
         if (user.role === 'passenger') {
           const r = await fetch(`${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(user.id)}`);
@@ -1041,13 +1106,23 @@ export default function App() {
     if (isMainAdmin) return;
     let cancelled = false;
     void (async () => {
-      const ok = await tryResumeActiveMatchSession(user, {
+      const resumeRes = await tryResumeActiveMatchSession(user, {
         saveUser,
         setUser,
         setSelectedRole,
         setScreen,
       });
-      if (!cancelled && ok) {
+      if (!cancelled && resumeRes.resumed) {
+        try {
+          if (user.id && resumeRes.role) {
+            await loadActiveTagForUserResume(user.id, resumeRes.role);
+          }
+        } catch (e) {
+          console.warn('[resume] loadActiveTagForUserResume (role-screen)', e);
+        }
+        registerPushToken(user.id, (ok) => {
+          console.log('[PUSH] after role-screen resume', ok ? 'token saved OK' : 'token save skipped or failed');
+        });
         console.log('✅ Aktif eşleşme — rol ekranından panele yönlendirildi');
       }
     })();
@@ -6260,7 +6335,10 @@ function PassengerDashboard({
     callCheck('clearIncomingCall', clearIncomingCall);
     clearIncomingCall();
   }, [clearIncomingCall]);
-  
+
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isPollingActiveRef = useRef<boolean>(true);
+
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
     socket: passengerSocket,
@@ -6532,6 +6610,12 @@ function PassengerDashboard({
     onForceEndCounterpartyPrompt: (data) => {
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
+      const initiatorType = data.initiator_type === 'passenger' ? 'passenger' : 'driver';
+      console.log('FORCE_END_MODAL_OPEN', {
+        tag_id: tid,
+        initiator_type: initiatorType,
+        source: 'socket',
+      });
       if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) return;
       passengerForceEndModalHandledTagIdsRef.current.add(tid);
       setPassengerDriverForceReview({
@@ -6543,6 +6627,7 @@ function PassengerDashboard({
     },
     // 🆕 ZORLA BİTİRME — tamamlandıktan sonra (yolcu onayı zaten alındı veya yolcu zorla bitirdi)
     onTripForceEnded: (data) => {
+      console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
 
       setRatingModalData(null);
@@ -6556,6 +6641,13 @@ function PassengerDashboard({
       setCallScreenData(null);
       setPassengerChatVisible(false);
       setPassengerEndTripModalVisible(false);
+      setPassengerForceEndConfirmVisible(false);
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
+      setFirstChatTapBanner(null);
+      setShowQRModal(false);
+      setShowPriceModal(false);
+      isPollingActiveRef.current = false;
       setScreen('role-select');
 
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
@@ -6681,10 +6773,6 @@ function PassengerDashboard({
     const interval = setInterval(checkTripEndRequest, 1000); // 1 saniyede bir kontrol - HIZLI
     return () => clearInterval(interval);
   }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
-
-  // 🔥 Polling interval ref - temizleme için
-  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isPollingActiveRef = useRef<boolean>(true);
 
   useEffect(() => {
     console.log('🔄 Yolcu polling başlatıldı');
@@ -6832,6 +6920,7 @@ function PassengerDashboard({
     if (passengerDriverForceReview?.tagId === tid) return;
     passengerForceEndModalHandledTagIdsRef.current.add(tid);
     const it = er?.initiator_type === 'passenger' ? 'passenger' : 'driver';
+    console.log('FORCE_END_MODAL_OPEN', { tag_id: tid, initiator_type: it, source: 'active_tag_pending' });
     setPassengerDriverForceReview({
       tagId: tid,
       initiatorId: String(er?.initiator_id || ''),
@@ -9603,6 +9692,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     onForceEndCounterpartyPrompt: (data) => {
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
+      const initiatorType = data.initiator_type === 'passenger' ? 'passenger' : 'driver';
+      console.log('FORCE_END_MODAL_OPEN', {
+        tag_id: tid,
+        initiator_type: initiatorType,
+        source: 'socket',
+      });
       if (driverForceEndModalHandledTagIdsRef.current.has(tid)) return;
       driverForceEndModalHandledTagIdsRef.current.add(tid);
       setDriverPassengerForceEndReview({
@@ -9613,6 +9708,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       });
     },
     onTripForceEnded: (data) => {
+      console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
 
       setRatingModalData(null);
@@ -9625,6 +9721,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       setCallScreenData(null);
       setDriverChatVisible(false);
       setDriverEndTripModalVisible(false);
+      setDriverForceEndConfirmVisible(false);
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
+      setDriverFirstChatTapBanner(null);
+      setShowQRModal(false);
       setScreen('role-select');
 
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
@@ -10262,6 +10363,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     if (driverPassengerForceEndReview?.tagId === tid) return;
     driverForceEndModalHandledTagIdsRef.current.add(tid);
     const it = er?.initiator_type === 'passenger' ? 'passenger' : 'driver';
+    console.log('FORCE_END_MODAL_OPEN', { tag_id: tid, initiator_type: it, source: 'active_tag_pending' });
     setDriverPassengerForceEndReview({
       tagId: tid,
       initiatorId: String(er?.initiator_id || ''),
