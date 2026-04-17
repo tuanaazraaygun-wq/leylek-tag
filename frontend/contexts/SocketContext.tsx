@@ -49,6 +49,8 @@ function getOrCreateSocket(): Socket {
       path: '/socket.io',
       transports: ['polling', 'websocket'],
       reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
       timeout: 20000,
     });
 
@@ -259,7 +261,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
           console.log('FRONTEND_SOCKET_REGISTER_RETRY', { userId: uid, role, reason, attempt });
         }
         registerAckOkRef.current = false;
-        sock.emit('register', { token, role, user_id: uid });
+        console.log('SOCKET REGISTER EMIT', uid);
+        sock.emit('register', { user_id: uid, token, role });
         registerTimerRef.current = setTimeout(() => {
           if (myGen !== registerGenRef.current) return;
           if (!registerAckOkRef.current && socketRef.current?.connected && userIdRef.current && userRoleRef.current) {
@@ -415,6 +418,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIncomingCallPresentToken((n) => n + 1);
     };
     socket.on('incoming_call', handleIncomingCall);
+
+    // Socket zaten bağlıysa `connect` bir daha tetiklenmez (ilk yükleme yarışı, Fast Refresh).
+    // Her başarılı oturumda sunucuya register gitmesi için aynı yolu çalıştır.
+    if (socket.connected) {
+      handleConnect();
+    }
 
     // Cleanup - AMA SOCKET'İ KAPATMA!
     return () => {

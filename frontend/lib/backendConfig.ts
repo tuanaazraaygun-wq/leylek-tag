@@ -8,6 +8,16 @@
  */
 import Constants from 'expo-constants';
 
+/**
+ * Push register zinciri teşhisi: release APK’da ekranda debug paneli için `true` yapın.
+ * `__DEV__` iken panel zaten açıktır (iş mantığı değişmez).
+ */
+export const ENABLE_PUSH_REGISTER_DEBUG_OVERLAY = true;
+
+export function isPushRegisterDebugOverlayEnabled(): boolean {
+  return (typeof __DEV__ !== 'undefined' && __DEV__) || ENABLE_PUSH_REGISTER_DEBUG_OVERLAY;
+}
+
 /** extra.backendUrl ve env yokken ana API kökü */
 export const DEFAULT_BACKEND_BASE_URL = 'https://api.leylektag.com';
 

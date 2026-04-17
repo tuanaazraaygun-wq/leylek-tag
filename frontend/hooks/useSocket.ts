@@ -540,7 +540,8 @@ export default function useSocket({
       const r = role ?? userRole ?? 'driver';
       console.log('📱 [useSocket] Kullanıcı kaydediliyor (JWT):', uid, r);
       console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role: r, reason: 'registerUser' });
-      socket.emit('register', { token, role: r, user_id: uid });
+      console.log('SOCKET REGISTER EMIT', uid);
+      socket.emit('register', { user_id: uid, token, role: r });
     })();
   }, [socket, userRole]);
 

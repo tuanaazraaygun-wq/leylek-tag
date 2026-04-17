@@ -621,7 +621,16 @@ export default function App() {
   const [showKvkk, setShowKvkk] = useState(false);
 
   // Push Notifications Hook - Expo Push ile (Firebase olmadan)
-  const { registerPushToken, removePushToken, notification } = usePushNotifications();
+  const { registerPushToken, removePushToken, notification, reportPushRegisterDebugSurface } =
+    usePushNotifications();
+
+  useEffect(() => {
+    reportPushRegisterDebugSurface({
+      screen,
+      userId: user?.id ?? null,
+      showSplash,
+    });
+  }, [screen, user?.id, showSplash, reportPushRegisterDebugSurface]);
   const lastPushRegisterTimeRef = useRef<number>(0);
   const PUSH_REREGISTER_INTERVAL_MS = 15000; // Uygulama her ön plana geldiğinde en fazla 15 sn'de bir tekrar dene
   /** Splash çıkışında user'a bakılır; user deps ile effect sıfırlanıp timer iptal edilmesin diye ref */
@@ -634,7 +643,15 @@ export default function App() {
 
     const uid = user.id;
     const t = setTimeout(() => {
-      registerPushToken(uid, (ok) => {
+      console.log('[PUSH_DEBUG] trigger:splash', {
+        userId: uid,
+        showSplash,
+        screen,
+        sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
+      });
+      registerPushToken(
+        uid,
+        (ok) => {
         if (ok) {
           lastPushRegisterTimeRef.current = Date.now();
           console.log('[PUSH] splash-deferred register OK (token saved)', { userId: uid });
@@ -643,7 +660,9 @@ export default function App() {
             userId: uid,
           });
         }
-      });
+      },
+        'splash'
+      );
     }, 500);
     return () => clearTimeout(t);
   }, [user?.id, registerPushToken, showSplash]);
@@ -658,8 +677,14 @@ export default function App() {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
+        console.log('[PUSH_DEBUG] trigger:appstate', {
+          userId: user.id,
+          showSplash,
+          screen,
+          sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
+        });
         lastPushRegisterTimeRef.current = Date.now();
-        registerPushToken(user.id, () => {});
+        registerPushToken(user.id, () => {}, 'appstate');
       }, 500);
     });
     return () => {
@@ -817,7 +842,13 @@ export default function App() {
     if (!user || screen !== 'dashboard') return;
 
     const pushTimer = setTimeout(() => {
-      registerPushToken(user.id, () => {});
+      console.log('[PUSH_DEBUG] trigger:dashboard', {
+        userId: user.id,
+        showSplash,
+        screen,
+        sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
+      });
+      registerPushToken(user.id, () => {}, 'dashboard');
     }, 500);
 
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -1013,9 +1044,19 @@ export default function App() {
           } catch (e) {
             console.warn('[resume] loadActiveTagForUserResume', e);
           }
-          registerPushToken(parsedUser.id, (ok) => {
-            console.log('[PUSH] after session resume', ok ? 'token saved OK' : 'token save skipped or failed');
+          console.log('[PUSH_DEBUG] trigger:resumedMatch', {
+            userId: parsedUser.id,
+            showSplash,
+            screen,
+            sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
           });
+          registerPushToken(
+            parsedUser.id,
+            (ok) => {
+            console.log('[PUSH] after session resume', ok ? 'token saved OK' : 'token save skipped or failed');
+          },
+            'resumedMatch'
+          );
           return;
         }
       }
@@ -1065,9 +1106,19 @@ export default function App() {
             } catch (e) {
               console.warn('[resume] loadActiveTagForUserResume (legal)', e);
             }
-            registerPushToken(user.id, (ok) => {
-              console.log('[PUSH] after legal resume', ok ? 'token saved OK' : 'token save skipped or failed');
+            console.log('[PUSH_DEBUG] trigger:legalResume', {
+              userId: user.id,
+              showSplash,
+              screen,
+              sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
             });
+            registerPushToken(
+              user.id,
+              (ok) => {
+              console.log('[PUSH] after legal resume', ok ? 'token saved OK' : 'token save skipped or failed');
+            },
+              'legalResume'
+            );
             return;
           }
         }
@@ -1133,9 +1184,19 @@ export default function App() {
         } catch (e) {
           console.warn('[resume] loadActiveTagForUserResume (role-screen)', e);
         }
-        registerPushToken(user.id, (ok) => {
-          console.log('[PUSH] after role-screen resume', ok ? 'token saved OK' : 'token save skipped or failed');
+        console.log('[PUSH_DEBUG] trigger:roleSelectResume', {
+          userId: user.id,
+          showSplash,
+          screen,
+          sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
         });
+        registerPushToken(
+          user.id,
+          (ok) => {
+          console.log('[PUSH] after role-screen resume', ok ? 'token saved OK' : 'token save skipped or failed');
+        },
+          'roleSelectResume'
+        );
         console.log('✅ Aktif eşleşme — rol ekranından panele yönlendirildi');
       }
     })();
@@ -6940,14 +7001,19 @@ function PassengerDashboard({
           return;
         }
         setActiveTag((prev) => {
-          if (data.success === true && !data.tag)
+          if (data.success === true && !data.tag) {
             if (prev) setPassengerChatVisible(false);
             return null;
           }
-
-          if (data.success === false && prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
+        
+          if (
+            data.success === false &&
+            prev &&
+            (prev.status === 'matched' || prev.status === 'in_progress')
+          ) {
             return prev;
           }
+        
           if (
             prev &&
             (prev.status === 'matched' || prev.status === 'in_progress') &&
@@ -6955,7 +7021,11 @@ function PassengerDashboard({
           ) {
             return prev;
           }
-          if (prev) setPassengerChatVisible(false);
+        
+          if (prev) {
+            setPassengerChatVisible(false);
+          }
+        
           return null;
         });
       }
@@ -10417,6 +10487,30 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     try {
       const response = await fetch(`${API_URL}/driver/active-tag?user_id=${user.id}`);
       const data = await response.json();
+      
+      // 🚨 TAG YOKSA ZORLA KAPAT
+      if (data.success === true && !data.tag) {
+        if (forceEndLockRef.current) {
+          console.log('POLLING BLOCKED AFTER FORCE END');
+          return null;
+        }
+      
+        console.log('🔥 DRIVER loadActiveTag: aktif tag yok, çıkış yapılıyor');
+      
+        // 🔒 BURAYI EKLE (KRİTİK)
+        forceEndLockRef.current = true;
+      
+        setActiveTag(null);
+        setRequests([]);
+        setDriverChatVisible(false);
+        driverClearIncomingCall();
+        setDriverPassengerForceEndReview(null);
+        driverForceEndModalHandledTagIdsRef.current.clear();
+      
+        setScreen('role-select');
+      
+        return null;
+      }
       
       if (data.success && data.tag) {
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP

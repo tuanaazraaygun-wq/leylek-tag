@@ -268,7 +268,7 @@ connected_users = {}
 
 @sio.event
 async def connect(sid, environ):
-    print("🔥 SOCKET CLIENT CONNECTED:", sid)
+    print(f"SOCKET CONNECTED: {sid}")
     logger.info("SOCKET_CONNECT sid=%s", sid)
     logger.info(f"🔌 Socket bağlandı: {sid}")
     logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
@@ -354,6 +354,8 @@ async def register(sid, data):
 
     room_name = _normalize_user_room(resolved_uid)
     await sio.enter_room(sid, room_name)
+    print(f"JOIN ROOM: {resolved_uid}")
+    logger.info("JOIN ROOM: %s", resolved_uid)
 
     logger.info("SOCKET_USER_ID sid=%s user_id=%s", sid, resolved_uid)
     try:
@@ -1270,6 +1272,7 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
             return False
         room = _normalize_user_room(raw)
         sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip())
+        print(f"EMIT to user_{driver_id}")
         if sid:
             await sio.emit("new_passenger_offer", offer_data, to=sid)
             logger.info(
