@@ -221,6 +221,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const registerAckOkRef = useRef(false);
 
   const scheduleSocketRegister = useCallback((reason: string) => {
+    console.log('SCHEDULE_REGISTER_START', {
+      reason,
+      connected: socketRef.current?.connected ?? false,
+      userId: userIdRef.current,
+      role: userRoleRef.current,
+    });
     registerGenRef.current += 1;
     const myGen = registerGenRef.current;
     if (registerTimerRef.current) {
@@ -231,30 +237,104 @@ export function SocketProvider({ children }: SocketProviderProps) {
     const baseDelayMs = 400;
     const tryOnce = (attempt: number) => {
       void (async () => {
-        if (myGen !== registerGenRef.current) return;
+        if (myGen !== registerGenRef.current) {
+          console.log('SCHEDULE_REGISTER_SKIP', {
+            reason: 'stale_schedule_generation',
+            userId: userIdRef.current,
+            role: userRoleRef.current,
+            connected: socketRef.current?.connected ?? false,
+          });
+          return;
+        }
         const sock = socketRef.current;
         if (!sock?.connected) {
           if (attempt < maxAttempts) {
+            console.log('SCHEDULE_REGISTER_SKIP', {
+              reason: 'socket_not_connected_scheduling_retry',
+              userId: userIdRef.current,
+              role: userRoleRef.current,
+              connected: false,
+              attempt,
+            });
             registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
+          } else {
+            console.log('SCHEDULE_REGISTER_SKIP', {
+              reason: 'socket_not_connected_max_attempts_exhausted',
+              userId: userIdRef.current,
+              role: userRoleRef.current,
+              connected: false,
+              attempt,
+            });
           }
           return;
         }
         const uid = userIdRef.current;
         const role = userRoleRef.current;
         if (!uid || !role) {
+          const missingReason = !uid && !role
+            ? 'missing_user_id_and_role'
+            : !uid
+              ? 'missing_user_id'
+              : 'missing_role';
           if (attempt < maxAttempts) {
+            console.log('SCHEDULE_REGISTER_SKIP', {
+              reason: `${missingReason}_scheduling_retry`,
+              userId: userIdRef.current,
+              role: userRoleRef.current,
+              connected: sock.connected,
+              attempt,
+            });
             registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
+          } else {
+            console.log('SCHEDULE_REGISTER_SKIP', {
+              reason: `${missingReason}_max_attempts_exhausted`,
+              userId: userIdRef.current,
+              role: userRoleRef.current,
+              connected: sock.connected,
+              attempt,
+            });
           }
           return;
         }
+        console.log('SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: uid, role, reason });
         const token = await getPersistedAccessToken();
+        console.log('SCHEDULE_REGISTER_TOKEN_RESULT', {
+          hasToken: !!token,
+          userId: uid,
+          role,
+          reason,
+        });
         if (!token) {
+          console.log('SCHEDULE_REGISTER_NO_TOKEN', { userId: uid, role, reason });
           if (attempt < maxAttempts) {
+            console.log('SCHEDULE_REGISTER_SKIP', {
+              reason: 'no_token_scheduling_retry',
+              userId: uid,
+              role,
+              connected: sock.connected,
+              attempt,
+            });
             registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
+          } else {
+            console.log('SCHEDULE_REGISTER_SKIP', {
+              reason: 'no_token_max_attempts_exhausted',
+              userId: uid,
+              role,
+              connected: sock.connected,
+              attempt,
+            });
           }
           return;
         }
-        if (myGen !== registerGenRef.current) return;
+        if (myGen !== registerGenRef.current) {
+          console.log('SCHEDULE_REGISTER_SKIP', {
+            reason: 'stale_schedule_generation_after_token',
+            userId: userIdRef.current,
+            role: userRoleRef.current,
+            connected: socketRef.current?.connected ?? false,
+          });
+          return;
+        }
         if (attempt === 0) {
           console.log('FRONTEND_SOCKET_REGISTER_USER', { userId: uid, role, reason, attempt });
         } else {
@@ -262,6 +342,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
         }
         registerAckOkRef.current = false;
         console.log('SOCKET REGISTER EMIT', uid);
+        console.log('REGISTER_EMIT_PAYLOAD', { user_id: uid, role, hasToken: !!token });
         sock.emit('register', { user_id: uid, token, role });
         registerTimerRef.current = setTimeout(() => {
           if (myGen !== registerGenRef.current) return;
@@ -340,6 +421,13 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // Bağlantı durumu listener'ları
     const handleConnect = () => {
+      console.log('HANDLE_CONNECT_START', {
+        connected: socket.connected,
+        hasUserIdRef: !!userIdRef.current,
+        userId: userIdRef.current,
+        role: userRoleRef.current,
+      });
+      scheduleSocketRegister('handle_connect_direct');
       const sid = socket.id ?? null;
       console.log('✅ [SocketProvider] Socket bağlandı:', sid);
       setIsConnected(true);
