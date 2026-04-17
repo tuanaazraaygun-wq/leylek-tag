@@ -18,7 +18,8 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { io, Socket } from 'socket.io-client';
 import { AppState, AppStateStatus } from 'react-native';
 import { BACKEND_BASE_URL } from '../lib/backendConfig';
-import { getPersistedAccessToken } from '../lib/sessionToken';
+import { waitForPersistedAccessToken } from '../lib/sessionToken';
+import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
 import { useNotifications } from './NotificationContext';
 
 // REST ile aynı origin (lib/backendConfig) — ayrı sunucu = teklif görünmez
@@ -296,34 +297,23 @@ export function SocketProvider({ children }: SocketProviderProps) {
           }
           return;
         }
-        console.log('SCHEDULE_REGISTER_BEFORE_TOKEN', { userId: uid, role, reason });
-        const token = await getPersistedAccessToken();
+        console.log('SCHEDULE_REGISTER_BEFORE_TOKEN', {
+          userId: uid,
+          role,
+          reason,
+          waitingForPersistedToken: true,
+          maxWaitMs: 19 * 250,
+        });
+        const token = await waitForPersistedAccessToken();
         console.log('SCHEDULE_REGISTER_TOKEN_RESULT', {
           hasToken: !!token,
           userId: uid,
           role,
           reason,
+          waitedForPersistedToken: true,
         });
         if (!token) {
-          console.log('SCHEDULE_REGISTER_NO_TOKEN', { userId: uid, role, reason });
-          if (attempt < maxAttempts) {
-            console.log('SCHEDULE_REGISTER_SKIP', {
-              reason: 'no_token_scheduling_retry',
-              userId: uid,
-              role,
-              connected: sock.connected,
-              attempt,
-            });
-            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
-          } else {
-            console.log('SCHEDULE_REGISTER_SKIP', {
-              reason: 'no_token_max_attempts_exhausted',
-              userId: uid,
-              role,
-              connected: sock.connected,
-              attempt,
-            });
-          }
+          console.log('SCHEDULE_REGISTER_NO_TOKEN_FINAL', { userId: uid, role, reason });
           return;
         }
         if (myGen !== registerGenRef.current) {
@@ -359,6 +349,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
     tryOnce(0);
   }, []);
+
+  useEffect(() => {
+    setSocketRegisterScheduler(scheduleSocketRegister);
+    return () => setSocketRegisterScheduler(null);
+  }, [scheduleSocketRegister]);
 
   /** Push / bildirim / socket: aynı payload şeması; arayan === ben ise yok say */
   const applyIncomingCallPayload = useCallback((data: any, source: string) => {

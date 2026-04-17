@@ -58,6 +58,7 @@ import {
   getPersistedUserRaw,
   setPersistedUserJson,
 } from '../lib/sessionToken';
+import { afterAuthAccessTokenPersisted } from '../lib/authTokenPersistenceNotify';
 import { displayFirstName } from '../lib/displayName';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { apiErrMsg, normalizeTrMobile10, parseApiJson } from '../lib/appHelpers';
@@ -1278,6 +1279,7 @@ export default function App() {
       const tokStr = typeof rawTok === 'string' ? rawTok.trim() : '';
       await persistAccessToken(tokStr ? { access_token: tokStr } : {});
       await saveUser(withVehicle);
+      await afterAuthAccessTokenPersisted(withVehicle.id);
       try {
         await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
       } catch {
@@ -1512,6 +1514,7 @@ export default function App() {
                 await persistAccessToken(registerData as { access_token?: string });
                 await saveUser(registerData.user);
                 setUser(registerData.user);
+                await afterAuthAccessTokenPersisted(registerData.user.id);
                 appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
                 ]);
@@ -1635,7 +1638,7 @@ export default function App() {
       if (data.success) {
         await persistAccessToken(data as { access_token?: string });
         await saveUser(data.user);
-        
+        await afterAuthAccessTokenPersisted(data.user?.id);
         setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
       } else {
         appAlert('Hata', data.detail || 'Kayıt oluşturulamadı');
@@ -2343,6 +2346,7 @@ export default function App() {
                 return next;
               });
             }
+            await afterAuthAccessTokenPersisted(user?.id);
             appAlert(
               'Kayıt Başarılı',
               'Hesabınız hazır. PIN kodunuzu kimseyle paylaşmayın.',
@@ -2373,6 +2377,7 @@ export default function App() {
           await persistAccessToken(registerData as { access_token?: string });
           setUser(registerData.user);
           await saveUser(registerData.user);
+          await afterAuthAccessTokenPersisted(registerData.user.id);
           appAlert(
             'Kayıt Başarılı',
             'Hesabınız oluşturuldu. PIN kodunuzu kimseyle paylaşmayın.',
@@ -2535,15 +2540,14 @@ export default function App() {
           }
           await persistAccessToken(data as { access_token?: string });
           setUser(data.user as User);
-          saveUser(data.user as User);
-          
+          await saveUser(data.user as User);
+          await afterAuthAccessTokenPersisted((data.user as User)?.id);
           // Admin kontrolü
           const cleanPhone = phone.replace(/\D/g, '');
           if (cleanPhone === '5326497412' || cleanPhone === '05326497412') {
             setIsAdmin(true);
             setShowAdminPanel(true);
           }
-          
           setScreen('role-select');
         } else {
           appAlert('Hata', apiErrMsg(data as { message?: string; detail?: unknown }, 'Yanlış şifre'));

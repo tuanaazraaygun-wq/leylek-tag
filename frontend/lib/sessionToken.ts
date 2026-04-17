@@ -64,3 +64,20 @@ export async function getPersistedAccessToken(): Promise<string | null> {
   }
   return null;
 }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Polls persisted storage for JWT (AsyncStorage flush / saveUser ordering).
+ * Up to 20 attempts, 250ms between attempts after a miss.
+ */
+export async function waitForPersistedAccessToken(): Promise<string | null> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const t = await getPersistedAccessToken();
+    if (t) return t;
+    if (attempt < 19) await sleep(250);
+  }
+  return null;
+}

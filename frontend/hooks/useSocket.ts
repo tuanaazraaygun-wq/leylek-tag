@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSocketContext } from '../contexts/SocketContext';
-import { getPersistedAccessToken } from '../lib/sessionToken';
+import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { AppState, AppStateStatus } from 'react-native';
 
 // ════════════════════════════════════════════════════════════════════
@@ -532,9 +532,9 @@ export default function useSocket({
   const registerUser = useCallback((uid: string, role?: string) => {
     if (!socket?.connected) return;
     void (async () => {
-      const token = await getPersistedAccessToken();
+      const token = await waitForPersistedAccessToken();
       if (!token) {
-        console.warn('[useSocket] register atlandı: access_token yok');
+        console.warn('[useSocket] register atlandı: access_token yok (wait sonrası)');
         return;
       }
       const r = role ?? userRole ?? 'driver';
