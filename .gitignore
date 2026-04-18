@@ -165,3 +165,4 @@ frontend/.metro-cache
 node_modules 
 .env 
 frontend/.metro-cache/
+platform-tools/ 
