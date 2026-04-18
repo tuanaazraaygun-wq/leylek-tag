@@ -91,6 +91,10 @@ interface LiveMapViewProps {
   otherUserId?: string;
   userId?: string;  // 🆕 Kullanıcı ID
   tagId?: string;   // 🆕 Tag ID
+  /** Sunucu tag.status — hedef yakınlığında otomatik tamamlama için (yalnız sürücü) */
+  tagStatus?: string | null;
+  /** Sunucu tag.started_at — yolculuk gerçekten başlamadan otomatik tamamlama yok */
+  tagStartedAt?: string | null;
   price?: number;
   offeredPrice?: number;  // Teklif edilen fiyat
   routeInfo?: {
@@ -1352,6 +1356,8 @@ export default function LiveMapView({
   otherUserId,
   userId,      // 🆕
   tagId,       // 🆕
+  tagStatus,
+  tagStartedAt,
   price,
   offeredPrice,
   routeInfo,
@@ -2879,6 +2885,22 @@ export default function LiveMapView({
     if (destinationDistance == null || !Number.isFinite(destinationDistance)) return;
     const isNear = destinationDistance <= 1;
     setNearDestination(isNear);
+
+    // Yolcu: otomatik tamamlama yok (sürücü complete endpoint yanlış aktörle çağrılabiliyordu).
+    if (!isDriver) return;
+
+    const tagIdOk = tagId != null && String(tagId).trim() !== '';
+    const stageOk = navigationStage === 'destination';
+    const tripOk =
+      tagStatus === 'in_progress' &&
+      !!tagStartedAt &&
+      String(tagStartedAt).trim().length > 0;
+
+    if (!tagIdOk || !tripOk || !stageOk) {
+      autoCompleteTriggered.current = false;
+      return;
+    }
+
     if (isNear && !autoCompleteTriggered.current) {
       autoCompleteTriggered.current = true;
       Alert.alert(
@@ -2887,7 +2909,15 @@ export default function LiveMapView({
         [{ text: 'Tamam', onPress: () => onAutoComplete?.() }],
       );
     }
-  }, [destinationDistance, onAutoComplete]);
+  }, [
+    destinationDistance,
+    onAutoComplete,
+    isDriver,
+    navigationStage,
+    tagStatus,
+    tagStartedAt,
+    tagId,
+  ]);
 
   /** Sürücü: harita merkezi araçta — navigasyon modunda kullanıcı rotayı görüyor; otomatik merkezleme yok */
   useEffect(() => {

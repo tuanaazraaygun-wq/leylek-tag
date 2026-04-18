@@ -338,6 +338,8 @@ interface Tag {
   final_price?: number;
   created_at: string;
   matched_at?: string;
+  /** Yolculuk sürücü tarafından başlatılınca (in_progress) dolar */
+  started_at?: string | null;
   completed_at?: string;
   driver_location?: { latitude: number; longitude: number };
   passenger_location?: { latitude: number; longitude: number };
@@ -8781,23 +8783,6 @@ function PassengerDashboard({
                       appAlert('Hata', 'İstek gönderilemedi');
                     }
                   }}
-                  onAutoComplete={async () => {
-                    // Hedefe yaklaşınca otomatik tamamlama - YOLCU
-                    try {
-                      const response = await fetch(
-                        `${API_URL}/driver/complete-tag/${activeTag.id}?user_id=${user.id}&approved=true`,
-                        { method: 'POST' }
-                      );
-                      const data = await response.json();
-                      if (data.success) {
-                        appAlert('🎉 Yolculuk Tamamlandı!', 'Hedefe ulaştınız. İyi yolculuklar!');
-                        setActiveTag(null);
-                        loadActiveTag();
-                      }
-                    } catch (error) {
-                      appAlert('Hata', 'İşlem başarısız');
-                    }
-                  }}
                   onComplete={() => {
                     appAlert(
                       'Yolculuğu Tamamla',
@@ -12018,6 +12003,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 ]
               );
             }}
+            tagStatus={activeTag?.status}
+            tagStartedAt={activeTag?.started_at ?? null}
             onAutoComplete={async () => {
               // Hedefe yaklaşınca otomatik tamamlama - ŞOFÖR
               try {
@@ -12032,6 +12019,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                   setRequests([]);
                   setDriverChatVisible(false);
                   setScreen('role-select');
+                } else {
+                  appAlert('Tamamlanamadı', data.message || data.detail || 'Yolculuk henüz başlamamış olabilir.');
                 }
               } catch (error) {
                 appAlert('Hata', 'İşlem başarısız');

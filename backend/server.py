@@ -426,10 +426,13 @@ async def call_user(sid, data):
         logger.warning(f"⚠️ Alıcı çevrimdışı veya kayıtlı değil: {receiver_id}")
         logger.warning(f"⚠️ Kayıtlı kullanıcılar: {connected_users}")
         try:
+            _ic_body = f"{_push_first_name(caller_name, 14) or 'Karşı taraf'} sizi arıyor • Yanıtlamak için dokun"
+            if len(_ic_body) > 72:
+                _ic_body = _ic_body[:69] + "…"
             asyncio.create_task(send_push_notification(
                 receiver_id,
-                f"📞 {caller_name}",
-                "Size gelen bir arama var.",
+                "Gelen arama",
+                _ic_body,
                 {
                     "type": "incoming_call",
                     "call_id": call_id,
@@ -1319,8 +1322,9 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
 
                 ok = await send_expo_push(
                     token=token,
-                    title="Yeni Yolculuk",
-                    body="Yakınınızda yeni bir yolculuk var",
+                    title="Yeni teklif geldi",
+                    body=_push_body_offer_from_context(offer_data),
+                    data=_new_offer_push_data_from_offer(offer_data),
                 )
                 if ok:
                     logger.info(
@@ -1998,11 +2002,18 @@ async def apply_force_end_trip_and_notify(
     ender_role = "Yolcu" if et == "passenger" else "Sürücü"
     if other_user_id:
         try:
+            _fe_body = (
+                f"{_push_first_name(ender_name)} ({ender_role}) bitirmek istiyor • Yanıt için dokun"
+                if ender_name
+                else f"{ender_role} yolculuğu bitirmek istiyor • Yanıt için dokun"
+            )
+            if len(_fe_body) > 72:
+                _fe_body = _fe_body[:69] + "…"
             asyncio.create_task(
                 send_push_notification(
                     other_user_id,
-                    "⚠️ Yolculuk Sonlandırıldı!",
-                    f"{ender_role} yolculuğu tek taraflı sonlandırdı. Şikayet etmek için tıklayın.",
+                    "Yolculuğu bitirme isteği",
+                    _fe_body,
                     {
                         "type": "force_ended",
                         "tag_id": tid,
@@ -2350,7 +2361,9 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
         trip_dur = tag_data.get("estimated_minutes") or tag_data.get("trip_duration_min") or 0
         price_int = int(price) if price else 0
         distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
-        body = f"{price_int} TL • {distance_str} - {timeout_sec} sn içinde kabul et"
+        body = f"{price_int} TL • {distance_str} • {timeout_sec} sn • Kabul için dokun" if price_int else f"{distance_str} • {timeout_sec} sn • Hemen incele"
+        if len(body) > 72:
+            body = body[:69] + "…"
 
         n_sent = 0
         for driver_id, r_pick_km, r_eta in top:
@@ -2390,7 +2403,7 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
                 await send_trip_push_and_log(
                     did,
                     "new_ride_request",
-                    "Yeni yolculuk teklifi",
+                    "Yeni teklif geldi",
                     body,
                     {"type": "new_offer", "tag_id": tag_id, "price": price, "distance_km": trip_distance_km, "timeout": timeout_sec, "action": "accept", "is_broadcast": True}
                 )
@@ -2589,7 +2602,9 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
     trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
     price_int = int(price) if price else 0
     distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
-    body = f"{price_int} TL • {distance_str} - {DISPATCH_TIMEOUT} sn içinde kabul et (batch {bseq})"
+    body = f"{price_int} TL • {distance_str} • {DISPATCH_TIMEOUT} sn • Kabul için dokun" if price_int else f"{distance_str} • {DISPATCH_TIMEOUT} sn • Hemen incele"
+    if len(body) > 72:
+        body = body[:69] + "…"
 
     offer_base = {
         "tag_id": tag_id,
@@ -2644,7 +2659,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             await _expo_push_dispatch_new_offer(
                 d_id,
                 tag_id,
-                "Yeni Teklif",
+                "Yeni teklif geldi",
                 body,
             )
         except Exception as push_err:
@@ -5118,8 +5133,8 @@ async def login(request: LoginRequest = None, phone: str = None, pin: str = None
             import asyncio
             asyncio.ensure_future(send_push_notification(
                 user["id"],
-                "🔐 Hesabınıza Giriş Yapıldı",
-                "Siz değilseniz hemen hesabınızı güvene alın!",
+                "Hesabınıza giriş yapıldı",
+                "Siz değil misiniz? Hemen kontrol edin.",
                 {"type": "login_alert", "timestamp": datetime.utcnow().isoformat()}
             ))
             logger.info(f"🔔 Giriş bildirimi gönderildi: {user['name']}")
@@ -5715,8 +5730,8 @@ async def approve_driver_kyc(admin_phone: str, user_id: str):
             try:
                 await send_push_notification(
                     user_id,
-                    "✅ Sürücü Kaydınız Onaylandı!",
-                    "Artık sürücü olarak çalışabilirsiniz. Yolcuları bekliyoruz!",
+                    "Sürücü kaydınız onaylandı",
+                    "Yolculuk almaya başlayabilirsiniz. Detay için dokun.",
                     {"type": "kyc_approved"}
                 )
             except:
@@ -5761,8 +5776,12 @@ async def reject_driver_kyc(admin_phone: str, user_id: str, reason: str = "Belge
             try:
                 await send_push_notification(
                     user_id,
-                    "❌ Sürücü Başvurunuz Reddedildi",
-                    f"Sebep: {reason}. Lütfen tekrar başvurun.",
+                    "Sürücü başvurunuz reddedildi",
+                    (
+                        f"Sebep: {str(reason)[:32]}… • Yeniden başvur"
+                        if len(str(reason)) > 33
+                        else f"Sebep: {reason}. Yeniden başvur"
+                    ),
                     {"type": "kyc_rejected"}
                 )
             except:
@@ -7329,10 +7348,23 @@ async def send_offer(
 
         if passenger_id:
             try:
+                drv_fn = _push_first_name(driver.get("name"), 10)
+                try:
+                    pi = int(float(p)) if p is not None else 0
+                except (TypeError, ValueError):
+                    pi = 0
+                if drv_fn and pi > 0:
+                    _pax_offer_body = f"{drv_fn} • {pi} TL • İncelemek için dokun"
+                elif pi > 0:
+                    _pax_offer_body = f"{pi} TL • Teklifi görmek için dokun"
+                else:
+                    _pax_offer_body = "Yeni teklif • Hemen inceleyin"
+                if len(_pax_offer_body) > 72:
+                    _pax_offer_body = _pax_offer_body[:69] + "…"
                 asyncio.create_task(send_push_notification(
                     passenger_id,
                     "Yeni teklif geldi",
-                    "Sürücü teklif gönderdi",
+                    _pax_offer_body,
                     {
                         "type": "new_offer",
                         "tag_id": tid,
@@ -7964,12 +7996,12 @@ async def start_trip(driver_id: str = None, user_id: str = None, tag_id: str = N
             try:
                 if p_id:
                     asyncio.create_task(send_trip_push_and_log(
-                        p_id, "trip_started", "Yolculuk başladı", "İyi yolculuklar.",
+                        p_id, "trip_started", "Yolculuk başladı", "İyi yolculuklar!",
                         {"type": "trip_started", "tag_id": tag_id}
                     ))
                 if d_id:
                     asyncio.create_task(send_trip_push_and_log(
-                        d_id, "trip_started", "Yolculuk başladı", "Güvenli sürüşler.",
+                        d_id, "trip_started", "Yolculuk başladı", "Güvenli yolculuklar!",
                         {"type": "trip_started", "tag_id": tag_id}
                     ))
             except Exception as notif_err:
@@ -7998,24 +8030,77 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
         
         # MongoDB ID'yi UUID'ye çevir
         resolved_id = await resolve_user_id(did)
-        
-        # TAG'i güncelle
+
+        tag_pre = (
+            supabase.table("tags")
+            .select("id, status, started_at, passenger_id, driver_id")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        if not tag_pre.data:
+            return {
+                "success": False,
+                "message": "Aktif yolculuk bulunamadı",
+                "code": "invalid_stage_for_completion",
+                "detail": "tag_not_found",
+            }
+
+        row0 = tag_pre.data[0]
+        drv_id = row0.get("driver_id")
+        passenger_id = row0.get("passenger_id")
+        if resolved_id not in (drv_id, passenger_id):
+            return {
+                "success": False,
+                "message": "Bu yolculuk için yetkiniz yok",
+                "code": "invalid_stage_for_completion",
+                "detail": "not_driver_or_passenger_on_tag",
+            }
+
+        st = str(row0.get("status") or "").strip()
+        started = row0.get("started_at")
+
+        if st != "in_progress":
+            return {
+                "success": False,
+                "message": "Yolculuk başlamadan tamamlanamaz",
+                "code": "invalid_stage_for_completion",
+                "detail": f"status_is_{st}",
+            }
+        if started is None or (isinstance(started, str) and not str(started).strip()):
+            return {
+                "success": False,
+                "message": "Yolculuk başlamadan tamamlanamaz",
+                "code": "ride_not_started",
+                "detail": "started_at_missing",
+            }
+
         supabase.table("tags").update({
             "status": "completed",
             "completed_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("driver_id", resolved_id).execute()
-        
-        # TAG bilgisini al
-        tag_result = supabase.table("tags").select("passenger_id").eq("id", tag_id).execute()
-        if tag_result.data:
-            passenger_id = tag_result.data[0]["passenger_id"]
-            
-            # Her iki kullanıcının trip sayısını artır
-            for uid in [resolved_id, passenger_id]:
-                user_result = supabase.table("users").select("total_trips").eq("id", uid).execute()
-                if user_result.data:
-                    current = user_result.data[0].get("total_trips", 0) or 0
-                    supabase.table("users").update({"total_trips": current + 1}).eq("id", uid).execute()
+        }).eq("id", tag_id).eq("status", "in_progress").not_.is_("started_at", "null").execute()
+
+        verify = (
+            supabase.table("tags")
+            .select("status")
+            .eq("id", tag_id)
+            .limit(1)
+            .execute()
+        )
+        if not verify.data or verify.data[0].get("status") != "completed":
+            return {
+                "success": False,
+                "message": "Yolculuk güncellenemedi",
+                "code": "no_rows_updated",
+                "detail": "completion_update_had_no_effect",
+            }
+
+        # Her iki kullanıcının trip sayısını artır (sürücü veya yolcu tamamlasa da aynı çift)
+        for uid in {u for u in (drv_id, passenger_id) if u}:
+            user_result = supabase.table("users").select("total_trips").eq("id", uid).execute()
+            if user_result.data:
+                current = user_result.data[0].get("total_trips", 0) or 0
+                supabase.table("users").update({"total_trips": current + 1}).eq("id", uid).execute()
         
         # 🆕 Trip bittiğinde chat mesajlarını sil
         try:
@@ -8037,14 +8122,17 @@ async def complete_trip(driver_id: str = None, user_id: str = None, tag_id: str 
                     asyncio.create_task(send_trip_push_and_log(
                         p_id, "trip_completed",
                         "Yolculuk tamamlandı",
-                        "Bizi tercih ettiğiniz için teşekkür ederiz.",
+                        "Teşekkürler! Detayları görmek için dokun.",
                         {"type": "trip_completed", "tag_id": tag_id, "price": price}
                     ))
                 if d_id:
+                    _earn_b = f"{fare_amount} TL kazanç • Yeni teklif için dokun" if fare_amount else "Özet için dokun"
+                    if len(_earn_b) > 72:
+                        _earn_b = _earn_b[:69] + "…"
                     asyncio.create_task(send_trip_push_and_log(
                         d_id, "trip_completed",
                         "Yolculuk tamamlandı",
-                        f"Kazancınız: {fare_amount} TL. Yeni teklif almak için bekleme ekranına geçebilirsiniz.",
+                        _earn_b,
                         {"type": "trip_completed", "tag_id": tag_id, "earnings": price}
                     ))
             except Exception as notif_err:
@@ -8104,13 +8192,15 @@ async def driver_on_the_way(driver_id: str = None, user_id: str = None, tag_id: 
                         eta_min = _eta_minutes(dl, dg, float(p_lat), float(p_lng))
         except Exception:
             pass
-        title = "Eşleştiniz, sürücü yola çıktı"
+        title = "Sürücü yola çıktı"
         if eta_min and distance_km_road is not None and distance_km_road > 0:
-            body = f"Yaklaşık {distance_km_road:.1f} km • {eta_min} dk"
+            body = f"~{distance_km_road:.1f} km • ~{eta_min} dk • Konumu görmek için dokun"
         elif eta_min:
-            body = f"Tahmini varış: {eta_min} dk"
+            body = f"~{eta_min} dk içinde yaklaşıyor • Konumu görmek için dokun"
         else:
-            body = "Sürücünüz size doğru geliyor."
+            body = "Konumunu görmek için dokun"
+        if len(body) > 72:
+            body = body[:69] + "…"
         if passenger_id:
             asyncio.create_task(send_trip_push_and_log(
                 passenger_id, "driver_on_the_way",
@@ -8148,14 +8238,14 @@ async def driver_arrived(driver_id: str = None, user_id: str = None, tag_id: str
             if passenger_id:
                 asyncio.create_task(send_trip_push_and_log(
                     passenger_id, "driver_arrived",
-                    "Sürücü sizi bekliyor",
-                    "Sürücünüz bulunduğunuz konuma ulaştı.",
+                    "Sürücü geldi",
+                    "Buluşma noktasına ulaştı • Görmek için dokun",
                     {"type": "driver_arrived", "tag_id": tag_id}
                 ))
             asyncio.create_task(send_trip_push_and_log(
                 resolved_id, "driver_arrived",
                 "Yolcuya ulaştınız",
-                "Yolcuyu aldığınızda yolculuğu başlatabilirsiniz.",
+                "Yolculuğu başlatmak için dokun",
                 {"type": "driver_arrived", "tag_id": tag_id}
             ))
         except Exception as notif_err:
@@ -8338,6 +8428,88 @@ async def rate_user(rater_id: str, rated_user_id: str, rating: int, tag_id: str 
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== PUSH NOTIFICATIONS ====================
+# Kullanıcıya dönük kısa Türkçe metinler (Android önizleme ~60 karakter hedefi).
+# Routing: _canonical_push_routing_data ve payload anahtarlarına dokunulmaz; yalnızca title/body iyileştirilir.
+
+
+def _push_first_name(name: Optional[str], max_len: int = 10) -> str:
+    n = (name or "").strip()
+    if not n:
+        return ""
+    part = n.split()[0]
+    if len(part) <= max_len:
+        return part
+    return part[: max_len - 1] + "…"
+
+
+def _push_body_offer_from_context(offer_data: dict) -> str:
+    """Sürücü yolculuk teklifi — fiyat, mesafe, süre (varsa)."""
+    bits: List[str] = []
+    try:
+        raw = offer_data.get("offered_price") or offer_data.get("final_price")
+        if raw is not None:
+            p = int(float(raw))
+            if p > 0:
+                bits.append(f"{p} TL")
+    except (TypeError, ValueError):
+        pass
+    try:
+        dkm = offer_data.get("distance_km")
+        if dkm is None:
+            dkm = offer_data.get("trip_distance_km")
+        if dkm is not None and float(dkm) > 0:
+            bits.append(f"{float(dkm):.0f} km")
+    except (TypeError, ValueError):
+        pass
+    try:
+        pk = offer_data.get("pickup_eta_min")
+        if pk is None:
+            pk = offer_data.get("time_to_passenger_min")
+        if pk is not None and int(pk) > 0:
+            bits.append(f"~{int(pk)} dk")
+    except (TypeError, ValueError):
+        pass
+    try:
+        to = offer_data.get("dispatch_timeout")
+        if to is not None and int(to) > 0:
+            bits.append(f"{int(to)} sn")
+    except (TypeError, ValueError):
+        pass
+    if bits:
+        s = " • ".join(bits) + " • Kabul için dokun"
+    else:
+        s = "Hemen incele, kabul için dokun"
+    return s if len(s) <= 72 else s[:69] + "…"
+
+
+def _new_offer_push_data_from_offer(offer_data: dict) -> dict:
+    """send_expo_push / FCM data: type + tag_id (+ kısa sayısal bağlam)."""
+    d: dict = {"type": "new_offer"}
+    tid = offer_data.get("tag_id")
+    if tid is not None:
+        d["tag_id"] = str(tid)
+    try:
+        raw = offer_data.get("offered_price") or offer_data.get("final_price")
+        if raw is not None:
+            p = int(float(raw))
+            if p > 0:
+                d["price"] = p
+    except (TypeError, ValueError):
+        pass
+    try:
+        dkm = offer_data.get("distance_km") or offer_data.get("trip_distance_km")
+        if dkm is not None:
+            d["distance_km"] = float(dkm)
+    except (TypeError, ValueError):
+        pass
+    to = offer_data.get("dispatch_timeout")
+    if to is not None:
+        try:
+            d["timeout"] = int(to)
+        except (TypeError, ValueError):
+            pass
+    return d
+
 
 def build_call_push_payload(
     notification_type: str,
@@ -8602,7 +8774,7 @@ async def register_push_token_endpoint(
                 supabase.table("users").update({
                     "push_token": _push_token,
                     "push_token_updated_at": datetime.utcnow().isoformat()
-                }                ).eq("id", resolved_user_id).execute()
+                }).eq("id", resolved_user_id).execute()
 
         logger.info(
             "PUSH_REGISTER transport=expo user_id=%s",
@@ -8714,9 +8886,13 @@ async def test_match_notification(
     """
     try:
         tag_id = tag_id or str(uuid.uuid4())
-        passenger_title = "Sürücü bulundu"
-        passenger_body = "Eşleşme sağlandı"
-        driver_body = f"Yolcuya {eta_min} dk. Yolcuya git için tıklayın." if eta_min else "Yolcuya git için tıklayın."
+        passenger_title = "Eşleşme sağlandı"
+        passenger_body = "Sürücü bulundu • Detayları görmek için dokun"
+        driver_body = (
+            f"Yolcuya ~{eta_min} dk • Rotayı görmek için dokun"
+            if eta_min
+            else "Yolcu hazır • Rotayı görmek için dokun"
+        )
         results = {}
         # Yolcu
         ok_p = await send_trip_push_and_log(
@@ -8857,10 +9033,10 @@ async def test_match_push_by_ids(driver_id: str, passenger_id: str, tag_id: str 
         tid = tag_id or "test"
         match_data = {"event": "match", "trip_id": tid, "type": "matched", "tag_id": tid}
         driver_ok = await send_push_notification(
-            driver_id, "Eşleşme sağlandı", "Yolcuya gitmek için tıklayın.", match_data,
+            driver_id, "Eşleşme sağlandı", "Yolcu bulundu • Rotayı görmek için dokun", match_data,
         )
         passenger_ok = await send_push_notification(
-            passenger_id, "Sürücü bulundu", "Eşleşme sağlandı", match_data,
+            passenger_id, "Eşleşme sağlandı", "Sürücü bulundu • Detay için dokun", match_data,
         )
         return {
             "success": True,
@@ -8889,13 +9065,13 @@ async def test_match_push_by_phone(
         driver_ok = await send_push_notification(
             driver_phone,
             "Eşleşme sağlandı",
-            "Yolcuya gitmek için tıklayın.",
+            "Yolcu bulundu • Rotayı görmek için dokun",
             match_data,
         )
         passenger_ok = await send_push_notification(
             passenger_phone,
-            "Sürücü bulundu",
             "Eşleşme sağlandı",
+            "Sürücü bulundu • Detay için dokun",
             match_data,
         )
         return {
@@ -10251,10 +10427,13 @@ async def start_call(request: StartCallRequest):
         
         logger.info(f"📞 SUPABASE: Arama başlatıldı: {call_id} - {request.caller_id} -> {receiver_id}")
         try:
+            _ic_body_http = f"{_push_first_name(caller_name, 14) or 'Karşı taraf'} sizi arıyor • Yanıtlamak için dokun"
+            if len(_ic_body_http) > 72:
+                _ic_body_http = _ic_body_http[:69] + "…"
             asyncio.create_task(send_push_notification(
                 receiver_id,
-                f"📞 {caller_name}",
-                "Size gelen bir arama var.",
+                "Gelen arama",
+                _ic_body_http,
                 build_call_push_payload(
                     "incoming_call",
                     request.caller_id,
@@ -12281,18 +12460,52 @@ async def handle_driver_accept_offer(sid, data):
         logger.info(f"MATCH PUSH: driver_id={_id_hint(resolved_driver_id)} passenger_id={_id_hint(passenger_id)}")
         match_data = {"event": "match", "trip_id": trip_id, "type": "matched", "tag_id": tid}
 
+        _m_fp = 0
+        try:
+            _raw_p = tag.get("final_price") or tag.get("offered_price")
+            if _raw_p is not None:
+                _m_fp = int(float(_raw_p))
+        except (TypeError, ValueError):
+            _m_fp = 0
+        _m_dkm = ""
+        try:
+            _dk = tag.get("distance_km")
+            if _dk is not None and float(_dk) > 0:
+                _m_dkm = f"{float(_dk):.0f} km"
+        except (TypeError, ValueError):
+            pass
+        if _m_fp and _m_dkm:
+            _match_driver_body = f"{_m_fp} TL • {_m_dkm} • Rotaya dokun"
+        elif _m_fp:
+            _match_driver_body = f"{_m_fp} TL • Rotayı görmek için dokun"
+        else:
+            _match_driver_body = "Yolcu bulundu • Rotayı görmek için dokun"
+        if len(_match_driver_body) > 72:
+            _match_driver_body = _match_driver_body[:69] + "…"
+        _dn = _push_first_name(driver_name, 10)
+        if _dn and _m_fp:
+            _match_pass_body = f"{_dn} • {_m_fp} TL • Detay için dokun"
+        elif _dn:
+            _match_pass_body = f"{_dn} • Detayları görmek için dokun"
+        elif _m_fp:
+            _match_pass_body = f"{_m_fp} TL • Detayları görmek için dokun"
+        else:
+            _match_pass_body = "Sürücü bulundu • Detay için dokun"
+        if len(_match_pass_body) > 72:
+            _match_pass_body = _match_pass_body[:69] + "…"
+
         print("📲 SENDING PUSH DRIVER")
         push_driver_ok = await send_push_notification(
             resolved_driver_id,
             "Eşleşme sağlandı",
-            "Yolcuya gitmek için tıklayın.",
+            _match_driver_body,
             match_data,
         )
         if not push_driver_ok and driver_phone and _looks_like_phone(driver_phone):
             push_driver_ok = await send_push_notification(
                 driver_phone,
                 "Eşleşme sağlandı",
-                "Yolcuya gitmek için tıklayın.",
+                _match_driver_body,
                 match_data,
             )
             if push_driver_ok:
@@ -12303,15 +12516,15 @@ async def handle_driver_accept_offer(sid, data):
             print("📲 SENDING PUSH PASSENGER")
             push_p_ok = await send_push_notification(
                 passenger_id,
-                "Sürücü bulundu",
                 "Eşleşme sağlandı",
+                _match_pass_body,
                 match_data,
             )
             if not push_p_ok and passenger_phone and _looks_like_phone(passenger_phone):
                 push_p_ok = await send_push_notification(
                     passenger_phone,
-                    "Sürücü bulundu",
                     "Eşleşme sağlandı",
+                    _match_pass_body,
                     match_data,
                 )
                 if push_p_ok:
@@ -12505,11 +12718,28 @@ async def send_chat_message(msg: ChatMessageCreate):
             should_first_push = False
 
         if should_first_push:
+            _fn_chat = _push_first_name(sender_name, 12)
+            if from_driver:
+                _chat_title = "Sürücü size yazdı"
+                _chat_body = (
+                    f"{_fn_chat} yazdı • Sohbeti aç"
+                    if _fn_chat
+                    else "Sohbeti açmak için dokun"
+                )
+            else:
+                _chat_title = "Yolcu size yazdı"
+                _chat_body = (
+                    f"{_fn_chat} yazdı • Mesajı gör"
+                    if _fn_chat
+                    else "Mesajı görmek için dokun"
+                )
+            if len(_chat_body) > 72:
+                _chat_body = _chat_body[:69] + "…"
             asyncio.create_task(
                 send_push_notification(
                     msg.receiver_id,
-                    "Yeni mesaj",
-                    "Mesaj geldi, görmek için tıklayın",
+                    _chat_title,
+                    _chat_body,
                     {
                         "type": "first_chat_message",
                         "tag_id": msg.tag_id,
@@ -14241,9 +14471,15 @@ async def send_match_notification_to_both(tag_id: str, driver_id: str, passenger
                     )
         except Exception:
             pass
-        driver_body = f"Yolcuya {eta_min} dk. Yolcuya git için tıklayın." if eta_min else "Yolcuya git için tıklayın."
-        passenger_title = "Sürücü bulundu"
-        passenger_body = "Eşleşme sağlandı"
+        driver_body = (
+            f"Yolcuya ~{eta_min} dk • Rotayı görmek için dokun"
+            if eta_min
+            else "Yolcu hazır • Rotayı görmek için dokun"
+        )
+        if len(driver_body) > 72:
+            driver_body = driver_body[:69] + "…"
+        passenger_title = "Eşleşme sağlandı"
+        passenger_body = "Sürücü bulundu • Detayları görmek için dokun"
         # Teklif bildirimi gibi type=new_offer kullan (cihazda aynı kanal/aynı davranış); event=match ile uygulama eşleşme ekranına gidebilir
         base_data = {"type": "new_offer", "event": "match", "tag_id": tag_id, "eta_min": eta_min}
         if d_id:
@@ -14452,10 +14688,10 @@ async def send_expo_notification(
     return success
 
 
-async def send_expo_push(token: str, title: str, body: str) -> bool:
+async def send_expo_push(token: str, title: str, body: str, data: Optional[dict] = None) -> bool:
     """
     Basit helper: token -> Expo Push API'ye gönder.
-    Sadece push gönderimi ekler; dispatch/vehicle filtrelerine dokunmaz.
+    data: new_offer yönlendirmesi için tag_id vb. (type her zaman new_offer kalır).
     """
     try:
         if not token:
@@ -14466,12 +14702,17 @@ async def send_expo_push(token: str, title: str, body: str) -> bool:
         if not ExpoPushService.is_valid_token(str(token).strip()):
             logger.warning("send_expo_push: geçersiz Expo token formatı")
             return False
+        push_data: dict = {"type": "new_offer"}
+        if data:
+            for k, v in data.items():
+                if v is not None and k != "type":
+                    push_data[k] = v
         ok, _ = await asyncio.wait_for(
             _send_expo_and_get_receipt(
                 token=token,
                 title=title,
                 body=body,
-                data={"type": "new_offer"},
+                data=push_data,
                 db_user_id=None,
             ),
             timeout=5.0,
