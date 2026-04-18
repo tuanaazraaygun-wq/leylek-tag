@@ -144,6 +144,8 @@ interface LiveMapViewProps {
   selfGender?: PassengerGender | null;
   /** Sürücü haritasında yolcu cinsiyeti — marker ikonu */
   otherPassengerGender?: PassengerGender | null;
+  /** Sürücü: `otherLocation` yolcu canlı GPS değil, tag alım (pickup) yedeğinden geliyorsa */
+  otherLocationFromPickupFallback?: boolean;
 }
 
 /**
@@ -211,6 +213,52 @@ function formatRouteKmMin(distanceKm: number | null, durationMin: number | null)
 
 type MapLatLng = { latitude: number; longitude: number };
 
+/** OSRM URL / rota: yalnızca gerçek sayılar (string koordinat güvenli reddedilir) */
+function isOsrmCoordComponent(n: unknown): n is number {
+  return typeof n === 'number' && !Number.isNaN(n) && Number.isFinite(n);
+}
+
+function isValidRouteEndpoint(loc: { latitude?: unknown; longitude?: unknown } | null | undefined): loc is MapLatLng {
+  if (!loc) return false;
+  return isOsrmCoordComponent(loc.latitude) && isOsrmCoordComponent(loc.longitude);
+}
+
+/** OSRM encoded polyline (precision 5) → harita koordinatları */
+function decodeOsrmPolyline(encoded: string, precision = 5): MapLatLng[] {
+  const coordinates: MapLatLng[] = [];
+  if (!encoded || typeof encoded !== 'string') return coordinates;
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const factor = Math.pow(10, precision);
+  const len = encoded.length;
+  while (index < len) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do {
+      if (index >= len) return coordinates;
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+    shift = 0;
+    result = 0;
+    do {
+      if (index >= len) return coordinates;
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+    coordinates.push({ latitude: lat / factor, longitude: lng / factor });
+  }
+  return coordinates;
+}
+
 /** OSRM GeoJSON LineString — [lng, lat] → { latitude, longitude } */
 function osrmGeometryToCoords(geometry: unknown): MapLatLng[] | null {
   if (!geometry || typeof geometry !== 'object') return null;
@@ -227,38 +275,59 @@ function osrmGeometryToCoords(geometry: unknown): MapLatLng[] | null {
   return out.length >= 2 ? out : null;
 }
 
-/** OSRM (Project OSRM) — yalnızca polyline çizimi; km/dk backend’ten gelir */
+/** OSRM yanıtı: polyline (string) veya GeoJSON LineString */
+function osrmRouteGeometryToCoords(geometry: unknown): MapLatLng[] | null {
+  if (geometry == null) return null;
+  if (typeof geometry === 'string') {
+    const decoded = decodeOsrmPolyline(geometry);
+    return decoded.length >= 2 ? decoded : null;
+  }
+  return osrmGeometryToCoords(geometry);
+}
+
+/** OSRM (Project OSRM) — polyline decode; km/dk backend’ten gelir */
 async function fetchOsrmDrivingRoute(
   fromLat: number,
   fromLng: number,
   toLat: number,
   toLng: number,
 ): Promise<{ distanceM: number; durationS: number; coordinates: MapLatLng[] } | null> {
+  if (
+    !isOsrmCoordComponent(fromLat) ||
+    !isOsrmCoordComponent(fromLng) ||
+    !isOsrmCoordComponent(toLat) ||
+    !isOsrmCoordComponent(toLng)
+  ) {
+    return null;
+  }
+  const origin = { latitude: fromLat, longitude: fromLng };
+  const dest = { latitude: toLat, longitude: toLng };
+  console.log('ROUTE ORIGIN:', origin);
+  console.log('ROUTE DEST:', dest);
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=polyline`;
     const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
     const data = await res.json();
-    if (data?.code !== 'Ok' || !data?.routes?.[0]) return null;
+    if (!data?.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
+      console.warn('[OSRM] No route found', { code: data?.code });
+      return null;
+    }
+    if (data.code !== 'Ok') {
+      console.warn('[OSRM] Route response not Ok', data?.code);
+      return null;
+    }
     const r = data.routes[0];
-    const coords = osrmGeometryToCoords(r.geometry);
+    const coords = osrmRouteGeometryToCoords(r.geometry);
     if (!coords) return null;
     return {
       distanceM: Number(r.distance) || 0,
       durationS: Number(r.duration) || 0,
       coordinates: coords,
     };
-  } catch {
+  } catch (e) {
+    console.warn('[OSRM] fetchOsrmDrivingRoute failed', e);
     return null;
   }
-}
-
-/** Sürücü nav tetikleyicisi: doğrudan iki konum */
-async function fetchOsrmDrivingRouteBetween(
-  from: MapLatLng,
-  to: MapLatLng,
-): Promise<MapLatLng[] | null> {
-  const r = await fetchOsrmDrivingRoute(from.latitude, from.longitude, to.latitude, to.longitude);
-  return r?.coordinates ?? null;
 }
 
 type OsrmNavStepParsed = {
@@ -296,13 +365,32 @@ async function fetchOsrmDrivingRouteWithSteps(
   coordinates: MapLatLng[];
   steps: OsrmNavStepParsed[];
 } | null> {
+  if (
+    !isOsrmCoordComponent(fromLat) ||
+    !isOsrmCoordComponent(fromLng) ||
+    !isOsrmCoordComponent(toLat) ||
+    !isOsrmCoordComponent(toLng)
+  ) {
+    return null;
+  }
+  const origin = { latitude: fromLat, longitude: fromLng };
+  const dest = { latitude: toLat, longitude: toLng };
+  console.log('ROUTE ORIGIN (steps):', origin);
+  console.log('ROUTE DEST (steps):', dest);
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&steps=true`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=polyline&steps=true`;
     const res = await fetch(url, { headers: { 'User-Agent': 'LeylekTAG-App/1.0' } });
     const data = await res.json();
-    if (data?.code !== 'Ok' || !data?.routes?.[0]) return null;
+    if (!data?.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
+      console.warn('[OSRM] No route found (steps)', { code: data?.code });
+      return null;
+    }
+    if (data.code !== 'Ok') {
+      console.warn('[OSRM] Route response not Ok (steps)', data?.code);
+      return null;
+    }
     const r = data.routes[0];
-    const coords = osrmGeometryToCoords(r.geometry);
+    const coords = osrmRouteGeometryToCoords(r.geometry);
     if (!coords) return null;
     const leg = r.legs?.[0];
     const steps = buildOsrmStepsFromLeg(leg);
@@ -312,7 +400,8 @@ async function fetchOsrmDrivingRouteWithSteps(
       coordinates: coords,
       steps,
     };
-  } catch {
+  } catch (e) {
+    console.warn('[OSRM] fetchOsrmDrivingRouteWithSteps failed', e);
     return null;
   }
 }
@@ -1129,9 +1218,6 @@ function sliceMeetingRouteForNavFit(user: MapLatLng, route: MapLatLng[], aheadM:
   return out;
 }
 
-/** NAV REFRESH: OSRM spam / flicker önleme — en az ms aralık */
-const NAV_REFRESH_OSRM_MIN_MS = 3000;
-
 function NavManeuverArrowIcon({ kind, size = 56 }: { kind: ManeuverArrowKind; size?: number }) {
   const green = '#4ADE80';
   const white = '#FFFFFF';
@@ -1289,12 +1375,14 @@ export default function LiveMapView({
   peerMapPinScale = 1,
   selfGender = null,
   otherPassengerGender = null,
+  otherLocationFromPickupFallback = false,
 }: LiveMapViewProps) {
   const logPax = useCallback((label: string, fn: unknown) => {
     if (!isDriver) callCheck(label, fn);
   }, [isDriver]);
 
   const mapRef = useRef<any>(null);
+  const pickupFallbackLoggedForTagRef = useRef<string | null>(null);
   const meetingRouteCoordinatesRef = useRef<MapLatLng[]>([]);
   const fitNavigationViewportRef = useRef<
     ((routeCoords?: MapLatLng[] | null) => void) | null
@@ -1303,6 +1391,9 @@ export default function LiveMapView({
   const insets = useSafeAreaInsets();
   const routeInfoRef = useRef(routeInfo);
   routeInfoRef.current = routeInfo;
+
+  /** Tek OSRM buluşma fetch’i — dışarıdan (ör. Yolcuya Git) tetiklemek için */
+  const runMeetingRouteOsrmFetchRef = useRef<() => void>(() => {});
 
   // BİLGİ KARTI STATE'İ
   const [showInfoCard, setShowInfoCard] = useState(false);
@@ -1411,6 +1502,27 @@ export default function LiveMapView({
     cumStart: number[];
   } | null>(null);
 
+  const meetingHasOsrmPolylineRef = useRef(false);
+  const lastNavRefreshDedupeKeyRef = useRef('');
+  const lastNavRefreshThrottleAtRef = useRef(0);
+
+  const clearMeetingRoute = useCallback((reason: string) => {
+    console.log('CLEAR ROUTE CALLED', {
+      reason,
+      navigationMode,
+      navigationStage,
+      isDriver,
+    });
+    setMeetingRouteCoordinates([]);
+    meetingHasOsrmPolylineRef.current = false;
+    pickupNavStepsRef.current = null;
+  }, [navigationMode, navigationStage, isDriver]);
+
+  const setMeetingRouteCoordsLogged = useCallback((coords: MapLatLng[]) => {
+    console.log('SET ROUTE COORDS', coords.length);
+    setMeetingRouteCoordinates(coords);
+  }, []);
+
   const [navManeuverUi, setNavManeuverUi] = useState<NavManeuverUi | null>(null);
   /** Google Directions (backend) trafik gecikme oranına göre rota rengi */
   const [navRouteTrafficLevel, setNavRouteTrafficLevel] = useState<NavTrafficLevel>('free');
@@ -1501,12 +1613,10 @@ export default function LiveMapView({
       navUserMapGestureUntilRef.current = 0;
       navFollowResumeSoftUntilRef.current = 0;
       navCamHeadingSentRef.current = null;
-      setMeetingRouteCoordinates([]);
-      meetingHasOsrmPolylineRef.current = false;
+      clearMeetingRoute('driver_nav_closed');
       lastNavRefreshDedupeKeyRef.current = '';
       lastNavRefreshThrottleAtRef.current = 0;
       setNavigationStage('pickup');
-      pickupNavStepsRef.current = null;
       destNavStepsRef.current = null;
       setNavManeuverUi(null);
       setNavRouteTrafficLevel('free');
@@ -1531,7 +1641,7 @@ export default function LiveMapView({
       navDriverMarkerSmoothedBearingRef.current = null;
       setDriverNavMarkerRotation(0);
     }
-  }, [navigationMode, isDriver]);
+  }, [navigationMode, isDriver, clearMeetingRoute]);
 
   /**
    * Buluşma sonrası: sürücü yolcuya yakın + varış noktası var → hedef (turuncu) aşaması.
@@ -1621,22 +1731,26 @@ export default function LiveMapView({
   });
   const lastOsrmAtRef = useRef(0);
   const lastOsrmKeyRef = useRef('');
-  const meetingHasOsrmPolylineRef = useRef(false);
-  const refreshMeetingRouteOsrmRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
-  const loadDriverNavMeetingRouteRef = useRef<() => Promise<void>>(async () => {});
-  const lastNavRefreshDedupeKeyRef = useRef('');
-  const lastNavRefreshThrottleAtRef = useRef(0);
 
   useEffect(() => {
-    meetingHasOsrmPolylineRef.current = false;
+    if (!isDriver || !otherLocationFromPickupFallback) {
+      pickupFallbackLoggedForTagRef.current = null;
+      return;
+    }
+    const tid = tagId != null && String(tagId).trim() !== '' ? String(tagId) : '_';
+    if (pickupFallbackLoggedForTagRef.current === tid) return;
+    pickupFallbackLoggedForTagRef.current = tid;
+    console.log('Using pickup fallback for passenger');
+  }, [isDriver, otherLocationFromPickupFallback, tagId]);
+
+  useEffect(() => {
+    clearMeetingRoute('tag_id_reset');
     lastOsrmKeyRef.current = '';
     lastOsrmAtRef.current = 0;
     mapFitRef.current = { initialDone: false, hadDestination: false };
     setNavigationMode(false);
     setNavigationStage('pickup');
     navStagePrevRef.current = 'pickup';
-    setMeetingRouteCoordinates([]);
-    pickupNavStepsRef.current = null;
     destNavStepsRef.current = null;
     setNavManeuverUi(null);
     setNavRouteTrafficLevel('free');
@@ -1664,7 +1778,7 @@ export default function LiveMapView({
     setNavDriverMapCoord(null);
     navDriverMarkerSmoothedBearingRef.current = null;
     setDriverNavMarkerRotation(0);
-  }, [tagId]);
+  }, [tagId, clearMeetingRoute]);
 
   useEffect(() => {
     if (!isDriver) return;
@@ -2269,7 +2383,7 @@ export default function LiveMapView({
 
   const handleYolcuyaGitPress = useCallback(() => {
     void tapButtonHaptic();
-    if (!userLocation || !otherLocation) {
+    if (!isValidRouteEndpoint(userLocation) || !isValidRouteEndpoint(otherLocation)) {
       Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
       return;
     }
@@ -2297,7 +2411,7 @@ export default function LiveMapView({
         navGestureResumeTimerRef.current = null;
       }
       setNavFollowResumeTick((x) => x + 1);
-      void loadDriverNavMeetingRouteRef.current();
+      runMeetingRouteOsrmFetchRef.current();
       InteractionManager.runAfterInteractions(() => {
         applyDriverActiveFollowViewportRef.current?.();
       });
@@ -2554,37 +2668,18 @@ export default function LiveMapView({
     return () => breath.stop();
   }, [onCall, quickCallBreath]);
 
-  // OSRM gelene kadar düz segment (yolcu); sürücü nav kapalıyken çizgi basma (nav açılınca OSRM/fallback)
-  useEffect(() => {
-    if (!userLocation || !otherLocation) return;
-    if (isDriver && !navigationMode) return;
-    if (isDriver && navigationMode && navigationStage === 'destination') {
-      setMeetingRouteCoordinates([]);
-      return;
-    }
-    const start = isDriver ? userLocation : otherLocation;
-    const end = isDriver ? otherLocation : userLocation;
-    if (!meetingHasOsrmPolylineRef.current) {
-      setMeetingRouteCoordinates([start, end]);
-    }
-  }, [
-    userLocation?.latitude,
-    userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    isDriver,
-    navigationMode,
-    navigationStage,
-  ]);
-
   // TURUNCU ROTA: Yolcu → Hedef — düz çizgi sonra OSRM polyline (etiketteki km/süre routeInfo’dan)
   useEffect(() => {
     if (!destinationLocation) {
       setDestinationRoute([]);
       return;
     }
+    if (!isValidRouteEndpoint(destinationLocation)) {
+      setDestinationRoute([]);
+      return;
+    }
     const passengerLocation = isDriver ? otherLocation : userLocation;
-    if (!passengerLocation) return;
+    if (!isValidRouteEndpoint(passengerLocation)) return;
     if (isDriver && navigationMode) {
       return;
     }
@@ -2603,21 +2698,12 @@ export default function LiveMapView({
     return () => {
       cancelled = true;
     };
-  }, [
-    userLocation?.latitude,
-    userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    destinationLocation?.latitude,
-    destinationLocation?.longitude,
-    isDriver,
-    navigationMode,
-  ]);
+  }, [userLocation, otherLocation, destinationLocation, isDriver, navigationMode]);
 
   /** Sürücü navigasyon — hedef aşaması: yolcu→varış OSRM + adımlar */
   useEffect(() => {
     if (!isDriver || !navigationMode || navigationStage !== 'destination') return;
-    if (!otherLocation || !destinationLocation) return;
+    if (!isValidRouteEndpoint(otherLocation) || !isValidRouteEndpoint(destinationLocation)) return;
     let cancelled = false;
     void (async () => {
       const r = await fetchOsrmDrivingRouteWithSteps(
@@ -2636,15 +2722,7 @@ export default function LiveMapView({
     return () => {
       cancelled = true;
     };
-  }, [
-    isDriver,
-    navigationMode,
-    navigationStage,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    destinationLocation?.latitude,
-    destinationLocation?.longitude,
-  ]);
+  }, [isDriver, navigationMode, navigationStage, otherLocation, destinationLocation]);
 
   /**
    * Buluşma km/dk: backend routeInfo (sürücü navigasyon açıkken OSRM — driver→yolcu rota).
@@ -2667,9 +2745,9 @@ export default function LiveMapView({
    * `routeInfo.trip_distance_km` + `trip_duration_min` doluysa üst panel km/dk OSRM ile güncellenmez (tag = fiyat temeli).
    */
   useEffect(() => {
-    if (!destinationLocation) return;
+    if (!isValidRouteEndpoint(destinationLocation)) return;
     const passengerLoc = isDriver ? otherLocation : userLocation;
-    if (!passengerLoc) return;
+    if (!isValidRouteEndpoint(passengerLoc)) return;
     let cancelled = false;
     void (async () => {
       const r = await fetchOsrmDrivingRoute(
@@ -2702,15 +2780,7 @@ export default function LiveMapView({
     return () => {
       cancelled = true;
     };
-  }, [
-    destinationLocation?.latitude,
-    destinationLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    userLocation?.latitude,
-    userLocation?.longitude,
-    isDriver,
-  ]);
+  }, [destinationLocation, otherLocation, userLocation, isDriver]);
 
   useEffect(() => {
     if (destinationDistance == null || !Number.isFinite(destinationDistance)) return;
@@ -2876,102 +2946,170 @@ export default function LiveMapView({
     applyDriverActiveFollowViewportRef.current = applyDriverActiveFollowViewport;
   }, [applyDriverActiveFollowViewport]);
 
-  const loadDriverNavMeetingRoute = useCallback(async () => {
-    if (!isDriver || !userLocation || !otherLocation) return;
-    const r = await fetchOsrmDrivingRouteWithSteps(
-      userLocation.latitude,
-      userLocation.longitude,
-      otherLocation.latitude,
-      otherLocation.longitude,
-    );
-    let coords: MapLatLng[];
-    if (!r || r.coordinates.length < 2) {
-      coords = [userLocation, otherLocation];
-      meetingHasOsrmPolylineRef.current = false;
-      pickupNavStepsRef.current = null;
-      const km = straightLineKm(userLocation, otherLocation);
-      const min = fallbackDurationMinFromKm(km);
-      setMeetingDistance(km);
-      setMeetingDuration(min);
-      console.log('PICKUP ETA', km, min);
-    } else {
-      meetingHasOsrmPolylineRef.current = true;
-      coords = r.coordinates;
-      pickupNavStepsRef.current = {
-        steps: r.steps,
-        cumStart: buildCumStartMeters(r.steps),
+  /*
+   * DEBUG — polyline render testi: OSRM/timing mi yoksa çizim mi ayırmak için geçici.
+   * __DEV__ içinde comment’leri kaldırıp tek seferlik deneyin.
+   *
+   * useEffect(() => {
+   *   if (!__DEV__) return;
+   *   setMeetingRouteCoordinates([
+   *     { latitude: 39.92, longitude: 32.85 },
+   *     { latitude: 39.93, longitude: 32.86 },
+   *   ]);
+   * }, []);
+   */
+
+  /**
+   * Buluşma (user ↔ other) OSRM: tek ana effect — koordinat + rol/nav/stage closure’dan;
+   * yeniden tetikleme: runMeetingRouteOsrmFetchRef (ör. Yolcuya Git).
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchRoute = async () => {
+      const ul = userLocation;
+      const ol = otherLocation;
+
+      const valid = isValidRouteEndpoint(ul) && isValidRouteEndpoint(ol);
+      if (!valid) {
+        console.log('Route skipped - invalid coords', { userLocation, otherLocation });
+        clearMeetingRoute('invalid_coords');
+        return;
+      }
+
+      if (isDriver && !navigationMode) {
+        console.log('Route skipped - driver nav off');
+        clearMeetingRoute('driver_nav_off');
+        return;
+      }
+
+      if (isDriver && navigationMode && navigationStage === 'destination') {
+        return;
+      }
+
+      console.log('TRIGGER ROUTE FETCH', {
+        isDriver,
+        navigationMode,
+        navigationStage,
+        userLocation,
+        otherLocation,
+      });
+
+      const start = isDriver ? ul : ol;
+      const end = isDriver ? ol : ul;
+
+      const applyStraightFallback = () => {
+        if (cancelled) return;
+        console.log('ROUTE FALLBACK STRAIGHT_LINE');
+        meetingHasOsrmPolylineRef.current = false;
+        pickupNavStepsRef.current = null;
+        const km = straightLineKm(start, end);
+        const min = fallbackDurationMinFromKm(km);
+        setMeetingDistance(km);
+        setMeetingDuration(min);
+        setMeetingRouteCoordsLogged([start, end]);
       };
-      const km = r.distanceM / 1000;
-      const min = Math.max(1, Math.round(r.durationS / 60));
-      setMeetingDistance(km);
-      setMeetingDuration(min);
-      console.log('PICKUP ETA', km, min);
-    }
-    lastOsrmAtRef.current = Date.now();
-    lastOsrmKeyRef.current = meetingEndpointsKey(
-      userLocation.latitude,
-      userLocation.longitude,
-      otherLocation.latitude,
-      otherLocation.longitude,
-    );
-    if (navigationModeRef.current) {
-      setMeetingRouteCoordinates(coords);
-      /** Aktif navigasyonda fitToCoordinates yok — kamera yalnızca follow effect + “Yeniden ortala” */
-    } else {
-      fitNavigationViewport(coords);
-      setTimeout(() => {
-        setMeetingRouteCoordinates(coords);
-      }, 150);
-    }
-  }, [isDriver, userLocation, otherLocation, fitNavigationViewport]);
 
-  useEffect(() => {
-    loadDriverNavMeetingRouteRef.current = loadDriverNavMeetingRoute;
-  }, [loadDriverNavMeetingRoute]);
+      try {
+        if (isDriver && navigationMode) {
+          const rw = await fetchOsrmDrivingRouteWithSteps(
+            start.latitude,
+            start.longitude,
+            end.latitude,
+            end.longitude,
+          );
+          if (cancelled) return;
+          if (rw && rw.coordinates.length >= 2) {
+            meetingHasOsrmPolylineRef.current = true;
+            pickupNavStepsRef.current = {
+              steps: rw.steps,
+              cumStart: buildCumStartMeters(rw.steps),
+            };
+            const km = rw.distanceM / 1000;
+            const min = Math.max(1, Math.round(rw.durationS / 60));
+            setMeetingDistance(km);
+            setMeetingDuration(min);
+            console.log('ROUTE FETCH OK', { points: rw.coordinates.length });
+            setMeetingRouteCoordsLogged(rw.coordinates);
+            lastOsrmAtRef.current = Date.now();
+            lastOsrmKeyRef.current = meetingEndpointsKey(
+              start.latitude,
+              start.longitude,
+              end.latitude,
+              end.longitude,
+            );
+            console.log('PICKUP ETA', km, min);
+          } else {
+            console.warn('Route empty');
+            applyStraightFallback();
+          }
+        } else {
+          const r = await fetchOsrmDrivingRoute(
+            start.latitude,
+            start.longitude,
+            end.latitude,
+            end.longitude,
+          );
+          if (cancelled) return;
+          if (r && r.coordinates.length >= 2) {
+            meetingHasOsrmPolylineRef.current = true;
+            const km = r.distanceM / 1000;
+            const min = Math.max(1, Math.round(r.durationS / 60));
+            setMeetingDistance(km);
+            setMeetingDuration(min);
+            lastOsrmAtRef.current = Date.now();
+            lastOsrmKeyRef.current = meetingEndpointsKey(
+              start.latitude,
+              start.longitude,
+              end.latitude,
+              end.longitude,
+            );
+            fitNavigationViewportRef.current?.(r.coordinates);
+            setTimeout(() => {
+              if (!cancelled) {
+                console.log('ROUTE FETCH OK', { points: r.coordinates.length });
+                setMeetingRouteCoordsLogged(r.coordinates);
+              }
+            }, 150);
+          } else {
+            console.warn('Route empty');
+            const km = straightLineKm(start, end);
+            const min = fallbackDurationMinFromKm(km);
+            setMeetingDistance(km);
+            setMeetingDuration(min);
+            fitNavigationViewportRef.current?.([start, end]);
+            setTimeout(() => {
+              if (!cancelled) {
+                console.log('ROUTE FALLBACK STRAIGHT_LINE');
+                setMeetingRouteCoordsLogged([start, end]);
+              }
+            }, 150);
+          }
+        }
+      } catch (err) {
+        console.warn('Route error:', err);
+        if (!cancelled) applyStraightFallback();
+      }
+    };
 
-  useEffect(() => {
-    if (!navigationMode || !isDriver) return;
-    if (!userLocation || !otherLocation) return;
-    console.log('NAV FETCH', userLocation, otherLocation);
-    const openKey = meetingEndpointsKey(
-      userLocation.latitude,
-      userLocation.longitude,
-      otherLocation.latitude,
-      otherLocation.longitude,
-    );
-    lastNavRefreshDedupeKeyRef.current = openKey;
-    void loadDriverNavMeetingRouteRef.current();
-    // navigationMode açılışında tek zorunlu tetik; throttle NAV REFRESH’te (konum primitive)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigationMode]);
+    void fetchRoute();
+    runMeetingRouteOsrmFetchRef.current = () => {
+      void fetchRoute();
+    };
 
-  useEffect(() => {
-    if (!navigationMode || !isDriver) return;
-    if (!userLocation || !otherLocation) return;
-    const key = meetingEndpointsKey(
-      userLocation.latitude,
-      userLocation.longitude,
-      otherLocation.latitude,
-      otherLocation.longitude,
-    );
-    const now = Date.now();
-    if (key === lastNavRefreshDedupeKeyRef.current) {
-      return;
-    }
-    if (now - lastNavRefreshThrottleAtRef.current < NAV_REFRESH_OSRM_MIN_MS) {
-      return;
-    }
-    lastNavRefreshDedupeKeyRef.current = key;
-    lastNavRefreshThrottleAtRef.current = now;
-    console.log('NAV REFRESH');
-    void loadDriverNavMeetingRouteRef.current();
+    return () => {
+      cancelled = true;
+    };
   }, [
-    navigationMode,
     isDriver,
+    navigationMode,
+    navigationStage,
     userLocation?.latitude,
     userLocation?.longitude,
     otherLocation?.latitude,
     otherLocation?.longitude,
+    clearMeetingRoute,
+    setMeetingRouteCoordsLogged,
   ]);
 
   const onDriverNavMapReady = useCallback(() => {
@@ -2999,76 +3137,15 @@ export default function LiveMapView({
     applyDriverActiveFollowViewport,
   ]);
 
-  // Buluşma: OSRM polyline; sürücü nav pickup aşamasında steps ile
-  useEffect(() => {
-    const pollMs = navigationMode && isDriver ? 12000 : 28000;
-    const throttleMs = navigationMode && isDriver ? 9000 : 22000;
-
-    refreshMeetingRouteOsrmRef.current = async (force = false) => {
-      if (!userLocation || !otherLocation) return;
-      const dLat = isDriver ? userLocation.latitude : otherLocation.latitude;
-      const dLng = isDriver ? userLocation.longitude : otherLocation.longitude;
-      const pLat = isDriver ? otherLocation.latitude : userLocation.latitude;
-      const pLng = isDriver ? otherLocation.longitude : userLocation.longitude;
-      const key = meetingEndpointsKey(dLat, dLng, pLat, pLng);
-      const now = Date.now();
-      const navOn = navigationModeRef.current && isDriver;
-      if (navOn && navigationStageRef.current !== 'pickup') {
-        return;
-      }
-      if (!force && !navOn) {
-        if (now - lastOsrmAtRef.current < throttleMs && key === lastOsrmKeyRef.current) {
-          return;
-        }
-      }
-      lastOsrmKeyRef.current = key;
-      lastOsrmAtRef.current = now;
-
-      if (navOn) {
-        const rw = await fetchOsrmDrivingRouteWithSteps(dLat, dLng, pLat, pLng);
-        if (!rw || rw.coordinates.length < 2) return;
-        meetingHasOsrmPolylineRef.current = true;
-        pickupNavStepsRef.current = {
-          steps: rw.steps,
-          cumStart: buildCumStartMeters(rw.steps),
-        };
-        setMeetingRouteCoordinates(rw.coordinates);
-        const km = rw.distanceM / 1000;
-        const min = Math.max(1, Math.round(rw.durationS / 60));
-        setMeetingDistance(km);
-        setMeetingDuration(min);
-        console.log('PICKUP ETA', km, min);
-        return;
-      }
-
-      const r = await fetchOsrmDrivingRoute(dLat, dLng, pLat, pLng);
-      if (!r || r.coordinates.length < 2) return;
-      meetingHasOsrmPolylineRef.current = true;
-      if (isDriver && !navigationModeRef.current) {
-        return;
-      }
-      setMeetingRouteCoordinates(r.coordinates);
-    };
-
-    void refreshMeetingRouteOsrmRef.current(true);
-
-    const id = setInterval(() => {
-      void refreshMeetingRouteOsrmRef.current(false);
-    }, pollMs);
-    return () => clearInterval(id);
-  }, [
-    userLocation?.latitude,
-    userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    isDriver,
-    navigationMode,
-  ]);
-
   // Yolcu: tüm noktaları göster; sürücüde fit yok (merkez araçta)
   useEffect(() => {
-    if (!mapRef.current || !userLocation || !otherLocation || isDriver) {
-      if (isDriver && userLocation && otherLocation) {
+    if (
+      !mapRef.current ||
+      !isValidRouteEndpoint(userLocation) ||
+      !isValidRouteEndpoint(otherLocation) ||
+      isDriver
+    ) {
+      if (isDriver && isValidRouteEndpoint(userLocation) && isValidRouteEndpoint(otherLocation)) {
         mapFitRef.current.initialDone = true;
         mapFitRef.current.hadDestination = !!destinationLocation;
       }
