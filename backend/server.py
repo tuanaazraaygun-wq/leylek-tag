@@ -12572,6 +12572,9 @@ async def send_chat_message(msg: ChatMessageCreate):
     HYBRID CHAT:
     1. Supabase'e kaydet
     2. tags.first_message_sent atomik claim — başarılıysa push + first_chat_message socket (kolon zorunlu)
+
+    Deploy doğrulama (sunucuda): grep CHAT_FIRST_PUSH backend/server.py
+    Log önekleri: CHAT_FIRST_PUSH_CLAIM_OK | CHAT_FIRST_PUSH_SKIP | CHAT_FIRST_PUSH_SCHEDULED
     """
     try:
         prior_any = (
@@ -12620,25 +12623,76 @@ async def send_chat_message(msg: ChatMessageCreate):
         if len(preview) > 72:
             preview = preview[:69] + "..."
 
+        # İlk push: tags.first_message_sent atomik bayrak.
+        # NOT: PostgREST update+select bazen boş `data` döndürür; claim'i yalnız `claim.data` ile ölçmek push'u kalıcı olarak kesebilir.
         should_first_push = False
-        try:
-            claim = (
-                supabase.table("tags")
-                .update({"first_message_sent": True})
-                .eq("id", msg.tag_id)
-                .or_("first_message_sent.is.null,first_message_sent.eq.false")
-                .select("id")
-                .execute()
+        tag_pre = (
+            supabase.table("tags")
+            .select("first_message_sent")
+            .eq("id", msg.tag_id)
+            .limit(1)
+            .execute()
+        )
+        if not tag_pre.data:
+            logger.info(
+                "CHAT_FIRST_PUSH_SKIP tag_id=%s sender=%s receiver=%s reason=tag_not_found",
+                msg.tag_id,
+                msg.sender_id,
+                msg.receiver_id,
             )
-            if claim.data is not None:
-                should_first_push = bool(claim.data and len(claim.data) > 0)
-        except Exception as tag_flag_err:
-            logger.error(
-                "tags.first_message_sent gerekli — kolon yok veya güncellenemedi; ilk mesaj push atlanır. "
-                "Migration uygulayın: backend/migrations/add_expo_push_and_first_message_sent.sql | hata=%s",
-                tag_flag_err,
-            )
-            should_first_push = False
+        else:
+            fs0 = tag_pre.data[0].get("first_message_sent")
+            already_sent = fs0 is True or str(fs0 or "").lower() == "true"
+            if already_sent:
+                logger.info(
+                    "CHAT_FIRST_PUSH_SKIP tag_id=%s sender=%s receiver=%s reason=first_message_sent_already_true "
+                    "chat_prior_row=%s",
+                    msg.tag_id,
+                    msg.sender_id,
+                    msg.receiver_id,
+                    0 if is_first_in_thread else 1,
+                )
+            else:
+                try:
+                    supabase.table("tags").update({"first_message_sent": True}).eq("id", msg.tag_id).or_(
+                        "first_message_sent.is.null,first_message_sent.eq.false"
+                    ).execute()
+                except Exception as tag_flag_err:
+                    logger.error(
+                        "CHAT_FIRST_PUSH_SKIP tag_id=%s sender=%s receiver=%s reason=first_message_sent_update_failed "
+                        "err=%s | migration=backend/migrations/add_expo_push_and_first_message_sent.sql",
+                        msg.tag_id,
+                        msg.sender_id,
+                        msg.receiver_id,
+                        tag_flag_err,
+                    )
+                    should_first_push = False
+                else:
+                    ver = (
+                        supabase.table("tags")
+                        .select("first_message_sent")
+                        .eq("id", msg.tag_id)
+                        .limit(1)
+                        .execute()
+                    )
+                    fs1 = ver.data[0].get("first_message_sent") if ver.data else None
+                    should_first_push = fs1 is True or str(fs1 or "").lower() == "true"
+                    if should_first_push:
+                        logger.info(
+                            "CHAT_FIRST_PUSH_CLAIM_OK tag_id=%s sender=%s receiver=%s "
+                            "is_first_chat_row=%s (prior_any before this insert)",
+                            msg.tag_id,
+                            msg.sender_id,
+                            msg.receiver_id,
+                            is_first_in_thread,
+                        )
+                    else:
+                        logger.warning(
+                            "CHAT_FIRST_PUSH_SKIP tag_id=%s sender=%s receiver=%s reason=flag_still_false_after_update",
+                            msg.tag_id,
+                            msg.sender_id,
+                            msg.receiver_id,
+                        )
 
         if should_first_push:
             if from_driver:
@@ -12662,7 +12716,13 @@ async def send_chat_message(msg: ChatMessageCreate):
                     },
                 )
             )
-            logger.info(f"📤 İlk sohbet push: receiver={msg.receiver_id} tag={msg.tag_id}")
+            logger.info(
+                "CHAT_FIRST_PUSH_SCHEDULED receiver=%s tag=%s from_driver=%s title=%r",
+                msg.receiver_id,
+                msg.tag_id,
+                from_driver,
+                _chat_title,
+            )
 
             try:
                 await sio.emit(
