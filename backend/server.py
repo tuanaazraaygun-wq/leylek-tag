@@ -3245,6 +3245,48 @@ async def resolve_user_id(user_id: str) -> str:
     # Bulunamadıysa orijinal değeri döndür
     return user_id
 
+
+async def passenger_location_for_driver_socket(
+    passenger_id: Optional[str], tag: dict
+) -> Optional[dict]:
+    """
+    Sürücü haritası / rota: yolcu users.latitude,longitude veya tag alım noktası (pickup_lat/lng).
+    Dönüş: {"latitude": float, "longitude": float}
+    """
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    pid = (passenger_id or "").strip()
+    if pid:
+        try:
+            rid = await resolve_user_id(pid)
+        except Exception:
+            rid = None
+        if rid:
+            try:
+                ur = (
+                    supabase.table("users")
+                    .select("latitude, longitude")
+                    .eq("id", rid)
+                    .limit(1)
+                    .execute()
+                )
+                if ur.data:
+                    u0 = ur.data[0]
+                    la, lo = u0.get("latitude"), u0.get("longitude")
+                    if la is not None and lo is not None:
+                        lat, lng = float(la), float(lo)
+            except (TypeError, ValueError):
+                lat, lng = None, None
+    if (lat is None or lng is None) and tag.get("pickup_lat") is not None and tag.get("pickup_lng") is not None:
+        try:
+            lat, lng = float(tag["pickup_lat"]), float(tag["pickup_lng"])
+        except (TypeError, ValueError):
+            return None
+    if lat is not None and lng is not None:
+        return {"latitude": lat, "longitude": lng}
+    return None
+
+
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     """Rota bilgisi al: Google Directions tek kaynak, OSRM sadece backend fallback."""
     try:
@@ -6449,6 +6491,14 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             "offered_price": offer.get("price"),
             "status": "matched",
         }
+        try:
+            pl_sock = await passenger_location_for_driver_socket(
+                str(passenger_id_final) if passenger_id_final else None, tag
+            )
+            if pl_sock:
+                match_payload["passenger_location"] = pl_sock
+        except Exception as _plm:
+            logger.warning(f"passenger_location (accept-offer socket): {_plm}")
 
         # Eşleşme bildirimini her iki tarafa da socket ile anında gönder (sid veya normalized room)
         try:
@@ -7567,6 +7617,14 @@ async def driver_accept_offer_http(
             "passenger_payment_method": updated_tag.get("passenger_payment_method"),
         }
         try:
+            pl_http = await passenger_location_for_driver_socket(
+                str(passenger_id) if passenger_id else None, updated_tag
+            )
+            if pl_http:
+                payload["passenger_location"] = pl_http
+        except Exception as _plh:
+            logger.warning(f"passenger_location (driver/accept-offer HTTP): {_plh}")
+        try:
             driver_sid = connected_users.get(
                 str(resolved_driver_id).strip().lower()
             ) or connected_users.get(resolved_driver_id)
@@ -7637,6 +7695,16 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
                     "latitude": float(passenger_info["latitude"]),
                     "longitude": float(passenger_info["longitude"])
                 }
+            if passenger_location is None and tag.get("pickup_lat") is not None and tag.get(
+                "pickup_lng"
+            ) is not None:
+                try:
+                    passenger_location = {
+                        "latitude": float(tag["pickup_lat"]),
+                        "longitude": float(tag["pickup_lng"]),
+                    }
+                except (TypeError, ValueError):
+                    passenger_location = None
             
             dk = tag.get("distance_km")
             em = tag.get("estimated_minutes")
@@ -10642,20 +10710,70 @@ async def get_driver_location(driver_id: str):
 async def get_passenger_location(passenger_id: str):
     """Yolcu konumunu getir (şoför için)"""
     try:
-        result = supabase.table("users").select("latitude, longitude, last_location_update, name").eq("id", passenger_id).execute()
-        
+        resolved_pid = await resolve_user_id(str(passenger_id).strip())
+        if not resolved_pid:
+            return {"success": False, "location": None}
+        result = (
+            supabase.table("users")
+            .select("latitude, longitude, last_location_update, name")
+            .eq("id", resolved_pid)
+            .execute()
+        )
+
         if result.data:
             user = result.data[0]
+            la = user.get("latitude")
+            lo = user.get("longitude")
+            if la is not None and lo is not None:
+                try:
+                    return {
+                        "success": True,
+                        "location": {
+                            "latitude": float(la),
+                            "longitude": float(lo),
+                            "updated_at": user.get("last_location_update"),
+                            "passenger_name": user.get("name"),
+                        },
+                    }
+                except (TypeError, ValueError):
+                    pass
+            # Canlı GPS yoksa: aktif tag alım noktası (sürücü→yolcu rota için)
+            try:
+                tag_r = (
+                    supabase.table("tags")
+                    .select("pickup_lat, pickup_lng, matched_at")
+                    .eq("passenger_id", resolved_pid)
+                    .in_("status", ["matched", "in_progress"])
+                    .order("matched_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if tag_r.data:
+                    row = tag_r.data[0]
+                    if row.get("pickup_lat") is not None and row.get("pickup_lng") is not None:
+                        return {
+                            "success": True,
+                            "location": {
+                                "latitude": float(row["pickup_lat"]),
+                                "longitude": float(row["pickup_lng"]),
+                                "updated_at": user.get("last_location_update"),
+                                "passenger_name": user.get("name"),
+                                "source": "pickup",
+                            },
+                        }
+            except Exception as _fb:
+                logger.warning(f"passenger-location pickup fallback: {_fb}")
+
             return {
                 "success": True,
                 "location": {
-                    "latitude": float(user["latitude"]) if user.get("latitude") else None,
-                    "longitude": float(user["longitude"]) if user.get("longitude") else None,
+                    "latitude": None,
+                    "longitude": None,
                     "updated_at": user.get("last_location_update"),
-                    "passenger_name": user.get("name")
-                }
+                    "passenger_name": user.get("name"),
+                },
             }
-        
+
         return {"success": False, "location": None}
     except Exception as e:
         logger.error(f"Get passenger location error: {e}")
@@ -12052,11 +12170,17 @@ async def handle_driver_accept_offer(sid, data):
         passenger_phone = None
         pr = None
         if passenger_id:
-            pr = supabase.table("users").select("name, phone, push_token").eq("id", passenger_id).limit(1).execute()
+            pr = (
+                supabase.table("users")
+                .select("name, phone, push_token, latitude, longitude")
+                .eq("id", passenger_id)
+                .limit(1)
+                .execute()
+            )
             if not pr.data and "-" in passenger_id:
                 pr = (
                     supabase.table("users")
-                    .select("name, phone, push_token")
+                    .select("name, phone, push_token, latitude, longitude")
                     .eq("id", passenger_id.lower())
                     .limit(1)
                     .execute()
@@ -12146,6 +12270,27 @@ async def handle_driver_accept_offer(sid, data):
         matched_at = datetime.utcnow().isoformat()
         trip_dk_sock = tag.get("distance_km")
         est_min_sock = tag.get("estimated_minutes")
+        passenger_location_sock: Optional[dict] = None
+        if pr and pr.data:
+            u_sock = pr.data[0]
+            if u_sock.get("latitude") is not None and u_sock.get("longitude") is not None:
+                try:
+                    passenger_location_sock = {
+                        "latitude": float(u_sock["latitude"]),
+                        "longitude": float(u_sock["longitude"]),
+                    }
+                except (TypeError, ValueError):
+                    passenger_location_sock = None
+        if passenger_location_sock is None and tag.get("pickup_lat") is not None and tag.get(
+            "pickup_lng"
+        ) is not None:
+            try:
+                passenger_location_sock = {
+                    "latitude": float(tag["pickup_lat"]),
+                    "longitude": float(tag["pickup_lng"]),
+                }
+            except (TypeError, ValueError):
+                passenger_location_sock = None
         payload = {
             "trip_id": trip_id,
             "tag_id": tid,
@@ -12171,6 +12316,8 @@ async def handle_driver_accept_offer(sid, data):
             "matched_at": matched_at,
             "passenger_payment_method": tag.get("passenger_payment_method"),
         }
+        if passenger_location_sock:
+            payload["passenger_location"] = passenger_location_sock
         driver_sid = connected_users.get(str(resolved_driver_id).strip().lower()) or connected_users.get(
             resolved_driver_id
         )
@@ -13014,6 +13161,14 @@ async def accept_ride(tag_id: str, driver_id: str):
             "matched_at": updated_tag.get("matched_at"),
             "passenger_payment_method": updated_tag.get("passenger_payment_method"),
         }
+        try:
+            pl_ar = await passenger_location_for_driver_socket(
+                str(passenger_id) if passenger_id else None, updated_tag
+            )
+            if pl_ar:
+                match_socket_payload["passenger_location"] = pl_ar
+        except Exception as _pla:
+            logger.warning(f"passenger_location (accept_ride socket): {_pla}")
         if passenger_id:
             await emit_socket_event_to_user(passenger_id, "ride_accepted", match_socket_payload)
         await emit_socket_event_to_user(resolved_driver_id, "ride_matched", match_socket_payload)

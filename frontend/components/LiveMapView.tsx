@@ -2388,9 +2388,23 @@ export default function LiveMapView({
       return;
     }
     if (!navigationMode) {
-      const dM = haversineMeters(userLocation, otherLocation);
-      const handoff = !!destinationLocation && dM < NAV_HANDOFF_TO_DESTINATION_M;
-      setNavigationStage(handoff ? 'destination' : 'pickup');
+      const handoffDistanceM = haversineMeters(userLocation, otherLocation);
+      const handoff =
+        !!destinationLocation && handoffDistanceM < NAV_HANDOFF_TO_DESTINATION_M;
+      if (__DEV__) {
+        console.log('YOLCUYA_GIT_PRESS', {
+          isDriver,
+          navigationMode,
+          currentStage: navigationStage,
+          hasUserLocation: !!userLocation,
+          hasOtherLocation: !!otherLocation,
+          hasDestinationLocation: !!destinationLocation,
+          handoff,
+          handoffDistanceM,
+          otherLocationFromPickupFallback,
+        });
+      }
+      setNavigationStage('pickup');
       navDriverStableRef.current = null;
       setNavDriverMapCoord(null);
       navDriverMarkerSmoothedBearingRef.current = null;
@@ -2401,6 +2415,10 @@ export default function LiveMapView({
         const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
         void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
       }
+      setTimeout(() => {
+        const refetch = runMeetingRouteOsrmFetchRef.current;
+        if (typeof refetch === 'function') void refetch();
+      }, 0);
     } else {
       lastNavCameraAtRef.current = 0;
       navUserMapGestureUntilRef.current = 0;
@@ -2421,6 +2439,9 @@ export default function LiveMapView({
     otherLocation,
     destinationLocation,
     navigationMode,
+    navigationStage,
+    otherLocationFromPickupFallback,
+    isDriver,
     userId,
     tagId,
     setNavigationMode,
@@ -2964,6 +2985,15 @@ export default function LiveMapView({
    * yeniden tetikleme: runMeetingRouteOsrmFetchRef (ör. Yolcuya Git).
    */
   useEffect(() => {
+    if (__DEV__) {
+      console.log('MEETING_ROUTE_EFFECT_ENTER', {
+        isDriver,
+        navigationMode,
+        navigationStage,
+        hasUserLocation: isValidRouteEndpoint(userLocation),
+        hasOtherLocation: isValidRouteEndpoint(otherLocation),
+      });
+    }
     let cancelled = false;
 
     const fetchRoute = async () => {

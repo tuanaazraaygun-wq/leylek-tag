@@ -389,6 +389,59 @@ function isPendingForceEndCounterparty(endReq: Tag['end_request'] | null | undef
   return kind === FORCE_END_COUNTERPARTY_KIND && st === 'pending';
 }
 
+/** Zorla bitir karşı onayı — socket / activeTag / polling aynı isteği ayırt etmek için */
+function forceEndCounterpartyRequestKey(
+  tagId: string,
+  initiatorId: string,
+  requestedAt?: string | null,
+): string {
+  const t = String(tagId || '').trim();
+  const i = String(initiatorId || '').trim().toLowerCase();
+  const ts = requestedAt != null && String(requestedAt).trim() ? String(requestedAt).trim() : '';
+  return `${t}:${i}:${ts}`;
+}
+
+/** Karşılıklı “Yolculuk Sonlandırma” legacy modal — force-end mavi kart / DB pending ile asla çakışmasın */
+function legacyTripEndModalVisible(
+  showTripEndModal: boolean,
+  activeTag: Tag | null,
+  forceEndReview: { tagId: string } | null | undefined,
+): boolean {
+  if (!showTripEndModal) return false;
+  if (isPendingForceEndCounterparty(activeTag?.end_request)) return false;
+  if (
+    forceEndReview &&
+    activeTag?.id &&
+    String(forceEndReview.tagId) === String(activeTag.id)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** FORCE_END_LEGACY_* logları için */
+function legacyTripEndBlockMeta(
+  activeTag: Tag | null,
+  forceEndReview: { tagId: string } | null | undefined,
+): {
+  tagForceEndPending: boolean;
+  blueCardSameTag: boolean;
+  endRequestKind: string | null;
+  endRequestStatus: string | null;
+} {
+  const er = activeTag?.end_request as { kind?: string; status?: string } | undefined;
+  return {
+    tagForceEndPending: isPendingForceEndCounterparty(activeTag?.end_request),
+    blueCardSameTag: !!(
+      forceEndReview &&
+      activeTag?.id &&
+      String(forceEndReview.tagId) === String(activeTag.id)
+    ),
+    endRequestKind: er?.kind != null ? String(er.kind) : null,
+    endRequestStatus: er?.status != null ? String(er.status) : null,
+  };
+}
+
 /** active-tag yanıtı ince geldiğinde harita alanlarını koru (flicker azaltır) */
 function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
   if (!prev || String(prev.id) !== String(incoming.id)) return incoming;
@@ -6004,6 +6057,8 @@ function PassengerDashboard({
   const [passengerForceEndReviewSubmitting, setPassengerForceEndReviewSubmitting] = useState(false);
   /** Aynı tag için zorla-bitir onay modalı yalnızca bir kez (poll/useEffect tekrar açmasın) */
   const passengerForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
+  /** Son açılan force-end counterparty isteği (duplicate socket / effect için) */
+  const passengerForceEndLastRequestKeyRef = useRef<string | null>(null);
 
   /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın (force-end modal loadActiveTag ile tekrar kurulur) */
   useEffect(() => {
@@ -6734,25 +6789,70 @@ function PassengerDashboard({
     onForceEndCounterpartyPrompt: (data) => {
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
-      const initiatorType = data.initiator_type === 'passenger' ? 'passenger' : 'driver';
-      console.log('FORCE_END_MODAL_OPEN', {
-        tag_id: tid,
-        initiator_type: initiatorType,
+      const ini = String(data.initiator_id);
+      const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
+      console.log('FORCE_END_REQUEST_RECEIVED', {
+        tagId: tid,
+        requestedBy: ini,
+        requestKey,
         source: 'socket',
+        screen: 'PassengerDashboard',
       });
-      if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) return;
+      console.log('FORCE_END_REQUEST_SOURCE', {
+        tagId: tid,
+        requestedBy: ini,
+        requestKey,
+        source: 'socket',
+        screen: 'PassengerDashboard',
+      });
+      if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) {
+        console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+          tagId: tid,
+          requestedBy: ini,
+          requestKey,
+          source: 'socket',
+          reason: 'handled_tag_set',
+          screen: 'PassengerDashboard',
+        });
+        return;
+      }
       passengerForceEndModalHandledTagIdsRef.current.add(tid);
+      passengerForceEndLastRequestKeyRef.current = requestKey;
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
       setPassengerDriverForceReview({
         tagId: tid,
-        initiatorId: String(data.initiator_id),
+        initiatorId: ini,
         initiatorType: data.initiator_type === 'passenger' ? 'passenger' : 'driver',
         initiatorName: displayFirstName(data.initiator_name, data.initiator_type === 'passenger' ? 'Yolcu' : 'Sürücü'),
+      });
+      console.log('FORCE_END_UI_OPEN', {
+        tagId: tid,
+        requestedBy: ini,
+        requestKey,
+        source: 'socket',
+        screen: 'PassengerDashboard',
       });
     },
     // 🆕 ZORLA BİTİRME — tamamlandıktan sonra (yolcu onayı zaten alındı veya yolcu zorla bitirdi)
     onTripForceEnded: (data) => {
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
+      const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      console.log('FORCE_END_FINALIZED', {
+        tagId: tid,
+        requestedBy: null,
+        requestKey: tid ? `${tid}::` : null,
+        source: 'socket',
+        screen: 'PassengerDashboard',
+        event: 'trip_force_ended',
+      });
+      console.log('FORCE_END_STATE_CLEARED', {
+        tagId: tid,
+        requestKey: passengerForceEndLastRequestKeyRef.current,
+        source: 'socket',
+        screen: 'PassengerDashboard',
+      });
 
       armForceEndLock();
       isPollingActiveRef.current = false;
@@ -6775,6 +6875,7 @@ function PassengerDashboard({
       setRatingModalData(null);
       setPassengerDriverForceReview(null);
       passengerForceEndModalHandledTagIdsRef.current.clear();
+      passengerForceEndLastRequestKeyRef.current = null;
       setActiveTag(null);
       setDestination(null);
       callCheck('clearIncomingCall', clearIncomingCall);
@@ -6892,41 +6993,6 @@ function PassengerDashboard({
   }, [activeTag?.id, activeTag?.status, activeTag?.driver_id]);
 
   // ❌ ESKİ POLLING KALDIRILDI - Supabase Realtime ile değiştirildi (yukarıda)
-
-  // Karşılıklı iptal isteği polling - YOLCU için
-  useEffect(() => {
-    if (!user?.id || !activeTag) return;
-    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    
-    const checkTripEndRequest = async () => {
-      if (forceEndLockRef.current) {
-        console.log('POLLING BLOCKED AFTER FORCE END');
-        return;
-      }
-      try {
-        const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
-        const data = await response.json();
-        
-        console.log('🔚 YOLCU - Trip end request check:', JSON.stringify(data));
-        
-        if (data.success && data.has_request && !showTripEndModal) {
-          console.log('🔚 YOLCU - Bitirme isteği VAR! Requester:', data.requester_type);
-          setTripEndRequesterType(data.requester_type || 'unknown');
-          setShowTripEndModal(true);
-        }
-      } catch (error) {
-        console.log('Check trip end error:', error);
-      }
-    };
-
-    checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 1000); // 1 saniyede bir kontrol - HIZLI
-    passengerCheckEndIntervalRef.current = interval;
-    return () => {
-      clearInterval(interval);
-      passengerCheckEndIntervalRef.current = null;
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
 
   useEffect(() => {
     console.log('🔄 Yolcu polling başlatıldı');
@@ -7100,22 +7166,159 @@ function PassengerDashboard({
     if (!user?.id || !activeTag?.id) return;
     const er = activeTag.end_request;
     if (!isPendingForceEndCounterparty(er)) return;
-    const ini = String(er?.initiator_id || '').trim().toLowerCase();
+    const iniRaw = String(er?.initiator_id || '').trim();
+    const ini = iniRaw.toLowerCase();
     const uid = String(user.id).trim().toLowerCase();
     if (!ini || ini === uid) return;
     const tid = String(activeTag.id);
-    if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) return;
+    const requestKey = forceEndCounterpartyRequestKey(tid, iniRaw, er?.requested_at);
+    console.log('FORCE_END_REQUEST_RECEIVED', {
+      tagId: tid,
+      requestedBy: iniRaw,
+      requestKey,
+      source: 'polling',
+      screen: 'PassengerDashboard',
+    });
+    console.log('FORCE_END_REQUEST_SOURCE', {
+      tagId: tid,
+      requestedBy: iniRaw,
+      requestKey,
+      source: 'activeTag',
+      screen: 'PassengerDashboard',
+    });
+    if (passengerForceEndModalHandledTagIdsRef.current.has(tid)) {
+      console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+        tagId: tid,
+        requestedBy: iniRaw,
+        requestKey,
+        source: 'activeTag',
+        reason: 'handled_tag_set',
+        screen: 'PassengerDashboard',
+      });
+      return;
+    }
     if (passengerDriverForceReview?.tagId === tid) return;
     passengerForceEndModalHandledTagIdsRef.current.add(tid);
+    passengerForceEndLastRequestKeyRef.current = requestKey;
     const it = er?.initiator_type === 'passenger' ? 'passenger' : 'driver';
-    console.log('FORCE_END_MODAL_OPEN', { tag_id: tid, initiator_type: it, source: 'active_tag_pending' });
+    setShowTripEndModal(false);
+    setTripEndRequesterType(null);
     setPassengerDriverForceReview({
       tagId: tid,
-      initiatorId: String(er?.initiator_id || ''),
+      initiatorId: iniRaw,
       initiatorType: it,
       initiatorName: it === 'driver' ? 'Sürücü' : 'Yolcu',
     });
+    console.log('FORCE_END_UI_OPEN', {
+      tagId: tid,
+      requestedBy: iniRaw,
+      requestKey,
+      source: 'activeTag',
+      screen: 'PassengerDashboard',
+    });
   }, [user?.id, activeTag?.id, passengerEndReqSig, passengerDriverForceReview?.tagId]);
+
+  // Karşılıklı iptal isteği polling - YOLCU (passengerEndReqSig ile end_request closure güncel kalır)
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+
+    const checkTripEndRequest = async () => {
+      if (forceEndLockRef.current) {
+        console.log('POLLING BLOCKED AFTER FORCE END');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
+        const data = await response.json();
+
+        console.log('🔚 YOLCU - Trip end request check:', JSON.stringify(data));
+
+        const pollRequestKind = (data as { request_kind?: string }).request_kind;
+        const tagForceEndPending = isPendingForceEndCounterparty(activeTag.end_request);
+        if (
+          data.success &&
+          data.has_request &&
+          (pollRequestKind === 'force_end_counterparty' || tagForceEndPending)
+        ) {
+          const rk = forceEndCounterpartyRequestKey(
+            String(activeTag.id),
+            String((data as { requester_id?: string }).requester_id || ''),
+            null,
+          );
+          setShowTripEndModal(false);
+          setTripEndRequesterType(null);
+          console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+            tagId: activeTag.id,
+            requestedBy: (data as { requester_id?: string }).requester_id,
+            requestKey: rk,
+            source: 'polling',
+            screen: 'PassengerDashboard',
+            reason: 'mutual_trip_end_modal_skipped_use_force_end_card',
+            tagForceEndPending,
+            pollRequestKind: pollRequestKind ?? null,
+          });
+          return;
+        }
+
+        if (data.success && data.has_request && !showTripEndModal) {
+          const blockLegacyOpen =
+            isPendingForceEndCounterparty(activeTag.end_request) ||
+            (!!passengerDriverForceReview &&
+              activeTag?.id &&
+              String(passengerDriverForceReview.tagId) === String(activeTag.id));
+          if (blockLegacyOpen) {
+            if (__DEV__) {
+              console.log('FORCE_END_LEGACY_TRIP_END_OPEN_BLOCKED', {
+                screen: 'PassengerDashboard',
+                tagId: activeTag.id,
+                showTripEndModal,
+                pollRequestKind: pollRequestKind ?? null,
+                ...legacyTripEndBlockMeta(activeTag, passengerDriverForceReview),
+              });
+            }
+            setShowTripEndModal(false);
+            setTripEndRequesterType(null);
+            return;
+          }
+          console.log('🔚 YOLCU - Bitirme isteği VAR! Requester:', data.requester_type);
+          setTripEndRequesterType(data.requester_type || 'unknown');
+          setShowTripEndModal(true);
+        }
+      } catch (error) {
+        console.log('Check trip end error:', error);
+      }
+    };
+
+    checkTripEndRequest();
+    const interval = setInterval(checkTripEndRequest, 1000);
+    passengerCheckEndIntervalRef.current = interval;
+    return () => {
+      clearInterval(interval);
+      passengerCheckEndIntervalRef.current = null;
+    };
+  }, [
+    user?.id,
+    activeTag?.id,
+    activeTag?.status,
+    showTripEndModal,
+    passengerEndReqSig,
+    passengerDriverForceReview,
+  ]);
+
+  /** Legacy modal state kaldıysa (force-end / mavi kart) zorla temizle */
+  useEffect(() => {
+    if (!showTripEndModal) return;
+    if (legacyTripEndModalVisible(showTripEndModal, activeTag, passengerDriverForceReview)) return;
+    console.log('FORCE_END_LEGACY_MODAL_STALE_SWEEP', {
+      screen: 'PassengerDashboard',
+      tagId: activeTag?.id,
+      showTripEndModal,
+      ...legacyTripEndBlockMeta(activeTag, passengerDriverForceReview),
+    });
+    setShowTripEndModal(false);
+    setTripEndRequesterType(null);
+  }, [showTripEndModal, activeTag?.id, passengerEndReqSig, passengerDriverForceReview]);
 
   useEffect(() => {
     const tid = activeTag?.id;
@@ -8784,8 +8987,13 @@ function PassengerDashboard({
                       });
                       const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
                       const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+                      const reqKey = passengerForceEndLastRequestKeyRef.current;
                       console.log('FORCE_END_CONFIRM_SENT', {
-                        tag_id: tid,
+                        tagId: tid,
+                        requestedBy: passengerDriverForceReview.initiatorId,
+                        requestKey: reqKey,
+                        source: 'local',
+                        screen: 'PassengerDashboard',
                         ok: !!r?.ok,
                         status: r?.status ?? null,
                         role: 'passenger',
@@ -8800,7 +9008,23 @@ function PassengerDashboard({
                         return;
                       }
                       console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'passenger' });
+                      console.log('FORCE_END_FINALIZED', {
+                        tagId: tid,
+                        requestedBy: passengerDriverForceReview.initiatorId,
+                        requestKey: reqKey,
+                        source: 'local',
+                        screen: 'PassengerDashboard',
+                        approved: true,
+                      });
+                      console.log('FORCE_END_STATE_CLEARED', {
+                        tagId: tid,
+                        requestKey: reqKey,
+                        source: 'local',
+                        screen: 'PassengerDashboard',
+                      });
                       passengerForceEndModalHandledTagIdsRef.current.delete(tid);
+                      passengerForceEndLastRequestKeyRef.current = null;
+                      setShowTripEndModal(false);
                       setPassengerDriverForceReview(null);
                       setRatingModalData(null);
                       setPassengerChatVisible(false);
@@ -8833,8 +9057,13 @@ function PassengerDashboard({
                       });
                       const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
                       const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
-                      console.log('FORCE_END_CONFIRM_SENT', {
-                        tag_id: tid,
+                      const reqKey = passengerForceEndLastRequestKeyRef.current;
+                      console.log('FORCE_END_REJECT_SENT', {
+                        tagId: tid,
+                        requestedBy: passengerDriverForceReview.initiatorId,
+                        requestKey: reqKey,
+                        source: 'local',
+                        screen: 'PassengerDashboard',
                         ok: !!r?.ok,
                         status: r?.status ?? null,
                         role: 'passenger',
@@ -8849,7 +9078,23 @@ function PassengerDashboard({
                         return;
                       }
                       console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'passenger' });
+                      console.log('FORCE_END_FINALIZED', {
+                        tagId: tid,
+                        requestedBy: passengerDriverForceReview.initiatorId,
+                        requestKey: reqKey,
+                        source: 'local',
+                        screen: 'PassengerDashboard',
+                        approved: false,
+                      });
+                      console.log('FORCE_END_STATE_CLEARED', {
+                        tagId: tid,
+                        requestKey: reqKey,
+                        source: 'local',
+                        screen: 'PassengerDashboard',
+                      });
                       passengerForceEndModalHandledTagIdsRef.current.delete(tid);
+                      passengerForceEndLastRequestKeyRef.current = null;
+                      setShowTripEndModal(false);
                       setPassengerDriverForceReview(null);
                       setRatingModalData(null);
                       setPassengerChatVisible(false);
@@ -9269,12 +9514,15 @@ function PassengerDashboard({
         />
       )}
 
-      {/* Karşılıklı İptal Onay Modalı - YOLCU */}
+      {/* Karşılıklı İptal Onay Modalı - YOLCU (force-end / mavi kart ile legacyTripEndModalVisible) */}
       <Modal
-        visible={showTripEndModal}
+        visible={legacyTripEndModalVisible(showTripEndModal, activeTag, passengerDriverForceReview)}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowTripEndModal(false)}
+        onRequestClose={() => {
+          setShowTripEndModal(false);
+          setTripEndRequesterType(null);
+        }}
       >
         <View style={styles.tripEndModalOverlay}>
           <View style={styles.tripEndModalContainer}>
@@ -9310,6 +9558,7 @@ function PassengerDashboard({
                     appAlert('Hata', 'İşlem başarısız');
                   }
                   setShowTripEndModal(false);
+                  setTripEndRequesterType(null);
                 }}
               >
                 <Text style={styles.tripEndApproveButtonText}>Onaylıyorum</Text>
@@ -9325,6 +9574,7 @@ function PassengerDashboard({
                     );
                   } catch (error) {}
                   setShowTripEndModal(false);
+                  setTripEndRequesterType(null);
                 }}
               >
                 <Text style={styles.tripEndRejectButtonText}>Onaylamıyorum</Text>
@@ -9386,6 +9636,63 @@ function PassengerDashboard({
 }
 
 // ==================== DRIVER DASHBOARD ====================
+/** Socket/API: passenger_location veya tag pickup — sürücü→yolcu rota için tek koordinat */
+function normalizePassengerLocationFromSocket(data: Record<string, unknown>): {
+  latitude: number;
+  longitude: number;
+} | null {
+  const raw = data.passenger_location ?? data.passengerLocation;
+  if (raw && typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    const lat = o.latitude ?? o.lat;
+    const lng = o.longitude ?? o.lng;
+    if (Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+      return { latitude: Number(lat), longitude: Number(lng) };
+    }
+  }
+  return null;
+}
+
+function driverPassengerCoordsForMap(
+  polled: { latitude: number; longitude: number } | null,
+  tag: Tag | null,
+): { latitude: number; longitude: number } | null {
+  if (polled && Number.isFinite(polled.latitude) && Number.isFinite(polled.longitude)) {
+    return polled;
+  }
+  const pl = tag?.passenger_location;
+  if (pl && Number.isFinite(pl.latitude) && Number.isFinite(pl.longitude)) {
+    return { latitude: pl.latitude, longitude: pl.longitude };
+  }
+  const plat = tag?.pickup_lat;
+  const plng = tag?.pickup_lng;
+  if (Number.isFinite(plat) && Number.isFinite(plng)) {
+    return { latitude: plat as number, longitude: plng as number };
+  }
+  const paxlat = tag?.passenger_latitude;
+  const paxlng = tag?.passenger_longitude;
+  if (Number.isFinite(paxlat) && Number.isFinite(paxlng)) {
+    return { latitude: paxlat as number, longitude: paxlng as number };
+  }
+  return null;
+}
+
+/** Sürücü haritası: yolcu pini pickup yedeğinde mi (canlı GPS / passenger_location yok) */
+function driverOtherLocationPickupFallback(
+  polled: { latitude: number; longitude: number } | null,
+  tag: Tag | null,
+): boolean {
+  if (!tag) return false;
+  if (polled && Number.isFinite(polled.latitude) && Number.isFinite(polled.longitude)) {
+    return false;
+  }
+  const pl = tag.passenger_location;
+  if (pl && Number.isFinite(pl.latitude) && Number.isFinite(pl.longitude)) {
+    return false;
+  }
+  return Number.isFinite(tag.pickup_lat) && Number.isFinite(tag.pickup_lng);
+}
+
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
@@ -9550,6 +9857,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   } | null>(null);
   const [driverForceEndReviewSubmitting, setDriverForceEndReviewSubmitting] = useState(false);
   const driverForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
+  const driverForceEndLastRequestKeyRef = useRef<string | null>(null);
 
   /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın */
   useEffect(() => {
@@ -9817,6 +10125,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
         const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
+        const fromSocketLoc = normalizePassengerLocationFromSocket(d);
+        const pickupLat = Number(d.pickup_lat);
+        const pickupLng = Number(d.pickup_lng);
+        const passenger_location =
+          fromSocketLoc ??
+          (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+            ? { latitude: pickupLat, longitude: pickupLng }
+            : undefined);
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -9847,6 +10163,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
+          ...(passenger_location ? { passenger_location } : {}),
         };
         console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
         setActiveTag(matchedTag as Tag);
@@ -9866,6 +10183,14 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const pkMin = Number(d.pickup_eta_min);
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
         const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
+        const fromSocketLoc = normalizePassengerLocationFromSocket(d);
+        const pickupLat = Number(d.pickup_lat);
+        const pickupLng = Number(d.pickup_lng);
+        const passenger_location =
+          fromSocketLoc ??
+          (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+            ? { latitude: pickupLat, longitude: pickupLng }
+            : undefined);
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -9897,6 +10222,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
+          ...(passenger_location ? { passenger_location } : {}),
         };
         setActiveTag(matchedTag as Tag);
       }
@@ -9934,24 +10260,69 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     onForceEndCounterpartyPrompt: (data) => {
       if (!data?.tag_id || !data?.initiator_id) return;
       const tid = String(data.tag_id);
-      const initiatorType = data.initiator_type === 'passenger' ? 'passenger' : 'driver';
-      console.log('FORCE_END_MODAL_OPEN', {
-        tag_id: tid,
-        initiator_type: initiatorType,
+      const ini = String(data.initiator_id);
+      const requestKey = forceEndCounterpartyRequestKey(tid, ini, null);
+      console.log('FORCE_END_REQUEST_RECEIVED', {
+        tagId: tid,
+        requestedBy: ini,
+        requestKey,
         source: 'socket',
+        screen: 'DriverDashboard',
       });
-      if (driverForceEndModalHandledTagIdsRef.current.has(tid)) return;
+      console.log('FORCE_END_REQUEST_SOURCE', {
+        tagId: tid,
+        requestedBy: ini,
+        requestKey,
+        source: 'socket',
+        screen: 'DriverDashboard',
+      });
+      if (driverForceEndModalHandledTagIdsRef.current.has(tid)) {
+        console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+          tagId: tid,
+          requestedBy: ini,
+          requestKey,
+          source: 'socket',
+          reason: 'handled_tag_set',
+          screen: 'DriverDashboard',
+        });
+        return;
+      }
       driverForceEndModalHandledTagIdsRef.current.add(tid);
+      driverForceEndLastRequestKeyRef.current = requestKey;
+      setShowTripEndModal(false);
+      setTripEndRequesterType(null);
       setDriverPassengerForceEndReview({
         tagId: tid,
-        initiatorId: String(data.initiator_id),
+        initiatorId: ini,
         initiatorType: data.initiator_type === 'passenger' ? 'passenger' : 'driver',
         initiatorName: displayFirstName(data.initiator_name, data.initiator_type === 'passenger' ? 'Yolcu' : 'Sürücü'),
+      });
+      console.log('FORCE_END_UI_OPEN', {
+        tagId: tid,
+        requestedBy: ini,
+        requestKey,
+        source: 'socket',
+        screen: 'DriverDashboard',
       });
     },
     onTripForceEnded: (data) => {
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
+      const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      console.log('FORCE_END_FINALIZED', {
+        tagId: tid,
+        requestedBy: null,
+        requestKey: tid ? `${tid}::` : null,
+        source: 'socket',
+        screen: 'DriverDashboard',
+        event: 'trip_force_ended',
+      });
+      console.log('FORCE_END_STATE_CLEARED', {
+        tagId: tid,
+        requestKey: driverForceEndLastRequestKeyRef.current,
+        source: 'socket',
+        screen: 'DriverDashboard',
+      });
 
       armForceEndLock();
       if (driverDataPollingIntervalRef.current) {
@@ -9966,6 +10337,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       setRatingModalData(null);
       setDriverPassengerForceEndReview(null);
       driverForceEndModalHandledTagIdsRef.current.clear();
+      driverForceEndLastRequestKeyRef.current = null;
       setActiveTag(null);
       setRequests([]);
       driverClearIncomingCall();
@@ -10223,8 +10595,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           // Yolcu konumunu backend'den al
           const response = await fetch(`${API_URL}/driver/passenger-location/${activeTag.passenger_id}`);
           const data = await response.json();
-          if (data.location) {
-            setPassengerLocation(data.location);
+          const loc = data?.location;
+          if (loc && Number.isFinite(Number(loc.latitude)) && Number.isFinite(Number(loc.longitude))) {
+            setPassengerLocation({ latitude: Number(loc.latitude), longitude: Number(loc.longitude) });
           }
         } catch (error) {
           console.log('Yolcu konumu alınamadı:', error);
@@ -10235,40 +10608,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     }
   }, [activeTag?.id, activeTag?.status, activeTag?.passenger_id]);
 
-  // Karşılıklı iptal isteği polling - ŞOFÖR için
   useEffect(() => {
-    if (!user?.id || !activeTag) return;
-    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
-    
-    const checkTripEndRequest = async () => {
-      if (forceEndLockRef.current) {
-        console.log('POLLING BLOCKED AFTER FORCE END');
-        return;
-      }
-      try {
-        const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
-        const data = await response.json();
-        
-        console.log('🔚 ŞOFÖR - Trip end request check:', JSON.stringify(data));
-        
-        if (data.success && data.has_request && !showTripEndModal) {
-          console.log('🔚 ŞOFÖR - Bitirme isteği VAR! Requester:', data.requester_type);
-          setTripEndRequesterType(data.requester_type || 'unknown');
-          setShowTripEndModal(true);
-        }
-      } catch (error) {
-        console.log('Check trip end error:', error);
-      }
-    };
-
-    checkTripEndRequest();
-    const interval = setInterval(checkTripEndRequest, 1000); // 1 saniyede bir kontrol - HIZLI
-    driverCheckEndIntervalRef.current = interval;
-    return () => {
-      clearInterval(interval);
-      driverCheckEndIntervalRef.current = null;
-    };
-  }, [user?.id, activeTag?.id, activeTag?.status, showTripEndModal]);
+    if (!activeTag || (activeTag.status !== 'matched' && activeTag.status !== 'in_progress')) {
+      return;
+    }
+    const eff = driverPassengerCoordsForMap(passengerLocation, activeTag);
+    console.log('DRIVER LOC:', userLocation);
+    console.log('PASSENGER LOC (polled state):', passengerLocation);
+    console.log('PASSENGER LOC (effective for map):', eff);
+  }, [
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.passenger_location,
+    activeTag?.pickup_lat,
+    activeTag?.pickup_lng,
+    passengerLocation,
+    userLocation,
+  ]);
 
   // 🆕 Yolcu detaylarını çek (Harita Bilgi Kartı için)
   useEffect(() => {
@@ -10669,22 +11025,158 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     if (!user?.id || !activeTag?.id) return;
     const er = activeTag.end_request;
     if (!isPendingForceEndCounterparty(er)) return;
-    const ini = String(er?.initiator_id || '').trim().toLowerCase();
+    const iniRaw = String(er?.initiator_id || '').trim();
+    const ini = iniRaw.toLowerCase();
     const uid = String(user.id).trim().toLowerCase();
     if (!ini || ini === uid) return;
     const tid = String(activeTag.id);
-    if (driverForceEndModalHandledTagIdsRef.current.has(tid)) return;
+    const requestKey = forceEndCounterpartyRequestKey(tid, iniRaw, er?.requested_at);
+    console.log('FORCE_END_REQUEST_RECEIVED', {
+      tagId: tid,
+      requestedBy: iniRaw,
+      requestKey,
+      source: 'polling',
+      screen: 'DriverDashboard',
+    });
+    console.log('FORCE_END_REQUEST_SOURCE', {
+      tagId: tid,
+      requestedBy: iniRaw,
+      requestKey,
+      source: 'activeTag',
+      screen: 'DriverDashboard',
+    });
+    if (driverForceEndModalHandledTagIdsRef.current.has(tid)) {
+      console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+        tagId: tid,
+        requestedBy: iniRaw,
+        requestKey,
+        source: 'activeTag',
+        reason: 'handled_tag_set',
+        screen: 'DriverDashboard',
+      });
+      return;
+    }
     if (driverPassengerForceEndReview?.tagId === tid) return;
     driverForceEndModalHandledTagIdsRef.current.add(tid);
+    driverForceEndLastRequestKeyRef.current = requestKey;
     const it = er?.initiator_type === 'passenger' ? 'passenger' : 'driver';
-    console.log('FORCE_END_MODAL_OPEN', { tag_id: tid, initiator_type: it, source: 'active_tag_pending' });
+    setShowTripEndModal(false);
+    setTripEndRequesterType(null);
     setDriverPassengerForceEndReview({
       tagId: tid,
-      initiatorId: String(er?.initiator_id || ''),
+      initiatorId: iniRaw,
       initiatorType: it,
       initiatorName: it === 'driver' ? 'Sürücü' : 'Yolcu',
     });
+    console.log('FORCE_END_UI_OPEN', {
+      tagId: tid,
+      requestedBy: iniRaw,
+      requestKey,
+      source: 'activeTag',
+      screen: 'DriverDashboard',
+    });
   }, [user?.id, activeTag?.id, driverEndReqSig, driverPassengerForceEndReview?.tagId]);
+
+  // Karşılıklı iptal isteği polling - ŞOFÖR (driverEndReqSig ile end_request closure güncel kalır)
+  useEffect(() => {
+    if (!user?.id || !activeTag) return;
+    if (activeTag.status !== 'matched' && activeTag.status !== 'in_progress') return;
+
+    const checkTripEndRequest = async () => {
+      if (forceEndLockRef.current) {
+        console.log('POLLING BLOCKED AFTER FORCE END');
+        return;
+      }
+      try {
+        const response = await fetch(`${API_URL}/trip/check-end-request?tag_id=${activeTag.id}&user_id=${user.id}`);
+        const data = await response.json();
+
+        console.log('🔚 ŞOFÖR - Trip end request check:', JSON.stringify(data));
+
+        const pollRequestKindDriver = (data as { request_kind?: string }).request_kind;
+        const tagForceEndPendingDriver = isPendingForceEndCounterparty(activeTag.end_request);
+        if (
+          data.success &&
+          data.has_request &&
+          (pollRequestKindDriver === 'force_end_counterparty' || tagForceEndPendingDriver)
+        ) {
+          const rk = forceEndCounterpartyRequestKey(
+            String(activeTag.id),
+            String((data as { requester_id?: string }).requester_id || ''),
+            null,
+          );
+          setShowTripEndModal(false);
+          setTripEndRequesterType(null);
+          console.log('FORCE_END_UI_IGNORED_DUPLICATE', {
+            tagId: activeTag.id,
+            requestedBy: (data as { requester_id?: string }).requester_id,
+            requestKey: rk,
+            source: 'polling',
+            screen: 'DriverDashboard',
+            reason: 'mutual_trip_end_modal_skipped_use_force_end_card',
+            tagForceEndPending: tagForceEndPendingDriver,
+            pollRequestKind: pollRequestKindDriver ?? null,
+          });
+          return;
+        }
+
+        if (data.success && data.has_request && !showTripEndModal) {
+          const blockLegacyOpen =
+            isPendingForceEndCounterparty(activeTag.end_request) ||
+            (!!driverPassengerForceEndReview &&
+              activeTag?.id &&
+              String(driverPassengerForceEndReview.tagId) === String(activeTag.id));
+          if (blockLegacyOpen) {
+            if (__DEV__) {
+              console.log('FORCE_END_LEGACY_TRIP_END_OPEN_BLOCKED', {
+                screen: 'DriverDashboard',
+                tagId: activeTag.id,
+                showTripEndModal,
+                pollRequestKind: pollRequestKindDriver ?? null,
+                ...legacyTripEndBlockMeta(activeTag, driverPassengerForceEndReview),
+              });
+            }
+            setShowTripEndModal(false);
+            setTripEndRequesterType(null);
+            return;
+          }
+          console.log('🔚 ŞOFÖR - Bitirme isteği VAR! Requester:', data.requester_type);
+          setTripEndRequesterType(data.requester_type || 'unknown');
+          setShowTripEndModal(true);
+        }
+      } catch (error) {
+        console.log('Check trip end error:', error);
+      }
+    };
+
+    checkTripEndRequest();
+    const interval = setInterval(checkTripEndRequest, 1000);
+    driverCheckEndIntervalRef.current = interval;
+    return () => {
+      clearInterval(interval);
+      driverCheckEndIntervalRef.current = null;
+    };
+  }, [
+    user?.id,
+    activeTag?.id,
+    activeTag?.status,
+    showTripEndModal,
+    driverEndReqSig,
+    driverPassengerForceEndReview,
+  ]);
+
+  useEffect(() => {
+    if (!showTripEndModal) return;
+    if (legacyTripEndModalVisible(showTripEndModal, activeTag, driverPassengerForceEndReview)) return;
+    console.log('FORCE_END_LEGACY_MODAL_STALE_SWEEP', {
+      screen: 'DriverDashboard',
+      tagId: activeTag?.id,
+      showTripEndModal,
+      ...legacyTripEndBlockMeta(activeTag, driverPassengerForceEndReview),
+    });
+    setShowTripEndModal(false);
+    setTripEndRequesterType(null);
+  }, [showTripEndModal, activeTag?.id, driverEndReqSig, driverPassengerForceEndReview]);
 
   const loadRequests = async () => {
     if (forceEndLockRef.current) {
@@ -11367,7 +11859,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           ) : null}
           <LiveMapView
             userLocation={userLocation}
-            otherLocation={passengerLocation || activeTag?.passenger_location || null}
+            otherLocation={driverPassengerCoordsForMap(passengerLocation, activeTag)}
+            otherLocationFromPickupFallback={driverOtherLocationPickupFallback(
+              passengerLocation,
+              activeTag,
+            )}
             destinationLocation={activeTag?.dropoff_lat && activeTag?.dropoff_lng ? { latitude: activeTag.dropoff_lat, longitude: activeTag.dropoff_lng } : null}
             peerMapPinScale={1.04}
             otherTripVehicleKind={
@@ -11903,12 +12399,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         />
       )}
 
-      {/* Karşılıklı İptal Onay Modalı - ŞOFÖR */}
+      {/* Karşılıklı İptal Onay Modalı - ŞOFÖR (force-end / mavi kart ile legacyTripEndModalVisible) */}
       <Modal
-        visible={showTripEndModal}
+        visible={legacyTripEndModalVisible(showTripEndModal, activeTag, driverPassengerForceEndReview)}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowTripEndModal(false)}
+        onRequestClose={() => {
+          setShowTripEndModal(false);
+          setTripEndRequesterType(null);
+        }}
       >
         <View style={styles.tripEndModalOverlay}>
           <View style={styles.tripEndModalContainer}>
@@ -11943,6 +12442,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                     appAlert('Hata', 'İşlem başarısız');
                   }
                   setShowTripEndModal(false);
+                  setTripEndRequesterType(null);
                 }}
               >
                 <Text style={styles.tripEndApproveButtonText}>Onaylıyorum</Text>
@@ -11958,6 +12458,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                     );
                   } catch (error) {}
                   setShowTripEndModal(false);
+                  setTripEndRequesterType(null);
                 }}
               >
                 <Text style={styles.tripEndRejectButtonText}>Onaylamıyorum</Text>
@@ -11996,8 +12497,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             });
             const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
             const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
+            const reqKey = driverForceEndLastRequestKeyRef.current;
             console.log('FORCE_END_CONFIRM_SENT', {
-              tag_id: tid,
+              tagId: tid,
+              requestedBy: driverPassengerForceEndReview.initiatorId,
+              requestKey: reqKey,
+              source: 'local',
+              screen: 'DriverDashboard',
               ok: !!r?.ok,
               status: r?.status ?? null,
               role: 'driver',
@@ -12012,7 +12518,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               return;
             }
             console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: true, role: 'driver' });
+            console.log('FORCE_END_FINALIZED', {
+              tagId: tid,
+              requestedBy: driverPassengerForceEndReview.initiatorId,
+              requestKey: reqKey,
+              source: 'local',
+              screen: 'DriverDashboard',
+              approved: true,
+            });
+            console.log('FORCE_END_STATE_CLEARED', {
+              tagId: tid,
+              requestKey: reqKey,
+              source: 'local',
+              screen: 'DriverDashboard',
+            });
             driverForceEndModalHandledTagIdsRef.current.delete(tid);
+            driverForceEndLastRequestKeyRef.current = null;
+            setShowTripEndModal(false);
             setDriverPassengerForceEndReview(null);
             setRatingModalData(null);
             setDriverChatVisible(false);
@@ -12045,8 +12567,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             });
             const url = `${API_URL}/trip/force-end-confirm?${q.toString()}`;
             const r = await fetchWithTimeout(url, { method: 'POST', timeoutMs: 20000 });
-            console.log('FORCE_END_CONFIRM_SENT', {
-              tag_id: tid,
+            const reqKey = driverForceEndLastRequestKeyRef.current;
+            console.log('FORCE_END_REJECT_SENT', {
+              tagId: tid,
+              requestedBy: driverPassengerForceEndReview.initiatorId,
+              requestKey: reqKey,
+              source: 'local',
+              screen: 'DriverDashboard',
               ok: !!r?.ok,
               status: r?.status ?? null,
               role: 'driver',
@@ -12061,7 +12588,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               return;
             }
             console.log('FRONTEND_FORCE_END_CONFIRM_OK', { tag_id: tid, approved: false, role: 'driver' });
+            console.log('FORCE_END_FINALIZED', {
+              tagId: tid,
+              requestedBy: driverPassengerForceEndReview.initiatorId,
+              requestKey: reqKey,
+              source: 'local',
+              screen: 'DriverDashboard',
+              approved: false,
+            });
+            console.log('FORCE_END_STATE_CLEARED', {
+              tagId: tid,
+              requestKey: reqKey,
+              source: 'local',
+              screen: 'DriverDashboard',
+            });
             driverForceEndModalHandledTagIdsRef.current.delete(tid);
+            driverForceEndLastRequestKeyRef.current = null;
+            setShowTripEndModal(false);
             setDriverPassengerForceEndReview(null);
             setRatingModalData(null);
             setDriverChatVisible(false);

@@ -80,6 +80,8 @@ export interface RideMatchSocketData {
   final_price?: number;
   matched_at?: string;
   passenger_payment_method?: 'cash' | 'card';
+  /** Sürücü haritası: canlı yolcu veya alım noktası (backend) */
+  passenger_location?: { latitude: number; longitude: number };
 }
 
 interface UseSocketProps {
