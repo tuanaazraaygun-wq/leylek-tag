@@ -1276,8 +1276,8 @@ async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, 
             prev = _offer_push_last_sent_mono.get(key)
             if prev is not None and (now - prev) < OFFER_PUSH_DEDUPE_WINDOW_SEC:
                 logger.info(
-                    "Push FCM offer dedupe skip driver=%s tag=%s age_s=%.2f window_s=%s",
-                    key[0][:13] + ("…" if len(key[0]) > 13 else ""),
+                    "Push FCM offer dedupe skip dedupe_key=%s|%s age_s=%.2f window_s=%s",
+                    key[0],
                     key[1],
                     now - prev,
                     OFFER_PUSH_DEDUPE_WINDOW_SEC,
@@ -1350,7 +1350,6 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
             return False
         room = _normalize_user_room(raw)
         sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip())
-        print(f"EMIT to user_{driver_id}")
         if sid:
             await sio.emit("new_passenger_offer", offer_data, to=sid)
             logger.info(
@@ -10853,6 +10852,19 @@ async def api_trust_active(
         if not uid:
             return {"success": False, "session": None}
         r = _trust_service.get_active_trust(supabase, uid, tag_id.strip() if tag_id else None)
+        if isinstance(r, dict) and r.get("success") and r.get("session"):
+            sess = dict(r["session"])
+            if str(sess.get("status") or "") == "accepted":
+                ch = str(sess.get("channel_name") or "").strip()
+                if ch:
+                    rid = str(sess.get("requester_id") or "")
+                    tgt = str(sess.get("target_id") or "")
+                    uid_l = str(uid).strip().lower()
+                    peer = tgt if uid_l == rid.strip().lower() else rid
+                    tok = generate_agora_token(ch, user_id=str(uid))
+                    sess["recovery_agora_token"] = tok
+                    sess["recovery_peer_user_id"] = peer
+            r = {**r, "session": sess}
         return r
     except Exception as e:
         logger.exception("trust active: %s", e)

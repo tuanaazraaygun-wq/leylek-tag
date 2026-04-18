@@ -165,6 +165,24 @@ interface UseSocketProps {
     created_at?: string;
   }) => void;
   onMessageSent?: (data: { success: boolean; message_id: string }) => void;
+  /** Güven Al — backend trust socket */
+  onTrustSocketRequest?: (data: {
+    trust_id: string;
+    tag_id: string;
+    requester_id: string;
+    requester_role: string;
+    request_ttl_expires_at?: string;
+  }) => void;
+  onTrustSessionReady?: (data: {
+    trust_id: string;
+    tag_id: string;
+    channel_name: string;
+    agora_token: string;
+    agora_app_id?: string;
+    session_hard_deadline_at?: string;
+    peer_user_id: string;
+  }) => void;
+  onTrustSessionEnded?: (data: { trust_id: string; tag_id?: string; end_reason?: string }) => void;
 }
 
 export default function useSocket({
@@ -199,6 +217,9 @@ export default function useSocket({
   onNewMessage,  // 🆕 Mesajlaşma
   onFirstChatMessage,
   onMessageSent,  // 🆕 Mesajlaşma
+  onTrustSocketRequest,
+  onTrustSessionReady,
+  onTrustSessionEnded,
 }: UseSocketProps) {
   
   // ════════════════════════════════════════════════════════════════════
@@ -235,7 +256,8 @@ export default function useSocket({
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal,
-    onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
+    onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
+    onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
   });
   
   // Callback'leri güncelle
@@ -246,7 +268,8 @@ export default function useSocket({
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal,
-      onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent
+      onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
+      onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
     };
   });
 
@@ -413,6 +436,19 @@ export default function useSocket({
       callbackRefs.current.onMessageSent?.(data);
     };
 
+    const handleTrustRequest = (data: any) => {
+      console.log('🛡️ [useSocket] trust_request:', data);
+      callbackRefs.current.onTrustSocketRequest?.(data);
+    };
+    const handleTrustSessionReady = (data: any) => {
+      console.log('🛡️ [useSocket] trust_session_ready:', data);
+      callbackRefs.current.onTrustSessionReady?.(data);
+    };
+    const handleTrustSessionEnded = (data: any) => {
+      console.log('🛡️ [useSocket] trust_session_ended:', data);
+      callbackRefs.current.onTrustSessionEnded?.(data);
+    };
+
     // Event listener'ları ekle
     socket.on('incoming_call', handleIncomingCall);
     socket.on('call_accepted', handleCallAccepted);
@@ -464,6 +500,10 @@ export default function useSocket({
     socket.on('first_chat_message', handleFirstChatMessage);
     socket.on('message_sent', handleMessageSent);
 
+    socket.on('trust_request', handleTrustRequest);
+    socket.on('trust_session_ready', handleTrustSessionReady);
+    socket.on('trust_session_ended', handleTrustSessionEnded);
+
     // Cleanup - listener'ları kaldır
     return () => {
       console.log(`🔌 [useSocket] Event listener'lar kaldırılıyor (${userRole})`);
@@ -513,6 +553,10 @@ export default function useSocket({
       socket.off('new_message', handleNewMessage);
       socket.off('first_chat_message', handleFirstChatMessage);
       socket.off('message_sent', handleMessageSent);
+
+      socket.off('trust_request', handleTrustRequest);
+      socket.off('trust_session_ready', handleTrustSessionReady);
+      socket.off('trust_session_ended', handleTrustSessionEnded);
     };
   }, [socket, userRole]);
 

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 TRUST_REQUEST_TTL_SEC = 120
-TRUST_SESSION_MAX_SEC = 240  # 4 dakika hard deadline
+TRUST_SESSION_MAX_SEC = 120  # Güven görüşmesi süresi (frontend geri sayım ile aynı)
 
 MATCHABLE_TAG_STATUSES = ("matched", "in_progress")
 

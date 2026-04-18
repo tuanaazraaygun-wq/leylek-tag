@@ -140,6 +140,8 @@ interface LiveMapViewProps {
   onNavigationModeChange?: (active: boolean) => void;
   /** Yolculuk: karşı taraftan güven isteği */
   onTrustRequest?: () => void;
+  /** true iken Güven AL basılmaz (çift istek / oturum çakışması önlemi) */
+  trustRequestDisabled?: boolean;
   trustRequestLabel?: string;
   /** Harita ekranından Leylek Zeka sohbeti (global widget ayrı kalır) */
   onOpenLeylekZekaSupport?: () => void;
@@ -1376,6 +1378,7 @@ export default function LiveMapView({
   passengerPaymentMethod,
   onNavigationModeChange,
   onTrustRequest,
+  trustRequestDisabled = false,
   trustRequestLabel,
   onOpenLeylekZekaSupport,
   peerMapPinScale = 1,
@@ -1414,10 +1417,10 @@ export default function LiveMapView({
     return () => clearTimeout(id);
   }, []);
 
-  /** Güven Al — küçük kalkan, yumuşak nabız (yalnız sürücü) */
+  /** Güven AL — kalkan, yumuşak nabız (sürücü + yolcu) */
   const guvenShieldPulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (!isDriver || !onTrustRequest) return;
+    if (!onTrustRequest) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(guvenShieldPulse, {
@@ -1439,7 +1442,7 @@ export default function LiveMapView({
       loop.stop();
       guvenShieldPulse.setValue(1);
     };
-  }, [isDriver, onTrustRequest, guvenShieldPulse]);
+  }, [onTrustRequest, guvenShieldPulse]);
   
   // YEŞİL ROTA: Şoför → Yolcu (buluşma) — koordinatlar yalnız OSRM polyline / düz çizgi
   const [meetingRouteCoordinates, setMeetingRouteCoordinates] = useState<
@@ -3993,19 +3996,24 @@ export default function LiveMapView({
                     style={styles.navImmersiveGuvenBtn}
                     onPress={() => {
                       void tapButtonHaptic();
+                      if (trustRequestDisabled) return;
                       onTrustRequest();
                     }}
                     activeOpacity={0.88}
+                    disabled={!!trustRequestDisabled}
                     accessibilityRole="button"
-                    accessibilityLabel={trustRequestLabel || 'Güven AL'}
+                    accessibilityLabel={trustRequestLabel ?? 'Güven AL'}
                   >
                     <LinearGradient
-                      colors={['#047857', '#059669', '#10B981']}
+                      colors={['#0E7490', '#059669', '#10B981', '#22C55E']}
+                      locations={[0, 0.3, 0.65, 1]}
                       style={styles.navImmersiveGuvenGrad}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                      <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
+                        <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                      </Animated.View>
                       <Text style={styles.navImmersiveGuvenText}>Güven AL</Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -4184,29 +4192,33 @@ export default function LiveMapView({
                       </TouchableOpacity>
                     ) : null}
                   </View>
-                  {onTrustRequest && trustRequestLabel ? (
+                  {onTrustRequest ? (
                     <View style={styles.tripGuvenMirrorWrap}>
                       <TouchableOpacity
                         style={styles.tripGuvenFabCompact}
                         onPress={() => {
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
+                          if (trustRequestDisabled) return;
                           logPax('onTrustRequest', onTrustRequest);
                           onTrustRequest();
                         }}
                         activeOpacity={0.88}
+                        disabled={!!trustRequestDisabled}
                         accessibilityRole="button"
-                        accessibilityLabel={trustRequestLabel}
+                        accessibilityLabel={trustRequestLabel ?? 'Güven AL'}
                       >
                         <LinearGradient
-                          colors={['#047857', '#059669', '#10B981']}
+                          colors={['#0D9488', '#059669', '#10B981', '#34D399']}
+                          locations={[0, 0.35, 0.7, 1]}
                           style={styles.tripGuvenFabCompactInner}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
                           <Animated.View style={{ transform: [{ scale: guvenShieldPulse }] }}>
-                            <Ionicons name="shield-checkmark" size={22} color="#FFF" />
+                            <Ionicons name="shield-checkmark" size={20} color="#FFF" />
                           </Animated.View>
+                          <Text style={styles.tripGuvenFabLabel}>Güven AL</Text>
                         </LinearGradient>
                       </TouchableOpacity>
                     </View>
@@ -4967,21 +4979,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tripGuvenFabCompact: {
-    borderRadius: 24,
+    borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#064e3b',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowColor: '#14B8A6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.42,
+    shadowRadius: 12,
+    elevation: 10,
   },
   tripGuvenFabCompactInner: {
-    width: 48,
-    height: 48,
+    minWidth: 76,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderColor: 'rgba(255,255,255,0.38)',
+  },
+  tripGuvenFabLabel: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   tripActionRightSpacer: {
     width: 88,

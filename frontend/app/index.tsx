@@ -19,6 +19,9 @@ import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
 import { RoleSelectLeylekAIFloating } from '../screens/RoleSelectScreen';
 import { DriverWaitingLeylekAIFloating } from '../screens/DriverWaitingScreen';
 import CallScreenV2 from '../components/CallScreenV2';
+import TrustRequestModal from '../components/trust/TrustRequestModal';
+import TrustVideoSessionScreen from '../components/trust/TrustVideoSessionScreen';
+import { useTrustSessionController } from '../hooks/useTrustSessionController';
 import { agoraVoiceService } from '../services/agoraVoiceService';
 import { agoraUidFromUserId } from '../lib/agoraUid';
 import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
@@ -6500,7 +6503,27 @@ function PassengerDashboard({
   const [callRejected, setCallRejected] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
   const [receiverOffline, setReceiverOffline] = useState(false);
-  
+
+  /** Güven Al — backend /trust + socket (CallScreenV2 dışında) */
+  const {
+    trustRequestModal,
+    trustModalLoading,
+    trustOutgoingPending,
+    trustVideoSession,
+    sendTrustRequest: sendPassengerTrustRequest,
+    respondTrust: respondPassengerTrust,
+    clearAllTrustState: clearPassengerTrustState,
+    trustSocketHandlers: passengerTrustSocketHandlers,
+    trustGuvenButtonDisabled: passengerTrustGuvenButtonDisabled,
+    isTrustBlockingCalls: passengerTrustBlocksCalls,
+  } = useTrustSessionController({
+    role: 'passenger',
+    userId: user?.id,
+    activeTag,
+    showCallScreen,
+    incomingCallBlocked: !!incomingCallData,
+  });
+
   const isCallActiveRef = useRef(false);
 
   const closePassengerCallUi = useCallback(() => {
@@ -6891,6 +6914,7 @@ function PassengerDashboard({
       setShowQRModal(false);
       setShowPriceModal(false);
       isPollingActiveRef.current = false;
+      clearPassengerTrustState();
       setScreen('role-select');
 
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
@@ -6918,6 +6942,7 @@ function PassengerDashboard({
       });
       // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
+    ...passengerTrustSocketHandlers,
   });
   
   // Karşılıklı iptal sistemi state'leri
@@ -7821,6 +7846,10 @@ function PassengerDashboard({
       appAlert('Uyarı', 'Zaten bir arama devam ediyor');
       return;
     }
+    if (passengerTrustBlocksCalls) {
+      appAlert('Uyarı', 'Güven görüşmesi veya güven isteği varken arama başlatılamaz.');
+      return;
+    }
     callCheck('clearIncomingCall', clearIncomingCall);
     if (typeof clearIncomingCall === 'function') {
       clearIncomingCall();
@@ -7891,6 +7920,7 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (!user?.id || !incomingCallData?.callId || !incomingCallData.channelName) return;
+    if (trustVideoSession) return;
     if (String(incomingCallData.callerId) === String(user.id)) return;
     if (
       showCallScreen &&
@@ -7913,7 +7943,14 @@ function PassengerDashboard({
       callType: incomingCallData.callType,
     });
     setShowCallScreen(true);
-  }, [incomingCallData, incomingCallPresentToken, user?.id, showCallScreen, callScreenData?.callId]);
+  }, [
+    incomingCallData,
+    incomingCallPresentToken,
+    user?.id,
+    showCallScreen,
+    callScreenData?.callId,
+    trustVideoSession,
+  ]);
 
   // Teklifi 10 dakikalığına gizle (çarpı butonu)
   const handleDismissOffer = async (offerId: string) => {
@@ -8768,9 +8805,9 @@ function PassengerDashboard({
                     await startTripCallAsPassenger(type);
                   }}
                   onTrustRequest={() => {
-                    void startTripCallAsPassenger('video');
+                    void sendPassengerTrustRequest();
                   }}
-                  trustRequestLabel="Sürücüden Güven Al"
+                  trustRequestDisabled={passengerTrustGuvenButtonDisabled}
                   onChat={() => {
                     // 🆕 Chat aç - Yolcu → Sürücüye Yaz
                     setPassengerChatVisible(true);
@@ -9509,6 +9546,27 @@ function PassengerDashboard({
         />
       )}
 
+      <TrustRequestModal
+        visible={!!trustRequestModal}
+        requesterRole={trustRequestModal?.requesterRole ?? 'driver'}
+        loading={trustModalLoading}
+        onAccept={() => void respondPassengerTrust(true)}
+        onReject={() => void respondPassengerTrust(false)}
+      />
+      {trustVideoSession && user?.id ? (
+        <TrustVideoSessionScreen
+          visible
+          trustId={trustVideoSession.trustId}
+          channelName={trustVideoSession.channelName}
+          agoraToken={trustVideoSession.agoraToken}
+          userId={user.id}
+          peerUserId={trustVideoSession.peerUserId}
+          sessionHardDeadlineAt={trustVideoSession.sessionHardDeadlineAt}
+          peerDisplayName={trustVideoSession.peerDisplayName}
+          onClose={() => clearPassengerTrustState()}
+        />
+      ) : null}
+
       {/* Karşılıklı İptal Onay Modalı - YOLCU (force-end / mavi kart ile legacyTripEndModalVisible) */}
       <Modal
         visible={legacyTripEndModalVisible(showTripEndModal, activeTag, passengerDriverForceReview)}
@@ -9927,7 +9985,26 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [callRejected, setCallRejected] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
   const [receiverOffline, setReceiverOffline] = useState(false);
-  
+
+  const {
+    trustRequestModal,
+    trustModalLoading,
+    trustOutgoingPending,
+    trustVideoSession,
+    sendTrustRequest: sendDriverTrustRequest,
+    respondTrust: respondDriverTrust,
+    clearAllTrustState: clearDriverTrustState,
+    trustSocketHandlers: driverTrustSocketHandlers,
+    trustGuvenButtonDisabled: driverTrustGuvenButtonDisabled,
+    isTrustBlockingCalls: driverTrustBlocksCalls,
+  } = useTrustSessionController({
+    role: 'driver',
+    userId: user?.id,
+    activeTag,
+    showCallScreen,
+    incomingCallBlocked: !!driverIncomingCallData,
+  });
+
   // Arama kilidi
   const isCallActiveRef = useRef(false);
 
@@ -10343,6 +10420,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       setTripEndRequesterType(null);
       setDriverFirstChatTapBanner(null);
       setShowQRModal(false);
+      clearDriverTrustState();
       setScreen('role-select');
 
       const enderId = String((data as { ended_by?: string; ender_id?: string }).ended_by ?? data.ender_id ?? '').trim();
@@ -10370,6 +10448,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       });
       // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
+    ...driverTrustSocketHandlers,
   });
 
   const startTripCallAsDriver = async (callType: 'audio' | 'video') => {
@@ -10388,6 +10467,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     }
     if (showCallScreen || driverIncomingCallData) {
       appAlert('Uyarı', 'Zaten bir arama devam ediyor');
+      return;
+    }
+    if (driverTrustBlocksCalls) {
+      appAlert('Uyarı', 'Güven görüşmesi veya güven isteği varken arama başlatılamaz.');
       return;
     }
     driverClearIncomingCall();
@@ -10449,6 +10532,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   useEffect(() => {
     if (!user?.id || !driverIncomingCallData?.callId || !driverIncomingCallData.channelName) return;
+    if (trustVideoSession) return;
     if (String(driverIncomingCallData.callerId) === String(user.id)) return;
     if (
       showCallScreen &&
@@ -10477,6 +10561,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     user?.id,
     showCallScreen,
     callScreenData?.callId,
+    trustVideoSession,
   ]);
 
   // 🔔 Bildirime tıklanınca (teklif / sohbet / eşleşme)
@@ -11912,9 +11997,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               await startTripCallAsDriver(type);
             }}
             onTrustRequest={() => {
-              void startTripCallAsDriver('video');
+              void sendDriverTrustRequest();
             }}
-            trustRequestLabel="Yolcudan Güven Al"
+            trustRequestDisabled={driverTrustGuvenButtonDisabled}
             onChat={() => {
               // 🆕 Chat aç - Sürücü → Yolcuya Yaz
               setDriverChatVisible(true);
@@ -12407,6 +12492,27 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           }}
         />
       )}
+
+      <TrustRequestModal
+        visible={!!trustRequestModal}
+        requesterRole={trustRequestModal?.requesterRole ?? 'passenger'}
+        loading={trustModalLoading}
+        onAccept={() => void respondDriverTrust(true)}
+        onReject={() => void respondDriverTrust(false)}
+      />
+      {trustVideoSession && user?.id ? (
+        <TrustVideoSessionScreen
+          visible
+          trustId={trustVideoSession.trustId}
+          channelName={trustVideoSession.channelName}
+          agoraToken={trustVideoSession.agoraToken}
+          userId={user.id}
+          peerUserId={trustVideoSession.peerUserId}
+          sessionHardDeadlineAt={trustVideoSession.sessionHardDeadlineAt}
+          peerDisplayName={trustVideoSession.peerDisplayName}
+          onClose={() => clearDriverTrustState()}
+        />
+      ) : null}
 
       {/* Karşılıklı İptal Onay Modalı - ŞOFÖR (force-end / mavi kart ile legacyTripEndModalVisible) */}
       <Modal

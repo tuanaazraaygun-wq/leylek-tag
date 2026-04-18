@@ -58,18 +58,20 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       setNotification(notification);
     });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response?.notification?.request?.content?.data;
       console.log('👆 Bildirime tıklandı:', data);
-      setTappedData(data || null, setLastTappedNotificationData);
+      setTappedData(
+        data && typeof data === 'object' ? (data as TappedNotificationData) : null,
+        setLastTappedNotificationData,
+      );
     });
 
-    Notifications.getLastNotificationResponseAsync().then(response => {
-      if (response) {
-        const data = response.notification.request.content.data;
-        console.log('📬 Uygulama bildirim ile açıldı:', data);
-        setTappedData(data || null, setLastTappedNotificationData);
-      }
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      const data = response.notification?.request?.content?.data;
+      console.log('📬 Uygulama bildirim ile açıldı:', data);
+      setTappedData((data && typeof data === 'object' ? data : null) as TappedNotificationData, setLastTappedNotificationData);
     });
 
     return () => {

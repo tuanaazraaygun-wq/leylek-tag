@@ -32,6 +32,8 @@ export class AgoraVoiceService {
   private eventHandler: IRtcEngineEventHandler | null = null;
   private callbacks: AgoraVoiceCallbacks = {};
   private joinRequested = false;
+  /** Güven videosu için açılmış motor — normal ses initialize öncesi temizlenir */
+  private isTrustVideoEngine = false;
 
   /** joinChannel bir kez çağrıldıysa true (caller index’te join ettiğinde CallScreen tekrar join denemesin) */
   isJoinPending(): boolean {
@@ -71,6 +73,9 @@ export class AgoraVoiceService {
   }
 
   async initialize(): Promise<IRtcEngine> {
+    if (this.engine && this.isTrustVideoEngine) {
+      await this.leaveChannelAndDestroy();
+    }
     if (this.engine) {
       return this.engine;
     }
@@ -86,7 +91,44 @@ export class AgoraVoiceService {
     engine.setDefaultAudioRouteToSpeakerphone(true);
     engine.setEnableSpeakerphone(true);
     this.engine = engine;
+    this.isTrustVideoEngine = false;
     return engine;
+  }
+
+  /**
+   * Güven görüşmesi: mevcut motoru kapatır, video + ses ile yeni kanala girer.
+   * (SDK tek IRtcEngine — normal aramadan önce mutlaka leaveChannelAndDestroy.)
+   */
+  async joinTrustVideoChannel(channelName: string, token: string, uid: number): Promise<void> {
+    await this.leaveChannelAndDestroy();
+    this.joinRequested = false;
+    const engine = createAgoraRtcEngine() as IRtcEngine;
+    engine.initialize({
+      appId: AGORA_APP_ID,
+      channelProfile: ChannelProfileType.ChannelProfileCommunication,
+    });
+    this.eventHandler = this.buildHandler();
+    engine.registerEventHandler(this.eventHandler);
+    engine.enableAudio();
+    engine.setAudioProfile(0, 1);
+    engine.setDefaultAudioRouteToSpeakerphone(true);
+    engine.setEnableSpeakerphone(true);
+    engine.enableVideo();
+    try {
+      engine.startPreview();
+    } catch {
+      /* noop */
+    }
+    this.engine = engine;
+    this.isTrustVideoEngine = true;
+    this.joinRequested = true;
+    this.engine.joinChannel(token, channelName, uid, {
+      clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+      publishMicrophoneTrack: true,
+      publishCameraTrack: true,
+      autoSubscribeAudio: true,
+      autoSubscribeVideo: true,
+    });
   }
 
   /**
@@ -121,10 +163,16 @@ export class AgoraVoiceService {
     const eng = this.engine;
     const handler = this.eventHandler;
     this.joinRequested = false;
+    this.isTrustVideoEngine = false;
     this.engine = null;
     this.eventHandler = null;
     if (!eng) {
       return;
+    }
+    try {
+      eng.stopPreview();
+    } catch {
+      /* noop */
     }
     try {
       eng.leaveChannel();
