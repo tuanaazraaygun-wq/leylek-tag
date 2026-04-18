@@ -23,6 +23,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { API_BASE_URL, BACKEND_BASE_URL, isPushRegisterDebugOverlayEnabled } from '../lib/backendConfig';
+import { registerFcmTokenWithBackend } from '../lib/androidFcmPush';
 
 const API_URL = API_BASE_URL;
 
@@ -391,6 +392,7 @@ function usePushNotificationsState(): PushNotificationHook {
           user_id: userId,
           tokenPrefix: pushDbgTokenPrefix(token),
         });
+        console.log('PUSH_TOKEN_REGISTER_START', { transport: 'expo' });
         fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -398,6 +400,7 @@ function usePushNotificationsState(): PushNotificationHook {
             user_id: userId,
             push_token: token,
             platform: Platform.OS,
+            token_type: 'expo',
           }),
         })
           .then(async (response) => {
@@ -443,6 +446,17 @@ function usePushNotificationsState(): PushNotificationHook {
               userId: userId,
               tokenPrefix: `${token.slice(0, 36)}…`,
             });
+            console.log('PUSH_TOKEN_REGISTER_SUCCESS', { transport: 'expo' });
+            console.log('PUSH_TRANSPORT_SELECTED', { registered: 'expo_parallel' });
+            if (Platform.OS === 'android') {
+              void registerFcmTokenWithBackend(userId).catch((e) => {
+                console.log('PUSH_TOKEN_REGISTER_ERROR', {
+                  transport: 'fcm',
+                  phase: 'post_expo_nonfatal',
+                  message: String(e),
+                });
+              });
+            }
             onComplete?.(true);
           })
           .catch((err) => {
