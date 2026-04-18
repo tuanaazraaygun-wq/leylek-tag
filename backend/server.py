@@ -964,6 +964,11 @@ rolling_dispatch_tasks: dict = {}
 # tag_id -> {"cursor": int, "drivers": list, "full_tag": dict, "current_batch": list[str]}
 rolling_dispatch_index: dict = {}
 
+# Sürücüye aynı tag teklif FCM: socket register + set-ride-vehicle-kind + reconnect kısa aralıkta aynı push'u tetikleyebilir.
+_offer_push_dedupe_lock = asyncio.Lock()
+_offer_push_last_sent_mono: dict[tuple[str, str], float] = {}
+OFFER_PUSH_DEDUPE_WINDOW_SEC = 120.0
+
 # dispatch_queue tablosu (sql_migrations/schema_updates.sql) — bilinmeyen kolonla insert tüm kaydı düşürürdü
 DISPATCH_QUEUE_DB_KEYS = frozenset(
     {
@@ -1255,6 +1260,71 @@ async def create_dispatch_queue(tag_id: str, tag_data: dict) -> bool:
         return False
 
 
+async def _driver_offer_push_fcm_deduped(resolved_driver_id: str, offer_tag_id, offer_data: dict) -> None:
+    """
+    Tek FCM / log satırı; (driver_id, tag_id) için OFFER_PUSH_DEDUPE_WINDOW_SEC içinde tekrar gönderilmez.
+    Socket emit her seferinde çalışır; yalnız push dedupe (reconnect / çift register).
+    """
+    if not offer_tag_id:
+        return
+    key = (str(resolved_driver_id).strip().lower(), str(offer_tag_id).strip())
+    now = time.monotonic()
+    reserved = False
+    ok = False
+    try:
+        async with _offer_push_dedupe_lock:
+            prev = _offer_push_last_sent_mono.get(key)
+            if prev is not None and (now - prev) < OFFER_PUSH_DEDUPE_WINDOW_SEC:
+                logger.info(
+                    "Push FCM offer dedupe skip driver=%s tag=%s age_s=%.2f window_s=%s",
+                    key[0][:13] + ("…" if len(key[0]) > 13 else ""),
+                    key[1],
+                    now - prev,
+                    OFFER_PUSH_DEDUPE_WINDOW_SEC,
+                )
+                return
+            _offer_push_last_sent_mono[key] = now
+            reserved = True
+            if len(_offer_push_last_sent_mono) > 3000:
+                cutoff = now - OFFER_PUSH_DEDUPE_WINDOW_SEC * 4
+                for k2, ts in list(_offer_push_last_sent_mono.items()):
+                    if ts < cutoff:
+                        del _offer_push_last_sent_mono[k2]
+        ok = await send_trip_push_and_log(
+            resolved_driver_id,
+            "new_ride_request",
+            "Yeni teklif geldi",
+            _push_body_offer_from_context(offer_data),
+            _new_offer_push_data_from_offer(offer_data),
+        )
+        if ok:
+            logger.info(
+                "Push FCM driver=%s tag=%s",
+                key[0][:13] + ("…" if len(key[0]) > 13 else ""),
+                offer_tag_id,
+            )
+        else:
+            logger.warning(
+                "Push FCM failed driver=%s tag=%s",
+                key[0][:13] + ("…" if len(key[0]) > 13 else ""),
+                offer_tag_id,
+            )
+    except Exception as e:
+        logger.warning(
+            "Push FCM exception driver=%s tag=%s: %s",
+            key[0][:13] + ("…" if len(key[0]) > 13 else ""),
+            offer_tag_id,
+            e,
+        )
+    finally:
+        if reserved and not ok:
+            try:
+                async with _offer_push_dedupe_lock:
+                    _offer_push_last_sent_mono.pop(key, None)
+            except Exception:
+                pass
+
+
 async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> bool:
     """
     Teklif socket event'i: önce doğrudan sid (connected_users), yoksa user room.
@@ -1297,37 +1367,8 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
         offer_tag_id = offer_data.get("tag_id")
         resolved_driver_id = raw
 
-        async def _push_driver_offer_fcm():
-            try:
-                ok = await send_trip_push_and_log(
-                    resolved_driver_id,
-                    "new_ride_request",
-                    "Yeni teklif geldi",
-                    _push_body_offer_from_context(offer_data),
-                    _new_offer_push_data_from_offer(offer_data),
-                )
-                if ok:
-                    logger.info(
-                        "Push FCM driver=%s tag=%s",
-                        resolved_driver_id[:13] + ("…" if len(resolved_driver_id) > 13 else ""),
-                        offer_tag_id,
-                    )
-                else:
-                    logger.warning(
-                        "Push FCM failed driver=%s tag=%s",
-                        resolved_driver_id[:13] + ("…" if len(resolved_driver_id) > 13 else ""),
-                        offer_tag_id,
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Push FCM exception driver=%s tag=%s: %s",
-                    resolved_driver_id[:13] + ("…" if len(resolved_driver_id) > 13 else ""),
-                    offer_tag_id,
-                    e,
-                )
-
         try:
-            asyncio.create_task(_push_driver_offer_fcm())
+            asyncio.create_task(_driver_offer_push_fcm_deduped(resolved_driver_id, offer_tag_id, offer_data))
         except Exception as e:
             logger.warning("Push create_task failed: %s", e)
         return True
@@ -12600,26 +12641,17 @@ async def send_chat_message(msg: ChatMessageCreate):
             should_first_push = False
 
         if should_first_push:
-            _fn_chat = _push_first_name(sender_name, 12)
             if from_driver:
                 _chat_title = "Sürücü size yazdı"
-                _chat_body = (
-                    f"{_fn_chat} yazdı • Sohbeti aç"
-                    if _fn_chat
-                    else "Sohbeti açmak için dokun"
-                )
             else:
                 _chat_title = "Yolcu size yazdı"
-                _chat_body = (
-                    f"{_fn_chat} yazdı • Mesajı gör"
-                    if _fn_chat
-                    else "Mesajı görmek için dokun"
-                )
+            _chat_body = "Cevap vermek için dokun"
             if len(_chat_body) > 72:
                 _chat_body = _chat_body[:69] + "…"
             asyncio.create_task(
-                send_push_notification(
+                send_trip_push_and_log(
                     msg.receiver_id,
+                    "first_chat_message",
                     _chat_title,
                     _chat_body,
                     {

@@ -6783,9 +6783,7 @@ function PassengerDashboard({
       if (passengerChatVisible) return;
       setFirstChatTapBanner({
         title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
-        subtitle:
-          (data.message_preview || data.message || '').trim() ||
-          'Mesajı görmek için tıklayın',
+        subtitle: 'Cevap vermek için dokun',
       });
     },
     onForceEndCounterpartyPrompt: (data) => {
@@ -7342,7 +7340,18 @@ function PassengerDashboard({
     const d = paxChatNotifData as Record<string, unknown> | null | undefined;
     if (!d) return;
     const t = String(d.type || '');
+    const detailT = String(d.detail_type || '');
     const tagId = d.tag_id != null ? String(d.tag_id) : '';
+    const fromDriverHint =
+      d.from_driver === true ||
+      d.from_driver === false ||
+      String(d.from_driver).toLowerCase() === 'true' ||
+      String(d.from_driver).toLowerCase() === 'false';
+    const isFirstChatTap =
+      !!tagId &&
+      (t === 'first_chat_message' ||
+        (t === 'chat' && detailT === 'first_chat_message') ||
+        (t === 'chat' && !detailT && fromDriverHint));
     if (t === 'incoming_call' || t === 'missed_call' || t === 'call_ended' || t === 'call_missed') {
       return;
     }
@@ -7352,8 +7361,9 @@ function PassengerDashboard({
       if (typeof paxClearChatNotif === 'function') paxClearChatNotif();
     };
 
-    if ((t === 'chat' || t === 'first_chat_message') && tagId) {
+    if (isFirstChatTap) {
       clearTap();
+      setScreen('dashboard');
       if (!activeTag?.id || tagId !== String(activeTag.id)) {
         void loadActiveTag();
       }
@@ -10237,9 +10247,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       if (driverChatVisible) return;
       setDriverFirstChatTapBanner({
         title: data.from_driver ? 'Sürücü size yazdı' : 'Yolcu size yazdı',
-        subtitle:
-          (data.message_preview || data.message || '').trim() ||
-          'Mesajı görmek için tıklayın',
+        subtitle: 'Cevap vermek için dokun',
       });
     },
     onForceEndCounterpartyPrompt: (data) => {
@@ -10476,13 +10484,25 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     const data = lastTappedNotificationData as Record<string, unknown> | null | undefined;
     if (!data) return;
     const t = String(data.type || '');
+    const detailT = String(data.detail_type || '');
     const tagId = data.tag_id != null ? String(data.tag_id) : '';
+    const fromDriverHint =
+      data.from_driver === true ||
+      data.from_driver === false ||
+      String(data.from_driver).toLowerCase() === 'true' ||
+      String(data.from_driver).toLowerCase() === 'false';
+    const isFirstChatTap =
+      !!tagId &&
+      (t === 'first_chat_message' ||
+        (t === 'chat' && detailT === 'first_chat_message') ||
+        (t === 'chat' && !detailT && fromDriverHint));
     if (t === 'incoming_call' || t === 'missed_call' || t === 'call_ended' || t === 'call_missed') {
       return;
     }
 
-    if ((t === 'chat' || t === 'first_chat_message') && tagId) {
+    if (isFirstChatTap) {
       clearLastTappedNotification();
+      setScreen('dashboard');
       if (!activeTag?.id || tagId !== String(activeTag.id)) {
         void loadData();
       }
