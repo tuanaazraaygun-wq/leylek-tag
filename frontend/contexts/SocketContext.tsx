@@ -167,6 +167,11 @@ interface SocketContextType {
   } | null;
   /** incoming_call / push ile state yazıldığında artar — index’te CallScreen açmak için */
   incomingCallPresentToken: number;
+  /**
+   * App kökü (index) user / rol değiştikçe çağırır — connect() yalnızca dashboard’da olduğu için
+   * login / role-select sırasında da userIdRef + userRoleRef güncel kalır.
+   */
+  syncSocketSessionFromApp: (patch: { userId?: string | null; role?: string | null }) => void;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -272,29 +277,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
         const uid = userIdRef.current;
         const role = userRoleRef.current;
         if (!uid || !role) {
-          const missingReason = !uid && !role
-            ? 'missing_user_id_and_role'
-            : !uid
-              ? 'missing_user_id'
-              : 'missing_role';
-          if (attempt < maxAttempts) {
-            console.log('SCHEDULE_REGISTER_SKIP', {
-              reason: `${missingReason}_scheduling_retry`,
-              userId: userIdRef.current,
-              role: userRoleRef.current,
-              connected: sock.connected,
-              attempt,
-            });
-            registerTimerRef.current = setTimeout(() => tryOnce(attempt + 1), baseDelayMs);
-          } else {
-            console.log('SCHEDULE_REGISTER_SKIP', {
-              reason: `${missingReason}_max_attempts_exhausted`,
-              userId: userIdRef.current,
-              role: userRoleRef.current,
-              connected: sock.connected,
-              attempt,
-            });
-          }
+          console.log('REGISTER_BLOCKED_MISSING_USER_OR_ROLE', {
+            userId: userIdRef.current,
+            role: userRoleRef.current,
+          });
           return;
         }
         console.log('SCHEDULE_REGISTER_BEFORE_TOKEN', {
@@ -331,9 +317,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
           console.log('FRONTEND_SOCKET_REGISTER_RETRY', { userId: uid, role, reason, attempt });
         }
         registerAckOkRef.current = false;
+        const registerPayload = { user_id: uid, token, role };
         console.log('SOCKET REGISTER EMIT', uid);
-        console.log('REGISTER_EMIT_PAYLOAD', { user_id: uid, role, hasToken: !!token });
-        sock.emit('register', { user_id: uid, token, role });
+        console.log('REGISTER_EMIT_PAYLOAD', registerPayload);
+        sock.emit('register', registerPayload);
         registerTimerRef.current = setTimeout(() => {
           if (myGen !== registerGenRef.current) return;
           if (!registerAckOkRef.current && socketRef.current?.connected && userIdRef.current && userRoleRef.current) {
@@ -584,16 +571,44 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
   }, [scheduleSocketRegister]);
 
+  /** Bağlantı önce, kimlik sonra geldiyse veya ilk deneme bloklandıysa — state değişince mutlaka yeniden dene */
   useEffect(() => {
-    if (!isConnected) return;
-    if (!userId || !userRole) return;
-    scheduleSocketRegister('provider_user_or_role');
+    if (!isConnected || !userId || !userRole) return;
+    console.log('LATE_IDENTITY_RECOVERY_TRIGGER', {
+      userId,
+      role: userRole,
+    });
+    scheduleSocketRegister('late_identity_recovery');
   }, [isConnected, userId, userRole, scheduleSocketRegister]);
 
   // ══════════════════════════════════════════════════════════════════
   // CONNECT FONKSİYONU
   // ══════════════════════════════════════════════════════════════════
   
+  const syncSocketSessionFromApp = useCallback(
+    (patch: { userId?: string | null; role?: string | null }) => {
+      let identityTouched = false;
+      if (patch.userId !== undefined) {
+        identityTouched = true;
+        const id = patch.userId;
+        if (id) console.log('USER_ID_REF_UPDATE', id);
+        userIdRef.current = id ?? null;
+        setUserId(id ?? null);
+      }
+      if (patch.role !== undefined) {
+        identityTouched = true;
+        const r = patch.role;
+        if (r) console.log('USER_ROLE_REF_UPDATE', r);
+        userRoleRef.current = r ?? null;
+        setUserRole(r ?? null);
+      }
+      if (identityTouched) {
+        scheduleSocketRegister('session_identity_sync');
+      }
+    },
+    [scheduleSocketRegister]
+  );
+
   const connect = useCallback((newUserId: string, newUserRole: string) => {
     console.log('🔌 [SocketProvider] Connect çağrıldı:', newUserId, newUserRole);
     
@@ -793,6 +808,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     clearIncomingCall,
     getIncomingCallData,  // 🔥 REF GETTER
     incomingCallPresentToken,
+    syncSocketSessionFromApp,
   };
 
   return (

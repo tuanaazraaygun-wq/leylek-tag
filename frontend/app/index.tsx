@@ -57,6 +57,8 @@ import {
   clearSessionStorage,
   getPersistedUserRaw,
   setPersistedUserJson,
+  USER_JSON_STORAGE_KEY,
+  type TokenPayload,
 } from '../lib/sessionToken';
 import { afterAuthAccessTokenPersisted } from '../lib/authTokenPersistenceNotify';
 import { displayFirstName } from '../lib/displayName';
@@ -625,6 +627,29 @@ export default function App() {
   const { registerPushToken, removePushToken, notification, reportPushRegisterDebugSurface } =
     usePushNotifications();
 
+  const { syncSocketSessionFromApp } = useSocketContext();
+
+  /** SocketProvider connect() yalnızca dashboard dallarında — login/role-select için kimliği kökten senkronize et */
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    const effectiveRole: 'passenger' | 'driver' | null =
+      selectedRole === 'passenger' || selectedRole === 'driver'
+        ? selectedRole
+        : user?.role === 'passenger' || user?.role === 'driver'
+          ? user.role
+          : null;
+
+    if (!uid) {
+      syncSocketSessionFromApp({ userId: null, role: null });
+      return;
+    }
+    if (effectiveRole) {
+      syncSocketSessionFromApp({ userId: uid, role: effectiveRole });
+    } else {
+      syncSocketSessionFromApp({ userId: uid, role: null });
+    }
+  }, [user?.id, user?.role, selectedRole, syncSocketSessionFromApp]);
+
   useEffect(() => {
     reportPushRegisterDebugSurface({
       screen,
@@ -1079,7 +1104,26 @@ export default function App() {
   };
 
   const saveUser = async (userData: User) => {
-    await setPersistedUserJson(JSON.stringify(userData));
+    const raw = await getPersistedUserRaw();
+    const next = { ...(userData as unknown as Record<string, unknown>) };
+    if (raw) {
+      try {
+        const prev = JSON.parse(raw) as Record<string, unknown>;
+        const tok = prev.access_token ?? prev.accessToken;
+        if (typeof tok === 'string' && tok.trim() && !next.access_token && !next.accessToken) {
+          const t = tok.trim();
+          next.access_token = t;
+          next.accessToken = t;
+        }
+      } catch {
+        /* yalnızca userData yaz */
+      }
+    }
+    await setPersistedUserJson(JSON.stringify(next));
+    console.log('SAVE_USER_PERSIST', {
+      key: USER_JSON_STORAGE_KEY,
+      preservedTokenFromPrev: !!(next.access_token || next.accessToken),
+    });
     setUser(userData);
   };
 
@@ -1277,8 +1321,9 @@ export default function App() {
       };
       const rawTok = d.token ?? d.access_token;
       const tokStr = typeof rawTok === 'string' ? rawTok.trim() : '';
-      await persistAccessToken(tokStr ? { access_token: tokStr } : {});
       await saveUser(withVehicle);
+      console.log('USER_SAVED', withVehicle);
+      await persistAccessToken(tokStr ? { access_token: tokStr } : {});
       await afterAuthAccessTokenPersisted(withVehicle.id);
       try {
         await AsyncStorage.removeItem(PENDING_PIN_LOGIN_PHONE_KEY);
@@ -1511,9 +1556,9 @@ export default function App() {
               console.log('📝 Register response:', registerData);
               
               if (registerData.success && registerData.user) {
-                await persistAccessToken(registerData as { access_token?: string });
                 await saveUser(registerData.user);
-                setUser(registerData.user);
+                console.log('USER_SAVED', registerData.user);
+                await persistAccessToken(registerData as TokenPayload);
                 await afterAuthAccessTokenPersisted(registerData.user.id);
                 appAlert('Kayıt Başarılı', 'Hesabınız oluşturuldu. Şimdi 6 haneli PIN belirleyin.', [
                   { text: 'Tamam', onPress: () => setScreen('set-pin') }
@@ -1636,8 +1681,9 @@ export default function App() {
 
       const data = await response.json();
       if (data.success) {
-        await persistAccessToken(data as { access_token?: string });
         await saveUser(data.user);
+        console.log('USER_SAVED', data.user);
+        await persistAccessToken(data as TokenPayload);
         await afterAuthAccessTokenPersisted(data.user?.id);
         setScreen('role-select'); // Kayıttan sonra rol seçimi (push: useEffect + splash/loading sonrası)
       } else {
@@ -2337,15 +2383,13 @@ export default function App() {
           });
           const setPinData = await setPinResponse.json();
           if (setPinData.success) {
-            await persistAccessToken(setPinData as { access_token?: string });
-            if (registerGender) {
-              setUser((prev) => {
-                if (!prev) return prev;
-                const next = { ...prev, gender: registerGender };
-                void saveUser(next);
-                return next;
-              });
+            const nextUser =
+              registerGender && user ? ({ ...user, gender: registerGender } as User) : user;
+            if (nextUser) {
+              await saveUser(nextUser);
+              console.log('USER_SAVED', nextUser);
             }
+            await persistAccessToken(setPinData as TokenPayload);
             await afterAuthAccessTokenPersisted(user?.id);
             appAlert(
               'Kayıt Başarılı',
@@ -2374,9 +2418,9 @@ export default function App() {
         });
         const registerData = await registerResponse.json();
         if (registerData.success && registerData.user) {
-          await persistAccessToken(registerData as { access_token?: string });
-          setUser(registerData.user);
           await saveUser(registerData.user);
+          console.log('USER_SAVED', registerData.user);
+          await persistAccessToken(registerData as TokenPayload);
           await afterAuthAccessTokenPersisted(registerData.user.id);
           appAlert(
             'Kayıt Başarılı',
@@ -2538,9 +2582,9 @@ export default function App() {
           } catch {
             /* ignore */
           }
-          await persistAccessToken(data as { access_token?: string });
-          setUser(data.user as User);
           await saveUser(data.user as User);
+          console.log('USER_SAVED', data.user);
+          await persistAccessToken(data as TokenPayload);
           await afterAuthAccessTokenPersisted((data.user as User)?.id);
           // Admin kontrolü
           const cleanPhone = phone.replace(/\D/g, '');

@@ -7,6 +7,10 @@ import { notifyAuthTokenBecameAvailableForSocket } from './socketRegisterSchedul
  */
 export async function afterAuthAccessTokenPersisted(userId: string | null | undefined): Promise<void> {
   const token = await getPersistedAccessToken();
+  console.log('AUTH_TOKEN_PERSISTED_CHECK', {
+    userId,
+    token: !!token,
+  });
   if (!token || !userId) return;
   console.log('AUTH_TOKEN_PERSISTED', { hasToken: true, userId });
   notifyAuthTokenBecameAvailableForSocket();
