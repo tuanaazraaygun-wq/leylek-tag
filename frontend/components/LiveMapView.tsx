@@ -1442,6 +1442,37 @@ export default function LiveMapView({
   useEffect(() => {
     meetingRouteCoordinatesRef.current = meetingRouteCoordinates;
   }, [meetingRouteCoordinates]);
+
+  const driverMapDebugPayload = useMemo(
+    () => ({
+      tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+      navigationMode,
+      navigationStage,
+      hasUserLocation: isValidRouteEndpoint(userLocation),
+      hasOtherLocation: isValidRouteEndpoint(otherLocation),
+      meetingRouteCoordinatesLength: meetingRouteCoordinates.length,
+      otherLocationFromPickupFallback: !!otherLocationFromPickupFallback,
+      isDriver,
+    }),
+    [
+      tagId,
+      navigationMode,
+      navigationStage,
+      userLocation?.latitude,
+      userLocation?.longitude,
+      otherLocation?.latitude,
+      otherLocation?.longitude,
+      meetingRouteCoordinates.length,
+      otherLocationFromPickupFallback,
+      isDriver,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isDriver) return;
+    console.log('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
+  }, [isDriver, driverMapDebugPayload]);
+
   const [meetingDistance, setMeetingDistance] = useState<number | null>(null);
   const [meetingDuration, setMeetingDuration] = useState<number | null>(null);
   
@@ -1493,6 +1524,14 @@ export default function LiveMapView({
     navigationStageRef.current = navigationStage;
   }, [navigationStage]);
 
+  useEffect(() => {
+    console.log('NAVIGATION_MODE_CHANGED', {
+      navigationMode,
+      navigationStage,
+      isDriver,
+    });
+  }, [navigationMode, navigationStage, isDriver]);
+
   const pickupNavStepsRef = useRef<{
     steps: OsrmNavStepParsed[];
     cumStart: number[];
@@ -1517,6 +1556,10 @@ export default function LiveMapView({
     meetingHasOsrmPolylineRef.current = false;
     pickupNavStepsRef.current = null;
   }, [navigationMode, navigationStage, isDriver]);
+
+  /** tagId reset effect’inde kullan; navigationMode değişince callback ref’i değişmesin diye ref */
+  const clearMeetingRouteRef = useRef(clearMeetingRoute);
+  clearMeetingRouteRef.current = clearMeetingRoute;
 
   const setMeetingRouteCoordsLogged = useCallback((coords: MapLatLng[]) => {
     console.log('SET ROUTE COORDS', coords.length);
@@ -1555,6 +1598,13 @@ export default function LiveMapView({
   /** Gesture süresi bitince kamera efektini yeniden tetikler (GPS hareketsizken bile) */
   const [navFollowResumeTick, setNavFollowResumeTick] = useState(0);
   const scheduleNavMapGesturePause = useCallback(() => {
+    if (Platform.OS !== 'web' && isDriver) {
+      console.log('DRIVER_MAP_GESTURE_START', driverMapDebugPayload);
+      console.log('DRIVER_AUTO_FOLLOW_PAUSED', {
+        ...driverMapDebugPayload,
+        untilMs: Date.now() + NAV_MAP_GESTURE_MS,
+      });
+    }
     navUserMapGestureUntilRef.current = Date.now() + NAV_MAP_GESTURE_MS;
     navFollowResumeSoftUntilRef.current = 0;
     if (navGestureResumeTimerRef.current) {
@@ -1563,9 +1613,13 @@ export default function LiveMapView({
     navGestureResumeTimerRef.current = setTimeout(() => {
       navGestureResumeTimerRef.current = null;
       navFollowResumeSoftUntilRef.current = Date.now() + NAV_RESUME_SOFT_MS;
+      if (Platform.OS !== 'web' && isDriver) {
+        console.log('DRIVER_MAP_GESTURE_END', driverMapDebugPayload);
+        console.log('DRIVER_AUTO_FOLLOW_RESUMED', driverMapDebugPayload);
+      }
       setNavFollowResumeTick((x) => x + 1);
     }, NAV_MAP_GESTURE_MS);
-  }, []);
+  }, [isDriver, driverMapDebugPayload]);
   const navProgrammaticCameraRef = useRef(false);
   const navCameraAnimClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Son GPS örneği — <5 m adım için kamera atlama */
@@ -1613,7 +1667,6 @@ export default function LiveMapView({
       navUserMapGestureUntilRef.current = 0;
       navFollowResumeSoftUntilRef.current = 0;
       navCamHeadingSentRef.current = null;
-      clearMeetingRoute('driver_nav_closed');
       lastNavRefreshDedupeKeyRef.current = '';
       lastNavRefreshThrottleAtRef.current = 0;
       setNavigationStage('pickup');
@@ -1641,7 +1694,7 @@ export default function LiveMapView({
       navDriverMarkerSmoothedBearingRef.current = null;
       setDriverNavMarkerRotation(0);
     }
-  }, [navigationMode, isDriver, clearMeetingRoute]);
+  }, [navigationMode, isDriver]);
 
   /**
    * Buluşma sonrası: sürücü yolcuya yakın + varış noktası var → hedef (turuncu) aşaması.
@@ -1744,7 +1797,8 @@ export default function LiveMapView({
   }, [isDriver, otherLocationFromPickupFallback, tagId]);
 
   useEffect(() => {
-    clearMeetingRoute('tag_id_reset');
+    console.log('NAVIGATION_MODE_FORCED_FALSE', { reason: 'tag_id_reset', tagId: tagId ?? null });
+    clearMeetingRouteRef.current('tag_id_reset');
     lastOsrmKeyRef.current = '';
     lastOsrmAtRef.current = 0;
     mapFitRef.current = { initialDone: false, hadDestination: false };
@@ -1778,10 +1832,14 @@ export default function LiveMapView({
     setNavDriverMapCoord(null);
     navDriverMarkerSmoothedBearingRef.current = null;
     setDriverNavMarkerRotation(0);
-  }, [tagId, clearMeetingRoute]);
+  }, [tagId]);
 
   useEffect(() => {
     if (!isDriver) return;
+    console.log('NAVIGATION_MODE_PROP_NOTIFY', {
+      navigationMode,
+      hasCallback: typeof onNavigationModeChange === 'function',
+    });
     onNavigationModeChange?.(navigationMode);
   }, [isDriver, navigationMode, onNavigationModeChange]);
 
@@ -2383,42 +2441,57 @@ export default function LiveMapView({
 
   const handleYolcuyaGitPress = useCallback(() => {
     void tapButtonHaptic();
-    if (!isValidRouteEndpoint(userLocation) || !isValidRouteEndpoint(otherLocation)) {
+
+    console.log('YOLCUYA_GIT_PRESS_START', {
+      isDriver,
+      navigationMode,
+      navigationStage,
+      hasUserLocation: !!userLocation,
+      hasOtherLocation: !!otherLocation,
+      userLocation,
+      otherLocation,
+      otherLocationFromPickupFallback,
+    });
+
+    if (!isDriver) {
+      console.log('YOLCUYA_GIT_BLOCKED', { reason: 'not_driver', userLocation, otherLocation });
+      return;
+    }
+
+    const userOk = isValidRouteEndpoint(userLocation);
+    const otherOk = isValidRouteEndpoint(otherLocation);
+    if (!userOk || !otherOk) {
+      console.log('YOLCUYA_GIT_BLOCKED', {
+        reason: !userOk && !otherOk ? 'invalid_coords_both' : !userOk ? 'invalid_user_location' : 'invalid_other_location',
+        userLocation,
+        otherLocation,
+      });
       Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
       return;
     }
+
     if (!navigationMode) {
-      const handoffDistanceM = haversineMeters(userLocation, otherLocation);
-      const handoff =
-        !!destinationLocation && handoffDistanceM < NAV_HANDOFF_TO_DESTINATION_M;
-      if (__DEV__) {
-        console.log('YOLCUYA_GIT_PRESS', {
-          isDriver,
-          navigationMode,
-          currentStage: navigationStage,
-          hasUserLocation: !!userLocation,
-          hasOtherLocation: !!otherLocation,
-          hasDestinationLocation: !!destinationLocation,
-          handoff,
-          handoffDistanceM,
-          otherLocationFromPickupFallback,
-        });
-      }
+      navigationStageRef.current = 'pickup';
+      navigationModeRef.current = true;
       setNavigationStage('pickup');
       navDriverStableRef.current = null;
       setNavDriverMapCoord(null);
       navDriverMarkerSmoothedBearingRef.current = null;
       setNavigationMode(true);
+      console.log('YOLCUYA_GIT_SET_NAV', {
+        nextNavigationMode: true,
+        nextNavigationStage: 'pickup',
+      });
       navCamHeadingSentRef.current = null;
       navFollowResumeSoftUntilRef.current = Date.now() + NAV_RESUME_SOFT_MS;
       if (userId && tagId) {
         const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
         void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
       }
-      setTimeout(() => {
-        const refetch = runMeetingRouteOsrmFetchRef.current;
-        if (typeof refetch === 'function') void refetch();
-      }, 0);
+      queueMicrotask(() => {
+        console.log('YOLCUYA_GIT_TRIGGER_REFETCH');
+        runMeetingRouteOsrmFetchRef.current?.();
+      });
     } else {
       lastNavCameraAtRef.current = 0;
       navUserMapGestureUntilRef.current = 0;
@@ -2437,7 +2510,6 @@ export default function LiveMapView({
   }, [
     userLocation,
     otherLocation,
-    destinationLocation,
     navigationMode,
     navigationStage,
     otherLocationFromPickupFallback,
@@ -2990,6 +3062,8 @@ export default function LiveMapView({
         isDriver,
         navigationMode,
         navigationStage,
+        navModeRef: navigationModeRef.current,
+        navStageRef: navigationStageRef.current,
         hasUserLocation: isValidRouteEndpoint(userLocation),
         hasOtherLocation: isValidRouteEndpoint(otherLocation),
       });
@@ -2999,28 +3073,24 @@ export default function LiveMapView({
     const fetchRoute = async () => {
       const ul = userLocation;
       const ol = otherLocation;
+      const navOn = navigationModeRef.current;
+      const navStage = navigationStageRef.current;
 
       const valid = isValidRouteEndpoint(ul) && isValidRouteEndpoint(ol);
       if (!valid) {
         console.log('Route skipped - invalid coords', { userLocation, otherLocation });
-        clearMeetingRoute('invalid_coords');
+        clearMeetingRouteRef.current('invalid_coords');
         return;
       }
 
-      if (isDriver && !navigationMode) {
-        console.log('Route skipped - driver nav off');
-        clearMeetingRoute('driver_nav_off');
-        return;
-      }
-
-      if (isDriver && navigationMode && navigationStage === 'destination') {
+      if (isDriver && navOn && navStage === 'destination') {
         return;
       }
 
       console.log('TRIGGER ROUTE FETCH', {
         isDriver,
-        navigationMode,
-        navigationStage,
+        navigationMode: navOn,
+        navigationStage: navStage,
         userLocation,
         otherLocation,
       });
@@ -3041,7 +3111,17 @@ export default function LiveMapView({
       };
 
       try {
-        if (isDriver && navigationMode) {
+        if (isDriver) {
+          console.log('DRIVER_ROUTE_PREFETCH_START', {
+            tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+            navigationMode: navOn,
+            navigationStage: navStage,
+            hasUserLocation: true,
+            hasOtherLocation: true,
+            meetingRouteCoordinatesLength: meetingRouteCoordinatesRef.current.length,
+            otherLocationFromPickupFallback: !!otherLocationFromPickupFallback,
+            isDriver,
+          });
           const rw = await fetchOsrmDrivingRouteWithSteps(
             start.latitude,
             start.longitude,
@@ -3050,6 +3130,17 @@ export default function LiveMapView({
           );
           if (cancelled) return;
           if (rw && rw.coordinates.length >= 2) {
+            console.log('DRIVER_ROUTE_PREFETCH_SUCCESS', {
+              tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+              navigationMode: navigationModeRef.current,
+              navigationStage: navigationStageRef.current,
+              hasUserLocation: true,
+              hasOtherLocation: true,
+              points: rw.coordinates.length,
+              meetingRouteCoordinatesLength: meetingRouteCoordinatesRef.current.length,
+              otherLocationFromPickupFallback: !!otherLocationFromPickupFallback,
+              isDriver,
+            });
             meetingHasOsrmPolylineRef.current = true;
             pickupNavStepsRef.current = {
               steps: rw.steps,
@@ -3069,7 +3160,20 @@ export default function LiveMapView({
               end.longitude,
             );
             console.log('PICKUP ETA', km, min);
+            if (!navigationModeRef.current) {
+              fitNavigationViewportRef.current?.(rw.coordinates);
+            }
           } else {
+            console.log('DRIVER_ROUTE_PREFETCH_EMPTY', {
+              tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+              navigationMode: navigationModeRef.current,
+              navigationStage: navigationStageRef.current,
+              hasUserLocation: true,
+              hasOtherLocation: true,
+              meetingRouteCoordinatesLength: meetingRouteCoordinatesRef.current.length,
+              otherLocationFromPickupFallback: !!otherLocationFromPickupFallback,
+              isDriver,
+            });
             console.warn('Route empty');
             applyStraightFallback();
           }
@@ -3117,6 +3221,19 @@ export default function LiveMapView({
           }
         }
       } catch (err) {
+        if (isDriver) {
+          console.log('DRIVER_ROUTE_PREFETCH_ERROR', {
+            tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+            navigationMode: navigationModeRef.current,
+            navigationStage: navigationStageRef.current,
+            hasUserLocation: true,
+            hasOtherLocation: true,
+            meetingRouteCoordinatesLength: meetingRouteCoordinatesRef.current.length,
+            otherLocationFromPickupFallback: !!otherLocationFromPickupFallback,
+            isDriver,
+            message: String(err),
+          });
+        }
         console.warn('Route error:', err);
         if (!cancelled) applyStraightFallback();
       }
@@ -3138,7 +3255,8 @@ export default function LiveMapView({
     userLocation?.longitude,
     otherLocation?.latitude,
     otherLocation?.longitude,
-    clearMeetingRoute,
+    otherLocationFromPickupFallback,
+    tagId,
     setMeetingRouteCoordsLogged,
   ]);
 
@@ -3363,18 +3481,18 @@ export default function LiveMapView({
           showsCompass={false}
           scrollEnabled
           zoomEnabled
-          rotateEnabled={!driverNavActive}
-          pitchEnabled={!driverNavActive}
+          rotateEnabled
+          pitchEnabled
           onPanDrag={() => {
-            if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
+            if (Platform.OS === 'web' || !isDriver) return;
             scheduleNavMapGesturePause();
           }}
           onPress={() => {
-            if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
+            if (Platform.OS === 'web' || !isDriver) return;
             scheduleNavMapGesturePause();
           }}
           onRegionChangeComplete={(_region: any, details?: { isGesture?: boolean }) => {
-            if (Platform.OS === 'web' || !isDriver || !navigationModeRef.current) return;
+            if (Platform.OS === 'web' || !isDriver) return;
             if (navProgrammaticCameraRef.current) return;
             if (details && details.isGesture === false) return;
             scheduleNavMapGesturePause();
@@ -3445,6 +3563,19 @@ export default function LiveMapView({
                 strokeWidth={8}
                 lineJoin="round"
                 lineCap="round"
+              />
+            )}
+          {isDriver &&
+            !navigationMode &&
+            Array.isArray(meetingRouteCoordinates) &&
+            meetingRouteCoordinates.length > 1 && (
+              <Polyline
+                coordinates={meetingRouteCoordinates}
+                strokeWidth={10}
+                strokeColor={pickupNavStroke.bright}
+                lineCap="round"
+                lineJoin="round"
+                zIndex={10}
               />
             )}
           
@@ -3947,6 +4078,7 @@ export default function LiveMapView({
             style={styles.driverNavCloseFab}
             onPress={() => {
               void tapButtonHaptic();
+              console.log('NAVIGATION_MODE_FORCED_FALSE', { reason: 'driver_nav_close_fab' });
               setNavigationMode(false);
             }}
             activeOpacity={0.85}
