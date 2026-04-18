@@ -1293,56 +1293,43 @@ async def emit_new_passenger_offer_to_driver(driver_id, offer_data: dict) -> boo
                 f"driver={raw[:13]}… room={room} tag={offer_data.get('tag_id')}"
             )
 
-        # Push'i socket emit'ten sonra, paralel olarak gönder.
-        # Dispatch/vehicle filtrelerine dokunmuyoruz; offer alan sürücüye push ekliyoruz.
+        # FCM: yalnız send_trip_push_and_log → send_push_notification (Expo token kullanılmaz).
         offer_tag_id = offer_data.get("tag_id")
         resolved_driver_id = raw
 
-        async def _push_driver_offer():
+        async def _push_driver_offer_fcm():
             try:
-                if not supabase:
-                    return
-                # Supabase client sync çalışabildiği için event-loop'u bloke etmemek adına thread'e al.
-                def _fetch_user_push_token():
-                    return (
-                        supabase.table("users")
-                        .select("push_token")
-                        .eq("id", resolved_driver_id)
-                        .limit(1)
-                        .execute()
-                    )
-
-                ures = await asyncio.to_thread(_fetch_user_push_token)
-                token = (ures.data or [None])[0].get("push_token") if ures.data else None
-                if not token:
-                    logger.warning(
-                        f"Push failed: no push_token driver={resolved_driver_id[:13]} tag={offer_tag_id}"
-                    )
-                    return
-
-                ok = await send_expo_push(
-                    token=token,
-                    title="Yeni teklif geldi",
-                    body=_push_body_offer_from_context(offer_data),
-                    data=_new_offer_push_data_from_offer(offer_data),
+                ok = await send_trip_push_and_log(
+                    resolved_driver_id,
+                    "new_ride_request",
+                    "Yeni teklif geldi",
+                    _push_body_offer_from_context(offer_data),
+                    _new_offer_push_data_from_offer(offer_data),
                 )
                 if ok:
                     logger.info(
-                        f"Push sent to driver={resolved_driver_id[:13]} tag={offer_tag_id}"
+                        "Push FCM driver=%s tag=%s",
+                        resolved_driver_id[:13] + ("…" if len(resolved_driver_id) > 13 else ""),
+                        offer_tag_id,
                     )
                 else:
                     logger.warning(
-                        f"Push failed driver={resolved_driver_id[:13]} tag={offer_tag_id}"
+                        "Push FCM failed driver=%s tag=%s",
+                        resolved_driver_id[:13] + ("…" if len(resolved_driver_id) > 13 else ""),
+                        offer_tag_id,
                     )
             except Exception as e:
                 logger.warning(
-                    f"Push failed driver={resolved_driver_id[:13]} tag={offer_tag_id}: {e}"
+                    "Push FCM exception driver=%s tag=%s: %s",
+                    resolved_driver_id[:13] + ("…" if len(resolved_driver_id) > 13 else ""),
+                    offer_tag_id,
+                    e,
                 )
 
         try:
-            asyncio.create_task(_push_driver_offer())
+            asyncio.create_task(_push_driver_offer_fcm())
         except Exception as e:
-            logger.warning(f"Push create_task failed: {e}")
+            logger.warning("Push create_task failed: %s", e)
         return True
     except Exception as e:
         logger.error(f"new_passenger_offer emit hatası: {e}")
@@ -2052,70 +2039,6 @@ async def apply_force_end_trip_and_notify(
     }
 
 
-async def _expo_push_dispatch_new_offer(
-    driver_id: str,
-    tag_id: str,
-    title: str,
-    body: str,
-    *,
-    notifications_log_type: str = "new_offer",
-) -> dict:
-    """
-    Dispatch (sıralı kuyruk) ve rolling batch: sürücüye Expo push.
-    data.type=new_offer → Android channelId=offers (ExpoPushService).
-    """
-    uid = str(driver_id).strip() if driver_id else ""
-    if not uid:
-        logger.warning("⚠️ dispatch offer push: boş driver_id")
-        return {"sent": 0, "failed": 1}
-    try:
-        resolved = await resolve_user_id(uid)
-        if resolved:
-            uid = str(resolved).strip()
-    except Exception:
-        pass
-    try:
-        supabase.table("notifications_log").insert({
-            "type": notifications_log_type,
-            "user_id": uid,
-            "title": title,
-            "body": body,
-            "created_at": datetime.utcnow().isoformat(),
-        }).execute()
-    except Exception:
-        pass
-
-    push_data = {"type": "new_offer", "tag_id": str(tag_id)}
-    try:
-        ur = supabase.table("users").select("push_token").eq("id", uid).limit(1).execute()
-        if not ur.data and "-" in uid:
-            ur = supabase.table("users").select("push_token").eq("id", uid.lower()).limit(1).execute()
-        token = (ur.data[0].get("push_token") if ur.data else None) or ""
-        if not token:
-            logger.warning(f"⚠️ Dispatch offer push: push_token yok user={uid[:8]}...")
-            return {"sent": 0, "failed": 1}
-        if not ExpoPushService.is_valid_token(token):
-            logger.warning(f"⚠️ Dispatch offer push: geçersiz token user={uid[:8]}...")
-            return {"sent": 0, "failed": 1}
-    except Exception as e:
-        logger.warning(f"⚠️ Dispatch offer push_token okunamadı: {e}")
-        return {"sent": 0, "failed": 1}
-
-    try:
-        result = await ExpoPushService.send(
-            [token],
-            title,
-            body,
-            push_data,
-        )
-        if result.get("sent", 0) < 1:
-            logger.warning(f"⚠️ Expo dispatch new_offer başarısız: user={uid[:8]}... result={result}")
-        return result
-    except Exception as e:
-        logger.warning(f"⚠️ Dispatch offer Expo push hatası: {e}")
-        return {"sent": 0, "failed": 1}
-
-
 async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
     """
     Sıradaki sürücüye teklif gönder
@@ -2175,12 +2098,6 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
             "passenger_payment_method": merged.get("passenger_payment_method"),
         }
 
-        price = merged.get("final_price") or merged.get("offered_price", 0)
-        distance_km = merged.get("distance_km") or merged.get("trip_distance_km") or 0
-        price_int = int(price) if price else 0
-        distance_str = f"{round(float(distance_km), 0):.0f} km" if distance_km else "— km"
-        body = f"{price_int} TL • {distance_str} - {timeout} sn içinde kabul et"
-
         sent_ok = await emit_new_passenger_offer_to_driver(driver_id, offer_data)
         if not sent_ok:
             logger.info(
@@ -2210,17 +2127,8 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
             pass
 
         logger.info(f"📤 Dispatch teklif gönderildi: tag={tag_id}, sürücü={driver_name} (priority={next_entry['priority']})")
-        logger.info(f"🚀 DISPATCH PUSH driver={driver_id} tag={tag_id}")
-        try:
-            await _expo_push_dispatch_new_offer(
-                driver_id,
-                tag_id,
-                "Yeni Teklif",
-                body,
-            )
-        except Exception as push_err:
-            logger.warning(f"⚠️ Dispatch push gönderilemedi: {driver_id} - {push_err}")
-        
+        # Push: emit_new_passenger_offer_to_driver içinde FCM (send_trip_push_and_log).
+
         # Timeout task başlat
         expired_driver_id = driver_id
 
@@ -2359,11 +2267,6 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
         price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
         trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
         trip_dur = tag_data.get("estimated_minutes") or tag_data.get("trip_duration_min") or 0
-        price_int = int(price) if price else 0
-        distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
-        body = f"{price_int} TL • {distance_str} • {timeout_sec} sn • Kabul için dokun" if price_int else f"{distance_str} • {timeout_sec} sn • Hemen incele"
-        if len(body) > 72:
-            body = body[:69] + "…"
 
         n_sent = 0
         for driver_id, r_pick_km, r_eta in top:
@@ -2399,16 +2302,7 @@ async def broadcast_offer_to_all(tag_id: str, tag_data: dict) -> int:
             if not ok:
                 continue
             n_sent += 1
-            try:
-                await send_trip_push_and_log(
-                    did,
-                    "new_ride_request",
-                    "Yeni teklif geldi",
-                    body,
-                    {"type": "new_offer", "tag_id": tag_id, "price": price, "distance_km": trip_distance_km, "timeout": timeout_sec, "action": "accept", "is_broadcast": True}
-                )
-            except Exception as push_err:
-                logger.warning(f"⚠️ Broadcast push sürücüye gönderilemedi: {did} - {push_err}")
+            # Push: emit_new_passenger_offer_to_driver içinde FCM (send_trip_push_and_log).
         
         logger.info(
             f"📢 Broadcast: tag={tag_id}, gönderilen={n_sent}/{BROADCAST_MAX_RECIPIENTS} sürücü "
@@ -2598,14 +2492,6 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             pass
     pref = pref or "car"
 
-    price = tag_data.get("final_price") or tag_data.get("offered_price", 0)
-    trip_distance_km = tag_data.get("distance_km") or tag_data.get("trip_distance_km") or 0
-    price_int = int(price) if price else 0
-    distance_str = f"{round(float(trip_distance_km), 0):.0f} km" if trip_distance_km else "— km"
-    body = f"{price_int} TL • {distance_str} • {DISPATCH_TIMEOUT} sn • Kabul için dokun" if price_int else f"{distance_str} • {DISPATCH_TIMEOUT} sn • Hemen incele"
-    if len(body) > 72:
-        body = body[:69] + "…"
-
     offer_base = {
         "tag_id": tag_id,
         "passenger_id": tag_data.get("passenger_id"),
@@ -2654,16 +2540,7 @@ async def rolling_dispatch_batch(tag_id: str) -> None:
             tag_id,
             d_id,
         )
-        logger.info(f"🚀 DISPATCH PUSH driver={d_id} tag={tag_id}")
-        try:
-            await _expo_push_dispatch_new_offer(
-                d_id,
-                tag_id,
-                "Yeni teklif geldi",
-                body,
-            )
-        except Exception as push_err:
-            logger.warning(f"⚠️ Rolling batch push: {d_id} - {push_err}")
+        # Push: emit_new_passenger_offer_to_driver içinde FCM (send_trip_push_and_log).
         if await _dispatch_queue_insert_after_emit(tag_id, d_id, idx):
             n_queue_ok += 1
 
@@ -8443,14 +8320,14 @@ def _push_first_name(name: Optional[str], max_len: int = 10) -> str:
 
 
 def _push_body_offer_from_context(offer_data: dict) -> str:
-    """Sürücü yolculuk teklifi — fiyat, mesafe, süre (varsa)."""
-    bits: List[str] = []
+    """Sürücü yolculuk teklifi — TL, yol km, kabul penceresi (Android önizleme ~72)."""
+    parts: List[str] = []
     try:
         raw = offer_data.get("offered_price") or offer_data.get("final_price")
         if raw is not None:
             p = int(float(raw))
             if p > 0:
-                bits.append(f"{p} TL")
+                parts.append(f"{p} TL")
     except (TypeError, ValueError):
         pass
     try:
@@ -8458,32 +8335,30 @@ def _push_body_offer_from_context(offer_data: dict) -> str:
         if dkm is None:
             dkm = offer_data.get("trip_distance_km")
         if dkm is not None and float(dkm) > 0:
-            bits.append(f"{float(dkm):.0f} km")
+            parts.append(f"{float(dkm):.0f} km")
     except (TypeError, ValueError):
         pass
+    to_sn = None
     try:
-        pk = offer_data.get("pickup_eta_min")
-        if pk is None:
-            pk = offer_data.get("time_to_passenger_min")
-        if pk is not None and int(pk) > 0:
-            bits.append(f"~{int(pk)} dk")
+        raw_to = offer_data.get("dispatch_timeout")
+        if raw_to is not None and int(raw_to) > 0:
+            to_sn = int(raw_to)
     except (TypeError, ValueError):
         pass
-    try:
-        to = offer_data.get("dispatch_timeout")
-        if to is not None and int(to) > 0:
-            bits.append(f"{int(to)} sn")
-    except (TypeError, ValueError):
-        pass
-    if bits:
-        s = " • ".join(bits) + " • Kabul için dokun"
+
+    if parts and to_sn is not None:
+        s = " • ".join(parts) + f" • {to_sn} sn içinde kabul et"
+    elif parts:
+        s = " • ".join(parts) + " • Detayları görmek için dokun"
+    elif to_sn is not None:
+        s = f"{to_sn} sn içinde kabul et"
     else:
-        s = "Hemen incele, kabul için dokun"
+        s = "Detayları görmek için dokun"
     return s if len(s) <= 72 else s[:69] + "…"
 
 
 def _new_offer_push_data_from_offer(offer_data: dict) -> dict:
-    """send_expo_push / FCM data: type + tag_id (+ kısa sayısal bağlam)."""
+    """FCM data: type=new_offer + tag_id + yönlendirme alanları (socket sözleşmesine dokunulmaz)."""
     d: dict = {"type": "new_offer"}
     tid = offer_data.get("tag_id")
     if tid is not None:
@@ -8508,6 +8383,13 @@ def _new_offer_push_data_from_offer(offer_data: dict) -> dict:
             d["timeout"] = int(to)
         except (TypeError, ValueError):
             pass
+    if offer_data.get("is_broadcast"):
+        d["is_broadcast"] = True
+        d["action"] = "accept"
+    if offer_data.get("is_dispatch"):
+        d["is_dispatch"] = True
+    if offer_data.get("is_rolling_batch"):
+        d["is_rolling_batch"] = True
     return d
 
 
