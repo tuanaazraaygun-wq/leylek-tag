@@ -1,5 +1,5 @@
 """
-Android FCM (Firebase Cloud Messaging) via firebase-admin — faz-1 Expo ile paralel.
+Firebase Cloud Messaging (FCM) via firebase-admin — birincil push taşıması (Android).
 FCM HTTP v1'e Admin SDK üzerinden gider; service account ile OAuth yönetilir.
 """
 from __future__ import annotations

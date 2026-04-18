@@ -21,7 +21,6 @@ import {
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 import { API_BASE_URL, BACKEND_BASE_URL, isPushRegisterDebugOverlayEnabled } from '../lib/backendConfig';
 import { registerFcmTokenWithBackend } from '../lib/androidFcmPush';
 
@@ -58,7 +57,7 @@ export type PushRegisterDebugSnapshot = {
 
 export interface PushNotificationHook {
   pushToken: string | null;
-  tokenType: 'expo' | null;
+  tokenType: 'fcm' | null;
   notification: Notifications.Notification | null;
   registerForPushNotifications: () => void;
   registerPushToken: (
@@ -165,7 +164,7 @@ type MergeDbg = (patch: Partial<PushRegisterDebugSnapshot>) => void;
 /** Promise dönmez; await yok; hatalar swallow; onToken(null | string) */
 function runRegisterForPushNotificationsChain(
   setPushToken: (t: string | null) => void,
-  setTokenType: (t: 'expo' | null) => void,
+  setTokenType: (t: 'fcm' | null) => void,
   onToken: (token: string | null) => void,
   mergeDebug?: MergeDbg
 ): void {
@@ -178,9 +177,6 @@ function runRegisterForPushNotificationsChain(
     return;
   }
 
-  const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
-
   const androidApiLevel =
     Platform.OS === 'android'
       ? typeof Platform.Version === 'number'
@@ -188,7 +184,6 @@ function runRegisterForPushNotificationsChain(
         : parseInt(String(Platform.Version), 10)
       : NaN;
   console.log('[PUSH_DEBUG] chain context', {
-    projectId: projectId ?? null,
     platform: Platform.OS,
     androidApiLevel: Platform.OS === 'android' ? (Number.isNaN(androidApiLevel) ? String(Platform.Version) : androidApiLevel) : null,
   });
@@ -258,30 +253,32 @@ function runRegisterForPushNotificationsChain(
       }
     })
     .then(() => {
-      if (!projectId) {
-        console.warn('[PUSH] EAS projectId yok — app.json extra.eas.projectId gerekli');
-        return Promise.reject(new Error('missing projectId'));
+      if (Platform.OS !== 'android') {
+        console.log('[PUSH_DEBUG] native FCM registration path is Android-only in this build');
+        mergeDebug?.({ tokenAcquired: false, chainFailReason: 'fcm_registration_android_only' });
+        onToken(null);
+        return;
       }
-      console.log('[PUSH_DEBUG] getExpoPushTokenAsync calling');
-      return Notifications.getExpoPushTokenAsync({ projectId });
-    })
-    .then((expoToken) => {
-      const token = expoToken?.data;
-      if (token) {
-        setPushToken(token);
-        setTokenType('expo');
-        mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
-        console.log('[PUSH_DEBUG] getExpoPushTokenAsync ok', { tokenPrefix: pushDbgTokenPrefix(token) });
-        console.log('PUSH_TOKEN_ACQUIRED', { tokenPrefix: `${token.slice(0, 36)}…` });
-        console.log('[PUSH] Expo device token acquired', {
-          tokenPrefix: `${token.slice(0, 36)}…`,
+      console.log('FCM_TOKEN_FETCH_START');
+      return Notifications.getDevicePushTokenAsync()
+        .then((deviceRes) => {
+          const token = deviceRes?.data;
+          if (typeof token === 'string' && token.length > 0) {
+            console.log('FCM_TOKEN_FETCH_SUCCESS');
+            setPushToken(token);
+            setTokenType('fcm');
+            mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
+            console.log('[PUSH_DEBUG] getDevicePushTokenAsync ok', { tokenPrefix: pushDbgTokenPrefix(token) });
+            onToken(token);
+          } else {
+            console.log('FCM_TOKEN_FETCH_ERROR', { reason: 'empty_device_token' });
+            chainFail('empty_fcm_token_data');
+          }
+        })
+        .catch((e) => {
+          console.log('FCM_TOKEN_FETCH_ERROR', { message: String(e) });
+          chainFail(e instanceof Error ? e.message : String(e));
         });
-        onToken(token);
-      } else {
-        console.log('[PUSH_DEBUG] getExpoPushTokenAsync empty data');
-        console.warn('[PUSH] Expo push token alınamadı (getExpoPushTokenAsync boş data)');
-        chainFail('empty_expo_token_data');
-      }
     })
     .catch((e) => {
       console.warn('[PUSH] Token zinciri başarısız:', e);
@@ -311,7 +308,7 @@ const initialPushRegisterDebug = (): PushRegisterDebugSnapshot => ({
 
 function usePushNotificationsState(): PushNotificationHook {
   const [pushToken, setPushToken] = useState<string | null>(null);
-  const [tokenType, setTokenType] = useState<'expo' | null>(null);
+  const [tokenType, setTokenType] = useState<'fcm' | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
   const [pushRegisterDebug, setPushRegisterDebug] = useState<PushRegisterDebugSnapshot>(initialPushRegisterDebug);
 
@@ -372,7 +369,7 @@ function usePushNotificationsState(): PushNotificationHook {
           tokenPrefix: pushDbgTokenPrefix(token),
         });
         if (!token) {
-          console.log('[PUSH_DEBUG] skip fetch: no token (chain logs above)');
+          console.log('[PUSH_DEBUG] skip register: no native token (chain logs above)');
           mergePushRegisterDebug({
             tokenAcquired: false,
             fetchStarted: false,
@@ -381,93 +378,50 @@ function usePushNotificationsState(): PushNotificationHook {
             fetchFailReason: 'no_device_token',
           });
           console.warn('PUSH_TOKEN_SAVE_FAIL', { userId, reason: 'no_device_token' });
-          console.warn('[PUSH] Token yok — backend’e gönderilmedi (userId=', userId, ')');
+          console.warn('[PUSH] FCM token yok — backend’e gönderilmedi (userId=', userId, ')');
           onComplete?.(false);
           return;
         }
-        const endpoint = `${API_URL}/user/save-push-token`;
-        mergePushRegisterDebug({ tokenAcquired: true, fetchStarted: true, fetchDone: false, fetchSuccess: null, fetchFailReason: null });
-        console.log('[PUSH_DEBUG] fetch start', {
-          endpoint,
+        if (Platform.OS !== 'android') {
+          mergePushRegisterDebug({
+            fetchStarted: false,
+            fetchDone: true,
+            fetchSuccess: false,
+            fetchFailReason: 'fcm_registration_android_only',
+          });
+          onComplete?.(false);
+          return;
+        }
+        mergePushRegisterDebug({
+          tokenAcquired: true,
+          fetchStarted: true,
+          fetchDone: false,
+          fetchSuccess: null,
+          fetchFailReason: null,
+        });
+        console.log('[PUSH_DEBUG] fcm register start', {
+          endpoint: `${API_URL}/user/save-push-token`,
           user_id: userId,
           tokenPrefix: pushDbgTokenPrefix(token),
         });
-        console.log('PUSH_TOKEN_REGISTER_START', { transport: 'expo' });
-        fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId,
-            push_token: token,
-            platform: Platform.OS,
-            token_type: 'expo',
-          }),
-        })
-          .then(async (response) => {
-            const raw = await response.text().catch(() => '');
-            let data: { success?: boolean; detail?: string; message?: string } = {};
-            try {
-              data = (raw ? JSON.parse(raw) : {}) as { success?: boolean; detail?: string; message?: string };
-            } catch {
-              data = {};
-            }
-            const success = !!(response.ok && data.success);
-            console.log('[PUSH_DEBUG] fetch done', {
-              httpStatus: response.status,
-              success,
-              bodyPreview: raw.slice(0, 400),
-            });
-            if (!response.ok || !data.success) {
-              const reason = data.detail || data.message || String(response.status);
-              mergePushRegisterDebug({
-                fetchDone: true,
-                fetchSuccess: false,
-                fetchFailReason: reason,
-              });
-              console.warn('PUSH_TOKEN_SAVE_FAIL', {
-                userId,
-                reason,
-                data,
-              });
-              console.warn('[PUSH] save-push-token başarısız:', reason, data);
-              onComplete?.(false);
-              return;
-            }
+        void registerFcmTokenWithBackend(userId, token)
+          .then((success) => {
+            console.log('[PUSH_DEBUG] fcm register done', { success });
             mergePushRegisterDebug({
               fetchDone: true,
-              fetchSuccess: true,
-              fetchFailReason: null,
+              fetchSuccess: success,
+              fetchFailReason: success ? null : 'fcm_register_failed',
             });
-            console.log('PUSH_TOKEN_SAVE_OK', {
-              userId,
-              tokenPrefix: `${token.slice(0, 36)}…`,
-            });
-            console.log('[PUSH] save-push-token OK', {
-              userId: userId,
-              tokenPrefix: `${token.slice(0, 36)}…`,
-            });
-            console.log('PUSH_TOKEN_REGISTER_SUCCESS', { transport: 'expo' });
-            console.log('PUSH_TRANSPORT_SELECTED', { registered: 'expo_parallel' });
-            if (Platform.OS === 'android') {
-              void registerFcmTokenWithBackend(userId).catch((e) => {
-                console.log('PUSH_TOKEN_REGISTER_ERROR', {
-                  transport: 'fcm',
-                  phase: 'post_expo_nonfatal',
-                  message: String(e),
-                });
-              });
-            }
-            onComplete?.(true);
+            onComplete?.(success);
           })
           .catch((err) => {
-            console.log('[PUSH_DEBUG] fetch network error', { message: String(err) });
+            console.log('[PUSH_DEBUG] fcm register error', { message: String(err) });
             mergePushRegisterDebug({
               fetchDone: true,
               fetchSuccess: false,
               fetchFailReason: `network:${String(err)}`,
             });
-            console.warn('PUSH_TOKEN_SAVE_FAIL', { userId, reason: 'network', err });
-            console.warn('[PUSH] save-push-token ağ hatası:', err);
+            console.log('PUSH_TOKEN_REGISTER_ERROR', { transport: 'fcm', message: String(err) });
             onComplete?.(false);
           });
       });

@@ -8436,37 +8436,51 @@ class ExpoPushService:
             logger.error(f"Push error: {e}")
             return {"sent": 0, "failed": len(valid_tokens)}
 
+
+def _effective_register_transport(declared: Optional[str], raw_token: str) -> str:
+    """
+    Kayıt: expo vs fcm. token_type eksik/yanlışsa token şekline göre düzelt (FCM'nin expo alanına yazılmasını önle).
+    Öncelik: geçerli Expo formatı → expo; aksi FCM benzeri (':' + uzun veya is_probable_fcm) → fcm; token_type=fcm → fcm.
+    """
+    t = (raw_token or "").strip()
+    if not t:
+        return "expo"
+    if ExpoPushService.is_valid_token(t):
+        return "expo"
+    decl = (declared or "").strip().lower()
+    if decl == "fcm":
+        return "fcm"
+    if ":" in t and len(t) >= 80:
+        return "fcm"
+    if is_probable_fcm_registration_token(t):
+        return "fcm"
+    return "expo"
+
+
 class PushTokenRequest(BaseModel):
     user_id: str
     push_token: str
     platform: Optional[str] = "android"
-    token_type: Optional[str] = Field(default="expo", description="expo | fcm (faz-1 paralel)")
+    token_type: Optional[str] = Field(default=None, description="expo | fcm; null/omit = auto from token string")
 
 @api_router.post("/user/register-push-token")
 async def register_push_token_endpoint(
-    request: PushTokenRequest = None,
-    user_id: str = None,
-    push_token: str = None
+    request: Optional[PushTokenRequest] = Body(None),
+    user_id: Optional[str] = Query(None),
+    push_token: Optional[str] = Query(None),
+    platform: Optional[str] = Query(None),
+    token_type: Optional[str] = Query(None),
 ):
-    """Push token kaydet - JSON body veya query params kabul eder (expo veya fcm)."""
+    """Push token kaydet — JSON body veya query (user_id, push_token, platform, token_type)."""
     try:
-        # JSON body veya query params'tan al
-        _user_id = request.user_id if request else user_id
-        _push_token = request.push_token if request else push_token
-        _platform = request.platform if request else "android"
-        _tok_type = str(request.token_type or "expo").strip().lower() if request else "expo"
+        _user_id = (request.user_id if request else None) or user_id
+        _push_token = (request.push_token if request else None) or push_token
+        _platform = (request.platform if request else None) or platform or "android"
+        _declared = (request.token_type if request else None) or token_type
+        _tok_type = _effective_register_transport(_declared, _push_token or "")
         if _tok_type not in ("expo", "fcm"):
             _tok_type = "expo"
 
-        logger.info(
-            "PUSH_REGISTER_RECEIVED transport=%s user_id=%s platform=%s token_prefix=%s",
-            _tok_type,
-            _user_id,
-            _platform,
-            (_push_token[:36] + "…") if _push_token and len(_push_token) > 36 else (_push_token or "NONE"),
-        )
-        logger.info(f"📱 Push token kayıt isteği: user_id={_user_id}, platform={_platform}, kind={_tok_type}, token={_push_token[:40] if _push_token else 'NONE'}...")
-        
         # Validasyonlar
         if not _user_id:
             return {"success": False, "detail": "user_id gerekli"}
@@ -8534,7 +8548,7 @@ async def register_push_token_endpoint(
             user_name = user_row.get("name", "Unknown")
 
         if not resolved_user_id:
-            logger.warning(f"❌ Kullanıcı bulunamadı (push token register): {_user_id}")
+            logger.warning("PUSH_REGISTER failed reason=user_not_found user_id=%s", _user_id)
             return {"success": False, "detail": "Kullanıcı bulunamadı"}
 
         if _tok_type == "fcm":
@@ -8546,17 +8560,19 @@ async def register_push_token_endpoint(
                     }
                 ).eq("id", resolved_user_id).execute()
                 logger.info(
-                    "PUSH_REGISTER_STORED transport=fcm user=%s (%s)",
-                    resolved_user_id[:12],
-                    user_name,
+                    "PUSH_REGISTER transport=fcm user_id=%s",
+                    resolved_user_id,
                 )
             except Exception as col_err:
-                logger.warning("PUSH_REGISTER_STORED transport=fcm FAILED err=%s", col_err)
+                logger.warning(
+                    "PUSH_REGISTER failed transport=fcm user_id=%s err=%s",
+                    resolved_user_id,
+                    col_err,
+                )
                 return {
                     "success": False,
                     "detail": "fcm_push_token yazılamadı — Supabase migration (fcm_push_token kolonları) uygulayın",
                 }
-            logger.info(f"✅ FCM token kaydedildi: {user_name} ({resolved_user_id}) - {_platform}")
             return {
                 "success": True,
                 "message": f"FCM token kaydedildi: {user_name}",
@@ -8586,14 +8602,12 @@ async def register_push_token_endpoint(
                 supabase.table("users").update({
                     "push_token": _push_token,
                     "push_token_updated_at": datetime.utcnow().isoformat()
-                }).eq("id", resolved_user_id).execute()
+                }                ).eq("id", resolved_user_id).execute()
 
         logger.info(
-            "PUSH_REGISTER_STORED transport=expo user=%s (%s)",
-            resolved_user_id[:12],
-            user_name,
+            "PUSH_REGISTER transport=expo user_id=%s",
+            resolved_user_id,
         )
-        logger.info(f"✅ Push token kaydedildi: {user_name} ({resolved_user_id}) - {_platform} - expo")
         return {
             "success": True,
             "message": f"Token kaydedildi: {user_name}",
@@ -8602,9 +8616,7 @@ async def register_push_token_endpoint(
             "resolved_user_id": resolved_user_id,
         }
     except Exception as e:
-        logger.error(f"❌ Push token kayıt hatası: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.exception("PUSH_REGISTER exception err=%s", e)
         return {"success": False, "detail": str(e)}
 
 
@@ -9584,28 +9596,28 @@ async def admin_send_notification(admin_phone: str, title: str, message: str, ta
         target_count = 0
         
         if target == "all":
-            result = supabase.table("users").select("id, push_token").execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token").execute()
             target_count = len(result.data)
             target_user_ids = [r["id"] for r in result.data if r.get("id")]
-            token_user_ids = [r["id"] for r in result.data if r.get("id") and ExpoPushService.is_valid_token(r.get("push_token"))]
+            token_user_ids = [r["id"] for r in result.data if _user_row_has_fcm_for_push(r)]
         elif target == "drivers":
-            result = supabase.table("users").select("id, push_token, driver_details").execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token, driver_details").execute()
             drivers = [r for r in result.data if r.get("driver_details")]
             target_count = len(drivers)
             target_user_ids = [r["id"] for r in drivers if r.get("id")]
-            token_user_ids = [r["id"] for r in drivers if r.get("id") and ExpoPushService.is_valid_token(r.get("push_token"))]
+            token_user_ids = [r["id"] for r in drivers if _user_row_has_fcm_for_push(r)]
         elif target == "passengers":
-            result = supabase.table("users").select("id, push_token, driver_details").execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token, driver_details").execute()
             passengers = [r for r in result.data if not r.get("driver_details")]
             target_count = len(passengers)
             target_user_ids = [r["id"] for r in passengers if r.get("id")]
-            token_user_ids = [r["id"] for r in passengers if r.get("id") and ExpoPushService.is_valid_token(r.get("push_token"))]
+            token_user_ids = [r["id"] for r in passengers if _user_row_has_fcm_for_push(r)]
         elif target == "user" and user_id:
-            result = supabase.table("users").select("id, push_token").eq("id", user_id).execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token").eq("id", user_id).execute()
             target_count = 1
             if result.data and result.data[0].get("id"):
                 target_user_ids = [result.data[0]["id"]]
-                if ExpoPushService.is_valid_token(result.data[0].get("push_token")):
+                if _user_row_has_fcm_for_push(result.data[0]):
                     token_user_ids = [result.data[0]["id"]]
         
         sent_count = 0
@@ -13956,14 +13968,14 @@ async def notifications_register_push_token(
     user_id: str,
     token: str,
     platform: str = "android",
-    token_type: str = "expo",
+    token_type: Optional[str] = None,
 ):
-    """Push token kaydet (query) — /user/save-push-token ile aynı kurallar; token_type=expo|fcm."""
+    """Push token kaydet (query) — /user/save-push-token ile aynı kurallar; token_type=expo|fcm veya omit=auto."""
     req = PushTokenRequest(
         user_id=user_id,
         push_token=token,
         platform=platform,
-        token_type=token_type or "expo",
+        token_type=token_type,
     )
     return await register_push_token_endpoint(request=req)
 
@@ -14077,12 +14089,20 @@ def _users_select_push_columns_fallback() -> str:
     return "push_token, expo_push_token, name, id, phone"
 
 
+def _user_row_has_fcm_for_push(row: Optional[dict]) -> bool:
+    """send_push_notification yalnızca FCM kullanır; toplu/admin hedef listesi buna göre seçilmeli."""
+    if not row or not row.get("id"):
+        return False
+    ft = (row.get("fcm_push_token") or "").strip()
+    return bool(ft and is_probable_fcm_registration_token(ft))
+
+
 async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
-    """Tek kullanıcıya push: faz-1 önce FCM (fcm_push_token), yoksa / başarısızsa Expo."""
+    """Tek kullanıcıya push — yalnızca FCM (users.fcm_push_token). Expo kullanılmaz."""
     try:
         uid = str(user_id).strip() if user_id else ""
         if not uid:
-            logger.warning("❌ Push: user_id boş")
+            logger.warning("PUSH_SEND_ERROR transport=fcm reason=user_id_empty")
             return False
 
         def _sel_u(cols: str, eq_key: str, eq_val: str):
@@ -14122,7 +14142,6 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
                     except Exception:
                         user_result = _sel_u(cols_fb, "phone", candidate)
                     if user_result.data:
-                        logger.info(f"📱 Push: kullanıcı telefon ile bulundu (E.164={phone_e164})")
                         break
                 if not user_result.data and len(ten_digit) >= 10:
                     try:
@@ -14149,106 +14168,46 @@ async def send_push_notification(user_id: str, title: str, body: str, data: dict
 
                                 user_result = _R()
                                 user_result.data = [row]
-                                logger.info(f"📱 Push: kullanıcı telefon LIKE ile bulundu (core={ten_digit})")
                                 break
         if not user_result.data:
-            logger.warning(
-                f"❌ Push: kullanıcı bulunamadı (user_id={uid[:20]}...) – ID veya telefon veritabanında yok."
-            )
+            logger.warning("PUSH_SEND_ERROR transport=fcm reason=user_not_found user_id=%s", uid[:36])
             return False
         row = user_result.data[0]
         uid = row.get("id") or uid
         fcm_token = (row.get("fcm_push_token") or "").strip() or None
-        expo_token = (row.get("expo_push_token") or row.get("push_token") or "").strip() or None
-        user_name = row.get("name", "Unknown")
-        user_phone = row.get("phone") or ""
 
-        if not fcm_token and not expo_token:
+        if not fcm_token or not is_probable_fcm_registration_token(fcm_token):
             logger.warning(
-                "PUSH_SEND_SKIP_NO_TOKEN user=%s name=%s phone=%s title=%r",
-                str(uid)[:12],
-                user_name,
-                (user_phone[:6] + "…") if user_phone else "?",
-                (title or "")[:80],
+                "PUSH_SEND_ERROR transport=fcm reason=no_valid_fcm_token user_id=%s",
+                str(uid),
+            )
+            return False
+
+        if not is_fcm_configured():
+            logger.warning(
+                "PUSH_SEND_ERROR transport=fcm reason=not_configured user_id=%s",
+                str(uid),
             )
             return False
 
         payload = _canonical_push_routing_data(data)
-        logger.info(
-            "PUSH_SEND_START user=%s has_fcm=%s has_expo=%s title=%r body_preview=%r",
-            str(uid)[:12],
-            bool(fcm_token and is_probable_fcm_registration_token(fcm_token)),
-            bool(expo_token and ExpoPushService.is_valid_token(expo_token)),
-            (title or "")[:120],
-            (body or "")[:200],
+        ok_fcm, err_code = await asyncio.to_thread(
+            send_fcm_notification_sync, fcm_token, title, body, payload
         )
-
-        tried_fcm_send = False
-        # --- FCM öncelik ---
-        if fcm_token and is_probable_fcm_registration_token(fcm_token):
-            if is_fcm_configured():
-                tried_fcm_send = True
-                ok_fcm, err_code = await asyncio.to_thread(
-                    send_fcm_notification_sync, fcm_token, title, body, payload
-                )
-                if ok_fcm:
-                    logger.info("PUSH_SEND_TRANSPORT=fcm user=%s", str(uid)[:12])
-                    logger.info("PUSH_SEND_SUCCESS transport=fcm user=%s", str(uid)[:12])
-                    return True
-                logger.warning(
-                    "PUSH_SEND_TRANSPORT=fcm_failed_expo_fallback user=%s err=%s",
-                    str(uid)[:12],
-                    err_code,
-                )
-                if err_code == "unregistered":
-                    await _clear_user_fcm_push_token(str(uid))
-            else:
-                logger.info(
-                    "PUSH_SEND_TRANSPORT=fcm_skipped_not_configured user=%s",
-                    str(uid)[:12],
-                )
-
-        # --- Expo geri dönüş ---
-        if not expo_token or not ExpoPushService.is_valid_token(expo_token):
-            logger.warning(
-                "PUSH_SEND_SKIP_NO_EXPO_TOKEN user=%s name=%s tried_fcm=%s",
-                str(uid)[:12],
-                user_name,
-                tried_fcm_send,
-            )
-            return False
-
-        token_dbg = f"{expo_token[:28]}…" if len(expo_token) > 32 else expo_token
-        logger.info("PUSH_SEND_TRANSPORT=expo user=%s token_prefix=%s", str(uid)[:12], token_dbg)
-        ok, receipt = await _send_expo_and_get_receipt(
-            expo_token, title, body, payload, db_user_id=str(uid)
+        if ok_fcm:
+            logger.info("PUSH_SEND_TRANSPORT=fcm")
+            logger.info("PUSH_SEND_SUCCESS transport=fcm user_id=%s", str(uid))
+            return True
+        logger.warning(
+            "PUSH_SEND_ERROR transport=fcm user_id=%s err=%s",
+            str(uid),
+            err_code,
         )
-        logger.info(
-            "PUSH_SEND_RESPONSE transport=expo user=%s ok=%s expo_response=%s",
-            str(uid)[:12],
-            ok,
-            receipt,
-        )
-        logger.info(
-            "📤 push_send transport=expo user=%s ok=%s token=%s title=%r receipt=%s",
-            str(uid)[:12],
-            ok,
-            token_dbg,
-            (title or "")[:80],
-            receipt,
-        )
-        if ok:
-            logger.info("PUSH_SEND_SUCCESS transport=expo user=%s", str(uid)[:12])
-        else:
-            logger.warning(
-                "PUSH_SEND_ERROR transport=expo user=%s receipt=%s",
-                str(uid)[:12],
-                receipt,
-            )
-        return ok
+        if err_code == "unregistered":
+            await _clear_user_fcm_push_token(str(uid))
+        return False
     except Exception as e:
-        logger.error("PUSH_SEND_ERROR transport=unknown err=%s", e)
-        logger.error(f"❌ Send push exception: {e}")
+        logger.exception("PUSH_SEND_ERROR transport=fcm reason=exception err=%s", e)
         return False
 
 
@@ -14526,9 +14485,9 @@ async def send_expo_push(token: str, title: str, body: str) -> bool:
         return False
 
 async def send_bulk_push_notification(title: str, body: str, target: str = "all", data: dict = None):
-    """Toplu push bildirim gönder - users.push_token kaynağını kullanır."""
+    """Toplu push bildirim gönder — send_push_notification (FCM) ile uyumlu kullanıcı seçimi."""
     try:
-        query = supabase.table("users").select("id, push_token, driver_details, driver_online")
+        query = supabase.table("users").select("id, push_token, fcm_push_token, driver_details, driver_online")
         
         if target == "drivers":
             # Sadece sürücülere (driver_details olan)
@@ -14545,16 +14504,10 @@ async def send_bulk_push_notification(title: str, body: str, target: str = "all"
         if not result.data:
             return 0
         
-        user_ids = [
-            user["id"]
-            for user in result.data
-            if user.get("id")
-            and user.get("push_token")
-            and ExpoPushService.is_valid_token(user.get("push_token"))
-        ]
+        user_ids = [user["id"] for user in result.data if _user_row_has_fcm_for_push(user)]
 
         if not user_ids:
-            logger.info(f"📭 Push token'ı olan kullanıcı bulunamadı (target={target})")
+            logger.info(f"📭 FCM token'ı olan kullanıcı bulunamadı (target={target})")
             return 0
 
         send_result = await send_push_notifications_to_users(user_ids, title, body, data)
@@ -14615,18 +14568,18 @@ async def admin_send_push(admin_phone: str, title: str, body: str, target: str =
             # Hedef kitle sayıları (0 kişiye gidince nedenini göstermek için)
             try:
                 if target == "all":
-                    r = supabase.table("users").select("id, push_token").execute()
+                    r = supabase.table("users").select("id, push_token, fcm_push_token").execute()
                     total_users = len(r.data or [])
-                    users_with_token = sum(1 for u in (r.data or []) if u.get("push_token") and ExpoPushService.is_valid_token(u.get("push_token")))
+                    users_with_token = sum(1 for u in (r.data or []) if _user_row_has_fcm_for_push(u))
                 elif target == "drivers":
-                    r = supabase.table("users").select("id, push_token, driver_details").not_.is_("driver_details", "null").execute()
+                    r = supabase.table("users").select("id, push_token, fcm_push_token, driver_details").not_.is_("driver_details", "null").execute()
                     total_users = len(r.data or [])
-                    users_with_token = sum(1 for u in (r.data or []) if u.get("push_token") and ExpoPushService.is_valid_token(u.get("push_token")))
+                    users_with_token = sum(1 for u in (r.data or []) if _user_row_has_fcm_for_push(u))
                 elif target == "passengers":
-                    r = supabase.table("users").select("id, push_token, driver_details").execute()
+                    r = supabase.table("users").select("id, push_token, fcm_push_token, driver_details").execute()
                     passengers = [u for u in (r.data or []) if not u.get("driver_details")]
                     total_users = len(passengers)
-                    users_with_token = sum(1 for u in passengers if u.get("push_token") and ExpoPushService.is_valid_token(u.get("push_token")))
+                    users_with_token = sum(1 for u in passengers if _user_row_has_fcm_for_push(u))
             except Exception:
                 pass
             sent_count = await send_bulk_push_notification(title, body, target, payload)
@@ -16032,25 +15985,21 @@ async def admin_send_push_notification(admin_phone: str, title: str, message: st
         target_rows = []
         
         if target == "all":
-            result = supabase.table("users").select("id, push_token").execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token").execute()
             target_rows = result.data or []
         elif target == "drivers":
-            result = supabase.table("users").select("id, push_token").eq("driver_online", True).execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token").eq("driver_online", True).execute()
             target_rows = result.data or []
         elif target == "passengers":
             # Driver olmayan kullanıcılar
-            result = supabase.table("users").select("id, push_token, driver_online").execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token, driver_online").execute()
             target_rows = [u for u in (result.data or []) if not u.get("driver_online")]
         elif target == "specific" and user_ids:
             ids = [uid.strip() for uid in user_ids.split(",")]
-            result = supabase.table("users").select("id, push_token").in_("id", ids).execute()
+            result = supabase.table("users").select("id, push_token, fcm_push_token").in_("id", ids).execute()
             target_rows = result.data or []
         
-        token_user_ids = [
-            row["id"]
-            for row in target_rows
-            if row.get("id") and ExpoPushService.is_valid_token(row.get("push_token"))
-        ]
+        token_user_ids = [row["id"] for row in target_rows if _user_row_has_fcm_for_push(row)]
 
         push_result = await send_push_notifications_to_users(
             user_ids=token_user_ids,
