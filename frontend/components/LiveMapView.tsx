@@ -42,6 +42,20 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
  */
 const DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP = 112;
 
+/**
+ * Immersive nav: Google mapPadding.bottom, sabit overlay aracın alt bandı ile aynı modeli kullanmalı.
+ * Eski %18 ekran / min 132dp, overlay (112dp + ikon) ile uyumsuzdu → kamera merkezi yolun “üstünde” kalıyordu.
+ */
+function driverNavImmersiveMapPaddingBottomPx(insetsBottom: number): number {
+  const iconHalf = Math.max(MARKER_PIXEL.driverCar, MARKER_PIXEL.driverMotor) * 0.5;
+  const raw =
+    DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP +
+    iconHalf +
+    Math.max(insetsBottom, 0) +
+    10;
+  return Math.round(Math.min(210, Math.max(96, raw)));
+}
+
 /** Harita-PNG offset’i (mapNavMarkers +180) ile uyum: ikon burnu ekranda yukarı (ileri). */
 const DRIVER_NAV_OVERLAY_ICON_ROTATION_DEG = 180;
 
@@ -1178,8 +1192,8 @@ function offsetCameraCenterForward(
   else forwardM = 214;
   const z = Number.isFinite(zoom) ? Math.max(14.8, Math.min(18.5, zoom)) : 16.5;
   forwardM *= Math.min(1.05, Math.max(0.9, 17 / z));
-  /** Önceki 1.12’den düşük: araç ekranda biraz daha “altta”, kamera daha az agresif */
-  forwardM *= 1.11;
+  /** Overlay nav: ileri offset biraz fazlaydı → yol çizgisi ikonun altında kalıyordu; 1.04 ile hizaya yaklaştır */
+  forwardM *= 1.04;
   const R = 6378137;
   const brng = (bearingDeg * Math.PI) / 180;
   const lat1 = (from.latitude * Math.PI) / 180;
@@ -3629,6 +3643,8 @@ export default function LiveMapView({
       true,
     );
     navCamLastSentHeadingRef.current = head;
+    /** Recenter sonrası takip efekti aynı anchor’tan lerp etsin (InteractionManager / effect yarışı). */
+    navSmoothCenterRef.current = { ...anchor };
     navCameraAnimClearTimerRef.current = setTimeout(() => {
       navProgrammaticCameraRef.current = false;
       navCameraAnimClearTimerRef.current = null;
@@ -4303,7 +4319,7 @@ export default function LiveMapView({
               ? {
                   top: Math.max(insets.top, 12) + 152,
                   right: 12,
-                  bottom: Math.min(260, Math.max(132, SCREEN_HEIGHT * 0.18)),
+                  bottom: driverNavImmersiveMapPaddingBottomPx(insets.bottom),
                   left: 12,
                 }
               : driverNavActive
