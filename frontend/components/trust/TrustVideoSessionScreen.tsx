@@ -65,12 +65,13 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   const endedRef = useRef(false);
   const deadlineMsRef = useRef<number | null>(null);
   const joinStartedRef = useRef(false);
+  /** Yeni güven oturumu (trustId+kanal+token) — ana effect’te setJoining ile yanlış “bağlanıyor” resetini önlemek için */
+  const trustSessionUiKeyRef = useRef<string>('');
 
-  useEffect(() => {
-    return () => {
-      joinStartedRef.current = false;
-    };
-  }, [trustId]);
+  const userIdRef = useRef(userId);
+  const peerUserIdRef = useRef(peerUserId);
+  userIdRef.current = userId;
+  peerUserIdRef.current = peerUserId;
 
   useEffect(() => {
     if (visible) {
@@ -95,13 +96,17 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
     onClose();
   }, [trustId, onClose]);
 
-  /** Agora join — yalnızca kanal/token/trustId; joinPromise servis kilidi; visible join yaşam döngüsüne girmez */
+  const finalizeEndRef = useRef(finalizeEnd);
+  finalizeEndRef.current = finalizeEnd;
+
+  /** Agora join: yalnızca [channelName, agoraToken, trustId]; teardown yalnızca bu effect cleanup’ta */
   useEffect(() => {
     const ch = String(channelName ?? '').trim();
     const tok = String(agoraToken ?? '').trim();
     if (!ch || !tok) return;
     if (joinStartedRef.current) return;
     joinStartedRef.current = true;
+    setJoining(true);
 
     const run = async () => {
       if (Platform.OS === 'android') {
@@ -114,26 +119,85 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
           return;
         }
       }
-      const myUid = agoraUidFromUserId(userId);
+      const curUserId = String(userIdRef.current ?? '');
+      const myUid = agoraUidFromUserId(curUserId);
       agoraVoiceService.resetJoinGate();
       agoraVoiceService.setCallbacks({
+        onJoinChannelSuccess: (_c, elapsed) => {
+          console.log(
+            '[TRUST]',
+            JSON.stringify({
+              evt: 'TRUST_JOIN_SUCCESS',
+              current_user_id: curUserId,
+              channel_name: ch,
+              uid_used_for_join: myUid,
+              elapsed_ms: elapsed,
+            }),
+          );
+        },
         onUserJoined: (_c, uid) => {
           if (uid && uid !== myUid) {
+            console.log(
+              '[TRUST]',
+              JSON.stringify({
+                evt: 'TRUST_REMOTE_USER_JOINED',
+                current_user_id: curUserId,
+                remote_uid: uid,
+              }),
+            );
             setRemoteUid(uid);
+            console.log(
+              '[TRUST]',
+              JSON.stringify({
+                evt: 'TRUST_REMOTE_VIDEO_ATTACHED',
+                current_user_id: curUserId,
+                remote_uid: uid,
+              }),
+            );
           }
         },
         onUserOffline: () => {
-          void finalizeEnd();
+          void finalizeEndRef.current();
         },
-        onError: () => {
+        onError: (err, msg) => {
+          console.log(
+            '[TRUST]',
+            JSON.stringify({
+              evt: 'TRUST_JOIN_ERROR',
+              current_user_id: curUserId,
+              err,
+              msg,
+            }),
+          );
           setError('Bağlantı hatası');
         },
       });
       try {
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_JOIN_START',
+            current_user_id: curUserId,
+            channel_name: ch,
+            uid_used_for_join: myUid,
+            peer_user_id: String(peerUserIdRef.current ?? ''),
+            token_prefix: tok.length ? `${tok.slice(0, 8)}…` : '',
+          }),
+        );
         await trustVideoJoin(ch, tok, myUid);
         setJoining(false);
       } catch (e) {
         console.warn('Trust video join', e);
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_JOIN_ERROR',
+            current_user_id: curUserId,
+            channel_name: ch,
+            uid_used_for_join: myUid,
+            message: e instanceof Error ? e.message : String(e),
+          }),
+        );
         joinStartedRef.current = false;
         setError('Görüntülü bağlantı kurulamadı.');
         setJoining(false);
@@ -144,13 +208,15 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
 
     return () => {
       joinStartedRef.current = false;
+      void trustVideoLeave();
+      agoraVoiceService.resetCallbacks();
     };
   }, [channelName, agoraToken, trustId]);
 
   useEffect(() => {
     if (!visible) {
+      trustSessionUiKeyRef.current = '';
       endedRef.current = false;
-      setJoining(true);
       setError(null);
       setRemoteUid(0);
       return;
@@ -164,17 +230,23 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
     const chWait = String(channelName || '').trim();
     const tokWait = String(agoraToken || '').trim();
     if (!chWait || !tokWait) {
-      setJoining(true);
       return;
+    }
+
+    const sessionUiKey = `${trustId}|${chWait}|${tokWait}`;
+    const isNewSessionUi = trustSessionUiKeyRef.current !== sessionUiKey;
+    if (isNewSessionUi) {
+      trustSessionUiKeyRef.current = sessionUiKey;
     }
 
     let tick: ReturnType<typeof setInterval> | null = null;
 
     const run = async () => {
-      endedRef.current = false;
-      setJoining(true);
-      setError(null);
-      setRemoteUid(0);
+      if (isNewSessionUi) {
+        endedRef.current = false;
+        setError(null);
+        setRemoteUid(0);
+      }
 
       const tok = String(agoraToken || '').trim();
       const ch = String(channelName || '').trim();
@@ -198,7 +270,7 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
         const left = Math.max(0, Math.ceil((d - Date.now()) / 1000));
         setRemainingSec(left);
         if (left <= 0) {
-          void finalizeEnd();
+          void finalizeEndRef.current();
         }
       };
       tickFn();
@@ -209,11 +281,8 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
 
     return () => {
       if (tick) clearInterval(tick);
-      void trustVideoLeave();
-      agoraVoiceService.resetCallbacks();
-      joinStartedRef.current = false;
     };
-  }, [visible, channelName, agoraToken, userId, peerUserId, finalizeEnd, sessionHardDeadlineAt, trustId]);
+  }, [visible, channelName, agoraToken, sessionHardDeadlineAt, trustId]);
 
   if (!visible) return null;
 

@@ -289,6 +289,18 @@ export function useTrustSessionController({
           String(data.tag_id ?? '').toLowerCase() === cur.toLowerCase()
         ) {
           const peer = String(data.peer_user_id ?? '');
+          console.log(
+            '[TRUST]',
+            JSON.stringify({
+              evt: 'TRUST_READY_RECEIVED',
+              trust_id: String(data.trust_id ?? ''),
+              tag_id: String(data.tag_id ?? ''),
+              channel_name: String(data.channel_name ?? ''),
+              current_user_id: String(userId ?? ''),
+              peer_user_id: peer,
+              has_token: !!String(data.agora_token ?? '').trim(),
+            }),
+          );
           const peerName = peerDisplayNameForPeerId(peer);
           outboundTrustIdRef.current = null;
           setTrustOutgoingPending(false);

@@ -56,6 +56,7 @@ export class AgoraVoiceService {
   private buildHandler(): IRtcEngineEventHandler {
     return {
       onJoinChannelSuccess: (connection, elapsed) => {
+        this.joinRequested = true;
         this.callbacks.onJoinChannelSuccess?.(connection, elapsed);
       },
       onUserJoined: (connection, uid, elapsed) => {
