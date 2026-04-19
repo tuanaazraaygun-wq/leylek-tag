@@ -401,6 +401,13 @@ export default function useSocket({
 
     const handleTripEnded = (data: any) => {
       console.log('🏁 [useSocket] YOLCULUK BİTTİ:', data);
+      console.log('TRIP_ENDED_RECEIVED', {
+        userRole,
+        tag_id: data?.tag_id ?? data?.tagId ?? null,
+        mutual: data?.mutual ?? null,
+        completed_at: data?.completed_at ?? null,
+        rawKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+      });
       callbackRefs.current.onTripEnded?.(data);
     };
 
@@ -416,6 +423,13 @@ export default function useSocket({
 
     const handleTripForceEnded = (data: any) => {
       console.log('⚡ [useSocket] YOLCULUK ZORLA BİTTİ:', data);
+      console.log('TRIP_FORCE_ENDED_RECEIVED', {
+        userRole,
+        tag_id: data?.tag_id ?? data?.tagId ?? null,
+        ended_by: data?.ended_by ?? data?.ender_id ?? null,
+        should_rate: data?.should_rate ?? null,
+        rawKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+      });
       callbackRefs.current.onTripForceEnded?.(data);
     };
 

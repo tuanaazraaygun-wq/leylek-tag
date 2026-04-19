@@ -3030,6 +3030,18 @@ async def auto_cleanup_inactive_tags():
     
     # Son temizlikten en az 10 dakika geçmişse tekrar çalıştır
     if last_cleanup_time and (datetime.utcnow() - last_cleanup_time).total_seconds() < 600:
+        logger.info(
+            "INACTIVITY_CLEANUP_RAN %s",
+            json.dumps(
+                {
+                    "outcome": "skipped_cooldown",
+                    "cleaned_count": 0,
+                    "cooldown_seconds": 600,
+                    "seconds_since_last": (datetime.utcnow() - last_cleanup_time).total_seconds(),
+                },
+                ensure_ascii=False,
+            ),
+        )
         return 0  # Henüz 10 dakika geçmedi
     
     try:
@@ -3059,6 +3071,8 @@ async def auto_cleanup_inactive_tags():
                     
                     if (now - activity_time).total_seconds() > max_inactive_minutes * 60:
                         # TAG'i iptal et
+                        _tid = tag.get("id")
+                        _prev_st = tag.get("status")
                         supabase.table("tags").update({
                             "status": "cancelled",
                             "cancelled_at": datetime.utcnow().isoformat(),
@@ -3066,6 +3080,20 @@ async def auto_cleanup_inactive_tags():
                         }).eq("id", tag["id"]).execute()
                         
                         cleaned_count += 1
+                        logger.info(
+                            "BACKEND_TAG_STATUS_CHANGE %s",
+                            json.dumps(
+                                {
+                                    "source": "auto_cleanup_inactive_tags",
+                                    "tag_id": _tid,
+                                    "previous_status": _prev_st,
+                                    "new_status": "cancelled",
+                                    "cancel_reason": "inactivity_timeout",
+                                    "activity_basis": last_activity,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
                         logger.info(f"🧹 Auto-cleanup: İnaktif TAG temizlendi: {tag['id']}")
                 except Exception as e:
                     logger.error(f"Auto-cleanup error for {tag['id']}: {e}")
@@ -3074,9 +3102,25 @@ async def auto_cleanup_inactive_tags():
         
         if cleaned_count > 0:
             logger.info(f"🧹 Auto-cleanup tamamlandı: {cleaned_count} TAG temizlendi")
+        logger.info(
+            "INACTIVITY_CLEANUP_RAN %s",
+            json.dumps(
+                {
+                    "outcome": "ran",
+                    "cleaned_count": cleaned_count,
+                    "matched_in_progress_scanned": len(result.data or []),
+                    "max_inactive_minutes": max_inactive_minutes,
+                },
+                ensure_ascii=False,
+            ),
+        )
         
         return cleaned_count
     except Exception as e:
+        logger.info(
+            "INACTIVITY_CLEANUP_RAN %s",
+            json.dumps({"outcome": "error", "cleaned_count": 0, "error": str(e)}, ensure_ascii=False),
+        )
         logger.error(f"Auto cleanup error: {e}")
         return 0
 

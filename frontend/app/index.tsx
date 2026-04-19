@@ -481,6 +481,10 @@ function armForceEndLock() {
   }, 5000);
 }
 
+function logPollingSkippedForceEndLock(role: 'passenger' | 'driver', where: string) {
+  console.log('POLLING_SKIPPED_FORCE_END_LOCK', { role, where });
+}
+
 type AppScreen =
   | 'login'
   | 'test-password'
@@ -6828,6 +6832,23 @@ function PassengerDashboard({
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 YOLCU - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
       const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      console.log('PASSENGER_EXIT_REASON', {
+        source: 'onTripForceEnded',
+        reason: 'trip_force_ended_socket',
+        tagId: tid,
+        userId: user?.id ?? null,
+      });
+      console.log('MATCH_SCREEN_CLEAR', {
+        role: 'passenger',
+        source: 'onTripForceEnded',
+        tagId: tid,
+        nextScreen: 'role-select',
+      });
+      console.log('ACTIVE_TAG_RESET', {
+        role: 'passenger',
+        source: 'onTripForceEnded',
+        tagId: tid,
+      });
       console.log('FORCE_END_FINALIZED', {
         tagId: tid,
         requestedBy: null,
@@ -6962,7 +6983,7 @@ function PassengerDashboard({
       // İlk yükleme
       const fetchDriverLocation = async () => {
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('passenger', 'fetch_driver_location_tick');
           return;
         }
         try {
@@ -6997,7 +7018,7 @@ function PassengerDashboard({
         return;
       }
       if (forceEndLockRef.current) {
-        console.log('POLLING BLOCKED AFTER FORCE END');
+        logPollingSkippedForceEndLock('passenger', 'active_tag_interval_tick');
         return;
       }
       console.log('🔄 Yolcu TAG ve teklifler yükleniyor...');
@@ -7016,7 +7037,7 @@ function PassengerDashboard({
 
   const loadActiveTag = async () => {
     if (forceEndLockRef.current) {
-      console.log('POLLING BLOCKED AFTER FORCE END');
+      logPollingSkippedForceEndLock('passenger', 'loadActiveTag_entry');
       return;
     }
     try {
@@ -7027,10 +7048,34 @@ function PassengerDashboard({
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
           if (forceEndLockRef.current) {
-            console.log('POLLING BLOCKED AFTER FORCE END');
+            logPollingSkippedForceEndLock('passenger', 'loadActiveTag_terminal_cancelled_gate');
             return;
           }
           console.log('🛑 loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          const _t = data.tag as Tag & { cancel_reason?: string; cancelled_at?: string };
+          console.log('PASSENGER_EXIT_REASON', {
+            source: 'loadActiveTag',
+            reason: _t.status === 'cancelled' ? 'tag_status_cancelled' : 'tag_status_completed',
+            tagId: _t.id,
+            status: _t.status,
+            cancel_reason: _t.cancel_reason ?? null,
+            cancelled_at: _t.cancelled_at ?? null,
+            was_cancelled: data.was_cancelled === true,
+            userId: user.id,
+          });
+          console.log('ACTIVE_TAG_RESET', {
+            role: 'passenger',
+            source: 'loadActiveTag_terminal',
+            tagId: _t.id,
+            nextStatus: _t.status,
+            cancel_reason: _t.cancel_reason ?? null,
+          });
+          console.log('MATCH_SCREEN_CLEAR', {
+            role: 'passenger',
+            source: 'loadActiveTag_terminal',
+            tagId: _t.id,
+            nextScreen: 'role-select',
+          });
           
           // 🔥 POLLING'İ DURDUR - sonsuz döngüyü engelle
           isPollingActiveRef.current = false;
@@ -7095,19 +7140,34 @@ function PassengerDashboard({
         
         // Aktif tag varsa, cancelled flag'i sıfırla
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('passenger', 'loadActiveTag_before_merge');
           return;
         }
         setCancelledAlertShown(false);
         setActiveTag((prev) => mergeTripTagState(prev, data.tag as Tag));
       } else {
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('passenger', 'loadActiveTag_else_branch');
           return;
         }
         setActiveTag((prev) => {
           if (data.success === true && !data.tag) {
             if (prev) setPassengerChatVisible(false);
+            if (prev) {
+              console.log('PASSENGER_EXIT_REASON', {
+                source: 'loadActiveTag',
+                reason: 'active_tag_response_empty',
+                priorTagId: prev.id,
+                priorStatus: prev.status,
+                userId: user.id,
+              });
+              console.log('ACTIVE_TAG_RESET', {
+                role: 'passenger',
+                source: 'loadActiveTag_no_tag',
+                priorTagId: prev.id,
+                priorStatus: prev.status,
+              });
+            }
             return null;
           }
         
@@ -7129,6 +7189,12 @@ function PassengerDashboard({
         
           if (prev) {
             setPassengerChatVisible(false);
+            console.log('ACTIVE_TAG_RESET', {
+              role: 'passenger',
+              source: 'loadActiveTag_else_clear',
+              priorTagId: prev.id,
+              priorStatus: prev.status,
+            });
           }
         
           return null;
@@ -7216,7 +7282,7 @@ function PassengerDashboard({
 
     const checkTripEndRequest = async () => {
       if (forceEndLockRef.current) {
-        console.log('POLLING BLOCKED AFTER FORCE END');
+        logPollingSkippedForceEndLock('passenger', 'checkTripEndRequest_tick');
         return;
       }
       try {
@@ -9776,7 +9842,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const fetchAndAppendOfferFromTagId = useCallback(async (tagId: string) => {
     if (forceEndLockRef.current) {
-      console.log('POLLING BLOCKED AFTER FORCE END');
+      logPollingSkippedForceEndLock('driver', 'fetchAndAppendOfferFromTagId');
       return;
     }
     try {
@@ -10346,6 +10412,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       console.log('TRIP_FORCE_ENDED_EVENT', data);
       console.log('🛑 ŞOFÖR - YOLCULUK ZORLA BİTİRİLDİ (resolve):', data);
       const tid = String((data as { tag_id?: string }).tag_id || '').trim() || null;
+      console.log('DRIVER_EXIT_REASON', {
+        source: 'onTripForceEnded',
+        reason: 'trip_force_ended_socket',
+        tagId: tid,
+        userId: user?.id ?? null,
+      });
+      console.log('MATCH_SCREEN_CLEAR', {
+        role: 'driver',
+        source: 'onTripForceEnded',
+        tagId: tid,
+        nextScreen: 'role-select',
+      });
+      console.log('ACTIVE_TAG_RESET', {
+        role: 'driver',
+        source: 'onTripForceEnded',
+        tagId: tid,
+      });
       console.log('FORCE_END_FINALIZED', {
         tagId: tid,
         requestedBy: null,
@@ -10645,7 +10728,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     if (activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) {
       const interval = setInterval(async () => {
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('driver', 'fetch_passenger_location_tick');
           return;
         }
         try {
@@ -10842,7 +10925,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const loadData = async () => {
     if (forceEndLockRef.current) {
-      console.log('POLLING BLOCKED AFTER FORCE END');
+      logPollingSkippedForceEndLock('driver', 'loadData_entry');
       return;
     }
     const trip = await loadActiveTag();
@@ -10856,7 +10939,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   /** Sıralı dispatch: uygulama resume / polling ile DB'deki aktif teklifi listeye ekle */
   const loadDispatchPendingOffer = async () => {
     if (forceEndLockRef.current) {
-      console.log('POLLING BLOCKED AFTER FORCE END');
+      logPollingSkippedForceEndLock('driver', 'loadDispatchPendingOffer');
       return;
     }
     if (!user?.id) return;
@@ -10942,7 +11025,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const loadActiveTag = async (): Promise<Record<string, unknown> | null> => {
     if (forceEndLockRef.current) {
-      console.log('POLLING BLOCKED AFTER FORCE END');
+      logPollingSkippedForceEndLock('driver', 'loadActiveTag_entry');
       return null;
     }
     try {
@@ -10952,11 +11035,25 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       // 🚨 TAG YOKSA ZORLA KAPAT
       if (data.success === true && !data.tag) {
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('driver', 'loadActiveTag_no_tag_gate');
           return null;
         }
       
         console.log('🔥 DRIVER loadActiveTag: aktif tag yok, çıkış yapılıyor');
+        console.log('DRIVER_EXIT_REASON', {
+          source: 'loadActiveTag',
+          reason: 'active_tag_response_empty',
+          userId: user.id,
+        });
+        console.log('MATCH_SCREEN_CLEAR', {
+          role: 'driver',
+          source: 'loadActiveTag_no_tag',
+          nextScreen: 'role-select',
+        });
+        console.log('ACTIVE_TAG_RESET', {
+          role: 'driver',
+          source: 'loadActiveTag_no_tag',
+        });
       
         // 🔒 BURAYI EKLE (KRİTİK)
         forceEndLockRef.current = true;
@@ -10977,10 +11074,34 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         // 🔥 Eğer tag cancelled veya completed ise - ÇIKIŞ YAP
         if (data.tag.status === 'cancelled' || data.tag.status === 'completed') {
           if (forceEndLockRef.current) {
-            console.log('POLLING BLOCKED AFTER FORCE END');
+            logPollingSkippedForceEndLock('driver', 'loadActiveTag_terminal_cancelled_gate');
             return null;
           }
           console.log('🛑 ŞOFÖR loadActiveTag: Tag bitirilmiş, çıkış yapılıyor...', data.tag.status);
+          const _dt = data.tag as Tag & { cancel_reason?: string; cancelled_at?: string };
+          console.log('DRIVER_EXIT_REASON', {
+            source: 'loadActiveTag',
+            reason: _dt.status === 'cancelled' ? 'tag_status_cancelled' : 'tag_status_completed',
+            tagId: _dt.id,
+            status: _dt.status,
+            cancel_reason: _dt.cancel_reason ?? null,
+            cancelled_at: _dt.cancelled_at ?? null,
+            was_cancelled: data.was_cancelled === true,
+            userId: user.id,
+          });
+          console.log('ACTIVE_TAG_RESET', {
+            role: 'driver',
+            source: 'loadActiveTag_terminal',
+            tagId: _dt.id,
+            nextStatus: _dt.status,
+            cancel_reason: _dt.cancel_reason ?? null,
+          });
+          console.log('MATCH_SCREEN_CLEAR', {
+            role: 'driver',
+            source: 'loadActiveTag_terminal',
+            tagId: _dt.id,
+            nextScreen: 'role-select',
+          });
           
           // 🔥 Alert'i sadece bir kez göster - aynı tag için tekrar gösterme
           const shouldShowAlert = data.tag.status === 'cancelled' && 
@@ -11033,7 +11154,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         
         // Aktif tag varsa, cancelled flag'i sıfırla
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('driver', 'loadActiveTag_before_merge');
           return null;
         }
         setCancelledAlertShown(false);
@@ -11041,11 +11162,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         return data.tag;
       } else {
         if (forceEndLockRef.current) {
-          console.log('POLLING BLOCKED AFTER FORCE END');
+          logPollingSkippedForceEndLock('driver', 'loadActiveTag_else_branch');
           return null;
         }
         setActiveTag((prev) => {
           if (data.success === false && prev && (prev.status === 'matched' || prev.status === 'in_progress')) {
+            console.log('DRIVER_STALE_MATCH_KEPT', {
+              role: 'driver',
+              source: 'loadActiveTag',
+              tagId: prev.id,
+              prevStatus: prev.status,
+              apiSuccess: data.success,
+              userId: user.id,
+            });
             return prev;
           }
           if (
@@ -11141,7 +11270,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
     const checkTripEndRequest = async () => {
       if (forceEndLockRef.current) {
-        console.log('POLLING BLOCKED AFTER FORCE END');
+        logPollingSkippedForceEndLock('driver', 'checkTripEndRequest_tick');
         return;
       }
       try {
@@ -11237,7 +11366,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const loadRequests = async () => {
     if (forceEndLockRef.current) {
-      console.log('POLLING BLOCKED AFTER FORCE END');
+      logPollingSkippedForceEndLock('driver', 'loadRequests_entry');
       return;
     }
     if (!user?.id) return;

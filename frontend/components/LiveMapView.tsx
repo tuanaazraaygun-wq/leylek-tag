@@ -1278,6 +1278,35 @@ function polylineLengthMeters(polyline: MapLatLng[]): number {
   return acc;
 }
 
+/** Turuncu hedef: bariz kuş uçuşu / seyrek fallback geometrisini gösterme */
+const DEST_ROUTE_GEOM_MIN_POINTS = 5;
+const DEST_ROUTE_GEOM_MIN_PATH_CROW_RATIO = 1.01;
+
+function isAcceptableDestinationRouteGeometry(coords: MapLatLng[]): boolean {
+  if (!Array.isArray(coords) || coords.length < DEST_ROUTE_GEOM_MIN_POINTS) return false;
+  const pathM = polylineLengthMeters(coords);
+  const crowM = haversineMeters(coords[0], coords[coords.length - 1]);
+  if (!Number.isFinite(pathM) || pathM <= 0 || !Number.isFinite(crowM) || crowM < 1) return false;
+  return pathM / crowM >= DEST_ROUTE_GEOM_MIN_PATH_CROW_RATIO;
+}
+
+function destinationRouteCoordsOrEmpty(coords: MapLatLng[] | null | undefined): MapLatLng[] {
+  if (!coords || coords.length < 2) return [];
+  if (!isAcceptableDestinationRouteGeometry(coords)) {
+    const pathM = polylineLengthMeters(coords);
+    const crowM = haversineMeters(coords[0], coords[coords.length - 1]);
+    logNavDiag('DEST_ROUTE_GEOMETRY_REJECTED', {
+      leg: 'destination_polyline',
+      points: coords.length,
+      path_m: Math.round(pathM),
+      crow_m: Math.round(crowM),
+      ratio: Number((crowM > 0 ? pathM / crowM : 0).toFixed(4)),
+    });
+    return [];
+  }
+  return coords;
+}
+
 /** Rota başından `distanceM` mesafedeki nokta (polyline üzerinde). */
 function pointAtDistanceAlongPolyline(polyline: MapLatLng[], distanceM: number): MapLatLng | null {
   if (polyline.length < 2) return null;
@@ -2250,7 +2279,7 @@ export default function LiveMapView({
     const poly =
       navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
         ? meetingRouteCoordinates
-        : navigationStage === 'destination' && destinationRoute.length >= 2
+        : navigationStage === 'destination' && destinationRoute.length > 2
           ? destinationRoute
           : [];
     let candidate: MapLatLng = {
@@ -2302,7 +2331,7 @@ export default function LiveMapView({
     const poly =
       navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
         ? meetingRouteCoordinates
-        : navigationStage === 'destination' && destinationRoute.length >= 2
+        : navigationStage === 'destination' && destinationRoute.length > 2
           ? destinationRoute
           : [];
     const dest =
@@ -3203,7 +3232,7 @@ export default function LiveMapView({
     return () => breath.stop();
   }, [onCall, quickCallBreath]);
 
-  // TURUNCU ROTA: Yolcu → Hedef — düz çizgi sonra OSRM polyline (etiketteki km/süre routeInfo’dan)
+  // TURUNCU ROTA: Yolcu → Hedef — yalnız gerçek yol geometrisi (kuş uçuşu polyline yok)
   useEffect(() => {
     if (!destinationLocation) {
       setDestinationRoute([]);
@@ -3214,21 +3243,24 @@ export default function LiveMapView({
       return;
     }
     const passengerLocation = isDriver ? otherLocation : userLocation;
-    if (!isValidRouteEndpoint(passengerLocation)) return;
+    if (!isValidRouteEndpoint(passengerLocation)) {
+      setDestinationRoute([]);
+      return;
+    }
     if (isDriver && navigationMode) {
       return;
     }
-    setDestinationRoute([passengerLocation, destinationLocation]);
+    setDestinationRoute([]);
     const skipOsrmPolylineForDriverQuotedPickupFallback =
       pickupFallbackForDriver &&
       readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
     if (skipOsrmPolylineForDriverQuotedPickupFallback) {
       logNavDiag('MATCH_ROUTE_METRICS', {
         leg: 'destination_polyline',
-        action: 'skip_osrm_use_chord_only',
+        action: 'skip_osrm_no_chord_visible',
         isDriver: true,
         pickup_fallback: true,
-        reason: 'quoted_trip_preserves_server_km_no_live_passenger_polyline',
+        reason: 'quoted_trip_preserves_server_km_no_visible_polyline_until_osrm',
       });
       return;
     }
@@ -3240,8 +3272,35 @@ export default function LiveMapView({
         destinationLocation.latitude,
         destinationLocation.longitude,
       );
-      if (cancelled || !r?.coordinates || r.coordinates.length < 2) return;
-      setDestinationRoute(r.coordinates);
+      if (cancelled) return;
+      if (r?.coordinates && r.coordinates.length >= 2) {
+        const destCoords = destinationRouteCoordsOrEmpty(r.coordinates);
+        if (destCoords.length >= 2) {
+          setDestinationRoute(destCoords);
+          return;
+        }
+        // OSRM geometrisi düşük kalite — aynı öncelik sırasıyla backend overview dene
+      }
+      const br = await fetchBackendRouteMetrics(
+        passengerLocation.latitude,
+        passengerLocation.longitude,
+        destinationLocation.latitude,
+        destinationLocation.longitude,
+      );
+      if (cancelled) return;
+      if (
+        br.success &&
+        br.overview_polyline &&
+        typeof br.overview_polyline === 'string' &&
+        br.overview_polyline.length > 2
+      ) {
+        const coords = decodeOsrmPolyline(br.overview_polyline, 5);
+        if (coords.length >= 2) {
+          setDestinationRoute(destinationRouteCoordsOrEmpty(coords));
+          return;
+        }
+      }
+      setDestinationRoute([]);
     })();
     return () => {
       cancelled = true;
@@ -3255,10 +3314,14 @@ export default function LiveMapView({
     pickupFallbackForDriver,
   ]);
 
-  /** Sürücü navigasyon — hedef aşaması: yolcu→varış OSRM + adımlar */
+  /** Sürücü navigasyon — hedef aşaması: yolcu→varış OSRM + adımlar (kuş uçuşu polyline yok) */
   useEffect(() => {
     if (!isDriver || !navigationMode || navigationStage !== 'destination') return;
-    if (!isValidRouteEndpoint(otherLocation) || !isValidRouteEndpoint(destinationLocation)) return;
+    if (!isValidRouteEndpoint(otherLocation) || !isValidRouteEndpoint(destinationLocation)) {
+      setDestinationRoute([]);
+      return;
+    }
+    setDestinationRoute([]);
     let cancelled = false;
     void (async () => {
       const r = await fetchOsrmDrivingRouteWithSteps(
@@ -3267,12 +3330,42 @@ export default function LiveMapView({
         destinationLocation.latitude,
         destinationLocation.longitude,
       );
-      if (cancelled || !r?.coordinates || r.coordinates.length < 2) return;
-      destNavStepsRef.current = {
-        steps: r.steps,
-        cumStart: buildCumStartMeters(r.steps),
-      };
-      setDestinationRoute(r.coordinates);
+      if (cancelled) return;
+      if (r?.coordinates && r.coordinates.length >= 2) {
+        const destCoords = destinationRouteCoordsOrEmpty(r.coordinates);
+        if (destCoords.length >= 2) {
+          destNavStepsRef.current = {
+            steps: r.steps,
+            cumStart: buildCumStartMeters(r.steps),
+          };
+          setDestinationRoute(destCoords);
+          return;
+        }
+        destNavStepsRef.current = null;
+        // OSRM geometrisi düşük kalite — backend overview dene
+      }
+      const br = await fetchBackendRouteMetrics(
+        otherLocation.latitude,
+        otherLocation.longitude,
+        destinationLocation.latitude,
+        destinationLocation.longitude,
+      );
+      if (cancelled) return;
+      if (
+        br.success &&
+        br.overview_polyline &&
+        typeof br.overview_polyline === 'string' &&
+        br.overview_polyline.length > 2
+      ) {
+        const coords = decodeOsrmPolyline(br.overview_polyline, 5);
+        if (coords.length >= 2) {
+          destNavStepsRef.current = null;
+          setDestinationRoute(destinationRouteCoordsOrEmpty(coords));
+          return;
+        }
+      }
+      destNavStepsRef.current = null;
+      setDestinationRoute([]);
     })();
     return () => {
       cancelled = true;
@@ -4048,7 +4141,7 @@ export default function LiveMapView({
       const s = splitRouteForNavDisplay(meetingRouteCoordinates, p);
       return { ...s, palette: 'pickup' as const };
     }
-    if (navigationStage === 'destination' && destinationRoute.length >= 2) {
+    if (navigationStage === 'destination' && destinationRoute.length > 2) {
       const p = distanceAlongPolylineM(navPos, destinationRoute);
       const s = splitRouteForNavDisplay(destinationRoute, p);
       return { ...s, palette: 'dest' as const };
@@ -4359,7 +4452,7 @@ export default function LiveMapView({
                 ) : null}
               </>
             )}
-          {destinationRoute.length > 1 &&
+          {destinationRoute.length > 2 &&
             destinationLocation &&
             !(isDriver && navigationMode && navigationStage === 'pickup') &&
             !(isDriver && navigationMode && navigationStage === 'destination' && driverNavRouteLayers?.palette === 'dest') && (
