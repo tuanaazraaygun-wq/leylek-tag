@@ -3224,24 +3224,84 @@ async def passenger_location_for_driver_socket(
     return None
 
 
+# Google/OSRM route bilgisi — kısa TTL ile tekrar çağrıları azaltır (Directions/OSRM maliyeti)
+_ROUTE_INFO_CACHE_TTL_SEC = 90.0
+_ROUTE_INFO_CACHE_MAX = 512
+_ROUTE_INFO_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _route_info_cache_key(ola: float, olo: float, dla: float, dlo: float) -> str:
+    return (
+        f"{round(float(ola), 5)}|{round(float(olo), 5)}|"
+        f"{round(float(dla), 5)}|{round(float(dlo), 5)}"
+    )
+
+
+def _route_info_cache_get(key: str) -> Optional[dict]:
+    now = time.monotonic()
+    ent = _ROUTE_INFO_CACHE.get(key)
+    if not ent:
+        return None
+    exp, payload = ent
+    if now >= exp:
+        try:
+            del _ROUTE_INFO_CACHE[key]
+        except KeyError:
+            pass
+        return None
+    return dict(payload)
+
+
+def _route_info_cache_set(key: str, payload: dict) -> None:
+    while len(_ROUTE_INFO_CACHE) >= _ROUTE_INFO_CACHE_MAX:
+        try:
+            first = next(iter(_ROUTE_INFO_CACHE))
+            del _ROUTE_INFO_CACHE[first]
+        except (StopIteration, RuntimeError):
+            break
+    _ROUTE_INFO_CACHE[key] = (
+        time.monotonic() + _ROUTE_INFO_CACHE_TTL_SEC,
+        dict(payload),
+    )
+
+
 async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     """Rota bilgisi al: Google Directions tek kaynak, OSRM sadece backend fallback."""
     try:
+        ola = float(origin_lat)
+        olo = float(origin_lng)
+        dla = float(dest_lat)
+        dlo = float(dest_lng)
+    except (TypeError, ValueError):
+        return None
+
+    ck = _route_info_cache_key(ola, olo, dla, dlo)
+    hit = _route_info_cache_get(ck)
+    if hit is not None:
+        return hit
+
+    try:
         # 1) Google Directions (tek kaynak)
-        road_info = await get_road_distance(
-            float(origin_lat), float(origin_lng),
-            float(dest_lat), float(dest_lng)
-        )
+        road_info = await get_road_distance(ola, olo, dla, dlo)
         if road_info:
-            return {
+            out = {
                 "distance_km": road_info["distance_km"],
                 "duration_min": road_info["duration_min"],
                 "distance_text": f"{road_info['distance_km']} km",
-                "duration_text": f"{road_info['duration_min']} dk"
+                "duration_text": f"{road_info['duration_min']} dk",
+                "source": "google",
             }
+            op = road_info.get("overview_polyline")
+            if isinstance(op, str) and len(op) > 2:
+                out["overview_polyline"] = op
+            _route_info_cache_set(ck, out)
+            return out
 
         # 2) Fallback: OSRM (yalnızca backend içinde)
-        url = f"https://router.project-osrm.org/route/v1/driving/{origin_lng},{origin_lat};{dest_lng},{dest_lat}?overview=false"
+        url = (
+            f"https://router.project-osrm.org/route/v1/driving/"
+            f"{olo},{ola};{dlo},{dla}?overview=false"
+        )
         async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
             response = await client.get(url)
             data = response.json()
@@ -3251,17 +3311,43 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                 duration_s = route.get("duration", 0)
                 distance_km = distance_m / 1000
                 duration_min = duration_s / 60
-                logger.warning(f"⚠️ Google başarısız, OSRM fallback kullanıldı: {distance_km:.1f} km, {duration_min:.0f} dk")
-                return {
+                logger.warning(
+                    f"⚠️ Google başarısız, OSRM fallback kullanıldı: "
+                    f"{distance_km:.1f} km, {duration_min:.0f} dk"
+                )
+                out = {
                     "distance_km": round(distance_km, 1),
                     "duration_min": round(duration_min, 0),
                     "distance_text": f"{round(distance_km, 1)} km",
-                    "duration_text": f"{int(duration_min)} dk"
+                    "duration_text": f"{int(duration_min)} dk",
+                    "source": "osrm",
                 }
+                _route_info_cache_set(ck, out)
+                return out
     except Exception as e:
         logger.warning(f"Route info error: {e}")
 
     return None
+
+
+@api_router.get("/route-metrics")
+async def api_route_metrics(
+    origin_lat: float = Query(...),
+    origin_lng: float = Query(...),
+    dest_lat: float = Query(...),
+    dest_lng: float = Query(...),
+):
+    """Tek bacak için yol mesafesi/süre — get_route_info + TTL önbellek (Google→OSRM)."""
+    ri = await get_route_info(origin_lat, origin_lng, dest_lat, dest_lng)
+    if not ri:
+        return {"success": False, "error": "no_route"}
+    return {
+        "success": True,
+        "distance_km": ri["distance_km"],
+        "duration_min": ri["duration_min"],
+        "source": ri.get("source"),
+        "overview_polyline": ri.get("overview_polyline"),
+    }
 
 
 def _bbox_road_prefilter_ok(
@@ -12859,6 +12945,16 @@ def _directions_leg_to_road_dict(leg: dict) -> dict:
     }
 
 
+def _attach_overview_polyline(route: Optional[dict], leg_dict: dict) -> dict:
+    """Aynı Directions yanıtından overview polyline (tek ek ücret yok)."""
+    if route and isinstance(route, dict):
+        op = route.get("overview_polyline") or {}
+        enc = op.get("points")
+        if isinstance(enc, str) and len(enc) > 2:
+            leg_dict["overview_polyline"] = enc
+    return leg_dict
+
+
 async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
     """
     Google Directions API ile gerçek yol mesafesi hesapla
@@ -12894,7 +12990,9 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
             response = await client.get(url, params=traffic_params)
             data = response.json()
             if data.get("status") == "OK" and data.get("routes"):
-                return _directions_leg_to_road_dict(data["routes"][0]["legs"][0])
+                r0 = data["routes"][0]
+                ld = _directions_leg_to_road_dict(r0["legs"][0])
+                return _attach_overview_polyline(r0, ld)
             logger.warning(
                 "⚠️ Google Directions (trafikli) başarısız: %s — trafiksiz yeniden deneniyor",
                 data.get("status"),
@@ -12904,7 +13002,9 @@ async def get_road_distance(origin_lat: float, origin_lng: float, dest_lat: floa
             data2 = response2.json()
             if data2.get("status") == "OK" and data2.get("routes"):
                 logger.info("📍 Google Directions: trafik parametresiz rota kullanıldı")
-                return _directions_leg_to_road_dict(data2["routes"][0]["legs"][0])
+                r0b = data2["routes"][0]
+                ld2 = _directions_leg_to_road_dict(r0b["legs"][0])
+                return _attach_overview_polyline(r0b, ld2)
 
             logger.warning(f"⚠️ Google Directions API hatası: {data2.get('status')}")
             return None

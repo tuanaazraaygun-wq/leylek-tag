@@ -28,6 +28,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSocketContext } from '../contexts/SocketContext';
 import { API_BASE_URL } from '../lib/backendConfig';
+import {
+  ROUTE_LOADING_MIN_VISIBLE_MS,
+  ROUTE_LOADING_UI,
+  ROUTE_UNAVAILABLE_REVEAL_DELAY_MS,
+} from '../lib/routeLoadingUiConstants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -39,6 +44,104 @@ function formatTripKmBadge(km: number | undefined | null): string {
   const n = Number(km);
   if (!Number.isFinite(n) || n <= 0) return '?';
   return n.toFixed(1);
+}
+
+async function fetchTripRouteMetrics(
+  pickupLat: number,
+  pickupLng: number,
+  dropLat: number,
+  dropLng: number,
+): Promise<{ km: number; min: number } | null> {
+  const q = new URLSearchParams({
+    origin_lat: String(pickupLat),
+    origin_lng: String(pickupLng),
+    dest_lat: String(dropLat),
+    dest_lng: String(dropLng),
+  });
+  try {
+    const res = await fetch(`${API_BASE_URL}/route-metrics?${q}`);
+    const data = (await res.json()) as Record<string, unknown>;
+    if (!res.ok || data.success !== true) return null;
+    const dk = Number(data.distance_km);
+    const dm = Number(data.duration_min);
+    if (!Number.isFinite(dk) || dk <= 0 || !Number.isFinite(dm) || dm <= 0) return null;
+    return { km: dk, min: Math.max(1, Math.round(dm)) };
+  } catch {
+    return null;
+  }
+}
+
+/** LiveMapView `RouteCalculatingPremium` ile aynı zamanlama / renk sabitleri */
+function TripRouteCalculatingInline({ compact }: { compact?: boolean }) {
+  const U = ROUTE_LOADING_UI;
+  const d0 = useRef(new Animated.Value(U.dotMinOpacity)).current;
+  const d1 = useRef(new Animated.Value(U.dotMinOpacity)).current;
+  const d2 = useRef(new Animated.Value(U.dotMinOpacity)).current;
+  const d3 = useRef(new Animated.Value(U.dotMinOpacity)).current;
+  const dots = [d0, d1, d2, d3];
+  useEffect(() => {
+    const loops = dots.map((v, i) => {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * U.dotStaggerMs),
+          Animated.timing(v, {
+            toValue: U.dotMaxOpacity,
+            duration: U.dotTimingMs,
+            useNativeDriver: true,
+          }),
+          Animated.timing(v, {
+            toValue: U.dotMinOpacity,
+            duration: U.dotTimingMs,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+      return loop;
+    });
+    return () => {
+      loops.forEach((l) => l.stop());
+    };
+  }, [d0, d1, d2, d3]);
+  const fs = compact ? U.fontSizeOfferCompact : U.fontSizeOffer;
+  const dotSz = compact ? U.dotSizeOfferCompact : U.dotSizeOffer;
+  const dotGap = U.dotGapOffer;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+      <Text
+        style={{
+          color: U.textColor,
+          fontSize: fs,
+          fontWeight: U.fontWeight,
+          letterSpacing: U.letterSpacing,
+        }}
+      >
+        Rota hesaplanıyor
+      </Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginLeft: U.textToDotsOffer,
+          height: fs + 2,
+        }}
+      >
+        {dots.map((v, i) => (
+          <Animated.View
+            key={i}
+            style={{
+              width: dotSz,
+              height: dotSz,
+              marginLeft: i === 0 ? 0 : dotGap,
+              borderRadius: 1,
+              backgroundColor: U.dotColor,
+              opacity: v,
+            }}
+          />
+        ))}
+      </View>
+    </View>
+  );
 }
 
 function pickupLineFromRequest(r: PassengerRequest): string {
@@ -203,9 +306,151 @@ function RequestCard({
     ]).start();
   }, []);
 
+  const srvTripKm = Number(request.trip_distance_km);
+  const srvTripMin = Number(request.trip_duration_min);
+  const hasFullTripFromServer =
+    Number.isFinite(srvTripKm) &&
+    srvTripKm > 0 &&
+    Number.isFinite(srvTripMin) &&
+    srvTripMin > 0;
+
+  const [tripRoadKm, setTripRoadKm] = useState<number | null>(null);
+  const [tripRoadMin, setTripRoadMin] = useState<number | null>(null);
+  const [tripRoadLoading, setTripRoadLoading] = useState(false);
+  const [tripRoadFailed, setTripRoadFailed] = useState(false);
+  const [tripUnavailableUiVisible, setTripUnavailableUiVisible] = useState(false);
+
+  const tripRouteFetchIdRef = useRef(0);
+  const tripLoadUiStartRef = useRef<number | null>(null);
+  const tripLoadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const forceTripRoadLoadingFalse = () => {
+    tripLoadUiStartRef.current = null;
+    if (tripLoadHideTimerRef.current) {
+      clearTimeout(tripLoadHideTimerRef.current);
+      tripLoadHideTimerRef.current = null;
+    }
+    setTripRoadLoading(false);
+  };
+
+  const beginTripRoadLoadingUi = () => {
+    if (tripLoadHideTimerRef.current) {
+      clearTimeout(tripLoadHideTimerRef.current);
+      tripLoadHideTimerRef.current = null;
+    }
+    tripLoadUiStartRef.current = Date.now();
+    setTripRoadLoading(true);
+  };
+
+  const endTripRoadLoadingUi = () => {
+    const start = tripLoadUiStartRef.current;
+    const finish = () => {
+      tripLoadUiStartRef.current = null;
+      if (tripLoadHideTimerRef.current) {
+        clearTimeout(tripLoadHideTimerRef.current);
+        tripLoadHideTimerRef.current = null;
+      }
+      setTripRoadLoading(false);
+    };
+    if (start == null) {
+      finish();
+      return;
+    }
+    const elapsed = Date.now() - start;
+    if (elapsed >= ROUTE_LOADING_MIN_VISIBLE_MS) finish();
+    else {
+      tripLoadHideTimerRef.current = setTimeout(
+        finish,
+        ROUTE_LOADING_MIN_VISIBLE_MS - elapsed,
+      );
+    }
+  };
+
+  useEffect(() => {
+    const fetchId = ++tripRouteFetchIdRef.current;
+    let cancelled = false;
+    setTripRoadKm(null);
+    setTripRoadMin(null);
+    setTripRoadFailed(false);
+
+    const kmOk =
+      Number.isFinite(srvTripKm) && srvTripKm > 0 && Number.isFinite(srvTripMin) && srvTripMin > 0;
+    if (kmOk) return;
+
+    const pla = Number(request.pickup_lat);
+    const pln = Number(request.pickup_lng);
+    const dla = Number(request.dropoff_lat);
+    const dln = Number(request.dropoff_lng);
+    if (![pla, pln, dla, dln].every((x) => Number.isFinite(x))) return;
+
+    beginTripRoadLoadingUi();
+    void (async () => {
+      let got: { km: number; min: number } | null = null;
+      try {
+        got = await fetchTripRouteMetrics(pla, pln, dla, dln);
+        if (!cancelled && got) {
+          setTripRoadKm(got.km);
+          setTripRoadMin(got.min);
+        }
+      } finally {
+        if (!cancelled && tripRouteFetchIdRef.current === fetchId) {
+          endTripRoadLoadingUi();
+          setTripRoadFailed(
+            !kmOk &&
+              [pla, pln, dla, dln].every((x) => Number.isFinite(x)) &&
+              got == null,
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      tripRouteFetchIdRef.current += 1;
+      forceTripRoadLoadingFalse();
+    };
+  }, [
+    request.id,
+    request.pickup_lat,
+    request.pickup_lng,
+    request.dropoff_lat,
+    request.dropoff_lng,
+    request.trip_distance_km,
+    request.trip_duration_min,
+    srvTripKm,
+    srvTripMin,
+  ]);
+
+  const tripFailureEligible =
+    !tripRoadLoading &&
+    tripRoadFailed &&
+    !hasFullTripFromServer &&
+    tripRoadKm == null &&
+    !(Number.isFinite(srvTripKm) && srvTripKm > 0);
+
+  useEffect(() => {
+    if (!tripFailureEligible) {
+      setTripUnavailableUiVisible(false);
+      return;
+    }
+    const t = setTimeout(
+      () => setTripUnavailableUiVisible(true),
+      ROUTE_UNAVAILABLE_REVEAL_DELAY_MS,
+    );
+    return () => clearTimeout(t);
+  }, [tripFailureEligible]);
+
+  const tripRoadShowFailedUi = tripFailureEligible && tripUnavailableUiVisible;
+  const tripRoadShowLoading =
+    !hasFullTripFromServer &&
+    !(Number.isFinite(srvTripKm) && srvTripKm > 0) &&
+    (tripRoadLoading || (tripRoadFailed && !tripUnavailableUiVisible));
+
   // km yalnızca backend alanları (pickup_distance_km / trip_distance_km); yoksa "?"
   const distanceToPassenger = formatTripKmBadge(request.pickup_distance_km);
-  const tripDistance = formatTripKmBadge(request.trip_distance_km);
+  const tripDistanceKmText = hasFullTripFromServer
+    ? formatTripKmBadge(srvTripKm)
+    : formatTripKmBadge(tripRoadKm ?? srvTripKm);
 
   const timeToPassenger =
     request.pickup_eta_min ??
@@ -217,10 +462,13 @@ function RequestCard({
     timeToPassenger != null && Number.isFinite(Number(timeToPassenger))
       ? Math.max(1, Math.round(Number(timeToPassenger)))
       : '—';
-  const tripDurationDisplay =
-    tripDuration != null && Number.isFinite(Number(tripDuration))
-      ? Math.max(1, Math.round(Number(tripDuration)))
-      : '—';
+  const tripDurationMinNumber = hasFullTripFromServer
+    ? Math.max(1, Math.round(srvTripMin))
+    : tripRoadMin != null
+      ? Math.max(1, Math.round(tripRoadMin))
+      : tripDuration != null && Number.isFinite(Number(tripDuration))
+        ? Math.max(1, Math.round(Number(tripDuration)))
+        : null;
 
   return (
     <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
@@ -287,9 +535,20 @@ function RequestCard({
               {dropoffLineFromRequest(request)}
             </Text>
           </View>
-          <View style={styles.distanceBadge}>
+          <View
+            style={[
+              styles.distanceBadge,
+              tripRoadShowLoading ? { minWidth: 118, alignItems: 'flex-end' } : null,
+            ]}
+          >
             <Ionicons name="navigate" size={12} color={COLORS.secondary} />
-            <Text style={styles.distanceText}>{tripDistance} km</Text>
+            {tripRoadShowLoading ? (
+              <TripRouteCalculatingInline compact />
+            ) : tripRoadShowFailedUi ? (
+              <Text style={styles.distanceText}>—</Text>
+            ) : (
+              <Text style={styles.distanceText}>{tripDistanceKmText} km</Text>
+            )}
           </View>
         </View>
       </View>
@@ -309,11 +568,18 @@ function RequestCard({
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
           <Ionicons name="speedometer-outline" size={20} color="#FF6B35" />
-          <View>
-            <Text style={styles.statValueBig}>
-              {tripDurationDisplay}
-              {typeof tripDurationDisplay === 'number' ? ' dk' : ''}
-            </Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {tripRoadShowLoading ? (
+              <TripRouteCalculatingInline compact />
+            ) : (
+              <Text style={styles.statValueBig}>
+                {tripRoadShowFailedUi && tripDurationMinNumber == null
+                  ? 'Rota bilgisi alınamadı'
+                  : tripDurationMinNumber != null
+                    ? `${tripDurationMinNumber} dk`
+                    : '—'}
+              </Text>
+            )}
             <Text style={styles.statLabelBig}>yolculuk</Text>
           </View>
         </View>

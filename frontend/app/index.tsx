@@ -11914,6 +11914,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               </Text>
             </TouchableOpacity>
           ) : null}
+          {/* Sürücü haritası: otherLocationFromPickupFallback true iken buluşma metrikleri routeInfo ile OSRM çelişmez; kotasyonlu trip OSRM ile sessizce ezilmez */}
           <LiveMapView
             userLocation={userLocation}
             otherLocation={driverPassengerCoordsForMap(passengerLocation, activeTag)}
