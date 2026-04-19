@@ -64,6 +64,13 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
   const [remainingSec, setRemainingSec] = useState(0);
   const endedRef = useRef(false);
   const deadlineMsRef = useRef<number | null>(null);
+  const joinStartedRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      joinStartedRef.current = false;
+    };
+  }, [trustId]);
 
   useEffect(() => {
     if (visible) {
@@ -88,6 +95,58 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
     onClose();
   }, [trustId, onClose]);
 
+  /** Agora join — yalnızca kanal/token/trustId; joinPromise servis kilidi; visible join yaşam döngüsüne girmez */
+  useEffect(() => {
+    const ch = String(channelName ?? '').trim();
+    const tok = String(agoraToken ?? '').trim();
+    if (!ch || !tok) return;
+    if (joinStartedRef.current) return;
+    joinStartedRef.current = true;
+
+    const run = async () => {
+      if (Platform.OS === 'android') {
+        const cam = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+        const mic = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
+          joinStartedRef.current = false;
+          setError('Kamera ve mikrofon izni gerekli.');
+          setJoining(false);
+          return;
+        }
+      }
+      const myUid = agoraUidFromUserId(userId);
+      agoraVoiceService.resetJoinGate();
+      agoraVoiceService.setCallbacks({
+        onUserJoined: (_c, uid) => {
+          if (uid && uid !== myUid) {
+            setRemoteUid(uid);
+          }
+        },
+        onUserOffline: () => {
+          void finalizeEnd();
+        },
+        onError: () => {
+          setError('Bağlantı hatası');
+        },
+      });
+      try {
+        await trustVideoJoin(ch, tok, myUid);
+        setJoining(false);
+      } catch (e) {
+        console.warn('Trust video join', e);
+        joinStartedRef.current = false;
+        setError('Görüntülü bağlantı kurulamadı.');
+        setJoining(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      joinStartedRef.current = false;
+    };
+  }, [channelName, agoraToken, trustId]);
+
   useEffect(() => {
     if (!visible) {
       endedRef.current = false;
@@ -102,6 +161,13 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
       return;
     }
 
+    const chWait = String(channelName || '').trim();
+    const tokWait = String(agoraToken || '').trim();
+    if (!chWait || !tokWait) {
+      setJoining(true);
+      return;
+    }
+
     let tick: ReturnType<typeof setInterval> | null = null;
 
     const run = async () => {
@@ -109,16 +175,6 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
       setJoining(true);
       setError(null);
       setRemoteUid(0);
-
-      if (Platform.OS === 'android') {
-        const cam = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
-        const mic = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-        if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
-          setError('Kamera ve mikrofon izni gerekli.');
-          setJoining(false);
-          return;
-        }
-      }
 
       const tok = String(agoraToken || '').trim();
       const ch = String(channelName || '').trim();
@@ -135,32 +191,6 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
         return;
       }
       deadlineMsRef.current = deadlineMs;
-
-      const myUid = agoraUidFromUserId(userId);
-      agoraVoiceService.resetJoinGate();
-      agoraVoiceService.setCallbacks({
-        onUserJoined: (_c, uid) => {
-          if (uid && uid !== myUid) {
-            setRemoteUid(uid);
-          }
-        },
-        onUserOffline: () => {
-          void finalizeEnd();
-        },
-        onError: () => {
-          setError('Bağlantı hatası');
-        },
-      });
-
-      try {
-        await trustVideoJoin(ch, tok, myUid);
-        setJoining(false);
-      } catch (e) {
-        console.warn('Trust video join', e);
-        setError('Görüntülü bağlantı kurulamadı.');
-        setJoining(false);
-        return;
-      }
 
       const tickFn = () => {
         const d = deadlineMsRef.current;
@@ -181,8 +211,9 @@ const TrustVideoSessionScreen = memo(function TrustVideoSessionScreen({
       if (tick) clearInterval(tick);
       void trustVideoLeave();
       agoraVoiceService.resetCallbacks();
+      joinStartedRef.current = false;
     };
-  }, [visible, channelName, agoraToken, userId, peerUserId, finalizeEnd, sessionHardDeadlineAt]);
+  }, [visible, channelName, agoraToken, userId, peerUserId, finalizeEnd, sessionHardDeadlineAt, trustId]);
 
   if (!visible) return null;
 

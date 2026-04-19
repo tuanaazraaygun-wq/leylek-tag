@@ -10776,6 +10776,7 @@ async def api_trust_respond(
                 "trust_id": r["trust_id"],
                 "tag_id": r["tag_id"],
                 "end_reason": "rejected",
+                "rejected_by": str(uid),
             }
             await emit_socket_event_to_user(r["requester_id"], "trust_session_ended", ep)
             await emit_socket_event_to_user(r["target_id"], "trust_session_ended", ep)

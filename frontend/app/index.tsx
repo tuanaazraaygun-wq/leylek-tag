@@ -709,6 +709,7 @@ export default function App() {
   }, [user?.id, user?.role, selectedRole, syncSocketSessionFromApp]);
 
   useEffect(() => {
+    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
     reportPushRegisterDebugSurface({
       screen,
       userId: user?.id ?? null,
@@ -727,12 +728,6 @@ export default function App() {
 
     const uid = user.id;
     const t = setTimeout(() => {
-      console.log('[PUSH_DEBUG] trigger:splash', {
-        userId: uid,
-        showSplash,
-        screen,
-        sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
-      });
       registerPushToken(
         uid,
         (ok) => {
@@ -761,12 +756,6 @@ export default function App() {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
-        console.log('[PUSH_DEBUG] trigger:appstate', {
-          userId: user.id,
-          showSplash,
-          screen,
-          sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
-        });
         lastPushRegisterTimeRef.current = Date.now();
         registerPushToken(user.id, () => {}, 'appstate');
       }, 500);
@@ -926,12 +915,6 @@ export default function App() {
     if (!user || screen !== 'dashboard') return;
 
     const pushTimer = setTimeout(() => {
-      console.log('[PUSH_DEBUG] trigger:dashboard', {
-        userId: user.id,
-        showSplash,
-        screen,
-        sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
-      });
       registerPushToken(user.id, () => {}, 'dashboard');
     }, 500);
 
@@ -1128,12 +1111,6 @@ export default function App() {
           } catch (e) {
             console.warn('[resume] loadActiveTagForUserResume', e);
           }
-          console.log('[PUSH_DEBUG] trigger:resumedMatch', {
-            userId: parsedUser.id,
-            showSplash,
-            screen,
-            sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
-          });
           registerPushToken(
             parsedUser.id,
             (ok) => {
@@ -1209,12 +1186,6 @@ export default function App() {
             } catch (e) {
               console.warn('[resume] loadActiveTagForUserResume (legal)', e);
             }
-            console.log('[PUSH_DEBUG] trigger:legalResume', {
-              userId: user.id,
-              showSplash,
-              screen,
-              sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
-            });
             registerPushToken(
               user.id,
               (ok) => {
@@ -1287,12 +1258,6 @@ export default function App() {
         } catch (e) {
           console.warn('[resume] loadActiveTagForUserResume (role-screen)', e);
         }
-        console.log('[PUSH_DEBUG] trigger:roleSelectResume', {
-          userId: user.id,
-          showSplash,
-          screen,
-          sinceLastPushRegisterMs: Date.now() - lastPushRegisterTimeRef.current,
-        });
         registerPushToken(
           user.id,
           (ok) => {
@@ -6522,6 +6487,7 @@ function PassengerDashboard({
     activeTag,
     showCallScreen,
     incomingCallBlocked: !!incomingCallData,
+    openChatForMatchedTrip: () => setPassengerChatVisible(true),
   });
 
   const isCallActiveRef = useRef(false);
@@ -10003,6 +9969,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     activeTag,
     showCallScreen,
     incomingCallBlocked: !!driverIncomingCallData,
+    openChatForMatchedTrip: () => setDriverChatVisible(true),
   });
 
   // Arama kilidi

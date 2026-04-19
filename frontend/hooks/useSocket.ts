@@ -182,7 +182,12 @@ interface UseSocketProps {
     session_hard_deadline_at?: string;
     peer_user_id: string;
   }) => void;
-  onTrustSessionEnded?: (data: { trust_id: string; tag_id?: string; end_reason?: string }) => void;
+  onTrustSessionEnded?: (data: {
+    trust_id: string;
+    tag_id?: string;
+    end_reason?: string;
+    rejected_by?: string;
+  }) => void;
 }
 
 export default function useSocket({

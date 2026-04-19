@@ -8,14 +8,9 @@
  */
 import Constants from 'expo-constants';
 
-/**
- * Push register zinciri teşhisi: release APK’da ekranda debug paneli için `true` yapın.
- * `__DEV__` iken panel zaten açıktır (iş mantığı değişmez).
- */
-export const ENABLE_PUSH_REGISTER_DEBUG_OVERLAY = true;
-
+/** Push register debug paneli — yalnızca geliştirme derlemesinde; prod’da kapalı */
 export function isPushRegisterDebugOverlayEnabled(): boolean {
-  return (typeof __DEV__ !== 'undefined' && __DEV__) || ENABLE_PUSH_REGISTER_DEBUG_OVERLAY;
+  return typeof __DEV__ !== 'undefined' && __DEV__;
 }
 
 /** extra.backendUrl ve env yokken ana API kökü */

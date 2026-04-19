@@ -4,26 +4,25 @@
  */
 import { agoraVoiceService } from './agoraVoiceService';
 
-/** Aynı anda iki join (çift effect / yarış) — tek zincir; ikinci çağrı aynı Promise’i bekler */
-let trustVideoJoinLock: Promise<void> | null = null;
+let joinPromise: Promise<void> | null = null;
 
 export async function trustVideoJoin(
   channelName: string,
   token: string,
   uid: number,
 ): Promise<void> {
-  if (trustVideoJoinLock) {
-    return trustVideoJoinLock;
+  if (joinPromise) {
+    return joinPromise;
   }
-  trustVideoJoinLock = (async () => {
-    try {
-      await agoraVoiceService.leaveChannelAndDestroy();
-      await agoraVoiceService.joinTrustVideoChannel(channelName, token, uid);
-    } finally {
-      trustVideoJoinLock = null;
-    }
+  joinPromise = (async () => {
+    await agoraVoiceService.leaveChannelAndDestroy();
+    await agoraVoiceService.joinTrustVideoChannel(channelName, token, uid);
   })();
-  return trustVideoJoinLock;
+  try {
+    await joinPromise;
+  } finally {
+    joinPromise = null;
+  }
 }
 
 export async function trustVideoLeave(): Promise<void> {

@@ -53,7 +53,12 @@ export type TrustSocketHandlers = {
     session_hard_deadline_at?: string;
     peer_user_id: string;
   }) => void;
-  onTrustSessionEnded?: (data: { trust_id: string; tag_id?: string; end_reason?: string }) => void;
+  onTrustSessionEnded?: (data: {
+    trust_id: string;
+    tag_id?: string;
+    end_reason?: string;
+    rejected_by?: string;
+  }) => void;
 };
 
 type Options = {
@@ -62,6 +67,8 @@ type Options = {
   activeTag: TrustActiveTagSnapshot;
   showCallScreen: boolean;
   incomingCallBlocked: boolean;
+  /** Güven reddedildiğinde eşleşmiş yolculuk sohbetini aç */
+  openChatForMatchedTrip?: () => void;
 };
 
 export function useTrustSessionController({
@@ -70,6 +77,7 @@ export function useTrustSessionController({
   activeTag,
   showCallScreen,
   incomingCallBlocked,
+  openChatForMatchedTrip,
 }: Options) {
   const [trustRequestModal, setTrustRequestModal] = useState<TrustRequestModalState>(null);
   const [trustModalLoading, setTrustModalLoading] = useState(false);
@@ -81,6 +89,8 @@ export function useTrustSessionController({
   const outboundTrustIdRef = useRef<string | null>(null);
   const sendInFlightRef = useRef(false);
   const recoveryInFlightRef = useRef(false);
+  const openChatRef = useRef(openChatForMatchedTrip);
+  openChatRef.current = openChatForMatchedTrip;
 
   const blockStateRef = useRef({
     showCallScreen,
@@ -135,32 +145,6 @@ export function useTrustSessionController({
         : displayFirstName(tagSnap?.driver_name, 'Sürücü');
     },
     [role],
-  );
-
-  const applySessionReadyPayload = useCallback(
-    (data: {
-      trust_id: string;
-      tag_id: string;
-      channel_name: string;
-      agora_token: string;
-      session_hard_deadline_at?: string;
-      peer_user_id: string;
-    }) => {
-      outboundTrustIdRef.current = null;
-      setTrustOutgoingPending(false);
-      setTrustRequestModal(null);
-      setTrustModalLoading(false);
-      const peer = String(data.peer_user_id ?? '');
-      setTrustVideoSession({
-        trustId: String(data.trust_id ?? ''),
-        channelName: String(data.channel_name ?? ''),
-        agoraToken: String(data.agora_token ?? ''),
-        peerUserId: peer,
-        sessionHardDeadlineAt: String(data.session_hard_deadline_at ?? ''),
-        peerDisplayName: peerDisplayNameForPeerId(peer),
-      });
-    },
-    [peerDisplayNameForPeerId],
   );
 
   const tryRecoverAcceptedSession = useCallback(async () => {
@@ -285,8 +269,9 @@ export function useTrustSessionController({
   const trustSocketHandlers = useMemo<TrustSocketHandlers>(
     () => ({
       onTrustSocketRequest: (data) => {
-        const tid = String(data?.tag_id ?? '');
-        if (!tid || tid !== activeTagIdRef.current) return;
+        const tid = String(data?.tag_id ?? '').trim();
+        const cur = String(activeTagIdRef.current ?? '').trim();
+        if (!tid || !cur || tid.toLowerCase() !== cur.toLowerCase()) return;
         const st = blockStateRef.current;
         if (st.showCallScreen || st.incomingCallBlocked || st.trustVideo) return;
         const rr = data?.requester_role === 'driver' ? 'driver' : 'passenger';
@@ -297,24 +282,62 @@ export function useTrustSessionController({
         });
       },
       onTrustSessionReady: (data) => {
-        const tid = String(data?.tag_id ?? '');
-        if (!tid || tid !== activeTagIdRef.current) return;
-        applySessionReadyPayload({
-          trust_id: String(data.trust_id ?? ''),
-          tag_id: tid,
-          channel_name: String(data.channel_name ?? ''),
-          agora_token: String(data.agora_token ?? ''),
-          session_hard_deadline_at: data.session_hard_deadline_at,
-          peer_user_id: String(data.peer_user_id ?? ''),
-        });
+        const cur = String(activeTagIdRef.current ?? '');
+        if (
+          data.channel_name &&
+          data.agora_token &&
+          String(data.tag_id ?? '').toLowerCase() === cur.toLowerCase()
+        ) {
+          const peer = String(data.peer_user_id ?? '');
+          const peerName = peerDisplayNameForPeerId(peer);
+          outboundTrustIdRef.current = null;
+          setTrustOutgoingPending(false);
+          setTrustRequestModal(null);
+          setTrustModalLoading(false);
+          setTrustVideoSession({
+            trustId: String(data.trust_id ?? ''),
+            channelName: String(data.channel_name),
+            agoraToken: String(data.agora_token),
+            peerUserId: peer,
+            sessionHardDeadlineAt: String(data.session_hard_deadline_at ?? ''),
+            peerDisplayName: peerName,
+          });
+        }
       },
       onTrustSessionEnded: (data) => {
         const endTrustId = String(data?.trust_id ?? '');
-        const tagOk =
-          !data?.tag_id ||
-          !activeTagIdRef.current ||
-          String(data.tag_id) === activeTagIdRef.current;
+        const evTag = String(data?.tag_id ?? '').trim();
+        const cur = String(activeTagIdRef.current ?? '').trim();
+        const tagOk = !evTag || !cur || evTag.toLowerCase() === cur.toLowerCase();
         if (!tagOk) return;
+
+        const reason = String(data?.end_reason ?? '');
+
+        if (reason === 'rejected') {
+          const currentUserId = String(userId ?? '').trim().toLowerCase();
+          const isRejectingUser =
+            String((data as { rejected_by?: string }).rejected_by ?? '')
+              .trim()
+              .toLowerCase() === currentUserId;
+
+          if (isRejectingUser) {
+            appAlert('Bilgi', 'Müsait değilseniz mesaj yazabilirsiniz', [{ text: 'Tamam' }], {
+              variant: 'info',
+            });
+          } else {
+            appAlert('Güven isteği', 'Karşı taraf güven vermedi', [{ text: 'Tamam' }], {
+              variant: 'warning',
+            });
+          }
+
+          setTimeout(() => {
+            openChatRef.current?.();
+          }, 150);
+
+          clearAllTrustState();
+          return;
+        }
+
         if (outboundTrustIdRef.current && outboundTrustIdRef.current === endTrustId) {
           outboundTrustIdRef.current = null;
         }
@@ -322,15 +345,12 @@ export function useTrustSessionController({
         setTrustModalLoading(false);
         setTrustVideoSession((prev) => (prev && prev.trustId === endTrustId ? null : prev));
         setTrustRequestModal((prev) => (prev && prev.trustId === endTrustId ? null : prev));
-        const reason = String(data?.end_reason ?? '');
-        if (reason === 'rejected') {
-          appAlert('Güven isteği', 'Karşı taraf güven vermedi.', [{ text: 'Tamam' }], { variant: 'info' });
-        } else if (reason === 'expired') {
+        if (reason === 'expired') {
           appAlert('Güven isteği', 'Süre doldu veya görüşme sona erdi.', [{ text: 'Tamam' }], { variant: 'info' });
         }
       },
     }),
-    [applySessionReadyPayload],
+    [peerDisplayNameForPeerId, userId, clearAllTrustState],
   );
 
   return {

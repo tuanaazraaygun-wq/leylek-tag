@@ -26,11 +26,6 @@ import { registerFcmTokenWithBackend } from '../lib/androidFcmPush';
 
 const API_URL = API_BASE_URL;
 
-function pushDbgTokenPrefix(s: string | null | undefined): string {
-  if (!s) return '';
-  return s.length <= 30 ? s : `${s.slice(0, 28)}…`;
-}
-
 function deferToNextFrame(fn: () => void) {
   InteractionManager.runAfterInteractions(() => {
     setTimeout(fn, 0);
@@ -145,7 +140,14 @@ export function PushNotificationsProvider({ children }: { children: React.ReactN
   return React.createElement(
     PushNotificationsContext.Provider,
     { value },
-    React.createElement(React.Fragment, null, children, React.createElement(PushRegisterDebugOverlayView, { value }))
+    isPushRegisterDebugOverlayEnabled()
+      ? React.createElement(
+          React.Fragment,
+          null,
+          children,
+          React.createElement(PushRegisterDebugOverlayView, { value }),
+        )
+      : React.createElement(React.Fragment, null, children),
   );
 }
 
@@ -168,25 +170,12 @@ function runRegisterForPushNotificationsChain(
   onToken: (token: string | null) => void,
   mergeDebug?: MergeDbg
 ): void {
-  console.log('[PUSH_DEBUG] chain enter', { isDevice: Device.isDevice });
   mergeDebug?.({ chainFailReason: null });
   if (!Device.isDevice) {
-    console.log('[PUSH_DEBUG] chain abort: not physical device');
     mergeDebug?.({ tokenAcquired: false, chainFailReason: 'not_physical_device' });
     onToken(null);
     return;
   }
-
-  const androidApiLevel =
-    Platform.OS === 'android'
-      ? typeof Platform.Version === 'number'
-        ? Platform.Version
-        : parseInt(String(Platform.Version), 10)
-      : NaN;
-  console.log('[PUSH_DEBUG] chain context', {
-    platform: Platform.OS,
-    androidApiLevel: Platform.OS === 'android' ? (Number.isNaN(androidApiLevel) ? String(Platform.Version) : androidApiLevel) : null,
-  });
 
   const chainFail = (reason: string) => {
     mergeDebug?.({ tokenAcquired: false, chainFailReason: reason });
@@ -234,19 +223,16 @@ function runRegisterForPushNotificationsChain(
       if (!Number.isNaN(api) && api >= 33) {
         return PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS').then(
           (postResult) => {
-            console.log('[PUSH_DEBUG] POST_NOTIFICATIONS', { result: postResult });
             if (postResult !== PermissionsAndroid.RESULTS.GRANTED) {
               return Promise.reject(new Error('POST_NOTIFICATIONS denied'));
             }
           }
         );
       }
-      console.log('[PUSH_DEBUG] POST_NOTIFICATIONS', { result: 'skipped', reason: 'api_lt_33_or_invalid', api });
       return Promise.resolve();
     })
     .then(() => Notifications.requestPermissionsAsync())
     .then((perm) => {
-      console.log('[PUSH_DEBUG] requestPermissionsAsync', { status: perm.status });
       if (perm.status !== 'granted') {
         console.warn('[PUSH] Bildirim izni verilmedi:', perm.status);
         return Promise.reject(new Error('notification permission denied'));
@@ -254,7 +240,6 @@ function runRegisterForPushNotificationsChain(
     })
     .then(() => {
       if (Platform.OS !== 'android') {
-        console.log('[PUSH_DEBUG] native FCM registration path is Android-only in this build');
         mergeDebug?.({ tokenAcquired: false, chainFailReason: 'fcm_registration_android_only' });
         onToken(null);
         return;
@@ -268,7 +253,6 @@ function runRegisterForPushNotificationsChain(
             setPushToken(token);
             setTokenType('fcm');
             mergeDebug?.({ tokenAcquired: true, chainFailReason: null });
-            console.log('[PUSH_DEBUG] getDevicePushTokenAsync ok', { tokenPrefix: pushDbgTokenPrefix(token) });
             onToken(token);
           } else {
             console.log('FCM_TOKEN_FETCH_ERROR', { reason: 'empty_device_token' });
@@ -283,7 +267,6 @@ function runRegisterForPushNotificationsChain(
     .catch((e) => {
       console.warn('[PUSH] Token zinciri başarısız:', e);
       const msg = e instanceof Error ? e.message : String(e);
-      console.log('[PUSH_DEBUG] chain catch', { message: msg });
       chainFail(msg);
     });
 }
@@ -316,6 +299,7 @@ function usePushNotificationsState(): PushNotificationHook {
   const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
 
   const mergePushRegisterDebug = useCallback((patch: Partial<PushRegisterDebugSnapshot>) => {
+    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
     setPushRegisterDebug((prev) => ({
       ...prev,
       ...patch,
@@ -327,6 +311,7 @@ function usePushNotificationsState(): PushNotificationHook {
 
   const reportPushRegisterDebugSurface = useCallback(
     (p: { screen: string; userId: string | null; showSplash: boolean }) => {
+      if (typeof __DEV__ === 'undefined' || !__DEV__) return;
       mergePushRegisterDebug({
         screen: p.screen,
         userId: p.userId,
@@ -351,9 +336,7 @@ function usePushNotificationsState(): PushNotificationHook {
 
   const registerPushTokenWork = useCallback(
     (userId: string, onComplete?: (success: boolean) => void, debugTrigger?: string) => {
-      console.log('[PUSH_DEBUG] registerPushTokenWork enter', { userId });
       if (!userId) {
-        console.log('[PUSH_DEBUG] registerPushTokenWork skip: empty userId');
         mergePushRegisterDebug({
           lastTrigger: debugTrigger ?? '—',
           fetchFailReason: 'empty_user_id_work',
@@ -363,13 +346,7 @@ function usePushNotificationsState(): PushNotificationHook {
         return;
       }
       acquireTokenNonBlocking((token) => {
-        console.log('[PUSH_DEBUG] token callback', {
-          userId,
-          hasToken: !!token,
-          tokenPrefix: pushDbgTokenPrefix(token),
-        });
         if (!token) {
-          console.log('[PUSH_DEBUG] skip register: no native token (chain logs above)');
           mergePushRegisterDebug({
             tokenAcquired: false,
             fetchStarted: false,
@@ -399,14 +376,8 @@ function usePushNotificationsState(): PushNotificationHook {
           fetchSuccess: null,
           fetchFailReason: null,
         });
-        console.log('[PUSH_DEBUG] fcm register start', {
-          endpoint: `${API_URL}/user/save-push-token`,
-          user_id: userId,
-          tokenPrefix: pushDbgTokenPrefix(token),
-        });
         void registerFcmTokenWithBackend(userId, token)
           .then((success) => {
-            console.log('[PUSH_DEBUG] fcm register done', { success });
             mergePushRegisterDebug({
               fetchDone: true,
               fetchSuccess: success,
@@ -415,7 +386,6 @@ function usePushNotificationsState(): PushNotificationHook {
             onComplete?.(success);
           })
           .catch((err) => {
-            console.log('[PUSH_DEBUG] fcm register error', { message: String(err) });
             mergePushRegisterDebug({
               fetchDone: true,
               fetchSuccess: false,
@@ -431,9 +401,7 @@ function usePushNotificationsState(): PushNotificationHook {
 
   const registerPushToken = useCallback(
     (userId: string, onComplete?: (success: boolean) => void, debugTrigger?: string) => {
-      console.log('[PUSH_DEBUG] registerPushToken enter', { userId });
       if (!userId) {
-        console.log('[PUSH_DEBUG] registerPushToken skip: empty userId');
         mergePushRegisterDebug({
           registerTriggered: true,
           registerTriggeredAt: Date.now(),
