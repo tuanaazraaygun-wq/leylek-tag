@@ -489,10 +489,13 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
 const forceEndLockRef = { current: false };
 let forceEndUnlockTimer: ReturnType<typeof setTimeout> | null = null;
 
-function armForceEndLock() {
+function armForceEndLock(reason?: string) {
+  const r = reason ?? 'unspecified';
+  console.log('FORCE_END_LOCK_ARMED', { reason: r, ttl_ms: 5000 });
   forceEndLockRef.current = true;
   if (forceEndUnlockTimer) clearTimeout(forceEndUnlockTimer);
   forceEndUnlockTimer = setTimeout(() => {
+    console.log('FORCE_END_LOCK_RELEASED', { reason: r });
     forceEndLockRef.current = false;
     forceEndUnlockTimer = null;
   }, 5000);
@@ -7034,7 +7037,7 @@ function PassengerDashboard({
         screen: 'PassengerDashboard',
       });
 
-      armForceEndLock();
+      armForceEndLock('passenger_socket_trip_force_ended');
       isPollingActiveRef.current = false;
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
@@ -10491,6 +10494,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     // Yeni TAG eventi - Yolcudan gelen TAG'ler
     onTagCreated: async (data) => {
       console.log('🏷️ ŞOFÖR - YENİ TAG GELDİ (Socket):', data);
+      console.log('OFFER_EVENT_RECEIVED', {
+        kind: 'tag_created',
+        tag_id: data?.tag_id ?? null,
+        passenger_id: data?.passenger_id ?? null,
+      });
       const pid = String(data?.passenger_id ?? '').toLowerCase();
       const uid = String(user?.id ?? '').toLowerCase();
       if (pid && uid && pid === uid) {
@@ -10608,6 +10616,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
+      console.log('OFFER_EVENT_RECEIVED', { kind: 'tag_matched', tag_id: data?.tag_id ?? null });
       // 🔊 EŞLEŞME SESİ - Ding ding ding
       playMatchSound();
       // 🔥 EŞLEŞTİĞİNDE TÜM LİSTEYİ TEMİZLE - Artık yeni teklif kabul edemez
@@ -10670,6 +10679,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     // Backend accept_ride: doğrudan eşleşme socket’i (sürücü)
     onRideMatched: (data) => {
       console.log('✅ ŞOFÖR - ride_matched (Socket):', data);
+      console.log('OFFER_EVENT_RECEIVED', { kind: 'ride_matched', tag_id: data?.tag_id ?? null });
       playMatchSound();
       setRequests([]);
       if (data?.tag_id) {
@@ -10834,7 +10844,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         screen: 'DriverDashboard',
       });
 
-      armForceEndLock();
+      armForceEndLock('driver_socket_trip_force_ended');
       if (driverDataPollingIntervalRef.current) {
         clearInterval(driverDataPollingIntervalRef.current);
         driverDataPollingIntervalRef.current = null;
@@ -11464,9 +11474,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           role: 'driver',
           source: 'loadActiveTag_no_tag',
         });
-      
-        // 🔒 BURAYI EKLE (KRİTİK)
-        forceEndLockRef.current = true;
+
+        console.log('FORCE_END_LOCK_BYPASSED_NO_TAG', {
+          role: 'driver',
+          source: 'loadActiveTag_no_tag',
+          action: 'timed_arm_not_permanent',
+        });
+        armForceEndLock('driver_loadActiveTag_no_tag');
       
         setActiveTag(null);
         setRequests([]);
@@ -11584,6 +11598,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               prevStatus: prev.status,
               apiSuccess: data.success,
               userId: user.id,
+            });
+            console.log('OFFER_EVENT_RECEIVED', {
+              kind: 'stale_match_kept',
+              tag_id: prev.id,
+              api_success: data.success,
             });
             return prev;
           }
@@ -12194,6 +12213,31 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   // 🚫 SESLİ ARAMA KALDIRILDI - ŞOFÖR
   // IncomingCallScreen, OutgoingCallScreen, DailyCallScreen kaldırıldı
 
+  const requestsIdsKey = requests
+    .map((r) => String(r.id || r.tag_id || r.request_id || '').trim())
+    .filter(Boolean)
+    .join(',');
+
+  useEffect(() => {
+    const aid = String(activeTag?.id || '').trim();
+    const hasPendingOtherTrip = aid
+      ? requests.some((r) => {
+          const rid = String(r.id || r.tag_id || r.request_id || '').trim();
+          return !!rid && rid !== aid;
+        })
+      : false;
+    const inMatched =
+      !!activeTag &&
+      (activeTag.status === 'matched' || activeTag.status === 'in_progress');
+    console.log('OFFER_STATE_UPDATED', {
+      requests_len: requests.length,
+      active_tag_id: activeTag?.id ?? null,
+      active_status: activeTag?.status ?? null,
+      has_pending_other_trip: hasPendingOtherTrip,
+      driver_in_active_trip_ui: inMatched && !hasPendingOtherTrip,
+    });
+  }, [requests.length, requestsIdsKey, activeTag?.id, activeTag?.status]);
+
   // 📋 KYC PENDING EKRANI - Başvuru inceleniyor
   if (kycStatus?.status === 'pending') {
     // Kalan süreyi hesapla (30 dakika)
@@ -12283,8 +12327,24 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   }
 
   /** Yolculuk yokken: teklif gelse de gelmese de aynı düzen (panel + harita + puan) */
+  const hasPendingRequestForOtherTrip =
+    !!activeTag?.id &&
+    requests.some((r) => {
+      const rid = String(r.id || r.tag_id || r.request_id || '').trim();
+      const aid = String(activeTag.id || '').trim();
+      return !!rid && !!aid && rid !== aid;
+    });
   const driverInActiveTrip =
-    !!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress'));
+    !!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) &&
+    !hasPendingRequestForOtherTrip;
+
+  console.log('OFFER_RENDER_CONDITION', {
+    driver_in_active_trip: driverInActiveTrip,
+    has_pending_request_for_other_trip: hasPendingRequestForOtherTrip,
+    requests_len: requests.length,
+    active_tag_id: activeTag?.id ?? null,
+    active_status: activeTag?.status ?? null,
+  });
 
   if (!driverInActiveTrip) {
     return (
