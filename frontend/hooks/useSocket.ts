@@ -95,7 +95,9 @@ interface UseSocketProps {
   onCallRinging?: (data: { success: boolean; receiver_online: boolean; reason?: string }) => void;
   // TAG eventleri
   onTagCreated?: (data: TagData) => void;
-  onTagCancelled?: (data: { tag_id: string }) => void;
+  onTagCancelled?: (data: { tag_id: string; request_id?: string }) => void;
+  /** Rolling dispatch dalga geçişi — `remove_offer`; iptal/revoke ile karıştırma */
+  onRemoveOffer?: (data: { tag_id: string; request_id?: string }) => void;
   onTagUpdated?: (data: TagData) => void;
   onTagMatched?: (data: { tag_id: string; driver_id: string }) => void;
   /** Backend doğrudan eşleşme: yolcuya */
@@ -207,6 +209,7 @@ export default function useSocket({
   onCallRinging,
   onTagCreated,
   onTagCancelled,
+  onRemoveOffer,
   onTagUpdated,
   onTagMatched,
   onRideAccepted,
@@ -265,7 +268,7 @@ export default function useSocket({
   // Callback refs - dependency array'i küçültmek için
   const callbackRefs = useRef({
     onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-    onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
+      onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
@@ -277,7 +280,7 @@ export default function useSocket({
   useEffect(() => {
     callbackRefs.current = {
       onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-      onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
+      onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
@@ -341,6 +344,11 @@ export default function useSocket({
     const handleTagCancelled = (data: any) => {
       console.log('🚫 [useSocket] TAG İPTAL:', data);
       callbackRefs.current.onTagCancelled?.(data);
+    };
+
+    const handleRemoveOfferRolling = (data: any) => {
+      console.log('📤 [useSocket] remove_offer (dalga geçişi):', data);
+      callbackRefs.current.onRemoveOffer?.(data);
     };
 
     const handleTagUpdated = (data: any) => {
@@ -497,7 +505,7 @@ export default function useSocket({
     socket.on('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
     socket.on('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG - Başka sürücü aldı
     socket.on('passenger_offer_revoked', handleTagCancelled); // Sıralı dispatch: süre doldu / sıra geçti
-    socket.on('remove_offer', handleTagCancelled); // Rolling batch: batch dışı / kabul sonrası teklifi kaldır
+    socket.on('remove_offer', handleRemoveOfferRolling); // Rolling batch — sürücü UI’si onRemoveOffer ile min. görünürlük
     socket.on('tag_updated', handleTagUpdated);
     socket.on('tag_matched', handleTagMatched);
     socket.on('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG - Sürücü kabul etti
@@ -556,7 +564,7 @@ export default function useSocket({
       socket.off('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
       socket.off('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG
       socket.off('passenger_offer_revoked', handleTagCancelled);
-      socket.off('remove_offer', handleTagCancelled);
+      socket.off('remove_offer', handleRemoveOfferRolling);
       socket.off('tag_updated', handleTagUpdated);
       socket.off('tag_matched', handleTagMatched);
       socket.off('offer_accepted_success', handleTagMatched); // 🆕 MARTI TAG

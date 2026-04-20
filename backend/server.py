@@ -10486,38 +10486,24 @@ async def start_call(request: StartCallRequest):
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
 
-        # Güven Al: aktif (accepted) güven görüşmesi varken normal aramayı başlatma — /voice akışı aynı, ek guard
+        # Güven videosu bu tag için accepted ise sesli arama ile çakışır (tek RTC motoru); yalnızca aynı yolculukta kontrol et.
         try:
-            _ca = str(request.caller_id).strip().lower()
-            _re = str(receiver_id).strip().lower()
-
-            def _in_accepted_trust(uid: str) -> bool:
-                q1 = (
+            _tag_for_trust = str(request.tag_id or "").strip()
+            if _tag_for_trust:
+                ts_active = (
                     supabase.table("trust_sessions")
                     .select("id")
+                    .eq("tag_id", _tag_for_trust)
                     .eq("status", "accepted")
-                    .eq("requester_id", uid)
                     .limit(1)
                     .execute()
                 )
-                if q1.data:
-                    return True
-                q2 = (
-                    supabase.table("trust_sessions")
-                    .select("id")
-                    .eq("status", "accepted")
-                    .eq("target_id", uid)
-                    .limit(1)
-                    .execute()
-                )
-                return bool(q2.data)
-
-            if _in_accepted_trust(_ca) or _in_accepted_trust(_re):
-                return {
-                    "success": False,
-                    "detail": "busy",
-                    "message": "Güven görüşmesi devam ediyor. Lütfen bitmesini bekleyin.",
-                }
+                if ts_active.data:
+                    return {
+                        "success": False,
+                        "detail": "busy",
+                        "message": "Güven görüşmesi devam ediyor. Lütfen bitmesini bekleyin.",
+                    }
         except Exception as _tb:
             logger.warning("trust_sessions busy check skipped: %s", _tb)
         

@@ -8169,7 +8169,10 @@ function PassengerDashboard({
       return;
     }
     if (passengerTrustBlocksCalls) {
-      appAlert('Uyarı', 'Güven görüşmesi veya güven isteği varken arama başlatılamaz.');
+      appAlert(
+        'Uyarı',
+        'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
+      );
       return;
     }
     callCheck('clearIncomingCall', clearIncomingCall);
@@ -10298,6 +10301,9 @@ interface DriverDashboardProps {
   onShowTripEndedBanner?: (message: string) => void;
 }
 
+/** Rolling `remove_offer`: kart en az bu kadar ms görünsün (dalga geçişinde titreşimi keser). */
+const DRIVER_OFFER_MIN_VISIBLE_MS = 30_000;
+
 function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusProp, onShowTripEndedBanner }: DriverDashboardProps) {
   const rawVk = (user?.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind;
   const driverVehicleKind: 'car' | 'motorcycle' =
@@ -10306,6 +10312,31 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
+  const driverOfferFirstShownAtRef = useRef<Record<string, number>>({});
+  const driverRemoveOfferTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const clearDriverRemoveOfferTimer = (tagKey: string) => {
+    const k = String(tagKey);
+    const t = driverRemoveOfferTimersRef.current[k];
+    if (t) {
+      clearTimeout(t);
+      delete driverRemoveOfferTimersRef.current[k];
+    }
+  };
+  const clearAllDriverOfferRemovalState = () => {
+    for (const k of Object.keys(driverRemoveOfferTimersRef.current)) {
+      clearDriverRemoveOfferTimer(k);
+    }
+    driverOfferFirstShownAtRef.current = {};
+  };
+  useEffect(() => {
+    return () => {
+      for (const k of Object.keys(driverRemoveOfferTimersRef.current)) {
+        clearDriverRemoveOfferTimer(k);
+      }
+      driverRemoveOfferTimersRef.current = {};
+      driverOfferFirstShownAtRef.current = {};
+    };
+  }, []);
   const driverDataPollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -10700,6 +10731,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             (data as { time_to_passenger_min?: number }).time_to_passenger_min,
         );
         const pkMin = Number.isFinite(pkMinN) && pkMinN > 0 ? pkMinN : null;
+        if (data.tag_id) {
+          driverOfferFirstShownAtRef.current[String(data.tag_id)] = Date.now();
+        }
         return [...filtered, {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -10738,14 +10772,37 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
-      // TAG'i listeden ANINDA kaldır
+      if (data?.tag_id) {
+        const tid = String(data.tag_id);
+        clearDriverRemoveOfferTimer(tid);
+        delete driverOfferFirstShownAtRef.current[tid];
+      }
+      // TAG'i listeden ANINDA kaldır (iptal / başka sürücü aldı / revoke)
       setRequests(prev => prev.filter(r => r.id !== data.tag_id && r.request_id !== data.request_id));
+    },
+    onRemoveOffer: (data) => {
+      const tagId = data?.tag_id != null ? String(data.tag_id) : '';
+      if (!tagId) return;
+      if (driverOfferFirstShownAtRef.current[tagId] == null) {
+        driverOfferFirstShownAtRef.current[tagId] = Date.now();
+      }
+      const t0 = driverOfferFirstShownAtRef.current[tagId];
+      const delay = Math.max(0, DRIVER_OFFER_MIN_VISIBLE_MS - (Date.now() - t0));
+      clearDriverRemoveOfferTimer(tagId);
+      driverRemoveOfferTimersRef.current[tagId] = setTimeout(() => {
+        delete driverRemoveOfferTimersRef.current[tagId];
+        setRequests(prev =>
+          prev.filter(r => r.id !== tagId && r.request_id !== data.request_id),
+        );
+        delete driverOfferFirstShownAtRef.current[tagId];
+      }, delay);
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
       console.log('OFFER_EVENT_RECEIVED', { kind: 'tag_matched', tag_id: data?.tag_id ?? null });
       // 🔊 EŞLEŞME SESİ - Ding ding ding
       playMatchSound();
+      clearAllDriverOfferRemovalState();
       // 🔥 EŞLEŞTİĞİNDE TÜM LİSTEYİ TEMİZLE - Artık yeni teklif kabul edemez
       setRequests([]);
       
@@ -10808,6 +10865,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       console.log('✅ ŞOFÖR - ride_matched (Socket):', data);
       console.log('OFFER_EVENT_RECEIVED', { kind: 'ride_matched', tag_id: data?.tag_id ?? null });
       playMatchSound();
+      clearAllDriverOfferRemovalState();
       setRequests([]);
       if (data?.tag_id) {
         const d = data as unknown as Record<string, unknown>;
@@ -11067,7 +11125,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       return;
     }
     if (driverTrustBlocksCalls) {
-      appAlert('Uyarı', 'Güven görüşmesi veya güven isteği varken arama başlatılamaz.');
+      appAlert(
+        'Uyarı',
+        'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
+      );
       return;
     }
     driverClearIncomingCall();

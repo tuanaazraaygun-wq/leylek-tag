@@ -126,8 +126,11 @@ export function useTrustSessionController({
   const trustGuvenButtonDisabled =
     trustOutgoingPending || trustModalLoading || !!trustVideoSession || !!trustRequestModal;
 
-  const isTrustBlockingCalls =
-    !!trustVideoSession || !!trustOutgoingPending || !!trustRequestModal;
+  /**
+   * Sesli arama yalnızca Agora güven görüşmesi kanalına gerçekten katılımda engellenir.
+   * Bekleyen güven isteği / modal — klasik sesli aramayı bloke etmez (ayrı token/kanal).
+   */
+  const isTrustBlockingCalls = !!trustVideoSession;
 
   const peerDisplayNameForPeerId = useCallback(
     (peer: string) => {

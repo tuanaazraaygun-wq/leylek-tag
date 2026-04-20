@@ -4,7 +4,7 @@
  * Özellikler:
  * - 20 km çevredeki sürücüleri haritada gösterir
  * - Zonklama/sinyal efekti ile 20 km yarıçap
- * - Geri sayım (10, 9, 8...)
+ * - Sakin bilgilendirme metni (gerçek dispatch süresi sunucuda)
  * - Dispatch durumu (kaç kişiye teklif gösterildi)
  * - Premium tasarım
  */
@@ -167,7 +167,6 @@ export default function PassengerWaitingScreen({
     timeout_remaining: 10,
     status: 'searching',
   });
-  const [countdown, setCountdown] = useState(10);
   const [selectedDriver, setSelectedDriver] = useState<NearbyDriver | null>(null);
   const [showDriverProfile, setShowDriverProfile] = useState(false);
   
@@ -262,7 +261,6 @@ export default function PassengerWaitingScreen({
             timeout_remaining: data.timeout_remaining || 10,
             status: data.status || 'searching',
           });
-          setCountdown(data.timeout_remaining || 10);
         }
       } catch (error) {
         // Sessizce geç
@@ -273,17 +271,6 @@ export default function PassengerWaitingScreen({
     const interval = setInterval(checkDispatch, 2000);
     return () => clearInterval(interval);
   }, [tagId]);
-  
-  // Geri sayım
-  useEffect(() => {
-    if (countdown <= 0) return;
-    
-    const timer = setInterval(() => {
-      setCountdown(prev => Math.max(0, prev - 1));
-    }, 1000);
-    
-    return () => clearInterval(timer);
-  }, [dispatchStatus.current_driver_index]);
   
   // Paylaş
   const handleShare = async () => {
@@ -323,12 +310,6 @@ export default function PassengerWaitingScreen({
   const getSubStatusMessage = () => {
     if (dispatchStatus.status === 'matched') {
       return 'Sürücünüz yola çıkıyor';
-    }
-    if (dispatchStatus.current_driver_index > 0 && countdown > 0) {
-      return `Yanıt bekleniyor... ${countdown} saniye`;
-    }
-    if (dispatchStatus.current_driver_index > 0 && countdown === 0) {
-      return 'Sonraki sürücüye geçiliyor...';
     }
     if (dispatchStatus.total_drivers === 0 && nearbyDriverCount > 0) {
       return `${nearbyDriverCount} sürücü yakında; talep türünüze uygun sıra oluşunca teklif gidecek`;
@@ -557,15 +538,13 @@ export default function PassengerWaitingScreen({
       
       {/* Durum Paneli */}
       <View style={styles.statusPanel}>
-        {/* Geri Sayım */}
-        {dispatchStatus.current_driver_index > 0 && countdown > 0 && (
-          <View style={styles.countdownContainer}>
-            <Animated.View style={[styles.countdownCircle, { transform: [{ scale: dotScale }] }]}>
-              <Text style={styles.countdownNumber}>{countdown}</Text>
-            </Animated.View>
-          </View>
-        )}
-        
+        <View style={styles.calmWaitingBlock}>
+          <Text style={styles.calmWaitingLine}>
+            Şehir içi yol paylaşımı teklifiniz sürücüler tarafından değerlendiriliyor.
+          </Text>
+          <Text style={styles.calmWaitingLineMuted}>Eşleşme sağlanıyor, lütfen bekleyin.</Text>
+        </View>
+
         {/* Loading Animasyonu */}
         {dispatchStatus.current_driver_index === 0 && (
           <View style={styles.loadingContainer}>
@@ -976,23 +955,32 @@ const styles = StyleSheet.create({
     marginTop: 20,
     alignItems: 'center',
   },
-  countdownContainer: {
-    marginBottom: 16,
+  calmWaitingBlock: {
+    marginBottom: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
-  countdownCircle: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(63, 169, 245, 0.14)',
-    borderWidth: 3,
-    borderColor: '#3FA9F5',
-    justifyContent: 'center',
-    alignItems: 'center',
+  calmWaitingLine: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+    textAlign: 'center',
+    lineHeight: 22,
   },
-  countdownNumber: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#2563EB',
+  calmWaitingLineMuted: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   loadingContainer: {
     marginBottom: 16,
