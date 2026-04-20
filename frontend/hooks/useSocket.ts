@@ -338,15 +338,58 @@ export default function useSocket({
 
     const handleNewTag = (data: any) => {
       console.log('🏷️ [useSocket] YENİ TAG:', data);
+      if (userRole === 'driver' && data?.tag_id) {
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_ADD',
+              source: 'socket_new_passenger_offer_or_tag',
+              tag_id: data.tag_id,
+              request_id: data.request_id ?? null,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+      }
       callbackRefs.current.onTagCreated?.(data);
     };
 
-    const handleTagCancelled = (data: any) => {
-      console.log('🚫 [useSocket] TAG İPTAL:', data);
+    /** TEMP: sürücü teklif flicker — hangi socket olayı anında listeden düşürüyor */
+    const logDriverOfferRemoveEvent = (socketEvent: string, data: any) => {
+      if (userRole === 'driver') {
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_REMOVE_EVENT',
+              socketEvent,
+              tag_id: data?.tag_id ?? null,
+              request_id: data?.request_id ?? null,
+              revoke_reason: data?.revoke_reason ?? null,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+      }
+    };
+
+    const notifyTagCancelled = (socketEvent: string, data: any) => {
+      logDriverOfferRemoveEvent(socketEvent, data);
+      console.log('🚫 [useSocket] TAG İPTAL:', socketEvent, data);
       callbackRefs.current.onTagCancelled?.(data);
     };
 
+    const handleTagCancelledPlain = (data: any) => notifyTagCancelled('tag_cancelled', data);
+    const handlePassengerOfferCancelledEvt = (data: any) =>
+      notifyTagCancelled('passenger_offer_cancelled', data);
+    const handlePassengerOfferTakenEvt = (data: any) =>
+      notifyTagCancelled('passenger_offer_taken', data);
+    const handlePassengerOfferRevokedEvt = (data: any) =>
+      notifyTagCancelled('passenger_offer_revoked', data);
+
     const handleRemoveOfferRolling = (data: any) => {
+      logDriverOfferRemoveEvent('remove_offer', data);
       console.log('📤 [useSocket] remove_offer (dalga geçişi):', data);
       callbackRefs.current.onRemoveOffer?.(data);
     };
@@ -501,10 +544,10 @@ export default function useSocket({
     socket.on('tag_created', handleNewTag); // Alias
     // Sürücü room'una giden teklif; yolcu room'una gitmez. Rol yanlış yazılsa bile kaçırmamak için her zaman dinle.
     socket.on('new_passenger_offer', handleNewTag);
-    socket.on('tag_cancelled', handleTagCancelled);
-    socket.on('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
-    socket.on('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG - Başka sürücü aldı
-    socket.on('passenger_offer_revoked', handleTagCancelled); // Sıralı dispatch: süre doldu / sıra geçti
+    socket.on('tag_cancelled', handleTagCancelledPlain);
+    socket.on('passenger_offer_cancelled', handlePassengerOfferCancelledEvt); // 🆕 MARTI TAG
+    socket.on('passenger_offer_taken', handlePassengerOfferTakenEvt); // 🆕 MARTI TAG - Başka sürücü aldı
+    socket.on('passenger_offer_revoked', handlePassengerOfferRevokedEvt); // revoke_reason: dispatch_timeout → ertelenmiş kaldırma
     socket.on('remove_offer', handleRemoveOfferRolling); // Rolling batch — sürücü UI’si onRemoveOffer ile min. görünürlük
     socket.on('tag_updated', handleTagUpdated);
     socket.on('tag_matched', handleTagMatched);
@@ -560,10 +603,10 @@ export default function useSocket({
       socket.off('new_tag', handleNewTag);
       socket.off('tag_created', handleNewTag);
       socket.off('new_passenger_offer', handleNewTag);
-      socket.off('tag_cancelled', handleTagCancelled);
-      socket.off('passenger_offer_cancelled', handleTagCancelled); // 🆕 MARTI TAG
-      socket.off('passenger_offer_taken', handleTagCancelled); // 🆕 MARTI TAG
-      socket.off('passenger_offer_revoked', handleTagCancelled);
+      socket.off('tag_cancelled', handleTagCancelledPlain);
+      socket.off('passenger_offer_cancelled', handlePassengerOfferCancelledEvt);
+      socket.off('passenger_offer_taken', handlePassengerOfferTakenEvt);
+      socket.off('passenger_offer_revoked', handlePassengerOfferRevokedEvt);
       socket.off('remove_offer', handleRemoveOfferRolling);
       socket.off('tag_updated', handleTagUpdated);
       socket.off('tag_matched', handleTagMatched);

@@ -1527,12 +1527,17 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
         logger.warning(f"emit_existing_waiting_offers_to_driver error: {e}")
 
 
-async def emit_passenger_offer_revoked(driver_id: str, tag_id: str):
-    """Önceki sürücü teklifi artık göremesin (sıralı dispatch)."""
+async def emit_passenger_offer_revoked(
+    driver_id: str,
+    tag_id: str,
+    *,
+    revoke_reason: str = "passenger_cancelled",
+):
+    """Önceki sürücü teklifi artık göremesin (sıralı dispatch timeout / iptal vb.)."""
     try:
         raw = str(driver_id).strip().lower() if driver_id else ""
         sid = connected_users.get(raw) or connected_users.get(str(driver_id).strip()) if driver_id else None
-        payload = {"tag_id": tag_id}
+        payload = {"tag_id": tag_id, "revoke_reason": str(revoke_reason or "unknown")}
         if sid:
             await sio.emit("passenger_offer_revoked", payload, to=sid)
         else:
@@ -2156,7 +2161,7 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
                 }).eq("id", next_entry["id"]).execute()
             except Exception:
                 pass
-            await emit_passenger_offer_revoked(driver_id, tag_id)
+            await emit_passenger_offer_revoked(driver_id, tag_id, revoke_reason="emit_failed")
             fresh = dispatch_tag_context.get(tag_id, merged)
             await dispatch_offer_to_next_driver(tag_id, fresh)
             return
@@ -2191,8 +2196,10 @@ async def dispatch_offer_to_next_driver(tag_id: str, tag_data: dict):
                     pass
                 
                 logger.info(f"⏱️ Dispatch timeout: tag={tag_id}, sürücü={driver_name}")
-                await emit_passenger_offer_revoked(expired_driver_id, tag_id)
-                
+                await emit_passenger_offer_revoked(
+                    expired_driver_id, tag_id, revoke_reason="dispatch_timeout"
+                )
+
                 # Sonraki sürücüye geç
                 fresh = dispatch_tag_context.get(tag_id, merged)
                 await dispatch_offer_to_next_driver(tag_id, fresh)
@@ -6742,7 +6749,9 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
             q_mem = dispatch_queues.get(tag_id, [])
             for e in q_mem:
                 if e.get("status") == "sent":
-                    await emit_passenger_offer_revoked(e["driver_id"], tag_id)
+                    await emit_passenger_offer_revoked(
+                        e["driver_id"], tag_id, revoke_reason="passenger_cancelled"
+                    )
             for key in list(active_dispatch_tasks.keys()):
                 if key.startswith(f"{tag_id}_"):
                     tsk = active_dispatch_tasks.pop(key, None)
@@ -6807,7 +6816,9 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
             q_mem = dispatch_queues.get(tid, [])
             for e in q_mem:
                 if e.get("status") == "sent":
-                    await emit_passenger_offer_revoked(e["driver_id"], tid)
+                    await emit_passenger_offer_revoked(
+                        e["driver_id"], tid, revoke_reason="passenger_cancelled"
+                    )
             for key in list(active_dispatch_tasks.keys()):
                 if key.startswith(f"{tid}_"):
                     tsk = active_dispatch_tasks.pop(key, None)

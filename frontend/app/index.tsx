@@ -10337,6 +10337,49 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       driverOfferFirstShownAtRef.current = {};
     };
   }, []);
+
+  /** Rolling batch / dispatch-timeout revoke: kart en az DRIVER_OFFER_MIN_VISIBLE_MS kalsın. */
+  function scheduleDriverOfferRemovalAfterMinVisible(
+    tagId: string,
+    request_id: string | null | undefined,
+    source: string,
+  ) {
+    const tagKey = String(tagId).trim();
+    if (!tagKey) return;
+    if (driverOfferFirstShownAtRef.current[tagKey] == null) {
+      driverOfferFirstShownAtRef.current[tagKey] = Date.now();
+    }
+    const t0 = driverOfferFirstShownAtRef.current[tagKey];
+    const delay = Math.max(0, DRIVER_OFFER_MIN_VISIBLE_MS - (Date.now() - t0));
+    try {
+      console.log(
+        JSON.stringify({
+          evt: 'DRIVER_OFFER_REMOVE_DELAYED',
+          tag_id: tagKey,
+          delay_ms: delay,
+          min_visible_ms: DRIVER_OFFER_MIN_VISIBLE_MS,
+          source,
+          request_id: request_id ?? null,
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+    clearDriverRemoveOfferTimer(tagKey);
+    driverRemoveOfferTimersRef.current[tagKey] = setTimeout(() => {
+      delete driverRemoveOfferTimersRef.current[tagKey];
+      try {
+        console.log(
+          JSON.stringify({ evt: 'DRIVER_OFFER_REMOVE_DELAYED_FIRED', tag_id: tagKey, source }),
+        );
+      } catch {
+        /* noop */
+      }
+      setRequests(prev => prev.filter(r => r.id !== tagKey && r.request_id !== request_id));
+      delete driverOfferFirstShownAtRef.current[tagKey];
+    }, delay);
+  }
+
   const driverDataPollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const driverCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -10733,6 +10776,18 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const pkMin = Number.isFinite(pkMinN) && pkMinN > 0 ? pkMinN : null;
         if (data.tag_id) {
           driverOfferFirstShownAtRef.current[String(data.tag_id)] = Date.now();
+          try {
+            console.log(
+              JSON.stringify({
+                evt: 'DRIVER_OFFER_ADD',
+                source: 'onTagCreated_setRequests',
+                tag_id: data.tag_id,
+                request_id: data.request_id ?? data.tag_id,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
         }
         return [...filtered, {
           id: data.tag_id,
@@ -10772,6 +10827,43 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
+      const revokeReason = String(
+        (data as { revoke_reason?: string } | null | undefined)?.revoke_reason || '',
+      );
+      const softDispatchRevoke =
+        revokeReason === 'dispatch_timeout' || revokeReason === 'emit_failed';
+      if (softDispatchRevoke && data?.tag_id) {
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_SOFT_REVOKE_SCHEDULED',
+              tag_id: data.tag_id,
+              revoke_reason: revokeReason,
+              request_id: data.request_id ?? null,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+        scheduleDriverOfferRemovalAfterMinVisible(
+          String(data.tag_id),
+          data.request_id,
+          `onTagCancelled:${revokeReason}`,
+        );
+        return;
+      }
+      try {
+        console.log(
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_IMMEDIATE_REMOVE',
+            tag_id: data?.tag_id ?? null,
+            request_id: data?.request_id ?? null,
+            revoke_reason: revokeReason || null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
       if (data?.tag_id) {
         const tid = String(data.tag_id);
         clearDriverRemoveOfferTimer(tid);
@@ -10783,19 +10875,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     onRemoveOffer: (data) => {
       const tagId = data?.tag_id != null ? String(data.tag_id) : '';
       if (!tagId) return;
-      if (driverOfferFirstShownAtRef.current[tagId] == null) {
-        driverOfferFirstShownAtRef.current[tagId] = Date.now();
-      }
-      const t0 = driverOfferFirstShownAtRef.current[tagId];
-      const delay = Math.max(0, DRIVER_OFFER_MIN_VISIBLE_MS - (Date.now() - t0));
-      clearDriverRemoveOfferTimer(tagId);
-      driverRemoveOfferTimersRef.current[tagId] = setTimeout(() => {
-        delete driverRemoveOfferTimersRef.current[tagId];
-        setRequests(prev =>
-          prev.filter(r => r.id !== tagId && r.request_id !== data.request_id),
-        );
-        delete driverOfferFirstShownAtRef.current[tagId];
-      }, delay);
+      scheduleDriverOfferRemovalAfterMinVisible(tagId, data.request_id, 'remove_offer');
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
@@ -12126,6 +12206,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           additions.push(row);
         }
         if (additions.length === 0) return prev;
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_POLL_APPEND',
+              added: additions.length,
+              tag_ids: additions.map((a) => a.id).filter(Boolean),
+            }),
+          );
+        } catch {
+          /* noop */
+        }
         return [...prev, ...additions];
       });
     } catch (e) {
@@ -12415,6 +12506,17 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       has_pending_other_trip: hasPendingOtherTrip,
       driver_in_active_trip_ui: inMatched && !hasPendingOtherTrip,
     });
+    try {
+      console.log(
+        JSON.stringify({
+          evt: 'DRIVER_OFFER_RENDER_STATE',
+          requests_len: requests.length,
+          ids: requests.map((r) => String(r.id || r.tag_id || '').trim()).filter(Boolean),
+        }),
+      );
+    } catch {
+      /* noop */
+    }
   }, [requests.length, requestsIdsKey, activeTag?.id, activeTag?.status]);
 
   // 📋 KYC PENDING EKRANI - Başvuru inceleniyor
