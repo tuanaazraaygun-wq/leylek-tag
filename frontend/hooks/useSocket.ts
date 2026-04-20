@@ -142,6 +142,13 @@ interface UseSocketProps {
     message: string;
     should_rate?: boolean;
   }) => void;
+  onBoardingConfirmed?: (data: {
+    tag_id?: string;
+    status?: string;
+    started_at?: string;
+    boarding_confirmed_at?: string;
+    reason?: string;
+  }) => void;
   onCallCancelled?: (data: { cancelled: boolean; by: string }) => void;
   onCallEndedNew?: (data: { ended: boolean; by: string; room_name: string }) => void;
   // 🆕 Mesajlaşma eventleri
@@ -217,6 +224,7 @@ export default function useSocket({
   onTripForceEnded,
   onForceEndCounterpartyPrompt,
   onShowRatingModal,  // 🆕 QR puanlama modalı
+  onBoardingConfirmed,
   onCallCancelled,
   onCallEndedNew,
   onNewMessage,  // 🆕 Mesajlaşma
@@ -260,7 +268,7 @@ export default function useSocket({
     onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
-    onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal,
+    onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
     onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
     onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
   });
@@ -272,7 +280,7 @@ export default function useSocket({
       onTagCreated, onTagCancelled, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
-      onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal,
+      onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
       onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
       onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
     };
@@ -468,6 +476,11 @@ export default function useSocket({
       callbackRefs.current.onTrustSessionEnded?.(data);
     };
 
+    const handleBoardingConfirmed = (data: any) => {
+      console.log('🚌 [useSocket] boarding_confirmed:', data);
+      callbackRefs.current.onBoardingConfirmed?.(data);
+    };
+
     // Event listener'ları ekle
     socket.on('incoming_call', handleIncomingCall);
     socket.on('call_accepted', handleCallAccepted);
@@ -513,7 +526,9 @@ export default function useSocket({
       console.log('⭐ [Socket] Puanlama modalı göster:', data);
       callbackRefs.current.onShowRatingModal?.(data);
     });
-    
+
+    socket.on('boarding_confirmed', handleBoardingConfirmed);
+
     // 🆕 Mesajlaşma eventleri
     socket.on('new_message', handleNewMessage);
     socket.on('first_chat_message', handleFirstChatMessage);
@@ -567,7 +582,8 @@ export default function useSocket({
       
       // 🆕 QR ile puanlama modalı
       socket.off('show_rating_modal');
-      
+      socket.off('boarding_confirmed', handleBoardingConfirmed);
+
       // 🆕 Mesajlaşma
       socket.off('new_message', handleNewMessage);
       socket.off('first_chat_message', handleFirstChatMessage);

@@ -174,6 +174,8 @@ interface LiveMapViewProps {
   otherPassengerGender?: PassengerGender | null;
   /** Sürücü: `otherLocation` yolcu canlı GPS değil, tag alım (pickup) yedeğinden geliyorsa */
   otherLocationFromPickupFallback?: boolean;
+  /** Biniş QR doğrulandı — yolcu pini gizlenir, üst metin güncellenir; matched iken GPS ile hedef fazına geçiş engellenir */
+  boardingConfirmed?: boolean;
 }
 
 /**
@@ -1637,6 +1639,7 @@ export default function LiveMapView({
   selfGender = null,
   otherPassengerGender = null,
   otherLocationFromPickupFallback = false,
+  boardingConfirmed = false,
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -1953,6 +1956,11 @@ export default function LiveMapView({
     pickupNavStepsRef.current = null;
   }, [navigationMode, navigationStage, isDriver]);
 
+  useEffect(() => {
+    if (!boardingConfirmed) return;
+    clearMeetingRoute('boarding_confirmed');
+  }, [boardingConfirmed, clearMeetingRoute]);
+
   /** tagId reset effect’inde kullan; navigationMode değişince callback ref’i değişmesin diye ref */
   const clearMeetingRouteRef = useRef(clearMeetingRoute);
   clearMeetingRouteRef.current = clearMeetingRoute;
@@ -2106,6 +2114,9 @@ export default function LiveMapView({
     if (!isDriver || !navigationMode || !userLocation || !otherLocation) return;
     if (navigationStage !== 'pickup') return;
     if (!destinationLocation) return;
+    // matched: hedef navigasyon fazına yalnızca biniş onayından sonra — GPS yakınlığı tek başına yetmez
+    const st = String(tagStatus || '').toLowerCase();
+    if (st === 'matched' && !boardingConfirmed) return;
     if (haversineMeters(userLocation, otherLocation) < NAV_HANDOFF_TO_DESTINATION_M) {
       setNavigationStage('destination');
     }
@@ -2117,6 +2128,23 @@ export default function LiveMapView({
     userLocation?.longitude,
     otherLocation?.latitude,
     otherLocation?.longitude,
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    tagStatus,
+    boardingConfirmed,
+  ]);
+
+  /** Biniş onayı sonrası hedef fazı (45 m beklenmeden) */
+  useEffect(() => {
+    if (!isDriver || !navigationMode || !boardingConfirmed) return;
+    if (navigationStage !== 'pickup') return;
+    if (!destinationLocation) return;
+    setNavigationStage('destination');
+  }, [
+    isDriver,
+    navigationMode,
+    boardingConfirmed,
+    navigationStage,
     destinationLocation?.latitude,
     destinationLocation?.longitude,
   ]);
@@ -3151,6 +3179,10 @@ export default function LiveMapView({
   
   // Matrix durumları — yalnızca backend meetingDistance (km); yoksa nötr metin
   useEffect(() => {
+    if (boardingConfirmed) {
+      setMatrixStatus(isDriver ? '> YOLCU ARACTA' : '> ARACTASIN');
+      return;
+    }
     if (!userLocation || !otherLocation) return;
 
     const distanceKm =
@@ -3187,7 +3219,15 @@ export default function LiveMapView({
         setMatrixStatus('> IYI YOLCULUKLAR');
       }
     }
-  }, [userLocation, otherLocation, isDriver, destinationLocation, passMotor, meetingDistance]);
+  }, [
+    userLocation,
+    otherLocation,
+    isDriver,
+    destinationLocation,
+    passMotor,
+    meetingDistance,
+    boardingConfirmed,
+  ]);
   
   // Renk teması - Yolcu: Mor, Sürücü: Mavi
   const themeColor = isDriver ? '#3B82F6' : '#8B5CF6';
@@ -4406,6 +4446,7 @@ export default function LiveMapView({
               />
             )}
           {!isDriver &&
+            !boardingConfirmed &&
             Array.isArray(meetingRouteCoordinates) &&
             meetingRouteCoordinates.length > 1 && (
               <Polyline
@@ -4418,6 +4459,7 @@ export default function LiveMapView({
             )}
           {isDriver &&
             !navigationMode &&
+            !boardingConfirmed &&
             Array.isArray(meetingRouteCoordinates) &&
             meetingRouteCoordinates.length > 1 && (
               <Polyline
@@ -4483,7 +4525,7 @@ export default function LiveMapView({
             )}
 
           {/* BEN — PNG (bekleme ekranı ile aynı ölçü / tracks kuralı) */}
-          {userLocation && !driverNavActive && (
+          {userLocation && !driverNavActive && !(boardingConfirmed && !isDriver) && (
             <Marker
               coordinate={userLocation}
               anchor={{ x: 0.5, y: 1 }}
@@ -4508,7 +4550,7 @@ export default function LiveMapView({
           )}
 
           {/* KARŞI TARAF — sürücü: yolcu PNG; yolcu: sürücü araç PNG */}
-          {otherLocation && (
+          {otherLocation && !(boardingConfirmed && isDriver) && (
             <Marker 
               coordinate={otherLocation} 
               anchor={{ x: 0.5, y: 1 }}

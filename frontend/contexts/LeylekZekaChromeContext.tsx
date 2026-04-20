@@ -27,6 +27,7 @@ export type LeylekZekaHomeFlowScreen =
   | 'reset-pin'
   | 'community'
   | 'driver-kyc'
+  | 'emergency-contacts'
   | null;
 
 /**

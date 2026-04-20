@@ -13,6 +13,9 @@ import { roleScreenHaptic } from '../utils/roleHaptics';
 import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import LiveMapView from '../components/LiveMapView';
 import QRTripEndModal from '../components/QRTripEndModal';
+import BoardingPassengerPromptModal from '../components/BoardingPassengerPromptModal';
+import BoardingScanModal from '../components/BoardingScanModal';
+import DriverBoardingQRModal from '../components/DriverBoardingQRModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
@@ -28,6 +31,7 @@ import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
 import PassengerDriverForceEndReviewModal from '../components/PassengerDriverForceEndReviewModal';
+import PanicModalFlow from '../components/PanicModalFlow';
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
@@ -49,12 +53,23 @@ import AnimatedClouds from '../components/auth/AnimatedClouds';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
 import CommunityScreen from '../components/CommunityScreen';
+import EmergencyContactsScreen from '../components/EmergencyContactsScreen';
+import { apiEmergencyContactsStatus } from '../lib/emergencyContactsApi';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
 // Supabase Realtime hooks - Anlık teklif ve arama güncellemeleri
 import { useOffers } from '../hooks/useOffers';
 import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
+import {
+  haversineMetersLatLng,
+  BOARDING_NEAR_ENTER_M,
+  BOARDING_NEAR_EXIT_M,
+  BOARDING_STABLE_MS,
+  BOARDING_DECLINE_COOLDOWN_MS,
+  BOARDING_DECLINE_COOLDOWN_LONG_MS,
+  BOARDING_DECLINES_BEFORE_BANNER_ONLY,
+} from '../lib/boardingProximity';
 import {
   persistAccessToken,
   clearSessionStorage,
@@ -154,24 +169,23 @@ function _normTagStatus(st: unknown): string {
     .toLowerCase();
 }
 
-function _sameUserId(a: unknown, b: unknown): boolean {
-  return String(a ?? '')
-    .trim()
-    .toLowerCase() === String(b ?? '').trim().toLowerCase();
-}
-
-function _passengerTagResumable(pj: Record<string, unknown>, pTag: Record<string, unknown>, uid: string): boolean {
+/**
+ * GET /passenger/active-tag?user_id=… sunucuda resolve edilip yalnızca o yolcunun tag’i döner;
+ * tag.passenger_id UUID, istemci user.id bazen mongo_id olabildiği için id eşlemesi yapılmaz.
+ */
+function _passengerTagResumable(pj: Record<string, unknown>, pTag: Record<string, unknown>): boolean {
   if (!pj?.success || !pTag || pj.was_cancelled === true) return false;
   const st = _normTagStatus(pTag.status);
   if (!(PASSENGER_RESUME_STATUSES as readonly string[]).includes(st)) return false;
-  return _sameUserId(pTag.passenger_id, uid);
+  return true;
 }
 
-function _driverTagResumable(dj: Record<string, unknown>, dTag: Record<string, unknown>, uid: string): boolean {
+/** GET /driver/active-tag — sunucu sürücüye göre scope’lar; tag.driver_id ile client id biçimi farklı olabilir. */
+function _driverTagResumable(dj: Record<string, unknown>, dTag: Record<string, unknown>): boolean {
   if (!dj?.success || !dTag || dj.was_cancelled === true) return false;
   const st = _normTagStatus(dTag.status);
   if (!(DRIVER_RESUME_STATUSES as readonly string[]).includes(st)) return false;
-  return _sameUserId(dTag.driver_id, uid);
+  return true;
 }
 
 /** İki tarafta da aktif varsa önce daha ileri aşama (matched > teklif aşaması). */
@@ -226,8 +240,8 @@ async function tryResumeActiveMatchSession(
     const dj = (await dr.json().catch(() => ({}))) as Record<string, unknown>;
     const pTag = pj?.tag as Record<string, unknown> | undefined;
     const dTag = dj?.tag as Record<string, unknown> | undefined;
-    const pOk = pTag ? _passengerTagResumable(pj, pTag, uid) : false;
-    const dOk = dTag ? _driverTagResumable(dj, dTag, uid) : false;
+    const pOk = pTag ? _passengerTagResumable(pj, pTag) : false;
+    const dOk = dTag ? _driverTagResumable(dj, dTag) : false;
 
     let role: 'passenger' | 'driver' | null = null;
     if (pOk && dOk) {
@@ -343,6 +357,9 @@ interface Tag {
   matched_at?: string;
   /** Yolculuk sürücü tarafından başlatılınca (in_progress) dolar */
   started_at?: string | null;
+  /** Biniş QR tamamlandığında (backend) */
+  boarding_confirmed_at?: string | null;
+  boarding_qr_issued_at?: string | null;
   completed_at?: string;
   driver_location?: { latitude: number; longitude: number };
   passenger_location?: { latitude: number; longitude: number };
@@ -497,7 +514,8 @@ type AppScreen =
   | 'forgot-password'
   | 'reset-pin'
   | 'community'
-  | 'driver-kyc';
+  | 'driver-kyc'
+  | 'emergency-contacts';
 
 /** Giriş/OTP: döndürme ve farklı genişliklerde simetrik padding + sütun genişliği */
 function useLoginAuthLayout() {
@@ -572,6 +590,30 @@ export default function App() {
     }
   }, [screen, leylekChrome.setFlowHint]);
 
+  useEffect(() => {
+    if (screen !== 'role-select' || !user?.id) {
+      setEmergencySuggestBanner(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const st = await apiEmergencyContactsStatus();
+        if (cancelled) return;
+        if (st?.success && typeof st.count === 'number' && st.count < 1) {
+          setEmergencySuggestBanner(true);
+        } else {
+          setEmergencySuggestBanner(false);
+        }
+      } catch {
+        if (!cancelled) setEmergencySuggestBanner(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, user?.id]);
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
   // ═══════════════════════════════════════════════════════════════════════════
@@ -587,6 +629,8 @@ export default function App() {
   const [kvkkAccepted, setKvkkAccepted] = useState(false);
   const [showKVKKModal, setShowKVKKModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  /** Rol ekranı: acil kişi yoksa gösterilen yumuşak öneri (engellemez) */
+  const [emergencySuggestBanner, setEmergencySuggestBanner] = useState(false);
 
   // Auth states
   const [phone, setPhone] = useState('');
@@ -721,6 +765,8 @@ export default function App() {
     });
   }, [screen, user?.id, showSplash, reportPushRegisterDebugSurface]);
   const lastPushRegisterTimeRef = useRef<number>(0);
+  const lastForegroundResumeTryRef = useRef<number>(0);
+  const FOREGROUND_RESUME_MATCH_MS = 5000; // Ön plan: aktif eşleşme tekrar dene (throttle)
   const PUSH_REREGISTER_INTERVAL_MS = 15000; // Uygulama her ön plana geldiğinde en fazla 15 sn'de bir tekrar dene
   /** Splash çıkışında user'a bakılır; user deps ile effect sıfırlanıp timer iptal edilmesin diye ref */
   const splashUserRef = useRef<User | null>(null);
@@ -1276,6 +1322,71 @@ export default function App() {
       cancelled = true;
     };
   }, [screen, user?.id]);
+
+  /** Rol ekranındayken uygulama ön plana gelince resume tekrar dene (ağ hatası sonrası kurtarma). */
+  useEffect(() => {
+    if (!user?.id || screen !== 'role-select') return;
+    const cleanPhone = user.phone?.replace(/\D/g, '') || '';
+    const isMainAdmin =
+      cleanPhone === '5326497412' ||
+      cleanPhone === '05326497412' ||
+      cleanPhone.endsWith('5326497412');
+    if (isMainAdmin) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      const now = Date.now();
+      if (now - lastForegroundResumeTryRef.current < FOREGROUND_RESUME_MATCH_MS) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined;
+        lastForegroundResumeTryRef.current = Date.now();
+        const u = splashUserRef.current;
+        if (!u?.id) return;
+        void (async () => {
+          try {
+            const resumeRes = await tryResumeActiveMatchSession(u, {
+              saveUser,
+              setUser,
+              setSelectedRole,
+              setScreen,
+            });
+            if (resumeRes.resumed && u.id && resumeRes.role) {
+              await loadActiveTagForUserResume(u.id, resumeRes.role);
+            }
+            if (resumeRes.resumed) {
+              registerPushToken(
+                u.id,
+                (ok) => {
+                  console.log(
+                    '[PUSH] after foreground role-select resume',
+                    ok ? 'token saved OK' : 'token save skipped or failed',
+                  );
+                },
+                'foregroundResume',
+              );
+            }
+          } catch (e) {
+            console.warn('[resume] foreground AppState role-select', e);
+          }
+        })();
+      }, 400);
+    });
+    return () => {
+      subscription.remove();
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [
+    screen,
+    user?.id,
+    user?.phone,
+    saveUser,
+    setUser,
+    setSelectedRole,
+    setScreen,
+    registerPushToken,
+  ]);
 
   const logout = async () => {
     // Logout sırasında push token'ı sil
@@ -3060,6 +3171,30 @@ export default function App() {
               </Text>
             </Animated.View>
           ) : null}
+          {emergencySuggestBanner ? (
+            <TouchableOpacity
+              style={{
+                marginHorizontal: 10,
+                marginBottom: 8,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                backgroundColor: '#1E3A5F',
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#334155',
+              }}
+              onPress={() => {
+                roleScreenHaptic();
+                setScreen('emergency-contacts');
+              }}
+              activeOpacity={0.88}
+            >
+              <Text style={{ color: '#E2E8F0', fontSize: 13, fontWeight: '700' }}>
+                Öneri: Acil durumda aranacak en az bir kişi ekleyin.
+              </Text>
+              <Text style={{ color: '#7DD3FC', fontSize: 13, marginTop: 4, fontWeight: '800' }}>Yönet →</Text>
+            </TouchableOpacity>
+          ) : null}
           {/* Üst Bar */}
           <View style={styles.roleTopBarCompact}>
             <TouchableOpacity 
@@ -3216,6 +3351,25 @@ export default function App() {
             </View>
 
             <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                marginBottom: 6,
+              }}
+              onPress={() => {
+                roleScreenHaptic();
+                setScreen('emergency-contacts');
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="shield-checkmark-outline" size={18} color="#93C5FD" />
+              <Text style={{ color: '#BFDBFE', fontSize: 14, fontWeight: '700' }}>Acil durum kişileri</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={styles.communityBtnCompact}
               onPress={async () => {
                 roleScreenHaptic();
@@ -3301,6 +3455,10 @@ export default function App() {
     );
   }
 
+  if (user && screen === 'emergency-contacts') {
+    return <EmergencyContactsScreen onBack={() => setScreen('role-select')} />;
+  }
+
   // Sürücü KYC Ekranı
   if (user && screen === 'driver-kyc') {
     return (
@@ -3347,7 +3505,8 @@ export default function App() {
     guardScreen !== 'dashboard' &&
     guardScreen !== 'role-select' &&
     guardScreen !== 'community' &&
-    guardScreen !== 'driver-kyc'
+    guardScreen !== 'driver-kyc' &&
+    guardScreen !== 'emergency-contacts'
   ) {
     setTimeout(() => setScreen('role-select'), 100);
   }
@@ -6033,6 +6192,7 @@ function PassengerDashboard({
   const passengerForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
   /** Son açılan force-end counterparty isteği (duplicate socket / effect için) */
   const passengerForceEndLastRequestKeyRef = useRef<string | null>(null);
+  const [passengerPanicModalVisible, setPassengerPanicModalVisible] = useState(false);
 
   /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın (force-end modal loadActiveTag ile tekrar kurulur) */
   useEffect(() => {
@@ -6094,7 +6254,17 @@ function PassengerDashboard({
   
   // 🆕 QR Modal State
   const [showQRModal, setShowQRModal] = useState(false);
-  
+
+  const [passengerBoardingPromptVisible, setPassengerBoardingPromptVisible] = useState(false);
+  const [passengerBoardingScanVisible, setPassengerBoardingScanVisible] = useState(false);
+  const [passengerBoardingReminderBannerVisible, setPassengerBoardingReminderBannerVisible] =
+    useState(false);
+  const passengerBoardingStableSinceRef = useRef<number | null>(null);
+  const passengerBoardingCooldownUntilRef = useRef(0);
+  const passengerBoardingDeclineCountRef = useRef(0);
+  const passengerBoardingBannerDismissedRef = useRef(false);
+  const passengerBoardingProximityPromptConsumedRef = useRef(false);
+
   // 🆕 Rating Modal State - QR tarama sonrası puanlama
   const [ratingModalData, setRatingModalData] = useState<{
     visible: boolean;
@@ -6929,6 +7099,27 @@ function PassengerDashboard({
       });
       // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
     },
+    onBoardingConfirmed: (data) => {
+      const tid = data?.tag_id;
+      if (!tid) return;
+      console.log('BOARDING_CONFIRMED_SOCKET', {
+        tag_id: tid,
+        role: 'passenger',
+        reason: (data as { reason?: string }).reason,
+      });
+      setActiveTag((prev) => {
+        if (!prev || String(prev.id) !== String(tid)) return prev;
+        return {
+          ...prev,
+          status: 'in_progress',
+          started_at: data.started_at ?? prev.started_at,
+          boarding_confirmed_at: data.boarding_confirmed_at ?? prev.boarding_confirmed_at,
+        };
+      });
+      setPassengerBoardingPromptVisible(false);
+      setPassengerBoardingScanVisible(false);
+      setPassengerBoardingReminderBannerVisible(false);
+    },
     ...passengerTrustSocketHandlers,
   });
   
@@ -7204,6 +7395,81 @@ function PassengerDashboard({
       console.error('TAG yüklenemedi:', error);
     }
   };
+
+  useEffect(() => {
+    passengerBoardingStableSinceRef.current = null;
+    passengerBoardingDeclineCountRef.current = 0;
+    passengerBoardingBannerDismissedRef.current = false;
+    passengerBoardingProximityPromptConsumedRef.current = false;
+    setPassengerBoardingReminderBannerVisible(false);
+  }, [activeTag?.id]);
+
+  useEffect(() => {
+    if (activeTag?.status !== 'matched' || activeTag?.boarding_confirmed_at) {
+      setPassengerBoardingPromptVisible(false);
+      setPassengerBoardingScanVisible(false);
+      setPassengerBoardingReminderBannerVisible(false);
+    }
+  }, [activeTag?.status, activeTag?.boarding_confirmed_at, activeTag?.id]);
+
+  useEffect(() => {
+    if (passengerBoardingScanVisible || passengerBoardingPromptVisible) return;
+    if (!activeTag || activeTag.status !== 'matched') return;
+    if (activeTag.boarding_confirmed_at) return;
+    const tick = () => {
+      if (Date.now() < passengerBoardingCooldownUntilRef.current) return;
+      if (!userLocation || !driverLocation) {
+        passengerBoardingStableSinceRef.current = null;
+        return;
+      }
+      const d = haversineMetersLatLng(userLocation, driverLocation);
+      if (d <= BOARDING_NEAR_ENTER_M) {
+        if (passengerBoardingStableSinceRef.current == null) {
+          passengerBoardingStableSinceRef.current = Date.now();
+        } else if (Date.now() - passengerBoardingStableSinceRef.current >= BOARDING_STABLE_MS) {
+          if (passengerBoardingProximityPromptConsumedRef.current) return;
+          passengerBoardingProximityPromptConsumedRef.current = true;
+          const declines = passengerBoardingDeclineCountRef.current;
+          const bannerMode =
+            declines >= BOARDING_DECLINES_BEFORE_BANNER_ONLY &&
+            !passengerBoardingBannerDismissedRef.current;
+          console.log('BOARDING_PROXIMITY_ENTER', {
+            tag_id: activeTag.id,
+            d_m: Math.round(d),
+            declines,
+            prompt_mode: bannerMode ? 'banner' : 'modal',
+          });
+          console.log('BOARDING_PROMPT_SHOWN', {
+            tag_id: activeTag.id,
+            mode: bannerMode ? 'banner' : 'modal',
+            declines,
+          });
+          if (bannerMode) {
+            setPassengerBoardingReminderBannerVisible(true);
+          } else {
+            setPassengerBoardingPromptVisible(true);
+          }
+        }
+      } else if (d >= BOARDING_NEAR_EXIT_M) {
+        passengerBoardingStableSinceRef.current = null;
+        passengerBoardingBannerDismissedRef.current = false;
+        passengerBoardingProximityPromptConsumedRef.current = false;
+      }
+    };
+    const id = setInterval(tick, 600);
+    tick();
+    return () => clearInterval(id);
+  }, [
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    driverLocation?.latitude,
+    driverLocation?.longitude,
+    passengerBoardingScanVisible,
+    passengerBoardingPromptVisible,
+  ]);
 
   /** Zorla bitir: karşı taraf — socket olmasa da DB'deki pending end_request ile modal */
   const passengerEndReqSig =
@@ -8795,6 +9061,64 @@ function PassengerDashboard({
                     </Text>
                   </TouchableOpacity>
                 ) : null}
+                {passengerBoardingReminderBannerVisible &&
+                activeTag?.status === 'matched' &&
+                !activeTag?.boarding_confirmed_at ? (
+                  <View
+                    style={{
+                      backgroundColor: '#0f172a',
+                      marginHorizontal: 12,
+                      marginTop: 8,
+                      marginBottom: 6,
+                      paddingVertical: 12,
+                      paddingHorizontal: 14,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(148,163,184,0.45)',
+                    }}
+                  >
+                    <Text style={{ color: '#e2e8f0', fontWeight: '700', fontSize: 14, textAlign: 'center' }}>
+                      Araca binmeye hazırsanız biniş kodunu tarayın
+                    </Text>
+                    <Text style={{ color: '#94a3b8', fontSize: 12, textAlign: 'center', marginTop: 6 }}>
+                      İstemiyorsanız bu bildirimi kapatabilirsiniz; araçtan uzaklaşınca tekrar hatırlatılır.
+                    </Text>
+                    <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          backgroundColor: '#334155',
+                          paddingVertical: 10,
+                          borderRadius: 8,
+                          alignItems: 'center',
+                          marginRight: 6,
+                        }}
+                        onPress={() => {
+                          passengerBoardingBannerDismissedRef.current = true;
+                          setPassengerBoardingReminderBannerVisible(false);
+                        }}
+                      >
+                        <Text style={{ color: '#f1f5f9', fontWeight: '700' }}>Kapat</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          backgroundColor: '#2563eb',
+                          paddingVertical: 10,
+                          borderRadius: 8,
+                          alignItems: 'center',
+                          marginLeft: 6,
+                        }}
+                        onPress={() => {
+                          setPassengerBoardingReminderBannerVisible(false);
+                          setPassengerBoardingScanVisible(true);
+                        }}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '800' }}>Kodu tara</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
@@ -8812,6 +9136,8 @@ function PassengerDashboard({
                   otherUserId={activeTag?.driver_id}
                   userId={user.id}
                   tagId={activeTag?.id}
+                  tagStatus={activeTag?.status}
+                  boardingConfirmed={!!activeTag?.boarding_confirmed_at}
                   price={activeTag?.final_price}
                   offeredPrice={activeTag?.offered_price}
                   routeInfo={{
@@ -9021,7 +9347,23 @@ function PassengerDashboard({
                   }}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
-                
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Acil durum"
+                  onPress={() => setPassengerPanicModalVisible(true)}
+                  style={styles.panicMapFab}
+                >
+                  <Ionicons name="warning" size={22} color="#FFF" />
+                </TouchableOpacity>
+                <PanicModalFlow
+                  visible={passengerPanicModalVisible}
+                  onClose={() => setPassengerPanicModalVisible(false)}
+                  role="passenger"
+                  tagId={activeTag?.id ?? null}
+                  latitude={userLocation?.latitude ?? null}
+                  longitude={userLocation?.longitude ?? null}
+                />
+
                 <PassengerDriverForceEndReviewModal
                   visible={!!passengerDriverForceReview}
                   submitting={passengerForceEndReviewSubmitting}
@@ -9698,6 +10040,49 @@ function PassengerDashboard({
           setActiveTag(null);
         }}
       />
+
+      <BoardingPassengerPromptModal
+        visible={passengerBoardingPromptVisible}
+        onYes={() => {
+          setPassengerBoardingPromptVisible(false);
+          setPassengerBoardingScanVisible(true);
+        }}
+        onNo={() => {
+          passengerBoardingDeclineCountRef.current += 1;
+          const n = passengerBoardingDeclineCountRef.current;
+          const cool =
+            n >= BOARDING_DECLINES_BEFORE_BANNER_ONLY
+              ? BOARDING_DECLINE_COOLDOWN_LONG_MS
+              : BOARDING_DECLINE_COOLDOWN_MS;
+          console.log('BOARDING_PROMPT_DECLINED', { tag_id: activeTag?.id, decline_count: n });
+          setPassengerBoardingPromptVisible(false);
+          passengerBoardingStableSinceRef.current = null;
+          passengerBoardingProximityPromptConsumedRef.current = false;
+          passengerBoardingCooldownUntilRef.current = Date.now() + cool;
+        }}
+      />
+      <BoardingScanModal
+        visible={passengerBoardingScanVisible}
+        onClose={() => setPassengerBoardingScanVisible(false)}
+        tagId={activeTag?.id || ''}
+        latitude={userLocation?.latitude}
+        longitude={userLocation?.longitude}
+        onVerified={(payload) => {
+          const tid = payload?.tag_id;
+          if (!tid) return;
+          setActiveTag((prev) => {
+            if (!prev || String(prev.id) !== String(tid)) return prev;
+            return {
+              ...prev,
+              status: 'in_progress',
+              started_at: payload.started_at ?? prev.started_at,
+              boarding_confirmed_at: payload.boarding_confirmed_at ?? prev.boarding_confirmed_at,
+            };
+          });
+          setPassengerBoardingScanVisible(false);
+          setPassengerBoardingPromptVisible(false);
+        }}
+      />
       
       {/* Rating Modal - QR tarama sonrası */}
       {ratingModalData && (
@@ -9809,6 +10194,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [passengerLocation, setPassengerLocation] = useState<{latitude: number; longitude: number} | null>(null);
   /** LiveMapView uygulama-içi navigasyon: GPS/socket aralığı 12s → 5s */
   const [driverLiveMapNavigationMode, setDriverLiveMapNavigationMode] = useState(false);
+  const [driverPanicModalVisible, setDriverPanicModalVisible] = useState(false);
   
   // Mesafe ve süre state'leri
   
@@ -9983,6 +10369,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   
   // 🆕 QR Modal State (Sürücü)
   const [showQRModal, setShowQRModal] = useState(false);
+
+  const [driverBoardingQrModalVisible, setDriverBoardingQrModalVisible] = useState(false);
+  const [driverBoardingNearBanner, setDriverBoardingNearBanner] = useState(false);
+  const driverBoardingStableSinceRef = useRef<number | null>(null);
   
   // 🆕 Rating Modal State - QR tarama sonrası puanlama (Sürücü)
   const [ratingModalData, setRatingModalData] = useState<{
@@ -10497,6 +10887,26 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         rateUserName: data.rate_user_name
       });
       // 🆕 Trip bitti olarak işaretle - Puanlama sonrası activeTag=null olacak
+    },
+    onBoardingConfirmed: (data) => {
+      const tid = data?.tag_id;
+      if (!tid) return;
+      console.log('BOARDING_CONFIRMED_SOCKET', {
+        tag_id: tid,
+        role: 'driver',
+        reason: (data as { reason?: string }).reason,
+      });
+      setActiveTag((prev) => {
+        if (!prev || String(prev.id) !== String(tid)) return prev;
+        return {
+          ...prev,
+          status: 'in_progress',
+          started_at: data.started_at ?? prev.started_at,
+          boarding_confirmed_at: data.boarding_confirmed_at ?? prev.boarding_confirmed_at,
+        };
+      });
+      setDriverBoardingQrModalVisible(false);
+      setDriverBoardingNearBanner(false);
     },
     ...driverTrustSocketHandlers,
   });
@@ -11193,6 +11603,57 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       return null;
     }
   };
+
+  useEffect(() => {
+    driverBoardingStableSinceRef.current = null;
+  }, [activeTag?.id]);
+
+  useEffect(() => {
+    if (activeTag?.status !== 'matched' || activeTag?.boarding_confirmed_at) {
+      setDriverBoardingNearBanner(false);
+      driverBoardingStableSinceRef.current = null;
+    }
+  }, [activeTag?.status, activeTag?.boarding_confirmed_at, activeTag?.id]);
+
+  useEffect(() => {
+    if (driverBoardingQrModalVisible) return;
+    if (!activeTag || activeTag.status !== 'matched') return;
+    if (activeTag.boarding_confirmed_at) return;
+    const tick = () => {
+      const pax = driverPassengerCoordsForMap(passengerLocation, activeTag);
+      if (!userLocation || !pax) {
+        driverBoardingStableSinceRef.current = null;
+        setDriverBoardingNearBanner(false);
+        return;
+      }
+      const d = haversineMetersLatLng(userLocation, pax);
+      if (d <= BOARDING_NEAR_ENTER_M) {
+        if (driverBoardingStableSinceRef.current == null) {
+          driverBoardingStableSinceRef.current = Date.now();
+        } else if (Date.now() - driverBoardingStableSinceRef.current >= BOARDING_STABLE_MS) {
+          setDriverBoardingNearBanner(true);
+        }
+      } else if (d >= BOARDING_NEAR_EXIT_M) {
+        driverBoardingStableSinceRef.current = null;
+        setDriverBoardingNearBanner(false);
+      }
+    };
+    const id = setInterval(tick, 600);
+    tick();
+    return () => clearInterval(id);
+  }, [
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    activeTag?.pickup_lat,
+    activeTag?.pickup_lng,
+    activeTag?.passenger_location,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    passengerLocation?.latitude,
+    passengerLocation?.longitude,
+    driverBoardingQrModalVisible,
+  ]);
 
   const driverEndReqSig =
     activeTag?.end_request &&
@@ -12043,6 +12504,32 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               </Text>
             </TouchableOpacity>
           ) : null}
+          {driverBoardingNearBanner &&
+          activeTag?.status === 'matched' &&
+          !activeTag?.boarding_confirmed_at ? (
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setDriverBoardingQrModalVisible(true)}
+              style={{
+                marginHorizontal: 12,
+                marginTop: 6,
+                marginBottom: 4,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                borderRadius: 12,
+                backgroundColor: 'rgba(14,165,233,0.95)',
+                borderWidth: 1,
+                borderColor: 'rgba(125,211,252,0.6)',
+              }}
+            >
+              <Text style={{ color: '#0f172a', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+                Yolcu yakın — biniş karekodunu göstermek için dokunun
+              </Text>
+              <Text style={{ color: '#0c4a6e', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: '600' }}>
+                Yolcu araçta olduğunda yolculuk başlar
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {/* Sürücü haritası: otherLocationFromPickupFallback true iken buluşma metrikleri routeInfo ile OSRM çelişmez; kotasyonlu trip OSRM ile sessizce ezilmez */}
           <LiveMapView
             userLocation={userLocation}
@@ -12068,6 +12555,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             otherUserId={activeTag?.passenger_id}
             userId={user.id}
             tagId={activeTag?.id}
+            boardingConfirmed={!!activeTag?.boarding_confirmed_at}
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
             routeInfo={{
@@ -12301,7 +12789,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             }}
             onShowEndTripModal={() => setDriverEndTripModalVisible(true)}
           />
-          
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Acil durum"
+            onPress={() => setDriverPanicModalVisible(true)}
+            style={styles.panicMapFab}
+          >
+            <Ionicons name="warning" size={22} color="#FFF" />
+          </TouchableOpacity>
+          <PanicModalFlow
+            visible={driverPanicModalVisible}
+            onClose={() => setDriverPanicModalVisible(false)}
+            role="driver"
+            tagId={activeTag?.id ?? null}
+            latitude={userLocation?.latitude ?? null}
+            longitude={userLocation?.longitude ?? null}
+          />
+
           {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz (PURE SOCKET - ANLIK) */}
           <ChatBubble
             visible={driverChatVisible}
@@ -12857,6 +13361,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           // Sayfayı yenile
           setActiveTag(null);
         }}
+      />
+
+      <DriverBoardingQRModal
+        visible={driverBoardingQrModalVisible}
+        onClose={() => setDriverBoardingQrModalVisible(false)}
+        tagId={activeTag?.id || ''}
       />
       
       {/* Rating Modal - QR tarama sonrası (SÜRÜCÜ) */}
@@ -16037,6 +16547,25 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     position: 'relative',
     backgroundColor: '#000',
+  },
+  panicMapFab: {
+    position: 'absolute',
+    top: 52,
+    right: 12,
+    zIndex: 50,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#B91C1C',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 6,
   },
   mapView: {
     flex: 1,

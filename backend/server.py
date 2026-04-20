@@ -7,7 +7,12 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from typing import Annotated, List, Optional, Tuple
+from typing import Annotated, List, Literal, Optional, Tuple
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 import os
 import logging
 import uuid
@@ -4135,6 +4140,16 @@ def normalize_phone_e164(phone: str, default_country_code: str = "90") -> str:
     return "+" + digits
 
 
+def _netgsm_gsmno_for_logs(gsmno: str) -> str:
+    """NetGSM log satırlarında tam numara yerine maskeli gösterim (10 hane: 5XXXXXXXXX)."""
+    g = "".join(c for c in str(gsmno or "") if c.isdigit())
+    if len(g) >= 10 and g.startswith("5"):
+        return f"{g[:2]}***…**{g[-2:]}"
+    if len(g) >= 4:
+        return f"***…{g[-2:]}"
+    return "***"
+
+
 def netgsm_gsmno_param(phone: str) -> str:
     """
     Netgsm HTTP GET çoğu entegrasyonda gsmno = 5XXXXXXXXX (10 hane) bekler.
@@ -4244,7 +4259,11 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         
         normalized_phone = normalize_turkish_phone(phone)
         gsmno = netgsm_gsmno_param(phone)
-        logger.info(f"📱 Phone internal: {phone} -> {normalized_phone}, Netgsm gsmno: {gsmno}")
+        logger.info(
+            "📱 NETGSM hedef (maskeli): normalized=%s gsmno=%s",
+            _netgsm_gsmno_for_logs(normalized_phone),
+            _netgsm_gsmno_for_logs(gsmno),
+        )
         
         # Use msgheader or usercode as sender (boşluk / Türkçe karakter: urlencode ile tek tip kodlama)
         sender = (msgheader if msgheader else usercode).strip()
@@ -4272,7 +4291,12 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
         url_https = f"{base}{path}?{query}"
         url_http = f"http://api.netgsm.com.tr{path}?{query}"
         
-        logger.info(f"📱 NETGSM Request - gsmno: {gsmno}, Sender: {sender!r}, filter: {filter_param or '(yok)'}")
+        logger.info(
+            "📱 NETGSM Request - gsmno: %s, Sender: %r, filter: %s",
+            _netgsm_gsmno_for_logs(gsmno),
+            sender,
+            filter_param or "(yok)",
+        )
         
         # Önce urllib (HTTP/1.1) — VPS'te httpx ConnectError / TLS reset sorunlarını aşar.
         response_text = None
@@ -4318,7 +4342,7 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
 
         if code == "00":
             job_id = parts[1] if len(parts) > 1 else "N/A"
-            logger.info(f"✅ SMS gönderildi: gsmno={gsmno}, JobID: {job_id}")
+            logger.info("✅ SMS gönderildi: gsmno=%s, JobID: %s", _netgsm_gsmno_for_logs(gsmno), job_id)
             result["success"] = True
             result["response"]["job_id"] = job_id
         else:
@@ -4338,7 +4362,12 @@ async def send_sms_via_netgsm(phone: str, message: str) -> dict:
                 "85": "Aynı numaraya 1 dk içinde çok fazla istek",
             }.get(code, f"Bilinmeyen hata: {code}")
 
-            logger.error(f"❌ SMS gönderilemedi: gsmno={gsmno} - Code: {code}, Desc: {error_desc}")
+            logger.error(
+                "❌ SMS gönderilemedi: gsmno=%s - Code: %s, Desc: %s",
+                _netgsm_gsmno_for_logs(gsmno),
+                code,
+                error_desc,
+            )
             result["error"] = f"Code: {code}, Desc: {error_desc}"
             # 30: NetGSM panelinde çoğunlukla şifre/API kullanıcısı veya GİT çıkış IP (IPv4/IPv6 farkı)
             if code == "30" and os.getenv("NETGSM_LOG_EGRESS_IP", "").strip().lower() in (
@@ -11331,6 +11360,259 @@ async def check_proximity_for_trip_end(
         logger.error(f"Proximity check error: {e}")
         return {"success": False, "detail": str(e), "can_end": False}
 
+# ==================== BOARDING QR (finish QR / trip-end akışından ayrı) ====================
+# URI: leylektag://board?t={token}&tag={tag_id} — yalnızca biniş doğrulaması; trip bitirmez.
+
+active_boarding_qr_codes: dict = {}
+
+
+def _boarding_uid_eq(a, b) -> bool:
+    if a is None or b is None:
+        return False
+    return str(a).strip().lower() == str(b).strip().lower()
+
+
+def _purge_boarding_tokens_for_tag(tag_id: str) -> None:
+    tid = str(tag_id).strip()
+    to_del = [
+        k
+        for k, v in active_boarding_qr_codes.items()
+        if str(v.get("tag_id") or "").strip() == tid
+    ]
+    for k in to_del:
+        active_boarding_qr_codes.pop(k, None)
+
+
+def generate_boarding_qr_token(tag_id: str, driver_id: str, passenger_id: str) -> str:
+    ts = int(time.time())
+    raw = f"BOARD:{tag_id}:{driver_id}:{passenger_id}:{ts}:{secrets.token_hex(10)}"
+    token = hashlib.sha256(raw.encode()).hexdigest()[:20].upper()
+    return f"BRD-{token}"
+
+
+@api_router.get("/qr/boarding-code")
+async def get_boarding_qr_code(
+    tag_id: str,
+    authed_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Binden önce sürücü QR üretir — yolcu /qr/verify-boarding ile doğrular; finish QR değildir."""
+    try:
+        if not tag_id:
+            return {"success": False, "detail": "tag_id gerekli"}
+
+        resolved_driver = await resolve_user_id(str(authed_user_id).strip())
+        tid = str(tag_id).strip()
+
+        tag_res = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+        if not tag_res.data:
+            return {"success": False, "detail": "Yolculuk bulunamadı"}
+
+        row = tag_res.data[0]
+        st = str(row.get("status") or "").strip().lower()
+        if st != "matched":
+            return {
+                "success": False,
+                "detail": "Biniş QR yalnızca eşleşmiş (matched) yolculukta üretilebilir",
+            }
+
+        driver_id = row.get("driver_id")
+        passenger_id = row.get("passenger_id")
+        if not driver_id or not passenger_id:
+            return {"success": False, "detail": "Eşleşme bilgisi eksik"}
+
+        if not _boarding_uid_eq(resolved_driver, driver_id):
+            return {"success": False, "detail": "Sadece atanmış sürücü biniş QR üretebilir"}
+
+        if row.get("boarding_confirmed_at"):
+            return {"success": False, "detail": "Biniş zaten doğrulanmış"}
+
+        _purge_boarding_tokens_for_tag(tid)
+        ts = int(time.time())
+        qr_token = generate_boarding_qr_token(tid, str(driver_id), str(passenger_id))
+        active_boarding_qr_codes[qr_token] = {
+            "tag_id": tid,
+            "driver_id": str(driver_id).strip().lower(),
+            "passenger_id": str(passenger_id).strip().lower(),
+            "timestamp": ts,
+            "expires": ts + 300,
+        }
+
+        qr_string = f"leylektag://board?t={qr_token}&tag={tid}"
+
+        issued_iso = datetime.now(timezone.utc).isoformat()
+        try:
+            supabase.table("tags").update({"boarding_qr_issued_at": issued_iso}).eq("id", tid).execute()
+        except Exception as col_err:
+            logger.warning(f"boarding_qr_issued_at güncellenemedi (kolon yok olabilir): {col_err}")
+
+        logger.info("BOARDING_QR_ISSUED tag_id=%s driver_id=%s", tid, resolved_driver)
+        return {
+            "success": True,
+            "qr_code": qr_token,
+            "qr_string": qr_string,
+            "expires_in": 300,
+            "tag_id": tid,
+        }
+    except Exception as e:
+        logger.error(f"Boarding QR oluşturma hatası: {e}")
+        return {"success": False, "detail": str(e)}
+
+
+@api_router.post("/qr/verify-boarding")
+async def verify_boarding_qr(
+    request: Request,
+    scanner_user_id_auth: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yolcu biniş QR tarar — tag matched → in_progress + started_at + boarding_confirmed_at."""
+    start_time = time.time()
+    try:
+        body = await request.json()
+        qr_token = (body.get("qr_token") or body.get("token") or "").strip()
+        scanned_data = (body.get("scanned_data") or body.get("data") or "").strip()
+        latitude = float(body.get("latitude") or 0)
+        longitude = float(body.get("longitude") or 0)
+
+        if scanned_data.startswith("leylektag://board"):
+            try:
+                qpart = scanned_data.split("?", 1)[1]
+                params: dict[str, str] = {}
+                for pair in qpart.split("&"):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        params[k.strip()] = v.strip()
+                qr_token = params.get("t") or qr_token
+                tag_from_uri = params.get("tag")
+            except Exception:
+                tag_from_uri = None
+        else:
+            tag_from_uri = None
+
+        scanner_user_id = await resolve_user_id(str(scanner_user_id_auth).strip())
+
+        if not qr_token:
+            return {"success": False, "detail": "qr_token veya geçerli scanned_data gerekli"}
+
+        qr_data = active_boarding_qr_codes.get(qr_token)
+        if not qr_data:
+            return {"success": False, "detail": "Geçersiz veya kullanılmış / süresi dolmuş biniş QR"}
+
+        if time.time() > float(qr_data.get("expires") or 0):
+            active_boarding_qr_codes.pop(qr_token, None)
+            return {"success": False, "detail": "Biniş QR süresi dolmuş, sürücüden yenisini isteyin"}
+
+        tag_id = str(qr_data.get("tag_id") or "").strip()
+        if tag_from_uri and str(tag_from_uri).strip() != tag_id:
+            return {"success": False, "detail": "QR etiketi yolculuk ile uyuşmuyor"}
+
+        driver_id_mem = qr_data.get("driver_id")
+        passenger_id_mem = qr_data.get("passenger_id")
+
+        if not _boarding_uid_eq(scanner_user_id, passenger_id_mem):
+            return {"success": False, "detail": "Sadece yolcu biniş QR doğrulayabilir"}
+
+        tag_res = supabase.table("tags").select("*").eq("id", tag_id).limit(1).execute()
+        if not tag_res.data:
+            active_boarding_qr_codes.pop(qr_token, None)
+            return {"success": False, "detail": "Yolculuk bulunamadı"}
+
+        tag_row = tag_res.data[0]
+        st = str(tag_row.get("status") or "").strip().lower()
+        if st != "matched":
+            active_boarding_qr_codes.pop(qr_token, None)
+            return {"success": False, "detail": "Yolculuk biniş için uygun durumda değil"}
+
+        drv = tag_row.get("driver_id")
+        pax = tag_row.get("passenger_id")
+        if not _boarding_uid_eq(drv, driver_id_mem) or not _boarding_uid_eq(pax, passenger_id_mem):
+            active_boarding_qr_codes.pop(qr_token, None)
+            return {"success": False, "detail": "QR bu yolculukla eşleşmiyor"}
+
+        if tag_row.get("boarding_confirmed_at"):
+            active_boarding_qr_codes.pop(qr_token, None)
+            return {"success": False, "detail": "Biniş zaten tamamlanmış"}
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        ur = (
+            supabase.table("tags")
+            .update(
+                {
+                    "status": "in_progress",
+                    "started_at": now_iso,
+                    "boarding_confirmed_at": now_iso,
+                }
+            )
+            .eq("id", tag_id)
+            .eq("status", "matched")
+            .execute()
+        )
+
+        if not ur.data:
+            active_boarding_qr_codes.pop(qr_token, None)
+            return {
+                "success": False,
+                "detail": "Güncelleme yapılamadı (yolculuk başka bir işlemle değişmiş olabilir)",
+            }
+
+        active_boarding_qr_codes.pop(qr_token, None)
+        _purge_boarding_tokens_for_tag(tag_id)
+        invalidate_tag_cache(tag_id, passenger_id=str(pax), driver_id=str(drv))
+
+        payload = {
+            "tag_id": tag_id,
+            "status": "in_progress",
+            "started_at": now_iso,
+            "boarding_confirmed_at": now_iso,
+        }
+        try:
+            p_room = _normalize_user_room(str(pax))
+            d_room = _normalize_user_room(str(drv))
+            await sio.emit("boarding_confirmed", {**payload, "reason": "qr_boarding"}, room=p_room)
+            await sio.emit("boarding_confirmed", {**payload, "reason": "qr_boarding"}, room=d_room)
+        except Exception as sock_err:
+            logger.warning(f"boarding_confirmed socket emit: {sock_err}")
+
+        try:
+            if pax:
+                asyncio.create_task(
+                    send_trip_push_and_log(
+                        str(pax),
+                        "trip_started",
+                        "Yolculuk başladı",
+                        "İyi yolculuklar!",
+                        {"type": "trip_started", "tag_id": tag_id, "source": "boarding_qr"},
+                    )
+                )
+            if drv:
+                asyncio.create_task(
+                    send_trip_push_and_log(
+                        str(drv),
+                        "trip_started",
+                        "Yolculuk başladı",
+                        "Güvenli yolculuklar!",
+                        {"type": "trip_started", "tag_id": tag_id, "source": "boarding_qr"},
+                    )
+                )
+        except Exception as push_err:
+            logger.warning(f"Boarding verify trip_started push: {push_err}")
+
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(
+            "BOARDING_SCAN_SUCCESS tag_id=%s passenger_id=%s elapsed_ms=%s",
+            tag_id,
+            scanner_user_id,
+            round(elapsed),
+        )
+        return {
+            "success": True,
+            "message": "Biniş doğrulandı, yolculuk başladı",
+            **payload,
+            "elapsed_ms": round(elapsed),
+        }
+    except Exception as e:
+        logger.error(f"verify_boarding_qr error: {e}")
+        return {"success": False, "detail": str(e)}
+
+
 # ==================== DİNAMİK TRIP QR KOD SİSTEMİ ====================
 # Her yolculuk için unique QR kod oluşturur
 
@@ -16475,6 +16757,523 @@ async def get_directions(origin_lat: float, origin_lng: float, dest_lat: float, 
     except Exception as e:
         logger.error(f"Directions API error: {e}")
         return {"success": False, "error": str(e)}
+
+# ==================== PANIC / EMERGENCY CONTACTS (isolated from OTP) ====================
+PANIC_COOLDOWN_SEC = 60
+PANIC_MAX_PER_HOUR = 3
+PANIC_MAX_PER_24H = 10
+
+
+def _panic_sms_time_hhmm() -> str:
+    """SMS içinde gösterilecek saat (TR tercih)."""
+    if ZoneInfo is not None:
+        try:
+            return datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%H:%M")
+        except Exception:
+            pass
+    return datetime.now(timezone.utc).strftime("%H:%M") + " UTC"
+
+
+def _panic_db_rate_check(uid: str) -> tuple[bool, str]:
+    """
+    panic_events tablosundan oran: son 60 sn, son 1 saat (max 3), son 24 saat (max 10).
+    OTP / bellek içi sayaç kullanılmaz.
+    """
+    now = datetime.now(timezone.utc)
+    since_24h = (now - timedelta(hours=24)).isoformat()
+    since_1h = (now - timedelta(hours=1)).isoformat()
+    try:
+        r24 = (
+            supabase.table("panic_events")
+            .select("id")
+            .eq("user_id", uid)
+            .gte("created_at", since_24h)
+            .limit(PANIC_MAX_PER_24H + 1)
+            .execute()
+        )
+        if len(r24.data or []) >= PANIC_MAX_PER_24H:
+            return False, "limit_24h"
+        r1 = (
+            supabase.table("panic_events")
+            .select("id")
+            .eq("user_id", uid)
+            .gte("created_at", since_1h)
+            .limit(PANIC_MAX_PER_HOUR + 1)
+            .execute()
+        )
+        if len(r1.data or []) >= PANIC_MAX_PER_HOUR:
+            return False, "limit_1h"
+        last = (
+            supabase.table("panic_events")
+            .select("created_at")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if last.data:
+            raw = (last.data[0] or {}).get("created_at")
+            if raw:
+                try:
+                    ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    else:
+                        ts = ts.astimezone(timezone.utc)
+                    if (now - ts).total_seconds() < float(PANIC_COOLDOWN_SEC):
+                        return False, "cooldown_60s"
+                except Exception:
+                    pass
+        return True, ""
+    except Exception as ex:
+        logger.warning("[PANIC] rate_check_db_failed user_id=%s err=%s", uid, type(ex).__name__)
+        return False, "rate_check_error"
+
+
+def _panic_mask_phone_display(phone_normalized: str) -> str:
+    """List API için; tam numara dönülmez."""
+    p = "".join(c for c in str(phone_normalized or "") if c.isdigit())
+    if len(p) >= 12 and p.startswith("90"):
+        tail = p[-2:] if len(p) >= 2 else ""
+        return f"90***…**{tail}"
+    if len(p) >= 4:
+        return f"***…{p[-2:]}"
+    return "***"
+
+
+def _emergency_active_count(uid: str) -> int:
+    r = (
+        supabase.table("user_emergency_contacts")
+        .select("id")
+        .eq("user_id", uid)
+        .eq("is_active", True)
+        .execute()
+    )
+    return len(r.data or [])
+
+
+class EmergencyContactCreateBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    phone: str
+    source: Literal["manual", "device_contact"] = "manual"
+    sort_order: int = Field(default=0, ge=0, le=99)
+
+
+class EmergencyContactPatchBody(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    phone: Optional[str] = None
+    source: Optional[Literal["manual", "device_contact"]] = None
+    sort_order: Optional[int] = Field(default=None, ge=0, le=99)
+    is_active: Optional[bool] = None
+
+
+class PanicSendSmsBody(BaseModel):
+    role: Literal["driver", "passenger"]
+    contact_ids: List[str] = Field(..., min_length=1, max_length=3)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_accuracy_m: Optional[float] = None
+    location_captured_at: Optional[str] = None
+    tag_id: Optional[str] = None
+
+
+@api_router.get("/emergency-contacts")
+async def api_emergency_contacts_list(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        r = (
+            supabase.table("user_emergency_contacts")
+            .select("id, display_name, phone_normalized, source, sort_order, created_at")
+            .eq("user_id", uid)
+            .eq("is_active", True)
+            .order("sort_order")
+            .execute()
+        )
+        rows = r.data or []
+        contacts = []
+        for row in rows:
+            contacts.append(
+                {
+                    "id": str(row["id"]),
+                    "name": row.get("display_name") or "",
+                    "phone_masked": _panic_mask_phone_display(row.get("phone_normalized") or ""),
+                    "source": row.get("source"),
+                    "sort_order": int(row.get("sort_order") or 0),
+                    "created_at": row.get("created_at"),
+                }
+            )
+        return {"success": True, "contacts": contacts}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("emergency_contacts_list: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/emergency-contacts/status")
+async def api_emergency_contacts_status(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        cnt = _emergency_active_count(uid)
+        return {
+            "success": True,
+            "count": cnt,
+            "min_met": cnt >= 1,
+            "max_reached": cnt >= 3,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("emergency_contacts_status: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/emergency-contacts")
+async def api_emergency_contacts_create(
+    body: EmergencyContactCreateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        if _emergency_active_count(uid) >= 3:
+            raise HTTPException(status_code=409, detail="En fazla 3 acil kişi eklenebilir")
+        ok, ten_or_msg = validate_turkish_phone(body.phone)
+        if not ok:
+            raise HTTPException(status_code=422, detail=ten_or_msg)
+        phone_norm = normalize_turkish_phone(ten_or_msg)
+        dup = (
+            supabase.table("user_emergency_contacts")
+            .select("id")
+            .eq("user_id", uid)
+            .eq("phone_normalized", phone_norm)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        if dup.data:
+            raise HTTPException(status_code=409, detail="Bu numara zaten kayıtlı")
+        row_id = str(uuid.uuid4())
+        now_iso = datetime.now(timezone.utc).isoformat()
+        ins = {
+            "id": row_id,
+            "user_id": uid,
+            "display_name": body.name.strip(),
+            "phone_normalized": phone_norm,
+            "source": body.source,
+            "sort_order": int(body.sort_order),
+            "is_active": True,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        supabase.table("user_emergency_contacts").insert(ins).execute()
+        return {
+            "success": True,
+            "contact": {
+                "id": row_id,
+                "name": ins["display_name"],
+                "phone_masked": _panic_mask_phone_display(phone_norm),
+                "source": body.source,
+                "sort_order": ins["sort_order"],
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("emergency_contacts_create: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.patch("/emergency-contacts/{contact_id}")
+async def api_emergency_contacts_patch(
+    contact_id: str,
+    body: EmergencyContactPatchBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        cur = (
+            supabase.table("user_emergency_contacts")
+            .select("id,user_id,is_active,phone_normalized")
+            .eq("id", contact_id.strip())
+            .limit(1)
+            .execute()
+        )
+        if not cur.data or str(cur.data[0].get("user_id")) != str(uid):
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+        row = cur.data[0]
+        upd: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
+        if body.name is not None:
+            upd["display_name"] = body.name.strip()
+        if body.phone is not None:
+            ok, ten_or_msg = validate_turkish_phone(body.phone)
+            if not ok:
+                raise HTTPException(status_code=422, detail=ten_or_msg)
+            phone_norm = normalize_turkish_phone(ten_or_msg)
+            dup = (
+                supabase.table("user_emergency_contacts")
+                .select("id")
+                .eq("user_id", uid)
+                .eq("phone_normalized", phone_norm)
+                .eq("is_active", True)
+                .neq("id", contact_id.strip())
+                .limit(1)
+                .execute()
+            )
+            if dup.data:
+                raise HTTPException(status_code=409, detail="Bu numara zaten kayıtlı")
+            upd["phone_normalized"] = phone_norm
+        if body.source is not None:
+            upd["source"] = body.source
+        if body.sort_order is not None:
+            upd["sort_order"] = int(body.sort_order)
+        if body.is_active is not None:
+            will_active = bool(body.is_active)
+            if not will_active and bool(row.get("is_active")):
+                if _emergency_active_count(uid) <= 1:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Son acil kişiyi devre dışı bırakamazsınız",
+                    )
+            upd["is_active"] = will_active
+        if len(upd) <= 1:
+            return {"success": True, "contact": {"id": contact_id}}
+        supabase.table("user_emergency_contacts").update(upd).eq("id", contact_id.strip()).execute()
+        r2 = (
+            supabase.table("user_emergency_contacts")
+            .select("id,display_name,phone_normalized,source,sort_order,is_active")
+            .eq("id", contact_id.strip())
+            .limit(1)
+            .execute()
+        )
+        u0 = (r2.data or [{}])[0]
+        return {
+            "success": True,
+            "contact": {
+                "id": str(u0.get("id")),
+                "name": u0.get("display_name"),
+                "phone_masked": _panic_mask_phone_display(u0.get("phone_normalized") or ""),
+                "source": u0.get("source"),
+                "sort_order": int(u0.get("sort_order") or 0),
+                "is_active": bool(u0.get("is_active", True)),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("emergency_contacts_patch: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.delete("/emergency-contacts/{contact_id}")
+async def api_emergency_contacts_delete(
+    contact_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        cur = (
+            supabase.table("user_emergency_contacts")
+            .select("id,user_id,is_active")
+            .eq("id", contact_id.strip())
+            .limit(1)
+            .execute()
+        )
+        if not cur.data or str(cur.data[0].get("user_id")) != str(uid):
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+        if not bool(cur.data[0].get("is_active", True)):
+            supabase.table("user_emergency_contacts").delete().eq("id", contact_id.strip()).execute()
+            return {"success": True}
+        if _emergency_active_count(uid) <= 1:
+            raise HTTPException(status_code=409, detail="Son acil kişiyi silemezsiniz")
+        supabase.table("user_emergency_contacts").delete().eq("id", contact_id.strip()).execute()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("emergency_contacts_delete: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/panic/send-sms")
+async def api_panic_send_sms(
+    body: PanicSendSmsBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Kayıtlı acil kişilere NetGSM ile SMS. Telefon panic loglarında tutulmaz.
+    Rate limit: panic_events üzerinden — 60 sn soğuma, saatte max 3, 24 saatte max 10.
+    """
+    try:
+        uid = await resolve_user_id(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+
+        allowed, rreason = _panic_db_rate_check(uid)
+        if not allowed:
+            logger.warning("[PANIC] rate_limited user_id=%s reason=%s", uid, rreason)
+            raise HTTPException(
+                status_code=429,
+                detail=f"panic_rate_limit:{rreason}",
+            )
+
+        if _emergency_active_count(uid) < 1:
+            raise HTTPException(status_code=400, detail="Önce en az bir acil kişi eklemelisiniz")
+
+        uniq_ids = list(dict.fromkeys([str(x).strip() for x in body.contact_ids if str(x).strip()]))
+        if not uniq_ids:
+            raise HTTPException(status_code=422, detail="Geçersiz acil kişi seçimi")
+        if len(uniq_ids) > 3:
+            raise HTTPException(status_code=422, detail="En fazla 3 acil kişiye SMS gönderilebilir")
+
+        ur = supabase.table("users").select("id,name").eq("id", uid).limit(1).execute()
+        if not ur.data:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        user_display_name = str(ur.data[0].get("name") or "Kullanıcı").strip() or "Kullanıcı"
+
+        cr = (
+            supabase.table("user_emergency_contacts")
+            .select("id,display_name,phone_normalized")
+            .eq("user_id", uid)
+            .eq("is_active", True)
+            .in_("id", uniq_ids)
+            .execute()
+        )
+        rows = cr.data or []
+        if len(rows) != len(uniq_ids):
+            raise HTTPException(status_code=403, detail="Seçilen kişiler geçersiz veya size ait değil")
+
+        tag_id_save = None
+        if body.tag_id and str(body.tag_id).strip():
+            tid = str(body.tag_id).strip()
+            tr = (
+                supabase.table("tags")
+                .select("id,passenger_id,driver_id,status")
+                .eq("id", tid)
+                .limit(1)
+                .execute()
+            )
+            if tr.data:
+                t0 = tr.data[0]
+                st = str(t0.get("status") or "").strip().lower()
+                if st not in ("matched", "in_progress"):
+                    tag_id_save = None
+                else:
+                    pid = str(await resolve_user_id(t0.get("passenger_id")))
+                    did_raw = t0.get("driver_id")
+                    did = str(await resolve_user_id(did_raw)) if did_raw else None
+                    if str(uid) != str(pid) and (not did or str(uid) != str(did)):
+                        raise HTTPException(status_code=403, detail="Bu yolculuk için acil SMS gönderemezsiniz")
+                    tag_id_save = tid
+
+        location_line = "Konum alınamadı. Lütfen kullanıcıyla iletişime geçin."
+        if body.latitude is not None and body.longitude is not None:
+            try:
+                la = float(body.latitude)
+                lo = float(body.longitude)
+                if (-90 <= la <= 90) and (-180 <= lo <= 180):
+                    location_line = f"https://maps.google.com/?q={la},{lo}"
+            except Exception:
+                pass
+
+        sms_time = _panic_sms_time_hhmm()
+        sms_body = (
+            "ACİL DURUM\n\n"
+            f"{user_display_name} şu anda yardım ihtiyacı içinde olabilir.\n\n"
+            f"Saat: {sms_time}\n\n"
+            f"Konum:\n{location_line}\n\n"
+            "Lütfen hemen kendisine ulaşmaya çalışın.\n"
+            "Ulaşamazsanız acil yardım ile iletişime geçin."
+        )
+
+        logger.info(
+            "[PANIC] request user_id=%s role=%s contact_count=%s tag_id=%s has_coords=%s",
+            uid,
+            body.role,
+            len(rows),
+            tag_id_save or "-",
+            body.latitude is not None and body.longitude is not None,
+        )
+
+        sms_results: list[dict] = []
+        for row in rows:
+            cid = str(row["id"])
+            cname = str(row.get("display_name") or "")
+            phone_to = row.get("phone_normalized")
+            res = await send_sms_via_netgsm(str(phone_to), sms_body)
+            ok = bool(res.get("success"))
+            entry = {
+                "contact_id": cid,
+                "success": ok,
+                "netgsm_error": (res.get("error") or None) if not ok else None,
+            }
+            if ok and isinstance(res.get("response"), dict):
+                entry["job_id"] = res["response"].get("job_id")
+            sms_results.append(entry)
+            if ok:
+                logger.info("[PANIC] sms_ok user_id=%s contact_id=%s", uid, cid)
+            else:
+                logger.warning(
+                    "[PANIC] sms_fail user_id=%s contact_id=%s err=%s",
+                    uid,
+                    cid,
+                    res.get("error") or "unknown",
+                )
+
+        loc_cap = None
+        if body.location_captured_at and str(body.location_captured_at).strip():
+            try:
+                loc_cap = datetime.fromisoformat(
+                    str(body.location_captured_at).replace("Z", "+00:00")
+                )
+            except Exception:
+                loc_cap = None
+
+        selected_snapshot = [{"id": str(r["id"]), "name": str(r.get("display_name") or "")} for r in rows]
+        panic_id = str(uuid.uuid4())
+        now_iso = datetime.now(timezone.utc).isoformat()
+        pe = {
+            "id": panic_id,
+            "user_id": uid,
+            "role_at_trigger": body.role,
+            "tag_id": tag_id_save,
+            "latitude": body.latitude,
+            "longitude": body.longitude,
+            "location_accuracy_m": body.location_accuracy_m,
+            "location_captured_at": loc_cap.isoformat() if loc_cap else None,
+            "selected_contact_count": len(rows),
+            "selected_contacts": selected_snapshot,
+            "sms_result_summary": {"results": sms_results},
+            "created_at": now_iso,
+        }
+        supabase.table("panic_events").insert(pe).execute()
+
+        any_ok = any(x.get("success") for x in sms_results)
+        return {
+            "success": bool(any_ok),
+            "panic_event_id": panic_id,
+            "sms": sms_results,
+            "partial_failure": bool(any_ok) and not all(x.get("success") for x in sms_results),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("panic_send_sms: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== API ROUTER INCLUDE ====================
 # TÜM ROUTE'LAR TANIMLANDIKTAN SONRA INCLUDE EDİLMELİ!
