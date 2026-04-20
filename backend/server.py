@@ -3346,10 +3346,10 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
             _route_info_cache_set(ck, out)
             return out
 
-        # 2) Fallback: OSRM (yalnızca backend içinde)
+        # 2) Fallback: OSRM (yalnızca backend içinde) — full polyline (precision-5), istemci decodeOsrmPolyline ile uyumlu
         url = (
             f"https://router.project-osrm.org/route/v1/driving/"
-            f"{olo},{ola};{dlo},{dla}?overview=false"
+            f"{olo},{ola};{dlo},{dla}?overview=full&geometries=polyline"
         )
         async with httpx.AsyncClient(http2=False, timeout=5.0) as client:
             response = await client.get(url)
@@ -3371,6 +3371,9 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
                     "duration_text": f"{int(duration_min)} dk",
                     "source": "osrm",
                 }
+                geom = route.get("geometry")
+                if isinstance(geom, str) and len(geom) > 2:
+                    out["overview_polyline"] = geom
                 _route_info_cache_set(ck, out)
                 return out
     except Exception as e:

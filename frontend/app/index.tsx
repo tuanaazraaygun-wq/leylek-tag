@@ -1092,6 +1092,13 @@ export default function App() {
               parsedUser = { ...parsedUser, role: lr };
               await setPersistedUserJson(JSON.stringify(parsedUser));
             }
+            if (lr === 'driver') {
+              console.log('DRIVER_MODE_RESTORED', {
+                user_id: parsedUser.id,
+                role: parsedUser.role,
+                last_role_key: lr,
+              });
+            }
           } else if (parsedUser.role !== 'passenger' && parsedUser.role !== 'driver') {
             parsedUser = { ...parsedUser, role: 'passenger' };
             await setPersistedUserJson(JSON.stringify(parsedUser));
@@ -3083,6 +3090,11 @@ export default function App() {
     const handleContinue = async () => {
       if (!selectedRole || !rideVehicleKind) return;
       roleScreenHaptic();
+      console.log('DRIVER_CONTINUE_PRESSED', {
+        selected_role: selectedRole,
+        ride_vehicle_kind: rideVehicleKind,
+        user_id: user?.id ?? null,
+      });
       try {
         if (user?.id) {
           await fetch(
@@ -3107,6 +3119,7 @@ export default function App() {
             });
             await AsyncStorage.setItem(`last_role_${user?.id}`, selectedRole);
             if (user) await saveUser(mergeVehicleIntoUser(user));
+            console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'driver_kyc_pending' });
             setScreen('dashboard');
             return;
           }
@@ -3118,11 +3131,18 @@ export default function App() {
         if (selectedRole && user) {
           const updatedUser = mergeVehicleIntoUser(user);
           await saveUser(updatedUser);
+          console.log('DRIVER_MODE_PERSISTED', {
+            role: updatedUser.role,
+            vehicle_kind:
+              (updatedUser.driver_details as { vehicle_kind?: string } | undefined)?.vehicle_kind ??
+              rideVehicleKind,
+          });
           
           // 📍 Hemen konum izni iste
           console.log('📍 Rol seçildi, konum izni isteniyor...');
           requestLocationPermission();
           
+          console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue' });
           setScreen('dashboard');
         }
       } catch (error) {
@@ -3134,6 +3154,7 @@ export default function App() {
           // 📍 Konum izni iste
           requestLocationPermission();
           
+          console.log('DRIVER_SCREEN_SET', { screen: 'dashboard', reason: 'role_continue_catch' });
           setScreen('dashboard');
         }
       }
@@ -10198,6 +10219,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   /** LiveMapView uygulama-içi navigasyon: GPS/socket aralığı 12s → 5s */
   const [driverLiveMapNavigationMode, setDriverLiveMapNavigationMode] = useState(false);
   const [driverPanicModalVisible, setDriverPanicModalVisible] = useState(false);
+
+  useEffect(() => {
+    console.log('DRIVER_WAITING_SCREEN_ENTER', { user_id: user?.id ?? null });
+  }, [user?.id]);
   
   // Mesafe ve süre state'leri
   
@@ -11452,45 +11477,31 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       const response = await fetch(`${API_URL}/driver/active-tag?user_id=${user.id}`);
       const data = await response.json();
       
-      // 🚨 TAG YOKSA ZORLA KAPAT
+      // Sunucuda aktif tag yok — normal bekleme (teklif ekranı); rol seçimine düşme.
       if (data.success === true && !data.tag) {
         if (forceEndLockRef.current) {
           logPollingSkippedForceEndLock('driver', 'loadActiveTag_no_tag_gate');
           return null;
         }
-      
-        console.log('🔥 DRIVER loadActiveTag: aktif tag yok, çıkış yapılıyor');
-        console.log('DRIVER_EXIT_REASON', {
+
+        console.log('DRIVER_WAITING_EXIT_REASON', {
           source: 'loadActiveTag',
-          reason: 'active_tag_response_empty',
+          outcome: 'stay_dashboard',
+          reason: 'active_tag_response_empty_idle',
           userId: user.id,
-        });
-        console.log('MATCH_SCREEN_CLEAR', {
-          role: 'driver',
-          source: 'loadActiveTag_no_tag',
-          nextScreen: 'role-select',
         });
         console.log('ACTIVE_TAG_RESET', {
           role: 'driver',
           source: 'loadActiveTag_no_tag',
         });
 
-        console.log('FORCE_END_LOCK_BYPASSED_NO_TAG', {
-          role: 'driver',
-          source: 'loadActiveTag_no_tag',
-          action: 'timed_arm_not_permanent',
-        });
-        armForceEndLock('driver_loadActiveTag_no_tag');
-      
         setActiveTag(null);
         setRequests([]);
         setDriverChatVisible(false);
         driverClearIncomingCall();
         setDriverPassengerForceEndReview(null);
         driverForceEndModalHandledTagIdsRef.current.clear();
-      
-        setScreen('role-select');
-      
+
         return null;
       }
       
@@ -11542,6 +11553,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           lastCancelledTagId.current = data.tag.id;
           
           // Rol seçim ekranına yönlendir
+          console.log('DRIVER_SCREEN_RESET_TO_ROLE_SELECT', {
+            source: 'loadActiveTag_terminal',
+            tag_id: _dt.id,
+            status: _dt.status,
+          });
           setScreen('role-select');
           
           // Alert'i sadece bir kez göster

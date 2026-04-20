@@ -3311,30 +3311,15 @@ export default function LiveMapView({
     if (skipOsrmPolylineForDriverQuotedPickupFallback) {
       logNavDiag('MATCH_ROUTE_METRICS', {
         leg: 'destination_polyline',
-        action: 'skip_osrm_no_chord_visible',
+        action: 'skip_polyline_preview_pickup_fallback',
         isDriver: true,
         pickup_fallback: true,
-        reason: 'quoted_trip_preserves_server_km_no_visible_polyline_until_osrm',
+        reason: 'quoted_trip_preserves_server_km_no_visible_polyline_preview',
       });
       return;
     }
     let cancelled = false;
     void (async () => {
-      const r = await fetchOsrmDrivingRoute(
-        passengerLocation.latitude,
-        passengerLocation.longitude,
-        destinationLocation.latitude,
-        destinationLocation.longitude,
-      );
-      if (cancelled) return;
-      if (r?.coordinates && r.coordinates.length >= 2) {
-        const destCoords = destinationRouteCoordsOrEmpty(r.coordinates);
-        if (destCoords.length >= 2) {
-          setDestinationRoute(destCoords);
-          return;
-        }
-        // OSRM geometrisi düşük kalite — aynı öncelik sırasıyla backend overview dene
-      }
       const br = await fetchBackendRouteMetrics(
         passengerLocation.latitude,
         passengerLocation.longitude,
@@ -3350,8 +3335,11 @@ export default function LiveMapView({
       ) {
         const coords = decodeOsrmPolyline(br.overview_polyline, 5);
         if (coords.length >= 2) {
-          setDestinationRoute(destinationRouteCoordsOrEmpty(coords));
-          return;
+          const destCoords = destinationRouteCoordsOrEmpty(coords);
+          if (destCoords.length >= 2) {
+            setDestinationRoute(destCoords);
+            return;
+          }
         }
       }
       setDestinationRoute([]);
@@ -3447,9 +3435,8 @@ export default function LiveMapView({
   }, [routeInfo, pickupFallbackForDriver]);
 
   /**
-   * Hedef polyline / yedek ETA: OSRM (harita çizgisi için).
-   * `routeInfo.trip_distance_km` + `trip_duration_min` doluysa üst panel km/dk OSRM ile güncellenmez (tag = fiyat temeli).
-   * Sürücü + pickup yedeği + sunucu trip kotasyonu: OSRM ile kotasyonu sessizce çürütme (polyline ayrı effect’te kısaltılır).
+   * Hedef km/dk: yalnız routeInfo (trip_*) veya backend /route-metrics — istemci OSRM mesafesi gösterilmez.
+   * Polyline ayrı effect’lerde OSRM/backend geometry.
    */
   useEffect(() => {
     if (!isValidRouteEndpoint(destinationLocation)) {
@@ -3487,78 +3474,51 @@ export default function LiveMapView({
     }
     void (async () => {
       try {
-        const r = await fetchOsrmDrivingRoute(
+        if (quotedNow) {
+          return;
+        }
+        const br = await fetchBackendRouteMetrics(
           passengerLoc.latitude,
           passengerLoc.longitude,
           destinationLocation.latitude,
           destinationLocation.longitude,
         );
         if (cancelled) return;
-        let km: number | null = null;
-        let min: number | null = null;
-        let src: DestinationMetricSource = 'osrm';
-        if (r && r.distanceM > 0) {
-          km = r.distanceM / 1000;
-          min = Math.max(1, Math.round(r.durationS / 60));
-        } else {
-          const br = await fetchBackendRouteMetrics(
-            passengerLoc.latitude,
-            passengerLoc.longitude,
-            destinationLocation.latitude,
-            destinationLocation.longitude,
-          );
-          if (
-            br.success &&
-            br.distance_km != null &&
-            Number.isFinite(br.distance_km) &&
-            br.distance_km > 0 &&
-            br.duration_min != null &&
-            Number.isFinite(br.duration_min) &&
-            br.duration_min > 0
-          ) {
-            km = br.distance_km;
-            min = Math.max(1, Math.round(br.duration_min));
-            src = 'backend_route_metrics';
-          } else {
-            logNavDiag('MATCH_ROUTE_METRICS', {
-              leg: 'destination',
-              reason: 'no_road_metrics_after_osrm',
-              osrm_points: r?.coordinates?.length ?? 0,
-              pickup_fallback: pickupFallbackForDriver,
-            });
-            const preserveQuotedTrip =
-              readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
-            if (!preserveQuotedTrip) {
-              setDestinationRouteMetricsUnavailable(true);
-            }
-            return;
+        if (
+          br.success &&
+          br.distance_km != null &&
+          Number.isFinite(br.distance_km) &&
+          br.distance_km > 0 &&
+          br.duration_min != null &&
+          Number.isFinite(br.duration_min) &&
+          br.duration_min > 0
+        ) {
+          if (!readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current)) {
+            setDestinationDistance(br.distance_km);
+            setDestinationDuration(Math.max(0, Math.round(br.duration_min)));
+            destinationMetricSourceRef.current = 'backend_route_metrics';
           }
-        }
-        if (km == null || min == null) return;
-        const preserveQuotedTrip = readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
-        if (pickupFallbackForDriver && !preserveQuotedTrip) {
-          destinationMetricSourceRef.current =
-            src === 'osrm' ? 'approx_pickup_anchor' : src;
-        } else if (!preserveQuotedTrip) {
-          destinationMetricSourceRef.current = src;
-        }
-        if (!preserveQuotedTrip) {
-          setDestinationDistance(km);
-          setDestinationDuration(Math.max(0, min));
-        }
-        setDestinationRouteMetricsUnavailable(false);
-        logNavDiag('MATCH_ROUTE_METRICS', {
-          leg: 'destination',
-          source: preserveQuotedTrip ? 'routeInfo' : src,
-          isDriver,
-          pickup_fallback: pickupFallbackForDriver,
-          preserve_quoted: preserveQuotedTrip,
-          km,
-          min,
-          osrm_points: r?.coordinates?.length ?? 0,
-        });
-        if (__DEV__) {
-          console.log('DEST ETA', km, min, preserveQuotedTrip ? '(quoted trip from server)' : '');
+          setDestinationRouteMetricsUnavailable(false);
+          logNavDiag('MATCH_ROUTE_METRICS', {
+            leg: 'destination',
+            source: readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current)
+              ? 'routeInfo'
+              : 'backend_route_metrics',
+            isDriver,
+            pickup_fallback: pickupFallbackForDriver,
+            preserve_quoted: false,
+            km: br.distance_km,
+            min: br.duration_min,
+          });
+        } else {
+          logNavDiag('MATCH_ROUTE_METRICS', {
+            leg: 'destination',
+            reason: 'no_backend_route_metrics',
+            pickup_fallback: pickupFallbackForDriver,
+          });
+          if (!readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current)) {
+            setDestinationRouteMetricsUnavailable(true);
+          }
         }
       } finally {
         if (!cancelled && destRouteFetchIdRef.current === fetchId) {
@@ -3872,17 +3832,19 @@ export default function LiveMapView({
           ) {
             const km = br.distance_km;
             const min = Math.max(1, Math.round(br.duration_min));
-            setMeetingDistance(km);
-            setMeetingDuration(min);
-            meetingMetricSourceRef.current = 'backend_route_metrics';
+            if (!fromRi) {
+              setMeetingDistance(km);
+              setMeetingDuration(min);
+              meetingMetricSourceRef.current = 'backend_route_metrics';
+            }
             logNavDiag('MATCH_ROUTE_METRICS', {
               leg: 'meeting',
-              source: 'backend_route_metrics',
+              source: fromRi ? 'routeInfo' : 'backend_route_metrics',
               backend_source: br.source ?? null,
               isDriver,
               pickup_fallback: pickupFallbackForDriver,
-              km,
-              min,
+              km: fromRi ? fromRi.km : km,
+              min: fromRi ? fromRi.min : min,
             });
             if (br.overview_polyline && br.overview_polyline.length > 2) {
               const coords = decodeOsrmPolyline(br.overview_polyline, 5);
@@ -3934,6 +3896,58 @@ export default function LiveMapView({
       beginMeetingRoadLoadingUi();
       setMeetingRouteMetricsUnavailable(false);
       try {
+        let prefetchPickupBackendKm: number | undefined;
+        let prefetchPickupBackendMin: number | undefined;
+        let prefetchPickupAppliedFromBackend = false;
+        if (!readPickupKmMinFromRouteInfo(routeInfoRef.current)) {
+          const brPre = await fetchBackendRouteMetrics(
+            start.latitude,
+            start.longitude,
+            end.latitude,
+            end.longitude,
+          );
+          if (cancelled) return;
+          if (
+            brPre.success &&
+            brPre.distance_km != null &&
+            Number.isFinite(brPre.distance_km) &&
+            brPre.distance_km > 0 &&
+            brPre.duration_min != null &&
+            Number.isFinite(brPre.duration_min) &&
+            brPre.duration_min > 0
+          ) {
+            const dk = brPre.distance_km;
+            const dm = Math.max(1, Math.round(brPre.duration_min));
+            setMeetingDistance(dk);
+            setMeetingDuration(dm);
+            meetingMetricSourceRef.current = 'backend_route_metrics';
+            setMeetingRouteMetricsUnavailable(false);
+            prefetchPickupAppliedFromBackend = true;
+            prefetchPickupBackendKm = dk;
+            prefetchPickupBackendMin = dm;
+          }
+          if (
+            brPre.success &&
+            typeof brPre.overview_polyline === 'string' &&
+            brPre.overview_polyline.length > 2
+          ) {
+            const coordsPre = decodeOsrmPolyline(brPre.overview_polyline, 5);
+            if (!cancelled && coordsPre.length >= 2) {
+              meetingHasOsrmPolylineRef.current = coordsPre.length >= 3;
+              pickupNavStepsRef.current = null;
+              setMeetingRouteCoordsLogged(coordsPre);
+              if (!navigationModeRef.current) {
+                fitNavigationViewportRef.current?.(coordsPre);
+              }
+              logNavDiag('NAV_ROUTE_SUCCESS', {
+                leg: 'meeting',
+                points: coordsPre.length,
+                source: 'backend_polyline',
+                pickup_fallback: pickupFallbackForDriver,
+              });
+            }
+          }
+        }
         if (isDriver) {
           console.log('DRIVER_ROUTE_PREFETCH_START', {
             tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
@@ -3965,16 +3979,19 @@ export default function LiveMapView({
               isDriver,
             });
             meetingHasOsrmPolylineRef.current = true;
-            meetingMetricSourceRef.current = 'osrm';
             pickupNavStepsRef.current = {
               steps: rw.steps,
               cumStart: buildCumStartMeters(rw.steps),
             };
-            const km = rw.distanceM / 1000;
-            const min = Math.max(1, Math.round(rw.durationS / 60));
-            setMeetingDistance(km);
-            setMeetingDuration(min);
-            setMeetingRouteMetricsUnavailable(false);
+            const kmOsrm = rw.distanceM / 1000;
+            const minOsrm = Math.max(1, Math.round(rw.durationS / 60));
+            const pickupAuth = readPickupKmMinFromRouteInfo(routeInfoRef.current);
+            if (pickupAuth) {
+              meetingMetricSourceRef.current = 'routeInfo';
+              setMeetingRouteMetricsUnavailable(false);
+            } else if (!prefetchPickupAppliedFromBackend && !cancelled) {
+              setMeetingRouteMetricsUnavailable(true);
+            }
             logNavDiag('NAV_ROUTE_SUCCESS', {
               leg: 'meeting',
               points: rw.coordinates.length,
@@ -3984,11 +4001,17 @@ export default function LiveMapView({
             });
             logNavDiag('MATCH_ROUTE_METRICS', {
               leg: 'meeting',
-              source: 'osrm',
+              source: pickupAuth
+                ? 'routeInfo'
+                : prefetchPickupAppliedFromBackend
+                  ? 'backend_route_metrics'
+                  : 'polyline_only',
               isDriver: true,
               pickup_fallback: pickupFallbackForDriver,
-              km,
-              min,
+              km: pickupAuth?.km ?? prefetchPickupBackendKm,
+              min: pickupAuth?.min ?? prefetchPickupBackendMin,
+              osrm_km: kmOsrm,
+              osrm_min: minOsrm,
             });
             console.log('ROUTE FETCH OK', { points: rw.coordinates.length });
             setMeetingRouteCoordsLogged(rw.coordinates);
@@ -3999,7 +4022,14 @@ export default function LiveMapView({
               end.latitude,
               end.longitude,
             );
-            console.log('PICKUP ETA', km, min);
+            console.log('PICKUP ETA', {
+              routeInfo: pickupAuth,
+              backend:
+                prefetchPickupAppliedFromBackend && prefetchPickupBackendKm != null
+                  ? { km: prefetchPickupBackendKm, min: prefetchPickupBackendMin }
+                  : null,
+              osrm_geometry_only_km_min: { km: kmOsrm, min: minOsrm },
+            });
             if (!navigationModeRef.current) {
               fitNavigationViewportRef.current?.(rw.coordinates);
             }
@@ -4018,35 +4048,41 @@ export default function LiveMapView({
             await recoverMeetingMetricsNoStraight();
           }
         } else {
-          const r = await fetchOsrmDrivingRoute(
+          const brPax = await fetchBackendRouteMetrics(
             start.latitude,
             start.longitude,
             end.latitude,
             end.longitude,
           );
           if (cancelled) return;
-          if (r && r.coordinates.length >= 2) {
-            meetingHasOsrmPolylineRef.current = true;
-            meetingMetricSourceRef.current = 'osrm';
-            const km = r.distanceM / 1000;
-            const min = Math.max(1, Math.round(r.durationS / 60));
-            setMeetingDistance(km);
-            setMeetingDuration(min);
-            setMeetingRouteMetricsUnavailable(false);
+          const polyPax =
+            brPax.success &&
+            typeof brPax.overview_polyline === 'string' &&
+            brPax.overview_polyline.length > 2
+              ? decodeOsrmPolyline(brPax.overview_polyline, 5)
+              : [];
+          if (polyPax.length >= 2) {
+            meetingHasOsrmPolylineRef.current = polyPax.length >= 3;
+            const pickupAuth = readPickupKmMinFromRouteInfo(routeInfoRef.current);
+            if (pickupAuth) {
+              meetingMetricSourceRef.current = 'routeInfo';
+              setMeetingRouteMetricsUnavailable(false);
+            } else if (!prefetchPickupAppliedFromBackend && !cancelled) {
+              setMeetingRouteMetricsUnavailable(true);
+            }
             logNavDiag('NAV_ROUTE_SUCCESS', {
               leg: 'meeting',
-              points: r.coordinates.length,
-              distance_m: r.distanceM,
-              duration_s: r.durationS,
+              points: polyPax.length,
+              source: 'backend_route_metrics',
               pickup_fallback: false,
             });
             logNavDiag('MATCH_ROUTE_METRICS', {
               leg: 'meeting',
-              source: 'osrm',
+              source: pickupAuth ? 'routeInfo' : 'backend_route_metrics',
               isDriver: false,
               pickup_fallback: false,
-              km,
-              min,
+              km: pickupAuth?.km ?? prefetchPickupBackendKm,
+              min: pickupAuth?.min ?? prefetchPickupBackendMin,
             });
             lastOsrmAtRef.current = Date.now();
             lastOsrmKeyRef.current = meetingEndpointsKey(
@@ -4055,11 +4091,11 @@ export default function LiveMapView({
               end.latitude,
               end.longitude,
             );
-            fitNavigationViewportRef.current?.(r.coordinates);
+            fitNavigationViewportRef.current?.(polyPax);
             setTimeout(() => {
               if (!cancelled) {
-                console.log('ROUTE FETCH OK', { points: r.coordinates.length });
-                setMeetingRouteCoordsLogged(r.coordinates);
+                console.log('ROUTE FETCH OK', { points: polyPax.length });
+                setMeetingRouteCoordsLogged(polyPax);
               }
             }, 150);
           } else {
@@ -4278,6 +4314,15 @@ export default function LiveMapView({
     !destHasUiMetrics &&
     !showDestinationRouteUnavailable &&
     (destinationRoadLoading || destinationRouteMetricsUnavailable);
+
+  const meetingPolylineRoadReady = meetingRouteCoordinates.length >= 2;
+  const showMeetingRoutePolylineLoadingHint =
+    meetingHasUiMetrics && !meetingPolylineRoadReady;
+  const destinationPolylineRoadReady = destinationRoute.length > 2;
+  const showDestinationRoutePolylineLoadingHint =
+    !!destinationLocation &&
+    destHasUiMetrics &&
+    !destinationPolylineRoadReady;
 
   const routeValueStyle = [
     styles.routeValueModern,
@@ -4661,9 +4706,21 @@ export default function LiveMapView({
                     ) : showMeetingRouteUnavailable ? (
                       <RouteUnavailableMuted compact={driverNavImmersive} />
                     ) : (
-                      <Text style={routeValueStyle}>
-                        {formatRouteKmMin(meetingDistance, meetingDuration)}
-                      </Text>
+                      <View>
+                        <Text style={routeValueStyle}>
+                          {formatRouteKmMin(meetingDistance, meetingDuration)}
+                        </Text>
+                        {showMeetingRoutePolylineLoadingHint ? (
+                          <Text
+                            style={[
+                              styles.routePolylineHint,
+                              driverNavImmersive ? styles.routePolylineHintNav : null,
+                            ]}
+                          >
+                            Rota yükleniyor
+                          </Text>
+                        ) : null}
+                      </View>
                     )}
                   </View>
                 </View>
@@ -4695,9 +4752,21 @@ export default function LiveMapView({
                       ) : showDestinationRouteUnavailable ? (
                         <RouteUnavailableMuted compact={driverNavImmersive} />
                       ) : (
-                        <Text style={routeValueStyle}>
-                          {formatRouteKmMin(destinationDistance, destinationDuration)}
-                        </Text>
+                        <View>
+                          <Text style={routeValueStyle}>
+                            {formatRouteKmMin(destinationDistance, destinationDuration)}
+                          </Text>
+                          {showDestinationRoutePolylineLoadingHint ? (
+                            <Text
+                              style={[
+                                styles.routePolylineHint,
+                                driverNavImmersive ? styles.routePolylineHintNav : null,
+                              ]}
+                            >
+                              Rota yükleniyor
+                            </Text>
+                          ) : null}
+                        </View>
                       )}
                     </View>
                   </View>
@@ -6253,6 +6322,16 @@ const styles = StyleSheet.create({
   routeValueModernNav: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  routePolylineHint: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  routePolylineHintNav: {
+    fontSize: 9,
+    marginTop: 1,
   },
   nearBadge: {
     backgroundColor: '#EA580C',
