@@ -30,7 +30,13 @@ import {
   ROUTE_UNAVAILABLE_REVEAL_DELAY_MS,
 } from '../lib/routeLoadingUiConstants';
 import type { PassengerGender } from '../lib/passengerFieldHelpers';
-import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
+import {
+  getDriverMarkerImage,
+  getPassengerMarkerImage,
+  getDriverNavMarkerAnchor,
+  getDriverNavRotationOffsetDeg,
+  MARKER_PIXEL,
+} from '../lib/mapNavMarkers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import InRideSaferForceEndModal from './InRideSaferForceEndModal';
@@ -38,14 +44,12 @@ import InRideSaferForceEndModal from './InRideSaferForceEndModal';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
- * Sabit overlay araç: alt kenardan dp — “Yeniden ortala / Navigasyonu kapat” üst bandının biraz üstü, yatay orta.
- * (Tam ekran yüksekliğine göre % kullanmak FAB + inset ile çok aşağı kaçıyordu.)
+ * Immersive nav alt boşluğu (dp): Marker araç haritada; padding “araç alt bandı + güvenli alan” için kalibrasyon.
  */
 const DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP = 112;
 
 /**
- * Immersive nav: Google mapPadding.bottom, sabit overlay aracın alt bandı ile aynı modeli kullanmalı.
- * Eski %18 ekran / min 132dp, overlay (112dp + ikon) ile uyumsuzdu → kamera merkezi yolun “üstünde” kalıyordu.
+ * Immersive nav: Google mapPadding.bottom — araç PNG yüksekliği + alt inset ile kamera merkezi/yol hizası.
  */
 function driverNavImmersiveMapPaddingBottomPx(insetsBottom: number): number {
   const iconHalf = Math.max(MARKER_PIXEL.driverCar, MARKER_PIXEL.driverMotor) * 0.5;
@@ -56,9 +60,6 @@ function driverNavImmersiveMapPaddingBottomPx(insetsBottom: number): number {
     10;
   return Math.round(Math.min(210, Math.max(96, raw)));
 }
-
-/** Harita-PNG offset’i (mapNavMarkers +180) ile uyum: ikon burnu ekranda yukarı (ileri). */
-const DRIVER_NAV_OVERLAY_ICON_ROTATION_DEG = 180;
 
 /** Android: `tracksViewChanges` kısa süre true — sürekli true iken özel PNG bazen çizilmez (bekleme ekranıyla aynı mantık). */
 function TripMapMarkerImage({
@@ -908,8 +909,8 @@ function resolveNavigationAnchor(
   return null;
 }
 
-/** Rota üzerine snap + mikro drift filtre (marker zıplamasını keser) */
-const NAV_MARKER_SNAP_MAX_M = 50;
+/** Rota üzerine snap + mikro drift filtre — yol dışına taşmış GPS’i zorla çekmez (sıkı) */
+const NAV_MARKER_SNAP_MAX_M = 25;
 /** 3 m altı: marker güncelleme yok (mikro jitter) */
 const NAV_MARKER_MICRO_IGNORE_M = 3;
 const NAV_MARKER_SOFT_BLEND_MAX_M = 22;
@@ -921,7 +922,9 @@ const NAV_ROUTE_BEARING_LOOKAHEAD_MIN_M = 14;
 const NAV_ROUTE_BEARING_LOOKAHEAD_MAX_M = 48;
 const NAV_ROUTE_BEARING_MIN_SEP_M = 5.5;
 /** Bearing yumuşatma (0–1), küçük bearing zıplamasını keser */
-const NAV_MARKER_BEARING_LERP = 0.26;
+const NAV_MARKER_BEARING_LERP = 0.22;
+/** Harita heading (animateCamera): ekstra yumuşatma — titreşimi keser */
+const NAV_CAMERA_HEADING_LERP = 0.22;
 /** Bu kadar dereceden az ham değişimde smoothing girdiği değiştirme */
 const NAV_MARKER_BEARING_RAW_DEADBAND_DEG = 2.4;
 
@@ -1171,17 +1174,49 @@ function zoomTargetForSpeedMps(speedMps: number | null | undefined): number {
   return 14.8;
 }
 
+/** Üç boyutlu nav — Google Maps tarzı sabit eğim */
+const NAV_CAMERA_PITCH_DEG = 55;
+
+function navPitchForSpeedMps(_speedMps: number | null | undefined): number {
+  return NAV_CAMERA_PITCH_DEG;
+}
+
+/** Kamera merkezi polyline üzerinde İleri bakış (m): ~50 düşük hız — ~100 otoyol */
+const NAV_CAMERA_LOOKAHEAD_MIN_M = 50;
+const NAV_CAMERA_LOOKAHEAD_MAX_M = 100;
+
+function navCameraLookAheadMeters(speedMps: number | null | undefined): number {
+  const s = typeof speedMps === 'number' && speedMps >= 0 && Number.isFinite(speedMps) ? speedMps : 0;
+  const kmh = s * 3.6;
+  if (kmh < 15) return NAV_CAMERA_LOOKAHEAD_MIN_M;
+  if (kmh >= 70) return NAV_CAMERA_LOOKAHEAD_MAX_M;
+  const t = (kmh - 15) / (70 - 15);
+  return NAV_CAMERA_LOOKAHEAD_MIN_M + t * (NAV_CAMERA_LOOKAHEAD_MAX_M - NAV_CAMERA_LOOKAHEAD_MIN_M);
+}
+
 /**
- * Hız / pitch uyumu: yavaşta daha az eğim, hızlıda önde daha fazla yol.
+ * Heading-up Kamera merkezi: rota üzerinde araçtan lookAhead kadar ileri.
+ * Polyline yoksa eski bearing + offset fallback (ızgara sapmayı keser).
  */
-function navPitchForSpeedMps(speedMps: number | null | undefined): number {
-  const s =
-    typeof speedMps === 'number' && speedMps >= 0 && Number.isFinite(speedMps) ? speedMps : 0;
-  if (s < 0.8) return 58;
-  if (s < 5) return 63;
-  if (s < 12) return 66;
-  if (s < 22) return 68;
-  return 70;
+function computeNavCameraCenterFromLookAhead(
+  anchor: MapLatLng,
+  polyline: MapLatLng[],
+  headingDeg: number,
+  remainKm: number,
+  zoom: number,
+  speedMps: number | null | undefined,
+): MapLatLng {
+  const lookM = navCameraLookAheadMeters(speedMps);
+  if (polyline.length >= 2) {
+    const progressM = distanceAlongPolylineM(anchor, polyline);
+    const totalM = polylineLengthMeters(polyline);
+    const along = Math.min(Math.max(0, progressM + lookM), Math.max(totalM, 0));
+    const pt = pointAtDistanceAlongPolyline(polyline, along);
+    if (pt && isValidMapCoord(pt)) {
+      return pt;
+    }
+  }
+  return offsetCameraCenterForward(anchor, headingDeg, remainKm, zoom);
 }
 
 /**
@@ -1354,7 +1389,7 @@ function pointAtDistanceAlongPolyline(polyline: MapLatLng[], distanceM: number):
 
 /**
  * Snap noktasından rota boyunca ileri bakış — pusula değil, polyline ekseni.
- * Harita üzerindeki Marker.rotation = bearing + offset (mapNavMarkers); nav overlay’de harita döner.
+ * Nav Marker.flat + rotation = bearing + offset (mapNavMarkers); MapView heading ile “ileri yukarı”.
  */
 function bearingAlongRouteAheadDeg(
   anchor: MapLatLng,
@@ -1781,6 +1816,11 @@ export default function LiveMapView({
   const [destinationRoadLoading, setDestinationRoadLoading] = useState(false);
   const [destinationRouteMetricsUnavailable, setDestinationRouteMetricsUnavailable] =
     useState(false);
+  const destinationRouteRef = useRef<{ latitude: number; longitude: number }[]>([]);
+  useEffect(() => {
+    destinationRouteRef.current = destinationRoute;
+  }, [destinationRoute]);
+
   /** Hata bayrağı geldikten sonra “alınamadı” metnini gecikmeli göster (yarış / flicker önlemi) */
   const [meetingUnavailableUiVisible, setMeetingUnavailableUiVisible] = useState(false);
   const [destinationUnavailableUiVisible, setDestinationUnavailableUiVisible] =
@@ -2019,6 +2059,8 @@ export default function LiveMapView({
   const navCamHeadingSentRef = useRef<number | null>(null);
   /** Son animateCamera heading — mikro titremede atlamayı heading farkıyla gevşet */
   const navCamLastSentHeadingRef = useRef<number | null>(null);
+  /** Marker bearing’den sonra ikinci kat kamera heading yumuşatması */
+  const navCamDisplayedHeadingRef = useRef<number | null>(null);
   /** Gesture süresi bitince kamera efektini yeniden tetikler (GPS hareketsizken bile) */
   const [navFollowResumeTick, setNavFollowResumeTick] = useState(0);
   const scheduleNavMapGesturePause = useCallback(() => {
@@ -2075,6 +2117,7 @@ export default function LiveMapView({
       navCamLastTimeRef.current = 0;
       navLastTickUserRef.current = null;
       navRemainKmRef.current = null;
+      navCamDisplayedHeadingRef.current = null;
     }
     navStagePrevRef.current = navigationStage;
   }, [isDriver, navigationMode, navigationStage]);
@@ -2095,6 +2138,7 @@ export default function LiveMapView({
       navFollowResumeSoftUntilRef.current = 0;
       navCamHeadingSentRef.current = null;
       navCamLastSentHeadingRef.current = null;
+      navCamDisplayedHeadingRef.current = null;
       lastNavRefreshDedupeKeyRef.current = '';
       lastNavRefreshThrottleAtRef.current = 0;
       setNavigationStage('pickup');
@@ -2276,6 +2320,7 @@ export default function LiveMapView({
     navFollowResumeSoftUntilRef.current = 0;
     navCamHeadingSentRef.current = null;
     navCamLastSentHeadingRef.current = null;
+    navCamDisplayedHeadingRef.current = null;
     if (navGestureResumeTimerRef.current) {
       clearTimeout(navGestureResumeTimerRef.current);
       navGestureResumeTimerRef.current = null;
@@ -2476,7 +2521,46 @@ export default function LiveMapView({
         : zoomTargetSpeed;
     const zoom = clampActiveNavFollowZoom(clampNavZoom(zoomRaw));
 
-    const targetCenter = { ...centerBase };
+    const polyNav =
+      navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
+        ? meetingRouteCoordinates
+        : navigationStage === 'destination' && destinationRoute.length > 2
+          ? destinationRoute
+          : [];
+
+    const destForCam =
+      navigationStage === 'destination' && destinationLocation && isValidMapCoord(destinationLocation)
+        ? destinationLocation
+        : otherLocation;
+
+    const headingDegBase =
+      navDriverMarkerSmoothedBearingRef.current != null &&
+      Number.isFinite(navDriverMarkerSmoothedBearingRef.current)
+        ? navDriverMarkerSmoothedBearingRef.current
+        : destForCam && isValidMapCoord(destForCam)
+          ? bearingDegrees(centerBase, destForCam)
+          : 0;
+
+    let headingDeg = headingDegBase;
+    const prevCamHeading = navCamDisplayedHeadingRef.current;
+    if (prevCamHeading != null && Number.isFinite(headingDegBase)) {
+      headingDeg = interpolateHeading(prevCamHeading, headingDegBase, NAV_CAMERA_HEADING_LERP);
+    }
+    navCamDisplayedHeadingRef.current = headingDeg;
+
+    const remainKm =
+      destForCam && isValidMapCoord(destForCam) ? straightLineKm(centerBase, destForCam) : 0;
+
+    const targetCenterRaw = computeNavCameraCenterFromLookAhead(
+      centerBase,
+      polyNav,
+      headingDeg,
+      remainKm,
+      zoom,
+      speedMps,
+    );
+    const targetCenter = { ...targetCenterRaw };
+
     const prevSmoothCenter = navSmoothCenterRef.current;
     const inSoftResume = Date.now() < navFollowResumeSoftUntilRef.current;
     const centerLerp = inSoftResume
@@ -2498,23 +2582,8 @@ export default function LiveMapView({
     const centerMovedM =
       prevSmoothCenter == null ? Infinity : haversineMeters(prevSmoothCenter, centerAfterLerp);
 
-    const destForCam =
-      navigationStage === 'destination' && destinationLocation && isValidMapCoord(destinationLocation)
-        ? destinationLocation
-        : otherLocation;
-    const headingDeg =
-      navDriverMarkerSmoothedBearingRef.current != null &&
-      Number.isFinite(navDriverMarkerSmoothedBearingRef.current)
-        ? navDriverMarkerSmoothedBearingRef.current
-        : destForCam && isValidMapCoord(destForCam)
-          ? bearingDegrees(centerAfterLerp, destForCam)
-          : 0;
-    const remainKm =
-      destForCam && isValidMapCoord(destForCam)
-        ? straightLineKm(centerAfterLerp, destForCam)
-        : 0;
     const pitch = navPitchForSpeedMps(speedMps);
-    const cameraCenter = offsetCameraCenterForward(centerAfterLerp, headingDeg, remainKm, zoom);
+    const cameraCenter = { ...centerAfterLerp };
 
     const headingDeltaSinceLast =
       navCamLastSentHeadingRef.current == null
@@ -2582,6 +2651,8 @@ export default function LiveMapView({
     navDriverMapCoord?.longitude,
     userLocation?.latitude,
     userLocation?.longitude,
+    meetingRouteCoordinates,
+    destinationRoute,
   ]);
 
   /** Turn-by-turn kartı (ok + mesafe + sokak) */
@@ -3014,6 +3085,7 @@ export default function LiveMapView({
       });
       navCamHeadingSentRef.current = null;
       navCamLastSentHeadingRef.current = null;
+      navCamDisplayedHeadingRef.current = null;
       navFollowResumeSoftUntilRef.current = Date.now() + NAV_RESUME_SOFT_MS;
       if (userId && tagId) {
         const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
@@ -3319,7 +3391,6 @@ export default function LiveMapView({
     if (isDriver && navigationMode) {
       return;
     }
-    setDestinationRoute([]);
     const skipOsrmPolylineForDriverQuotedPickupFallback =
       pickupFallbackForDriver &&
       readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
@@ -3357,7 +3428,6 @@ export default function LiveMapView({
           }
         }
       }
-      setDestinationRoute([]);
     })();
     return () => {
       cancelled = true;
@@ -3378,7 +3448,6 @@ export default function LiveMapView({
       setDestinationRoute([]);
       return;
     }
-    setDestinationRoute([]);
     let cancelled = false;
     void (async () => {
       const r = await fetchOsrmDrivingRouteWithSteps(
@@ -3422,7 +3491,6 @@ export default function LiveMapView({
         }
       }
       destNavStepsRef.current = null;
-      setDestinationRoute([]);
     })();
     return () => {
       cancelled = true;
@@ -3481,7 +3549,8 @@ export default function LiveMapView({
     const fetchId = ++destRouteFetchIdRef.current;
     let cancelled = false;
     const quotedNow = readAuthoritativeTripKmMinFromRouteInfo(routeInfoRef.current) != null;
-    if (!quotedNow) {
+    const destAlreadyDrawn = destinationRouteRef.current.length > 2;
+    if (!quotedNow && !destAlreadyDrawn) {
       beginDestinationRoadLoadingUi();
       setDestinationRouteMetricsUnavailable(false);
     } else {
@@ -3642,11 +3711,18 @@ export default function LiveMapView({
       Number.isFinite(navDriverMarkerSmoothedBearingRef.current)
         ? navDriverMarkerSmoothedBearingRef.current
         : headFallback;
+    navCamDisplayedHeadingRef.current = head;
     const remainKm = straightLineKm(anchor, dest);
     const speedMps = navGpsSpeedMpsRef.current;
     const zoom = clampActiveNavFollowZoom(clampNavZoom(zoomTargetForSpeedMps(speedMps)));
+    const polyNav =
+      navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
+        ? meetingRouteCoordinates
+        : navigationStage === 'destination' && destinationRoute.length > 2
+          ? destinationRoute
+          : [];
+    const center = computeNavCameraCenterFromLookAhead(anchor, polyNav, head, remainKm, zoom, speedMps);
     const pitch = navPitchForSpeedMps(speedMps);
-    const center = offsetCameraCenterForward(anchor, head, remainKm, zoom);
     navProgrammaticCameraRef.current = true;
     if (navCameraAnimClearTimerRef.current) {
       clearTimeout(navCameraAnimClearTimerRef.current);
@@ -3658,8 +3734,8 @@ export default function LiveMapView({
       true,
     );
     navCamLastSentHeadingRef.current = head;
-    /** Recenter sonrası takip efekti aynı anchor’tan lerp etsin (InteractionManager / effect yarışı). */
-    navSmoothCenterRef.current = { ...anchor };
+    /** Recenter sonrası takip efekti aynı look-ahead merkezinden lerp etsin (InteractionManager / effect yarışı). */
+    navSmoothCenterRef.current = { ...center };
     navCameraAnimClearTimerRef.current = setTimeout(() => {
       navProgrammaticCameraRef.current = false;
       navCameraAnimClearTimerRef.current = null;
@@ -3676,6 +3752,8 @@ export default function LiveMapView({
     navDriverMapCoord?.latitude,
     navDriverMapCoord?.longitude,
     driverNavRouteHeadingDeg,
+    meetingRouteCoordinates,
+    destinationRoute,
   ]);
 
   /**
@@ -3983,7 +4061,13 @@ export default function LiveMapView({
         }
       };
 
-      beginMeetingRoadLoadingUi();
+      const legKeyForLoading = meetingEndpointsKeyHere();
+      const alreadyDrawingThisLeg =
+        meetingRouteCoordinatesRef.current.length >= 2 &&
+        lastOsrmKeyRef.current === legKeyForLoading;
+      if (!alreadyDrawingThisLeg) {
+        beginMeetingRoadLoadingUi();
+      }
       setMeetingRouteMetricsUnavailable(false);
       try {
         let prefetchPickupBackendKm: number | undefined;
@@ -4351,19 +4435,20 @@ export default function LiveMapView({
   const driverNavActive = isDriver && navigationMode;
   /** Tam ekran sürücü navigasyonu: yalnızca arama + üst kart + harita */
   const driverNavImmersive = isDriver && navigationMode;
-  const driverNavOverlayVehicleSize = passMotor ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar;
-
   const meetingHasUiMetrics =
     meetingDistance != null &&
     meetingDuration != null &&
     Number.isFinite(meetingDistance) &&
     Number.isFinite(meetingDuration);
+  const meetingPolylineRoadReady = meetingRouteCoordinates.length >= 2;
+  const destinationPolylineRoadReady = destinationRoute.length > 2;
   const showMeetingRouteUnavailable =
     !meetingHasUiMetrics &&
     meetingRouteMetricsUnavailable &&
     meetingUnavailableUiVisible &&
     !meetingRoadLoading;
   const showMeetingRouteCalculating =
+    !meetingPolylineRoadReady &&
     !meetingHasUiMetrics &&
     !showMeetingRouteUnavailable &&
     (meetingRoadLoading || meetingRouteMetricsUnavailable);
@@ -4383,14 +4468,13 @@ export default function LiveMapView({
     !destinationRoadLoading;
   const showDestinationRouteCalculating =
     !!destinationLocation &&
+    !destinationPolylineRoadReady &&
     !destHasUiMetrics &&
     !showDestinationRouteUnavailable &&
     (destinationRoadLoading || destinationRouteMetricsUnavailable);
 
-  const meetingPolylineRoadReady = meetingRouteCoordinates.length >= 2;
   const showMeetingRoutePolylineLoadingHint =
     meetingHasUiMetrics && !meetingPolylineRoadReady;
-  const destinationPolylineRoadReady = destinationRoute.length > 2;
   const showDestinationRoutePolylineLoadingHint =
     !!destinationLocation &&
     destHasUiMetrics &&
@@ -4400,6 +4484,17 @@ export default function LiveMapView({
     styles.routeValueModern,
     driverNavImmersive ? styles.routeValueModernNav : null,
   ];
+
+  const navMapVehicleCoord =
+    driverNavImmersive && userLocation && isValidMapCoord(userLocation)
+      ? navDriverMapCoord && isValidMapCoord(navDriverMapCoord)
+        ? navDriverMapCoord
+        : userLocation
+      : null;
+  const navMapVehicleRotation =
+    (typeof driverNavRouteHeadingDeg === 'number' && Number.isFinite(driverNavRouteHeadingDeg)
+      ? driverNavRouteHeadingDeg
+      : 0) + getDriverNavRotationOffsetDeg(passMotor ? 'motorcycle' : 'car');
 
   return (
     <View style={styles.container}>
@@ -4640,6 +4735,23 @@ export default function LiveMapView({
                 lineCap="round"
               />
             )}
+
+          {/* Navigasyon: araç haritada (flat + rota bearing); çizgiler zIndex 8–10 altında */}
+          {driverNavImmersive && navMapVehicleCoord && Marker ? (
+            <Marker
+              coordinate={navMapVehicleCoord}
+              flat
+              rotation={navMapVehicleRotation}
+              anchor={getDriverNavMarkerAnchor(passMotor ? 'motorcycle' : 'car')}
+              zIndex={6000}
+              tracksViewChanges={false}
+            >
+              <TripMapMarkerImage
+                source={getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')}
+                size={passMotor ? MARKER_PIXEL.driverMotor : MARKER_PIXEL.driverCar}
+              />
+            </Marker>
+          ) : null}
 
           {/* BEN — PNG (bekleme ekranı ile aynı ölçü / tracks kuralı) */}
           {userLocation && !driverNavActive && !(boardingConfirmed && !isDriver) && (
@@ -5087,28 +5199,6 @@ export default function LiveMapView({
 
       {driverNavImmersive && MapView ? (
         <View style={styles.navImmersiveLayerRoot} pointerEvents="box-none">
-          <View
-            style={[
-              styles.driverNavFixedVehicleWrap,
-              {
-                bottom: DRIVER_NAV_OVERLAY_ABOVE_BOTTOM_DP + Math.max(insets.bottom, 0),
-              },
-            ]}
-            pointerEvents="none"
-          >
-            <Image
-              source={getDriverMarkerImage(passMotor ? 'motorcycle' : 'car')}
-              style={[
-                styles.driverNavFixedVehicleImg,
-                {
-                  width: driverNavOverlayVehicleSize,
-                  height: driverNavOverlayVehicleSize,
-                  transform: [{ rotate: `${DRIVER_NAV_OVERLAY_ICON_ROTATION_DEG}deg` }],
-                },
-              ]}
-              resizeMode="contain"
-            />
-          </View>
           <View
             style={[
               styles.driverNavRecenterFabWrap,
@@ -5755,14 +5845,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 92,
   },
-  driverNavFixedVehicleWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 26,
-  },
-  driverNavFixedVehicleImg: {},
   navImmersiveOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-start',
