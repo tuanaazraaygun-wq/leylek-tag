@@ -33,6 +33,7 @@ import type { PassengerGender } from '../lib/passengerFieldHelpers';
 import { getDriverMarkerImage, getPassengerMarkerImage, MARKER_PIXEL } from '../lib/mapNavMarkers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
+import InRideSaferForceEndModal from './InRideSaferForceEndModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -151,6 +152,11 @@ interface LiveMapViewProps {
   onComplete?: () => void;
   onRequestTripEnd?: () => void;
   onForceEnd?: () => void;
+  /** Biniş / in_progress: önce şikayet; yalnızca kayıt başarılıysa zorla bitir (index sunar) */
+  onInRideComplaintForceEnd?: (args: {
+    reasonKey: string;
+    details: string;
+  }) => Promise<{ ok: true } | { ok: false; message: string }>;
   onAutoComplete?: () => void;
   onShowEndTripModal?: () => void;
   onShowQRModal?: () => void;  // 🆕 QR Modal aç
@@ -1625,6 +1631,7 @@ export default function LiveMapView({
   onComplete,
   onRequestTripEnd,
   onForceEnd,
+  onInRideComplaintForceEnd,
   onAutoComplete,
   onShowEndTripModal,
   onShowQRModal,  // 🆕
@@ -1643,6 +1650,13 @@ export default function LiveMapView({
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
+
+  const tripStarted =
+    tagStartedAt != null && String(tagStartedAt).trim().length > 0;
+  const tripOnboardSaferForceEnd =
+    String(tagStatus || '').toLowerCase() === 'in_progress' ||
+    !!boardingConfirmed ||
+    tripStarted;
 
   const logPax = useCallback((label: string, fn: unknown) => {
     if (!isDriver) callCheck(label, fn);
@@ -1667,7 +1681,11 @@ export default function LiveMapView({
 
   // BİLGİ KARTI STATE'İ
   const [showInfoCard, setShowInfoCard] = useState(false);
-  
+  const [inRideSaferFeVisible, setInRideSaferFeVisible] = useState(false);
+  const [inRideSaferFeStep, setInRideSaferFeStep] = useState<'choice' | 'complaint'>('choice');
+  const [inRideComplaintSubmitting, setInRideComplaintSubmitting] = useState(false);
+  const inRideComplaintInFlightRef = useRef(false);
+
   // ARAMA STATE'LERİ
   const [isCallLoading, setIsCallLoading] = useState(false);
 
@@ -3001,10 +3019,7 @@ export default function LiveMapView({
         const q = new URLSearchParams({ user_id: userId, tag_id: tagId });
         void fetch(`${API_BASE_URL}/driver/on-the-way?${q}`, { method: 'POST' });
       }
-      queueMicrotask(() => {
-        console.log('YOLCUYA_GIT_TRIGGER_REFETCH');
-        runMeetingRouteOsrmFetchRef.current?.();
-      });
+      /* meeting-route effect navigationMode ile zaten tetiklenir; microtask ile ikinci fetch iptal/flicker üretiyordu */
     } else {
       lastNavCameraAtRef.current = 0;
       navUserMapGestureUntilRef.current = 0;
@@ -3756,6 +3771,39 @@ export default function LiveMapView({
    * }, []);
    */
 
+  /** GPS titreşiminde meeting-route effect’ini her tick tetikleme — ~11 m kovada anahtar */
+  const meetingRouteFetchStableKey = useMemo(() => {
+    const ul = userLocation;
+    const ol = otherLocation;
+    const r4 = (n: number | undefined) =>
+      typeof n === 'number' && Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 'x';
+    if (!isValidRouteEndpoint(ul) || !isValidRouteEndpoint(ol)) {
+      return `inv|${isDriver}|${navigationMode}|${navigationStage}|${pickupFallbackForDriver}|${String(tagId ?? '')}`;
+    }
+    return [
+      'm',
+      r4(ul.latitude),
+      r4(ul.longitude),
+      r4(ol.latitude),
+      r4(ol.longitude),
+      isDriver,
+      navigationMode,
+      navigationStage,
+      pickupFallbackForDriver,
+      String(tagId ?? ''),
+    ].join('|');
+  }, [
+    userLocation?.latitude,
+    userLocation?.longitude,
+    otherLocation?.latitude,
+    otherLocation?.longitude,
+    isDriver,
+    navigationMode,
+    navigationStage,
+    pickupFallbackForDriver,
+    tagId,
+  ]);
+
   /**
    * Buluşma (user ↔ other) OSRM: tek ana effect — koordinat + rol/nav/stage closure’dan;
    * yeniden tetikleme: runMeetingRouteOsrmFetchRef (ör. Yolcuya Git).
@@ -3803,6 +3851,17 @@ export default function LiveMapView({
       const start = isDriver ? ul : ol;
       const end = isDriver ? ol : ul;
 
+      const meetingEndpointsKeyHere = () =>
+        meetingEndpointsKey(start.latitude, start.longitude, end.latitude, end.longitude);
+
+      /** Stale fetch veya boş geometri ile mevcut rotayı silme — yalnızca geçerli yeni polyline ile güncelle */
+      const commitMeetingPolyline = (coords: MapLatLng[]): boolean => {
+        if (cancelled || meetingRouteFetchIdRef.current !== fetchId) return false;
+        if (!Array.isArray(coords) || coords.length < 2) return false;
+        setMeetingRouteCoordsLogged(coords);
+        return true;
+      };
+
       /** OSRM başarısız: kuş uçuşu çizgi/km UI yok — routeInfo pickup + backend get_route_info / önbellek. */
       const recoverMeetingMetricsNoStraight = async () => {
         if (cancelled) return;
@@ -3849,38 +3908,69 @@ export default function LiveMapView({
             if (br.overview_polyline && br.overview_polyline.length > 2) {
               const coords = decodeOsrmPolyline(br.overview_polyline, 5);
               if (coords.length >= 2) {
-                meetingHasOsrmPolylineRef.current = coords.length >= 3;
-                pickupNavStepsRef.current = null;
-                setMeetingRouteCoordsLogged(coords);
-                if (!navigationModeRef.current) {
-                  fitNavigationViewportRef.current?.(coords);
+                if (commitMeetingPolyline(coords)) {
+                  meetingHasOsrmPolylineRef.current = coords.length >= 3;
+                  pickupNavStepsRef.current = null;
+                  lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+                  if (!navigationModeRef.current) {
+                    fitNavigationViewportRef.current?.(coords);
+                  }
+                  logNavDiag('NAV_ROUTE_SUCCESS', {
+                    leg: 'meeting',
+                    points: coords.length,
+                    source: 'backend_polyline',
+                    pickup_fallback: pickupFallbackForDriver,
+                  });
+                  return;
                 }
-                logNavDiag('NAV_ROUTE_SUCCESS', {
-                  leg: 'meeting',
-                  points: coords.length,
-                  source: 'backend_polyline',
-                  pickup_fallback: pickupFallbackForDriver,
-                });
                 return;
               }
             }
-            meetingHasOsrmPolylineRef.current = false;
-            pickupNavStepsRef.current = null;
-            clearMeetingRouteRef.current('backend_metrics_no_polyline');
+            const epKRecover = meetingEndpointsKeyHere();
+            if (
+              meetingRouteCoordinatesRef.current.length >= 2 &&
+              lastOsrmKeyRef.current === epKRecover
+            ) {
+              logNavDiag('NAV_ROUTE_FALLBACK', {
+                leg: 'meeting',
+                reason: 'preserve_polyline_same_endpoints',
+                visible_straight: false,
+                isDriver,
+                pickup_fallback: pickupFallbackForDriver,
+              });
+              return;
+            }
             logNavDiag('NAV_ROUTE_FALLBACK', {
               leg: 'meeting',
               reason: 'backend_metrics_no_polyline',
               visible_straight: false,
               isDriver,
             });
+            if (!fromRi) {
+              setMeetingRouteMetricsUnavailable(true);
+            }
             return;
           }
         } catch {
           /* sessiz — routeInfo yukarıda kaldıysa metrik korunur */
         }
-        meetingHasOsrmPolylineRef.current = false;
-        pickupNavStepsRef.current = null;
-        clearMeetingRouteRef.current('meeting_no_road_after_osrm');
+        const epKNoRoad = meetingEndpointsKeyHere();
+        if (
+          meetingRouteCoordinatesRef.current.length >= 2 &&
+          lastOsrmKeyRef.current === epKNoRoad
+        ) {
+          logNavDiag('NAV_ROUTE_FALLBACK', {
+            leg: 'meeting',
+            reason: 'preserve_polyline_same_endpoints_after_failed_recover',
+            visible_straight: false,
+            isDriver,
+            pickup_fallback: pickupFallbackForDriver,
+          });
+          if (!fromRi) {
+            setMeetingRouteMetricsUnavailable(true);
+          }
+          return;
+        }
         logNavDiag('NAV_ROUTE_FALLBACK', {
           leg: 'meeting',
           reason: 'no_road_metrics_after_osrm',
@@ -3932,19 +4022,21 @@ export default function LiveMapView({
             brPre.overview_polyline.length > 2
           ) {
             const coordsPre = decodeOsrmPolyline(brPre.overview_polyline, 5);
-            if (!cancelled && coordsPre.length >= 2) {
-              meetingHasOsrmPolylineRef.current = coordsPre.length >= 3;
-              pickupNavStepsRef.current = null;
-              setMeetingRouteCoordsLogged(coordsPre);
-              if (!navigationModeRef.current) {
-                fitNavigationViewportRef.current?.(coordsPre);
+            if (coordsPre.length >= 2) {
+              if (commitMeetingPolyline(coordsPre)) {
+                meetingHasOsrmPolylineRef.current = coordsPre.length >= 3;
+                pickupNavStepsRef.current = null;
+                lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+                if (!navigationModeRef.current) {
+                  fitNavigationViewportRef.current?.(coordsPre);
+                }
+                logNavDiag('NAV_ROUTE_SUCCESS', {
+                  leg: 'meeting',
+                  points: coordsPre.length,
+                  source: 'backend_polyline',
+                  pickup_fallback: pickupFallbackForDriver,
+                });
               }
-              logNavDiag('NAV_ROUTE_SUCCESS', {
-                leg: 'meeting',
-                points: coordsPre.length,
-                source: 'backend_polyline',
-                pickup_fallback: pickupFallbackForDriver,
-              });
             }
           }
         }
@@ -3967,71 +4059,67 @@ export default function LiveMapView({
           );
           if (cancelled) return;
           if (rw && rw.coordinates.length >= 2) {
-            console.log('DRIVER_ROUTE_PREFETCH_SUCCESS', {
-              tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
-              navigationMode: navigationModeRef.current,
-              navigationStage: navigationStageRef.current,
-              hasUserLocation: true,
-              hasOtherLocation: true,
-              points: rw.coordinates.length,
-              meetingRouteCoordinatesLength: meetingRouteCoordinatesRef.current.length,
-              otherLocationFromPickupFallback: pickupFallbackForDriver,
-              isDriver,
-            });
-            meetingHasOsrmPolylineRef.current = true;
-            pickupNavStepsRef.current = {
-              steps: rw.steps,
-              cumStart: buildCumStartMeters(rw.steps),
-            };
             const kmOsrm = rw.distanceM / 1000;
             const minOsrm = Math.max(1, Math.round(rw.durationS / 60));
             const pickupAuth = readPickupKmMinFromRouteInfo(routeInfoRef.current);
-            if (pickupAuth) {
-              meetingMetricSourceRef.current = 'routeInfo';
-              setMeetingRouteMetricsUnavailable(false);
-            } else if (!prefetchPickupAppliedFromBackend && !cancelled) {
-              setMeetingRouteMetricsUnavailable(true);
-            }
-            logNavDiag('NAV_ROUTE_SUCCESS', {
-              leg: 'meeting',
-              points: rw.coordinates.length,
-              distance_m: rw.distanceM,
-              duration_s: rw.durationS,
-              pickup_fallback: pickupFallbackForDriver,
-            });
-            logNavDiag('MATCH_ROUTE_METRICS', {
-              leg: 'meeting',
-              source: pickupAuth
-                ? 'routeInfo'
-                : prefetchPickupAppliedFromBackend
-                  ? 'backend_route_metrics'
-                  : 'polyline_only',
-              isDriver: true,
-              pickup_fallback: pickupFallbackForDriver,
-              km: pickupAuth?.km ?? prefetchPickupBackendKm,
-              min: pickupAuth?.min ?? prefetchPickupBackendMin,
-              osrm_km: kmOsrm,
-              osrm_min: minOsrm,
-            });
-            console.log('ROUTE FETCH OK', { points: rw.coordinates.length });
-            setMeetingRouteCoordsLogged(rw.coordinates);
-            lastOsrmAtRef.current = Date.now();
-            lastOsrmKeyRef.current = meetingEndpointsKey(
-              start.latitude,
-              start.longitude,
-              end.latitude,
-              end.longitude,
-            );
-            console.log('PICKUP ETA', {
-              routeInfo: pickupAuth,
-              backend:
-                prefetchPickupAppliedFromBackend && prefetchPickupBackendKm != null
-                  ? { km: prefetchPickupBackendKm, min: prefetchPickupBackendMin }
-                  : null,
-              osrm_geometry_only_km_min: { km: kmOsrm, min: minOsrm },
-            });
-            if (!navigationModeRef.current) {
-              fitNavigationViewportRef.current?.(rw.coordinates);
+            if (commitMeetingPolyline(rw.coordinates)) {
+              console.log('DRIVER_ROUTE_PREFETCH_SUCCESS', {
+                tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+                navigationMode: navigationModeRef.current,
+                navigationStage: navigationStageRef.current,
+                hasUserLocation: true,
+                hasOtherLocation: true,
+                points: rw.coordinates.length,
+                meetingRouteCoordinatesLength: meetingRouteCoordinatesRef.current.length,
+                otherLocationFromPickupFallback: pickupFallbackForDriver,
+                isDriver,
+              });
+              meetingHasOsrmPolylineRef.current = true;
+              pickupNavStepsRef.current = {
+                steps: rw.steps,
+                cumStart: buildCumStartMeters(rw.steps),
+              };
+              if (pickupAuth) {
+                meetingMetricSourceRef.current = 'routeInfo';
+                setMeetingRouteMetricsUnavailable(false);
+              } else if (!prefetchPickupAppliedFromBackend && !cancelled) {
+                setMeetingRouteMetricsUnavailable(true);
+              }
+              logNavDiag('NAV_ROUTE_SUCCESS', {
+                leg: 'meeting',
+                points: rw.coordinates.length,
+                distance_m: rw.distanceM,
+                duration_s: rw.durationS,
+                pickup_fallback: pickupFallbackForDriver,
+              });
+              logNavDiag('MATCH_ROUTE_METRICS', {
+                leg: 'meeting',
+                source: pickupAuth
+                  ? 'routeInfo'
+                  : prefetchPickupAppliedFromBackend
+                    ? 'backend_route_metrics'
+                    : 'polyline_only',
+                isDriver: true,
+                pickup_fallback: pickupFallbackForDriver,
+                km: pickupAuth?.km ?? prefetchPickupBackendKm,
+                min: pickupAuth?.min ?? prefetchPickupBackendMin,
+                osrm_km: kmOsrm,
+                osrm_min: minOsrm,
+              });
+              console.log('ROUTE FETCH OK', { points: rw.coordinates.length });
+              console.log('PICKUP ETA', {
+                routeInfo: pickupAuth,
+                backend:
+                  prefetchPickupAppliedFromBackend && prefetchPickupBackendKm != null
+                    ? { km: prefetchPickupBackendKm, min: prefetchPickupBackendMin }
+                    : null,
+                osrm_geometry_only_km_min: { km: kmOsrm, min: minOsrm },
+              });
+              lastOsrmAtRef.current = Date.now();
+              lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+              if (!navigationModeRef.current) {
+                fitNavigationViewportRef.current?.(rw.coordinates);
+              }
             }
           } else {
             console.log('DRIVER_ROUTE_PREFETCH_EMPTY', {
@@ -4062,42 +4150,34 @@ export default function LiveMapView({
               ? decodeOsrmPolyline(brPax.overview_polyline, 5)
               : [];
           if (polyPax.length >= 2) {
-            meetingHasOsrmPolylineRef.current = polyPax.length >= 3;
             const pickupAuth = readPickupKmMinFromRouteInfo(routeInfoRef.current);
-            if (pickupAuth) {
-              meetingMetricSourceRef.current = 'routeInfo';
-              setMeetingRouteMetricsUnavailable(false);
-            } else if (!prefetchPickupAppliedFromBackend && !cancelled) {
-              setMeetingRouteMetricsUnavailable(true);
-            }
-            logNavDiag('NAV_ROUTE_SUCCESS', {
-              leg: 'meeting',
-              points: polyPax.length,
-              source: 'backend_route_metrics',
-              pickup_fallback: false,
-            });
-            logNavDiag('MATCH_ROUTE_METRICS', {
-              leg: 'meeting',
-              source: pickupAuth ? 'routeInfo' : 'backend_route_metrics',
-              isDriver: false,
-              pickup_fallback: false,
-              km: pickupAuth?.km ?? prefetchPickupBackendKm,
-              min: pickupAuth?.min ?? prefetchPickupBackendMin,
-            });
-            lastOsrmAtRef.current = Date.now();
-            lastOsrmKeyRef.current = meetingEndpointsKey(
-              start.latitude,
-              start.longitude,
-              end.latitude,
-              end.longitude,
-            );
-            fitNavigationViewportRef.current?.(polyPax);
-            setTimeout(() => {
-              if (!cancelled) {
-                console.log('ROUTE FETCH OK', { points: polyPax.length });
-                setMeetingRouteCoordsLogged(polyPax);
+            if (commitMeetingPolyline(polyPax)) {
+              meetingHasOsrmPolylineRef.current = polyPax.length >= 3;
+              if (pickupAuth) {
+                meetingMetricSourceRef.current = 'routeInfo';
+                setMeetingRouteMetricsUnavailable(false);
+              } else if (!prefetchPickupAppliedFromBackend && !cancelled) {
+                setMeetingRouteMetricsUnavailable(true);
               }
-            }, 150);
+              logNavDiag('NAV_ROUTE_SUCCESS', {
+                leg: 'meeting',
+                points: polyPax.length,
+                source: 'backend_route_metrics',
+                pickup_fallback: false,
+              });
+              logNavDiag('MATCH_ROUTE_METRICS', {
+                leg: 'meeting',
+                source: pickupAuth ? 'routeInfo' : 'backend_route_metrics',
+                isDriver: false,
+                pickup_fallback: false,
+                km: pickupAuth?.km ?? prefetchPickupBackendKm,
+                min: pickupAuth?.min ?? prefetchPickupBackendMin,
+              });
+              lastOsrmAtRef.current = Date.now();
+              lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+              fitNavigationViewportRef.current?.(polyPax);
+              console.log('ROUTE FETCH OK', { points: polyPax.length });
+            }
           } else {
             console.warn('Route empty');
             await recoverMeetingMetricsNoStraight();
@@ -4137,15 +4217,7 @@ export default function LiveMapView({
       forceMeetingRoadLoadingFalse();
     };
   }, [
-    isDriver,
-    navigationMode,
-    navigationStage,
-    userLocation?.latitude,
-    userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
-    pickupFallbackForDriver,
-    tagId,
+    meetingRouteFetchStableKey,
     setMeetingRouteCoordsLogged,
     beginMeetingRoadLoadingUi,
     endMeetingRoadLoadingUi,
@@ -5299,6 +5371,27 @@ export default function LiveMapView({
             <TouchableOpacity 
               style={styles.endButton} 
               onPress={() => {
+                void tapButtonHaptic();
+                if (tripOnboardSaferForceEnd && onInRideComplaintForceEnd) {
+                  if (inRideComplaintInFlightRef.current || inRideComplaintSubmitting) {
+                    return;
+                  }
+                  if (!tagId || String(tagId).trim() === '') {
+                    Alert.alert(
+                      'İşlem yapılamıyor',
+                      'Eşleşme bilgisi bulunamadı. Sayfayı yenileyip tekrar deneyin.',
+                    );
+                    return;
+                  }
+                  const stOpen = String(tagStatus || '').toLowerCase();
+                  if (['completed', 'cancelled', 'force_ended'].includes(stOpen)) {
+                    Alert.alert('İşlem yapılamıyor', 'Bu yolculuk artık aktif değil.');
+                    return;
+                  }
+                  setInRideSaferFeStep('choice');
+                  setInRideSaferFeVisible(true);
+                  return;
+                }
                 Alert.alert(
                   '⚠️ Zorla Bitir',
                   'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
@@ -5455,6 +5548,62 @@ export default function LiveMapView({
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {onInRideComplaintForceEnd ? (
+        <InRideSaferForceEndModal
+          visible={inRideSaferFeVisible}
+          step={inRideSaferFeStep}
+          submitting={inRideComplaintSubmitting}
+          onClose={() => {
+            setInRideSaferFeVisible(false);
+            setInRideSaferFeStep('choice');
+          }}
+          onChooseQr={() => {
+            setInRideSaferFeVisible(false);
+            setInRideSaferFeStep('choice');
+            onShowQRModal?.();
+          }}
+          onChooseIssue={() => setInRideSaferFeStep('complaint')}
+          onSubmitComplaintAndEnd={async (reasonKey, details) => {
+            if (!onInRideComplaintForceEnd || inRideComplaintInFlightRef.current) return;
+            inRideComplaintInFlightRef.current = true;
+            setInRideComplaintSubmitting(true);
+            try {
+              const result = await onInRideComplaintForceEnd({ reasonKey, details });
+              if (result.ok) {
+                setInRideSaferFeVisible(false);
+                setInRideSaferFeStep('choice');
+              } else {
+                Alert.alert(
+                  'Şikayet gönderilemedi',
+                  result.message ||
+                    'Bağlantı veya sunucu hatası. Tekrar deneyebilir veya “Yine de zorla bitir” seçebilirsiniz.',
+                );
+              }
+            } finally {
+              inRideComplaintInFlightRef.current = false;
+              setInRideComplaintSubmitting(false);
+            }
+          }}
+          onBluntForceEnd={() => {
+            if (inRideComplaintInFlightRef.current) return;
+            setInRideSaferFeVisible(false);
+            setInRideSaferFeStep('choice');
+            Alert.alert(
+              '⚠️ Zorla Bitir',
+              'Bu işlem puanınızı 5 düşürecektir!\n\nYol Paylaşımını Bitir butonu ile QR okutarak +3 puan kazanabilirsiniz.',
+              [
+                { text: 'Vazgeç', style: 'cancel' },
+                {
+                  text: 'Zorla Bitir (-5 Puan)',
+                  style: 'destructive',
+                  onPress: () => onForceEnd?.(),
+                },
+              ],
+            );
+          }}
+        />
+      ) : null}
     </View>
   );
 }

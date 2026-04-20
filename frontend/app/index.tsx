@@ -9162,6 +9162,7 @@ function PassengerDashboard({
                   tagId={activeTag?.id}
                   tagStatus={activeTag?.status}
                   boardingConfirmed={!!activeTag?.boarding_confirmed_at}
+                  tagStartedAt={activeTag?.started_at ?? null}
                   price={activeTag?.final_price}
                   offeredPrice={activeTag?.offered_price}
                   routeInfo={{
@@ -9195,6 +9196,107 @@ function PassengerDashboard({
                     setPassengerChatVisible(true);
                   }}
                   onOpenLeylekZekaSupport={openLeylekZekaFromMap}
+                  onInRideComplaintForceEnd={async ({ reasonKey, details }) => {
+                    if (!activeTag?.id || !user?.id) {
+                      return { ok: false, message: 'Eşleşme bilgisi bulunamadı.' };
+                    }
+                    const st = String(activeTag.status || '').toLowerCase();
+                    if (['completed', 'cancelled', 'force_ended'].includes(st)) {
+                      return { ok: false, message: 'Bu yolculuk artık aktif değil.' };
+                    }
+                    const reportedId = String(activeTag.driver_id || '');
+                    if (!reportedId) {
+                      return { ok: false, message: 'Sürücü bilgisi bulunamadı.' };
+                    }
+                    const meta = `[in_ride_force_end reporter=passenger reported_party=driver tag_id=${activeTag.id} ts=${new Date().toISOString()}]`;
+                    const fullDetails = details ? `${meta}\n${details}` : meta;
+                    let rep: Record<string, unknown> = {};
+                    try {
+                      const q = new URLSearchParams({
+                        user_id: String(user.id),
+                        reported_user_id: reportedId,
+                        reason: reasonKey,
+                        tag_id: String(activeTag.id),
+                      });
+                      q.set('description', fullDetails);
+                      const res = await fetch(`${API_URL}/user/report?${q}`, { method: 'POST' });
+                      rep = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+                      if (!res.ok || rep.success === false) {
+                        const d =
+                          typeof rep.detail === 'string'
+                            ? rep.detail
+                            : typeof rep.message === 'string'
+                              ? rep.message
+                              : null;
+                        return {
+                          ok: false,
+                          message:
+                            d ||
+                            'Şikayet sunucuya kaydedilemedi. İnternetinizi kontrol edip tekrar deneyin.',
+                        };
+                      }
+                    } catch {
+                      return {
+                        ok: false,
+                        message:
+                          'Şikayet gönderilirken bağlantı hatası oluştu. Tekrar deneyin.',
+                      };
+                    }
+                    try {
+                      const response = await fetch(
+                        `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=passenger`,
+                        { method: 'POST' },
+                      );
+                      const result = (await response.json()) as {
+                        success?: boolean;
+                        detail?: string;
+                        message?: string;
+                      };
+                      if (!response.ok || result.success === false) {
+                        return {
+                          ok: false,
+                          message:
+                            'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin veya destek ile iletişime geçin.',
+                        };
+                      }
+                    } catch {
+                      return {
+                        ok: false,
+                        message:
+                          'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin.',
+                      };
+                    }
+                    try {
+                      callCheck('passengerForceEndTrip', passengerForceEndTrip);
+                      passengerForceEndTrip({
+                        tag_id: activeTag.id,
+                        ender_id: user.id,
+                        ender_type: 'passenger',
+                        passenger_id: user.id,
+                        driver_id: activeTag.driver_id || '',
+                      });
+                    } catch (socketErr) {
+                      console.log('Socket force end hatası:', socketErr);
+                    }
+                    const nowIso = new Date().toISOString();
+                    setActiveTag((prev) =>
+                      prev && String(prev.id) === String(activeTag.id)
+                        ? {
+                            ...prev,
+                            end_request: {
+                              kind: FORCE_END_COUNTERPARTY_KIND,
+                              status: 'pending',
+                              initiator_id: user.id,
+                              initiator_type: 'passenger',
+                              requested_at: nowIso,
+                            },
+                          }
+                        : prev,
+                    );
+                    onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+                    void loadActiveTag();
+                    return { ok: true };
+                  }}
                   onRequestTripEnd={async () => {
                     // Karşılıklı iptal isteği gönder - YOLCU
                     try {
@@ -12631,6 +12733,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             otherUserId={activeTag?.passenger_id}
             userId={user.id}
             tagId={activeTag?.id}
+            tagStatus={activeTag?.status}
+            tagStartedAt={activeTag?.started_at ?? null}
             boardingConfirmed={!!activeTag?.boarding_confirmed_at}
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
@@ -12666,6 +12770,106 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               setDriverChatVisible(true);
             }}
             onOpenLeylekZekaSupport={openLeylekZekaFromMapDriver}
+            onInRideComplaintForceEnd={async ({ reasonKey, details }) => {
+              if (!activeTag?.id || !user?.id) {
+                return { ok: false, message: 'Eşleşme bilgisi bulunamadı.' };
+              }
+              const st = String(activeTag.status || '').toLowerCase();
+              if (['completed', 'cancelled', 'force_ended'].includes(st)) {
+                return { ok: false, message: 'Bu yolculuk artık aktif değil.' };
+              }
+              const reportedId = String(activeTag.passenger_id || '');
+              if (!reportedId) {
+                return { ok: false, message: 'Yolcu bilgisi bulunamadı.' };
+              }
+              const meta = `[in_ride_force_end reporter=driver reported_party=passenger tag_id=${activeTag.id} ts=${new Date().toISOString()}]`;
+              const fullDetails = details ? `${meta}\n${details}` : meta;
+              let rep: Record<string, unknown> = {};
+              try {
+                const q = new URLSearchParams({
+                  user_id: String(user.id),
+                  reported_user_id: reportedId,
+                  reason: reasonKey,
+                  tag_id: String(activeTag.id),
+                });
+                q.set('description', fullDetails);
+                const res = await fetch(`${API_URL}/user/report?${q}`, { method: 'POST' });
+                rep = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+                if (!res.ok || rep.success === false) {
+                  const d =
+                    typeof rep.detail === 'string'
+                      ? rep.detail
+                      : typeof rep.message === 'string'
+                        ? rep.message
+                        : null;
+                  return {
+                    ok: false,
+                    message:
+                      d ||
+                      'Şikayet sunucuya kaydedilemedi. İnternetinizi kontrol edip tekrar deneyin.',
+                  };
+                }
+              } catch {
+                return {
+                  ok: false,
+                  message:
+                    'Şikayet gönderilirken bağlantı hatası oluştu. Tekrar deneyin.',
+                };
+              }
+              try {
+                const response = await fetch(
+                  `${API_URL}/trip/force-end?tag_id=${activeTag.id}&user_id=${user.id}&ender_type=driver`,
+                  { method: 'POST' },
+                );
+                const result = (await response.json()) as {
+                  success?: boolean;
+                  detail?: string;
+                  message?: string;
+                };
+                if (!response.ok || result.success === false) {
+                  return {
+                    ok: false,
+                    message:
+                      'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin veya destek ile iletişime geçin.',
+                  };
+                }
+              } catch {
+                return {
+                  ok: false,
+                  message:
+                    'Şikayetiniz kaydedildi ancak yolculuğu şimdi sonlandıramadık. Biraz sonra tekrar deneyin.',
+                };
+              }
+              try {
+                driverForceEndTrip({
+                  tag_id: activeTag.id,
+                  ender_id: user.id,
+                  ender_type: 'driver',
+                  passenger_id: activeTag.passenger_id || '',
+                  driver_id: user.id,
+                });
+              } catch (socketErr) {
+                console.log('Socket force end hatası:', socketErr);
+              }
+              const nowIso = new Date().toISOString();
+              setActiveTag((prev) =>
+                prev && String(prev.id) === String(activeTag.id)
+                  ? {
+                      ...prev,
+                      end_request: {
+                        kind: FORCE_END_COUNTERPARTY_KIND,
+                        status: 'pending',
+                        initiator_id: user.id,
+                        initiator_type: 'driver',
+                        requested_at: nowIso,
+                      },
+                    }
+                  : prev,
+              );
+              onShowTripEndedBanner?.('Karşı tarafın onayı bekleniyor');
+              void loadData();
+              return { ok: true };
+            }}
             onForceEnd={async () => {
               console.log('⚡ ŞOFÖR - ZORLA BİTİR başlatılıyor...');
 
@@ -12769,8 +12973,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 ]
               );
             }}
-            tagStatus={activeTag?.status}
-            tagStartedAt={activeTag?.started_at ?? null}
             onAutoComplete={async () => {
               // Hedefe yaklaşınca otomatik tamamlama - ŞOFÖR
               try {
