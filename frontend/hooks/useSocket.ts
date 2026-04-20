@@ -355,27 +355,47 @@ export default function useSocket({
       callbackRefs.current.onTagCreated?.(data);
     };
 
-    /** TEMP: sürücü teklif flicker — hangi socket olayı anında listeden düşürüyor */
-    const logDriverOfferRemoveEvent = (socketEvent: string, data: any) => {
-      if (userRole === 'driver') {
-        try {
-          console.log(
-            JSON.stringify({
-              evt: 'DRIVER_OFFER_REMOVE_EVENT',
-              socketEvent,
-              tag_id: data?.tag_id ?? null,
-              request_id: data?.request_id ?? null,
-              revoke_reason: data?.revoke_reason ?? null,
-            }),
-          );
-        } catch {
-          /* noop */
-        }
+    /** Rolling dalga: timeout / emit retry — UI’de 30 sn min. visibility (sürücü). */
+    const PASSENGER_OFFER_SOFT_REVOKE_REASONS = new Set(['dispatch_timeout', 'emit_failed']);
+
+    const logDriverOfferSoftRemove = (socketEvent: string, data: any, source: string) => {
+      if (userRole !== 'driver') return;
+      try {
+        console.log(
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_SOFT_REMOVE_EVENT',
+            socketEvent,
+            tag_id: data?.tag_id ?? null,
+            request_id: data?.request_id ?? null,
+            revoke_reason: data?.revoke_reason ?? null,
+            source,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    };
+
+    const logDriverOfferHardRemove = (socketEvent: string, data: any) => {
+      if (userRole !== 'driver') return;
+      try {
+        console.log(
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_HARD_REMOVE_EVENT',
+            socketEvent,
+            tag_id: data?.tag_id ?? null,
+            request_id: data?.request_id ?? null,
+            revoke_reason: data?.revoke_reason ?? null,
+            source: `useSocket:${socketEvent}`,
+          }),
+        );
+      } catch {
+        /* noop */
       }
     };
 
     const notifyTagCancelled = (socketEvent: string, data: any) => {
-      logDriverOfferRemoveEvent(socketEvent, data);
+      logDriverOfferHardRemove(socketEvent, data);
       console.log('🚫 [useSocket] TAG İPTAL:', socketEvent, data);
       callbackRefs.current.onTagCancelled?.(data);
     };
@@ -385,11 +405,20 @@ export default function useSocket({
       notifyTagCancelled('passenger_offer_cancelled', data);
     const handlePassengerOfferTakenEvt = (data: any) =>
       notifyTagCancelled('passenger_offer_taken', data);
-    const handlePassengerOfferRevokedEvt = (data: any) =>
+    const handlePassengerOfferRevokedEvt = (data: any) => {
+      const reason = String(data?.revoke_reason ?? '');
+      const isSoft = PASSENGER_OFFER_SOFT_REVOKE_REASONS.has(reason);
+      if (userRole === 'driver' && isSoft && data?.tag_id) {
+        logDriverOfferSoftRemove('passenger_offer_revoked', data, 'useSocket:passenger_offer_revoked→onRemoveOffer');
+        console.log('📤 [useSocket] passenger_offer_revoked (soft rolling):', data);
+        callbackRefs.current.onRemoveOffer?.(data);
+        return;
+      }
       notifyTagCancelled('passenger_offer_revoked', data);
+    };
 
     const handleRemoveOfferRolling = (data: any) => {
-      logDriverOfferRemoveEvent('remove_offer', data);
+      logDriverOfferSoftRemove('remove_offer', data, 'useSocket:remove_offer→onRemoveOffer');
       console.log('📤 [useSocket] remove_offer (dalga geçişi):', data);
       callbackRefs.current.onRemoveOffer?.(data);
     };
@@ -547,7 +576,7 @@ export default function useSocket({
     socket.on('tag_cancelled', handleTagCancelledPlain);
     socket.on('passenger_offer_cancelled', handlePassengerOfferCancelledEvt); // 🆕 MARTI TAG
     socket.on('passenger_offer_taken', handlePassengerOfferTakenEvt); // 🆕 MARTI TAG - Başka sürücü aldı
-    socket.on('passenger_offer_revoked', handlePassengerOfferRevokedEvt); // revoke_reason: dispatch_timeout → ertelenmiş kaldırma
+    socket.on('passenger_offer_revoked', handlePassengerOfferRevokedEvt); // soft revoke → onRemoveOffer (30s min)
     socket.on('remove_offer', handleRemoveOfferRolling); // Rolling batch — sürücü UI’si onRemoveOffer ile min. görünürlük
     socket.on('tag_updated', handleTagUpdated);
     socket.on('tag_matched', handleTagMatched);

@@ -10338,11 +10338,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     };
   }, []);
 
-  /** Rolling batch / dispatch-timeout revoke: kart en az DRIVER_OFFER_MIN_VISIBLE_MS kalsın. */
+  /** Tüm soft offer kaldırmaları: kart en az DRIVER_OFFER_MIN_VISIBLE_MS kalsın. */
   function scheduleDriverOfferRemovalAfterMinVisible(
     tagId: string,
-    request_id: string | null | undefined,
     source: string,
+    request_id?: string | null,
+    revoke_reason?: string | null,
   ) {
     const tagKey = String(tagId).trim();
     if (!tagKey) return;
@@ -10360,6 +10361,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           min_visible_ms: DRIVER_OFFER_MIN_VISIBLE_MS,
           source,
           request_id: request_id ?? null,
+          revoke_reason: revoke_reason ?? null,
         }),
       );
     } catch {
@@ -10370,7 +10372,13 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       delete driverRemoveOfferTimersRef.current[tagKey];
       try {
         console.log(
-          JSON.stringify({ evt: 'DRIVER_OFFER_REMOVE_DELAYED_FIRED', tag_id: tagKey, source }),
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_REMOVE_DELAYED_FIRED',
+            tag_id: tagKey,
+            source,
+            request_id: request_id ?? null,
+            revoke_reason: revoke_reason ?? null,
+          }),
         );
       } catch {
         /* noop */
@@ -10827,55 +10835,30 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
-      const revokeReason = String(
-        (data as { revoke_reason?: string } | null | undefined)?.revoke_reason || '',
-      );
-      const softDispatchRevoke =
-        revokeReason === 'dispatch_timeout' || revokeReason === 'emit_failed';
-      if (softDispatchRevoke && data?.tag_id) {
-        try {
-          console.log(
-            JSON.stringify({
-              evt: 'DRIVER_OFFER_SOFT_REVOKE_SCHEDULED',
-              tag_id: data.tag_id,
-              revoke_reason: revokeReason,
-              request_id: data.request_id ?? null,
-            }),
-          );
-        } catch {
-          /* noop */
-        }
-        scheduleDriverOfferRemovalAfterMinVisible(
-          String(data.tag_id),
-          data.request_id,
-          `onTagCancelled:${revokeReason}`,
-        );
-        return;
-      }
-      try {
-        console.log(
-          JSON.stringify({
-            evt: 'DRIVER_OFFER_IMMEDIATE_REMOVE',
-            tag_id: data?.tag_id ?? null,
-            request_id: data?.request_id ?? null,
-            revoke_reason: revokeReason || null,
-          }),
-        );
-      } catch {
-        /* noop */
-      }
+      // Soft rolling revoke useSocket’ta onRemoveOffer’a yönlendirilir; burada yalnızca hard removal.
       if (data?.tag_id) {
         const tid = String(data.tag_id);
         clearDriverRemoveOfferTimer(tid);
         delete driverOfferFirstShownAtRef.current[tid];
       }
-      // TAG'i listeden ANINDA kaldır (iptal / başka sürücü aldı / revoke)
       setRequests(prev => prev.filter(r => r.id !== data.tag_id && r.request_id !== data.request_id));
     },
     onRemoveOffer: (data) => {
       const tagId = data?.tag_id != null ? String(data.tag_id) : '';
       if (!tagId) return;
-      scheduleDriverOfferRemovalAfterMinVisible(tagId, data.request_id, 'remove_offer');
+      const revokeReason = String(
+        (data as { revoke_reason?: string } | null | undefined)?.revoke_reason || '',
+      );
+      const source =
+        revokeReason === 'dispatch_timeout' || revokeReason === 'emit_failed'
+          ? 'passenger_offer_revoked'
+          : 'remove_offer';
+      scheduleDriverOfferRemovalAfterMinVisible(
+        tagId,
+        source,
+        data.request_id,
+        revokeReason || null,
+      );
     },
     onTagMatched: (data) => {
       console.log('🤝 ŞOFÖR - TAG EŞLEŞTİ (Socket):', data);
