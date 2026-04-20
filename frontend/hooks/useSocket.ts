@@ -336,6 +336,29 @@ export default function useSocket({
 
     // ══════════ TAG EVENTLERİ ══════════
 
+    const emitDriverOfferSocketEvent = (
+      socketEvent: string,
+      data: any,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (userRole !== 'driver') return;
+      try {
+        console.log(
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_SOCKET_EVENT',
+            socketEvent,
+            tag_id: data?.tag_id ?? null,
+            request_id: data?.request_id ?? null,
+            revoke_reason: data?.revoke_reason ?? null,
+            source: `useSocket:${socketEvent}`,
+            ...(extra || {}),
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    };
+
     const handleNewTag = (data: any) => {
       console.log('🏷️ [useSocket] YENİ TAG:', data);
       if (userRole === 'driver' && data?.tag_id) {
@@ -346,11 +369,14 @@ export default function useSocket({
               source: 'socket_new_passenger_offer_or_tag',
               tag_id: data.tag_id,
               request_id: data.request_id ?? null,
+              revoke_reason: null,
+              visible_request_ids: null,
             }),
           );
         } catch {
           /* noop */
         }
+        emitDriverOfferSocketEvent('new_passenger_offer_or_tag', data, { intent: 'append_offer' });
       }
       callbackRefs.current.onTagCreated?.(data);
     };
@@ -358,44 +384,8 @@ export default function useSocket({
     /** Rolling dalga: timeout / emit retry — UI’de 30 sn min. visibility (sürücü). */
     const PASSENGER_OFFER_SOFT_REVOKE_REASONS = new Set(['dispatch_timeout', 'emit_failed']);
 
-    const logDriverOfferSoftRemove = (socketEvent: string, data: any, source: string) => {
-      if (userRole !== 'driver') return;
-      try {
-        console.log(
-          JSON.stringify({
-            evt: 'DRIVER_OFFER_SOFT_REMOVE_EVENT',
-            socketEvent,
-            tag_id: data?.tag_id ?? null,
-            request_id: data?.request_id ?? null,
-            revoke_reason: data?.revoke_reason ?? null,
-            source,
-          }),
-        );
-      } catch {
-        /* noop */
-      }
-    };
-
-    const logDriverOfferHardRemove = (socketEvent: string, data: any) => {
-      if (userRole !== 'driver') return;
-      try {
-        console.log(
-          JSON.stringify({
-            evt: 'DRIVER_OFFER_HARD_REMOVE_EVENT',
-            socketEvent,
-            tag_id: data?.tag_id ?? null,
-            request_id: data?.request_id ?? null,
-            revoke_reason: data?.revoke_reason ?? null,
-            source: `useSocket:${socketEvent}`,
-          }),
-        );
-      } catch {
-        /* noop */
-      }
-    };
-
     const notifyTagCancelled = (socketEvent: string, data: any) => {
-      logDriverOfferHardRemove(socketEvent, data);
+      emitDriverOfferSocketEvent(socketEvent, data, { intent: 'hard_remove_onTagCancelled' });
       console.log('🚫 [useSocket] TAG İPTAL:', socketEvent, data);
       callbackRefs.current.onTagCancelled?.(data);
     };
@@ -409,7 +399,10 @@ export default function useSocket({
       const reason = String(data?.revoke_reason ?? '');
       const isSoft = PASSENGER_OFFER_SOFT_REVOKE_REASONS.has(reason);
       if (userRole === 'driver' && isSoft && data?.tag_id) {
-        logDriverOfferSoftRemove('passenger_offer_revoked', data, 'useSocket:passenger_offer_revoked→onRemoveOffer');
+        emitDriverOfferSocketEvent('passenger_offer_revoked', data, {
+          intent: 'soft_defer_remove',
+          routes_to: 'onRemoveOffer',
+        });
         console.log('📤 [useSocket] passenger_offer_revoked (soft rolling):', data);
         callbackRefs.current.onRemoveOffer?.(data);
         return;
@@ -418,7 +411,10 @@ export default function useSocket({
     };
 
     const handleRemoveOfferRolling = (data: any) => {
-      logDriverOfferSoftRemove('remove_offer', data, 'useSocket:remove_offer→onRemoveOffer');
+      emitDriverOfferSocketEvent('remove_offer', data, {
+        intent: 'soft_defer_remove',
+        routes_to: 'onRemoveOffer',
+      });
       console.log('📤 [useSocket] remove_offer (dalga geçişi):', data);
       callbackRefs.current.onRemoveOffer?.(data);
     };
@@ -430,6 +426,7 @@ export default function useSocket({
 
     const handleTagMatched = (data: any) => {
       console.log('🤝 [useSocket] TAG EŞLEŞTİ:', data);
+      emitDriverOfferSocketEvent('tag_matched', data, { intent: 'terminal_match_clear_offers' });
       callbackRefs.current.onTagMatched?.(data);
     };
 
@@ -440,6 +437,7 @@ export default function useSocket({
 
     const handleRideMatched = (data: any) => {
       console.log('✅ [useSocket] ride_matched:', data);
+      emitDriverOfferSocketEvent('ride_matched', data, { intent: 'terminal_match_clear_offers' });
       callbackRefs.current.onRideMatched?.(data as RideMatchSocketData);
     };
 

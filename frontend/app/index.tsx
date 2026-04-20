@@ -10312,6 +10312,12 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
+  const requestsSnapshotRef = useRef<any[]>([]);
+  requestsSnapshotRef.current = requests;
+  const snapshotVisibleRequestIds = () =>
+    requestsSnapshotRef.current
+      .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+      .filter(Boolean);
   const driverOfferFirstShownAtRef = useRef<Record<string, number>>({});
   const driverRemoveOfferTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const clearDriverRemoveOfferTimer = (tagKey: string) => {
@@ -10355,13 +10361,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     try {
       console.log(
         JSON.stringify({
-          evt: 'DRIVER_OFFER_REMOVE_DELAYED',
+          evt: 'DRIVER_OFFER_REMOVE_REQUESTED',
+          kind: 'soft_scheduled',
           tag_id: tagKey,
           delay_ms: delay,
           min_visible_ms: DRIVER_OFFER_MIN_VISIBLE_MS,
           source,
           request_id: request_id ?? null,
           revoke_reason: revoke_reason ?? null,
+          visible_request_ids: snapshotVisibleRequestIds(),
         }),
       );
     } catch {
@@ -10373,17 +10381,36 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       try {
         console.log(
           JSON.stringify({
-            evt: 'DRIVER_OFFER_REMOVE_DELAYED_FIRED',
+            evt: 'DRIVER_OFFER_REMOVE_EXECUTED',
+            kind: 'soft_scheduled',
             tag_id: tagKey,
             source,
             request_id: request_id ?? null,
             revoke_reason: revoke_reason ?? null,
+            visible_request_ids_before: snapshotVisibleRequestIds(),
           }),
         );
       } catch {
         /* noop */
       }
-      setRequests(prev => prev.filter(r => r.id !== tagKey && r.request_id !== request_id));
+      setRequests(prev => {
+        const next = prev.filter(r => r.id !== tagKey && r.request_id !== request_id);
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+              source: `${source}:soft_timeout_filter`,
+              requests_len: next.length,
+              visible_request_ids: next
+                .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+                .filter(Boolean),
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+        return next;
+      });
       delete driverOfferFirstShownAtRef.current[tagKey];
     }, delay);
   }
@@ -10782,22 +10809,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             (data as { time_to_passenger_min?: number }).time_to_passenger_min,
         );
         const pkMin = Number.isFinite(pkMinN) && pkMinN > 0 ? pkMinN : null;
-        if (data.tag_id) {
-          driverOfferFirstShownAtRef.current[String(data.tag_id)] = Date.now();
-          try {
-            console.log(
-              JSON.stringify({
-                evt: 'DRIVER_OFFER_ADD',
-                source: 'onTagCreated_setRequests',
-                tag_id: data.tag_id,
-                request_id: data.request_id ?? data.tag_id,
-              }),
-            );
-          } catch {
-            /* noop */
-          }
-        }
-        return [...filtered, {
+        const newRow = {
           id: data.tag_id,
           tag_id: data.tag_id,
           request_id: data.request_id ?? data.tag_id,
@@ -10828,7 +10840,37 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
-        }];
+        };
+        const nextList = [...filtered, newRow];
+        if (data.tag_id) {
+          driverOfferFirstShownAtRef.current[String(data.tag_id)] = Date.now();
+          const vis = nextList
+            .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+            .filter(Boolean);
+          try {
+            console.log(
+              JSON.stringify({
+                evt: 'DRIVER_OFFER_ADD',
+                source: 'onTagCreated_setRequests',
+                tag_id: data.tag_id,
+                request_id: data.request_id ?? data.tag_id,
+                revoke_reason: null,
+                visible_request_ids: vis,
+              }),
+            );
+            console.log(
+              JSON.stringify({
+                evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+                source: 'onTagCreated_append',
+                requests_len: nextList.length,
+                visible_request_ids: vis,
+              }),
+            );
+          } catch {
+            /* noop */
+          }
+        }
+        return nextList;
       });
       
       // Frontend rota hesaplaması yok: yalnızca backend'in gönderdiği mesafe/süre kullanılır.
@@ -10836,12 +10878,54 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     onTagCancelled: (data) => {
       console.log('🚫 ŞOFÖR - TAG İPTAL (Socket):', data);
       // Soft rolling revoke useSocket’ta onRemoveOffer’a yönlendirilir; burada yalnızca hard removal.
+      try {
+        console.log(
+          JSON.stringify({
+            evt: 'DRIVER_OFFER_REMOVE_REQUESTED',
+            kind: 'hard_immediate',
+            tag_id: data?.tag_id ?? null,
+            request_id: data?.request_id ?? null,
+            revoke_reason: (data as { revoke_reason?: string })?.revoke_reason ?? null,
+            source: 'DriverDashboard:onTagCancelled',
+            visible_request_ids: snapshotVisibleRequestIds(),
+          }),
+        );
+      } catch {
+        /* noop */
+      }
       if (data?.tag_id) {
         const tid = String(data.tag_id);
         clearDriverRemoveOfferTimer(tid);
         delete driverOfferFirstShownAtRef.current[tid];
       }
-      setRequests(prev => prev.filter(r => r.id !== data.tag_id && r.request_id !== data.request_id));
+      setRequests(prev => {
+        const next = prev.filter(r => r.id !== data.tag_id && r.request_id !== data.request_id);
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_REMOVE_EXECUTED',
+              kind: 'hard_immediate',
+              tag_id: data?.tag_id ?? null,
+              request_id: data?.request_id ?? null,
+              revoke_reason: (data as { revoke_reason?: string })?.revoke_reason ?? null,
+              source: 'DriverDashboard:onTagCancelled',
+            }),
+          );
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+              source: 'DriverDashboard:onTagCancelled_hard_filter',
+              requests_len: next.length,
+              visible_request_ids: next
+                .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+                .filter(Boolean),
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+        return next;
+      });
     },
     onRemoveOffer: (data) => {
       const tagId = data?.tag_id != null ? String(data.tag_id) : '';
@@ -11653,41 +11737,55 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const tripDurN = Number(data.trip_duration_min ?? data.estimated_minutes);
         const tripDur =
           Number.isFinite(tripDurN) && tripDurN > 0 ? tripDurN : null;
-        return [
-          ...prev,
-          {
-            id: data.tag_id,
-            tag_id: data.tag_id,
-            request_id: data.tag_id,
-            passenger_id: data.passenger_id,
-            passenger_name: data.passenger_name || 'Yolcu',
-            pickup_lat: data.pickup_lat,
-            pickup_lng: data.pickup_lng,
-            pickup_address: data.pickup_location,
-            pickup_location: data.pickup_location,
-            dropoff_lat: data.dropoff_lat,
-            dropoff_lng: data.dropoff_lng,
-            dropoff_address: dropLabel,
-            dropoff_location: dropLabel,
-            offered_price: data.offered_price ?? 0,
-            distance_km: tripKm ?? 0,
-            estimated_minutes: data.estimated_minutes ?? 0,
-            distance_to_pickup: pkKm ?? data.distance_to_pickup,
-            status: 'pending',
-            created_at: new Date().toISOString(),
-            pickup_distance_km: pkKm,
-            pickup_eta_min: pkMin,
-            distance_to_passenger_km: pkKm,
-            time_to_passenger_min: pkMin,
-            trip_distance_km: tripKm,
-            trip_duration_min: tripDur ?? data.estimated_minutes ?? null,
-            passenger_vehicle_kind: (() => {
-              const v = data.passenger_vehicle_kind;
-              const s = String(v || '').toLowerCase();
-              return s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
-            })(),
-          },
-        ];
+        const newRow = {
+          id: data.tag_id,
+          tag_id: data.tag_id,
+          request_id: data.tag_id,
+          passenger_id: data.passenger_id,
+          passenger_name: data.passenger_name || 'Yolcu',
+          pickup_lat: data.pickup_lat,
+          pickup_lng: data.pickup_lng,
+          pickup_address: data.pickup_location,
+          pickup_location: data.pickup_location,
+          dropoff_lat: data.dropoff_lat,
+          dropoff_lng: data.dropoff_lng,
+          dropoff_address: dropLabel,
+          dropoff_location: dropLabel,
+          offered_price: data.offered_price ?? 0,
+          distance_km: tripKm ?? 0,
+          estimated_minutes: data.estimated_minutes ?? 0,
+          distance_to_pickup: pkKm ?? data.distance_to_pickup,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          pickup_distance_km: pkKm,
+          pickup_eta_min: pkMin,
+          distance_to_passenger_km: pkKm,
+          time_to_passenger_min: pkMin,
+          trip_distance_km: tripKm,
+          trip_duration_min: tripDur ?? data.estimated_minutes ?? null,
+          passenger_vehicle_kind: (() => {
+            const v = data.passenger_vehicle_kind;
+            const s = String(v || '').toLowerCase();
+            return s === 'motorcycle' || s === 'motor' ? 'motorcycle' : 'car';
+          })(),
+        };
+        const merged = [...prev, newRow];
+        const vis = merged
+          .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+          .filter(Boolean);
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+              source: 'loadDispatchPendingOffer_append',
+              requests_len: merged.length,
+              visible_request_ids: vis,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+        return merged;
       });
     } catch (e) {
       console.warn('dispatch-pending-offer:', e);
@@ -11722,7 +11820,20 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         });
 
         setActiveTag(null);
-        setRequests([]);
+        // Bekleyen Marti / socket teklifleri `active-tag` boşken de geçerlidir; `setRequests([])` flicker üretirdi (polling ~2.5s).
+        try {
+          console.log(
+            JSON.stringify({
+              evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+              source: 'loadActiveTag:success_no_active_tag',
+              action: 'retain_pending_offers',
+              requests_len: requestsSnapshotRef.current.length,
+              visible_request_ids: snapshotVisibleRequestIds(),
+            }),
+          );
+        } catch {
+          /* noop */
+        }
         setDriverChatVisible(false);
         driverClearIncomingCall();
         setDriverPassengerForceEndReview(null);
@@ -12189,18 +12300,24 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           additions.push(row);
         }
         if (additions.length === 0) return prev;
+        const merged = [...prev, ...additions];
+        const vis = merged
+          .map((r) => String(r?.id || r?.tag_id || r?.request_id || '').trim())
+          .filter(Boolean);
         try {
           console.log(
             JSON.stringify({
-              evt: 'DRIVER_OFFER_POLL_APPEND',
+              evt: 'DRIVER_OFFER_LIST_AFTER_SET',
+              source: 'loadRequests_append',
               added: additions.length,
-              tag_ids: additions.map((a) => a.id).filter(Boolean),
+              requests_len: merged.length,
+              visible_request_ids: vis,
             }),
           );
         } catch {
           /* noop */
         }
-        return [...prev, ...additions];
+        return merged;
       });
     } catch (e) {
       console.warn('driver/requests:', e);
@@ -12495,6 +12612,34 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           evt: 'DRIVER_OFFER_RENDER_STATE',
           requests_len: requests.length,
           ids: requests.map((r) => String(r.id || r.tag_id || '').trim()).filter(Boolean),
+        }),
+      );
+    } catch {
+      /* noop */
+    }
+    const hasPendingRequestForOtherTripGuard =
+      !!activeTag?.id &&
+      requests.some((r) => {
+        const rid = String(r.id || r.tag_id || r.request_id || '').trim();
+        const aid = String(activeTag.id || '').trim();
+        return !!rid && !!aid && rid !== aid;
+      });
+    const driverInActiveTripGuard =
+      !!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) &&
+      !hasPendingRequestForOtherTripGuard;
+    try {
+      console.log(
+        JSON.stringify({
+          evt: 'DRIVER_OFFER_RENDER_GUARD',
+          driver_in_active_trip: driverInActiveTripGuard,
+          active_tag_id: activeTag?.id ?? null,
+          active_status: activeTag?.status ?? null,
+          has_pending_request_for_other_trip: hasPendingRequestForOtherTripGuard,
+          requests_len: requests.length,
+          visible_request_ids: requests
+            .map((r) => String(r.id || r.tag_id || r.request_id || '').trim())
+            .filter(Boolean),
+          source: 'DriverDashboard:requests_effect',
         }),
       );
     } catch {
