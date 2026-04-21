@@ -6640,22 +6640,109 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             passenger_result = supabase.table("users").select("name").eq("id", passenger_id_final).execute()
             if passenger_result.data:
                 passenger_name = passenger_result.data[0].get("name", "Yolcu")
-        
-        # Teklifi kabul et
+
+        driver_id_res = None
+        if driver_id_final:
+            try:
+                driver_id_res = await resolve_user_id(str(driver_id_final).strip())
+            except Exception:
+                driver_id_res = str(driver_id_final).strip()
+        passenger_id_res = None
+        if passenger_id_final:
+            try:
+                passenger_id_res = await resolve_user_id(str(passenger_id_final).strip())
+            except Exception:
+                passenger_id_res = str(passenger_id_final).strip()
+
+        _match_accept_log(
+            "MATCH_ACCEPT_ATTEMPT",
+            path="passenger_accept_offer_http",
+            tag_id=tag_id_final,
+            driver_id=driver_id_res,
+            passenger_id=passenger_id_res,
+            offer_id=real_offer_id,
+        )
+
+        if driver_id_res:
+            o_drv_po = _other_active_tag_id_sync(
+                supabase,
+                column="driver_id",
+                user_id=str(driver_id_res),
+                exclude_tag_id=tag_id_final,
+            )
+            if o_drv_po:
+                _match_accept_log(
+                    "MATCH_ACCEPT_BLOCKED_DRIVER_BUSY",
+                    tag_id=tag_id_final,
+                    driver_id=driver_id_res,
+                    conflicting_tag_id=o_drv_po,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Sürücü başka bir yolculukta",
+                )
+
+        if passenger_id_res:
+            o_pax_po = _other_active_tag_id_sync(
+                supabase,
+                column="passenger_id",
+                user_id=str(passenger_id_res),
+                exclude_tag_id=tag_id_final,
+            )
+            if o_pax_po:
+                _match_accept_log(
+                    "MATCH_ACCEPT_BLOCKED_PASSENGER_BUSY",
+                    tag_id=tag_id_final,
+                    passenger_id=passenger_id_res,
+                    conflicting_tag_id=o_pax_po,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Yolcu başka bir yolculukta",
+                )
+
+        matched_at_iso = datetime.utcnow().isoformat()
+        tag_upd = (
+            supabase.table("tags")
+            .update(
+                {
+                    "status": "matched",
+                    "driver_id": driver_id_final,
+                    "driver_name": driver_name,
+                    "accepted_offer_id": real_offer_id,
+                    "final_price": offer["price"],
+                    "matched_at": matched_at_iso,
+                }
+            )
+            .eq("id", tag_id_final)
+            .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
+            .execute()
+        )
+        if not tag_upd.data:
+            _match_accept_log(
+                "MATCH_ACCEPT_LOST_ALREADY_TAKEN",
+                path="passenger_accept_offer_http",
+                tag_id=tag_id_final,
+                driver_id=driver_id_res,
+                passenger_id=passenger_id_res,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail="Bu teklif artık mevcut değil veya eşleştirilemez",
+            )
+
+        tag = tag_upd.data[0] if tag_upd.data else tag
+        _match_accept_log(
+            "MATCH_ACCEPT_WON",
+            path="passenger_accept_offer_http",
+            tag_id=tag_id_final,
+            driver_id=driver_id_res,
+            passenger_id=passenger_id_res,
+            offer_id=real_offer_id,
+        )
+
         supabase.table("offers").update({"status": "accepted"}).eq("id", real_offer_id).execute()
-        
-        # Diğer teklifleri reddet
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tag_id_final).neq("id", real_offer_id).execute()
-        
-        # TAG'i güncelle
-        supabase.table("tags").update({
-            "status": "matched",
-            "driver_id": driver_id_final,
-            "driver_name": driver_name,
-            "accepted_offer_id": real_offer_id,
-            "final_price": offer["price"],
-            "matched_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id_final).execute()
 
         match_payload = {
             "tag_id": tag_id_final,
@@ -7701,6 +7788,58 @@ async def driver_accept_offer_http(
             else "Sürücü"
         )
 
+        passenger_id_busy = None
+        if tag_row_pre.get("passenger_id"):
+            try:
+                passenger_id_busy = await resolve_user_id(str(tag_row_pre["passenger_id"]).strip())
+            except Exception:
+                passenger_id_busy = str(tag_row_pre["passenger_id"]).strip()
+
+        _match_accept_log(
+            "MATCH_ACCEPT_ATTEMPT",
+            path="driver_accept_offer_http",
+            tag_id=tid,
+            driver_id=resolved_driver_id,
+            passenger_id=passenger_id_busy,
+        )
+
+        o_drv_http = _other_active_tag_id_sync(
+            supabase,
+            column="driver_id",
+            user_id=str(resolved_driver_id),
+            exclude_tag_id=tid,
+        )
+        if o_drv_http:
+            _match_accept_log(
+                "MATCH_ACCEPT_BLOCKED_DRIVER_BUSY",
+                tag_id=tid,
+                driver_id=resolved_driver_id,
+                conflicting_tag_id=o_drv_http,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail="Zaten devam eden bir yolculuğunuz var",
+            )
+
+        if passenger_id_busy:
+            o_pax_http = _other_active_tag_id_sync(
+                supabase,
+                column="passenger_id",
+                user_id=str(passenger_id_busy),
+                exclude_tag_id=tid,
+            )
+            if o_pax_http:
+                _match_accept_log(
+                    "MATCH_ACCEPT_BLOCKED_PASSENGER_BUSY",
+                    tag_id=tid,
+                    passenger_id=passenger_id_busy,
+                    conflicting_tag_id=o_pax_http,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="Yolcu başka bir yolculukta",
+                )
+
         matched_at = datetime.now(timezone.utc).isoformat()
         update_data = {
             "status": "matched",
@@ -7709,14 +7848,13 @@ async def driver_accept_offer_http(
             "matched_at": matched_at,
         }
 
-        matchable_statuses = ["waiting", "offers_received", "pending"]
         # postgrest-py 2.x: update() sonrası .select() yok (SyncFilterRequestBuilder).
         # Varsayılan Prefer: return=representation ile güncellenen satır( lar) ur.data içinde gelir.
         ur = (
             supabase.table("tags")
             .update(update_data)
             .eq("id", tid)
-            .in_("status", matchable_statuses)
+            .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
             .execute()
         )
         updated_tag = ur.data[0] if ur.data else None
@@ -7728,10 +7866,32 @@ async def driver_accept_offer_http(
             did_row = str(row.get("driver_id") or "").strip().lower()
             if st == "matched" and did_row == str(resolved_driver_id).strip().lower():
                 updated_tag = row
+                _match_accept_log(
+                    "MATCH_ACCEPT_WON",
+                    path="driver_accept_offer_http",
+                    tag_id=tid,
+                    driver_id=resolved_driver_id,
+                    note="idempotent_same_driver",
+                )
             else:
+                _match_accept_log(
+                    "MATCH_ACCEPT_LOST_ALREADY_TAKEN",
+                    path="driver_accept_offer_http",
+                    tag_id=tid,
+                    driver_id=resolved_driver_id,
+                    current_status=row.get("status"),
+                    row_driver_id=row.get("driver_id"),
+                )
                 raise HTTPException(
                     status_code=409, detail="Bu teklif artık mevcut değil veya eşleştirilemez"
                 )
+        else:
+            _match_accept_log(
+                "MATCH_ACCEPT_WON",
+                path="driver_accept_offer_http",
+                tag_id=tid,
+                driver_id=resolved_driver_id,
+            )
 
         try:
             await rolling_dispatch_stop(
@@ -10497,6 +10657,30 @@ async def start_call(request: StartCallRequest):
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
 
+        # BUG4: süresi dolmuş trust + takılı arama satırları (yanlış meşgul / güven kilidi)
+        try:
+            ended_pre = _trust_service.expire_stale_sessions(supabase)
+            if ended_pre:
+                logger.info(
+                    "STALE_TRUST_CLEANUP %s",
+                    json.dumps(
+                        {"context": "voice_start_call", "count": len(ended_pre)},
+                        default=str,
+                    ),
+                )
+                await _trust_emit_ended_batch(ended_pre)
+        except Exception as _e_trust_clean:
+            logger.warning("STALE_TRUST_CLEANUP voice_start_call skipped: %s", _e_trust_clean)
+        try:
+            sc_voice = _trust_service.cleanup_stale_voice_calls(supabase)
+            if sc_voice.get("missed_ringing") or sc_voice.get("ended_connected"):
+                logger.info(
+                    "STALE_CALL_CLEANUP %s",
+                    json.dumps({"context": "voice_start_call", **sc_voice}, default=str),
+                )
+        except Exception as _e_call_clean:
+            logger.warning("STALE_CALL_CLEANUP voice_start_call skipped: %s", _e_call_clean)
+
         # Güven videosu bu tag için accepted ise sesli arama ile çakışır (tek RTC motoru); yalnızca aynı yolculukta kontrol et.
         try:
             _tag_for_trust = str(request.tag_id or "").strip()
@@ -10510,6 +10694,25 @@ async def start_call(request: StartCallRequest):
                     .execute()
                 )
                 if ts_active.data:
+                    try:
+                        logger.info(
+                            "TRUST_REQUEST_BLOCK_REASON %s",
+                            json.dumps(
+                                {
+                                    "reason": "voice_start_blocked_tag_has_accepted_trust",
+                                    "tag_id": _tag_for_trust,
+                                    "blocking_session_ids": [
+                                        str(r.get("id", "")) for r in ts_active.data
+                                    ],
+                                },
+                                default=str,
+                            ),
+                        )
+                    except Exception:
+                        logger.info(
+                            "TRUST_REQUEST_BLOCK_REASON voice_start_blocked_tag_has_accepted_trust tag_id=%s",
+                            _tag_for_trust,
+                        )
                     return {
                         "success": False,
                         "detail": "busy",
@@ -10531,13 +10734,33 @@ async def start_call(request: StartCallRequest):
         try:
             busy = (
                 supabase.table("calls")
-                .select("call_id")
+                .select("call_id,caller_id,receiver_id,status")
                 .or_(f"caller_id.eq.{receiver_id},receiver_id.eq.{receiver_id}")
                 .in_("status", ["ringing", "connected"])
                 .limit(1)
                 .execute()
             )
             if busy.data:
+                try:
+                    _br = busy.data[0]
+                    logger.info(
+                        "CALL_BUSY_REASON %s",
+                        json.dumps(
+                            {
+                                "receiver_id": receiver_id,
+                                "call_id": _br.get("call_id"),
+                                "caller_id": _br.get("caller_id"),
+                                "status": _br.get("status"),
+                            },
+                            default=str,
+                        ),
+                    )
+                except Exception:
+                    logger.info(
+                        "CALL_BUSY_REASON receiver_id=%s call_id=%s",
+                        receiver_id,
+                        busy.data[0].get("call_id") if busy.data else None,
+                    )
                 return {
                     "success": False,
                     "detail": "busy",
@@ -10735,6 +10958,16 @@ async def accept_call(user_id: str, call_id: str):
 async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
     """Aramayı reddet - Supabase'de güncelle"""
     try:
+        try:
+            logger.info(
+                "CALL_REJECT_HTTP %s",
+                json.dumps(
+                    {"call_id": call_id, "tag_id": tag_id, "receiver_user_id": user_id},
+                    default=str,
+                ),
+            )
+        except Exception:
+            logger.info("CALL_REJECT_HTTP call_id=%s tag_id=%s", call_id, tag_id)
         # call_id yoksa tag_id'den en son ringing aramayı bul
         if not call_id and tag_id:
             call_result = supabase.table("calls").select("call_id").eq("tag_id", tag_id).eq("status", "ringing").order("created_at", desc=True).limit(1).execute()
@@ -10758,6 +10991,29 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
         
         if result.data:
             logger.info(f"📵 SUPABASE: Arama reddedildi: {call_id}")
+            row = result.data[0]
+            caller_id = row.get("caller_id")
+            reject_payload = {
+                "call_id": call_id,
+                "rejected_by": str(user_id).strip(),
+            }
+            try:
+                logger.info(
+                    "CALL_REJECT_EMIT_TO_CALLER %s",
+                    json.dumps(
+                        {"caller_id": caller_id, **reject_payload},
+                        default=str,
+                    ),
+                )
+            except Exception:
+                logger.info("CALL_REJECT_EMIT_TO_CALLER caller_id=%s call_id=%s", caller_id, call_id)
+            if caller_id:
+                try:
+                    await emit_socket_event_to_user(
+                        caller_id, "call_rejected", reject_payload
+                    )
+                except Exception as emit_err:
+                    logger.warning("CALL_REJECT_EMIT_TO_CALLER failed: %s", emit_err)
         
         return {"success": True, "call_id": call_id}
     except Exception as e:
@@ -10951,7 +11207,23 @@ async def api_trust_request(
     try:
         ended = _trust_service.expire_stale_sessions(supabase)
         if ended:
+            logger.info(
+                "STALE_TRUST_CLEANUP %s",
+                json.dumps(
+                    {"context": "trust_request", "count": len(ended)},
+                    default=str,
+                ),
+            )
             await _trust_emit_ended_batch(ended)
+        try:
+            sc_trust = _trust_service.cleanup_stale_voice_calls(supabase)
+            if sc_trust.get("missed_ringing") or sc_trust.get("ended_connected"):
+                logger.info(
+                    "STALE_CALL_CLEANUP %s",
+                    json.dumps({"context": "trust_request", **sc_trust}, default=str),
+                )
+        except Exception as _sc_trust:
+            logger.warning("STALE_CALL_CLEANUP trust_request skipped: %s", _sc_trust)
         uid = await resolve_user_id(authenticated_user_id)
         if not uid:
             return {"success": False, "error": "user_not_found"}
@@ -12687,13 +12959,61 @@ async def account_delete_request(request: dict):
         return {"success": False, "detail": str(e)}
 
 
+# --- Atomik eşleşme + tek aktif yolculuk (BUG-2 double-match) ---
+MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST = ["waiting", "offers_received", "pending"]
+
+
+def _match_accept_log(event: str, **fields: object) -> None:
+    try:
+        body = dict(fields)
+        body["event"] = event
+        logger.info("%s %s", event, json.dumps(body, default=str, ensure_ascii=False))
+    except Exception:
+        logger.info("%s %s", event, fields)
+
+
+def _norm_tag_id_str(tid: Optional[str]) -> str:
+    s = str(tid or "").strip()
+    if len(s) == 36 and s.count("-") == 4:
+        return s.lower()
+    return s
+
+
+def _other_active_tag_id_sync(
+    supabase_client: Client,
+    *,
+    column: str,
+    user_id: str,
+    exclude_tag_id: str,
+) -> Optional[str]:
+    """Başka bir tag'de matched/in_progress varsa o tag id; yoksa None."""
+    uid = str(user_id or "").strip()
+    if not uid or column not in ("driver_id", "passenger_id"):
+        return None
+    ex = _norm_tag_id_str(exclude_tag_id)
+    try:
+        res = (
+            supabase_client.table("tags")
+            .select("id")
+            .eq(column, uid)
+            .in_("status", ["matched", "in_progress"])
+            .execute()
+        )
+        for row in res.data or []:
+            rid = _norm_tag_id_str(str(row.get("id") or ""))
+            if rid and rid != ex:
+                return str(row.get("id"))
+    except Exception:
+        pass
+    return None
+
+
 # Socket event: MARTI TAG - Sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
 @sio.on("driver_accept_offer")
 async def handle_driver_accept_offer(sid, data):
     """
     Eşleşme: tags satırı id=tag_id için status='matched', driver_id, matched_at güncellenir.
-    WHERE yalnızca id (status='waiting' şartı yok — istemci/debug ile uyum).
-    Yolcu araç tercihi (tag + yolcu profili) ile sürücü vehicle_kind eşleşmezse kabul reddedilir.
+    Yalnızca status in (waiting, offers_received, pending) iken atomik güncellenir; aksi halde already_taken.
 
     DB: modül geneli `supabase` = supabase_client.get_supabase() (create_client(URL, SERVICE_ROLE_KEY)).
 
@@ -12798,18 +13118,134 @@ async def handle_driver_accept_offer(sid, data):
             )
             return
 
+        passenger_id_busy = None
+        if tag.get("passenger_id"):
+            try:
+                passenger_id_busy = await resolve_user_id(str(tag["passenger_id"]).strip())
+            except Exception:
+                passenger_id_busy = str(tag["passenger_id"]).strip()
+
+        _match_accept_log(
+            "MATCH_ACCEPT_ATTEMPT",
+            path="driver_accept_offer_socket",
+            tag_id=tid,
+            driver_id=resolved_driver_id,
+            passenger_id=passenger_id_busy,
+        )
+
+        o_drv = _other_active_tag_id_sync(
+            supabase,
+            column="driver_id",
+            user_id=str(resolved_driver_id),
+            exclude_tag_id=tid,
+        )
+        if o_drv:
+            _match_accept_log(
+                "MATCH_ACCEPT_BLOCKED_DRIVER_BUSY",
+                tag_id=tid,
+                driver_id=resolved_driver_id,
+                conflicting_tag_id=o_drv,
+            )
+            await sio.emit(
+                "offer_accepted_error",
+                {
+                    "error": "Zaten devam eden bir yolculuğunuz var",
+                    "code": "driver_busy",
+                    "already_taken": False,
+                },
+                room=sid,
+            )
+            return
+
+        if passenger_id_busy:
+            o_pax = _other_active_tag_id_sync(
+                supabase,
+                column="passenger_id",
+                user_id=str(passenger_id_busy),
+                exclude_tag_id=tid,
+            )
+            if o_pax:
+                _match_accept_log(
+                    "MATCH_ACCEPT_BLOCKED_PASSENGER_BUSY",
+                    tag_id=tid,
+                    passenger_id=passenger_id_busy,
+                    conflicting_tag_id=o_pax,
+                )
+                await sio.emit(
+                    "offer_accepted_error",
+                    {
+                        "error": "Yolcu başka bir yolculukta",
+                        "code": "passenger_busy",
+                        "already_taken": False,
+                    },
+                    room=sid,
+                )
+                return
+
         _upd_body = {
             "status": "matched",
             "driver_id": resolved_driver_id,
             "driver_name": driver_name,
             "matched_at": datetime.now(timezone.utc).isoformat(),
         }
-        supabase.table("tags").update(_upd_body).eq("id", tid).execute()
-        # Orijinal tag_id farklı biçimdeyse (UUID büyük/küçük harf) bir kez daha dene
-        if str(tag_id).strip() != tid:
-            alt = str(tag_id).strip()
-            print("RETRY UPDATE with alt id:", alt)
-            supabase.table("tags").update(_upd_body).eq("id", alt).execute()
+        ur_sock = (
+            supabase.table("tags")
+            .update(_upd_body)
+            .eq("id", tid)
+            .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
+            .execute()
+        )
+        if not ur_sock.data and str(tag_id).strip() != tid:
+            alt_id = str(tag_id).strip()
+            ur_sock = (
+                supabase.table("tags")
+                .update(_upd_body)
+                .eq("id", alt_id)
+                .in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST)
+                .execute()
+            )
+        updated_tag_rows = ur_sock.data if ur_sock.data else []
+        if not updated_tag_rows:
+            ref = supabase.table("tags").select("*").eq("id", tid).limit(1).execute()
+            row = ref.data[0] if ref.data else {}
+            st = (row.get("status") or "").lower()
+            did_row = str(row.get("driver_id") or "").strip().lower()
+            if st == "matched" and did_row == str(resolved_driver_id).strip().lower():
+                tag = row
+                _match_accept_log(
+                    "MATCH_ACCEPT_WON",
+                    path="driver_accept_offer_socket",
+                    tag_id=tid,
+                    driver_id=resolved_driver_id,
+                    note="idempotent_same_driver",
+                )
+            else:
+                _match_accept_log(
+                    "MATCH_ACCEPT_LOST_ALREADY_TAKEN",
+                    path="driver_accept_offer_socket",
+                    tag_id=tid,
+                    driver_id=resolved_driver_id,
+                    current_status=row.get("status"),
+                    row_driver_id=row.get("driver_id"),
+                )
+                await sio.emit(
+                    "offer_accepted_error",
+                    {
+                        "error": "Bu teklif artık mevcut değil veya başka sürücü ile eşleşti",
+                        "already_taken": True,
+                    },
+                    room=sid,
+                )
+                return
+        else:
+            tag = updated_tag_rows[0]
+            _match_accept_log(
+                "MATCH_ACCEPT_WON",
+                path="driver_accept_offer_socket",
+                tag_id=tid,
+                driver_id=resolved_driver_id,
+            )
+
         logger.info(
             f"driver_accept_offer UPDATE tag={tid} driver={resolved_driver_id}"
         )
@@ -13864,9 +14300,16 @@ async def accept_ride(tag_id: str, driver_id: str):
             return {"success": False, "error": "Teklif bulunamadı"}
         
         tag = tag_result.data[0]
-        
-        # Zaten kabul edilmiş mi?
-        if tag.get("status") != "waiting":
+        st0 = str(tag.get("status") or "").strip().lower()
+        if st0 not in {s.lower() for s in MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST}:
+            _match_accept_log(
+                "MATCH_ACCEPT_LOST_ALREADY_TAKEN",
+                path="ride_accept_http",
+                tag_id=tag_id,
+                driver_id=driver_id,
+                reason="tag_not_matchable",
+                current_status=tag.get("status"),
+            )
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
 
         logger.info("Accept: direct match mode")
@@ -13911,21 +14354,82 @@ async def accept_ride(tag_id: str, driver_id: str):
             passenger_name = passenger_result.data[0]["name"] if passenger_result.data else "Yolcu"
         else:
             passenger_name = "Yolcu"
-        
-        # Atomik güncelleme - sadece status='waiting' ise güncelle
+
+        _match_accept_log(
+            "MATCH_ACCEPT_ATTEMPT",
+            path="ride_accept_http",
+            tag_id=tag_id,
+            driver_id=resolved_driver_id,
+            passenger_id=passenger_id,
+        )
+
+        o_drv_ra = _other_active_tag_id_sync(
+            supabase,
+            column="driver_id",
+            user_id=str(resolved_driver_id),
+            exclude_tag_id=tag_id,
+        )
+        if o_drv_ra:
+            _match_accept_log(
+                "MATCH_ACCEPT_BLOCKED_DRIVER_BUSY",
+                tag_id=tag_id,
+                driver_id=resolved_driver_id,
+                conflicting_tag_id=o_drv_ra,
+            )
+            return {
+                "success": False,
+                "error": "Zaten devam eden bir yolculuğunuz var",
+                "driver_busy": True,
+            }
+
+        if passenger_id:
+            o_pax_ra = _other_active_tag_id_sync(
+                supabase,
+                column="passenger_id",
+                user_id=str(passenger_id),
+                exclude_tag_id=tag_id,
+            )
+            if o_pax_ra:
+                _match_accept_log(
+                    "MATCH_ACCEPT_BLOCKED_PASSENGER_BUSY",
+                    tag_id=tag_id,
+                    passenger_id=passenger_id,
+                    conflicting_tag_id=o_pax_ra,
+                )
+                return {
+                    "success": False,
+                    "error": "Yolcu başka bir yolculukta",
+                    "passenger_busy": True,
+                }
+
+        # Atomik güncelleme — yalnızca waiting / pending / offers_received
         # postgrest-py 2.x: update().select() kullanılamaz; return=representation varsayılan → data dolu
         update_result = supabase.table("tags").update({
             "status": "matched",
             "driver_id": resolved_driver_id,
             "driver_name": driver_name,
             "matched_at": datetime.utcnow().isoformat()
-        }).eq("id", tag_id).eq("status", "waiting").execute()
+        }).eq("id", tag_id).in_("status", MATCHABLE_TAG_STATUSES_FOR_ACCEPT_LIST).execute()
         
         if not update_result.data:
+            _match_accept_log(
+                "MATCH_ACCEPT_LOST_ALREADY_TAKEN",
+                path="ride_accept_http",
+                tag_id=tag_id,
+                driver_id=resolved_driver_id,
+                passenger_id=passenger_id,
+            )
             return {"success": False, "error": "Bu teklif artık mevcut değil", "already_taken": True}
         
         updated_tag = update_result.data[0]
         updated_tag["passenger_name"] = passenger_name
+        _match_accept_log(
+            "MATCH_ACCEPT_WON",
+            path="ride_accept_http",
+            tag_id=tag_id,
+            driver_id=resolved_driver_id,
+            passenger_id=passenger_id,
+        )
 
         try:
             await rolling_dispatch_stop(

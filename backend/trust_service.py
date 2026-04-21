@@ -4,6 +4,7 @@ Güven Al — trust_sessions tablosu iş kuralları (calls /voice akışından a
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -111,6 +112,45 @@ def expire_stale_sessions(supabase) -> List[Dict[str, Any]]:
     return ended
 
 
+VOICE_STALE_RINGING_SEC = 90  # check_call_status ile uyumlu
+VOICE_STALE_CONNECTED_SEC = 720  # CallScreen üst sınırından (600s) sonra
+
+
+def cleanup_stale_voice_calls(supabase) -> Dict[str, Any]:
+    """
+    Uzun süre çalan / takılı connected kayıtlarını kapatır; meşgul (busy) yanlış pozitiflerini azaltır.
+    Dönüş: güncellenen satır sayıları (log için).
+    """
+    summary: Dict[str, Any] = {"missed_ringing": 0, "ended_connected": 0}
+    now = _utcnow()
+    now_s = _iso(now)
+    cut_ring = _iso(now - timedelta(seconds=VOICE_STALE_RINGING_SEC))
+    cut_conn = _iso(now - timedelta(seconds=VOICE_STALE_CONNECTED_SEC))
+    try:
+        r1 = (
+            supabase.table("calls")
+            .update({"status": "missed", "ended_at": now_s})
+            .eq("status", "ringing")
+            .lt("created_at", cut_ring)
+            .execute()
+        )
+        summary["missed_ringing"] = len(r1.data or [])
+    except Exception as e:
+        logger.warning("cleanup_stale_voice_calls ringing: %s", e)
+    try:
+        r2 = (
+            supabase.table("calls")
+            .update({"status": "ended", "ended_at": now_s})
+            .eq("status", "connected")
+            .lt("created_at", cut_conn)
+            .execute()
+        )
+        summary["ended_connected"] = len(r2.data or [])
+    except Exception as e:
+        logger.warning("cleanup_stale_voice_calls connected: %s", e)
+    return summary
+
+
 def _norm_uid(uid: str) -> str:
     return str(uid or "").strip().lower()
 
@@ -154,6 +194,23 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
         .execute()
     )
     if active.data:
+        try:
+            logger.info(
+                "TRUST_REQUEST_BLOCK_REASON %s",
+                json.dumps(
+                    {
+                        "reason": "trust_already_active",
+                        "tag_id": tid,
+                        "blocking_session_ids": [str(r.get("id", "")) for r in active.data],
+                    },
+                    default=str,
+                ),
+            )
+        except Exception:
+            logger.info(
+                "TRUST_REQUEST_BLOCK_REASON trust_already_active tag_id=%s",
+                tid,
+            )
         return {"success": False, "error": "trust_already_active"}
 
     now = _utcnow()

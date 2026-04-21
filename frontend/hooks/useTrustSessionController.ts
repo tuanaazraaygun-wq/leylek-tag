@@ -92,6 +92,13 @@ export function useTrustSessionController({
   const openChatRef = useRef(openChatForMatchedTrip);
   openChatRef.current = openChatForMatchedTrip;
 
+  /** Arama / gelen arama UI açıkken gelen trust_request tek seferlik saklanır; blok kalkınca modal gösterilir. */
+  const deferredTrustRequestRef = useRef<{
+    trustId: string;
+    tagId: string;
+    requesterRole: 'driver' | 'passenger';
+  } | null>(null);
+
   const blockStateRef = useRef({
     showCallScreen,
     incomingCallBlocked,
@@ -111,6 +118,7 @@ export function useTrustSessionController({
   const clearAllTrustState = useCallback(() => {
     outboundTrustIdRef.current = null;
     sendInFlightRef.current = false;
+    deferredTrustRequestRef.current = null;
     setTrustOutgoingPending(false);
     setTrustRequestModal(null);
     setTrustModalLoading(false);
@@ -204,6 +212,31 @@ export function useTrustSessionController({
     }
   }, [activeTag?.id, activeTag?.status, tryRecoverAcceptedSession]);
 
+  useEffect(() => {
+    if (showCallScreen || incomingCallBlocked || !!trustVideoSession) {
+      return;
+    }
+    const d = deferredTrustRequestRef.current;
+    if (!d?.trustId) {
+      return;
+    }
+    const cur = String(activeTagIdRef.current ?? '').trim();
+    if (!cur || d.tagId.toLowerCase() !== cur.toLowerCase()) {
+      deferredTrustRequestRef.current = null;
+      return;
+    }
+    deferredTrustRequestRef.current = null;
+    console.log(
+      'TRUST_REQUEST_SHOWN_FROM_DEFERRED',
+      JSON.stringify({ trust_id: d.trustId, tag_id: d.tagId }),
+    );
+    setTrustRequestModal({
+      trustId: d.trustId,
+      tagId: d.tagId,
+      requesterRole: d.requesterRole,
+    });
+  }, [showCallScreen, incomingCallBlocked, trustVideoSession]);
+
   const sendTrustRequest = useCallback(async () => {
     const uid = userId?.trim();
     const tagId = activeTag?.id ? String(activeTag.id) : '';
@@ -276,8 +309,35 @@ export function useTrustSessionController({
         const cur = String(activeTagIdRef.current ?? '').trim();
         if (!tid || !cur || tid.toLowerCase() !== cur.toLowerCase()) return;
         const st = blockStateRef.current;
-        if (st.showCallScreen || st.incomingCallBlocked || st.trustVideo) return;
         const rr = data?.requester_role === 'driver' ? 'driver' : 'passenger';
+        if (st.showCallScreen || st.incomingCallBlocked || st.trustVideo) {
+          const reasons: string[] = [];
+          if (st.showCallScreen) reasons.push('showCallScreen');
+          if (st.incomingCallBlocked) reasons.push('incomingCallBlocked');
+          if (st.trustVideo) reasons.push('trustVideoSession');
+          console.log(
+            'TRUST_REQUEST_BLOCK_REASON',
+            JSON.stringify({
+              reasons,
+              trust_id: String(data?.trust_id ?? ''),
+              tag_id: tid,
+            }),
+          );
+          console.log(
+            'TRUST_REQUEST_DEFERRED_UI',
+            JSON.stringify({
+              trust_id: String(data?.trust_id ?? ''),
+              tag_id: tid,
+            }),
+          );
+          deferredTrustRequestRef.current = {
+            trustId: String(data.trust_id ?? ''),
+            tagId: tid,
+            requesterRole: rr,
+          };
+          return;
+        }
+        deferredTrustRequestRef.current = null;
         setTrustRequestModal({
           trustId: String(data.trust_id ?? ''),
           tagId: tid,
@@ -325,6 +385,10 @@ export function useTrustSessionController({
         const cur = String(activeTagIdRef.current ?? '').trim();
         const tagOk = !evTag || !cur || evTag.toLowerCase() === cur.toLowerCase();
         if (!tagOk) return;
+
+        if (deferredTrustRequestRef.current?.trustId === endTrustId) {
+          deferredTrustRequestRef.current = null;
+        }
 
         const reason = String(data?.end_reason ?? '');
 
