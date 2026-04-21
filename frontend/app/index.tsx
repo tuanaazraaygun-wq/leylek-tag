@@ -19,6 +19,7 @@ import DriverBoardingQRModal from '../components/DriverBoardingQRModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
 import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
+import PanicDial112Button from '../components/PanicDial112Button';
 import { RoleSelectLeylekAIFloating } from '../screens/RoleSelectScreen';
 import { DriverWaitingLeylekAIFloating } from '../screens/DriverWaitingScreen';
 import CallScreenV2 from '../components/CallScreenV2';
@@ -32,7 +33,6 @@ import ChatBubble from '../components/ChatBubble'; // 🆕 Bulutlu Chat
 import EndTripModal from '../components/EndTripModal'; // 🆕 Modern Yolculuk Bitirme Modalı
 import ForceEndConfirmModal from '../components/ForceEndConfirmModal'; // 🆕 Zorla Bitir Onay Modalı
 import PassengerDriverForceEndReviewModal from '../components/PassengerDriverForceEndReviewModal';
-import PanicModalFlow from '../components/PanicModalFlow';
 import DriverOfferScreen from '../components/DriverOfferScreen'; // Sürücü Teklif Ekranı (Eski)
 import DriverKYCScreen from '../components/DriverKYCScreen'; // 🆕 Sürücü KYC Ekranı
 import OfferMapScreen from '../components/OfferMapScreen'; // 🆕 YENİ Modern Teklif Ekranı
@@ -54,8 +54,6 @@ import AnimatedClouds from '../components/auth/AnimatedClouds';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
 import CommunityScreen from '../components/CommunityScreen';
-import EmergencyContactsScreen from '../components/EmergencyContactsScreen';
-import { apiEmergencyContactsStatus } from '../lib/emergencyContactsApi';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -518,8 +516,7 @@ type AppScreen =
   | 'forgot-password'
   | 'reset-pin'
   | 'community'
-  | 'driver-kyc'
-  | 'emergency-contacts';
+  | 'driver-kyc';
 
 /** Giriş/OTP: döndürme ve farklı genişliklerde simetrik padding + sütun genişliği */
 function useLoginAuthLayout() {
@@ -594,30 +591,6 @@ export default function App() {
     }
   }, [screen, leylekChrome.setFlowHint]);
 
-  useEffect(() => {
-    if (screen !== 'role-select' || !user?.id) {
-      setEmergencySuggestBanner(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const st = await apiEmergencyContactsStatus();
-        if (cancelled) return;
-        if (st?.success && typeof st.count === 'number' && st.count < 1) {
-          setEmergencySuggestBanner(true);
-        } else {
-          setEmergencySuggestBanner(false);
-        }
-      } catch {
-        if (!cancelled) setEmergencySuggestBanner(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [screen, user?.id]);
-
   // ═══════════════════════════════════════════════════════════════════════════
   // PERMISSION GATE - All permissions requested ONCE at app start
   // ═══════════════════════════════════════════════════════════════════════════
@@ -633,9 +606,6 @@ export default function App() {
   const [kvkkAccepted, setKvkkAccepted] = useState(false);
   const [showKVKKModal, setShowKVKKModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
-  /** Rol ekranı: acil kişi yoksa gösterilen yumuşak öneri (engellemez) */
-  const [emergencySuggestBanner, setEmergencySuggestBanner] = useState(false);
-
   // Auth states
   const [phone, setPhone] = useState('');
   const [testLoginPassword, setTestLoginPassword] = useState('');
@@ -3196,30 +3166,6 @@ export default function App() {
               </Text>
             </Animated.View>
           ) : null}
-          {emergencySuggestBanner ? (
-            <TouchableOpacity
-              style={{
-                marginHorizontal: 10,
-                marginBottom: 8,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                backgroundColor: '#1E3A5F',
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: '#334155',
-              }}
-              onPress={() => {
-                roleScreenHaptic();
-                setScreen('emergency-contacts');
-              }}
-              activeOpacity={0.88}
-            >
-              <Text style={{ color: '#E2E8F0', fontSize: 13, fontWeight: '700' }}>
-                Öneri: Acil durumda aranacak en az bir kişi ekleyin.
-              </Text>
-              <Text style={{ color: '#7DD3FC', fontSize: 13, marginTop: 4, fontWeight: '800' }}>Yönet →</Text>
-            </TouchableOpacity>
-          ) : null}
           {/* Üst Bar */}
           <View style={styles.roleTopBarCompact}>
             <TouchableOpacity 
@@ -3376,25 +3322,6 @@ export default function App() {
             </View>
 
             <TouchableOpacity
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                paddingVertical: 10,
-                marginBottom: 6,
-              }}
-              onPress={() => {
-                roleScreenHaptic();
-                setScreen('emergency-contacts');
-              }}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="shield-checkmark-outline" size={18} color="#93C5FD" />
-              <Text style={{ color: '#BFDBFE', fontSize: 14, fontWeight: '700' }}>Acil durum kişileri</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={styles.communityBtnCompact}
               onPress={async () => {
                 roleScreenHaptic();
@@ -3480,10 +3407,6 @@ export default function App() {
     );
   }
 
-  if (user && screen === 'emergency-contacts') {
-    return <EmergencyContactsScreen onBack={() => setScreen('role-select')} />;
-  }
-
   // Sürücü KYC Ekranı
   if (user && screen === 'driver-kyc') {
     return (
@@ -3530,8 +3453,7 @@ export default function App() {
     guardScreen !== 'dashboard' &&
     guardScreen !== 'role-select' &&
     guardScreen !== 'community' &&
-    guardScreen !== 'driver-kyc' &&
-    guardScreen !== 'emergency-contacts'
+    guardScreen !== 'driver-kyc'
   ) {
     setTimeout(() => setScreen('role-select'), 100);
   }
@@ -6217,7 +6139,6 @@ function PassengerDashboard({
   const passengerForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
   /** Son açılan force-end counterparty isteği (duplicate socket / effect için) */
   const passengerForceEndLastRequestKeyRef = useRef<string | null>(null);
-  const [passengerPanicModalVisible, setPassengerPanicModalVisible] = useState(false);
 
   /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın (force-end modal loadActiveTag ile tekrar kurulur) */
   useEffect(() => {
@@ -6284,6 +6205,9 @@ function PassengerDashboard({
   const [passengerBoardingScanVisible, setPassengerBoardingScanVisible] = useState(false);
   const [passengerBoardingReminderBannerVisible, setPassengerBoardingReminderBannerVisible] =
     useState(false);
+  /** Sürücü yakın — üst bilgi bandı (sürücü tarafındaki yolcu-yakın bandı ile aynı mantık, modal/scan tüketimiyle bağımsız) */
+  const [passengerBoardingGuidanceNearBanner, setPassengerBoardingGuidanceNearBanner] = useState(false);
+  const passengerBoardingGuidanceStableSinceRef = useRef<number | null>(null);
   const passengerBoardingStableSinceRef = useRef<number | null>(null);
   const passengerBoardingCooldownUntilRef = useRef(0);
   const passengerBoardingDeclineCountRef = useRef(0);
@@ -7456,6 +7380,8 @@ function PassengerDashboard({
     passengerBoardingProximityPromptConsumedRef.current = false;
     passengerBoardingDriverReissuePendingRef.current = false;
     passengerBoardingQrIssuedSigRef.current = null;
+    passengerBoardingGuidanceStableSinceRef.current = null;
+    setPassengerBoardingGuidanceNearBanner(false);
     setPassengerBoardingReminderBannerVisible(false);
   }, [activeTag?.id]);
 
@@ -7485,6 +7411,8 @@ function PassengerDashboard({
     passengerBoardingBannerDismissedRef.current = false;
     passengerBoardingDeclineCountRef.current = 0;
     passengerBoardingStableSinceRef.current = null;
+    passengerBoardingGuidanceStableSinceRef.current = null;
+    setPassengerBoardingGuidanceNearBanner(false);
     passengerBoardingDriverReissuePendingRef.current = true;
     setPassengerBoardingReminderBannerVisible(false);
     setPassengerBoardingPromptVisible(false);
@@ -7505,8 +7433,46 @@ function PassengerDashboard({
       setPassengerBoardingPromptVisible(false);
       setPassengerBoardingScanVisible(false);
       setPassengerBoardingReminderBannerVisible(false);
+      setPassengerBoardingGuidanceNearBanner(false);
+      passengerBoardingGuidanceStableSinceRef.current = null;
     }
   }, [activeTag?.status, activeTag?.boarding_confirmed_at, activeTag?.id]);
+
+  useEffect(() => {
+    if (passengerBoardingScanVisible) return;
+    if (!activeTag || activeTag.status !== 'matched') return;
+    if (activeTag.boarding_confirmed_at) return;
+    const tick = () => {
+      if (!userLocation || !driverLocation) {
+        passengerBoardingGuidanceStableSinceRef.current = null;
+        setPassengerBoardingGuidanceNearBanner(false);
+        return;
+      }
+      const d = haversineMetersLatLng(userLocation, driverLocation);
+      if (d <= BOARDING_NEAR_ENTER_M) {
+        if (passengerBoardingGuidanceStableSinceRef.current == null) {
+          passengerBoardingGuidanceStableSinceRef.current = Date.now();
+        } else if (Date.now() - passengerBoardingGuidanceStableSinceRef.current >= BOARDING_STABLE_MS) {
+          setPassengerBoardingGuidanceNearBanner(true);
+        }
+      } else if (d >= BOARDING_NEAR_EXIT_M) {
+        passengerBoardingGuidanceStableSinceRef.current = null;
+        setPassengerBoardingGuidanceNearBanner(false);
+      }
+    };
+    const id = setInterval(tick, 600);
+    tick();
+    return () => clearInterval(id);
+  }, [
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    userLocation?.latitude,
+    userLocation?.longitude,
+    driverLocation?.latitude,
+    driverLocation?.longitude,
+    passengerBoardingScanVisible,
+  ]);
 
   useEffect(() => {
     if (passengerBoardingScanVisible || passengerBoardingPromptVisible) return;
@@ -8747,16 +8713,19 @@ function PassengerDashboard({
         </View>
 
         {/* HARİTA - Üstte Sabit */}
-        <View style={searchingStyles.mapContainer}>
-          <SearchingMapView
-            userLocation={userLocation}
-            destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
-            driverLocations={offerDriverLocations}
-            height={SCREEN_HEIGHT * 0.32}
-            nearbyDriverCount={nearbyDriverCount}
-            selfGender={parseGender(user?.gender)}
-            selfUserId={user?.id}
-          />
+        <View style={{ marginHorizontal: 16, marginTop: 12, position: 'relative' }}>
+          <View style={{ borderRadius: 16, overflow: 'hidden' }}>
+            <SearchingMapView
+              userLocation={userLocation}
+              destinationLocation={destination ? { latitude: destination.latitude, longitude: destination.longitude } : null}
+              driverLocations={offerDriverLocations}
+              height={SCREEN_HEIGHT * 0.32}
+              nearbyDriverCount={nearbyDriverCount}
+              selfGender={parseGender(user?.gender)}
+              selfUserId={user?.id}
+            />
+          </View>
+          <PanicDial112Button variant="mapStrip" />
         </View>
 
         {/* Rota Bilgisi - Küçük Kart */}
@@ -9170,6 +9139,35 @@ function PassengerDashboard({
                     </Text>
                   </TouchableOpacity>
                 ) : null}
+                {passengerBoardingGuidanceNearBanner &&
+                activeTag?.status === 'matched' &&
+                !activeTag?.boarding_confirmed_at &&
+                !passengerBoardingReminderBannerVisible &&
+                !passengerBoardingPromptVisible &&
+                !passengerBoardingScanVisible ? (
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => setPassengerBoardingPromptVisible(true)}
+                    style={{
+                      marginHorizontal: 12,
+                      marginTop: 8,
+                      marginBottom: 6,
+                      paddingVertical: 12,
+                      paddingHorizontal: 14,
+                      borderRadius: 12,
+                      backgroundColor: 'rgba(14,165,233,0.95)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(125,211,252,0.6)',
+                    }}
+                  >
+                    <Text style={{ color: '#0f172a', fontWeight: '800', fontSize: 15, textAlign: 'center' }}>
+                      Sürücü yakın — araca bindiğinizde sürücünün karekodunu okutun
+                    </Text>
+                    <Text style={{ color: '#0c4a6e', fontSize: 12, textAlign: 'center', marginTop: 4, fontWeight: '600' }}>
+                      Yolculuk, biniş doğrulandıktan sonra başlar
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
                 {passengerBoardingReminderBannerVisible &&
                 activeTag?.status === 'matched' &&
                 !activeTag?.boarding_confirmed_at ? (
@@ -9228,6 +9226,7 @@ function PassengerDashboard({
                     </View>
                   </View>
                 ) : null}
+                <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                 <LiveMapView
                   userLocation={userLocation}
                   otherLocation={driverLocation || activeTag?.driver_location || null}
@@ -9558,22 +9557,6 @@ function PassengerDashboard({
                   }}
                   onShowEndTripModal={() => setPassengerEndTripModalVisible(true)}
                 />
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Acil durum"
-                  onPress={() => setPassengerPanicModalVisible(true)}
-                  style={styles.panicMapFab}
-                >
-                  <Ionicons name="warning" size={22} color="#FFF" />
-                </TouchableOpacity>
-                <PanicModalFlow
-                  visible={passengerPanicModalVisible}
-                  onClose={() => setPassengerPanicModalVisible(false)}
-                  role="passenger"
-                  tagId={activeTag?.id ?? null}
-                  latitude={userLocation?.latitude ?? null}
-                  longitude={userLocation?.longitude ?? null}
-                />
 
                 <PassengerDriverForceEndReviewModal
                   visible={!!passengerDriverForceReview}
@@ -9765,6 +9748,8 @@ function PassengerDashboard({
                     }
                   }}
                 />
+                <PanicDial112Button variant="mapOverlay" />
+                </View>
                 
                 {/* 🆕 End Trip Modal - Yolcu */}
                 <EndTripModal
@@ -10514,7 +10499,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [passengerLocation, setPassengerLocation] = useState<{latitude: number; longitude: number} | null>(null);
   /** LiveMapView uygulama-içi navigasyon: GPS/socket aralığı 12s → 5s */
   const [driverLiveMapNavigationMode, setDriverLiveMapNavigationMode] = useState(false);
-  const [driverPanicModalVisible, setDriverPanicModalVisible] = useState(false);
 
   useEffect(() => {
     console.log('DRIVER_WAITING_SCREEN_ENTER', { user_id: user?.id ?? null });
@@ -12895,6 +12879,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                 null
               }
             />
+            <PanicDial112Button variant="mapOverlay" />
             <DriverOfferScreen
               embedded
               vehicleKind={driverVehicleKind}
@@ -13114,6 +13099,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             </TouchableOpacity>
           ) : null}
           {/* Sürücü haritası: otherLocationFromPickupFallback true iken buluşma metrikleri routeInfo ile OSRM çelişmez; kotasyonlu trip OSRM ile sessizce ezilmez */}
+          <View style={{ flex: 1, position: 'relative', minHeight: 0 }}>
           <LiveMapView
             userLocation={userLocation}
             otherLocation={driverPassengerCoordsForMap(passengerLocation, activeTag)}
@@ -13472,22 +13458,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             }}
             onShowEndTripModal={() => setDriverEndTripModalVisible(true)}
           />
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Acil durum"
-            onPress={() => setDriverPanicModalVisible(true)}
-            style={styles.panicMapFab}
-          >
-            <Ionicons name="warning" size={22} color="#FFF" />
-          </TouchableOpacity>
-          <PanicModalFlow
-            visible={driverPanicModalVisible}
-            onClose={() => setDriverPanicModalVisible(false)}
-            role="driver"
-            tagId={activeTag?.id ?? null}
-            latitude={userLocation?.latitude ?? null}
-            longitude={userLocation?.longitude ?? null}
-          />
+          <PanicDial112Button variant="mapOverlay" />
+          </View>
 
           {/* 🆕 Chat Bubble - Sürücü → Yolcuya Yaz (PURE SOCKET - ANLIK) */}
           <ChatBubble
@@ -17230,25 +17202,6 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     position: 'relative',
     backgroundColor: '#000',
-  },
-  panicMapFab: {
-    position: 'absolute',
-    top: 52,
-    right: 12,
-    zIndex: 50,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#B91C1C',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 6,
   },
   mapView: {
     flex: 1,

@@ -30,7 +30,6 @@
         ],
         "NSBluetoothAlwaysUsageDescription": "Bluetooth kulaklık kullanımı için izin gereklidir.",
         "NSBluetoothPeripheralUsageDescription": "Bluetooth cihazları ile bağlantı için izin gereklidir.",
-        "NSContactsUsageDescription": "Acil durum SMS'i için kaydedeceğiniz kişiyi rehberinizden tek seferde seçebilmeniz için rehber erişimi gerekir. Tüm rehber kopyalanmaz.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
           "NSAllowsLocalNetworking": true,
@@ -73,8 +72,7 @@
         "android.permission.VIBRATE",
         "android.permission.WAKE_LOCK",
         "android.permission.READ_PHONE_STATE",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.READ_CONTACTS"
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "config": {
         "googleMaps": {
@@ -128,12 +126,6 @@
         "expo-av",
         {
           "microphonePermission": "Sesli görüşme için mikrofon izni gereklidir."
-        }
-      ],
-      [
-        "expo-contacts",
-        {
-          "contactsPermission": "Acil durumda SMS gönderilecek kişiyi rehberinizden seçebilmeniz için rehber izni gerekir."
         }
       ],
       [
