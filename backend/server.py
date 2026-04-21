@@ -6677,6 +6677,12 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
                     driver_id=driver_id_res,
                     conflicting_tag_id=o_drv_po,
                 )
+                logger.info(
+                    "MATCH_DRIVER_LOCKED path=passenger_accept_offer_http tag_id=%s driver_id=%s conflict=%s",
+                    tag_id_final,
+                    str(driver_id_res)[:13] if driver_id_res else "?",
+                    o_drv_po,
+                )
                 raise HTTPException(
                     status_code=409,
                     detail="Sürücü başka bir yolculukta",
@@ -6740,6 +6746,35 @@ async def accept_offer(request: AcceptOfferRequest = None, user_id: str = None, 
             passenger_id=passenger_id_res,
             offer_id=real_offer_id,
         )
+
+        try:
+            await rolling_dispatch_stop(
+                tag_id_final,
+                revoke_offers=True,
+                except_driver_id=driver_id_res,
+            )
+        except Exception as _rds:
+            logger.warning(
+                "rolling_dispatch_stop after passenger/accept-offer (non-fatal): %s", _rds
+            )
+        try:
+            if driver_id_res:
+                await handle_dispatch_accept(tag_id_final, driver_id_res)
+        except Exception as _hda:
+            logger.warning(
+                "handle_dispatch_accept after passenger/accept-offer (non-fatal): %s", _hda
+            )
+        try:
+            if driver_id_res:
+                await match_accept_cleanup_foreign_offers(
+                    driver_id_res,
+                    tag_id_final,
+                    log_path="passenger_accept_offer_http",
+                )
+        except Exception as _cl:
+            logger.warning(
+                "match_accept_cleanup_foreign_offers passenger/accept (non-fatal): %s", _cl
+            )
 
         supabase.table("offers").update({"status": "accepted"}).eq("id", real_offer_id).execute()
         supabase.table("offers").update({"status": "rejected"}).eq("tag_id", tag_id_final).neq("id", real_offer_id).execute()
@@ -7816,6 +7851,12 @@ async def driver_accept_offer_http(
                 driver_id=resolved_driver_id,
                 conflicting_tag_id=o_drv_http,
             )
+            logger.info(
+                "MATCH_DRIVER_LOCKED path=driver_accept_offer_http tag_id=%s driver_id=%s conflict=%s",
+                tid,
+                str(resolved_driver_id)[:13],
+                o_drv_http,
+            )
             raise HTTPException(
                 status_code=409,
                 detail="Zaten devam eden bir yolculuğunuz var",
@@ -7907,6 +7948,12 @@ async def driver_accept_offer_http(
             logger.warning(
                 f"handle_dispatch_accept after driver/accept-offer HTTP (non-fatal): {_hda}"
             )
+        try:
+            await match_accept_cleanup_foreign_offers(
+                resolved_driver_id, tid, log_path="driver_accept_offer_http"
+            )
+        except Exception as _cl:
+            logger.warning("match_accept_cleanup_foreign_offers HTTP (non-fatal): %s", _cl)
 
         passenger_id = updated_tag.get("passenger_id")
         if passenger_id:
@@ -13008,6 +13055,147 @@ def _other_active_tag_id_sync(
     return None
 
 
+async def match_accept_cleanup_foreign_offers(
+    resolved_driver_id: str,
+    accepted_tag_id: str,
+    *,
+    log_path: str,
+) -> None:
+    """
+    Bir sürücü tag T'yi kabul ettikten sonra: aynı sürücünün diğer tag'lerdeki
+    bekleyen dispatch/offers satırlarını iptal et; remove_offer + passenger_offer_taken;
+    rolling_dispatch_index / dispatch_queues bellek durumunu temizle.
+    """
+    did_raw = str(await resolve_user_id(str(resolved_driver_id).strip()) or resolved_driver_id).strip()
+    did_low = did_raw.lower()
+    acc = _norm_tag_id_str(accepted_tag_id)
+    if not did_raw or not acc:
+        return
+
+    other_tag_ids: list[str] = []
+    try:
+        dq_sel = (
+            supabase.table("dispatch_queue")
+            .select("tag_id,id")
+            .eq("driver_id", did_low)
+            .in_("status", ["waiting", "sent"])
+            .execute()
+        )
+        seen: set[str] = set()
+        for row in dq_sel.data or []:
+            ot = _norm_tag_id_str(str(row.get("tag_id") or ""))
+            if ot and ot != acc and ot not in seen:
+                seen.add(ot)
+                other_tag_ids.append(ot)
+    except Exception as e:
+        logger.warning("MATCH_ACCEPT_CLEANUP dispatch_queue select failed: %s", e)
+
+    try:
+        supabase.table("dispatch_queue").update(
+            {"status": "expired", "responded_at": datetime.utcnow().isoformat()}
+        ).eq("driver_id", did_low).neq("tag_id", acc).in_("status", ["waiting", "sent"]).execute()
+    except Exception as e:
+        logger.warning("MATCH_ACCEPT_CLEANUP dispatch_queue bulk expire: %s", e)
+
+    try:
+        supabase.table("offers").update({"status": "rejected"}).eq("driver_id", did_raw).neq(
+            "tag_id", acc
+        ).eq("status", "pending").execute()
+    except Exception as e:
+        logger.warning("MATCH_ACCEPT_CLEANUP offers reject: %s", e)
+
+    emit_count = 0
+    for otid in other_tag_ids:
+        payload = {
+            "tag_id": otid,
+            "revoke_reason": "driver_accepted_elsewhere",
+            "accepted_tag_id": acc,
+        }
+        try:
+            await emit_socket_event_to_user(did_raw, "remove_offer", payload)
+            await emit_socket_event_to_user(did_raw, "passenger_offer_taken", payload)
+            emit_count += 1
+        except Exception as em:
+            logger.warning("MATCH_ACCEPT_CLEANUP emit driver tag=%s: %s", otid, em)
+        try:
+            tr = supabase.table("tags").select("passenger_id").eq("id", otid).limit(1).execute()
+            pid = None
+            if tr.data:
+                pid = tr.data[0].get("passenger_id")
+            if pid:
+                pid_r = await resolve_user_id(str(pid).strip())
+                if pid_r:
+                    await emit_socket_event_to_user(
+                        str(pid_r),
+                        "passenger_offer_taken",
+                        {
+                            "tag_id": otid,
+                            "driver_id": did_raw,
+                            "reason": "driver_locked_other_trip",
+                            "accepted_tag_id": acc,
+                        },
+                    )
+        except Exception as ep:
+            logger.warning("MATCH_ACCEPT_CLEANUP passenger emit tag=%s: %s", otid, ep)
+
+    for otid in list(dispatch_queues.keys()):
+        if otid == acc:
+            continue
+        qmem = dispatch_queues.get(otid)
+        if not qmem:
+            continue
+        newq = [
+            e
+            for e in qmem
+            if str(e.get("driver_id", "")).strip().lower() != did_low
+        ]
+        if len(newq) != len(qmem):
+            dispatch_queues[otid] = newq
+
+    for otid, st in list(rolling_dispatch_index.items()):
+        if otid == acc:
+            continue
+        cb = list(st.get("current_batch") or [])
+        nb = [x for x in cb if str(x).strip().lower() != did_low]
+        if len(nb) != len(cb):
+            st["current_batch"] = nb
+        ex_raw = st.get("excluded_driver_ids")
+        if isinstance(ex_raw, set):
+            ex_raw.add(did_low)
+        else:
+            ex_new = {did_low}
+            if isinstance(ex_raw, (list, tuple)):
+                ex_new.update(str(x).strip().lower() for x in ex_raw if x is not None)
+            st["excluded_driver_ids"] = ex_new
+
+    for otid in other_tag_ids:
+        ot_norm = _norm_tag_id_str(otid)
+        prefix = f"{ot_norm}_"
+        for key in list(active_dispatch_tasks.keys()):
+            if key.startswith(prefix):
+                tsk = active_dispatch_tasks.pop(key, None)
+                if tsk and not tsk.done():
+                    try:
+                        tsk.cancel()
+                    except Exception:
+                        pass
+
+    logger.info(
+        "MATCH_ACCEPT_CLEANUP path=%s driver=%s accepted_tag=%s other_tags=%s emits=%s",
+        log_path,
+        did_low[:13],
+        acc[:13],
+        len(other_tag_ids),
+        emit_count,
+    )
+    logger.info(
+        "MATCH_OTHER_OFFERS_CANCELLED driver=%s accepted_tag=%s cancelled_tags=%s",
+        did_low[:13],
+        acc[:13],
+        json.dumps(other_tag_ids, default=str),
+    )
+
+
 # Socket event: MARTI TAG - Sürücü teklifi kabul eder (Uber-style: trip lock → push → socket)
 @sio.on("driver_accept_offer")
 async def handle_driver_accept_offer(sid, data):
@@ -13146,6 +13334,12 @@ async def handle_driver_accept_offer(sid, data):
                 driver_id=resolved_driver_id,
                 conflicting_tag_id=o_drv,
             )
+            logger.info(
+                "MATCH_DRIVER_LOCKED path=driver_accept_offer_socket tag_id=%s driver_id=%s conflict=%s",
+                tid,
+                str(resolved_driver_id)[:13],
+                o_drv,
+            )
             await sio.emit(
                 "offer_accepted_error",
                 {
@@ -13272,6 +13466,12 @@ async def handle_driver_accept_offer(sid, data):
             await handle_dispatch_accept(tid, resolved_driver_id)
         except Exception as _hda:
             logger.warning(f"handle_dispatch_accept after driver_accept_offer (non-fatal): {_hda}")
+        try:
+            await match_accept_cleanup_foreign_offers(
+                resolved_driver_id, tid, log_path="driver_accept_offer_socket"
+            )
+        except Exception as _cl:
+            logger.warning("match_accept_cleanup_foreign_offers socket (non-fatal): %s", _cl)
 
         passenger_id = tag.get("passenger_id")
         passenger_id = str(passenger_id).strip() if passenger_id else None
@@ -14376,6 +14576,12 @@ async def accept_ride(tag_id: str, driver_id: str):
                 driver_id=resolved_driver_id,
                 conflicting_tag_id=o_drv_ra,
             )
+            logger.info(
+                "MATCH_DRIVER_LOCKED path=ride_accept_http tag_id=%s driver_id=%s conflict=%s",
+                tag_id,
+                str(resolved_driver_id)[:13],
+                o_drv_ra,
+            )
             return {
                 "success": False,
                 "error": "Zaten devam eden bir yolculuğunuz var",
@@ -14437,6 +14643,16 @@ async def accept_ride(tag_id: str, driver_id: str):
             )
         except Exception as _rds:
             logger.warning(f"rolling_dispatch_stop after accept_ride (non-fatal): {_rds}")
+        try:
+            await handle_dispatch_accept(tag_id, resolved_driver_id)
+        except Exception as _hda:
+            logger.warning(f"handle_dispatch_accept after accept_ride (non-fatal): {_hda}")
+        try:
+            await match_accept_cleanup_foreign_offers(
+                resolved_driver_id, tag_id, log_path="ride_accept_http"
+            )
+        except Exception as _cl:
+            logger.warning("match_accept_cleanup_foreign_offers ride/accept (non-fatal): %s", _cl)
 
         # Socket: yolcu / sürücü (DB dispatch_queue kullanılmıyor)
         match_socket_payload = {

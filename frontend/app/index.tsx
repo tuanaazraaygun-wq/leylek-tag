@@ -12841,9 +12841,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       const aid = String(activeTag.id || '').trim();
       return !!rid && !!aid && rid !== aid;
     });
-  const driverInActiveTrip =
-    !!(activeTag && (activeTag.status === 'matched' || activeTag.status === 'in_progress')) &&
-    !hasPendingRequestForOtherTrip;
+  /** Eşleşmiş / yolda iken liste + çift kabul yarışını engelle — stale request'lere bakma */
+  const driverInActiveTrip = !!(
+    activeTag &&
+    (activeTag.status === 'matched' || activeTag.status === 'in_progress')
+  );
 
   console.log('OFFER_RENDER_CONDITION', {
     driver_in_active_trip: driverInActiveTrip,
@@ -12950,6 +12952,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
               onDismissRequest={handleDismissRequest}
               onDriverAcceptMatch={(match) => {
                 const data = match as Record<string, unknown>;
+                clearAllDriverOfferRemovalState();
+                setRequests([]);
+                playMatchSound();
                 if (data?.tag_id) {
                   const pkKm = Number(data.pickup_distance_km);
                   const pkMin = Number(data.pickup_eta_min);
@@ -12995,8 +13000,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
                     ) ?? undefined,
                   } as Tag);
                 }
-                setRequests([]);
-                playMatchSound();
                 setScreen('dashboard');
                 setTimeout(() => loadData(), 800);
               }}

@@ -26,7 +26,6 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSocketContext } from '../contexts/SocketContext';
 import { API_BASE_URL } from '../lib/backendConfig';
 import {
   ROUTE_LOADING_MIN_VISIBLE_MS,
@@ -284,7 +283,9 @@ function RequestCard({
   playTapSound,
   onDismiss,
   onDriverAcceptMatch,
-  index
+  index,
+  globalAcceptFrozen,
+  setGlobalAcceptFrozen,
 }: { 
   request: PassengerRequest; 
   driverLocation: { latitude: number; longitude: number } | null;
@@ -293,8 +294,9 @@ function RequestCard({
   onDismiss: () => void;
   onDriverAcceptMatch?: (match: Record<string, unknown>) => void;
   index: number;
+  globalAcceptFrozen: boolean;
+  setGlobalAcceptFrozen: (v: boolean) => void;
 }) {
-  const { socket } = useSocketContext();
   const [accepting, setAccepting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -597,7 +599,7 @@ function RequestCard({
         <TouchableOpacity
           style={[styles.acceptButton, accepting && styles.acceptButtonDisabled]}
           onPress={async () => {
-            if (accepting) return;
+            if (accepting || globalAcceptFrozen) return;
 
             const tagIdForAccept = String(request.tag_id || request.id || '').trim();
             const userId = String(driverId || '').trim();
@@ -607,6 +609,7 @@ function RequestCard({
               return;
             }
 
+            setGlobalAcceptFrozen(true);
             setAccepting(true);
             try {
               playTapSound?.();
@@ -640,6 +643,8 @@ function RequestCard({
                 return;
               }
 
+              setGlobalAcceptFrozen(false);
+
               let errMsg = '';
               if (body) {
                 const d = (body as { detail?: unknown }).detail;
@@ -655,23 +660,15 @@ function RequestCard({
                     : `Sunucu yanıtı: ${res.status}`;
               }
               Alert.alert('Eşleşme olmadı', errMsg);
-              console.warn('[driver/accept-offer] socket yedek denemesi');
-              socket?.emit('driver_accept_offer', {
-                tag_id: tagIdForAccept,
-                driver_id: userId,
-              });
             } catch (e) {
               console.error('[driver/accept-offer] fetch', e);
-              Alert.alert('Hata', 'Bağlantı hatası; socket ile deneniyor.');
-              socket?.emit('driver_accept_offer', {
-                tag_id: tagIdForAccept,
-                driver_id: userId,
-              });
+              setGlobalAcceptFrozen(false);
+              Alert.alert('Hata', 'Bağlantı hatası. Lütfen tekrar deneyin.');
             } finally {
               setAccepting(false);
             }
           }}
-          disabled={accepting}
+          disabled={accepting || globalAcceptFrozen}
         >
           {accepting ? (
             <ActivityIndicator size="small" color="#FFF" />
@@ -777,6 +774,7 @@ export default function DriverOfferScreen({
   onDriverAcceptMatch,
 }: DriverOfferScreenProps) {
   const isMotor = vehicleKind === 'motorcycle';
+  const [globalAcceptFrozen, setGlobalAcceptFrozen] = useState(false);
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapSeekingPins, setMapSeekingPins] = useState<DriverMapSeekingPin[]>([]);
@@ -1157,6 +1155,8 @@ export default function DriverOfferScreen({
                 onDismiss={() => onDismissRequest(item.id)}
                 onDriverAcceptMatch={onDriverAcceptMatch}
                 index={index}
+                globalAcceptFrozen={globalAcceptFrozen}
+                setGlobalAcceptFrozen={setGlobalAcceptFrozen}
               />
             )}
             contentContainerStyle={styles.listContent}
