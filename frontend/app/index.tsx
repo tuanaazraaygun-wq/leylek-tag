@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar, Vibration } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -22,6 +22,7 @@ import PassengerWaitingScreen from '../components/PassengerWaitingScreen';
 import { RoleSelectLeylekAIFloating } from '../screens/RoleSelectScreen';
 import { DriverWaitingLeylekAIFloating } from '../screens/DriverWaitingScreen';
 import CallScreenV2 from '../components/CallScreenV2';
+import InCallManager from 'react-native-incall-manager';
 import TrustRequestModal from '../components/trust/TrustRequestModal';
 import TrustVideoSessionScreen from '../components/trust/TrustVideoSessionScreen';
 import { useTrustSessionController } from '../hooks/useTrustSessionController';
@@ -6750,7 +6751,32 @@ function PassengerDashboard({
     },
     onCallRejected: (data) => {
       console.log('❌ YOLCU - ARAMA REDDEDİLDİ:', data);
+      try {
+        console.log(
+          'CALL_REJECT_AUDIO_STOP',
+          JSON.stringify({
+            role: 'passenger',
+            call_id: (data as { call_id?: string })?.call_id ?? null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      try {
+        InCallManager.stopRingback();
+        InCallManager.stopRingtone();
+        Vibration.cancel();
+        InCallManager.stop();
+      } catch {
+        /* noop */
+      }
+      Alert.alert('Reddedildi', 'Arama reddedildi');
       closePassengerCallUi();
+      try {
+        console.log('CALL_UI_CLOSE', JSON.stringify({ role: 'passenger', reason: 'call_rejected' }));
+      } catch {
+        /* noop */
+      }
     },
     onCallEnded: (data) => {
       console.log('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
@@ -10774,12 +10800,36 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onCallRejected: (data) => {
       console.log('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
+      try {
+        console.log(
+          'CALL_REJECT_AUDIO_STOP',
+          JSON.stringify({
+            role: 'driver',
+            call_id: (data as { call_id?: string })?.call_id ?? null,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      try {
+        InCallManager.stopRingback();
+        InCallManager.stopRingtone();
+        Vibration.cancel();
+        InCallManager.stop();
+      } catch {
+        /* noop */
+      }
       console.log(
         'CALL_REJECT_UI_CLOSE',
         JSON.stringify({ call_id: (data as { call_id?: string })?.call_id ?? null })
       );
       Alert.alert('Reddedildi', 'Arama reddedildi');
       closeDriverCallUi();
+      try {
+        console.log('CALL_UI_CLOSE', JSON.stringify({ role: 'driver', reason: 'call_rejected' }));
+      } catch {
+        /* noop */
+      }
     },
     onCallEnded: (data) => {
       console.log('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);

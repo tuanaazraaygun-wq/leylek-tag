@@ -87,6 +87,8 @@ export default function CallScreenV2({
   const prevSessionKeyRef = useRef('');
   /** Caller oturumunda useEffect’in ikinci kez startOutgoing çalıştırmasını engeller */
   const callerJoinExecutedRef = useRef(false);
+  /** Oturum effect cleanup / visible=false: giden arama async’i ringback’i yeniden başlatmasın */
+  const callSessionAbortRef = useRef(false);
   const hangUpRef = useRef<(reason?: string) => void>(() => {});
 
   const myUid = agoraUidFromUserId(userId);
@@ -124,7 +126,15 @@ export default function CallScreenV2({
     agoraVoiceService.resetCallbacks();
     await agoraVoiceService.leaveChannelAndDestroy();
     setJoined(false);
-  }, [stopTimersAndRing]);
+    try {
+      console.log(
+        'CALL_AUDIO_CLEANUP',
+        JSON.stringify({ call_id: callId, mode, channel: String(channelName || '').slice(0, 24) }),
+      );
+    } catch {
+      /* noop */
+    }
+  }, [stopTimersAndRing, callId, mode, channelName]);
 
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
@@ -206,29 +216,47 @@ export default function CallScreenV2({
     }
 
     const ok = await requestMicPermission();
+    if (callSessionAbortRef.current) {
+      stopTimersAndRing();
+      return;
+    }
     if (!ok) {
+      stopTimersAndRing();
       setPhase('ended');
       return;
     }
     await agoraVoiceService.initialize();
+    if (callSessionAbortRef.current) {
+      stopTimersAndRing();
+      return;
+    }
 
     const ch = channelName?.trim();
     const tok = agoraTokenProp?.trim();
     if (!tok || !ch) {
+      stopTimersAndRing();
       Alert.alert('Hata', 'Arama bileti (token) alınamadı.');
       setPhase('ended');
       return;
     }
     attachEngineHandlers();
     if (agoraVoiceService.isJoinPending()) {
+      if (callSessionAbortRef.current) {
+        stopTimersAndRing();
+        return;
+      }
       setJoined(true);
       callerJoinExecutedRef.current = true;
       return;
     }
     await agoraVoiceService.joinChannel(ch, tok, myUid);
+    if (callSessionAbortRef.current) {
+      stopTimersAndRing();
+      return;
+    }
     setJoined(true);
     callerJoinExecutedRef.current = true;
-  }, [agoraTokenProp, channelName, attachEngineHandlers, myUid, requestMicPermission]);
+  }, [agoraTokenProp, channelName, attachEngineHandlers, myUid, requestMicPermission, stopTimersAndRing]);
 
   const acceptIncoming = useCallback(async () => {
     if (joined) return;
@@ -361,6 +389,7 @@ export default function CallScreenV2({
 
   useEffect(() => {
     if (!visible) {
+      callSessionAbortRef.current = true;
       void runCleanup();
       prevSessionKeyRef.current = '';
       return;
@@ -380,6 +409,7 @@ export default function CallScreenV2({
       if (cancelled) return;
 
       prevSessionKeyRef.current = sessionKey;
+      callSessionAbortRef.current = false;
 
       LOG('CallScreenV2 açıldı', { mode, callId, channelName });
       setRemoteUid(0);
@@ -415,11 +445,13 @@ export default function CallScreenV2({
     })();
 
     return () => {
+      callSessionAbortRef.current = true;
       cancelled = true;
       pulseAnim.stopAnimation();
+      void runCleanup();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startOutgoing/runCleanup dep'e alınmaz
-  }, [visible, callId, mode, channelName, pulseAnim]);
+  }, [visible, callId, mode, channelName, pulseAnim, runCleanup]);
 
   /** Karşı taraf hattı kabul etti (socket) — arayan: çalma tonu kesilir, yeşil “Bağlandı” */
   useEffect(() => {
