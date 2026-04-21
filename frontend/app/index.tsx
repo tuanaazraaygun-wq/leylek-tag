@@ -6288,6 +6288,9 @@ function PassengerDashboard({
   const passengerBoardingDeclineCountRef = useRef(0);
   const passengerBoardingBannerDismissedRef = useRef(false);
   const passengerBoardingProximityPromptConsumedRef = useRef(false);
+  /** Sürücü aynı tag için biniş QR’ı yenilediğinde (boarding_qr_issued_at) — yakınlık prompt’u tekrar loglanır */
+  const passengerBoardingDriverReissuePendingRef = useRef(false);
+  const passengerBoardingQrIssuedSigRef = useRef<{ tagId: string; sig: string } | null>(null);
 
   // 🆕 Rating Modal State - QR tarama sonrası puanlama
   const [ratingModalData, setRatingModalData] = useState<{
@@ -7425,8 +7428,51 @@ function PassengerDashboard({
     passengerBoardingDeclineCountRef.current = 0;
     passengerBoardingBannerDismissedRef.current = false;
     passengerBoardingProximityPromptConsumedRef.current = false;
+    passengerBoardingDriverReissuePendingRef.current = false;
+    passengerBoardingQrIssuedSigRef.current = null;
     setPassengerBoardingReminderBannerVisible(false);
   }, [activeTag?.id]);
+
+  useEffect(() => {
+    const tag = activeTag;
+    const tagId = tag?.id ? String(tag.id) : '';
+    if (!tag || !tagId || tag.status !== 'matched' || tag.boarding_confirmed_at) {
+      if (!tagId) {
+        passengerBoardingQrIssuedSigRef.current = null;
+      }
+      return;
+    }
+    const raw = tag.boarding_qr_issued_at;
+    const sig =
+      raw != null && String(raw).trim() !== '' ? String(raw).trim() : '';
+    const prev = passengerBoardingQrIssuedSigRef.current;
+    if (!prev || prev.tagId !== tagId) {
+      passengerBoardingQrIssuedSigRef.current = { tagId, sig };
+      return;
+    }
+    if (prev.sig === sig) {
+      return;
+    }
+    passengerBoardingQrIssuedSigRef.current = { tagId, sig };
+    passengerBoardingProximityPromptConsumedRef.current = false;
+    passengerBoardingCooldownUntilRef.current = 0;
+    passengerBoardingBannerDismissedRef.current = false;
+    passengerBoardingDeclineCountRef.current = 0;
+    passengerBoardingStableSinceRef.current = null;
+    passengerBoardingDriverReissuePendingRef.current = true;
+    setPassengerBoardingReminderBannerVisible(false);
+    setPassengerBoardingPromptVisible(false);
+    setPassengerBoardingScanVisible(false);
+    console.log(
+      'BOARDING_PROMPT_RESET_BY_DRIVER_TRIGGER',
+      JSON.stringify({ tag_id: tagId, boarding_qr_issued_at: sig || null }),
+    );
+  }, [
+    activeTag?.id,
+    activeTag?.status,
+    activeTag?.boarding_confirmed_at,
+    activeTag?.boarding_qr_issued_at,
+  ]);
 
   useEffect(() => {
     if (activeTag?.status !== 'matched' || activeTag?.boarding_confirmed_at) {
@@ -7468,6 +7514,16 @@ function PassengerDashboard({
             mode: bannerMode ? 'banner' : 'modal',
             declines,
           });
+          if (passengerBoardingDriverReissuePendingRef.current) {
+            passengerBoardingDriverReissuePendingRef.current = false;
+            console.log(
+              'BOARDING_PROMPT_REOPENED',
+              JSON.stringify({
+                tag_id: activeTag.id,
+                mode: bannerMode ? 'banner' : 'modal',
+              }),
+            );
+          }
           if (bannerMode) {
             setPassengerBoardingReminderBannerVisible(true);
           } else {
@@ -10183,7 +10239,10 @@ function PassengerDashboard({
             n >= BOARDING_DECLINES_BEFORE_BANNER_ONLY
               ? BOARDING_DECLINE_COOLDOWN_LONG_MS
               : BOARDING_DECLINE_COOLDOWN_MS;
-          console.log('BOARDING_PROMPT_DECLINED', { tag_id: activeTag?.id, decline_count: n });
+          console.log(
+            'BOARDING_PROMPT_DECLINE',
+            JSON.stringify({ tag_id: activeTag?.id ?? null, decline_count: n }),
+          );
           setPassengerBoardingPromptVisible(false);
           passengerBoardingStableSinceRef.current = null;
           passengerBoardingProximityPromptConsumedRef.current = false;
@@ -10715,6 +10774,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     onCallRejected: (data) => {
       console.log('❌ ŞOFÖR - ESKİ ARAMA RED:', data);
+      console.log(
+        'CALL_REJECT_UI_CLOSE',
+        JSON.stringify({ call_id: (data as { call_id?: string })?.call_id ?? null })
+      );
+      Alert.alert('Reddedildi', 'Arama reddedildi');
       closeDriverCallUi();
     },
     onCallEnded: (data) => {
