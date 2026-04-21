@@ -6634,6 +6634,10 @@ function PassengerDashboard({
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const passengerCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isPollingActiveRef = useRef<boolean>(true);
+  /** TEMP: next passenger price/offer attempt after socket trip_force_ended — for lifecycle logs */
+  const passengerPostForceEndRef = useRef(false);
+  /** TEMP: log ACTIVE_TAG_RESUME_AFTER_FORCE_END once when polling runs after lock clears */
+  const resumeActiveTagPollAfterForceEndRef = useRef(false);
 
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
@@ -7012,11 +7016,16 @@ function PassengerDashboard({
       });
 
       armForceEndLock('passenger_socket_trip_force_ended');
-      isPollingActiveRef.current = false;
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      passengerPostForceEndRef.current = true;
+      resumeActiveTagPollAfterForceEndRef.current = true;
+      console.log('FORCE_END_POST_STATE', {
+        activeTagCleared: true,
+        destinationCleared: true,
+        pollingWasActive: isPollingActiveRef.current,
+        forceEndLockMs: 5000,
+      });
+      // Do not clear pollingIntervalRef here: the user?.id effect will not re-run, so the
+      // interval would never restart. forceEndLockRef briefly blocks loadActiveTag instead.
       if (passengerCheckEndIntervalRef.current) {
         clearInterval(passengerCheckEndIntervalRef.current);
         passengerCheckEndIntervalRef.current = null;
@@ -7047,7 +7056,6 @@ function PassengerDashboard({
       setFirstChatTapBanner(null);
       setShowQRModal(false);
       setShowPriceModal(false);
-      isPollingActiveRef.current = false;
       clearPassengerTrustState();
       setScreen('role-select');
 
@@ -7060,6 +7068,7 @@ function PassengerDashboard({
           variant: 'info',
         });
       }
+      isPollingActiveRef.current = true;
     },
     // 🆕 QR ile yolculuk bitirme - Puanlama modalı (SOCKET'TEN)
     onShowRatingModal: (data) => {
@@ -7207,6 +7216,13 @@ function PassengerDashboard({
     if (forceEndLockRef.current) {
       logPollingSkippedForceEndLock('passenger', 'loadActiveTag_entry');
       return;
+    }
+    if (resumeActiveTagPollAfterForceEndRef.current) {
+      resumeActiveTagPollAfterForceEndRef.current = false;
+      console.log('ACTIVE_TAG_RESUME_AFTER_FORCE_END', {
+        userId: user?.id ?? null,
+        pollingActive: isPollingActiveRef.current,
+      });
     }
     try {
       const response = await fetch(`${API_URL}/passenger/active-tag?user_id=${user.id}`);
@@ -7903,7 +7919,18 @@ function PassengerDashboard({
       setSelectedPrice(Number((pf.data as { suggested_price: number }).suggested_price));
       setShowPriceModal(true);
       setPriceLoading(false);
+      passengerPostForceEndRef.current = false;
       return;
+    }
+
+    if (passengerPostForceEndRef.current) {
+      console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', {
+        prefetchKey,
+        pickupLat,
+        pickupLng,
+        dropLat,
+        dropLng,
+      });
     }
 
     try {
@@ -7920,6 +7947,19 @@ function PassengerDashboard({
       });
 
       if (!response.ok) {
+        let errBody: unknown = null;
+        try {
+          errBody = await response.clone().json();
+        } catch {
+          /* ignore */
+        }
+        console.log('NEW_OFFER_API_ERROR', {
+          api: `${API_URL}/price/calculate`,
+          httpOk: false,
+          status: response.status,
+          body: errBody,
+          afterForceEnd: passengerPostForceEndRef.current,
+        });
         throw new Error(`Price API HTTP ${response.status}`);
       }
       const data = await response.json();
@@ -7929,14 +7969,36 @@ function PassengerDashboard({
         setSelectedPrice(data.suggested_price);
         pricePrefetchRef.current = { key: prefetchKey, data, ts: Date.now() };
         setShowPriceModal(true);
+        passengerPostForceEndRef.current = false;
       } else {
+        console.log('NEW_OFFER_API_ERROR', {
+          api: `${API_URL}/price/calculate`,
+          httpOk: response.ok,
+          status: response.status,
+          body: data,
+          afterForceEnd: passengerPostForceEndRef.current,
+        });
         throw new Error(data?.error || 'Price API success=false');
       }
     } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const networkLike =
+        raw === 'Failed to fetch' || raw.includes('Network request failed');
       console.error('Fiyat hesaplama hatası:', error);
+      console.log('NEW_OFFER_API_ERROR', {
+        api: `${API_URL}/price/calculate`,
+        phase: 'catch',
+        message: raw,
+        networkLike,
+        afterForceEnd: passengerPostForceEndRef.current,
+      });
       appAlert(
         'Fiyat alınamadı',
-        'Sunucuya bağlanılamadı. Bağlantınızı kontrol edip tekrar deneyin.',
+        networkLike
+          ? 'Sunucuya bağlanılamadı. Bağlantınızı kontrol edip tekrar deneyin.'
+          : raw.length > 0
+            ? raw
+            : 'Fiyat hesaplanamadı. Biraz sonra tekrar deneyin.',
       );
     } finally {
       setPriceLoading(false);
@@ -7970,8 +8032,24 @@ function PassengerDashboard({
         throw new Error(data?.error || 'Price API success=false');
       }
     } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const networkLike =
+        raw === 'Failed to fetch' || raw.includes('Network request failed');
       console.log('Price recalc error:', e);
-      appAlert('Fiyat güncellenemedi', 'Sunucuya ulaşılamadı. Biraz sonra tekrar deneyin.');
+      console.log('NEW_OFFER_API_ERROR', {
+        api: `${API_URL}/price/calculate`,
+        phase: 'recalc_catch',
+        message: raw,
+        networkLike,
+      });
+      appAlert(
+        'Fiyat güncellenemedi',
+        networkLike
+          ? 'Sunucuya ulaşılamadı. Biraz sonra tekrar deneyin.'
+          : raw.length > 0
+            ? raw
+            : 'Fiyat güncellenemedi.',
+      );
     } finally {
       setPriceLoading(false);
     }
@@ -8050,6 +8128,9 @@ function PassengerDashboard({
 
     try {
       console.log('CREATE RIDE REQUEST SENT');
+      if (passengerPostForceEndRef.current) {
+        console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', { phase: 'ride_create', userId: user?.id ?? null });
+      }
       // API_URL = {BACKEND}/api → yol /api/ride/create (çift /api olmaması için /ride/create)
       const res = await fetch(`${API_URL}/ride/create`, {
         method: 'POST',
@@ -8144,9 +8225,16 @@ function PassengerDashboard({
         });
       }
       console.log('🚀 MARTI TAG: Tag oluşturuldu, rolling dispatch sunucuda tetiklendi', resolvedTagId);
+      passengerPostForceEndRef.current = false;
     } catch (err) {
       console.log('Backend kayıt hatası:', err);
       const raw = err instanceof Error ? err.message : String(err);
+      console.log('NEW_OFFER_API_ERROR', {
+        api: `${API_URL}/ride/create`,
+        phase: 'ride_create_catch',
+        message: raw,
+        afterForceEnd: passengerPostForceEndRef.current,
+      });
       const message =
         raw === 'Failed to fetch' || raw.includes('Network request failed')
           ? 'Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.'
