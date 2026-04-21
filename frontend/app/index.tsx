@@ -90,13 +90,11 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /** Hedef seçim modalı — yalnız native (web’de metro stub) */
 let DestinationPickerMapView: any = null;
-let DestinationPickerMarker: any = null;
 let DestinationPickerMapProvider: any = null;
 if (Platform.OS !== 'web') {
   try {
     const Maps = require('react-native-maps');
     DestinationPickerMapView = Maps.default;
-    DestinationPickerMarker = Maps.Marker;
     DestinationPickerMapProvider = Maps.PROVIDER_GOOGLE;
   } catch (e) {
     console.log('⚠️ react-native-maps (hedef modal) yüklenemedi:', e);
@@ -6035,6 +6033,7 @@ function PassengerDashboard({
       console.warn(`[PAX_UNDEFINED_FN] ${label} typeof=${typeof fn}`);
     }
   };
+  const insets = useSafeAreaInsets();
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
@@ -6230,22 +6229,41 @@ function PassengerDashboard({
   const tapSoundRef = useRef<Audio.Sound | null>(null);
   const priceSendPulse = useRef(new Animated.Value(1)).current;
 
-  /** Hedef seçim modalı — haritada dokunulan nokta + ters geokod */
+  /** Harita başlangıç merkezi (arama sonrası animate); sürüklemeyle güncellenmez — merkez ref'te tutulur */
   const [destinationPickerPin, setDestinationPickerPin] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
+  /** Harita görünümünün merkezi (crosshair); onRegionChangeComplete ile güncellenir — state yok, gereksiz re-render yok */
+  const destinationPickerMapCenterRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const [destinationPickerGeocoding, setDestinationPickerGeocoding] = useState(false);
+
   const destinationPickerMapRef = useRef<any>(null);
   const destinationSnapshotOnPickerOpenRef = useRef<{
     address: string;
     latitude: number;
     longitude: number;
   } | null>(null);
-  /** Arama ile bölge seçildi; hedef ancak haritada dokununca / işaretçi sürüklenince kesinleşir */
+  /** Arama ile bölge seçildi; hedef ancak haritayı sürükleyip "Tam burası" ile onaylanınca kesinleşir */
   const [destinationAwaitingMapTap, setDestinationAwaitingMapTap] = useState(false);
   /** search: başlık + arama kartı | map: yalnızca harita (mahalle seçilince) */
   const [destinationPickerPhase, setDestinationPickerPhase] = useState<'search' | 'map'>('search');
+
+  useEffect(() => {
+    if (
+      destinationPickerPhase !== 'map' ||
+      !destinationPickerPin ||
+      !Number.isFinite(destinationPickerPin.latitude) ||
+      !Number.isFinite(destinationPickerPin.longitude)
+    ) {
+      return;
+    }
+    destinationPickerMapCenterRef.current = {
+      latitude: destinationPickerPin.latitude,
+      longitude: destinationPickerPin.longitude,
+    };
+  }, [destinationPickerPhase, destinationPickerPin?.latitude, destinationPickerPin?.longitude]);
+
   /** Hedef modalı arama fazı: şehir görünümü */
   const DESTINATION_PICKER_SEARCH_DELTA = 0.11;
   /** Pin / mahalle seçim sonrası yakın zoom (initialRegion + animateToRegion ile aynı) */
@@ -6338,7 +6356,7 @@ function PassengerDashboard({
   const playOfferSound = async () => {};
 
   useEffect(() => {
-    if (!destinationPickerPin || destinationPickerPhase !== 'map') return;
+    if (destinationPickerPhase !== 'map') return;
     const ring1 = Animated.loop(
       Animated.sequence([
         Animated.parallel([
@@ -6386,14 +6404,7 @@ function PassengerDashboard({
       ring1.stop();
       ring2.stop();
     };
-  }, [
-    destinationPickerPin,
-    destinationPickerPhase,
-    destPinPulse1,
-    destPinOpacity1,
-    destPinPulse2,
-    destPinOpacity2,
-  ]);
+  }, [destinationPickerPhase, destPinPulse1, destPinOpacity1, destPinPulse2, destPinOpacity2]);
 
   useEffect(() => {
     if (!showDestinationPicker) return;
@@ -7874,7 +7885,7 @@ function PassengerDashboard({
       appAlert(
         '⚠️ Hedef gerekli',
         destinationAwaitingMapTap
-          ? 'Listeden bölgeyi seçtikten sonra haritadan tam durağa dokunun veya yeşil işaretçiyi sürükleyin.'
+          ? 'Listeden bölgeyi seçtikten sonra haritayı sürükleyin ve "Tam burası" ile onaylayın.'
           : 'Önce hedef seçin: arama veya harita ile tam konumu belirleyin.',
       );
       return;
@@ -8693,11 +8704,7 @@ function PassengerDashboard({
     destinationPickerPin?.longitude,
   ]);
 
-  const applyDestinationFromCoordinate = async (
-    latitude: number,
-    longitude: number,
-  ) => {
-    setDestinationPickerPin({ latitude, longitude });
+  const applyDestinationFromCoordinate = async (latitude: number, longitude: number) => {
     setDestinationPickerGeocoding(true);
     try {
       __paxFn('tapButtonHaptic', tapButtonHaptic);
@@ -8714,24 +8721,29 @@ function PassengerDashboard({
       __paxFn('commitDestinationFromMap', commitDestinationFromMap);
       await commitDestinationFromMap(address, latitude, longitude);
     } catch {
-      appAlert('Hata', 'Adres okunamadı. İşareti sürükleyip tekrar deneyin.');
+      appAlert('Hata', 'Adres okunamadı. Haritayı kaydırıp tekrar deneyin.');
     } finally {
       setDestinationPickerGeocoding(false);
     }
   };
 
-  const handleDestinationMapPress = async (e: {
-    nativeEvent: { coordinate: { latitude: number; longitude: number } };
+  const handleDestinationPickerRegionComplete = (region: {
+    latitude: number;
+    longitude: number;
   }) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
-    await applyDestinationFromCoordinate(latitude, longitude);
+    destinationPickerMapCenterRef.current = {
+      latitude: region.latitude,
+      longitude: region.longitude,
+    };
   };
 
-  const handleDestinationMarkerDragEnd = async (e: {
-    nativeEvent: { coordinate: { latitude: number; longitude: number } };
-  }) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
-    await applyDestinationFromCoordinate(latitude, longitude);
+  const confirmDestinationPickerCenter = async () => {
+    const c = destinationPickerMapCenterRef.current;
+    if (!c || !Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) {
+      appAlert('Harita', 'Konum hazırlanıyor; lütfen kısa bir süre sonra tekrar deneyin.');
+      return;
+    }
+    await applyDestinationFromCoordinate(c.latitude, c.longitude);
   };
 
   __paxFn('getRegisteredCityCenter', getRegisteredCityCenter);
@@ -9966,59 +9978,45 @@ function PassengerDashboard({
                     ? DESTINATION_PICKER_SEARCH_DELTA
                     : DESTINATION_PICKER_PIN_DELTA,
               }}
-              onPress={
-                destinationPickerPhase === 'map' ? handleDestinationMapPress : undefined
-              }
-            >
-              {destinationPickerPin &&
-              DestinationPickerMarker &&
-              destinationPickerPhase === 'map' ? (
-                <DestinationPickerMarker
-                  coordinate={destinationPickerPin}
-                  draggable
-                  anchor={{ x: 0.5, y: 1 }}
-                  tracksViewChanges={false}
-                  onDragEnd={handleDestinationMarkerDragEnd}
-                >
-                  <View style={styles.destinationPinMarkerWrap} pointerEvents="none" collapsable={false}>
-                    <Animated.View
-                      style={[
-                        styles.destinationPinRing,
-                        {
-                          transform: [{ scale: destPinPulse1 }],
-                          opacity: destPinOpacity1,
-                        },
-                      ]}
-                    />
-                    <Animated.View
-                      style={[
-                        styles.destinationPinRing,
-                        styles.destinationPinRingOuter,
-                        {
-                          transform: [{ scale: destPinPulse2 }],
-                          opacity: destPinOpacity2,
-                        },
-                      ]}
-                    />
-                    <View style={styles.destinationPinCore}>
-                      <Ionicons name="location" size={36} color="#FFF" />
-                    </View>
-                  </View>
-                </DestinationPickerMarker>
-              ) : null}
-            </DestinationPickerMapView>
+              onRegionChangeComplete={(region: {
+                latitude: number;
+                longitude: number;
+              }) => {
+                if (destinationPickerPhase === 'map') {
+                  handleDestinationPickerRegionComplete(region);
+                }
+              }}
+            />
           ) : null}
           {DestinationPickerMapView &&
           isNativeGoogleMapsSupported() &&
           destinationPickerPhase === 'map' ? (
-            <View style={styles.destinationMapCalloutWrap} pointerEvents="none">
-              <View style={styles.destinationMapCalloutBubble}>
-                <Text style={styles.destinationMapCalloutText}>
-                  Haritayı kaydırın · yakınlaştırın · yeşil işaretçiyi sürükleyin
-                </Text>
-                <Text style={styles.destinationMapCalloutTextBold}>
-                  Gitmek istediğiniz sokağa haritada biraz daha sert dokunun — pin tam otursun.
-                </Text>
+            <View style={styles.destinationCrosshairOverlay} pointerEvents="none">
+              <View style={styles.destinationCrosshairPinShift}>
+                <View style={styles.destinationPinMarkerWrap} collapsable={false}>
+                  <Animated.View
+                    style={[
+                      styles.destinationPinRing,
+                      {
+                        transform: [{ scale: destPinPulse1 }],
+                        opacity: destPinOpacity1,
+                      },
+                    ]}
+                  />
+                  <Animated.View
+                    style={[
+                      styles.destinationPinRing,
+                      styles.destinationPinRingOuter,
+                      {
+                        transform: [{ scale: destPinPulse2 }],
+                        opacity: destPinOpacity2,
+                      },
+                    ]}
+                  />
+                  <View style={styles.destinationPinCore}>
+                    <Ionicons name="location" size={36} color="#FFF" />
+                  </View>
+                </View>
               </View>
             </View>
           ) : null}
@@ -10114,7 +10112,7 @@ function PassengerDashboard({
                         strictCityBounds={!!(passengerSearchCityLabel || user?.city || '').trim()}
                         biasLatitude={userLocation?.latitude}
                         biasLongitude={userLocation?.longitude}
-                        biasDeltaDeg={0.34}
+                        biasDeltaDeg={0.22}
                         inputSize="large"
                         predictionMaxHeightBonus={56}
                         onPlaceSelected={(place) => handleDestinationAreaFromSearch(place)}
@@ -10125,6 +10123,24 @@ function PassengerDashboard({
               ) : null}
             </SafeAreaView>
           </View>
+
+          {destinationPickerPhase === 'map' &&
+          DestinationPickerMapView &&
+          isNativeGoogleMapsSupported() ? (
+            <View
+              style={[styles.destinationMapConfirmWrap, { paddingBottom: Math.max(insets.bottom, 14) + 8 }]}
+              pointerEvents="box-none"
+            >
+              <Text style={styles.destinationMapHintMinimal}>Haritayı sürükleyerek konumu ayarlayın</Text>
+              <TouchableOpacity
+                style={styles.destinationMapConfirmBtn}
+                activeOpacity={0.88}
+                onPress={() => void confirmDestinationPickerCenter()}
+              >
+                <Text style={styles.destinationMapConfirmBtnText}>Tam burası</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {destinationPickerGeocoding ? (
             <View style={styles.destinationGeocodeOverlay}>
@@ -12621,19 +12637,20 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     setOfferModalVisible(true);
   };
 
-  // Şoför için talebi 10 dakikalığına gizle (çarpı butonu)
+  // Şoför: "Geç" — bu tag'ı bu sürücü için reddet (yalnızca current tag)
   const handleDismissRequest = async (tagId: string) => {
     playTapSound();
     try {
-      const response = await fetch(`${API_URL}/driver/dismiss-request?user_id=${user.id}&tag_id=${tagId}`, {
+      const response = await fetch(
+        `${API_URL}/ride/reject?tag_id=${encodeURIComponent(tagId)}&driver_id=${encodeURIComponent(String(user.id))}`,
+        {
         method: 'POST',
-      });
+        },
+      );
       const data = await response.json();
       if (data.success) {
         // Talebi listeden kaldır
         setRequests(prev => prev.filter(r => r.id !== tagId));
-        // Toast göster
-        appAlert('Gizlendi', 'Bu talep 10 dakika boyunca görünmeyecek');
       }
     } catch (error) {
       console.log('Dismiss error:', error);
@@ -19367,37 +19384,56 @@ const styles = StyleSheet.create({
     letterSpacing: -0.35,
     marginTop: 0,
   },
-  destinationMapCalloutWrap: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 112,
+  destinationCrosshairOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 6,
+    zIndex: 4,
+    pointerEvents: 'none',
   },
-  destinationMapCalloutBubble: {
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.35)',
-    maxWidth: 340,
+  destinationCrosshairPinShift: {
+    marginTop: -52,
   },
-  destinationMapCalloutText: {
-    color: 'rgba(240, 253, 244, 0.95)',
-    fontSize: 13,
+  destinationMapConfirmWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 8,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    alignItems: 'center',
+  },
+  destinationMapHintMinimal: {
+    fontSize: 12,
     fontWeight: '600',
+    color: 'rgba(226, 232, 240, 0.92)',
     textAlign: 'center',
-    lineHeight: 19,
+    marginBottom: 10,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  destinationMapCalloutTextBold: {
-    color: '#FFF',
-    fontSize: 13,
+  destinationMapConfirmBtn: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#16A34A',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  destinationMapConfirmBtnText: {
+    fontSize: 17,
     fontWeight: '800',
-    textAlign: 'center',
-    lineHeight: 19,
-    marginTop: 8,
+    color: '#FFF',
+    letterSpacing: 0.3,
   },
   destinationSearchShellModern: {
     marginTop: 2,

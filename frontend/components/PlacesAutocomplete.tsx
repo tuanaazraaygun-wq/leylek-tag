@@ -12,6 +12,13 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  getGoogleMapsApiKey,
+  googlePlacesAutocompleteMerged,
+  googlePlaceDetailsLatLng,
+  type GoogleAutocompleteBias,
+  type GoogleAutocompletePrediction,
+} from '../lib/googlePlaces';
 
 // Türkiye şehirlerinin koordinatları ve bounding box'ları
 const CITY_DATA: { [key: string]: { lat: number; lng: number; bbox: string } } = {
@@ -66,6 +73,184 @@ export function getRegisteredCityCenter(raw: string): { latitude: number; longit
   return { latitude: d.lat, longitude: d.lng };
 }
 
+/**
+ * CITY_DATA.bbox saklanışı: min_lon,min_lat,max_lon,max_lat (SW → NE köşeleri).
+ * Nominatim viewbox: sol (west), üst (north), sağ (east), alt (south) =
+ * min_lon, max_lat, max_lon, min_lat
+ */
+function parseStoredCityBbox(bbox: string): { minLon: number; minLat: number; maxLon: number; maxLat: number } | null {
+  const p = bbox.split(',').map((x) => Number.parseFloat(x.trim()));
+  if (p.length !== 4 || p.some((n) => !Number.isFinite(n))) return null;
+  return { minLon: p[0], minLat: p[1], maxLon: p[2], maxLat: p[3] };
+}
+
+function pointInStoredCityBbox(lat: number, lon: number, bbox: string): boolean {
+  const b = parseStoredCityBbox(bbox);
+  if (!b) return false;
+  return lon >= b.minLon && lon <= b.maxLon && lat >= b.minLat && lat <= b.maxLat;
+}
+
+/** Nominatim `viewbox=` parametresi (left,top,right,bottom). */
+function nominatimViewboxFromStoredBbox(bbox: string): string | null {
+  const b = parseStoredCityBbox(bbox);
+  if (!b) return null;
+  return `${b.minLon},${b.maxLat},${b.maxLon},${b.minLat}`;
+}
+
+function gpsBiasViewbox(lat: number, lng: number, deltaDeg: number): string {
+  const left = lng - deltaDeg;
+  const right = lng + deltaDeg;
+  const top = lat + deltaDeg;
+  const bottom = lat - deltaDeg;
+  return `${left},${top},${right},${bottom}`;
+}
+
+/** Kullanıcı sorguda başka bir ili açıkça yazdıysa (ör. seyahat), o ilin bbox’ı kullanılır */
+function explicitOtherMajorCityKeyFromQuery(query: string, homeKey: string | null): string | null {
+  const q = query.trim().toLocaleLowerCase('tr-TR');
+  if (q.length < 3) return null;
+  for (const k of Object.keys(CITY_DATA)) {
+    if (homeKey && k === homeKey) continue;
+    if (q.includes(k.toLocaleLowerCase('tr-TR'))) return k;
+  }
+  return null;
+}
+
+/** Sokak numarası + sokak/cadde ve genel aramalar için şehir bağlamı */
+function buildNominatimSearchQuery(rawInput: string, cityLabel: string, forcedCityKey: string | null): string {
+  const head = rawInput.trim().replace(/\s+/g, ' ');
+  if (!head) return head;
+
+  const effectiveLabel = (forcedCityKey || cityLabel || '').trim();
+  const roadish =
+    /^\d{1,5}\s*(?:\.|:)?\s*(?:no\.?|numara)?\s*(?:sokak|sokağı|sok\.?|sk\.?|cadde|caddesi|cd\.?|bulvar|bulvarı|blv\.?)\b/i.test(
+      head,
+    );
+
+  if (roadish && effectiveLabel) {
+    return `${head}, ${effectiveLabel}, Türkiye`;
+  }
+  if (effectiveLabel && !head.toLocaleLowerCase('tr-TR').includes(effectiveLabel.toLocaleLowerCase('tr-TR'))) {
+    return `${head}, ${effectiveLabel}, Türkiye`;
+  }
+  return `${head}, Türkiye`;
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const toR = (d: number) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLon = toR(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function pointInGpsBiasBox(
+  lat: number,
+  lon: number,
+  biasLat: number,
+  biasLng: number,
+  deltaDeg: number,
+): boolean {
+  return (
+    lat >= biasLat - deltaDeg &&
+    lat <= biasLat + deltaDeg &&
+    lon >= biasLng - deltaDeg &&
+    lon <= biasLng + deltaDeg
+  );
+}
+
+function passesStrictLocality(
+  item: PlaceResult,
+  opts: {
+    strictCityBounds: boolean;
+    cityLabel: string;
+    effectiveCityKey: string | null;
+    cityDataEffective: { bbox: string } | null;
+    biasLatitude?: number;
+    biasLongitude?: number;
+    biasDeltaDeg: number;
+    usedBiasOnlyBbox: boolean;
+  },
+): boolean {
+  if (!opts.strictCityBounds) return true;
+
+  const lat = parseFloat(item.lat);
+  const lon = parseFloat(item.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+
+  const needle = (opts.effectiveCityKey || opts.cityLabel || '').trim();
+
+  if (opts.cityDataEffective && opts.effectiveCityKey) {
+    if (pointInStoredCityBbox(lat, lon, opts.cityDataEffective.bbox)) return true;
+    if (needle && nominatimResultInCityLabel(item, needle)) return true;
+    return false;
+  }
+
+  if (
+    opts.usedBiasOnlyBbox &&
+    opts.biasLatitude != null &&
+    opts.biasLongitude != null &&
+    Number.isFinite(opts.biasLatitude) &&
+    Number.isFinite(opts.biasLongitude)
+  ) {
+    if (pointInGpsBiasBox(lat, lon, opts.biasLatitude, opts.biasLongitude, opts.biasDeltaDeg)) return true;
+    if (needle && nominatimResultInCityLabel(item, needle)) return true;
+    return false;
+  }
+
+  if (needle && nominatimResultInCityLabel(item, needle)) return true;
+  return true;
+}
+
+function computeLocalSortScore(
+  item: PlaceResult,
+  queryInput: string,
+  biasLatitude?: number,
+  biasLongitude?: number,
+): number {
+  if (item.source === 'google') {
+    const types = item.google_types || [];
+    let tr = 5;
+    if (types.some((t) => ['street_address', 'route', 'premise', 'subpremise'].includes(t))) tr = 0;
+    else if (types.some((t) => ['sublocality_level_1', 'neighborhood', 'sublocality'].includes(t))) tr = 1;
+    else if (types.includes('establishment') || types.includes('point_of_interest')) tr = 2;
+    const txt = (item.display_name || '').toLocaleLowerCase('tr-TR');
+    const ql = queryInput.trim().toLocaleLowerCase('tr-TR');
+    const prefixBoost = ql.length >= 2 && txt.includes(ql) ? -2 : 0;
+    return tr * 18 + prefixBoost;
+  }
+
+  const tier = urbanRankTier(item);
+  const lat = parseFloat(item.lat);
+  const lon = parseFloat(item.lon);
+  let distKm = 0;
+  if (
+    biasLatitude != null &&
+    biasLongitude != null &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    Number.isFinite(biasLatitude) &&
+    Number.isFinite(biasLongitude)
+  ) {
+    distKm = haversineKm(biasLatitude, biasLongitude, lat, lon);
+  }
+  const imp = typeof item.importance === 'number' ? item.importance : 0;
+  const streetBoost = numericStreetMatchesQuery(item, queryInput) ? -3.2 : 0;
+  const qLower = queryInput.trim().toLocaleLowerCase('tr-TR');
+  const nameLower = (item.display_name || '').toLocaleLowerCase('tr-TR');
+  const tokenBoost =
+    qLower.length >= 3 && nameLower.includes(qLower)
+      ? -1.2
+      : qLower.length >= 3 && qLower.split(/\s+/).filter((w) => w.length > 2).some((w) => nameLower.includes(w))
+        ? -0.6
+        : 0;
+
+  return tier * 12 + distKm * 0.92 - imp * 3.2 + streetBoost + tokenBoost;
+}
+
 // Mahalle popüler aramaları - her şehir için
 const POPULAR_PLACES: { [key: string]: string[] } = {
   'İstanbul': ['Kadıköy', 'Beşiktaş', 'Şişli', 'Bakırköy', 'Ümraniye', 'Üsküdar', 'Fatih', 'Beyoğlu', 'Ataşehir', 'Maltepe'],
@@ -81,14 +266,29 @@ interface PlaceResult {
   lat: string;
   lon: string;
   type: string;
+  class?: string;
   importance?: number;
+  /** nominatim varsayılan; google seçiminde Place Details ile koordinat alınır */
+  source?: 'nominatim' | 'google';
+  google_place_id?: string;
+  structured_main?: string;
+  structured_secondary?: string;
+  google_types?: string[];
   address?: {
     neighbourhood?: string;
     suburb?: string;
+    quarter?: string;
     district?: string;
     city?: string;
+    city_district?: string;
     town?: string;
+    municipality?: string;
+    county?: string;
     road?: string;
+    amenity?: string;
+    shop?: string;
+    office?: string;
+    tourism?: string;
   };
 }
 
@@ -98,7 +298,65 @@ interface PlaceDetails {
   longitude: number;
 }
 
-/** strictCityBounds: OSM address alanlarında şehir adı (İstanbul’da Ankara sonucu elenir) */
+function mapGooglePredictionToPlaceResult(p: GoogleAutocompletePrediction): PlaceResult {
+  const st = p.structured_formatting;
+  return {
+    place_id: p.place_id,
+    display_name: p.description,
+    lat: '0',
+    lon: '0',
+    type: p.types?.[0] || 'establishment',
+    class: 'google',
+    source: 'google',
+    google_place_id: p.place_id,
+    structured_main: st?.main_text,
+    structured_secondary: st?.secondary_text,
+    google_types: p.types,
+  };
+}
+
+function buildGooglePlacesBias(
+  effectiveCityKey: string | null,
+  explicitOtherKey: string | null,
+  biasLatitude: number | undefined,
+  biasLongitude: number | undefined,
+  strictCityBounds: boolean,
+): GoogleAutocompleteBias | null {
+  if (explicitOtherKey && CITY_DATA[explicitOtherKey]) {
+    const d = CITY_DATA[explicitOtherKey];
+    return {
+      latitude: d.lat,
+      longitude: d.lng,
+      radiusMeters: 65000,
+      strictBounds: false,
+    };
+  }
+  if (
+    biasLatitude != null &&
+    biasLongitude != null &&
+    Number.isFinite(biasLatitude) &&
+    Number.isFinite(biasLongitude)
+  ) {
+    return {
+      latitude: biasLatitude,
+      longitude: biasLongitude,
+      radiusMeters: strictCityBounds ? 44000 : 38000,
+      strictBounds,
+    };
+  }
+  if (effectiveCityKey && CITY_DATA[effectiveCityKey]) {
+    const d = CITY_DATA[effectiveCityKey];
+    return {
+      latitude: d.lat,
+      longitude: d.lng,
+      radiusMeters: strictCityBounds ? 52000 : 58000,
+      strictBounds: !!strictCityBounds,
+    };
+  }
+  return null;
+}
+
+/** strictCityBounds: OSM adres + display_name içinde şehir / ilçe eşleşmesi */
 function nominatimResultInCityLabel(item: PlaceResult, cityNeedle: string): boolean {
   const nl = cityNeedle.trim().toLocaleLowerCase('tr-TR');
   if (!nl) return true;
@@ -109,9 +367,13 @@ function nominatimResultInCityLabel(item: PlaceResult, cityNeedle: string): bool
     'city',
     'town',
     'municipality',
+    'city_district',
+    'district',
     'county',
     'village',
     'suburb',
+    'neighbourhood',
+    'quarter',
     'state',
     'province',
   ] as const) {
@@ -121,19 +383,63 @@ function nominatimResultInCityLabel(item: PlaceResult, cityNeedle: string): bool
   return false;
 }
 
-/** Sokak / cadde / mahalle önceliği — hedef aramada üstte göster */
-function nominatimStreetRank(item: PlaceResult): number {
+const POI_TYPE_BONUS = new Set([
+  'embassy',
+  'place_of_worship',
+  'police',
+  'school',
+  'university',
+  'college',
+  'hospital',
+  'clinic',
+  'pharmacy',
+  'mall',
+  'department_store',
+  'shopping_centre',
+  'marketplace',
+  'courthouse',
+  'townhall',
+  'public_building',
+]);
+
+/** Düşük = listede üstte (şehir içi adres ve POI için ayrılmış) */
+function urbanRankTier(item: PlaceResult): number {
   const t = (item.type || '').toLowerCase();
+  const c = (item.class || '').toLowerCase();
   const dn = item.display_name || '';
+  const addr = item.address || {};
+
   const roadHint =
-    /\b(sokak|sokağı|cadde|caddesi|bulvar|bulvarı|mah\.?|mahalle|sk\.|cd\.)\b/i.test(dn) ||
-    !!(item.address?.road);
+    /\b(sokak|sokağı|cadde|caddesi|bulvar|bulvarı|mah\.?|mahalle|sk\.|cd\.)\b/i.test(dn) || !!addr.road;
+
   if (t === 'house' || t === 'building') return 0;
-  if (roadHint || t === 'road' || t === 'residential' || t === 'living_street') return 1;
+  if (roadHint || t === 'road' || t === 'residential' || t === 'living_street' || t === 'pedestrian')
+    return 1;
   if (t === 'neighbourhood' || t === 'suburb' || t === 'quarter') return 2;
-  if (t === 'village' || t === 'hamlet' || t === 'farm') return 3;
-  if (t === 'town' || t === 'city' || t === 'administrative') return 8;
-  return 4;
+
+  if (POI_TYPE_BONUS.has(t) || (c === 'amenity' && POI_TYPE_BONUS.has(t))) return 3;
+  if (
+    c === 'amenity' ||
+    c === 'shop' ||
+    c === 'office' ||
+    c === 'tourism' ||
+    c === 'historic' ||
+    c === 'leisure'
+  )
+    return 4;
+
+  if (t === 'village' || t === 'hamlet' || t === 'farm') return 5;
+  if (t === 'town' || t === 'city' || t === 'administrative') return 9;
+  return 6;
+}
+
+function numericStreetMatchesQuery(item: PlaceResult, queryRaw: string): boolean {
+  const m = queryRaw.trim().match(/^(\d{1,5})\b/);
+  if (!m) return false;
+  const num = m[1];
+  const dn = (item.display_name || '').toLowerCase();
+  const road = (item.address?.road || '').toLowerCase();
+  return dn.includes(num) || road.includes(num);
 }
 
 /** Liste ve çipler için tek yerden layout — küçük ekranda sıkışmayı azaltır */
@@ -221,9 +527,10 @@ export default function PlacesAutocomplete({
     }
 
     setShowPopular(false);
+    const debounceMs = getGoogleMapsApiKey() ? 200 : widerSearch ? 220 : 280;
     debounceRef.current = setTimeout(() => {
       searchPlaces(query);
-    }, widerSearch ? 220 : 280);
+    }, debounceMs);
 
     return () => {
       if (debounceRef.current) {
@@ -232,84 +539,145 @@ export default function PlacesAutocomplete({
     };
   }, [query, widerSearch, city, strictCityBounds, biasLatitude, biasLongitude, biasDeltaDeg]);
 
-  // Nominatim API ile arama (ÜCRETSİZ)
+  /** Önce Google Places (Autocomplete + Details ile koordinat); boş / hata → Nominatim (mevcut mantık). */
   const searchPlaces = async (input: string) => {
     setLoading(true);
+    const apiKey = getGoogleMapsApiKey();
     try {
-      const cityKey = resolveCityDataKey(city);
-      const cityData = cityKey ? CITY_DATA[cityKey] : null;
-      const cityLabel = cityKey || city.trim();
+      const cityKeyHome = resolveCityDataKey(city);
+      const cityLabel = cityKeyHome || city.trim();
+      const explicitOtherKey = explicitOtherMajorCityKeyFromQuery(input, cityKeyHome);
+      const effectiveCityKey = explicitOtherKey || cityKeyHome;
+      const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
 
-      // Arama sorgusunu hazırla
-      let searchQuery = input;
-      if (cityLabel && !input.toLowerCase().includes(cityLabel.toLowerCase())) {
-        searchQuery = `${input}, ${cityLabel}`;
-      }
-      
-      // Nominatim API - OpenStreetMap ücretsiz servisi
-      const limit = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 15 : 10;
-      let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=tr&addressdetails=1&limit=${limit}&accept-language=tr`;
+      let filtered: PlaceResult[] = [];
 
-      let bboxParam: string | null = null;
-      const useRegisteredCityBbox = !!(cityData && (!widerSearch || strictCityBounds));
-      let usedBiasOnlyBbox = false;
-      if (useRegisteredCityBbox) {
-        bboxParam = cityData!.bbox;
-      } else if (
-        strictCityBounds &&
-        biasLatitude != null &&
-        biasLongitude != null &&
-        Number.isFinite(biasLatitude) &&
-        Number.isFinite(biasLongitude)
-      ) {
-        const d = biasDeltaDeg;
-        const left = biasLongitude - d;
-        const right = biasLongitude + d;
-        const top = biasLatitude + d;
-        const bottom = biasLatitude - d;
-        bboxParam = `${left},${top},${right},${bottom}`;
-        usedBiasOnlyBbox = true;
-      }
-      if (bboxParam) {
-        url += `&viewbox=${bboxParam}&bounded=1`;
-      }
-      
-      console.log('🔍 Nominatim arama:', searchQuery);
-      
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'LeylekTAG-App/1.0'
+      if (apiKey) {
+        try {
+          const gBias = buildGooglePlacesBias(
+            effectiveCityKey,
+            explicitOtherKey,
+            biasLatitude,
+            biasLongitude,
+            strictCityBounds,
+          );
+          const raw = await googlePlacesAutocompleteMerged(input.trim(), apiKey, gBias);
+          filtered = raw.map(mapGooglePredictionToPlaceResult);
+          filtered.sort(
+            (a, b) =>
+              computeLocalSortScore(a, input, biasLatitude, biasLongitude) -
+              computeLocalSortScore(b, input, biasLatitude, biasLongitude),
+          );
+          const gCap = widerSearch && !strictCityBounds ? 24 : strictCityBounds ? 20 : 14;
+          filtered = filtered.slice(0, gCap);
+          console.log('🔍 Google Places öneri:', filtered.length);
+        } catch (gErr) {
+          console.warn('Google Places autocomplete:', gErr);
+          filtered = [];
         }
-      });
-      
-      const data: PlaceResult[] = await response.json();
-      
-      console.log('📍 Nominatim sonuç:', data.length, 'adet');
-      
-      if (data && data.length > 0) {
-        const cityNeedle = cityLabel
-          ? cityLabel.toLocaleLowerCase('tr-TR')
-          : '';
-        // Sonuçları filtrele ve formatla
-        let filtered = data.filter(item => {
-          // Ülke, il gibi çok geniş sonuçları çıkar
-          return !['country', 'state', 'county'].includes(item.type);
-        });
-        // Kayıtlı il bbox’ı: metin + adres alanında şehir doğrula. Sadece GPS kutusu: bounded sonuçlar yeter.
-        if (strictCityBounds && cityNeedle && !usedBiasOnlyBbox) {
-          filtered = filtered.filter((item) => nominatimResultInCityLabel(item, cityLabel));
+      }
+
+      if (filtered.length === 0) {
+        const searchQuery = buildNominatimSearchQuery(input, city, explicitOtherKey);
+        const limitPrimary =
+          widerSearch && !strictCityBounds ? 22 : strictCityBounds ? 20 : 12;
+
+        const buildUrl = (bounded: boolean, lim: number) => {
+          let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            searchQuery,
+          )}&countrycodes=tr&addressdetails=1&extratags=1&limit=${lim}&accept-language=tr`;
+
+          let bboxParam: string | null = null;
+          const useRegisteredCityBbox = !!(cityDataEffective && (!widerSearch || strictCityBounds));
+          let usedBiasOnlyBbox = false;
+
+          if (useRegisteredCityBbox) {
+            bboxParam = nominatimViewboxFromStoredBbox(cityDataEffective!.bbox);
+          } else if (
+            strictCityBounds &&
+            biasLatitude != null &&
+            biasLongitude != null &&
+            Number.isFinite(biasLatitude) &&
+            Number.isFinite(biasLongitude)
+          ) {
+            bboxParam = gpsBiasViewbox(biasLatitude, biasLongitude, biasDeltaDeg);
+            usedBiasOnlyBbox = true;
+          }
+
+          if (bboxParam && bounded) {
+            url += `&viewbox=${bboxParam}&bounded=1`;
+          }
+
+          return { url, usedBiasOnlyBbox };
+        };
+
+        const runFetch = async (bounded: boolean, lim: number) => {
+          const { url } = buildUrl(bounded, lim);
+          const response = await fetch(url, {
+            headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
+          });
+          const data: PlaceResult[] = await response.json();
+          return Array.isArray(data) ? data : [];
+        };
+
+        const { usedBiasOnlyBbox } = buildUrl(true, limitPrimary);
+        console.log('🔍 Nominatim arama (yedek):', searchQuery);
+
+        let data = await runFetch(true, limitPrimary);
+
+        const filterAndRank = (rows: PlaceResult[]) => {
+          let rowsIn = rows.filter((item) => !['country', 'state', 'county'].includes(item.type));
+
+          if (strictCityBounds) {
+            rowsIn = rowsIn.filter((item) =>
+              passesStrictLocality(item, {
+                strictCityBounds,
+                cityLabel,
+                effectiveCityKey,
+                cityDataEffective,
+                biasLatitude,
+                biasLongitude,
+                biasDeltaDeg,
+                usedBiasOnlyBbox,
+              }),
+            );
+          }
+
+          const seen = new Set<string>();
+          rowsIn = rowsIn.filter((item) => {
+            const id = String(item.place_id || `${item.lat},${item.lon}`);
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+
+          rowsIn.sort(
+            (a, b) =>
+              computeLocalSortScore(a, input, biasLatitude, biasLongitude) -
+              computeLocalSortScore(b, input, biasLatitude, biasLongitude),
+          );
+
+          return rowsIn;
+        };
+
+        let nom = filterAndRank(data);
+
+        if (nom.length < 5 && strictCityBounds) {
+          const loose = await runFetch(false, 35);
+          const byId = new Map<string, PlaceResult>();
+          for (const r of [...data, ...loose]) {
+            const id = String(r.place_id || `${r.lat},${r.lon}`);
+            if (!byId.has(id)) byId.set(id, r);
+          }
+          nom = filterAndRank(Array.from(byId.values()));
         }
 
-        filtered.sort((a, b) => {
-          const ra = nominatimStreetRank(a);
-          const rb = nominatimStreetRank(b);
-          if (ra !== rb) return ra - rb;
-          const ia = typeof a.importance === 'number' ? a.importance : 0;
-          const ib = typeof b.importance === 'number' ? b.importance : 0;
-          if (ib !== ia) return ib - ia;
-          return 0;
-        });
+        const nCap = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
+        filtered = nom.slice(0, nCap);
+        console.log('📍 Nominatim sonuç (işlenmiş):', filtered.length, 'adet');
+      }
 
+      if (filtered.length > 0) {
         setPredictions(filtered);
         setShowPredictions(true);
       } else {
@@ -317,8 +685,9 @@ export default function PlacesAutocomplete({
         setShowPredictions(false);
       }
     } catch (error) {
-      console.error('Nominatim hatası:', error);
+      console.error('Arama hatası:', error);
       setPredictions([]);
+      setShowPredictions(false);
     } finally {
       setLoading(false);
     }
@@ -326,32 +695,63 @@ export default function PlacesAutocomplete({
 
   // Sonuç formatla
   const formatAddress = (item: PlaceResult): { main: string; secondary: string } => {
-    const parts = item.display_name.split(',').map(p => p.trim());
-    
-    // Ana metin: İlk kısım (mahalle/sokak/mekan adı)
+    if (item.structured_main) {
+      return {
+        main: item.structured_main,
+        secondary: item.structured_secondary || '',
+      };
+    }
+    const parts = item.display_name.split(',').map((p) => p.trim());
+
     const main = parts[0] || item.display_name;
-    
-    // İkincil metin: Geri kalan adres
+
     const secondary = parts.slice(1, 4).join(', ');
-    
+
     return { main, secondary };
   };
 
   // Seçim işlemi
-  const handleSelectPrediction = (item: PlaceResult) => {
+  const handleSelectPrediction = async (item: PlaceResult) => {
     if (!tech) {
       Keyboard.dismiss();
     }
-    
+
     const formatted = formatAddress(item);
-    
+
+    if (item.source === 'google' && item.google_place_id) {
+      const key = getGoogleMapsApiKey();
+      if (!key) {
+        console.warn('Google Place Details: anahtar yok');
+        return;
+      }
+      setLoading(true);
+      try {
+        const det = await googlePlaceDetailsLatLng(item.google_place_id, key);
+        console.log('✅ Seçildi (Google):', det.formattedAddress, det.lat, det.lng);
+        setQuery(formatted.main);
+        setShowPredictions(false);
+        setShowPopular(false);
+        setPredictions([]);
+        onPlaceSelected({
+          address: det.formattedAddress || item.display_name,
+          latitude: det.lat,
+          longitude: det.lng,
+        });
+      } catch (e) {
+        console.warn('Google Place Details hatası:', e);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     console.log('✅ Seçildi:', formatted.main, item.lat, item.lon);
-    
+
     setQuery(formatted.main);
     setShowPredictions(false);
     setShowPopular(false);
     setPredictions([]);
-    
+
     onPlaceSelected({
       address: item.display_name,
       latitude: parseFloat(item.lat),
@@ -431,7 +831,7 @@ export default function PlacesAutocomplete({
                   return (
                     <TouchableOpacity
                       style={[styles.predictionItem, tech && styles.predictionItemTech]}
-                      onPress={() => handleSelectPrediction(item)}
+                      onPress={() => void handleSelectPrediction(item)}
                     >
                       <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
                         <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />
@@ -539,7 +939,7 @@ export default function PlacesAutocomplete({
               return (
                 <TouchableOpacity
                   style={[styles.predictionItem, tech && styles.predictionItemTech]}
-                  onPress={() => handleSelectPrediction(item)}
+                  onPress={() => void handleSelectPrediction(item)}
                 >
                   <View style={[styles.iconContainer, tech && styles.iconContainerTech]}>
                     <Ionicons name="location" size={22} color={tech ? '#38BDF8' : '#3FA9F5'} />

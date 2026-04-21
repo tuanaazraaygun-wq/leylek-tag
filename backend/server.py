@@ -8631,13 +8631,12 @@ async def driver_arrived(driver_id: str = None, user_id: str = None, tag_id: str
 
 @api_router.post("/driver/dismiss-request")
 async def dismiss_request(user_id: str, tag_id: str):
-    """Talebi 10 dakika boyunca gizle"""
+    """DEPRECATED: eski istemciler için no-op (10dk gizleme yok)."""
     try:
-        # Bu işlem için basit bir in-memory cache kullanıyoruz
-        # Production'da Redis veya veritabanı kullanılmalı
-        # Şimdilik sadece başarılı yanıt döndürüyoruz
-        logger.info(f"🙈 Talep gizlendi: {tag_id} by {user_id}")
-        return {"success": True, "message": "Talep 10 dakika boyunca gizlendi"}
+        # NOT: Üründe "Geç" davranışı tag-scoped reject (/ride/reject) olmalı.
+        # Bu endpoint yalnızca geriye uyumluluk için tutulur.
+        logger.info(f"🙈 driver/dismiss-request (noop): tag={tag_id} by {user_id}")
+        return {"success": True, "message": "Talep gizlendi"}
     except Exception as e:
         logger.error(f"Dismiss request error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
