@@ -3,7 +3,7 @@
  * v8 - ERROR BOUNDARY İLE SARMALANMIŞ VERSİYON
  */
 
-import React, { useState, useEffect, Component } from 'react';
+import React, { useState, useEffect, Component, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import {
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
+import { API_BASE_URL } from '../lib/backendConfig';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 
 // Error Boundary Class Component
 class ErrorBoundary extends Component {
@@ -62,8 +64,35 @@ const errorStyles = StyleSheet.create({
 });
 
 // Main Admin Component
+type KbChatLine = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  kind?: string;
+  /** list_result / search_result: tam UUID — “Unut hazırla” ile input doldurma */
+  itemIds?: string[];
+};
+
+const _KB_UUID_FULL = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function extractKbItemUuids(items: unknown[]): string[] {
+  const out: string[] = [];
+  for (const it of items) {
+    if (!it || typeof it !== 'object') continue;
+    const id = String((it as Record<string, unknown>).id ?? '').trim();
+    if (_KB_UUID_FULL.test(id)) {
+      out.push(id);
+    }
+  }
+  return out;
+}
+
 function AdminContent() {
   const router = useRouter();
+  const [kbChatLines, setKbChatLines] = useState<KbChatLine[]>([]);
+  const [kbChatInput, setKbChatInput] = useState('');
+  const [kbChatLoading, setKbChatLoading] = useState(false);
+  const [kbChatErr, setKbChatErr] = useState('');
   const [state, setState] = useState({
     loading: true,
     error: '',
@@ -187,6 +216,111 @@ function AdminContent() {
   const setTab = (tab) => setState(s => ({ ...s, tab }));
   const setSearch = (search) => setState(s => ({ ...s, search }));
 
+  const sendKbNlTurn = useCallback(async () => {
+    const msg = kbChatInput.trim();
+    if (!msg || kbChatLoading) return;
+    setKbChatLoading(true);
+    setKbChatErr('');
+    const uid = `m-${Date.now()}`;
+    setKbChatLines((prev) => [...prev, { id: uid, role: 'user', text: msg }]);
+    setKbChatInput('');
+    const token = await getPersistedAccessToken();
+    if (!token) {
+      setKbChatErr('Oturum anahtarı yok; yeniden giriş yapın.');
+      setKbChatLines((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          text: 'Oturum anahtarı yok; yeniden giriş yapın.',
+          kind: 'error',
+        },
+      ]);
+      setKbChatLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/leylek-zeka-kb/nl-turn`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message: msg }),
+      });
+      const raw = await res.text();
+      let data: Record<string, unknown> | null = null;
+      try {
+        data = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        const detail = data && typeof data.detail === 'string' ? data.detail : null;
+        const line = detail || `İstek başarısız (${res.status})`;
+        setKbChatErr(line);
+        setKbChatLines((prev) => [
+          ...prev,
+          { id: `a-${Date.now()}`, role: 'assistant', text: line, kind: 'error' },
+        ]);
+        return;
+      }
+      const kind = typeof data?.kind === 'string' ? data.kind : '';
+      const assistantText =
+        typeof data?.assistant_text === 'string' && data.assistant_text.trim()
+          ? data.assistant_text.trim()
+          : typeof data?.ok === 'boolean' && data.ok
+            ? '(Yanıt metni yok)'
+            : raw.slice(0, 400) || 'Beklenmeyen yanıt';
+      let extra = '';
+      const items = data?.items;
+      if (Array.isArray(items) && items.length > 0) {
+        const lines = items.slice(0, 6).map((it: unknown, i: number) => {
+          const row = it && typeof it === 'object' ? (it as Record<string, unknown>) : {};
+          const idShort = String(row.id ?? '').slice(0, 10);
+          const body = String(row.body ?? '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 72);
+          return `${i + 1}) ${idShort} — ${body}`;
+        });
+        extra = `\n\n${lines.join('\n')}`;
+        if (items.length > 6) {
+          extra += `\n… +${items.length - 6} kayıt`;
+        }
+      }
+      const crud = data?.crud;
+      let crudHint = '';
+      if (crud && typeof crud === 'object' && typeof (crud as { op?: unknown }).op === 'string') {
+        crudHint = `\n[${String((crud as { op: string }).op)}]`;
+      }
+      const itemUuids =
+        Array.isArray(items) && items.length > 0 ? extractKbItemUuids(items as unknown[]) : [];
+      const prepIds =
+        (kind === 'list_result' || kind === 'search_result') && itemUuids.length > 0
+          ? itemUuids
+          : undefined;
+      setKbChatLines((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          text: `${assistantText}${extra}${crudHint}`,
+          kind: kind || undefined,
+          itemIds: prepIds,
+        },
+      ]);
+    } catch (e) {
+      const line = `Bağlantı hatası: ${String((e as Error)?.message || e)}`;
+      setKbChatErr(line);
+      setKbChatLines((prev) => [
+        ...prev,
+        { id: `a-${Date.now()}`, role: 'assistant', text: line, kind: 'error' },
+      ]);
+    } finally {
+      setKbChatLoading(false);
+    }
+  }, [kbChatInput, kbChatLoading]);
+
   // LOADING
   if (state.loading) {
     return (
@@ -258,14 +392,20 @@ function AdminContent() {
 
       {/* Tabs */}
       <View style={styles.tabs}>
-        {['dashboard', 'users', 'trips'].map(t => (
-          <TouchableOpacity 
+        {(['dashboard', 'users', 'trips', 'kb'] as const).map((t) => (
+          <TouchableOpacity
             key={t}
             style={[styles.tabBtn, state.tab === t && styles.tabActive]}
             onPress={() => setTab(t)}
           >
             <Text style={[styles.tabText, state.tab === t && styles.tabTextActive]}>
-              {t === 'dashboard' ? 'Panel' : t === 'users' ? 'Kullanıcılar' : 'Yolculuklar'}
+              {t === 'dashboard'
+                ? 'Panel'
+                : t === 'users'
+                  ? 'Kullanıcılar'
+                  : t === 'trips'
+                    ? 'Yolculuklar'
+                    : 'Leylek KB'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -353,6 +493,86 @@ function AdminContent() {
                 </Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {state.tab === 'kb' && (
+          <View style={styles.section}>
+            <Text style={styles.kbHintTitle}>Yönetici sohbeti (Leylek KB)</Text>
+            <Text style={styles.kbHint}>
+              listele{'\n'}
+              ara: kelime{'\n'}
+              öğren: tetik1, tetik2 {'>>>'} cevap metni{'\n'}
+              unut: {'<uuid>'} veya unut: kelime (tek aktif eşleşme){'\n'}
+            </Text>
+            {kbChatErr ? (
+              <Text style={styles.kbErrBanner}>{kbChatErr}</Text>
+            ) : null}
+            <ScrollView
+              style={styles.kbLog}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
+              {kbChatLines.map((line) => (
+                <View
+                  key={line.id}
+                  style={[
+                    styles.kbBubble,
+                    line.role === 'user' ? styles.kbBubbleUser : styles.kbBubbleAssistant,
+                  ]}
+                >
+                  {line.kind ? (
+                    <Text style={styles.kbKind}>
+                      {line.kind === 'error' ? 'hata' : line.kind}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.kbBubbleText}>{line.text}</Text>
+                  {line.role === 'assistant' &&
+                  line.itemIds &&
+                  line.itemIds.length > 0 &&
+                  (line.kind === 'list_result' || line.kind === 'search_result') ? (
+                    <View style={styles.kbPrepBlock}>
+                      {line.itemIds.slice(0, 12).map((iid) => (
+                        <View key={iid} style={styles.kbPrepRow}>
+                          <Text style={styles.kbPrepId} numberOfLines={1} ellipsizeMode="middle">
+                            {iid}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.kbPrepBtn}
+                            onPress={() => setKbChatInput(`unut: ${iid}`)}
+                            activeOpacity={0.75}
+                          >
+                            <Text style={styles.kbPrepBtnText}>Unut hazırla</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.kbInputRow}>
+              <TextInput
+                style={styles.kbInput}
+                placeholder="Komut yazın…"
+                placeholderTextColor="#64748B"
+                value={kbChatInput}
+                onChangeText={setKbChatInput}
+                editable={!kbChatLoading}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.kbSendBtn, kbChatLoading && styles.kbSendBtnDisabled]}
+                onPress={() => void sendKbNlTurn()}
+                disabled={kbChatLoading}
+              >
+                {kbChatLoading ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={styles.kbSendBtnText}>Gönder</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -525,5 +745,118 @@ const styles = StyleSheet.create({
   warnText: {
     color: '#FCA5A5',
     fontSize: 12,
+  },
+  kbHintTitle: {
+    color: '#E2E8F0',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  kbHint: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  kbErrBanner: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  kbLog: {
+    maxHeight: 320,
+    marginBottom: 12,
+  },
+  kbBubble: {
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+    maxWidth: '100%',
+  },
+  kbBubbleUser: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#1D4ED8',
+  },
+  kbBubbleAssistant: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  kbKind: {
+    color: '#64748B',
+    fontSize: 11,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  kbBubbleText: {
+    color: '#F1F5F9',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  kbInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  kbInput: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 120,
+    backgroundColor: '#1E293B',
+    color: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    fontSize: 15,
+  },
+  kbSendBtn: {
+    backgroundColor: '#2563EB',
+    marginLeft: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kbSendBtnDisabled: {
+    opacity: 0.65,
+  },
+  kbSendBtnText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  kbPrepBlock: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(51, 65, 85, 0.9)',
+  },
+  kbPrepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  kbPrepId: {
+    flex: 1,
+    color: '#94A3B8',
+    fontSize: 11,
+    marginRight: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  kbPrepBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  kbPrepBtnText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

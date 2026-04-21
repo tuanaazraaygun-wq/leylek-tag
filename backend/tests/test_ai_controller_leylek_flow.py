@@ -111,6 +111,32 @@ def test_get_leylek_generic_fallback_no_engine_no_openai(monkeypatch: pytest.Mon
     asyncio.run(_run())
 
 
+def test_admin_kb_after_answer_engine_before_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADMIN_KB_READ_ENABLED açıkken admin KB, answer_engine yokken OpenAI'dan önce döner."""
+    from controllers import ai_controller
+
+    monkeypatch.setenv("ADMIN_KB_READ_ENABLED", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
+
+    async def _run() -> None:
+        with (
+            patch.object(ai_controller, "try_resolve", return_value=None),
+            patch.object(ai_controller, "try_match_admin_kb", return_value="Kart yanıtı"),
+            patch.object(ai_controller, "_call_openai", new_callable=AsyncMock) as m_openai,
+        ):
+            m_openai.side_effect = AssertionError("OpenAI çağrılmamalı")
+            reply, source, meta = await ai_controller.get_leylek_zeka_reply(
+                user_message="özel kb tetik ifadesi",
+                history=[],
+                context=None,
+            )
+        assert source == "admin_kb"
+        assert meta is None
+        assert reply == "Kart yanıtı"
+
+    asyncio.run(_run())
+
+
 def test_route_post_leylekzeka_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
     """POST /api/ai/leylekzeka — OpenAI yok; sabit akış yanıtı (rate limit devre dışı)."""
     import routes.ai as routes_ai

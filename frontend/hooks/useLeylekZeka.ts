@@ -9,12 +9,18 @@ export type LeylekZekaMessage = {
   text: string;
 };
 
-export type LeylekZekaReplySource = 'openai' | 'fallback' | 'answer_engine' | 'kb';
+export type LeylekZekaReplySource = 'openai' | 'fallback' | 'answer_engine' | 'admin_kb' | 'kb';
 
 const LEYLEK_ZEKA_FETCH_TIMEOUT_MS = 28_000;
 
 function normalizeReplySource(raw: string | undefined): LeylekZekaReplySource {
-  if (raw === 'openai' || raw === 'answer_engine' || raw === 'fallback' || raw === 'kb') {
+  if (
+    raw === 'openai' ||
+    raw === 'answer_engine' ||
+    raw === 'fallback' ||
+    raw === 'admin_kb' ||
+    raw === 'kb'
+  ) {
     return raw;
   }
   // Eski backend uyumu: LLM yanıtı "claude" etiketiyle geliyordu; gerçek sağlayıcı Leylek AI idi.

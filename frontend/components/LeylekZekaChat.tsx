@@ -553,7 +553,7 @@ const LeylekZekaChat = memo(function LeylekZekaChat({
       ? 'Hazır yanıtlarla destekleniyorsunuz.'
       : lastReplySource === 'openai' || lastReplySource === 'kb'
         ? 'Yapay zeka yanıtı (Leylek AI).'
-        : lastReplySource === 'answer_engine'
+        : lastReplySource === 'answer_engine' || lastReplySource === 'admin_kb'
           ? 'Resmi adım adım yanıt.'
           : null;
 

@@ -452,6 +452,11 @@ const LAYOUT = {
   popularChipMinHeight: 40,
 } as const;
 
+/** Geçici teşhis: tek satır JSON, cihazlar arası autocomplete farkları için */
+function acDiag(event: string, payload: Record<string, unknown>) {
+  console.log(`[${event}]`, JSON.stringify({ event, ...payload }));
+}
+
 interface PlacesAutocompleteProps {
   placeholder?: string;
   onPlaceSelected: (place: PlaceDetails) => void;
@@ -512,6 +517,8 @@ export default function PlacesAutocomplete({
   const [showPredictions, setShowPredictions] = useState(false);
   const [showPopular, setShowPopular] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Artan kimlik: tamamlanan arama yanıtı yalnızca en son isteğe aitse state günceller (yarış / boş liste). */
+  const autocompleteRequestIdRef = useRef(0);
 
   // Debounced search
   useEffect(() => {
@@ -520,16 +527,18 @@ export default function PlacesAutocomplete({
     }
 
     if (query.length < 2) {
+      autocompleteRequestIdRef.current += 1;
       setPredictions([]);
       setShowPredictions(false);
       setShowPopular(true);
+      setLoading(false);
       return;
     }
 
     setShowPopular(false);
     const debounceMs = getGoogleMapsApiKey() ? 200 : widerSearch ? 220 : 280;
     debounceRef.current = setTimeout(() => {
-      searchPlaces(query);
+      void searchPlaces(query);
     }, debounceMs);
 
     return () => {
@@ -541,6 +550,7 @@ export default function PlacesAutocomplete({
 
   /** Önce Google Places (Autocomplete + Details ile koordinat); boş / hata → Nominatim (mevcut mantık). */
   const searchPlaces = async (input: string) => {
+    const requestId = ++autocompleteRequestIdRef.current;
     setLoading(true);
     const apiKey = getGoogleMapsApiKey();
     try {
@@ -550,10 +560,25 @@ export default function PlacesAutocomplete({
       const effectiveCityKey = explicitOtherKey || cityKeyHome;
       const cityDataEffective = effectiveCityKey ? CITY_DATA[effectiveCityKey] : null;
 
+      acDiag('AUTOCOMPLETE_INPUT', {
+        query: input.trim(),
+        city_label: cityLabel || null,
+        bias_lat_present: biasLatitude != null && Number.isFinite(biasLatitude),
+        bias_lng_present: biasLongitude != null && Number.isFinite(biasLongitude),
+        strict_city_bounds: strictCityBounds,
+        request_id: requestId,
+      });
+
       let filtered: PlaceResult[] = [];
 
       if (apiKey) {
         try {
+          acDiag('AUTOCOMPLETE_PROVIDER_START', {
+            provider: 'google',
+            query: input.trim(),
+            city_label: cityLabel || null,
+            request_id: requestId,
+          });
           const gBias = buildGooglePlacesBias(
             effectiveCityKey,
             explicitOtherKey,
@@ -562,6 +587,9 @@ export default function PlacesAutocomplete({
             strictCityBounds,
           );
           const raw = await googlePlacesAutocompleteMerged(input.trim(), apiKey, gBias);
+          if (requestId !== autocompleteRequestIdRef.current) {
+            return;
+          }
           filtered = raw.map(mapGooglePredictionToPlaceResult);
           filtered.sort(
             (a, b) =>
@@ -570,14 +598,38 @@ export default function PlacesAutocomplete({
           );
           const gCap = widerSearch && !strictCityBounds ? 24 : strictCityBounds ? 20 : 14;
           filtered = filtered.slice(0, gCap);
-          console.log('🔍 Google Places öneri:', filtered.length);
+          acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+            provider: 'google',
+            query: input.trim(),
+            city_label: cityLabel || null,
+            raw_result_count: raw.length,
+            final_result_count: filtered.length,
+            error_message: null,
+            request_id: requestId,
+          });
         } catch (gErr) {
-          console.warn('Google Places autocomplete:', gErr);
+          const msg = gErr instanceof Error ? gErr.message : String(gErr);
+          acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+            provider: 'google',
+            query: input.trim(),
+            city_label: cityLabel || null,
+            raw_result_count: 0,
+            final_result_count: 0,
+            error_message: msg,
+            request_id: requestId,
+          });
           filtered = [];
         }
       }
 
       if (filtered.length === 0) {
+        acDiag('AUTOCOMPLETE_FALLBACK_START', {
+          provider: 'nominatim',
+          query: input.trim(),
+          city_label: cityLabel || null,
+          had_google_key: !!apiKey,
+          request_id: requestId,
+        });
         const searchQuery = buildNominatimSearchQuery(input, city, explicitOtherKey);
         const limitPrimary =
           widerSearch && !strictCityBounds ? 22 : strictCityBounds ? 20 : 12;
@@ -616,19 +668,25 @@ export default function PlacesAutocomplete({
           const response = await fetch(url, {
             headers: { 'User-Agent': 'LeylekTAG-App/1.0' },
           });
+          if (!response.ok) {
+            throw new Error(`nominatim_http_${response.status}`);
+          }
           const data: PlaceResult[] = await response.json();
           return Array.isArray(data) ? data : [];
         };
 
         const { usedBiasOnlyBbox } = buildUrl(true, limitPrimary);
-        console.log('🔍 Nominatim arama (yedek):', searchQuery);
 
         let data = await runFetch(true, limitPrimary);
+        if (requestId !== autocompleteRequestIdRef.current) {
+          return;
+        }
 
         const filterAndRank = (rows: PlaceResult[]) => {
           let rowsIn = rows.filter((item) => !['country', 'state', 'county'].includes(item.type));
 
           if (strictCityBounds) {
+            const beforeStrict = rowsIn.length;
             rowsIn = rowsIn.filter((item) =>
               passesStrictLocality(item, {
                 strictCityBounds,
@@ -641,15 +699,40 @@ export default function PlacesAutocomplete({
                 usedBiasOnlyBbox,
               }),
             );
+            if (beforeStrict > rowsIn.length) {
+              acDiag('AUTOCOMPLETE_FILTERED_OUT', {
+                provider: 'nominatim',
+                query: input.trim(),
+                city_label: cityLabel || null,
+                raw_result_count: beforeStrict,
+                final_result_count: rowsIn.length,
+                reason: 'strict_city_bounds',
+                filtered_out_count: beforeStrict - rowsIn.length,
+                request_id: requestId,
+              });
+            }
           }
 
           const seen = new Set<string>();
+          const beforeDedup = rowsIn.length;
           rowsIn = rowsIn.filter((item) => {
             const id = String(item.place_id || `${item.lat},${item.lon}`);
             if (seen.has(id)) return false;
             seen.add(id);
             return true;
           });
+          if (beforeDedup > rowsIn.length) {
+            acDiag('AUTOCOMPLETE_FILTERED_OUT', {
+              provider: 'nominatim',
+              query: input.trim(),
+              city_label: cityLabel || null,
+              raw_result_count: beforeDedup,
+              final_result_count: rowsIn.length,
+              reason: 'dedupe',
+              filtered_out_count: beforeDedup - rowsIn.length,
+              request_id: requestId,
+            });
+          }
 
           rowsIn.sort(
             (a, b) =>
@@ -660,10 +743,23 @@ export default function PlacesAutocomplete({
           return rowsIn;
         };
 
+        acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+          provider: 'nominatim',
+          query: input.trim(),
+          city_label: cityLabel || null,
+          raw_result_count: data.length,
+          final_result_count: data.length,
+          phase: 'raw_fetch_bounded',
+          request_id: requestId,
+        });
+
         let nom = filterAndRank(data);
 
         if (nom.length < 5 && strictCityBounds) {
           const loose = await runFetch(false, 35);
+          if (requestId !== autocompleteRequestIdRef.current) {
+            return;
+          }
           const byId = new Map<string, PlaceResult>();
           for (const r of [...data, ...loose]) {
             const id = String(r.place_id || `${r.lat},${r.lon}`);
@@ -674,22 +770,58 @@ export default function PlacesAutocomplete({
 
         const nCap = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
         filtered = nom.slice(0, nCap);
-        console.log('📍 Nominatim sonuç (işlenmiş):', filtered.length, 'adet');
+        acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+          provider: 'nominatim',
+          query: input.trim(),
+          city_label: cityLabel || null,
+          raw_result_count: nom.length,
+          final_result_count: filtered.length,
+          phase: 'after_cap',
+          request_id: requestId,
+        });
       }
+
+      if (requestId !== autocompleteRequestIdRef.current) {
+        return;
+      }
+
+      acDiag('AUTOCOMPLETE_RENDER_RESULTS', {
+        query: input.trim(),
+        provider: filtered.length > 0 && filtered[0]?.source === 'google' ? 'google' : filtered.length > 0 ? 'nominatim' : 'none',
+        raw_result_count: filtered.length,
+        final_result_count: filtered.length,
+        city_label: cityKeyHome || city.trim() || null,
+        bias_lat_present: biasLatitude != null && Number.isFinite(biasLatitude),
+        bias_lng_present: biasLongitude != null && Number.isFinite(biasLongitude),
+        request_id: requestId,
+      });
 
       if (filtered.length > 0) {
         setPredictions(filtered);
         setShowPredictions(true);
       } else {
         setPredictions([]);
-        setShowPredictions(false);
+        /** Boş sonuçta da liste alanı açık kalsın; aksi halde "sonuç yok" UI hiç görünmez */
+        setShowPredictions(true);
       }
     } catch (error) {
-      console.error('Arama hatası:', error);
-      setPredictions([]);
-      setShowPredictions(false);
+      const msg = error instanceof Error ? error.message : String(error);
+      acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
+        provider: 'nominatim',
+        query: input.trim(),
+        raw_result_count: 0,
+        final_result_count: 0,
+        error_message: msg,
+        request_id: requestId,
+      });
+      if (requestId === autocompleteRequestIdRef.current) {
+        setPredictions([]);
+        setShowPredictions(true);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === autocompleteRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 

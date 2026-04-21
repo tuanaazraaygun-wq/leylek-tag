@@ -13,6 +13,7 @@ from typing import Any, Literal, Optional, TypedDict
 
 import httpx
 
+from services.admin_leylek_zeka_kb import try_match_admin_kb
 from services.answer_engine import try_resolve
 from services.answer_engine.telemetry import emit_answer_engine_resolution
 
@@ -25,7 +26,7 @@ REQUEST_TIMEOUT_SEC = 20.0
 RATE_LIMIT_SEC = 5.0
 
 # Leylek Zeka kullanıcı sohbeti: yalnızca OpenAI (OPENAI_API_KEY). Kaynak etiketi gerçeği yansıtır.
-Source = Literal["openai", "fallback", "answer_engine"]
+Source = Literal["openai", "fallback", "answer_engine", "admin_kb"]
 
 
 def _emit_answer_engine_telemetry(
@@ -480,7 +481,7 @@ async def get_leylek_zeka_reply(
     context: dict[str, Any] | None = None,
 ) -> tuple[str, Source, AnswerEngineMeta | None]:
     """
-    Öncelik: yüksek güven akışı → answer_engine (katalog) → OpenAI (anahtar varsa) → Türkçe fallback.
+    Öncelik: yüksek güven akışı → answer_engine (katalog) → admin KB (feature flag) → OpenAI (anahtar varsa) → Türkçe fallback.
     context: opsiyonel bağlama duyarlı yardım (USER_HELP_MODE).
     Üçüncü dönüş: yalnızca Answer Engine eşleşmesinde intent_id + deterministic (HTTP opsiyonel alanları).
 
@@ -516,6 +517,17 @@ async def get_leylek_zeka_reply(
             user_message=text,
         )
         return resolved["text"], "answer_engine", meta
+
+    kb_hit = try_match_admin_kb(text)
+    if kb_hit:
+        _emit_answer_engine_telemetry(
+            hit=False,
+            intent_id=None,
+            response_source="admin_kb",
+            context=context,
+            user_message=text,
+        )
+        return kb_hit, "admin_kb", None
 
     system_extra = _context_system_addon(context)
 

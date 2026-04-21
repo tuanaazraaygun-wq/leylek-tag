@@ -74,7 +74,9 @@ async function fetchAutocompleteRaw(
   const res = await fetch(url);
   const data = (await res.json()) as GoogleAutocompleteResponse;
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-    throw new Error(data.error_message || data.status || 'places_autocomplete_failed');
+    throw new Error(
+      [data.error_message || '', data.status || 'places_autocomplete_failed'].filter(Boolean).join(' | '),
+    );
   }
   return data.predictions || [];
 }
@@ -86,9 +88,30 @@ export async function googlePlacesAutocompleteMerged(
   bias: GoogleAutocompleteBias | null,
 ): Promise<GoogleAutocompletePrediction[]> {
   const lang = 'tr';
+  const logFail = (branch: string, err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(
+      '[AUTOCOMPLETE_PROVIDER_RESULT]',
+      JSON.stringify({
+        event: 'AUTOCOMPLETE_PROVIDER_RESULT',
+        provider: 'google',
+        query: input.trim(),
+        branch,
+        raw_result_count: 0,
+        final_result_count: 0,
+        error_message: msg,
+      }),
+    );
+  };
   const [geo, est] = await Promise.all([
-    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'geocode', bias }).catch(() => []),
-    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'establishment', bias }).catch(() => []),
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'geocode', bias }).catch((e) => {
+      logFail('geocode', e);
+      return [];
+    }),
+    fetchAutocompleteRaw(input, apiKey, { language: lang, types: 'establishment', bias }).catch((e) => {
+      logFail('establishment', e);
+      return [];
+    }),
   ]);
 
   const byId = new Map<string, GoogleAutocompletePrediction>();
