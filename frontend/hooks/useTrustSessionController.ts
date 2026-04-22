@@ -11,6 +11,7 @@ import {
   getTrustActive,
   type TrustActiveSessionRow,
 } from '../lib/trustApi';
+import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 
 export type TrustRequestModalState = {
   trustId: string;
@@ -34,6 +35,8 @@ export type TrustActiveTagSnapshot = {
   driver_name?: string;
   passenger_name?: string;
   status?: string;
+  /** Biniş doğrulandıktan sonra aynı tag içi güven/call/chat kapısı (sunucu ile uyumlu) */
+  boarding_confirmed_at?: string | null;
 } | null;
 
 export type TrustSocketHandlers = {
@@ -69,6 +72,8 @@ type Options = {
   incomingCallBlocked: boolean;
   /** Güven reddedildiğinde eşleşmiş yolculuk sohbetini aç */
   openChatForMatchedTrip?: () => void;
+  /** Biniş sonrası: yeni güven isteği / reddedince otomatik chat açılması yok */
+  boardingCommsClosed?: boolean;
 };
 
 export function useTrustSessionController({
@@ -78,6 +83,7 @@ export function useTrustSessionController({
   showCallScreen,
   incomingCallBlocked,
   openChatForMatchedTrip,
+  boardingCommsClosed = false,
 }: Options) {
   const [trustRequestModal, setTrustRequestModal] = useState<TrustRequestModalState>(null);
   const [trustModalLoading, setTrustModalLoading] = useState(false);
@@ -130,6 +136,12 @@ export function useTrustSessionController({
       clearAllTrustState();
     }
   }, [activeTag?.id, clearAllTrustState]);
+
+  useEffect(() => {
+    if (boardingCommsClosed) {
+      deferredTrustRequestRef.current = null;
+    }
+  }, [boardingCommsClosed]);
 
   const trustGuvenButtonDisabled =
     trustOutgoingPending || trustModalLoading || !!trustVideoSession || !!trustRequestModal;
@@ -247,6 +259,10 @@ export function useTrustSessionController({
     if (sendInFlightRef.current || trustOutgoingPending) {
       return;
     }
+    if (boardingCommsClosed) {
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+      return;
+    }
     if (showCallScreen || incomingCallBlocked) {
       appAlert('Uyarı', 'Önce devam eden aramayı sonlandırın.');
       return;
@@ -262,6 +278,11 @@ export function useTrustSessionController({
       if (!res?.success) {
         setTrustOutgoingPending(false);
         const err = String(res?.error ?? 'İstek gönderilemedi');
+        const det = String((res as { detail?: unknown }).detail ?? '');
+        if (err === BOARDING_COMM_CLOSED_CODE || det === BOARDING_COMM_CLOSED_CODE) {
+          appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+          return;
+        }
         if (err === 'trust_already_active') {
           console.log(
             'TRUST_DIAG_SEND_TRUST_ALREADY_ACTIVE',
@@ -292,6 +313,7 @@ export function useTrustSessionController({
     incomingCallBlocked,
     showCallScreen,
     trustRequestModal,
+    boardingCommsClosed,
   ]);
 
   const respondTrust = useCallback(
@@ -335,6 +357,17 @@ export function useTrustSessionController({
               role,
               data_tag_id: tid || null,
               activeTagIdRef: cur || null,
+            }),
+          );
+          return;
+        }
+        if (activeTagRef.current?.boarding_confirmed_at) {
+          console.log(
+            'TRUST_DIAG_MODAL_SKIP',
+            JSON.stringify({
+              reason: 'BOARDING_COMMS_CLOSED',
+              role,
+              data_tag_id: tid || null,
             }),
           );
           return;
@@ -473,9 +506,11 @@ export function useTrustSessionController({
             });
           }
 
-          setTimeout(() => {
-            openChatRef.current?.();
-          }, 150);
+          if (!activeTagRef.current?.boarding_confirmed_at) {
+            setTimeout(() => {
+              openChatRef.current?.();
+            }, 150);
+          }
 
           clearAllTrustState();
           return;

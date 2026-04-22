@@ -69,6 +69,7 @@ import {
   BOARDING_DECLINE_COOLDOWN_LONG_MS,
   BOARDING_DECLINES_BEFORE_BANNER_ONLY,
 } from '../lib/boardingProximity';
+import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 import {
   persistAccessToken,
   clearSessionStorage,
@@ -6628,6 +6629,7 @@ function PassengerDashboard({
     showCallScreen,
     incomingCallBlocked: !!incomingCallData,
     openChatForMatchedTrip: () => setPassengerChatVisible(true),
+    boardingCommsClosed: !!activeTag?.boarding_confirmed_at,
   });
 
   const isCallActiveRef = useRef(false);
@@ -6652,6 +6654,8 @@ function PassengerDashboard({
   const passengerPostForceEndRef = useRef(false);
   /** TEMP: log ACTIVE_TAG_RESUME_AFTER_FORCE_END once when polling runs after lock clears */
   const resumeActiveTagPollAfterForceEndRef = useRef(false);
+  /** Biniş onayı sonrası iletişim kapanışı bilgisi — tag başına bir kez */
+  const passengerBoardingCommsNoticeTagRef = useRef<string | null>(null);
 
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
@@ -7107,6 +7111,7 @@ function PassengerDashboard({
         role: 'passenger',
         reason: (data as { reason?: string }).reason,
       });
+      setPassengerChatVisible(false);
       setActiveTag((prev) => {
         if (!prev || String(prev.id) !== String(tid)) return prev;
         return {
@@ -7122,6 +7127,22 @@ function PassengerDashboard({
     },
     ...passengerTrustSocketHandlers,
   });
+
+  useEffect(() => {
+    const tid = activeTag?.id ? String(activeTag.id) : '';
+    if (!tid) {
+      passengerBoardingCommsNoticeTagRef.current = null;
+      return;
+    }
+    if (!activeTag?.boarding_confirmed_at) {
+      passengerBoardingCommsNoticeTagRef.current = null;
+      return;
+    }
+    setPassengerChatVisible(false);
+    if (passengerBoardingCommsNoticeTagRef.current === tid) return;
+    passengerBoardingCommsNoticeTagRef.current = tid;
+    appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+  }, [activeTag?.id, activeTag?.boarding_confirmed_at]);
   
   // Karşılıklı iptal sistemi state'leri
   const [showTripEndModal, setShowTripEndModal] = useState(false);
@@ -8325,6 +8346,10 @@ function PassengerDashboard({
       );
       return;
     }
+    if (activeTag?.boarding_confirmed_at) {
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+      return;
+    }
     callCheck('clearIncomingCall', clearIncomingCall);
     if (typeof clearIncomingCall === 'function') {
       clearIncomingCall();
@@ -8353,6 +8378,10 @@ function PassengerDashboard({
             [{ text: 'Tamam' }],
             { variant: 'warning' },
           );
+          return;
+        }
+        if (detail === BOARDING_COMM_CLOSED_CODE) {
+          appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
           return;
         }
         appAlert('Hata', detail || 'Arama başlatılamadı');
@@ -9821,6 +9850,7 @@ function PassengerDashboard({
                   userId={user?.id || ''}
                   otherUserId={activeTag?.driver_id || ''}
                   tagId={activeTag?.id || ''}
+                  tripCommsLocked={!!activeTag?.boarding_confirmed_at}
                   incomingMessage={passengerIncomingMessage}
                   onSendMessage={(text, receiverId) => {
                     // Socket ile ANLIK gönder
@@ -10730,6 +10760,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   };
   const playTapSound = async () => {};
   
+  const driverBoardingCommsNoticeTagRef = useRef<string | null>(null);
+
   // 🆕 Chat State'leri (Sürücü)
   const [driverChatVisible, setDriverChatVisible] = useState(false);
   const [driverIncomingMessage, setDriverIncomingMessage] = useState<{ text: string; senderId: string; timestamp: number } | null>(null);
@@ -10844,6 +10876,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     showCallScreen,
     incomingCallBlocked: !!driverIncomingCallData,
     openChatForMatchedTrip: () => setDriverChatVisible(true),
+    boardingCommsClosed: !!activeTag?.boarding_confirmed_at,
   });
 
   // Arama kilidi
@@ -11446,6 +11479,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         role: 'driver',
         reason: (data as { reason?: string }).reason,
       });
+      setDriverChatVisible(false);
       setActiveTag((prev) => {
         if (!prev || String(prev.id) !== String(tid)) return prev;
         return {
@@ -11460,6 +11494,22 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     },
     ...driverTrustSocketHandlers,
   });
+
+  useEffect(() => {
+    const tid = activeTag?.id ? String(activeTag.id) : '';
+    if (!tid) {
+      driverBoardingCommsNoticeTagRef.current = null;
+      return;
+    }
+    if (!activeTag?.boarding_confirmed_at) {
+      driverBoardingCommsNoticeTagRef.current = null;
+      return;
+    }
+    setDriverChatVisible(false);
+    if (driverBoardingCommsNoticeTagRef.current === tid) return;
+    driverBoardingCommsNoticeTagRef.current = tid;
+    appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+  }, [activeTag?.id, activeTag?.boarding_confirmed_at]);
 
   const startTripCallAsDriver = async (callType: 'audio' | 'video') => {
     if (!user?.id || !activeTag?.id) {
@@ -11484,6 +11534,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         'Uyarı',
         'Güven görüşmesi (video) açıkken sesli arama başlatılamaz. Önce güven görüşmesini sonlandırın.',
       );
+      return;
+    }
+    if (activeTag?.boarding_confirmed_at) {
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
       return;
     }
     driverClearIncomingCall();
@@ -11511,6 +11565,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             [{ text: 'Tamam' }],
             { variant: 'warning' },
           );
+          return;
+        }
+        if (detail === BOARDING_COMM_CLOSED_CODE) {
+          appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
           return;
         }
         appAlert('Hata', detail || 'Arama başlatılamadı');
@@ -13585,6 +13643,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             userId={user?.id || ''}
             otherUserId={activeTag?.passenger_id || ''}
             tagId={activeTag?.id || ''}
+            tripCommsLocked={!!activeTag?.boarding_confirmed_at}
             incomingMessage={driverIncomingMessage}
             onSendMessage={(text, receiverId) => {
               // Socket ile ANLIK gönder

@@ -10705,6 +10705,25 @@ async def start_call(request: StartCallRequest):
         if not receiver_id:
             return {"success": False, "detail": "Alıcı bulunamadı"}
 
+        _tag_id_call = str(request.tag_id or "").strip()
+        if _tag_id_call:
+            try:
+                _bd_row = (
+                    supabase.table("tags")
+                    .select("boarding_confirmed_at")
+                    .eq("id", _tag_id_call)
+                    .limit(1)
+                    .execute()
+                )
+                if _bd_row.data and _bd_row.data[0].get("boarding_confirmed_at"):
+                    return {
+                        "success": False,
+                        "detail": "boarding_comm_closed",
+                        "message": "Artık aynı araçtasınız, bu aşamada uygulama içi görüşme ve mesajlaşma kapatıldı.",
+                    }
+            except Exception as _e_board_call:
+                logger.warning("voice start_call boarding gate skipped: %s", _e_board_call)
+
         # BUG4: süresi dolmuş trust + takılı arama satırları (yanlış meşgul / güven kilidi)
         try:
             ended_pre = _trust_service.expire_stale_sessions(supabase)
@@ -13729,6 +13748,25 @@ async def send_chat_message(msg: ChatMessageCreate):
     Log önekleri: CHAT_FIRST_PUSH_CLAIM_OK | CHAT_FIRST_PUSH_SKIP | CHAT_FIRST_PUSH_SCHEDULED
     """
     try:
+        _tid_send = str(msg.tag_id or "").strip()
+        if _tid_send:
+            try:
+                _bd_chat = (
+                    supabase.table("tags")
+                    .select("boarding_confirmed_at")
+                    .eq("id", _tid_send)
+                    .limit(1)
+                    .execute()
+                )
+                if _bd_chat.data and _bd_chat.data[0].get("boarding_confirmed_at"):
+                    return {
+                        "success": False,
+                        "detail": "boarding_comm_closed",
+                        "error": "boarding_comm_closed",
+                    }
+            except Exception as _e_board_chat:
+                logger.warning("chat send_message boarding gate skipped: %s", _e_board_chat)
+
         prior_any = (
             supabase.table("chat_messages")
             .select("id")

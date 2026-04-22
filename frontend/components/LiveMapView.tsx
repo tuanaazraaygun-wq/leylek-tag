@@ -40,6 +40,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import InRideSaferForceEndModal from './InRideSaferForceEndModal';
+import { BOARDING_COMMS_CLOSED_USER_MSG } from '../lib/boardingCommsClosed';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -3327,6 +3328,12 @@ export default function LiveMapView({
       return;
     }
 
+    if (boardingConfirmed) {
+      void tapButtonHaptic();
+      Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+      return;
+    }
+
     if (userLocation && otherLocation) {
       const dM = haversineMeters(userLocation, otherLocation);
       if (dM < PROXIMITY_CALL_BLOCK_M) {
@@ -5060,7 +5067,7 @@ export default function LiveMapView({
             <View style={styles.navImmersiveBelowCardRow}>
               {onCall ? (
                 <TouchableOpacity
-                  style={styles.navImmersiveAraBtn}
+                  style={[styles.navImmersiveAraBtn, boardingConfirmed && !isCallLoading && { opacity: 0.45 }]}
                   onPress={() => {
                     void tapButtonHaptic();
                     void handleCall('audio');
@@ -5100,9 +5107,13 @@ export default function LiveMapView({
                     Güven mi istiyorsun? Yolcudan güven al
                   </Animated.Text>
                   <TouchableOpacity
-                    style={styles.navImmersiveGuvenBtn}
+                    style={[styles.navImmersiveGuvenBtn, boardingConfirmed && { opacity: 0.45 }]}
                     onPress={() => {
                       void tapButtonHaptic();
+                      if (boardingConfirmed) {
+                        Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+                        return;
+                      }
                       if (trustRequestDisabled) return;
                       onTrustRequest();
                     }}
@@ -5264,7 +5275,11 @@ export default function LiveMapView({
                   <View style={styles.tripCallChatCluster}>
                     <Animated.View style={{ transform: [{ scale: quickCallBreath }] }}>
                       <TouchableOpacity
-                        style={[styles.mapCallFabCircle, isCallLoading && styles.mapCallFabCircleDisabled]}
+                        style={[
+                          styles.mapCallFabCircle,
+                          isCallLoading && styles.mapCallFabCircleDisabled,
+                          boardingConfirmed && !isCallLoading ? { opacity: 0.45 } : null,
+                        ]}
                         onPress={() => {
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
@@ -5280,10 +5295,14 @@ export default function LiveMapView({
                     </Animated.View>
                     {onChat ? (
                       <TouchableOpacity
-                        style={styles.tripInlineChatBtn}
+                        style={[styles.tripInlineChatBtn, boardingConfirmed && { opacity: 0.45 }]}
                         onPress={() => {
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
+                          if (boardingConfirmed) {
+                            Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+                            return;
+                          }
                           logPax('onChat', onChat);
                           onChat();
                         }}
@@ -5308,10 +5327,14 @@ export default function LiveMapView({
                   {onTrustRequest ? (
                     <View style={styles.tripGuvenMirrorWrap}>
                       <TouchableOpacity
-                        style={styles.tripGuvenFabCompact}
+                        style={[styles.tripGuvenFabCompact, boardingConfirmed && { opacity: 0.45 }]}
                         onPress={() => {
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
+                          if (boardingConfirmed) {
+                            Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+                            return;
+                          }
                           if (trustRequestDisabled) return;
                           logPax('onTrustRequest', onTrustRequest);
                           onTrustRequest();

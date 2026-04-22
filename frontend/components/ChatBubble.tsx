@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Audio } from 'expo-av';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -53,6 +54,8 @@ interface ChatBubbleProps {
   tagId: string;
   onSendMessage?: (text: string, receiverId: string) => void;
   incomingMessage?: { text: string; senderId: string; timestamp: number } | null;
+  /** Biniş doğrulandı — yeni mesaj gönderimi kapalı (yayın + REST) */
+  tripCommsLocked?: boolean;
 }
 
 function firstNameOnly(full: string | undefined, fallback: string): string {
@@ -100,6 +103,7 @@ export default function ChatBubble({
   userId,
   otherUserId,
   tagId,
+  tripCommsLocked = false,
 }: ChatBubbleProps) {
   const otherFirst = useMemo(
     () => firstNameOnly(otherUserName, isDriver ? 'Yolcu' : 'Sürücü'),
@@ -240,7 +244,13 @@ export default function ChatBubble({
   
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || !channelRef.current) return;
-    
+
+    if (tripCommsLocked) {
+      setSpamWarning(BOARDING_COMMS_CLOSED_USER_MSG);
+      setTimeout(() => setSpamWarning(''), 5000);
+      return;
+    }
+
     const trimmedText = text.trim();
     const now = Date.now();
     
@@ -305,7 +315,7 @@ export default function ChatBubble({
     // Sunucuya kayıt (ilk mesajda push + socket; tekrarları sessiz)
     if (tagId && userId && otherUserId) {
       try {
-        await fetch(`${API_BASE_URL}/chat/send-message`, {
+        const res = await fetch(`${API_BASE_URL}/chat/send-message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -316,11 +326,24 @@ export default function ChatBubble({
             sender_name: myFirst,
           }),
         });
+        const j = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          detail?: string;
+          error?: string;
+        };
+        if (!res.ok || j.success === false) {
+          const d = String(j.detail ?? j.error ?? '');
+          if (d === BOARDING_COMM_CLOSED_CODE) {
+            setMessages((prev) => prev.filter((m) => m.id !== newMessage.id));
+            setSpamWarning(BOARDING_COMMS_CLOSED_USER_MSG);
+            setTimeout(() => setSpamWarning(''), 5000);
+          }
+        }
       } catch (e) {
         console.warn('[ChatBubble] send-message API (non-fatal):', e);
       }
     }
-  }, [tagId, userId, otherUserId, isDriver, lastMessageTime, myFirst]);
+  }, [tagId, userId, otherUserId, isDriver, lastMessageTime, myFirst, tripCommsLocked]);
 
   // ═══════════════════════════════════════════════════════════════
   // ANİMASYONLAR
@@ -500,8 +523,9 @@ export default function ChatBubble({
             showsHorizontalScrollIndicator={false}
             renderItem={({ item }) => (
               <TouchableOpacity 
-                style={styles.suggestionChip}
+                style={[styles.suggestionChip, tripCommsLocked && { opacity: 0.45 }]}
                 onPress={() => sendMessage(item)}
+                disabled={tripCommsLocked}
               >
                 <Text style={styles.suggestionText}>{item}</Text>
               </TouchableOpacity>
@@ -536,14 +560,15 @@ export default function ChatBubble({
             onChangeText={setInputText}
             multiline
             maxLength={500}
+            editable={!tripCommsLocked}
           />
           <TouchableOpacity 
             style={[
               styles.sendButton,
-              !inputText.trim() && styles.sendButtonDisabled
+              (!inputText.trim() || tripCommsLocked) && styles.sendButtonDisabled
             ]}
             onPress={() => sendMessage(inputText)}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || tripCommsLocked}
           >
             <Ionicons name="send" size={20} color="#fff" />
           </TouchableOpacity>

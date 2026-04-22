@@ -17,6 +17,7 @@ export type TrustRequestResponse = {
   success?: boolean;
   trust_id?: string;
   error?: string;
+  detail?: string;
   request_ttl_expires_at?: string;
 };
 

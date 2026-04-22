@@ -162,7 +162,7 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
     if len(tid) == 36 and tid.count("-") == 4:
         tid = tid.lower()
 
-    tr = supabase.table("tags").select("id,status,passenger_id,driver_id").eq("id", tid).limit(1).execute()
+    tr = supabase.table("tags").select("id,status,passenger_id,driver_id,boarding_confirmed_at").eq("id", tid).limit(1).execute()
     if not tr.data:
         logger.info(
             "TRUST_DIAG_CREATE %s",
@@ -194,6 +194,25 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
             ),
         )
         return {"success": False, "error": "tag_not_matched", "detail": "Yalnızca eşleşmiş yolculukta kullanılabilir"}
+
+    if tag.get("boarding_confirmed_at"):
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "boarding_comm_closed",
+                    "tag_id": tid,
+                    "requester_id": rid,
+                },
+                default=str,
+            ),
+        )
+        return {
+            "success": False,
+            "error": "boarding_comm_closed",
+            "detail": "boarding_comm_closed",
+        }
 
     pid = _norm_uid(str(tag.get("passenger_id") or ""))
     did = _norm_uid(str(tag.get("driver_id") or ""))
