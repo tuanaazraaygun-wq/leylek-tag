@@ -263,6 +263,14 @@ export function useTrustSessionController({
         setTrustOutgoingPending(false);
         const err = String(res?.error ?? 'İstek gönderilemedi');
         if (err === 'trust_already_active') {
+          console.log(
+            'TRUST_DIAG_SEND_TRUST_ALREADY_ACTIVE',
+            JSON.stringify({
+              activeTagId: tagId,
+              outboundTrustIdRef: outboundTrustIdRef.current,
+              trustOutgoingPending,
+            }),
+          );
           appAlert('Güven', 'Bu yolculukta zaten aktif bir güven isteği var.');
         } else {
           appAlert('Hata', err);
@@ -307,10 +315,56 @@ export function useTrustSessionController({
       onTrustSocketRequest: (data) => {
         const tid = String(data?.tag_id ?? '').trim();
         const cur = String(activeTagIdRef.current ?? '').trim();
-        if (!tid || !cur || tid.toLowerCase() !== cur.toLowerCase()) return;
         const st = blockStateRef.current;
+        console.log(
+          'TRUST_DIAG_TRUST_REQUEST_HANDLER',
+          JSON.stringify({
+            role,
+            data_tag_id: tid || null,
+            activeTagIdRef: cur || null,
+            showCallScreen: st.showCallScreen,
+            incomingCallBlocked: st.incomingCallBlocked,
+            trustVideoSession_active: st.trustVideo,
+          }),
+        );
+        if (!tid || !cur || tid.toLowerCase() !== cur.toLowerCase()) {
+          console.log(
+            'TRUST_DIAG_MODAL_SKIP',
+            JSON.stringify({
+              reason: 'TAG_MISMATCH',
+              role,
+              data_tag_id: tid || null,
+              activeTagIdRef: cur || null,
+            }),
+          );
+          return;
+        }
         const rr = data?.requester_role === 'driver' ? 'driver' : 'passenger';
         if (st.showCallScreen || st.incomingCallBlocked || st.trustVideo) {
+          if (st.trustVideo) {
+            console.log(
+              'TRUST_DIAG_MODAL_SKIP',
+              JSON.stringify({
+                reason: 'DEFER_DUE_TO_TRUST_VIDEO',
+                role,
+                trust_id: String(data?.trust_id ?? ''),
+                tag_id: tid,
+              }),
+            );
+          }
+          if (st.showCallScreen || st.incomingCallBlocked) {
+            console.log(
+              'TRUST_DIAG_MODAL_SKIP',
+              JSON.stringify({
+                reason: 'DEFER_DUE_TO_CALL',
+                role,
+                showCallScreen: st.showCallScreen,
+                incomingCallBlocked: st.incomingCallBlocked,
+                trust_id: String(data?.trust_id ?? ''),
+                tag_id: tid,
+              }),
+            );
+          }
           const reasons: string[] = [];
           if (st.showCallScreen) reasons.push('showCallScreen');
           if (st.incomingCallBlocked) reasons.push('incomingCallBlocked');
@@ -338,6 +392,16 @@ export function useTrustSessionController({
           return;
         }
         deferredTrustRequestRef.current = null;
+        console.log(
+          'TRUST_DIAG_MODAL_OPENED',
+          JSON.stringify({
+            reason: 'MODAL_OPENED',
+            role,
+            trust_id: String(data?.trust_id ?? ''),
+            tag_id: tid,
+            requester_role: rr,
+          }),
+        );
         setTrustRequestModal({
           trustId: String(data.trust_id ?? ''),
           tagId: tid,
@@ -429,7 +493,7 @@ export function useTrustSessionController({
         }
       },
     }),
-    [peerDisplayNameForPeerId, userId, clearAllTrustState],
+    [peerDisplayNameForPeerId, userId, clearAllTrustState, role],
   );
 
   return {

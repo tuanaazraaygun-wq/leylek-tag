@@ -11286,6 +11286,24 @@ async def api_trust_request(
             "requester_role": r["requester_role"],
             "request_ttl_expires_at": r["request_ttl_expires_at"],
         }
+        try:
+            _tid_emit = str(target_id).strip().lower()
+            _room_emit = _normalize_user_room(_tid_emit)
+            logger.info(
+                "TRUST_DIAG_TRUST_REQUEST_EMIT %s",
+                json.dumps(
+                    {
+                        "event": "trust_request",
+                        "target_id": str(target_id),
+                        "user_room": _room_emit,
+                        "trust_id": r.get("trust_id"),
+                        "tag_id": r.get("tag_id"),
+                    },
+                    default=str,
+                ),
+            )
+        except Exception as _trust_emit_log_e:
+            logger.warning("TRUST_DIAG_TRUST_REQUEST_EMIT log skipped: %s", _trust_emit_log_e)
         await emit_socket_event_to_user(target_id, "trust_request", payload)
         return {
             "success": True,

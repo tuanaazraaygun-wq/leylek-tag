@@ -164,18 +164,67 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
 
     tr = supabase.table("tags").select("id,status,passenger_id,driver_id").eq("id", tid).limit(1).execute()
     if not tr.data:
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "tag_not_found",
+                    "tag_id": tid,
+                    "requester_id": rid,
+                },
+                default=str,
+            ),
+        )
         return {"success": False, "error": "tag_not_found"}
     tag = tr.data[0]
     st = (tag.get("status") or "").strip()
     if st not in MATCHABLE_TAG_STATUSES:
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "tag_not_matched",
+                    "tag_id": tid,
+                    "requester_id": rid,
+                    "tag_status": st,
+                },
+                default=str,
+            ),
+        )
         return {"success": False, "error": "tag_not_matched", "detail": "Yalnızca eşleşmiş yolculukta kullanılabilir"}
 
     pid = _norm_uid(str(tag.get("passenger_id") or ""))
     did = _norm_uid(str(tag.get("driver_id") or ""))
     if not pid or not did:
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "tag_incomplete",
+                    "tag_id": tid,
+                    "requester_id": rid,
+                },
+                default=str,
+            ),
+        )
         return {"success": False, "error": "tag_incomplete"}
 
     if rid not in (pid, did):
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "forbidden",
+                    "tag_id": tid,
+                    "requester_id": rid,
+                },
+                default=str,
+            ),
+        )
         return {"success": False, "error": "forbidden"}
 
     if rid == pid:
@@ -211,6 +260,22 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
                 "TRUST_REQUEST_BLOCK_REASON trust_already_active tag_id=%s",
                 tid,
             )
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "trust_already_active",
+                    "tag_id": tid,
+                    "trust_id": None,
+                    "requester_id": rid,
+                    "requester_role": requester_role,
+                    "target_id": target_id,
+                    "blocking_session_ids": [str(r.get("id", "")) for r in (active.data or [])],
+                },
+                default=str,
+            ),
+        )
         return {"success": False, "error": "trust_already_active"}
 
     now = _utcnow()
@@ -239,8 +304,38 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
         .execute()
     )
     if not ins.data:
+        logger.info(
+            "TRUST_DIAG_CREATE %s",
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "insert_failed",
+                    "tag_id": tid,
+                    "trust_id": new_id,
+                    "requester_id": rid,
+                    "requester_role": requester_role,
+                    "target_id": target_id,
+                },
+                default=str,
+            ),
+        )
         return {"success": False, "error": "insert_failed"}
 
+    logger.info(
+        "TRUST_DIAG_CREATE %s",
+        json.dumps(
+            {
+                "success": True,
+                "tag_id": tid,
+                "trust_id": new_id,
+                "requester_id": rid,
+                "requester_role": requester_role,
+                "target_id": target_id,
+                "target_role": target_role,
+            },
+            default=str,
+        ),
+    )
     return {
         "success": True,
         "trust_id": new_id,

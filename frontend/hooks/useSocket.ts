@@ -543,6 +543,20 @@ export default function useSocket({
 
     const handleTrustRequest = (data: any) => {
       console.log('🛡️ [useSocket] trust_request:', data);
+      try {
+        console.log(
+          'TRUST_DIAG_SOCKET_RECEIVED',
+          JSON.stringify({
+            event: 'trust_request',
+            userRole,
+            tag_id: data?.tag_id ?? null,
+            trust_id: data?.trust_id ?? null,
+            socket_connected: !!(socket && socket.connected),
+          }),
+        );
+      } catch {
+        /* noop */
+      }
       callbackRefs.current.onTrustSocketRequest?.(data);
     };
     const handleTrustSessionReady = (data: any) => {
