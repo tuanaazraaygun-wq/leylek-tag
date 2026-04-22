@@ -13,6 +13,10 @@ import {
 } from '../lib/trustApi';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 
+/** tag_id / activeTag yarışı için kısa retry; socket tek sefer kaçsa bile activeTag yetişince modal / video açılır */
+const MAX_TRUST_TAG_RETRY_ATTEMPTS = 14;
+const TRUST_TAG_RETRY_BASE_MS = 260;
+
 export type TrustRequestModalState = {
   trustId: string;
   tagId: string;
@@ -98,6 +102,27 @@ export function useTrustSessionController({
   const openChatRef = useRef(openChatForMatchedTrip);
   openChatRef.current = openChatForMatchedTrip;
 
+  const trustVideoSessionRef = useRef<TrustVideoSessionState>(null);
+  useEffect(() => {
+    trustVideoSessionRef.current = trustVideoSession;
+  }, [trustVideoSession]);
+
+  const trustTagRetryTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearTrustTagRetryTimers = useCallback(() => {
+    trustTagRetryTimerIdsRef.current.forEach((timerId) => clearTimeout(timerId));
+    trustTagRetryTimerIdsRef.current = [];
+  }, []);
+
+  const scheduleTrustTagRetry = useCallback((fn: () => void, attempt: number) => {
+    const delay = TRUST_TAG_RETRY_BASE_MS + Math.min(attempt * 45, 420);
+    const timerId = setTimeout(() => {
+      trustTagRetryTimerIdsRef.current = trustTagRetryTimerIdsRef.current.filter((t) => t !== timerId);
+      fn();
+    }, delay);
+    trustTagRetryTimerIdsRef.current.push(timerId);
+  }, []);
+
   /** Arama / gelen arama UI açıkken gelen trust_request tek seferlik saklanır; blok kalkınca modal gösterilir. */
   const deferredTrustRequestRef = useRef<{
     trustId: string;
@@ -122,6 +147,7 @@ export function useTrustSessionController({
   }, [activeTag?.id, activeTag]);
 
   const clearAllTrustState = useCallback(() => {
+    clearTrustTagRetryTimers();
     outboundTrustIdRef.current = null;
     sendInFlightRef.current = false;
     deferredTrustRequestRef.current = null;
@@ -129,7 +155,7 @@ export function useTrustSessionController({
     setTrustRequestModal(null);
     setTrustModalLoading(false);
     setTrustVideoSession(null);
-  }, []);
+  }, [clearTrustTagRetryTimers]);
 
   useEffect(() => {
     if (!activeTag?.id) {
@@ -174,7 +200,7 @@ export function useTrustSessionController({
     const uid = userId?.trim();
     const tid = activeTagIdRef.current;
     if (!uid || !tid) return;
-    if (trustVideoSession) return;
+    if (trustVideoSessionRef.current) return;
     if (showCallScreen || incomingCallBlocked) return;
     if (recoveryInFlightRef.current) return;
     recoveryInFlightRef.current = true;
@@ -206,7 +232,75 @@ export function useTrustSessionController({
     } finally {
       recoveryInFlightRef.current = false;
     }
-  }, [userId, trustVideoSession, showCallScreen, incomingCallBlocked, peerDisplayNameForPeerId]);
+  }, [userId, showCallScreen, incomingCallBlocked, peerDisplayNameForPeerId]);
+
+  /**
+   * Socket trust_session_ready tag eşleşmediğinde veya event kaçtığında: event'teki tag_id ile GET /trust/active.
+   * activeTag ref henüz güncellenmemiş olsa bile kabul edilmiş oturumu açar (yanlış tag için active_tag_mismatch_after_fetch ile iptal).
+   */
+  const recoverTrustVideoByTagId = useCallback(
+    async (tagIdForQuery: string, reason: string) => {
+      const tid = String(tagIdForQuery ?? '').trim().toLowerCase();
+      const uid = userId?.trim();
+      if (!tid || !uid) return;
+      if (trustVideoSessionRef.current) return;
+      if (showCallScreen || incomingCallBlocked) return;
+      if (recoveryInFlightRef.current) return;
+      recoveryInFlightRef.current = true;
+      try {
+        console.log(
+          'TRUST_RECOVERY_BY_TAG',
+          JSON.stringify({ reason, tag_id: tid, role }),
+        );
+        const r = await getTrustActive(String(tagIdForQuery).trim());
+        const curSnap = String(activeTagIdRef.current ?? '').trim().toLowerCase();
+        if (curSnap && curSnap !== tid) {
+          console.log(
+            'TRUST_RECOVERY_BY_TAG_ABORT',
+            JSON.stringify({ reason: 'active_tag_mismatch_after_fetch', curSnap, tid }),
+          );
+          return;
+        }
+        if (!r?.success || !r.session) return;
+        const s = r.session as TrustActiveSessionRow;
+        if (String(s.status || '') !== 'accepted') return;
+        const rowTag = String(s.tag_id ?? '').trim().toLowerCase();
+        if (rowTag !== tid) return;
+        const ch = String(s.channel_name ?? '').trim();
+        const recoveryTok = String(s.recovery_agora_token ?? '').trim();
+        if (!ch || !recoveryTok) return;
+        const trustId = String(s.id ?? '').trim();
+        const deadline = String(s.session_hard_deadline_at ?? '').trim();
+        const peer = String(s.recovery_peer_user_id ?? '').trim();
+        if (!trustId || !deadline || !peer) return;
+
+        outboundTrustIdRef.current = null;
+        setTrustOutgoingPending(false);
+        setTrustRequestModal(null);
+        setTrustModalLoading(false);
+        setTrustVideoSession({
+          trustId,
+          channelName: ch,
+          agoraToken: recoveryTok,
+          peerUserId: peer,
+          sessionHardDeadlineAt: deadline,
+          peerDisplayName: peerDisplayNameForPeerId(peer),
+        });
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_READY_RECOVERY_APPLIED',
+            reason,
+            trust_id: trustId,
+            tag_id: tid,
+          }),
+        );
+      } finally {
+        recoveryInFlightRef.current = false;
+      }
+    },
+    [userId, showCallScreen, incomingCallBlocked, peerDisplayNameForPeerId, role],
+  );
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
@@ -340,151 +434,255 @@ export function useTrustSessionController({
     [trustRequestModal],
   );
 
-  const trustSocketHandlers = useMemo<TrustSocketHandlers>(
-    () => ({
-      onTrustSocketRequest: (data) => {
-        const tid = String(data?.tag_id ?? '').trim();
-        const cur = String(activeTagIdRef.current ?? '').trim();
-        const st = blockStateRef.current;
+  const processTrustSocketRequestInternal = useCallback(
+    (
+      data: {
+        trust_id?: string;
+        tag_id?: string;
+        requester_id?: string;
+        requester_role?: string;
+        request_ttl_expires_at?: string;
+      },
+      attempt: number,
+    ) => {
+      const tid = String(data?.tag_id ?? '').trim();
+      const cur = String(activeTagIdRef.current ?? '').trim();
+      const st = blockStateRef.current;
+      console.log(
+        'TRUST_DIAG_TRUST_REQUEST_HANDLER',
+        JSON.stringify({
+          role,
+          attempt,
+          data_tag_id: tid || null,
+          activeTagIdRef: cur || null,
+          showCallScreen: st.showCallScreen,
+          incomingCallBlocked: st.incomingCallBlocked,
+          trustVideoSession_active: st.trustVideo,
+        }),
+      );
+
+      if (!tid) {
         console.log(
-          'TRUST_DIAG_TRUST_REQUEST_HANDLER',
-          JSON.stringify({
-            role,
-            data_tag_id: tid || null,
-            activeTagIdRef: cur || null,
-            showCallScreen: st.showCallScreen,
-            incomingCallBlocked: st.incomingCallBlocked,
-            trustVideoSession_active: st.trustVideo,
-          }),
+          'TRUST_DIAG_MODAL_SKIP',
+          JSON.stringify({ reason: 'MISSING_TAG_ID', role, attempt }),
         );
-        if (!tid || !cur || tid.toLowerCase() !== cur.toLowerCase()) {
+        return;
+      }
+
+      if (!cur || tid.toLowerCase() !== cur.toLowerCase()) {
+        if (attempt < MAX_TRUST_TAG_RETRY_ATTEMPTS) {
           console.log(
-            'TRUST_DIAG_MODAL_SKIP',
+            'TRUST_REQUEST_TAG_RETRY_SCHEDULED',
             JSON.stringify({
-              reason: 'TAG_MISMATCH',
+              attempt,
               role,
-              data_tag_id: tid || null,
+              data_tag_id: tid,
               activeTagIdRef: cur || null,
             }),
           );
-          return;
+          scheduleTrustTagRetry(() => processTrustSocketRequestInternal(data, attempt + 1), attempt);
+        } else {
+          console.log(
+            'TRUST_REQUEST_RETRY_EXHAUSTED',
+            JSON.stringify({
+              role,
+              data_tag_id: tid,
+              activeTagIdRef: cur || null,
+            }),
+          );
         }
-        if (activeTagRef.current?.boarding_confirmed_at) {
+        return;
+      }
+
+      if (activeTagRef.current?.boarding_confirmed_at) {
+        console.log(
+          'TRUST_DIAG_MODAL_SKIP',
+          JSON.stringify({
+            reason: 'BOARDING_COMMS_CLOSED',
+            role,
+            data_tag_id: tid || null,
+          }),
+        );
+        return;
+      }
+      const rr = data?.requester_role === 'driver' ? 'driver' : 'passenger';
+      if (st.showCallScreen || st.incomingCallBlocked || st.trustVideo) {
+        if (st.trustVideo) {
           console.log(
             'TRUST_DIAG_MODAL_SKIP',
             JSON.stringify({
-              reason: 'BOARDING_COMMS_CLOSED',
+              reason: 'DEFER_DUE_TO_TRUST_VIDEO',
               role,
-              data_tag_id: tid || null,
-            }),
-          );
-          return;
-        }
-        const rr = data?.requester_role === 'driver' ? 'driver' : 'passenger';
-        if (st.showCallScreen || st.incomingCallBlocked || st.trustVideo) {
-          if (st.trustVideo) {
-            console.log(
-              'TRUST_DIAG_MODAL_SKIP',
-              JSON.stringify({
-                reason: 'DEFER_DUE_TO_TRUST_VIDEO',
-                role,
-                trust_id: String(data?.trust_id ?? ''),
-                tag_id: tid,
-              }),
-            );
-          }
-          if (st.showCallScreen || st.incomingCallBlocked) {
-            console.log(
-              'TRUST_DIAG_MODAL_SKIP',
-              JSON.stringify({
-                reason: 'DEFER_DUE_TO_CALL',
-                role,
-                showCallScreen: st.showCallScreen,
-                incomingCallBlocked: st.incomingCallBlocked,
-                trust_id: String(data?.trust_id ?? ''),
-                tag_id: tid,
-              }),
-            );
-          }
-          const reasons: string[] = [];
-          if (st.showCallScreen) reasons.push('showCallScreen');
-          if (st.incomingCallBlocked) reasons.push('incomingCallBlocked');
-          if (st.trustVideo) reasons.push('trustVideoSession');
-          console.log(
-            'TRUST_REQUEST_BLOCK_REASON',
-            JSON.stringify({
-              reasons,
               trust_id: String(data?.trust_id ?? ''),
               tag_id: tid,
             }),
           );
+        }
+        if (st.showCallScreen || st.incomingCallBlocked) {
           console.log(
-            'TRUST_REQUEST_DEFERRED_UI',
+            'TRUST_DIAG_MODAL_SKIP',
             JSON.stringify({
+              reason: 'DEFER_DUE_TO_CALL',
+              role,
+              showCallScreen: st.showCallScreen,
+              incomingCallBlocked: st.incomingCallBlocked,
               trust_id: String(data?.trust_id ?? ''),
               tag_id: tid,
             }),
           );
-          deferredTrustRequestRef.current = {
-            trustId: String(data.trust_id ?? ''),
-            tagId: tid,
-            requesterRole: rr,
-          };
-          return;
         }
-        deferredTrustRequestRef.current = null;
+        const reasons: string[] = [];
+        if (st.showCallScreen) reasons.push('showCallScreen');
+        if (st.incomingCallBlocked) reasons.push('incomingCallBlocked');
+        if (st.trustVideo) reasons.push('trustVideoSession');
         console.log(
-          'TRUST_DIAG_MODAL_OPENED',
+          'TRUST_REQUEST_BLOCK_REASON',
           JSON.stringify({
-            reason: 'MODAL_OPENED',
-            role,
+            reasons,
             trust_id: String(data?.trust_id ?? ''),
             tag_id: tid,
-            requester_role: rr,
           }),
         );
-        setTrustRequestModal({
+        console.log(
+          'TRUST_REQUEST_DEFERRED_UI',
+          JSON.stringify({
+            trust_id: String(data?.trust_id ?? ''),
+            tag_id: tid,
+          }),
+        );
+        deferredTrustRequestRef.current = {
           trustId: String(data.trust_id ?? ''),
           tagId: tid,
           requesterRole: rr,
+        };
+        return;
+      }
+      deferredTrustRequestRef.current = null;
+      console.log(
+        'TRUST_DIAG_MODAL_OPENED',
+        JSON.stringify({
+          reason: 'MODAL_OPENED',
+          role,
+          trust_id: String(data?.trust_id ?? ''),
+          tag_id: tid,
+          requester_role: rr,
+        }),
+      );
+      setTrustRequestModal({
+        trustId: String(data.trust_id ?? ''),
+        tagId: tid,
+        requesterRole: rr,
+      });
+    },
+    [role, scheduleTrustTagRetry],
+  );
+
+  const processTrustSessionReadyInternal = useCallback(
+    (
+      data: {
+        trust_id?: string;
+        tag_id?: string;
+        channel_name?: string;
+        agora_token?: string;
+        agora_app_id?: string;
+        session_hard_deadline_at?: string;
+        peer_user_id?: string;
+      },
+      attempt: number,
+    ) => {
+      const tid = String(data?.tag_id ?? '').trim();
+      const cur = String(activeTagIdRef.current ?? '').trim();
+      const ch = String(data?.channel_name ?? '').trim();
+      const tok = String(data?.agora_token ?? '').trim();
+
+      if (!ch || !tok) {
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_READY_SKIP',
+            reason: 'missing_channel_or_token',
+            attempt,
+            tag_id: tid || null,
+          }),
+        );
+        return;
+      }
+
+      const tagMatches = !!(tid && cur && tid.toLowerCase() === cur.toLowerCase());
+
+      if (tagMatches) {
+        const peer = String(data.peer_user_id ?? '');
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_READY_RECEIVED',
+            attempt,
+            trust_id: String(data.trust_id ?? ''),
+            tag_id: String(data.tag_id ?? ''),
+            channel_name: String(data.channel_name ?? ''),
+            current_user_id: String(userId ?? ''),
+            peer_user_id: peer,
+            has_token: !!String(data.agora_token ?? '').trim(),
+          }),
+        );
+        const peerName = peerDisplayNameForPeerId(peer);
+        outboundTrustIdRef.current = null;
+        setTrustOutgoingPending(false);
+        setTrustRequestModal(null);
+        setTrustModalLoading(false);
+        setTrustVideoSession({
+          trustId: String(data.trust_id ?? ''),
+          channelName: ch,
+          agoraToken: tok,
+          peerUserId: peer,
+          sessionHardDeadlineAt: String(data.session_hard_deadline_at ?? ''),
+          peerDisplayName: peerName,
         });
+        return;
+      }
+
+      if (attempt < MAX_TRUST_TAG_RETRY_ATTEMPTS) {
+        console.log(
+          'TRUST_READY_TAG_RETRY_SCHEDULED',
+          JSON.stringify({
+            attempt,
+            role,
+            data_tag_id: tid || null,
+            activeTagIdRef: cur || null,
+          }),
+        );
+        scheduleTrustTagRetry(() => processTrustSessionReadyInternal(data, attempt + 1), attempt);
+        return;
+      }
+
+      console.log(
+        'TRUST_READY_RETRY_EXHAUSTED',
+        JSON.stringify({
+          role,
+          data_tag_id: tid || null,
+          activeTagIdRef: cur || null,
+        }),
+      );
+      const fallbackTag = tid || cur;
+      if (fallbackTag) {
+        void recoverTrustVideoByTagId(fallbackTag, 'trust_ready_socket_tag_exhausted');
+      }
+    },
+    [role, scheduleTrustTagRetry, peerDisplayNameForPeerId, userId, recoverTrustVideoByTagId],
+  );
+
+  const trustSocketHandlers = useMemo<TrustSocketHandlers>(
+    () => ({
+      onTrustSocketRequest: (data) => {
+        clearTrustTagRetryTimers();
+        processTrustSocketRequestInternal(data, 0);
       },
       onTrustSessionReady: (data) => {
-        const cur = String(activeTagIdRef.current ?? '');
-        if (
-          data.channel_name &&
-          data.agora_token &&
-          String(data.tag_id ?? '').toLowerCase() === cur.toLowerCase()
-        ) {
-          const peer = String(data.peer_user_id ?? '');
-          console.log(
-            '[TRUST]',
-            JSON.stringify({
-              evt: 'TRUST_READY_RECEIVED',
-              trust_id: String(data.trust_id ?? ''),
-              tag_id: String(data.tag_id ?? ''),
-              channel_name: String(data.channel_name ?? ''),
-              current_user_id: String(userId ?? ''),
-              peer_user_id: peer,
-              has_token: !!String(data.agora_token ?? '').trim(),
-            }),
-          );
-          const peerName = peerDisplayNameForPeerId(peer);
-          outboundTrustIdRef.current = null;
-          setTrustOutgoingPending(false);
-          setTrustRequestModal(null);
-          setTrustModalLoading(false);
-          setTrustVideoSession({
-            trustId: String(data.trust_id ?? ''),
-            channelName: String(data.channel_name),
-            agoraToken: String(data.agora_token),
-            peerUserId: peer,
-            sessionHardDeadlineAt: String(data.session_hard_deadline_at ?? ''),
-            peerDisplayName: peerName,
-          });
-        }
+        clearTrustTagRetryTimers();
+        processTrustSessionReadyInternal(data, 0);
       },
       onTrustSessionEnded: (data) => {
+        clearTrustTagRetryTimers();
         const endTrustId = String(data?.trust_id ?? '');
         const evTag = String(data?.tag_id ?? '').trim();
         const cur = String(activeTagIdRef.current ?? '').trim();
@@ -536,7 +734,15 @@ export function useTrustSessionController({
         }
       },
     }),
-    [peerDisplayNameForPeerId, userId, clearAllTrustState, role],
+    [
+      peerDisplayNameForPeerId,
+      userId,
+      clearAllTrustState,
+      role,
+      processTrustSocketRequestInternal,
+      processTrustSessionReadyInternal,
+      clearTrustTagRetryTimers,
+    ],
   );
 
   return {
