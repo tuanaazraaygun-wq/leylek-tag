@@ -4,6 +4,7 @@ POST /api/ai/leylekzeka — bu modül (OpenAI / fallback / answer_engine).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any, Literal
@@ -11,10 +12,16 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from api_session_jwt import verify_access_token_optional
 from controllers.ai_controller import (
     RateLimitedError,
     get_leylek_zeka_reply,
     enforce_rate_limit,
+)
+from services.trip_lifecycle_support_context import (
+    build_support_context_trip_payload,
+    fetch_active_tag_minimal_sync,
+    utc_now_iso_z,
 )
 
 logger = logging.getLogger("server")
@@ -77,6 +84,30 @@ async def run_leylek_zeka_chat(body: LeylekZekaRequest, request: Request) -> dic
 
     hist = [h.model_dump() for h in (body.history or [])]
     ctx_dict = body.context.model_dump(exclude_none=True) if body.context else None
+
+    # Opsiyonel Bearer: varsa minimal aktif tag → support_context.trip (PII yok). Yoksa veya hata: sessizce atla.
+    try:
+        auth_hdr = request.headers.get("authorization") or request.headers.get("Authorization")
+        token_uid: str | None = None
+        if auth_hdr and str(auth_hdr).strip():
+            parts = str(auth_hdr).strip().split(None, 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+                token_uid = verify_access_token_optional(parts[1].strip())
+        if token_uid:
+            gen_at = utc_now_iso_z()
+
+            def _load_tag() -> dict[str, Any] | None:
+                return fetch_active_tag_minimal_sync(token_uid)
+
+            tag_min = await asyncio.to_thread(_load_tag)
+            support_payload = build_support_context_trip_payload(tag_min, generated_at=gen_at)
+            if ctx_dict is None:
+                ctx_dict = {}
+            else:
+                ctx_dict = dict(ctx_dict)
+            ctx_dict["support_context"] = support_payload
+    except Exception:
+        logger.warning("Leylek Zeka support_context trip atlandı", exc_info=True)
 
     try:
         reply, source, engine_meta = await get_leylek_zeka_reply(

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSegments } from 'expo-router';
 import { useLeylekZekaChrome } from '../contexts/LeylekZekaChromeContext';
 import { getLeylekZekaChatUrl } from '../lib/backendConfig';
+import { getPersistedAccessToken } from '../lib/sessionToken';
 
 export type LeylekZekaMessage = {
   id: string;
@@ -115,9 +116,14 @@ export function useLeylekZeka(options?: { isAdmin?: boolean }) {
       const payload: Record<string, unknown> = { message, history };
       if (leylekContext) payload.context = leylekContext;
       if (isAdminUser) payload.is_admin = true;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const accessTok = await getPersistedAccessToken();
+      if (accessTok?.trim()) {
+        headers.Authorization = `Bearer ${accessTok.trim()}`;
+      }
       const res = await fetch(chatUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
         signal: controller.signal,
       });

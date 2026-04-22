@@ -5,6 +5,7 @@ Eşleşme/socket/harita koduna dokunulmaz.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -96,6 +97,17 @@ def _context_system_addon(ctx: dict[str, Any] | None) -> str:
         if v is None or v == "":
             continue
         parts.append(f"{k}={v}")
+    sc = ctx.get("support_context")
+    if isinstance(sc, dict):
+        trip = sc.get("trip")
+        if isinstance(trip, dict):
+            try:
+                parts.append(
+                    "support_trip="
+                    + json.dumps(trip, ensure_ascii=False, separators=(",", ":"))
+                )
+            except Exception:
+                parts.append("support_trip=(serialize_error)")
     if not parts:
         return ""
     return "\n[Kullanıcı bağlamı — kişisel veri yok] " + ", ".join(parts) + "\nBu bağlama uygun, kısa yardım ver."
