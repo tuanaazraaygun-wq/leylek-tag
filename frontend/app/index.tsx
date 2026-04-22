@@ -10375,19 +10375,21 @@ function PassengerDashboard({
         latitude={userLocation?.latitude}
         longitude={userLocation?.longitude}
         onVerified={(payload) => {
-          const tid = payload?.tag_id;
-          if (!tid) return;
-          setActiveTag((prev) => {
-            if (!prev || String(prev.id) !== String(tid)) return prev;
-            return {
-              ...prev,
-              status: 'in_progress',
-              started_at: payload.started_at ?? prev.started_at,
-              boarding_confirmed_at: payload.boarding_confirmed_at ?? prev.boarding_confirmed_at,
-            };
-          });
+          const tid = String(payload?.tag_id ?? activeTag?.id ?? '').trim();
+          if (tid) {
+            setActiveTag((prev) => {
+              if (!prev || String(prev.id) !== String(tid)) return prev;
+              return {
+                ...prev,
+                status: 'in_progress',
+                started_at: payload.started_at ?? prev.started_at,
+                boarding_confirmed_at: payload.boarding_confirmed_at ?? prev.boarding_confirmed_at,
+              };
+            });
+          }
           setPassengerBoardingScanVisible(false);
           setPassengerBoardingPromptVisible(false);
+          void loadActiveTag();
         }}
       />
       

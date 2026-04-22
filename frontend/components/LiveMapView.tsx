@@ -4435,6 +4435,12 @@ export default function LiveMapView({
   const driverNavActive = isDriver && navigationMode;
   /** Tam ekran sürücü navigasyonu: yalnızca arama + üst kart + harita */
   const driverNavImmersive = isDriver && navigationMode;
+  /** Matrix satırı büyük yön butonu — yalnız etiket/renk; handler aynı (boardingConfirmed). */
+  const driverMatrixNavChipLabel = boardingConfirmed ? 'Hedefe Git' : 'Yolcuya Git';
+  const driverMatrixNavChipGradientColors = boardingConfirmed
+    ? (['#C2410C', '#EA580C', '#F97316', '#FB923C'] as const)
+    : (['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA'] as const);
+  const driverMatrixNavChipIconColor = boardingConfirmed ? '#FFEDD5' : '#EFF6FF';
   const meetingHasUiMetrics =
     meetingDistance != null &&
     meetingDuration != null &&
@@ -5151,21 +5157,21 @@ export default function LiveMapView({
                 onPress={handleYolcuyaGitPress}
                 activeOpacity={0.82}
                 accessibilityRole="button"
-                accessibilityLabel="Yolcuya Git"
+                accessibilityLabel={driverMatrixNavChipLabel}
                 style={styles.driverMatchYgitTouch}
               >
                 <Animated.View style={{ transform: [{ scale: matchYgitBreathAnim }] }}>
                   <LinearGradient
-                    colors={['#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA']}
+                    colors={[...driverMatrixNavChipGradientColors]}
                     style={styles.driverYolcuyaGitChip}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                   >
                     <Animated.View style={{ transform: [{ rotate: tripCompassRotate }] }}>
-                      <Ionicons name="compass" size={22} color="#EFF6FF" />
+                      <Ionicons name="compass" size={22} color={driverMatrixNavChipIconColor} />
                     </Animated.View>
                     <Text style={styles.driverYolcuyaGitChipLabel} numberOfLines={1}>
-                      Yolcuya Git
+                      {driverMatrixNavChipLabel}
                     </Text>
                   </LinearGradient>
                 </Animated.View>

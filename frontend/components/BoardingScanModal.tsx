@@ -83,8 +83,11 @@ export default function BoardingScanModal({
           return;
         }
         if (json.success) {
-          const tag_id = (json as { tag_id?: string }).tag_id;
-          console.log('BOARDING_SCAN_SUCCESS', { tag_id });
+          const rawTag = (json as { tag_id?: string }).tag_id;
+          const propTag = typeof tagId === 'string' ? tagId.trim() : '';
+          const tag_id =
+            (typeof rawTag === 'string' && rawTag.trim()) || propTag || undefined;
+          console.log('BOARDING_SCAN_SUCCESS', { tag_id, used_prop_fallback: !rawTag && !!propTag });
           onVerified({
             tag_id,
             started_at: (json as { started_at?: string }).started_at,
@@ -102,7 +105,7 @@ export default function BoardingScanModal({
         setScanned(false);
       }
     },
-    [latitude, longitude, onVerified, onClose],
+    [latitude, longitude, onVerified, onClose, tagId],
   );
 
   const onBarcodeScanned = useCallback(
