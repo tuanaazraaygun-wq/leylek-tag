@@ -210,7 +210,7 @@ const EmptyWelcome = memo(function EmptyWelcome() {
       </View>
       <Text style={styles.emptyTitle}>Leylek Zeka</Text>
       <Text style={styles.emptyBody}>
-        Merhaba, ben Leylek Zeka. Uygulama içi adımlarda sana yardımcı olabilirim.
+        Merhaba 👋 Ben Leylek Zeka. LeylekTag içinde eşleşme, yolculuk ve uygulama kullanımıyla ilgili konularda sana yardımcı olabilirim. Aklına takılan bir şey varsa yazabilir, istersen geri bildirim paylaşarak uygulamanın gelişmesine katkı da sağlayabilirsin.
       </Text>
     </View>
   );

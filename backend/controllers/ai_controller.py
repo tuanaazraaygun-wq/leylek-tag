@@ -56,22 +56,20 @@ class AnswerEngineMeta(TypedDict):
     deterministic: Literal[True]
 
 
-# Tek kaynak: system prompt + eşleşme/teklif/rol ile ilgili fallback’lerde aynı metin (1–4 tekrarlanmaz).
-_ESLESME_AKISI_CANONICAL = (
-    "Eşleşme şu şekilde çalışır:\n"
-    "1.\tYolcu talep oluşturur.\n"
-    "2.\tYakındaki sürücüler bu talebi görür.\n"
-    "3.\tSürücü teklif gönderir.\n"
-    "4.\tYolcu teklifi kabul ederse eşleşme gerçekleşir."
+# Tek kaynak: system prompt + eşleşme/rol ile ilgili fallback’lerde aynı kanon metin (tekrarlanmaz).
+_ESLESME_VE_ROL = (
+    "Yolcu uygulama üzerinden bir yolculuk talebi oluşturur. Uygun sürücüler bu talebi görür. "
+    "Sürücüler talebi kabul ettiğinde eşleşme sağlanır. Eşleşme sonrasında yolcu ve sürücü, yan yana gelene kadar "
+    "uygulama içi sesli iletişim ve yazılı sohbet özelliklerini kullanabilir. Sürücü tarafında navigasyon desteği bulunur. "
+    "Yolcu araca bindiğinde QR doğrulaması ile başlangıç adımı tamamlanır. Süreç bitirilirken yine QR doğrulaması kullanılır."
 )
-_ROL_KURAL_TEK = (
-    "Yolcu teklif göndermez. Sürücü teklif gönderir; eşleşmeyi yolcu bir teklifi kabul ederek tamamlar."
-)
-_ESLESME_VE_ROL = _ESLESME_AKISI_CANONICAL + "\n\n" + _ROL_KURAL_TEK
 
 LEYLEK_ZEKA_SYSTEM = (
-    "Sen LeylekTag asistanı Leylek Zeka'sın. Türkçe, kısa, net; ücret veya ekran adı uydurma.\n"
-    "Eşleşme veya roller hakkında soruda yalnızca aşağıdaki metni kullan; başka sıra veya ifade ekleme.\n\n"
+    "Sen LeylekTag uygulamasının yardımcısı Leylek Zeka'sın. Samimi, saygılı, kısa ve net konuş. "
+    "Kullanıcıya uygulama içindeki yolculuk, eşleşme ve kullanım adımlarında yardımcı ol. "
+    "Uygulama dışı genel, hukuki, tıbbi veya kişisel konularda kesin yönlendirme yapma; nazikçe LeylekTag içindeki konulara dön. "
+    "Bilmediğin bir şeyi uydurma. Kullanıcıyı azarlama. Gerekirse uygulama içi destek veya geri bildirim paylaşmasını öner. "
+    "Eşleşme ve rol sorularında yalnızca tanımlı kanon akışı kullan.\n\n"
     + _ESLESME_VE_ROL
 )
 
@@ -162,8 +160,10 @@ _REPLIES: dict[str, str] = {
         "Kapasite veya bagaj ihtiyacın varsa bunu not düşmek eşleşmeyi netleştirir.\n\n"
         "İstersen hangi araç tipinin daha uygun olduğunu söyleyeyim."
     ),
-    "surucu_sec": _ESLESME_VE_ROL + "\nYolcuysan talep oluşturursun; sürücüysen yakın taleplere teklif gönderirsin.",
-    "yolcu_sec": _ESLESME_VE_ROL + "\nSürücüysen teklif gönderirsin; yolcuysan talep açıp teklifleri kabul edersin.",
+    "surucu_sec": _ESLESME_VE_ROL
+    + "\nYolcuysan yolculuk talebini oluşturursun; sürücüysen listedeki talepleri görüp uygun talebi kabul ederek eşleşmeye geçersin.",
+    "yolcu_sec": _ESLESME_VE_ROL
+    + "\nYolcuysan yolculuk talebini oluşturup adımları takip edersin; sürücüysen talepleri görüp uygun talebi kabul ederek eşleşmeye geçersin.",
     "kim_teklif": _ESLESME_VE_ROL,
     "rol_kabul_netligi": _ESLESME_VE_ROL,
     "guvenlik": (
@@ -193,8 +193,8 @@ _REPLIES: dict[str, str] = {
 }
 
 _FALLBACK_GENERIC = (
-    "Şu an sana LeylekTag içindeki akışlara göre kısa yanıtlar veriyorum. "
-    "Eşleşme, teklif, araç tipi, güvenlik, iptal veya şehir içi kullanım için sorunu birkaç kelimeyle yazabilir "
+    "Şu an sana LeylekTag içindeki yolculuk, eşleşme ve kullanım adımlarına göre kısa yanıtlar veriyorum. "
+    "Eşleşme, yolculuk, araç tipi, güvenlik, iptal veya şehir içi kullanım için sorunu birkaç kelimeyle yazabilir "
     "veya alttaki önerilen sorulardan birine dokunabilirsin.\n\n"
     "İstersen adım adım anlatayım."
 )
@@ -485,8 +485,8 @@ async def get_leylek_zeka_reply(
     context: opsiyonel bağlama duyarlı yardım (USER_HELP_MODE).
     Üçüncü dönüş: yalnızca Answer Engine eşleşmesinde intent_id + deterministic (HTTP opsiyonel alanları).
 
-    Kritik eşleşme/teklif/rol sorularında answer_engine kataloğundan önce _ESLESME_VE_ROL dönülür
-    (katalog metni farklı olsa bile tek doğru akış metni korunur; answer_engine dosyalarına dokunulmadan).
+    Kritik eşleşme/rol sorularında answer_engine kataloğundan önce _ESLESME_VE_ROL dönülür
+    (katalog metni farklı olsa bile tek doğru kanon akışı korunur; answer_engine dosyalarına dokunulmadan).
     """
     text = (user_message or "").strip()
     if not text:
