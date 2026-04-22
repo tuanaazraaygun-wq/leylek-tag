@@ -53,7 +53,7 @@ import SplashScreen from '../components/SplashScreen';
 import AnimatedClouds from '../components/auth/AnimatedClouds';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
-import CommunityScreen from '../components/CommunityScreen';
+import LeylekMuhabbetiFaz1Screen from '../components/LeylekMuhabbetiFaz1Screen';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -3389,10 +3389,11 @@ export default function App() {
     );
   }
 
-  // Community Screen - Leylek Muhabbeti
+  // Community Screen - Leylek Muhabbeti (Faz 1–2: mahalle / grup / gönderi akışı)
   if (user && screen === 'community') {
+    const uTok = user as { access_token?: string; accessToken?: string };
     return (
-      <CommunityScreen
+      <LeylekMuhabbetiFaz1Screen
         user={{
           id: user.id,
           name: user.name || 'Kullanıcı',
@@ -3402,6 +3403,7 @@ export default function App() {
         }}
         onBack={() => setScreen('role-select')}
         apiUrl={API_URL}
+        accessToken={uTok.access_token ?? uTok.accessToken ?? ''}
       />
     );
   }

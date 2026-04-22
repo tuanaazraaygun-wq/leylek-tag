@@ -16,6 +16,7 @@ async function authHeaders(): Promise<Record<string, string>> {
 export type TrustRequestResponse = {
   success?: boolean;
   trust_id?: string;
+  /** trust_already_active: tag'de zaten pending|accepted; trust_race_lost: eşzamanlı istekte kaybeden */
   error?: string;
   detail?: string;
   request_ttl_expires_at?: string;

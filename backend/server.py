@@ -16580,6 +16580,598 @@ async def delete_community_message(message_id: str, user_id: str):
         logger.error(f"❌ Community delete error: {e}")
         return {"success": False, "error": str(e)}
 
+
+# ==================== LEYLEK MUHABBETİ v1 — FAZ 1 (mahalle / grup / üyelik) ====================
+
+
+def _muhabbet_sync_group_member_count(group_id: str) -> None:
+    """groups.member_count kolonunu group_members ile hizalar."""
+    try:
+        r = supabase.table("group_members").select("id", count="exact").eq("group_id", group_id).execute()
+        n = int(r.count or 0)
+        supabase.table("groups").update({"member_count": n}).eq("id", group_id).execute()
+    except Exception as e:
+        logger.warning("muhabbet member_count sync failed: %s", e)
+
+
+class MuhabbetJoinBody(BaseModel):
+    user_id: str
+
+
+@api_router.get("/muhabbet/neighborhoods")
+async def muhabbet_list_neighborhoods(city: str):
+    """Şehre göre mahalle listesi (sıralı)."""
+    try:
+        c = (city or "").strip()
+        if not c:
+            return {"success": False, "neighborhoods": [], "detail": "city gerekli"}
+        res = (
+            supabase.table("neighborhoods")
+            .select("id, city, name, sort_order, created_at")
+            .eq("city", c)
+            .execute()
+        )
+        rows = list(res.data or [])
+        rows.sort(key=lambda x: (int(x.get("sort_order") or 0), str(x.get("name") or "")))
+        return {"success": True, "neighborhoods": rows}
+    except Exception as e:
+        logger.error(f"muhabbet_list_neighborhoods: {e}")
+        return {"success": False, "neighborhoods": [], "detail": str(e)}
+
+
+@api_router.get("/muhabbet/groups")
+async def muhabbet_list_groups(city: str, neighborhood_id: Optional[str] = None):
+    """Şehir + isteğe bağlı mahalle filtresiyle grup listesi."""
+    try:
+        c = (city or "").strip()
+        if not c:
+            return {"success": False, "groups": [], "detail": "city gerekli"}
+        q = supabase.table("groups").select("*").eq("city", c)
+        nid = (neighborhood_id or "").strip()
+        if nid:
+            q = q.eq("neighborhood_id", nid)
+        res = q.order("name").execute()
+        rows = res.data or []
+        n_ids = list({str(g.get("neighborhood_id")) for g in rows if g.get("neighborhood_id")})
+        name_map: dict[str, str] = {}
+        if n_ids:
+            nh = supabase.table("neighborhoods").select("id, name").in_("id", n_ids).execute()
+            for n in nh.data or []:
+                if n.get("id"):
+                    name_map[str(n["id"])] = str(n.get("name") or "")
+        for g in rows:
+            g["neighborhood_name"] = name_map.get(str(g.get("neighborhood_id") or ""), "")
+        return {"success": True, "groups": rows}
+    except Exception as e:
+        logger.error(f"muhabbet_list_groups: {e}")
+        return {"success": False, "groups": [], "detail": str(e)}
+
+
+@api_router.get("/muhabbet/me/groups")
+async def muhabbet_my_groups(user_id: str):
+    """Kullanıcının üye olduğu gruplar (özet)."""
+    try:
+        raw = (user_id or "").strip()
+        if not raw:
+            return {"success": False, "groups": [], "detail": "user_id gerekli"}
+        uid = await resolve_user_id(raw)
+        gm = (
+            supabase.table("group_members")
+            .select("group_id, joined_at")
+            .eq("user_id", uid)
+            .execute()
+        )
+        gids = [str(x["group_id"]) for x in (gm.data or []) if x.get("group_id")]
+        if not gids:
+            return {"success": True, "groups": []}
+        gr = supabase.table("groups").select("*").in_("id", gids).order("name").execute()
+        rows = gr.data or []
+        n_ids = list({str(g.get("neighborhood_id")) for g in rows if g.get("neighborhood_id")})
+        name_map: dict[str, str] = {}
+        if n_ids:
+            nh = supabase.table("neighborhoods").select("id, name, city").in_("id", n_ids).execute()
+            for n in nh.data or []:
+                if n.get("id"):
+                    name_map[str(n["id"])] = str(n.get("name") or "")
+        for g in rows:
+            g["neighborhood_name"] = name_map.get(str(g.get("neighborhood_id") or ""), "")
+        return {"success": True, "groups": rows}
+    except Exception as e:
+        logger.error(f"muhabbet_my_groups: {e}")
+        return {"success": False, "groups": [], "detail": str(e)}
+
+
+@api_router.get("/muhabbet/groups/{group_id}")
+async def muhabbet_get_group(group_id: str, user_id: Optional[str] = None):
+    """Grup detayı; user_id verilirse is_member döner."""
+    try:
+        gid = str(group_id).strip().lower()
+        uuid.UUID(gid)
+        gr = supabase.table("groups").select("*").eq("id", gid).limit(1).execute()
+        if not gr.data:
+            return {"success": False, "group": None, "detail": "Grup bulunamadı"}
+        row = dict(gr.data[0])
+        nh = (
+            supabase.table("neighborhoods")
+            .select("id, name, city")
+            .eq("id", row.get("neighborhood_id"))
+            .limit(1)
+            .execute()
+        )
+        if nh.data:
+            row["neighborhood_name"] = nh.data[0].get("name") or ""
+            row["neighborhood_city"] = nh.data[0].get("city") or ""
+        else:
+            row["neighborhood_name"] = ""
+            row["neighborhood_city"] = ""
+        row["is_member"] = False
+        uq = (user_id or "").strip()
+        if uq:
+            uid = await resolve_user_id(uq)
+            ex = (
+                supabase.table("group_members")
+                .select("id")
+                .eq("group_id", gid)
+                .eq("user_id", uid)
+                .limit(1)
+                .execute()
+            )
+            row["is_member"] = bool(ex.data)
+        return {"success": True, "group": row}
+    except ValueError:
+        return {"success": False, "group": None, "detail": "Geçersiz grup kimliği"}
+    except Exception as e:
+        logger.error(f"muhabbet_get_group: {e}")
+        return {"success": False, "group": None, "detail": str(e)}
+
+
+@api_router.post("/muhabbet/groups/{group_id}/join")
+async def muhabbet_join_group(group_id: str, body: MuhabbetJoinBody):
+    """Gruba katıl (idempotent: zaten üyeyse already_member)."""
+    try:
+        gid = str(group_id).strip().lower()
+        uuid.UUID(gid)
+        raw = (body.user_id or "").strip()
+        if not raw:
+            return {"success": False, "detail": "user_id gerekli"}
+        uid = await resolve_user_id(raw)
+        gr = supabase.table("groups").select("id").eq("id", gid).limit(1).execute()
+        if not gr.data:
+            return {"success": False, "detail": "Grup bulunamadı"}
+        ex = (
+            supabase.table("group_members")
+            .select("id")
+            .eq("group_id", gid)
+            .eq("user_id", uid)
+            .limit(1)
+            .execute()
+        )
+        if ex.data:
+            return {"success": True, "already_member": True, "group_id": gid}
+        supabase.table("group_members").insert({"group_id": gid, "user_id": uid}).execute()
+        _muhabbet_sync_group_member_count(gid)
+        return {"success": True, "already_member": False, "group_id": gid}
+    except ValueError:
+        return {"success": False, "detail": "Geçersiz grup kimliği"}
+    except Exception as e:
+        logger.error(f"muhabbet_join_group: {e}")
+        return {"success": False, "detail": str(e)}
+
+
+# ==================== LEYLEK MUHABBETİ v1 — FAZ 2 (gönderi / yorum / şikayet) ====================
+
+MUHABBET_POSTS_BUCKET = "muhabbet-posts"
+
+
+def _muhabbet_ensure_posts_bucket() -> None:
+    try:
+        supabase.storage.create_bucket(MUHABBET_POSTS_BUCKET, {"public": True})
+    except Exception:
+        pass
+
+
+def _muhabbet_verify_bearer(authorization: Optional[str]) -> str:
+    if not authorization or not str(authorization).strip():
+        raise HTTPException(status_code=401, detail="Authorization header gerekli")
+    parts = str(authorization).strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+        raise HTTPException(status_code=401, detail="Bearer token gerekli")
+    tok_uid = verify_access_token(parts[1].strip())
+    if not tok_uid:
+        raise HTTPException(status_code=401, detail="Geçersiz veya süresi dolmuş oturum")
+    return str(tok_uid).strip().lower()
+
+
+async def _muhabbet_verify_bearer_matches_claimed_user(
+    authorization: Optional[str],
+    claimed_user_id: str,
+) -> str:
+    tok = _muhabbet_verify_bearer(authorization)
+    if not (claimed_user_id or "").strip():
+        raise HTTPException(status_code=400, detail="user_id gerekli")
+    resolved = await resolve_user_id(claimed_user_id.strip())
+    r = str(resolved).strip().lower()
+    if r != tok:
+        raise HTTPException(status_code=403, detail="user_id ile oturum uyumsuz")
+    return r
+
+
+def _muhabbet_assert_group_member(group_id: str, user_uid: str) -> None:
+    ex = (
+        supabase.table("group_members")
+        .select("id")
+        .eq("group_id", group_id)
+        .eq("user_id", user_uid)
+        .limit(1)
+        .execute()
+    )
+    if not ex.data:
+        raise HTTPException(status_code=403, detail="Bu grubun üyesi değilsiniz")
+
+
+def _muhabbet_post_image_public_url(storage_path: str) -> str:
+    return supabase.storage.from_(MUHABBET_POSTS_BUCKET).get_public_url(storage_path)
+
+
+def _muhabbet_validate_storage_path_for_group(group_id: str, storage_path: str) -> str:
+    gid = group_id.strip().lower()
+    p = (storage_path or "").strip().lstrip("/")
+    prefix = f"posts/{gid}/"
+    if not p.startswith(prefix):
+        raise HTTPException(status_code=400, detail="Geçersiz görsel yolu")
+    rest = p[len(prefix) :]
+    if not rest or ".." in rest or "/" in rest:
+        raise HTTPException(status_code=400, detail="Geçersiz görsel yolu")
+    return p
+
+
+async def _muhabbet_require_post_viewer(post_id: str, user_uid: str) -> dict:
+    pid = str(post_id).strip().lower()
+    uuid.UUID(pid)
+    pr = (
+        supabase.table("posts")
+        .select("id, group_id, author_user_id, body_text, image_storage_path, created_at")
+        .eq("id", pid)
+        .limit(1)
+        .execute()
+    )
+    if not pr.data:
+        raise HTTPException(status_code=404, detail="Gönderi bulunamadı")
+    row = dict(pr.data[0])
+    gid = str(row.get("group_id") or "").strip().lower()
+    _muhabbet_assert_group_member(gid, user_uid)
+    row["image_url"] = _muhabbet_post_image_public_url(str(row.get("image_storage_path") or ""))
+    ur = (
+        supabase.table("users")
+        .select("name")
+        .eq("id", row.get("author_user_id"))
+        .limit(1)
+        .execute()
+    )
+    row["author_name"] = (ur.data[0].get("name") if ur.data else None) or "Kullanıcı"
+    return row
+
+
+def _muhabbet_enrich_posts_rows(rows: list) -> list:
+    out = []
+    uids = list({str(r.get("author_user_id")) for r in rows if r.get("author_user_id")})
+    name_map: dict[str, str] = {}
+    if uids:
+        ur = supabase.table("users").select("id, name").in_("id", uids).execute()
+        for u in ur.data or []:
+            if u.get("id"):
+                name_map[str(u["id"])] = str(u.get("name") or "Kullanıcı")
+    for r in rows:
+        d = dict(r)
+        aid = str(d.get("author_user_id") or "")
+        d["author_name"] = name_map.get(aid, "Kullanıcı")
+        sp = str(d.get("image_storage_path") or "")
+        d["image_url"] = _muhabbet_post_image_public_url(sp) if sp else ""
+        out.append(d)
+    return out
+
+
+class MuhabbetPresignBody(BaseModel):
+    user_id: str
+    group_id: str
+    content_type: str = "image/jpeg"
+
+    @field_validator("content_type")
+    @classmethod
+    def _ct(cls, v: str) -> str:
+        v2 = (v or "").strip().lower()
+        if v2 not in ("image/jpeg", "image/png", "image/webp"):
+            raise ValueError("Geçersiz content_type")
+        return v2
+
+
+class MuhabbetPostCreateBody(BaseModel):
+    user_id: str
+    group_id: str
+    body_text: str
+    image_storage_path: str
+
+
+class MuhabbetCommentCreateBody(BaseModel):
+    user_id: str
+    body: str
+
+
+class MuhabbetReportBody(BaseModel):
+    user_id: str
+    post_id: str
+    reason: Optional[str] = None
+    details: Optional[str] = None
+
+
+@api_router.post("/muhabbet/uploads/presign")
+async def muhabbet_upload_presign(
+    body: MuhabbetPresignBody,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """
+    Supabase Storage imzalı yükleme URL'i (base64 ağırlıklı JSON yerine doğrudan PUT).
+    """
+    try:
+        uid = await _muhabbet_verify_bearer_matches_claimed_user(authorization, body.user_id)
+        gid = str(body.group_id).strip().lower()
+        uuid.UUID(gid)
+        _muhabbet_assert_group_member(gid, uid)
+        _muhabbet_ensure_posts_bucket()
+        ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+        ext = ext_map[body.content_type]
+        fname = f"{uuid.uuid4().hex}.{ext}"
+        path = f"posts/{gid}/{fname}"
+        su = supabase.storage.from_(MUHABBET_POSTS_BUCKET).create_signed_upload_url(path)
+        signed = su.get("signed_url") or su.get("signedUrl")
+        tok = su.get("token")
+        if not signed or not tok:
+            return {"success": False, "detail": "İmzalı URL oluşturulamadı"}
+        public_url = _muhabbet_post_image_public_url(path)
+        return {
+            "success": True,
+            "signed_url": signed,
+            "token": tok,
+            "path": path,
+            "bucket": MUHABBET_POSTS_BUCKET,
+            "public_url": public_url,
+            "content_type": body.content_type,
+        }
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz grup kimliği") from None
+    except Exception as e:
+        logger.error(f"muhabbet_upload_presign: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/posts")
+async def muhabbet_create_post(
+    body: MuhabbetPostCreateBody,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Grup gönderisi oluştur (yalnızca üye; foto yolu presign ile aynı prefix olmalı)."""
+    try:
+        uid = await _muhabbet_verify_bearer_matches_claimed_user(authorization, body.user_id)
+        gid = str(body.group_id).strip().lower()
+        uuid.UUID(gid)
+        _muhabbet_assert_group_member(gid, uid)
+        sp = _muhabbet_validate_storage_path_for_group(gid, body.image_storage_path)
+        bt = (body.body_text or "").strip()
+        if len(bt) < 1:
+            raise HTTPException(status_code=400, detail="Kısa açıklama gerekli")
+        if len(bt) > 500:
+            raise HTTPException(status_code=400, detail="Açıklama en fazla 500 karakter")
+        ins = (
+            supabase.table("posts")
+            .insert(
+                {
+                    "group_id": gid,
+                    "author_user_id": uid,
+                    "body_text": bt,
+                    "image_storage_path": sp,
+                }
+            )
+            .execute()
+        )
+        if not ins.data:
+            return {"success": False, "detail": "Kayıt oluşturulamadı"}
+        row = dict(ins.data[0])
+        row["image_url"] = _muhabbet_post_image_public_url(str(row.get("image_storage_path") or ""))
+        ur = (
+            supabase.table("users")
+            .select("name")
+            .eq("id", uid)
+            .limit(1)
+            .execute()
+        )
+        row["author_name"] = (ur.data[0].get("name") if ur.data else None) or "Kullanıcı"
+        return {"success": True, "post": row}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz grup kimliği") from None
+    except Exception as e:
+        logger.error(f"muhabbet_create_post: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/groups/{group_id}/feed")
+async def muhabbet_group_feed(
+    group_id: str,
+    limit: int = 25,
+    offset: int = 0,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Grup gönderi akışı (yalnızca üye, Bearer zorunlu)."""
+    try:
+        uid = _muhabbet_verify_bearer(authorization)
+        gid = str(group_id).strip().lower()
+        uuid.UUID(gid)
+        _muhabbet_assert_group_member(gid, uid)
+        lim = max(1, min(int(limit or 25), 50))
+        off = max(0, int(offset or 0))
+        res = (
+            supabase.table("posts")
+            .select("id, group_id, author_user_id, body_text, image_storage_path, created_at")
+            .eq("group_id", gid)
+            .order("created_at", desc=True)
+            .range(off, off + lim - 1)
+            .execute()
+        )
+        rows = _muhabbet_enrich_posts_rows(list(res.data or []))
+        return {"success": True, "posts": rows, "limit": lim, "offset": off}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz grup kimliği") from None
+    except Exception as e:
+        logger.error(f"muhabbet_group_feed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/posts/{post_id}")
+async def muhabbet_get_post(
+    post_id: str,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Gönderi detayı (grup üyesi)."""
+    try:
+        uid = _muhabbet_verify_bearer(authorization)
+        row = await _muhabbet_require_post_viewer(str(post_id).strip().lower(), uid)
+        return {"success": True, "post": row}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_get_post: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/posts/{post_id}/comments")
+async def muhabbet_list_post_comments(
+    post_id: str,
+    limit: int = 80,
+    offset: int = 0,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Tek seviye yorum listesi."""
+    try:
+        uid = _muhabbet_verify_bearer(authorization)
+        pid = str(post_id).strip().lower()
+        uuid.UUID(pid)
+        await _muhabbet_require_post_viewer(pid, uid)
+        lim = max(1, min(int(limit or 80), 120))
+        off = max(0, int(offset or 0))
+        res = (
+            supabase.table("post_comments")
+            .select("id, post_id, author_user_id, body, created_at")
+            .eq("post_id", pid)
+            .order("created_at", desc=False)
+            .range(off, off + lim - 1)
+            .execute()
+        )
+        rows = list(res.data or [])
+        uids = list({str(r.get("author_user_id")) for r in rows if r.get("author_user_id")})
+        name_map: dict[str, str] = {}
+        if uids:
+            ur = supabase.table("users").select("id, name").in_("id", uids).execute()
+            for u in ur.data or []:
+                if u.get("id"):
+                    name_map[str(u["id"])] = str(u.get("name") or "Kullanıcı")
+        enriched: list = []
+        for r in rows:
+            d = dict(r)
+            aid = str(d.get("author_user_id") or "")
+            d["author_name"] = name_map.get(aid, "Kullanıcı")
+            enriched.append(d)
+        return {"success": True, "comments": enriched}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_list_post_comments: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/posts/{post_id}/comments")
+async def muhabbet_add_post_comment(
+    post_id: str,
+    body: MuhabbetCommentCreateBody,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Yorum ekle (grup üyesi)."""
+    try:
+        uid = await _muhabbet_verify_bearer_matches_claimed_user(authorization, body.user_id)
+        pid = str(post_id).strip().lower()
+        uuid.UUID(pid)
+        await _muhabbet_require_post_viewer(pid, uid)
+        txt = (body.body or "").strip()
+        if len(txt) < 1:
+            raise HTTPException(status_code=400, detail="Yorum metni gerekli")
+        if len(txt) > 800:
+            raise HTTPException(status_code=400, detail="Yorum en fazla 800 karakter")
+        ins = (
+            supabase.table("post_comments")
+            .insert({"post_id": pid, "author_user_id": uid, "body": txt})
+            .execute()
+        )
+        if not ins.data:
+            return {"success": False, "detail": "Yorum kaydedilemedi"}
+        row = dict(ins.data[0])
+        ur = (
+            supabase.table("users")
+            .select("name")
+            .eq("id", uid)
+            .limit(1)
+            .execute()
+        )
+        row["author_name"] = (ur.data[0].get("name") if ur.data else None) or "Kullanıcı"
+        return {"success": True, "comment": row}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_add_post_comment: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/reports")
+async def muhabbet_create_report(
+    body: MuhabbetReportBody,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Gönderi şikayeti kaydı (grup üyesi; aynı gönderiye tekrar idempotent)."""
+    try:
+        uid = await _muhabbet_verify_bearer_matches_claimed_user(authorization, body.user_id)
+        pid = str(body.post_id).strip().lower()
+        uuid.UUID(pid)
+        await _muhabbet_require_post_viewer(pid, uid)
+        ex = (
+            supabase.table("post_reports")
+            .select("id")
+            .eq("post_id", pid)
+            .eq("reporter_user_id", uid)
+            .limit(1)
+            .execute()
+        )
+        if ex.data:
+            return {"success": True, "already_reported": True}
+        supabase.table("post_reports").insert(
+            {
+                "post_id": pid,
+                "reporter_user_id": uid,
+                "reason": (body.reason or "").strip()[:200] or None,
+                "details": (body.details or "").strip()[:2000] or None,
+                "status": "pending",
+            }
+        ).execute()
+        return {"success": True, "already_reported": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_create_report: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 # ==================== HESAP SİLME (Google Play Zorunlu) ====================
 
 @api_router.post("/user/delete-account")

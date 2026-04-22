@@ -452,6 +452,19 @@ const LAYOUT = {
   popularChipMinHeight: 40,
 } as const;
 
+/** Geçici teşhis bayrağı — prod’da kapalı; kaldırmak için bu blok + searchDiag kullanımını silmek yeterli */
+const SHOW_PLACES_DIAG = process.env.EXPO_PUBLIC_PLACES_DIAG === '1';
+
+type PlaceSearchDiagCode =
+  | 'google_error'
+  | 'nominatim_http'
+  | 'nominatim_empty'
+  | 'filtered_empty'
+  | 'both_empty'
+  | 'unknown';
+
+type PlaceSearchDiag = { code: PlaceSearchDiagCode; hint?: string };
+
 /** Geçici teşhis: tek satır JSON, cihazlar arası autocomplete farkları için */
 function acDiag(event: string, payload: Record<string, unknown>) {
   console.log(`[${event}]`, JSON.stringify({ event, ...payload }));
@@ -516,6 +529,8 @@ export default function PlacesAutocomplete({
   const [loading, setLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
   const [showPopular, setShowPopular] = useState(true);
+  /** Geçici: boş sonuç nedeni (yalnız SHOW_PLACES_DIAG açıkken dolar / gösterilir) */
+  const [searchDiag, setSearchDiag] = useState<PlaceSearchDiag | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Artan kimlik: tamamlanan arama yanıtı yalnızca en son isteğe aitse state günceller (yarış / boş liste). */
   const autocompleteRequestIdRef = useRef(0);
@@ -532,6 +547,7 @@ export default function PlacesAutocomplete({
       setShowPredictions(false);
       setShowPopular(true);
       setLoading(false);
+      if (SHOW_PLACES_DIAG) setSearchDiag(null);
       return;
     }
 
@@ -553,6 +569,13 @@ export default function PlacesAutocomplete({
     const requestId = ++autocompleteRequestIdRef.current;
     setLoading(true);
     const apiKey = getGoogleMapsApiKey();
+    let googleHadError = false;
+    let googleErrorHint: string | undefined;
+    let googleRawLen: number | null = null;
+    let enteredNominatim = false;
+    let anyNomRaw = false;
+    let nomFinalLenBeforeCap = 0;
+    if (SHOW_PLACES_DIAG) setSearchDiag(null);
     try {
       const cityKeyHome = resolveCityDataKey(city);
       const cityLabel = cityKeyHome || city.trim();
@@ -590,6 +613,7 @@ export default function PlacesAutocomplete({
           if (requestId !== autocompleteRequestIdRef.current) {
             return;
           }
+          googleRawLen = raw.length;
           filtered = raw.map(mapGooglePredictionToPlaceResult);
           filtered.sort(
             (a, b) =>
@@ -609,6 +633,8 @@ export default function PlacesAutocomplete({
           });
         } catch (gErr) {
           const msg = gErr instanceof Error ? gErr.message : String(gErr);
+          googleHadError = true;
+          googleErrorHint = msg.slice(0, 160);
           acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
             provider: 'google',
             query: input.trim(),
@@ -623,6 +649,7 @@ export default function PlacesAutocomplete({
       }
 
       if (filtered.length === 0) {
+        enteredNominatim = true;
         acDiag('AUTOCOMPLETE_FALLBACK_START', {
           provider: 'nominatim',
           query: input.trim(),
@@ -681,6 +708,7 @@ export default function PlacesAutocomplete({
         if (requestId !== autocompleteRequestIdRef.current) {
           return;
         }
+        anyNomRaw = data.length > 0;
 
         const filterAndRank = (rows: PlaceResult[]) => {
           let rowsIn = rows.filter((item) => !['country', 'state', 'county'].includes(item.type));
@@ -760,6 +788,7 @@ export default function PlacesAutocomplete({
           if (requestId !== autocompleteRequestIdRef.current) {
             return;
           }
+          anyNomRaw = anyNomRaw || loose.length > 0;
           const byId = new Map<string, PlaceResult>();
           for (const r of [...data, ...loose]) {
             const id = String(r.place_id || `${r.lat},${r.lon}`);
@@ -769,6 +798,7 @@ export default function PlacesAutocomplete({
         }
 
         const nCap = widerSearch && !strictCityBounds ? 20 : strictCityBounds ? 18 : 12;
+        nomFinalLenBeforeCap = nom.length;
         filtered = nom.slice(0, nCap);
         acDiag('AUTOCOMPLETE_PROVIDER_RESULT', {
           provider: 'nominatim',
@@ -783,6 +813,37 @@ export default function PlacesAutocomplete({
 
       if (requestId !== autocompleteRequestIdRef.current) {
         return;
+      }
+
+      if (SHOW_PLACES_DIAG) {
+        if (filtered.length > 0) {
+          setSearchDiag(null);
+        } else {
+          let code: PlaceSearchDiagCode = 'unknown';
+          let hint: string | undefined;
+          if (enteredNominatim && anyNomRaw && nomFinalLenBeforeCap === 0) {
+            code = 'filtered_empty';
+          } else if (googleHadError) {
+            code = 'google_error';
+            hint = googleErrorHint;
+          } else if (enteredNominatim && !anyNomRaw) {
+            if (apiKey && !googleHadError && googleRawLen === 0) {
+              code = 'both_empty';
+            } else {
+              code = 'nominatim_empty';
+            }
+          } else {
+            code = 'unknown';
+          }
+          const payload: PlaceSearchDiag = hint ? { code, hint } : { code };
+          setSearchDiag(payload);
+          acDiag('AUTOCOMPLETE_DIAG', {
+            ...payload,
+            request_id: requestId,
+            query: input.trim(),
+          });
+          console.warn('[PLACES_DIAG]', payload.code, payload.hint ?? '');
+        }
       }
 
       acDiag('AUTOCOMPLETE_RENDER_RESULTS', {
@@ -817,6 +878,20 @@ export default function PlacesAutocomplete({
       if (requestId === autocompleteRequestIdRef.current) {
         setPredictions([]);
         setShowPredictions(true);
+        if (SHOW_PLACES_DIAG) {
+          const hint = msg.slice(0, 160);
+          const isNomHttp = hint.startsWith('nominatim_http_');
+          const payload: PlaceSearchDiag = isNomHttp
+            ? { code: 'nominatim_http', hint }
+            : { code: 'unknown', hint };
+          setSearchDiag(payload);
+          acDiag('AUTOCOMPLETE_DIAG', {
+            ...payload,
+            request_id: requestId,
+            query: input.trim(),
+          });
+          console.warn('[PLACES_DIAG]', payload.code, payload.hint ?? '');
+        }
       }
     } finally {
       if (requestId === autocompleteRequestIdRef.current) {
@@ -1111,6 +1186,11 @@ export default function PlacesAutocomplete({
           <Text style={[styles.noResultsHint, tech && styles.noResultsHintTech]}>
             Farklı bir arama deneyin
           </Text>
+          {SHOW_PLACES_DIAG && searchDiag ? (
+            <Text style={[styles.noResultsDiag, tech && styles.noResultsDiagTech]} numberOfLines={2}>
+              {`diag: ${searchDiag.code}${searchDiag.hint ? ` · ${searchDiag.hint}` : ''}`}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>
@@ -1327,5 +1407,14 @@ const styles = StyleSheet.create({
   },
   noResultsHintTech: {
     color: '#64748B',
+  },
+  noResultsDiag: {
+    marginTop: 8,
+    fontSize: 11,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  noResultsDiagTech: {
+    color: '#475569',
   },
 });

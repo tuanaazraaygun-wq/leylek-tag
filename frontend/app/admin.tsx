@@ -21,6 +21,51 @@ import { ADMIN_API_BASE, normalizeTrPhone10 } from '../lib/adminApi';
 import { API_BASE_URL } from '../lib/backendConfig';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 
+/** Geçici teşhis: yalnızca EXPO_PUBLIC_ADMIN_DIAG=1 build'lerde admin bandı görünür. */
+const SHOW_ADMIN_DIAG = process.env.EXPO_PUBLIC_ADMIN_DIAG === '1';
+
+function summarizeAdminCheckResponse(res: Response, body: unknown): string {
+  const st = res.status;
+  let isAd = '?';
+  let keys = '';
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const o = body as Record<string, unknown>;
+    isAd = Object.prototype.hasOwnProperty.call(o, 'is_admin') ? String(o.is_admin) : '?';
+    keys = Object.keys(o).slice(0, 12).join(',');
+  } else {
+    keys = body === null || body === undefined ? 'empty' : 'non-object';
+  }
+  const line = `HTTP ${st} is_admin=${isAd} keys=[${keys}]`;
+  return line.length > 170 ? `${line.slice(0, 167)}...` : line;
+}
+
+type AdminDiagBandProps = {
+  loading: boolean;
+  error: string;
+  isAdmin: boolean;
+  tab: string;
+  adminCheckSummary: string;
+};
+
+function AdminDiagBand({
+  loading,
+  error,
+  isAdmin,
+  tab,
+  adminCheckSummary,
+}: AdminDiagBandProps) {
+  if (!SHOW_ADMIN_DIAG) return null;
+  const errShort = error ? error.replace(/\s+/g, ' ').trim().slice(0, 96) : '(yok)';
+  const checkShort = (adminCheckSummary || '(yok)').replace(/\s+/g, ' ').trim().slice(0, 140);
+  return (
+    <View style={styles.adminDiagBand} accessibilityLabel="Admin teşhis bandı">
+      <Text style={styles.adminDiagText} selectable numberOfLines={5}>
+        {`[ADMIN_DIAG] loading=${String(loading)} isAdmin=${String(isAdmin)} tab=${tab}\nerror: ${errShort}\ncheck: ${checkShort}`}
+      </Text>
+    </View>
+  );
+}
+
 // Error Boundary Class Component
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -105,6 +150,8 @@ function AdminContent() {
     search: '',
     refreshing: false,
     apiWarnings: '',
+    /** Geçici teşhis: admin/check özeti (SHOW_ADMIN_DIAG açıkken bandda). */
+    adminCheckSummary: '',
   });
 
   useEffect(() => {
@@ -117,7 +164,12 @@ function AdminContent() {
       const userData = (await AsyncStorage.getItem('user')) || (await AsyncStorage.getItem('leylek_user'));
       
       if (!userData) {
-        setState(s => ({ ...s, loading: false, error: 'Giriş yapmalısınız' }));
+        setState(s => ({
+          ...s,
+          loading: false,
+          error: 'Giriş yapmalısınız',
+          adminCheckSummary: 'check: atlanmadı (oturum yok)',
+        }));
         return;
       }
       
@@ -125,25 +177,59 @@ function AdminContent() {
       try {
         user = JSON.parse(userData);
       } catch (e) {
-        setState(s => ({ ...s, loading: false, error: 'Kullanıcı verisi okunamadı' }));
+        setState(s => ({
+          ...s,
+          loading: false,
+          error: 'Kullanıcı verisi okunamadı',
+          adminCheckSummary: 'check: atlanmadı (kullanıcı JSON)',
+        }));
         return;
       }
       
       const userPhone = normalizeTrPhone10(String(user.phone || ''));
       
-      const checkRes = await fetch(`${ADMIN_API_BASE}/admin/check?phone=${encodeURIComponent(userPhone)}`);
-      const checkData = await checkRes.json();
-      
-      if (checkData.is_admin !== true) {
-        setState(s => ({ ...s, loading: false, error: 'Admin yetkisi yok' }));
+      let checkRes: Response;
+      let checkData: unknown;
+      try {
+        checkRes = await fetch(`${ADMIN_API_BASE}/admin/check?phone=${encodeURIComponent(userPhone)}`);
+        checkData = await checkRes.json();
+      } catch {
+        setState(s => ({
+          ...s,
+          loading: false,
+          error: 'Bağlantı hatası: admin/check',
+          adminCheckSummary: 'check: istisna (ağ veya JSON)',
+        }));
+        return;
+      }
+
+      const checkSummary = summarizeAdminCheckResponse(checkRes, checkData);
+      const isAdminOk =
+        checkData &&
+        typeof checkData === 'object' &&
+        !Array.isArray(checkData) &&
+        (checkData as Record<string, unknown>).is_admin === true;
+
+      if (!isAdminOk) {
+        setState(s => ({
+          ...s,
+          loading: false,
+          error: 'Admin yetkisi yok',
+          adminCheckSummary: checkSummary,
+        }));
         return;
       }
       
-      setState(s => ({ ...s, isAdmin: true, phone: userPhone }));
+      setState(s => ({ ...s, isAdmin: true, phone: userPhone, adminCheckSummary: checkSummary }));
       await loadData(userPhone);
       
     } catch (err) {
-      setState(s => ({ ...s, loading: false, error: 'Bağlantı hatası: ' + String(err.message || err) }));
+      setState(s => ({
+        ...s,
+        loading: false,
+        error: 'Bağlantı hatası: ' + String((err as Error)?.message || err),
+        adminCheckSummary: s.adminCheckSummary || 'check: beklenmeyen hata',
+      }));
     }
   };
 
@@ -325,6 +411,13 @@ function AdminContent() {
   if (state.loading) {
     return (
       <View style={styles.screen}>
+        <AdminDiagBand
+          loading={state.loading}
+          error={state.error}
+          isAdmin={state.isAdmin}
+          tab={state.tab}
+          adminCheckSummary={state.adminCheckSummary}
+        />
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#3B82F6" />
           <Text style={styles.loadingText}>Yükleniyor...</Text>
@@ -337,6 +430,13 @@ function AdminContent() {
   if (state.error) {
     return (
       <View style={styles.screen}>
+        <AdminDiagBand
+          loading={state.loading}
+          error={state.error}
+          isAdmin={state.isAdmin}
+          tab={state.tab}
+          adminCheckSummary={state.adminCheckSummary}
+        />
         <View style={styles.centered}>
           <Text style={styles.errorText}>{state.error}</Text>
           <TouchableOpacity style={styles.blueBtn} onPress={goBack}>
@@ -351,6 +451,13 @@ function AdminContent() {
   if (!state.isAdmin) {
     return (
       <View style={styles.screen}>
+        <AdminDiagBand
+          loading={state.loading}
+          error={state.error}
+          isAdmin={state.isAdmin}
+          tab={state.tab}
+          adminCheckSummary={state.adminCheckSummary}
+        />
         <View style={styles.centered}>
           <Text style={styles.errorText}>Yetkisiz</Text>
           <TouchableOpacity style={styles.blueBtn} onPress={goBack}>
@@ -373,6 +480,13 @@ function AdminContent() {
   // MAIN PANEL
   return (
     <View style={styles.screen}>
+      <AdminDiagBand
+        loading={state.loading}
+        error={state.error}
+        isAdmin={state.isAdmin}
+        tab={state.tab}
+        adminCheckSummary={state.adminCheckSummary}
+      />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.headerBtn}>
@@ -595,6 +709,19 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#0F172A',
+  },
+  adminDiagBand: {
+    backgroundColor: '#422006',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  adminDiagText: {
+    color: '#FEF3C7',
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    lineHeight: 15,
   },
   centered: {
     flex: 1,

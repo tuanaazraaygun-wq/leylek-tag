@@ -185,6 +185,8 @@ interface LiveMapViewProps {
   otherLocationFromPickupFallback?: boolean;
   /** Biniş QR doğrulandı — yolcu pini gizlenir, üst metin güncellenir; matched iken GPS ile hedef fazına geçiş engellenir */
   boardingConfirmed?: boolean;
+  /** Sürücü: navigasyon pickup → destination geçişi (biniş sonrası hedef fazı) — yolcuya bildirim tetiklemek için */
+  onDriverEnteredDestinationNavigation?: () => void;
 }
 
 /**
@@ -1684,6 +1686,7 @@ export default function LiveMapView({
   otherPassengerGender = null,
   otherLocationFromPickupFallback = false,
   boardingConfirmed = false,
+  onDriverEnteredDestinationNavigation,
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -2105,6 +2108,43 @@ export default function LiveMapView({
   /** Sürücü nav: ilk manevra sessiz/ boşsa tek seferlik genel TTS */
   const navStartupSpeechDoneRef = useRef(false);
   const navStagePrevRef = useRef<'pickup' | 'destination'>('pickup');
+  /** pickup→destination geçişinde parent callback (yolcuya socket tetik); tag değişince sıfırlanır */
+  const pickupToDestNavHintPrevRef = useRef<'pickup' | 'destination'>(navigationStage);
+
+  useEffect(() => {
+    pickupToDestNavHintPrevRef.current = navigationStage;
+  }, [tagId]);
+
+  useEffect(() => {
+    if (!isDriver || !navigationMode) {
+      pickupToDestNavHintPrevRef.current = navigationStage;
+      return;
+    }
+    const prev = pickupToDestNavHintPrevRef.current;
+    pickupToDestNavHintPrevRef.current = navigationStage;
+    if (
+      prev === 'pickup' &&
+      navigationStage === 'destination' &&
+      boardingConfirmed
+    ) {
+      try {
+        console.log(
+          'DRIVER_DESTINATION_NAV_PHASE',
+          JSON.stringify({ tagId: tagId != null ? String(tagId) : null }),
+        );
+      } catch {
+        /* noop */
+      }
+      onDriverEnteredDestinationNavigation?.();
+    }
+  }, [
+    isDriver,
+    navigationMode,
+    navigationStage,
+    boardingConfirmed,
+    tagId,
+    onDriverEnteredDestinationNavigation,
+  ]);
 
   /** Pickup → hedef geçişinde kamera eşiklerini sıfırla (turuncu rota + araç hizası tazelensin) */
   useEffect(() => {
@@ -5460,8 +5500,8 @@ export default function LiveMapView({
               <TouchableOpacity 
                 style={styles.qrEndButton} 
                 onPress={() => {
-                  // 🔥 KONUM KONTROLÜ - Sadece sürücü için (1 KM mesafe)
-                  if (isDriver && userLocation && otherLocation) {
+                  // Pickup öncesi: sürücü–yolcu meeting mesafesi + 1 km. Biniş sonrası meetingDistance güvenilir değil; finish QR engellenmesin.
+                  if (!boardingConfirmed && isDriver && userLocation && otherLocation) {
                     const distanceKm =
                       meetingDistance != null && Number.isFinite(meetingDistance) && meetingDistance >= 0
                         ? meetingDistance

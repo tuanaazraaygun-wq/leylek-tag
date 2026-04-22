@@ -151,6 +151,8 @@ interface UseSocketProps {
     boarding_confirmed_at?: string;
     reason?: string;
   }) => void;
+  /** Sürücü pickup→hedef navigasyona geçti — yolcuya tek seferlik bilgi */
+  onPassengerDestinationNavHint?: (data: { tag_id?: string }) => void;
   onCallCancelled?: (data: { cancelled: boolean; by: string }) => void;
   onCallEndedNew?: (data: { ended: boolean; by: string; room_name: string }) => void;
   // 🆕 Mesajlaşma eventleri
@@ -228,6 +230,7 @@ export default function useSocket({
   onForceEndCounterpartyPrompt,
   onShowRatingModal,  // 🆕 QR puanlama modalı
   onBoardingConfirmed,
+  onPassengerDestinationNavHint,
   onCallCancelled,
   onCallEndedNew,
   onNewMessage,  // 🆕 Mesajlaşma
@@ -272,6 +275,7 @@ export default function useSocket({
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
+    onPassengerDestinationNavHint,
     onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
     onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
   });
@@ -284,6 +288,7 @@ export default function useSocket({
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
+      onPassengerDestinationNavHint,
       onCallCancelled, onCallEndedNew, onNewMessage, onFirstChatMessage, onMessageSent,
       onTrustSocketRequest, onTrustSessionReady, onTrustSessionEnded,
     };
@@ -573,6 +578,11 @@ export default function useSocket({
       callbackRefs.current.onBoardingConfirmed?.(data);
     };
 
+    const handlePassengerDestinationNavHint = (data: any) => {
+      console.log('🧭 [useSocket] passenger_destination_nav_hint:', data);
+      callbackRefs.current.onPassengerDestinationNavHint?.(data);
+    };
+
     // Event listener'ları ekle
     socket.on('incoming_call', handleIncomingCall);
     socket.on('call_accepted', handleCallAccepted);
@@ -620,6 +630,7 @@ export default function useSocket({
     });
 
     socket.on('boarding_confirmed', handleBoardingConfirmed);
+    socket.on('passenger_destination_nav_hint', handlePassengerDestinationNavHint);
 
     // 🆕 Mesajlaşma eventleri
     socket.on('new_message', handleNewMessage);
@@ -675,6 +686,7 @@ export default function useSocket({
       // 🆕 QR ile puanlama modalı
       socket.off('show_rating_modal');
       socket.off('boarding_confirmed', handleBoardingConfirmed);
+      socket.off('passenger_destination_nav_hint', handlePassengerDestinationNavHint);
 
       // 🆕 Mesajlaşma
       socket.off('new_message', handleNewMessage);
