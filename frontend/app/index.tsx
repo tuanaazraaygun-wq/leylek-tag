@@ -6248,6 +6248,8 @@ function PassengerDashboard({
   const [destinationAwaitingMapTap, setDestinationAwaitingMapTap] = useState(false);
   /** search: başlık + arama kartı | map: yalnızca harita (mahalle seçilince) */
   const [destinationPickerPhase, setDestinationPickerPhase] = useState<'search' | 'map'>('search');
+  /** Modal her açılışta PlacesAutocomplete remount — RN Modal kapalıyken child mount kalabildiği için query/effect takılı kalmayı önler. */
+  const [destinationPickerAutocompleteMountKey, setDestinationPickerAutocompleteMountKey] = useState(0);
 
   useEffect(() => {
     if (
@@ -6431,6 +6433,7 @@ function PassengerDashboard({
 
   useEffect(() => {
     if (!showDestinationPicker) return;
+    setDestinationPickerAutocompleteMountKey((k) => k + 1);
     destinationSnapshotOnPickerOpenRef.current = destination;
     setDestinationAwaitingMapTap(false);
     setDestinationPickerPhase('search');
@@ -10104,6 +10107,7 @@ function PassengerDashboard({
 
                     <View style={styles.destinationSearchShellModern}>
                       <PlacesAutocomplete
+                        key={destinationPickerAutocompleteMountKey}
                         placeholder="Mahalle, sokak, mekan ara…"
                         city={passengerSearchCityLabel || user?.city || ''}
                         hidePopularChips
