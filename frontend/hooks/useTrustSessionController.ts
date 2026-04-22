@@ -21,6 +21,15 @@ const TRUST_TAG_RETRY_BASE_MS = 260;
 const REQUESTER_TRUST_POLL_INTERVAL_MS = 850;
 const REQUESTER_TRUST_POLL_MAX_MS = 48000;
 
+/** Güven görüşmesi UI açıkken trust_session_ended kaçsa bile GET /trust/active ile düşük frekanslı doğrulama */
+const TRUST_VIDEO_ACTIVE_POLL_MS = 2600;
+
+function normTrustId(v: unknown): string {
+  return String(v ?? '')
+    .trim()
+    .toLowerCase();
+}
+
 export type TrustRequestModalState = {
   trustId: string;
   tagId: string;
@@ -98,11 +107,17 @@ export function useTrustSessionController({
   const [trustOutgoingPending, setTrustOutgoingPending] = useState(false);
   const [trustVideoSession, setTrustVideoSession] = useState<TrustVideoSessionState>(null);
 
+  const trustOutgoingPendingRef = useRef(false);
+  useEffect(() => {
+    trustOutgoingPendingRef.current = trustOutgoingPending;
+  }, [trustOutgoingPending]);
+
   const activeTagIdRef = useRef<string | null>(null);
   const activeTagRef = useRef(activeTag);
   const outboundTrustIdRef = useRef<string | null>(null);
   const sendInFlightRef = useRef(false);
   const recoveryInFlightRef = useRef(false);
+  const trustVideoActivePollInFlightRef = useRef(false);
   const openChatRef = useRef(openChatForMatchedTrip);
   openChatRef.current = openChatForMatchedTrip;
 
@@ -110,6 +125,12 @@ export function useTrustSessionController({
   useEffect(() => {
     trustVideoSessionRef.current = trustVideoSession;
   }, [trustVideoSession]);
+
+  /** onTrustSessionEnded içinde setState güncellemesinden önce güvenilir trust_id eşlemesi için */
+  const trustRequestModalRef = useRef<TrustRequestModalState>(null);
+  useEffect(() => {
+    trustRequestModalRef.current = trustRequestModal;
+  }, [trustRequestModal]);
 
   const trustTagRetryTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -368,6 +389,84 @@ export function useTrustSessionController({
       clearInterval(id);
     };
   }, [trustOutgoingPending, activeTag?.id, userId, role]);
+
+  /**
+   * Güven görüşmesi açıkken: socket `trust_session_ended` kaçsa bile sunucudaki aktif oturumu periyodik doğrular.
+   * Aktif kayıt yoksa veya mevcut `trust_id` / accepted durumu ile uyuşmuyorsa video state'i kapatır (socket ile aynı setter).
+   */
+  useEffect(() => {
+    if (!trustVideoSession?.trustId) return;
+    const tagId = activeTag?.id ? String(activeTag.id).trim() : '';
+    if (!tagId) return;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const vid = trustVideoSessionRef.current;
+      if (!vid?.trustId) return;
+      const pollTrustId = normTrustId(vid.trustId);
+      const tagForQuery = String(activeTagIdRef.current ?? '').trim();
+      if (!tagForQuery || tagForQuery.toLowerCase() !== tagId.toLowerCase()) return;
+      if (trustVideoActivePollInFlightRef.current) return;
+      trustVideoActivePollInFlightRef.current = true;
+      try {
+        const r = await getTrustActive(tagForQuery);
+        if (cancelled) return;
+        if (
+          String(activeTagIdRef.current ?? '').trim().toLowerCase() !== tagForQuery.toLowerCase()
+        ) {
+          return;
+        }
+        const stillVid = trustVideoSessionRef.current;
+        if (!stillVid || normTrustId(stillVid.trustId) !== pollTrustId) return;
+
+        if (!r || r.success === false) {
+          return;
+        }
+
+        const s = r.session as TrustActiveSessionRow | null | undefined;
+        if (!s) {
+          setTrustVideoSession((prev) =>
+            prev && normTrustId(prev.trustId) === pollTrustId ? null : prev,
+          );
+          console.log(
+            '[TRUST]',
+            JSON.stringify({ evt: 'TRUST_VIDEO_ACTIVE_POLL', action: 'close', reason: 'no_session' }),
+          );
+          return;
+        }
+
+        const sid = normTrustId(s.id);
+        const st = String(s.status ?? '').trim().toLowerCase();
+        if (sid !== pollTrustId || st !== 'accepted') {
+          setTrustVideoSession((prev) =>
+            prev && normTrustId(prev.trustId) === pollTrustId ? null : prev,
+          );
+          console.log(
+            '[TRUST]',
+            JSON.stringify({
+              evt: 'TRUST_VIDEO_ACTIVE_POLL',
+              action: 'close',
+              reason: sid !== pollTrustId ? 'trust_id_mismatch' : 'status_not_accepted',
+              server_trust_id: sid || null,
+              server_status: st || null,
+            }),
+          );
+        }
+      } finally {
+        trustVideoActivePollInFlightRef.current = false;
+      }
+    };
+
+    const id = setInterval(() => void tick(), TRUST_VIDEO_ACTIVE_POLL_MS);
+    void tick();
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [trustVideoSession?.trustId, activeTag?.id]);
 
   useEffect(() => {
     if (showCallScreen || incomingCallBlocked || !!trustVideoSession) {
@@ -745,19 +844,64 @@ export function useTrustSessionController({
       },
       onTrustSessionEnded: (data) => {
         clearTrustTagRetryTimers();
-        const endTrustId = String(data?.trust_id ?? '');
+
+        const endTrustId = normTrustId(data?.trust_id);
+        if (!endTrustId) {
+          console.log(
+            '[TRUST]',
+            JSON.stringify({ evt: 'TRUST_SESSION_ENDED_SKIP', reason: 'missing_trust_id' }),
+          );
+          return;
+        }
+
         const evTag = String(data?.tag_id ?? '').trim();
         const cur = String(activeTagIdRef.current ?? '').trim();
         const tagOk = !evTag || !cur || evTag.toLowerCase() === cur.toLowerCase();
-        if (!tagOk) return;
 
-        if (deferredTrustRequestRef.current?.trustId === endTrustId) {
+        const videoTid = normTrustId(trustVideoSessionRef.current?.trustId);
+        const sessionMatches = !!videoTid && videoTid === endTrustId;
+        const outboundMatches = normTrustId(outboundTrustIdRef.current) === endTrustId;
+        const deferredMatches =
+          normTrustId(deferredTrustRequestRef.current?.trustId) === endTrustId;
+        const modalMatches = normTrustId(trustRequestModalRef.current?.trustId) === endTrustId;
+
+        /** Bu oturuma ait UI/state var mı? (tag yarışında trust_id bağlayıcıdır.) */
+        const trustIdApplies =
+          sessionMatches || outboundMatches || deferredMatches || modalMatches;
+
+        if (!tagOk && !trustIdApplies) {
+          console.log(
+            '[TRUST]',
+            JSON.stringify({
+              evt: 'TRUST_SESSION_ENDED_SKIP',
+              reason: 'tag_and_trust_mismatch',
+              end_trust_id: endTrustId,
+              ev_tag: evTag || null,
+              active_tag_id: cur || null,
+            }),
+          );
+          return;
+        }
+
+        if (normTrustId(deferredTrustRequestRef.current?.trustId) === endTrustId) {
           deferredTrustRequestRef.current = null;
         }
 
         const reason = String(data?.end_reason ?? '');
 
         if (reason === 'rejected') {
+          if (!trustIdApplies) {
+            console.log(
+              '[TRUST]',
+              JSON.stringify({
+                evt: 'TRUST_SESSION_ENDED_SKIP',
+                reason: 'rejected_not_applicable',
+                end_trust_id: endTrustId,
+              }),
+            );
+            return;
+          }
+
           const currentUserId = String(userId ?? '').trim().toLowerCase();
           const isRejectingUser =
             String((data as { rejected_by?: string }).rejected_by ?? '')
@@ -769,8 +913,8 @@ export function useTrustSessionController({
               variant: 'info',
             });
           } else {
-            appAlert('Güven isteği', 'Karşı taraf güven vermedi', [{ text: 'Tamam' }], {
-              variant: 'warning',
+            appAlert('Güven isteği', 'Karşı taraf şu an müsait değil.', [{ text: 'Tamam' }], {
+              variant: 'info',
             });
           }
 
@@ -784,14 +928,20 @@ export function useTrustSessionController({
           return;
         }
 
-        if (outboundTrustIdRef.current && outboundTrustIdRef.current === endTrustId) {
+        if (outboundMatches) {
           outboundTrustIdRef.current = null;
+          setTrustOutgoingPending(false);
         }
-        setTrustOutgoingPending(false);
-        setTrustModalLoading(false);
-        setTrustVideoSession((prev) => (prev && prev.trustId === endTrustId ? null : prev));
-        setTrustRequestModal((prev) => (prev && prev.trustId === endTrustId ? null : prev));
-        if (reason === 'expired') {
+        if (modalMatches) {
+          setTrustModalLoading(false);
+        }
+        setTrustVideoSession((prev) =>
+          prev && normTrustId(prev.trustId) === endTrustId ? null : prev,
+        );
+        setTrustRequestModal((prev) =>
+          prev && normTrustId(prev.trustId) === endTrustId ? null : prev,
+        );
+        if (reason === 'expired' && trustIdApplies) {
           appAlert('Güven isteği', 'Süre doldu veya görüşme sona erdi.', [{ text: 'Tamam' }], { variant: 'info' });
         }
       },

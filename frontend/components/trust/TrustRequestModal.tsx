@@ -90,10 +90,10 @@ const TrustRequestModal = memo(function TrustRequestModal({
           </View>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>
-            2 dakikalık görüntülü güven görüşmesi başlatılacak
+            En fazla 5 dakikalık görüntülü güven görüşmesi başlatılacak
           </Text>
           <Text style={styles.hint}>
-            Onaylarsanız kısa süreli canlı görüntü paylaşımı açılır. İstemediğinizde güven vermeyebilirsiniz.
+            Onaylarsanız kısa süreli canlı görüntü paylaşımı açılır. Müsait değilseniz aşağıdaki seçeneği kullanabilirsiniz.
           </Text>
 
           <View style={styles.actions}>
@@ -137,7 +137,7 @@ const TrustRequestModal = memo(function TrustRequestModal({
                 style={styles.btnDanger}
               >
                 <Ionicons name="close-circle" size={22} color="#FFF" style={{ marginRight: 8 }} />
-                <Text style={styles.btnDangerText}>Güven Verme</Text>
+                <Text style={styles.btnDangerText}>Müsait Değilim</Text>
               </LinearGradient>
             </Pressable>
           </View>

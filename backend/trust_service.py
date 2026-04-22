@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 TRUST_REQUEST_TTL_SEC = 120
-TRUST_SESSION_MAX_SEC = 120  # Güven görüşmesi süresi (frontend geri sayım ile aynı)
+TRUST_SESSION_MAX_SEC = 300  # Kabul sonrası güven görüşmesi üst süresi (sn); UI geri sayımı session_hard_deadline_at ile
 
 MATCHABLE_TAG_STATUSES = ("matched", "in_progress")
 
@@ -153,6 +153,18 @@ def cleanup_stale_voice_calls(supabase) -> Dict[str, Any]:
 
 def _norm_uid(uid: str) -> str:
     return str(uid or "").strip().lower()
+
+
+def _is_pg_unique_violation(exc: BaseException) -> bool:
+    """PostgREST / psycopg: aynı tag için ikinci aktif oturum INSERT çakışması."""
+    msg = str(exc).lower()
+    if "23505" in msg:
+        return True
+    if "duplicate key" in msg:
+        return True
+    if "unique constraint" in msg and "trust_sessions" in msg:
+        return True
+    return False
 
 
 def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, Any]:
@@ -303,26 +315,82 @@ def create_trust_request(supabase, requester_id: str, tag_id: str) -> Dict[str, 
     ttl_s = _iso(ttl)
     new_id = str(uuid.uuid4())
 
-    ins = (
-        supabase.table("trust_sessions")
-        .insert(
-            {
-                "id": new_id,
-                "tag_id": tid,
-                "requester_id": rid,
-                "target_id": target_id,
-                "requester_role": requester_role,
-                "target_role": target_role,
-                "status": "pending",
-                "requested_at": now_s,
-                "request_ttl_expires_at": ttl_s,
-                "created_at": now_s,
-                "updated_at": now_s,
-            }
-        )
-        .execute()
-    )
+    insert_row = {
+        "id": new_id,
+        "tag_id": tid,
+        "requester_id": rid,
+        "target_id": target_id,
+        "requester_role": requester_role,
+        "target_role": target_role,
+        "status": "pending",
+        "requested_at": now_s,
+        "request_ttl_expires_at": ttl_s,
+        "created_at": now_s,
+        "updated_at": now_s,
+    }
+    try:
+        ins = supabase.table("trust_sessions").insert(insert_row).execute()
+    except Exception as ins_ex:
+        if _is_pg_unique_violation(ins_ex):
+            logger.info(
+                "TRUST_DIAG_CREATE %s",
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": "trust_race_lost",
+                        "tag_id": tid,
+                        "trust_id": None,
+                        "requester_id": rid,
+                        "requester_role": requester_role,
+                        "target_id": target_id,
+                        "reason": "unique_active_tag_race",
+                    },
+                    default=str,
+                ),
+            )
+            logger.info(
+                "TRUST_REQUEST_BLOCK_REASON %s",
+                json.dumps(
+                    {
+                        "reason": "trust_race_lost",
+                        "tag_id": tid,
+                        "concurrent_insert": True,
+                    },
+                    default=str,
+                ),
+            )
+            return {"success": False, "error": "trust_race_lost"}
+        logger.warning("create_trust_request insert exception: %s", ins_ex)
+        return {"success": False, "error": "insert_failed"}
+
     if not ins.data:
+        # Bazı PostgREST yanıtları unique ihlalinde boş data dönebilir; aktif satır varsa yarış kaybı say.
+        try:
+            race_chk = (
+                supabase.table("trust_sessions")
+                .select("id")
+                .eq("tag_id", tid)
+                .in_("status", ["pending", "accepted"])
+                .limit(1)
+                .execute()
+            )
+            if race_chk.data:
+                logger.info(
+                    "TRUST_DIAG_CREATE %s",
+                    json.dumps(
+                        {
+                            "success": False,
+                            "error": "trust_race_lost",
+                            "tag_id": tid,
+                            "reason": "empty_insert_but_active_row",
+                        },
+                        default=str,
+                    ),
+                )
+                return {"success": False, "error": "trust_race_lost"}
+        except Exception as _race_q:
+            logger.warning("create_trust_request race_chk: %s", _race_q)
+
         logger.info(
             "TRUST_DIAG_CREATE %s",
             json.dumps(
