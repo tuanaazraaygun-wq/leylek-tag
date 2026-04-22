@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, Platform, PermissionsAndroid } from 'react-native';
+import { appAlert } from '../contexts/AppAlertContext';
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 
@@ -292,7 +293,11 @@ export function useCall(options: UseCallOptions) {
         
         // 4. UI feedback
         if (call.end_reason === 'rejected') {
-          Alert.alert('Reddedildi', 'Arama reddedildi');
+          appAlert('Reddedildi', 'Arama reddedildi', [], {
+            variant: 'info',
+            autoDismissMs: 2600,
+            cancelable: true,
+          });
         } else if (call.end_reason === 'timeout') {
           Alert.alert('Cevap Yok', 'Arama cevaplanmadı');
         }

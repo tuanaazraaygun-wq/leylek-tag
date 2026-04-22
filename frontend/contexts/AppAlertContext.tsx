@@ -27,6 +27,10 @@ type ShowOptions = {
   cancelable?: boolean;
   /** Uyarı başlığı için vurgu */
   variant?: 'warning' | 'info';
+  /**
+   * >0 ise kart bu süre sonra kendiliğinden kapanır; `buttons` boş bırakılabilir (Tamam zorunlu değil).
+   */
+  autoDismissMs?: number;
 };
 
 type AlertQueueItem = {
@@ -53,7 +57,7 @@ export function appAlert(
     return;
   }
   const fallback =
-    buttons && buttons.length > 0
+    buttons !== undefined && buttons.length > 0
       ? buttons.map((b) => ({
           text: b.text,
           onPress: b.onPress,
@@ -88,10 +92,27 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
 
   const variant = current?.options?.variant ?? 'info';
   const cancelable = current?.options?.cancelable !== false;
+  const autoDismissMs = current?.options?.autoDismissMs;
+
+  useEffect(() => {
+    const ms = typeof autoDismissMs === 'number' && autoDismissMs > 0 ? autoDismissMs : 0;
+    if (!current || !ms) return;
+    const t = setTimeout(() => {
+      closeCurrent();
+    }, ms);
+    return () => clearTimeout(t);
+  }, [current, autoDismissMs, closeCurrent]);
 
   const buttons = useMemo(() => {
     if (!current) return [];
-    if (current.buttons && current.buttons.length > 0) return current.buttons;
+    if (current.buttons !== undefined) {
+      const raw = current.buttons;
+      const ms = current.options?.autoDismissMs;
+      if (raw.length === 0 && (!ms || ms <= 0)) {
+        return [{ text: 'Tamam', style: 'default' as const }];
+      }
+      return raw;
+    }
     return [{ text: 'Tamam', style: 'default' as const }];
   }, [current]);
 
@@ -141,41 +162,43 @@ export function AppAlertProvider({ children }: { children: React.ReactNode }) {
               </ScrollView>
             ) : null}
 
-            <View style={styles.buttonColumn}>
-              {buttons.map((btn, idx) => {
-                const isCancel = btn.style === 'cancel';
-                const isDest = btn.style === 'destructive';
-                return (
-                  <TouchableOpacity
-                    key={`${btn.text}-${idx}`}
-                    activeOpacity={0.88}
-                    style={[
-                      styles.btnOutline,
-                      isCancel && styles.btnCancelOutline,
-                      isDest && styles.btnDestructiveOutline,
-                    ]}
-                    onPress={async () => {
-                      try {
-                        await btn.onPress?.();
-                      } finally {
-                        closeCurrent();
-                      }
-                    }}
-                  >
-                    <Text
+            {buttons.length > 0 ? (
+              <View style={styles.buttonColumn}>
+                {buttons.map((btn, idx) => {
+                  const isCancel = btn.style === 'cancel';
+                  const isDest = btn.style === 'destructive';
+                  return (
+                    <TouchableOpacity
+                      key={`${btn.text}-${idx}`}
+                      activeOpacity={0.88}
                       style={[
-                        styles.btnText,
-                        isCancel && styles.btnCancelText,
-                        isDest && styles.btnDestructiveText,
+                        styles.btnOutline,
+                        isCancel && styles.btnCancelOutline,
+                        isDest && styles.btnDestructiveOutline,
                       ]}
-                      numberOfLines={2}
+                      onPress={async () => {
+                        try {
+                          await btn.onPress?.();
+                        } finally {
+                          closeCurrent();
+                        }
+                      }}
                     >
-                      {btn.text}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                      <Text
+                        style={[
+                          styles.btnText,
+                          isCancel && styles.btnCancelText,
+                          isDest && styles.btnDestructiveText,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {btn.text}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
           </Pressable>
         </Pressable>
       </Modal>

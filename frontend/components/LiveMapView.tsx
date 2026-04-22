@@ -41,6 +41,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import InRideSaferForceEndModal from './InRideSaferForceEndModal';
 import { BOARDING_COMMS_CLOSED_USER_MSG } from '../lib/boardingCommsClosed';
+import { appAlert } from '../contexts/AppAlertContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -3330,7 +3331,11 @@ export default function LiveMapView({
 
     if (boardingConfirmed) {
       void tapButtonHaptic();
-      Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+        variant: 'info',
+        autoDismissMs: 3200,
+        cancelable: true,
+      });
       return;
     }
 
@@ -5111,7 +5116,11 @@ export default function LiveMapView({
                     onPress={() => {
                       void tapButtonHaptic();
                       if (boardingConfirmed) {
-                        Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+                        appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+                          variant: 'info',
+                          autoDismissMs: 3200,
+                          cancelable: true,
+                        });
                         return;
                       }
                       if (trustRequestDisabled) return;
@@ -5300,7 +5309,11 @@ export default function LiveMapView({
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
                           if (boardingConfirmed) {
-                            Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+                            appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+                              variant: 'info',
+                              autoDismissMs: 3200,
+                              cancelable: true,
+                            });
                             return;
                           }
                           logPax('onChat', onChat);
@@ -5332,7 +5345,11 @@ export default function LiveMapView({
                           logPax('tapButtonHaptic', tapButtonHaptic);
                           void tapButtonHaptic();
                           if (boardingConfirmed) {
-                            Alert.alert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }]);
+                            appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+                              variant: 'info',
+                              autoDismissMs: 3200,
+                              cancelable: true,
+                            });
                             return;
                           }
                           if (trustRequestDisabled) return;

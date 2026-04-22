@@ -260,7 +260,11 @@ export function useTrustSessionController({
       return;
     }
     if (boardingCommsClosed) {
-      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+      appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+        variant: 'info',
+        autoDismissMs: 3200,
+        cancelable: true,
+      });
       return;
     }
     if (showCallScreen || incomingCallBlocked) {
@@ -280,7 +284,11 @@ export function useTrustSessionController({
         const err = String(res?.error ?? 'İstek gönderilemedi');
         const det = String((res as { detail?: unknown }).detail ?? '');
         if (err === BOARDING_COMM_CLOSED_CODE || det === BOARDING_COMM_CLOSED_CODE) {
-          appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [{ text: 'Tamam' }], { variant: 'info' });
+          appAlert('Bilgi', BOARDING_COMMS_CLOSED_USER_MSG, [], {
+            variant: 'info',
+            autoDismissMs: 3200,
+            cancelable: true,
+          });
           return;
         }
         if (err === 'trust_already_active') {
