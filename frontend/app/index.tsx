@@ -14,7 +14,7 @@ import { keyCharHaptic, tapButtonHaptic } from '../utils/touchHaptics';
 import LiveMapView from '../components/LiveMapView';
 import QRTripEndModal from '../components/QRTripEndModal';
 import BoardingPassengerPromptModal from '../components/BoardingPassengerPromptModal';
-import BoardingScanModal from '../components/BoardingScanModal';
+import BoardingScanModal, { type BoardingScanModalProps } from '../components/BoardingScanModal';
 import DriverBoardingQRModal from '../components/DriverBoardingQRModal';
 import RatingModal from '../components/RatingModal';
 import SearchingMapView, { DriverLocation } from '../components/SearchingMapView';
@@ -6004,6 +6004,23 @@ function AnimatedPulseButton({
   );
 }
 
+/** Tag id — QR/optimistic eşleşmesi için (UUID büyük/küçük harf farkını absorbe eder) */
+function normalizeTripTagIdForCompare(raw: string | undefined | null): string {
+  const s = String(raw ?? '').trim();
+  if (s.length >= 32 && s.includes('-')) return s.toLowerCase();
+  return s;
+}
+
+function tripTagIdsMatch(a: string | undefined | null, b: string | undefined | null): boolean {
+  const x = normalizeTripTagIdForCompare(a);
+  const y = normalizeTripTagIdForCompare(b);
+  return !!x && !!y && x === y;
+}
+
+/** Biniş QR: API success sonrası active-tag yanıtında in_progress + boarding_confirmed_at teyidi (kısa poll) */
+const BOARDING_STATE_POLL_MS = 380;
+const BOARDING_STATE_MAX_ATTEMPTS = 8;
+
 // ==================== PASSENGER DASHBOARD ====================
 function PassengerDashboard({ 
   user, 
@@ -6216,6 +6233,15 @@ function PassengerDashboard({
   /** Sürücü aynı tag için biniş QR’ı yenilediğinde (boarding_qr_issued_at) — yakınlık prompt’u tekrar loglanır */
   const passengerBoardingDriverReissuePendingRef = useRef(false);
   const passengerBoardingQrIssuedSigRef = useRef<{ tagId: string; sig: string } | null>(null);
+  const passengerDestinationNavHintShownForTagRef = useRef<string | null>(null);
+  const passengerDestinationNavHintCtxRef = useRef<{ tagId: string | null; boardingOk: boolean }>({
+    tagId: null,
+    boardingOk: false,
+  });
+
+  useEffect(() => {
+    passengerDestinationNavHintShownForTagRef.current = null;
+  }, [activeTag?.id]);
 
   // 🆕 Rating Modal State - QR tarama sonrası puanlama
   const [ratingModalData, setRatingModalData] = useState<{
@@ -6647,6 +6673,100 @@ function PassengerDashboard({
     clearIncomingCall();
   }, [clearIncomingCall]);
 
+  /** Caller (giden arama): socket kaçırılsa bile reddedildi / kapandı bilgisini poll ile yakala */
+  const passengerOutgoingCallCleanupDoneRef = useRef(false);
+
+  useEffect(() => {
+    passengerOutgoingCallCleanupDoneRef.current = false;
+  }, [callScreenData?.callId]);
+
+  const runPassengerOutgoingCallRejectCleanup = useCallback(
+    (source: 'socket' | 'poll') => {
+      if (passengerOutgoingCallCleanupDoneRef.current) return;
+      passengerOutgoingCallCleanupDoneRef.current = true;
+      try {
+        console.log(
+          'CALL_REJECT_CLEANUP_APPLY',
+          JSON.stringify({ role: 'passenger', source }),
+        );
+      } catch {
+        /* noop */
+      }
+      try {
+        console.log(
+          'CALL_REJECT_AUDIO_STOP',
+          JSON.stringify({
+            role: 'passenger',
+            source,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      try {
+        InCallManager.stopRingback();
+        InCallManager.stopRingtone();
+        Vibration.cancel();
+        InCallManager.stop();
+      } catch {
+        /* noop */
+      }
+      appAlert('Reddedildi', 'Arama reddedildi', [], {
+        variant: 'info',
+        autoDismissMs: 2600,
+        cancelable: true,
+      });
+      closePassengerCallUi();
+      try {
+        console.log(
+          'CALL_UI_CLOSE',
+          JSON.stringify({
+            role: 'passenger',
+            reason: source === 'poll' ? 'call_status_poll' : 'call_rejected',
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    },
+    [closePassengerCallUi],
+  );
+
+  useEffect(() => {
+    if (!showCallScreen || !callScreenData || callScreenData.mode !== 'caller' || !user?.id) return;
+    if (callAccepted) return;
+    const cid = callScreenData.callId;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(
+          `${API_URL}/voice/check-call-status?user_id=${encodeURIComponent(user.id)}&call_id=${encodeURIComponent(cid)}`,
+        );
+        const data = (await res.json()) as { success?: boolean; should_close?: boolean };
+        if (cancelled) return;
+        if (data?.success && data.should_close) {
+          runPassengerOutgoingCallRejectCleanup('poll');
+        }
+      } catch {
+        /* noop */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 2800);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [
+    showCallScreen,
+    callScreenData?.mode,
+    callScreenData?.callId,
+    user?.id,
+    callAccepted,
+    runPassengerOutgoingCallRejectCleanup,
+  ]);
+
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const passengerCheckEndIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isPollingActiveRef = useRef<boolean>(true);
@@ -6654,6 +6774,11 @@ function PassengerDashboard({
   const passengerPostForceEndRef = useRef(false);
   /** TEMP: log ACTIVE_TAG_RESUME_AFTER_FORCE_END once when polling runs after lock clears */
   const resumeActiveTagPollAfterForceEndRef = useRef(false);
+
+  passengerDestinationNavHintCtxRef.current = {
+    tagId: activeTag?.id ? String(activeTag.id) : null,
+    boardingOk: !!activeTag?.boarding_confirmed_at,
+  };
 
   // ==================== SOCKET.IO HOOK - YOLCU ====================
   const {
@@ -6706,25 +6831,7 @@ function PassengerDashboard({
       } catch {
         /* noop */
       }
-      try {
-        InCallManager.stopRingback();
-        InCallManager.stopRingtone();
-        Vibration.cancel();
-        InCallManager.stop();
-      } catch {
-        /* noop */
-      }
-      appAlert('Reddedildi', 'Arama reddedildi', [], {
-        variant: 'info',
-        autoDismissMs: 2600,
-        cancelable: true,
-      });
-      closePassengerCallUi();
-      try {
-        console.log('CALL_UI_CLOSE', JSON.stringify({ role: 'passenger', reason: 'call_rejected' }));
-      } catch {
-        /* noop */
-      }
+      runPassengerOutgoingCallRejectCleanup('socket');
     },
     onCallEnded: (data) => {
       console.log('📴 YOLCU - ARAMA SONLANDIRILDI:', data);
@@ -7127,6 +7234,23 @@ function PassengerDashboard({
       setPassengerBoardingScanVisible(false);
       setPassengerBoardingReminderBannerVisible(false);
     },
+    onPassengerDestinationNavHint: (data) => {
+      const tid = data?.tag_id ? String(data.tag_id) : '';
+      const ctx = passengerDestinationNavHintCtxRef.current;
+      if (!tid || !ctx.tagId || tid !== ctx.tagId) return;
+      if (!ctx.boardingOk) return;
+      if (passengerDestinationNavHintShownForTagRef.current === tid) return;
+      passengerDestinationNavHintShownForTagRef.current = tid;
+      appAlert(
+        'Bilgi',
+        'Hedefe doğru yola çıktınız. Yolculuk sonunda hedef QR kodunu okutup bitirebilir, ardından puanlama yapabilirsiniz.',
+        [],
+        {
+          variant: 'info',
+          autoDismissMs: 9000,
+        },
+      );
+    },
     ...passengerTrustSocketHandlers,
   });
 
@@ -7415,6 +7539,109 @@ function PassengerDashboard({
       console.error('TAG yüklenemedi:', error);
     }
   };
+
+  const confirmBoardingViaActiveTagApi = useCallback(async (expectedTagId: string): Promise<boolean> => {
+    const exp = normalizeTripTagIdForCompare(expectedTagId);
+    if (!exp || !user?.id) return false;
+    for (let attempt = 0; attempt < BOARDING_STATE_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise<void>((r) => setTimeout(r, BOARDING_STATE_POLL_MS));
+      }
+      try {
+        const response = await fetch(
+          `${API_URL}/passenger/active-tag?user_id=${encodeURIComponent(user.id)}`,
+        );
+        const data = await response.json();
+        if (!data.success || !data.tag) continue;
+        const t = data.tag as Tag;
+        if (!tripTagIdsMatch(t.id, exp)) continue;
+        const st = String(t.status || '').toLowerCase();
+        if (st !== 'in_progress' || !t.boarding_confirmed_at) continue;
+        return true;
+      } catch {
+        /* retry */
+      }
+    }
+    return false;
+  }, [user?.id]);
+
+  const handlePassengerBoardingVerified = useCallback<
+    BoardingScanModalProps['onVerified']
+  >(
+    async (payload) => {
+      const tidPayload = normalizeTripTagIdForCompare(String(payload?.tag_id ?? ''));
+      const tidFallback = normalizeTripTagIdForCompare(String(activeTag?.id ?? ''));
+      const tid = tidPayload || tidFallback;
+
+      const QR_RETRY_MSG = 'QR doğrulaması tamamlanamadı, lütfen tekrar okutun.';
+
+      if (!tid || !activeTag?.id || !tripTagIdsMatch(activeTag.id, tid)) {
+        try {
+          console.log(
+            'BOARDING_VERIFY_TAG_MISMATCH',
+            JSON.stringify({
+              tid,
+              active_id: activeTag?.id ?? null,
+              payload_tag: payload?.tag_id ?? null,
+            }),
+          );
+        } catch {
+          /* noop */
+        }
+        appAlert('Biniş', QR_RETRY_MSG, [], {
+          variant: 'warning',
+          cancelable: true,
+        });
+        return false;
+      }
+
+      const confirmed = await confirmBoardingViaActiveTagApi(tid);
+      if (!confirmed) {
+        try {
+          console.log(
+            'BOARDING_VERIFY_STATE_NOT_CONFIRMED',
+            JSON.stringify({ tag_id: tid }),
+          );
+        } catch {
+          /* noop */
+        }
+        appAlert('Biniş', QR_RETRY_MSG, [], {
+          variant: 'warning',
+          cancelable: true,
+        });
+        return false;
+      }
+
+      try {
+        await loadActiveTag();
+        try {
+          console.log(
+            'BOARDING_VERIFY_REFRESH_DONE',
+            JSON.stringify({ tag_id: tid }),
+          );
+        } catch {
+          /* noop */
+        }
+      } catch (e) {
+        console.warn('BOARDING_VERIFY_REFRESH', e);
+        try {
+          await loadActiveTag();
+        } catch {
+          /* noop */
+        }
+      }
+
+      setPassengerBoardingPromptVisible(false);
+
+      appAlert('Biniş onaylandı', 'Yolculuk başladı.', [], {
+        variant: 'info',
+        autoDismissMs: 2600,
+        cancelable: true,
+      });
+      return true;
+    },
+    [activeTag, confirmBoardingViaActiveTagApi, loadActiveTag],
+  );
 
   useEffect(() => {
     passengerBoardingStableSinceRef.current = null;
@@ -10404,23 +10631,7 @@ function PassengerDashboard({
         tagId={activeTag?.id || ''}
         latitude={userLocation?.latitude}
         longitude={userLocation?.longitude}
-        onVerified={(payload) => {
-          const tid = String(payload?.tag_id ?? activeTag?.id ?? '').trim();
-          if (tid) {
-            setActiveTag((prev) => {
-              if (!prev || String(prev.id) !== String(tid)) return prev;
-              return {
-                ...prev,
-                status: 'in_progress',
-                started_at: payload.started_at ?? prev.started_at,
-                boarding_confirmed_at: payload.boarding_confirmed_at ?? prev.boarding_confirmed_at,
-              };
-            });
-          }
-          setPassengerBoardingScanVisible(false);
-          setPassengerBoardingPromptVisible(false);
-          void loadActiveTag();
-        }}
+        onVerified={handlePassengerBoardingVerified}
       />
       
       {/* Rating Modal - QR tarama sonrası */}
@@ -10639,6 +10850,23 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [passengerLocation, setPassengerLocation] = useState<{latitude: number; longitude: number} | null>(null);
   /** LiveMapView uygulama-içi navigasyon: GPS/socket aralığı 12s → 5s */
   const [driverLiveMapNavigationMode, setDriverLiveMapNavigationMode] = useState(false);
+  const driverDestinationNavHintSigRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    driverDestinationNavHintSigRef.current = null;
+  }, [activeTag?.id]);
+
+  const handleDriverEnteredDestinationNavigation = useCallback(() => {
+    const tid = activeTag?.id ? String(activeTag.id) : '';
+    if (!tid || !user?.id) return;
+    if (!activeTag?.boarding_confirmed_at) return;
+    if (driverDestinationNavHintSigRef.current === tid) return;
+    driverDestinationNavHintSigRef.current = tid;
+    const q = new URLSearchParams({ user_id: user.id, tag_id: tid });
+    void fetch(`${API_URL}/driver/destination-nav-hint?${q.toString()}`, { method: 'POST' }).catch((err) =>
+      console.warn('DESTINATION_NAV_HINT_HTTP', err),
+    );
+  }, [activeTag?.boarding_confirmed_at, activeTag?.id, user?.id]);
 
   useEffect(() => {
     console.log('DRIVER_WAITING_SCREEN_ENTER', { user_id: user?.id ?? null });
@@ -10891,6 +11119,99 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     setReceiverOffline(false);
     driverClearIncomingCall();
   }, [driverClearIncomingCall]);
+
+  const driverOutgoingCallCleanupDoneRef = useRef(false);
+
+  useEffect(() => {
+    driverOutgoingCallCleanupDoneRef.current = false;
+  }, [callScreenData?.callId]);
+
+  const runDriverOutgoingCallRejectCleanup = useCallback(
+    (source: 'socket' | 'poll') => {
+      if (driverOutgoingCallCleanupDoneRef.current) return;
+      driverOutgoingCallCleanupDoneRef.current = true;
+      try {
+        console.log(
+          'CALL_REJECT_CLEANUP_APPLY',
+          JSON.stringify({ role: 'driver', source }),
+        );
+      } catch {
+        /* noop */
+      }
+      try {
+        console.log(
+          'CALL_REJECT_AUDIO_STOP',
+          JSON.stringify({
+            role: 'driver',
+            source,
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+      try {
+        InCallManager.stopRingback();
+        InCallManager.stopRingtone();
+        Vibration.cancel();
+        InCallManager.stop();
+      } catch {
+        /* noop */
+      }
+      appAlert('Reddedildi', 'Arama reddedildi', [], {
+        variant: 'info',
+        autoDismissMs: 2600,
+        cancelable: true,
+      });
+      closeDriverCallUi();
+      try {
+        console.log(
+          'CALL_UI_CLOSE',
+          JSON.stringify({
+            role: 'driver',
+            reason: source === 'poll' ? 'call_status_poll' : 'call_rejected',
+          }),
+        );
+      } catch {
+        /* noop */
+      }
+    },
+    [closeDriverCallUi],
+  );
+
+  useEffect(() => {
+    if (!showCallScreen || !callScreenData || callScreenData.mode !== 'caller' || !user?.id) return;
+    if (callAccepted) return;
+    const cid = callScreenData.callId;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(
+          `${API_URL}/voice/check-call-status?user_id=${encodeURIComponent(user.id)}&call_id=${encodeURIComponent(cid)}`,
+        );
+        const data = (await res.json()) as { success?: boolean; should_close?: boolean };
+        if (cancelled) return;
+        if (data?.success && data.should_close) {
+          runDriverOutgoingCallRejectCleanup('poll');
+        }
+      } catch {
+        /* noop */
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 2800);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [
+    showCallScreen,
+    callScreenData?.mode,
+    callScreenData?.callId,
+    user?.id,
+    callAccepted,
+    runDriverOutgoingCallRejectCleanup,
+  ]);
   
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
@@ -10936,29 +11257,11 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       } catch {
         /* noop */
       }
-      try {
-        InCallManager.stopRingback();
-        InCallManager.stopRingtone();
-        Vibration.cancel();
-        InCallManager.stop();
-      } catch {
-        /* noop */
-      }
       console.log(
         'CALL_REJECT_UI_CLOSE',
         JSON.stringify({ call_id: (data as { call_id?: string })?.call_id ?? null })
       );
-      appAlert('Reddedildi', 'Arama reddedildi', [], {
-        variant: 'info',
-        autoDismissMs: 2600,
-        cancelable: true,
-      });
-      closeDriverCallUi();
-      try {
-        console.log('CALL_UI_CLOSE', JSON.stringify({ role: 'driver', reason: 'call_rejected' }));
-      } catch {
-        /* noop */
-      }
+      runDriverOutgoingCallRejectCleanup('socket');
     },
     onCallEnded: (data) => {
       console.log('📴 ŞOFÖR - ESKİ ARAMA BİTTİ:', data);
@@ -13299,6 +13602,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             tagStatus={activeTag?.status}
             tagStartedAt={activeTag?.started_at ?? null}
             boardingConfirmed={!!activeTag?.boarding_confirmed_at}
+            onDriverEnteredDestinationNavigation={handleDriverEnteredDestinationNavigation}
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
             routeInfo={{

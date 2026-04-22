@@ -18,13 +18,16 @@ type Props = {
   tagId: string;
   latitude?: number;
   longitude?: number;
+  /** true: sunucu + state teyidi tamam → modal kapanır. false: kamera açık kalır */
   onVerified: (payload: {
     tag_id?: string;
     started_at?: string;
     boarding_confirmed_at?: string;
     status?: string;
-  }) => void;
+  }) => boolean | Promise<boolean>;
 };
+
+export type BoardingScanModalProps = Props;
 
 export default function BoardingScanModal({
   visible,
@@ -88,13 +91,17 @@ export default function BoardingScanModal({
           const tag_id =
             (typeof rawTag === 'string' && rawTag.trim()) || propTag || undefined;
           console.log('BOARDING_SCAN_SUCCESS', { tag_id, used_prop_fallback: !rawTag && !!propTag });
-          onVerified({
-            tag_id,
-            started_at: (json as { started_at?: string }).started_at,
-            boarding_confirmed_at: (json as { boarding_confirmed_at?: string }).boarding_confirmed_at,
-            status: (json as { status?: string }).status,
-          });
-          onClose();
+          const closeModal = await Promise.resolve(
+            onVerified({
+              tag_id,
+              started_at: (json as { started_at?: string }).started_at,
+              boarding_confirmed_at: (json as { boarding_confirmed_at?: string }).boarding_confirmed_at,
+              status: (json as { status?: string }).status,
+            }),
+          );
+          if (closeModal === true) {
+            onClose();
+          }
         } else {
           Alert.alert('Biniş doğrulanamadı', json.detail || 'Tekrar deneyin');
         }
