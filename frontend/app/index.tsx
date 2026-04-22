@@ -6017,6 +6017,28 @@ function tripTagIdsMatch(a: string | undefined | null, b: string | undefined | n
   return !!x && !!y && x === y;
 }
 
+/** FastAPI `detail` / düz `error` — özellikle `/price/calculate` 503 gövdesi */
+function pickPriceApiDetailMessage(body: unknown, fallback: string): string {
+  if (body === null || body === undefined || typeof body !== 'object') return fallback;
+  const rec = body as Record<string, unknown>;
+  const d = rec.detail;
+  if (typeof d === 'string' && d.trim()) return d.trim();
+  if (Array.isArray(d)) {
+    const parts = d
+      .map((item) => {
+        if (typeof item === 'object' && item !== null && 'msg' in item) {
+          return String((item as { msg?: unknown }).msg ?? '').trim();
+        }
+        return '';
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join('; ');
+  }
+  const err = rec.error;
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  return fallback;
+}
+
 /** Biniş QR: API success sonrası active-tag yanıtında in_progress + boarding_confirmed_at teyidi (kısa poll) */
 const BOARDING_STATE_POLL_MS = 380;
 const BOARDING_STATE_MAX_ATTEMPTS = 8;
@@ -7183,6 +7205,10 @@ function PassengerDashboard({
       setFirstChatTapBanner(null);
       setShowQRModal(false);
       setShowPriceModal(false);
+      setPriceInfo(null);
+      setSelectedPrice(0);
+      pricePrefetchRef.current = null;
+      setPriceLoading(false);
       clearPassengerTrustState();
       setScreen('role-select');
 
@@ -8163,6 +8189,7 @@ function PassengerDashboard({
     const prefetchKey = makePricePrefetchKey(pickupLat, pickupLng, dropLat, dropLng, rideVehiclePreference);
     const pf = pricePrefetchRef.current;
     if (
+      !passengerPostForceEndRef.current &&
       pf &&
       pf.key === prefetchKey &&
       Date.now() - pf.ts < 120_000 &&
@@ -8214,7 +8241,11 @@ function PassengerDashboard({
           body: errBody,
           afterForceEnd: passengerPostForceEndRef.current,
         });
-        throw new Error(`Price API HTTP ${response.status}`);
+        const msg = pickPriceApiDetailMessage(
+          errBody,
+          `Sunucu yanıtı ${response.status}`,
+        );
+        throw new Error(msg);
       }
       const data = await response.json();
 
@@ -8232,7 +8263,9 @@ function PassengerDashboard({
           body: data,
           afterForceEnd: passengerPostForceEndRef.current,
         });
-        throw new Error(data?.error || 'Price API success=false');
+        throw new Error(
+          pickPriceApiDetailMessage(data, typeof data?.error === 'string' ? data.error : 'Fiyat hesaplanamadı'),
+        );
       }
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
@@ -8276,14 +8309,24 @@ function PassengerDashboard({
         }),
       });
       if (!response.ok) {
-        throw new Error(`Price API HTTP ${response.status}`);
+        let errBody: unknown = null;
+        try {
+          errBody = await response.clone().json();
+        } catch {
+          /* ignore */
+        }
+        throw new Error(
+          pickPriceApiDetailMessage(errBody, `Sunucu yanıtı ${response.status}`),
+        );
       }
       const data = await response.json();
       if (data?.success) {
         setPriceInfo(data);
         setSelectedPrice(data.suggested_price);
       } else {
-        throw new Error(data?.error || 'Price API success=false');
+        throw new Error(
+          pickPriceApiDetailMessage(data, typeof data?.error === 'string' ? data.error : 'Fiyat güncellenemedi'),
+        );
       }
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
