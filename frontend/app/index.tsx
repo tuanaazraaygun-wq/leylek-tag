@@ -7467,8 +7467,11 @@ function PassengerDashboard({
           // Rol seçim ekranına yönlendir
           setScreen('role-select');
           
-          // Alert'i sadece bir kez göster
-          if (shouldShowAlert) {
+          // Alert'i sadece bir kez göster — yolcu kendi iptalinde karşı taraf suçlu mesajı gösterme
+          const passengerSelfCancel =
+            data.tag.status === 'cancelled' &&
+            String((_t.cancel_reason as string | undefined) ?? '').trim() === 'passenger_cancelled';
+          if (shouldShowAlert && !passengerSelfCancel) {
             const t = data.tag;
             const otherId = String(t.driver_id || '');
             const otherName = displayFirstName(t.driver_name, 'Sürücü');

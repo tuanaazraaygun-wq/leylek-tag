@@ -472,20 +472,20 @@ async def accept_call(sid, data):
 
 @sio.event
 async def reject_call(sid, data):
-    """Aramayı reddet"""
+    """Aramayı reddet — caller'a bildirim: sid map yerine emit_socket_event_to_user (oda fallback)."""
     call_id = data.get('call_id')
     caller_id = data.get('caller_id')
     receiver_id = data.get('receiver_id')
-    
+
     logger.info(f"❌ Arama reddedildi: {call_id}")
-    
-    # Arayana bildir
-    caller_sid = connected_users.get(caller_id)
-    if caller_sid:
-        await sio.emit('call_rejected', {
-            'call_id': call_id,
-            'rejected_by': receiver_id
-        }, room=caller_sid)
+    payload = {'call_id': call_id, 'rejected_by': receiver_id}
+    if caller_id:
+        try:
+            await emit_socket_event_to_user(str(caller_id).strip(), 'call_rejected', payload)
+        except Exception as emit_err:
+            logger.warning(f"reject_call emit_socket_event_to_user failed: {emit_err}")
+    else:
+        logger.warning("reject_call: caller_id eksik, call_rejected gönderilemedi")
 
 @sio.event
 async def end_call(sid, data):
@@ -6861,7 +6861,8 @@ async def cancel_tag_delete(tag_id: str, passenger_id: str = None, user_id: str 
         
         update_query = supabase.table("tags").update({
             "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat()
+            "cancelled_at": datetime.utcnow().isoformat(),
+            "cancel_reason": "passenger_cancelled",
         }).eq("id", tag_id)
         
         if resolved_id:
@@ -6921,10 +6922,11 @@ async def cancel_tag_post(request: CancelTagRequest = None, tag_id: str = None, 
                 logger.info("AUTO_CANCEL_BLOCKED (<20s)")
                 return {"success": False, "message": "Too early cancel blocked"}
         
-        # 1. TAG'i iptal et
+        # 1. TAG'i iptal et (yolcu self-cancel — istemci active-tag polling'de ayırır)
         update_query = supabase.table("tags").update({
             "status": "cancelled",
-            "cancelled_at": datetime.utcnow().isoformat()
+            "cancelled_at": datetime.utcnow().isoformat(),
+            "cancel_reason": "passenger_cancelled",
         }).eq("id", tid)
         
         if resolved_id:
@@ -8589,6 +8591,53 @@ async def driver_on_the_way(driver_id: str = None, user_id: str = None, tag_id: 
         raise
     except Exception as e:
         logger.error(f"driver_on_the_way error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/driver/destination-nav-hint")
+async def driver_destination_nav_hint(
+    driver_id: str = None,
+    user_id: str = None,
+    tag_id: str = None,
+):
+    """Sürücü navigasyonu pickup→hedef fazına geçti — yolcuya socket ile tek seferlik bilgi tetiklenir."""
+    try:
+        did = driver_id or user_id
+        if not did or not tag_id:
+            raise HTTPException(status_code=422, detail="user_id ve tag_id gerekli")
+        resolved_id = await resolve_user_id(did)
+        tag_result = (
+            supabase.table("tags")
+            .select("passenger_id, driver_id, status, boarding_confirmed_at")
+            .eq("id", tag_id)
+            .eq("driver_id", resolved_id)
+            .limit(1)
+            .execute()
+        )
+        if not tag_result.data:
+            raise HTTPException(status_code=400, detail="Yolculuk bulunamadı")
+        row = tag_result.data[0]
+        if row.get("status") not in ("matched", "in_progress"):
+            raise HTTPException(status_code=400, detail="Geçersiz yolculuk durumu")
+        if not row.get("boarding_confirmed_at"):
+            raise HTTPException(status_code=400, detail="Biniş doğrulanmamış")
+        passenger_id = row.get("passenger_id")
+        if passenger_id:
+            await emit_socket_event_to_user(
+                str(passenger_id),
+                "passenger_destination_nav_hint",
+                {"tag_id": str(tag_id)},
+            )
+            logger.info(
+                "PASSENGER_DESTINATION_NAV_HINT_EMIT tag_id=%s passenger_id=%s",
+                tag_id,
+                str(passenger_id)[:13],
+            )
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"driver_destination_nav_hint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -11055,33 +11104,112 @@ async def reject_call(user_id: str, call_id: str = None, tag_id: str = None):
             "ended_at": datetime.utcnow().isoformat(),
             "ended_by": user_id
         }).eq("call_id", call_id).eq("status", "ringing").execute()
-        
-        if result.data:
-            logger.info(f"📵 SUPABASE: Arama reddedildi: {call_id}")
-            row = result.data[0]
-            caller_id = row.get("caller_id")
-            reject_payload = {
-                "call_id": call_id,
-                "rejected_by": str(user_id).strip(),
-            }
+
+        uid_norm = str(user_id).strip().lower()
+
+        async def _emit_call_rejected_to(caller_uid: str, rp: dict, label: str) -> None:
             try:
                 logger.info(
                     "CALL_REJECT_EMIT_TO_CALLER %s",
                     json.dumps(
-                        {"caller_id": caller_id, **reject_payload},
+                        {"caller_id": caller_uid, **rp, "emit_reason": label},
                         default=str,
                     ),
                 )
             except Exception:
-                logger.info("CALL_REJECT_EMIT_TO_CALLER caller_id=%s call_id=%s", caller_id, call_id)
+                logger.info(
+                    "CALL_REJECT_EMIT_TO_CALLER caller_id=%s call_id=%s reason=%s",
+                    caller_uid,
+                    call_id,
+                    label,
+                )
+            try:
+                await emit_socket_event_to_user(caller_uid, "call_rejected", rp)
+            except Exception as emit_err:
+                logger.warning("CALL_REJECT_EMIT_TO_CALLER failed (%s): %s", label, emit_err)
+
+        reject_payload_base = {"call_id": call_id, "rejected_by": str(user_id).strip()}
+
+        if result.data:
+            logger.info(f"📵 SUPABASE: Arama reddedildi: {call_id}")
+            row = result.data[0]
+            caller_id = row.get("caller_id")
             if caller_id:
-                try:
-                    await emit_socket_event_to_user(
-                        caller_id, "call_rejected", reject_payload
-                    )
-                except Exception as emit_err:
-                    logger.warning("CALL_REJECT_EMIT_TO_CALLER failed: %s", emit_err)
-        
+                await _emit_call_rejected_to(str(caller_id).strip(), reject_payload_base, "primary_update")
+        else:
+            # Güncelleme 0 satır (yarış / çift reddetme / durum drift): caller temizliği için güvenli fallback
+            try:
+                fb = (
+                    supabase.table("calls")
+                    .select("caller_id,receiver_id,status")
+                    .eq("call_id", call_id)
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as sel_err:
+                logger.warning("CALL_REJECT_HTTP_FALLBACK_SELECT failed: %s", sel_err)
+                fb = None
+
+            row_fb = (fb.data or [None])[0] if fb else None
+            if row_fb:
+                recv = str(row_fb.get("receiver_id") or "").strip().lower()
+                st = str(row_fb.get("status") or "").strip().lower()
+                caller_fb = row_fb.get("caller_id")
+
+                if recv != uid_norm:
+                    try:
+                        logger.info(
+                            "CALL_REJECT_HTTP_FALLBACK_SKIP %s",
+                            json.dumps(
+                                {
+                                    "call_id": call_id,
+                                    "reason": "receiver_mismatch",
+                                    "expected_receiver": recv,
+                                    "reject_user": uid_norm,
+                                },
+                                default=str,
+                            ),
+                        )
+                    except Exception:
+                        pass
+                elif st == "rejected":
+                    try:
+                        logger.info(
+                            "CALL_REJECT_HTTP_EMIT_FALLBACK %s",
+                            json.dumps(
+                                {"call_id": call_id, "reason": "already_rejected_idempotent"},
+                                default=str,
+                            ),
+                        )
+                    except Exception:
+                        logger.info(
+                            "CALL_REJECT_HTTP_EMIT_FALLBACK call_id=%s already_rejected",
+                            call_id,
+                        )
+                    if caller_fb:
+                        await _emit_call_rejected_to(
+                            str(caller_fb).strip(), reject_payload_base, "fallback_already_rejected"
+                        )
+                elif st in ("ended", "cancelled", "missed"):
+                    try:
+                        logger.info(
+                            "CALL_REJECT_HTTP_EMIT_FALLBACK %s",
+                            json.dumps(
+                                {"call_id": call_id, "reason": "terminal_non_ringing", "status": st},
+                                default=str,
+                            ),
+                        )
+                    except Exception:
+                        logger.info(
+                            "CALL_REJECT_HTTP_EMIT_FALLBACK call_id=%s status=%s",
+                            call_id,
+                            st,
+                        )
+                    if caller_fb:
+                        await _emit_call_rejected_to(
+                            str(caller_fb).strip(), reject_payload_base, "fallback_terminal"
+                        )
+
         return {"success": True, "call_id": call_id}
     except Exception as e:
         logger.error(f"Reject call error: {e}")
