@@ -17,6 +17,10 @@ import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../li
 const MAX_TRUST_TAG_RETRY_ATTEMPTS = 14;
 const TRUST_TAG_RETRY_BASE_MS = 260;
 
+/** İstek sahibi (outgoing): trust_session_ready socket kaçınca GET /trust/active ile accepted yakalama */
+const REQUESTER_TRUST_POLL_INTERVAL_MS = 850;
+const REQUESTER_TRUST_POLL_MAX_MS = 48000;
+
 export type TrustRequestModalState = {
   trustId: string;
   tagId: string;
@@ -318,6 +322,53 @@ export function useTrustSessionController({
     }
   }, [activeTag?.id, activeTag?.status, tryRecoverAcceptedSession]);
 
+  const recoverTrustVideoByTagIdRef = useRef(recoverTrustVideoByTagId);
+  recoverTrustVideoByTagIdRef.current = recoverTrustVideoByTagId;
+
+  /**
+   * Outgoing requester: karşı taraf kabul edince sunucu trust_session_ready yayınlar; socket kaçarsa
+   * yalnızca AppState / tek seferlik recover yetmez. Bu interval ile aynı tag için accepted + token
+   * gelene kadar GET /trust/active tekrarlanır (recoverTrustVideoByTagId ile aynı güvenlik kontrolleri).
+   */
+  useEffect(() => {
+    if (!trustOutgoingPending) return;
+    const uid = userId?.trim();
+    const tid = activeTag?.id ? String(activeTag.id).trim() : '';
+    if (!uid || !tid) return;
+
+    let cancelled = false;
+    const t0 = Date.now();
+
+    const tick = async () => {
+      if (cancelled) return;
+      if (!trustOutgoingPendingRef.current) return;
+      if (trustVideoSessionRef.current) return;
+      if (Date.now() - t0 > REQUESTER_TRUST_POLL_MAX_MS) {
+        console.log(
+          '[TRUST]',
+          JSON.stringify({
+            evt: 'TRUST_REQUESTER_POLL_MAX_MS',
+            tag_id: tid,
+            role,
+          }),
+        );
+        return;
+      }
+      const bs = blockStateRef.current;
+      if (bs.showCallScreen || bs.incomingCallBlocked) return;
+
+      await recoverTrustVideoByTagIdRef.current(tid, 'requester_outgoing_poll');
+    };
+
+    const id = setInterval(() => void tick(), REQUESTER_TRUST_POLL_INTERVAL_MS);
+    void tick();
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [trustOutgoingPending, activeTag?.id, userId, role]);
+
   useEffect(() => {
     if (showCallScreen || incomingCallBlocked || !!trustVideoSession) {
       return;
@@ -395,6 +446,17 @@ export function useTrustSessionController({
             }),
           );
           appAlert('Güven', 'Bu yolculukta zaten aktif bir güven isteği var.');
+        } else if (err === 'trust_race_lost') {
+          console.log(
+            'TRUST_DIAG_SEND_TRUST_RACE_LOST',
+            JSON.stringify({ activeTagId: tagId }),
+          );
+          appAlert(
+            'Güven',
+            'Karşı taraf güven isteğini bir an önce gönderdi. Yineleyebilir veya karşı tarafın isteğini bekleyebilirsiniz.',
+            [{ text: 'Tamam' }],
+            { variant: 'info' },
+          );
         } else {
           appAlert('Hata', err);
         }
