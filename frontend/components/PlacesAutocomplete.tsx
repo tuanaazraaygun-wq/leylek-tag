@@ -90,6 +90,16 @@ function pointInStoredCityBbox(lat: number, lon: number, bbox: string): boolean 
   return lon >= b.minLon && lon <= b.maxLon && lat >= b.minLat && lat <= b.maxLat;
 }
 
+/**
+ * Muhabbet teklif uçları: nokta kayıtlı şehir bbox içinde mi.
+ * Şehir CITY_DATA’da yoksa true (yalnızca arama sıkılığına güvenilir).
+ */
+export function isLatLngWithinRegisteredCity(cityLabel: string, lat: number, lng: number): boolean {
+  const key = resolveCityDataKey(cityLabel);
+  if (!key) return true;
+  return pointInStoredCityBbox(lat, lng, CITY_DATA[key].bbox);
+}
+
 /** Nominatim `viewbox=` parametresi (left,top,right,bottom). */
 function nominatimViewboxFromStoredBbox(bbox: string): string | null {
   const b = parseStoredCityBbox(bbox);
