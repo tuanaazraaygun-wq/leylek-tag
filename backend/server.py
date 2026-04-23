@@ -70,6 +70,7 @@ from services.fcm_push_service import (
     send_fcm_notification_sync,
 )
 from services.muhabbet_moderation import moderate_muhabbet_text, ModerationUnavailableError
+import services.route_matching as _route_matching
 from route_service import get_route_cached
 import trust_service as _trust_service
 from routes.admin_ai import router as admin_ai_router
@@ -6134,6 +6135,85 @@ async def admin_community_city_requests(admin_phone: str, limit: int = 80):
     except Exception as e:
         logger.error(f"admin_community_city_requests error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/muhabbet/groups/pending")
+async def admin_muhabbet_groups_pending(admin_phone: str, limit: int = 100):
+    """Admin: onay bekleyen kullanıcı grup önerileri."""
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        lim = max(1, min(int(limit), 200))
+        res = (
+            supabase.table("groups")
+            .select("*")
+            .eq("status", "pending")
+            .order("created_at", desc=True)
+            .limit(lim)
+            .execute()
+        )
+        rows = list(res.data or [])
+        n_ids = list({str(g.get("neighborhood_id")) for g in rows if g.get("neighborhood_id")})
+        name_map: dict[str, str] = {}
+        if n_ids:
+            nh = supabase.table("neighborhoods").select("id, name").in_("id", n_ids).execute()
+            for n in nh.data or []:
+                if n.get("id"):
+                    name_map[str(n["id"])] = str(n.get("name") or "")
+        for g in rows:
+            g["neighborhood_name"] = name_map.get(str(g.get("neighborhood_id") or ""), "")
+        return {"success": True, "groups": rows}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"admin_muhabbet_groups_pending: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/admin/muhabbet/groups/{group_id}/approve")
+async def admin_muhabbet_group_approve(group_id: str, admin_phone: str):
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        gid = str(group_id).strip().lower()
+        uuid.UUID(gid)
+        cur = supabase.table("groups").select("id,status").eq("id", gid).limit(1).execute()
+        if not cur.data:
+            raise HTTPException(status_code=404, detail="Grup bulunamadı")
+        if str(cur.data[0].get("status") or "") != "pending":
+            raise HTTPException(status_code=400, detail="Yalnızca bekleyen (pending) gruplar onaylanabilir.")
+        supabase.table("groups").update({"status": "approved"}).eq("id", gid).execute()
+        return {"success": True, "message": "Grup onaylandı ve keşifte yayınlandı."}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz grup kimliği") from None
+    except Exception as e:
+        logger.error(f"admin_muhabbet_group_approve: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/admin/muhabbet/groups/{group_id}/reject")
+async def admin_muhabbet_group_reject(group_id: str, admin_phone: str):
+    if admin_phone not in ADMIN_PHONE_NUMBERS:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    try:
+        gid = str(group_id).strip().lower()
+        uuid.UUID(gid)
+        cur = supabase.table("groups").select("id,status").eq("id", gid).limit(1).execute()
+        if not cur.data:
+            raise HTTPException(status_code=404, detail="Grup bulunamadı")
+        if str(cur.data[0].get("status") or "") != "pending":
+            raise HTTPException(status_code=400, detail="Yalnızca bekleyen (pending) gruplar reddedilebilir.")
+        supabase.table("groups").update({"status": "rejected"}).eq("id", gid).execute()
+        return {"success": True, "message": "Grup önerisi reddedildi."}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz grup kimliği") from None
+    except Exception as e:
+        logger.error(f"admin_muhabbet_group_reject: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @api_router.post("/admin/reports/{report_id}/update")
@@ -16582,6 +16662,480 @@ async def delete_community_message(message_id: str, user_id: str):
         return {"success": False, "error": str(e)}
 
 
+# ==================== GÜZERGAH: user_routes / eşleşme / auto_groups (Muhabbet grupları) ====================
+
+
+def _routes_default_neighborhood_id(city: str) -> Optional[str]:
+    c = (city or "").strip()
+    if not c:
+        return None
+    try:
+        r = (
+            supabase.table("neighborhoods")
+            .select("id")
+            .eq("city", c)
+            .order("sort_order")
+            .limit(1)
+            .execute()
+        )
+        if r.data and r.data[0].get("id"):
+            return str(r.data[0]["id"]).strip().lower()
+    except Exception as e:
+        logger.warning("routes: varsayılan neighborhood bulunamadı: %s", e)
+    return None
+
+
+def _routes_upsert_pair_match(
+    uid_self: str,
+    uid_other: str,
+    row_self: dict,
+    row_other: dict,
+) -> str:
+    """
+    (user_a, user_b) tekil; user_a < user_b. Dönen: 'inserted' | 'updated' | 'noop'.
+    """
+    a, b = _route_matching.ordered_pair(uid_self, uid_other)
+    sd = _route_matching.same_district_flag(row_self.get("district"), row_other.get("district"))
+    d = _route_matching.match_distance_meters(row_self, row_other)
+    ex = (
+        supabase.table("route_matches")
+        .select("id, distance_meters")
+        .eq("user_a", a)
+        .eq("user_b", b)
+        .limit(1)
+        .execute()
+    )
+    if ex.data:
+        old = int(ex.data[0].get("distance_meters") or 9_999_999)
+        if d < old:
+            supabase.table("route_matches").update(
+                {
+                    "distance_meters": d,
+                    "same_district": sd,
+                    "same_city": True,
+                }
+            ).eq("user_a", a).eq("user_b", b).execute()
+            logger.info("routes: eşleşme mesafe güncellendi user_a=%s user_b=%s m=%s (önce %s)", a, b, d, old)
+            return "updated"
+        return "noop"
+    supabase.table("route_matches").insert(
+        {
+            "user_a": a,
+            "user_b": b,
+            "distance_meters": d,
+            "same_district": sd,
+            "same_city": True,
+        }
+    ).execute()
+    logger.info("routes: yeni eşleşme user_a=%s user_b=%s distance_meters=%s", a, b, d)
+    return "inserted"
+
+
+def _routes_distinct_user_ids_for_pattern(city: str, pattern_h: str) -> list[str]:
+    r = (
+        supabase.table("user_routes")
+        .select("user_id")
+        .eq("city", (city or "").strip())
+        .eq("pattern_hash", pattern_h)
+        .execute()
+    )
+    out: set[str] = set()
+    for x in r.data or []:
+        u = str(x.get("user_id") or "").strip().lower()
+        if u:
+            out.add(u)
+    return list(out)
+
+
+def _routes_ensure_auto_group(city: str, pattern_h: str) -> Optional[str]:
+    """
+    Aynı city + route_hash (pattern) için tek Muhabbet grubu: önce auto_groups + varsa group_id, yoksa güvenli oluştur.
+    groups.name = 'Aynı Güzergah', group_type = 'route'.
+    """
+    c = (city or "").strip()
+    if not c or not pattern_h:
+        return None
+    uids = _routes_distinct_user_ids_for_pattern(c, pattern_h)
+    if len(uids) < 2:
+        return None
+    nh = _routes_default_neighborhood_id(c)
+    if not nh:
+        logger.warning("routes: '%s' için mahalle yok, otomatik grup atlandı", c)
+        return None
+    gname = "Aynı Güzergah"
+    gtype = "route"
+
+    def _ag_row() -> Optional[dict]:
+        r = (
+            supabase.table("auto_groups")
+            .select("id, group_id, name")
+            .eq("city", c)
+            .eq("route_hash", pattern_h)
+            .limit(1)
+            .execute()
+        )
+        return r.data[0] if r.data else None
+
+    ag = _ag_row()
+    if not ag:
+        try:
+            supabase.table("auto_groups").insert(
+                {"route_hash": pattern_h, "city": c, "name": gname, "group_id": None}
+            ).execute()
+        except Exception as e:
+            logger.debug("routes: auto_groups ilk kayıt yarış: %s", e)
+        ag = _ag_row()
+    if not ag:
+        return None
+
+    gid: Optional[str] = None
+    if ag.get("group_id"):
+        gid = str(ag["group_id"]).strip().lower()
+    if not gid:
+        ins_g = (
+            supabase.table("groups")
+            .insert(
+                {
+                    "neighborhood_id": nh,
+                    "city": c,
+                    "name": gname,
+                    "description": "Aynı güzergahtaki kullanıcılar (otomatik).",
+                    "group_type": gtype,
+                    "status": "approved",
+                }
+            )
+            .execute()
+        )
+        if not ins_g.data or not ins_g.data[0].get("id"):
+            logger.error("routes: groups insert başarısız")
+            return None
+        new_gid = str(ins_g.data[0]["id"]).strip().lower()
+        aid = str(ag.get("id") or "")
+        supabase.table("auto_groups").update({"group_id": new_gid, "name": gname}).eq("id", aid).is_(
+            "group_id", "null"
+        ).execute()
+        re = _ag_row()
+        if re and re.get("group_id"):
+            winner = str(re["group_id"]).strip().lower()
+            if winner != new_gid:
+                try:
+                    supabase.table("groups").delete().eq("id", new_gid).execute()
+                except Exception as ex:
+                    logger.warning("routes: yetim grup silinemedi: %s", ex)
+            gid = str(re.get("group_id") or "").strip().lower() or None
+        else:
+            gid = new_gid
+    if not gid:
+        return None
+    for u in uids:
+        try:
+            supabase.table("group_members").insert({"group_id": gid, "user_id": u}).execute()
+        except Exception:
+            pass
+    _muhabbet_sync_group_member_count(gid)
+    return gid
+
+
+def _routes_fetch_match_candidates(city: str, new_row: dict) -> list:
+    """
+    Tüm tablo taraması yok: aynı city + aynı/komşu pattern_hash (3x3 grid) içinden en fazla 50 aday.
+    """
+    c = (city or "").strip()
+    new_id = str(new_row.get("id") or "")
+    sl, sgl = float(new_row["start_lat"]), float(new_row["start_lng"])
+    el, egl = float(new_row["end_lat"]), float(new_row["end_lng"])
+    hashes = _route_matching.neighbor_pattern_hashes(c, sl, sgl, el, egl)
+    if not hashes:
+        return []
+    r = (
+        supabase.table("user_routes")
+        .select("*")
+        .eq("city", c)
+        .in_("pattern_hash", hashes)
+        .neq("id", new_id)
+        .limit(50)
+        .execute()
+    )
+    return list(r.data or [])
+
+
+def _routes_process_new_route(new_row: dict) -> int:
+    """Aday kümesiyle eşleştir, route_matches yazar, pattern altında auto_group senkler."""
+    city = str(new_row.get("city") or "").strip()
+    new_id = str(new_row.get("id") or "")
+    my_uid = str(new_row.get("user_id") or "").strip().lower()
+    n_effective = 0
+    for other in _routes_fetch_match_candidates(city, new_row):
+        if str(other.get("id")) == new_id:
+            continue
+        if not _route_matching.route_rows_similar(new_row, other):
+            continue
+        ou = str(other.get("user_id") or "").strip().lower()
+        if not ou or ou == my_uid:
+            continue
+        op = _routes_upsert_pair_match(my_uid, ou, new_row, other)
+        if op != "noop":
+            n_effective += 1
+    ph = str(new_row.get("pattern_hash") or "")
+    if ph:
+        _routes_ensure_auto_group(city, ph)
+    return n_effective
+
+
+def _routes_summary_display_line(row: Optional[dict]) -> Optional[str]:
+    """Rota metni: district alanı 'A → B' veya sadece başlangıç; yoksa şehir."""
+    if not row:
+        return None
+    d = (row.get("district") or "").strip()
+    c = (row.get("city") or "").strip()
+    if d:
+        t = d.replace("->", "→").replace("|", " → ")
+        if "→" in t:
+            return t
+        if c:
+            return f"{d} → {c}"
+        return d
+    if c:
+        return f"{c} rotası"
+    return None
+
+
+class UserRouteCreateBody(BaseModel):
+    start_lat: float
+    start_lng: float
+    end_lat: float
+    end_lng: float
+    city: str
+    district: Optional[str] = None
+
+    @field_validator("start_lat", "end_lat")
+    @classmethod
+    def _lat(cls, v: float) -> float:
+        if v < -90 or v > 90:
+            raise ValueError("Enlem -90..90 aralığında olmalı")
+        return float(v)
+
+    @field_validator("start_lng", "end_lng")
+    @classmethod
+    def _lng(cls, v: float) -> float:
+        if v < -180 or v > 180:
+            raise ValueError("Boylam -180..180 aralığında olmalı")
+        return float(v)
+
+
+@api_router.post("/routes")
+async def user_routes_create(
+    body: UserRouteCreateBody,
+    user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Oturumdaki kullanıcı için güzergah kaydeder, eşleşmeleri yazar, otomatik gruba bağlar.
+    user_id sadece JWT sub'dan; body'de kimlik yok.
+    """
+    try:
+        uid_r = await resolve_user_id(user_id)
+        uid = str(uid_r or user_id).strip().lower()
+        if not uid:
+            raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+        c = (body.city or "").strip()
+        if not c:
+            raise HTTPException(status_code=400, detail="city gerekli")
+        ph = _route_matching.pattern_hash(
+            c, body.start_lat, body.start_lng, body.end_lat, body.end_lng
+        )
+        dup = (
+            supabase.table("user_routes")
+            .select("*")
+            .eq("user_id", uid)
+            .eq("pattern_hash", ph)
+            .limit(1)
+            .execute()
+        )
+        if dup.data:
+            return {
+                "success": True,
+                "duplicate": True,
+                "route": dict(dup.data[0]),
+                "pairwise_matches_upserted": 0,
+            }
+        try:
+            ins = (
+                supabase.table("user_routes")
+                .insert(
+                    {
+                        "user_id": uid,
+                        "start_lat": body.start_lat,
+                        "start_lng": body.start_lng,
+                        "end_lat": body.end_lat,
+                        "end_lng": body.end_lng,
+                        "city": c,
+                        "district": (body.district or "").strip() or None,
+                        "pattern_hash": ph,
+                    }
+                )
+                .execute()
+            )
+        except Exception as ie:
+            err = str(ie).lower()
+            if "23505" in str(ie) or "duplicate" in err or "unique" in err:
+                dup2 = (
+                    supabase.table("user_routes")
+                    .select("*")
+                    .eq("user_id", uid)
+                    .eq("pattern_hash", ph)
+                    .limit(1)
+                    .execute()
+                )
+                if dup2.data:
+                    return {
+                        "success": True,
+                        "duplicate": True,
+                        "route": dict(dup2.data[0]),
+                        "pairwise_matches_upserted": 0,
+                    }
+            raise
+        if not ins.data:
+            return {"success": False, "detail": "Rota kaydedilemedi"}
+        row = dict(ins.data[0])
+        n = _routes_process_new_route(row)
+        return {
+            "success": True,
+            "duplicate": False,
+            "route": row,
+            "pairwise_matches_upserted": n,
+        }
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"user_routes_create: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/routes/match")
+async def user_routes_match_list(
+    user_id: str = Depends(get_authenticated_user_id_from_authorization),
+    city: Optional[str] = None,
+    limit: int = 100,
+):
+    """
+    Sadece oturum kullanıcısının eşleşmeleri. Karşı taraf hakkında yalnızca kimlik (UUID) — ek alan yok.
+    """
+    try:
+        uid = str((await resolve_user_id(user_id)) or user_id).strip().lower()
+        if not uid:
+            raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+        lim = max(1, min(int(limit or 100), 500))
+        city_filter: Optional[set[str]] = None
+        if (city or "").strip():
+            others = (
+                supabase.table("user_routes")
+                .select("user_id")
+                .eq("city", (city or "").strip())
+                .execute()
+            )
+            city_filter = {str(x.get("user_id")) for x in (others.data or []) if x.get("user_id")}
+
+        res = (
+            supabase.table("route_matches")
+            .select("id, user_a, user_b, created_at")
+            .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
+            .order("created_at", desc=True)
+            .limit(lim * 2)
+            .execute()
+        )
+        rows = list(res.data or [])
+        out: list = []
+        seen: set[str] = set()
+        for r0 in rows:
+            aid = str(r0.get("user_a") or "")
+            bid = str(r0.get("user_b") or "")
+            other = bid if aid == uid else (aid if bid == uid else None)
+            if not other or other == uid:
+                continue
+            if city_filter is not None and str(other) not in city_filter:
+                continue
+            if other in seen:
+                continue
+            seen.add(str(other))
+            out.append(
+                {
+                    "match_id": r0.get("id"),
+                    "other_user_id": other,
+                }
+            )
+            if len(out) >= lim:
+                break
+        return {"success": True, "matches": out, "count": len(out)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"user_routes_match_list: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/routes/summary")
+async def user_routes_summary(
+    user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Son kayıtlı güzergah özeti, toplam eşleşme sayısı ve aynı pattern için otomatik grup (varsa).
+    """
+    try:
+        uid = str((await resolve_user_id(user_id)) or user_id).strip().lower()
+        if not uid:
+            raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+
+        last = (
+            supabase.table("user_routes")
+            .select("city, district, pattern_hash, start_lat, start_lng, end_lat, end_lng, created_at")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        last_row: Optional[dict] = dict(last.data[0]) if last.data else None
+
+        mc = (
+            supabase.table("route_matches")
+            .select("id", count="exact")
+            .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
+            .execute()
+        )
+        match_count = int(mc.count or 0)
+
+        has_group = False
+        group_id: Optional[str] = None
+        if last_row:
+            ph = str(last_row.get("pattern_hash") or "").strip()
+            city = str(last_row.get("city") or "").strip()
+            if ph and city:
+                ag = (
+                    supabase.table("auto_groups")
+                    .select("group_id")
+                    .eq("city", city)
+                    .eq("route_hash", ph)
+                    .limit(1)
+                    .execute()
+                )
+                if ag.data and ag.data[0].get("group_id"):
+                    group_id = str(ag.data[0]["group_id"]).strip().lower()
+                    has_group = bool(group_id)
+
+        return {
+            "match_count": match_count,
+            "route": _routes_summary_display_line(last_row),
+            "has_group": has_group,
+            "group_id": group_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"user_routes_summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 # ==================== LEYLEK MUHABBETİ v1 — FAZ 1 (mahalle / grup / üyelik) ====================
 
 
@@ -16597,6 +17151,33 @@ def _muhabbet_sync_group_member_count(group_id: str) -> None:
 
 class MuhabbetJoinBody(BaseModel):
     user_id: str
+
+
+class MuhabbetGroupCreateBody(BaseModel):
+    user_id: str
+    name: str
+    description: Optional[str] = None
+    city: str
+    neighborhood_id: str
+
+
+def _muhabbet_normalize_group_title(name: str) -> str:
+    """Kopya kontrolü için isim normalizasyonu (boşluk birleştirme + küçük harf)."""
+    return " ".join((name or "").strip().lower().split())
+
+
+def _muhabbet_require_approved_group(group_id: str) -> None:
+    """Gönderi / presign / akış için grup yayında olmalı."""
+    gid = str(group_id).strip().lower()
+    gr = supabase.table("groups").select("id,status").eq("id", gid).limit(1).execute()
+    if not gr.data:
+        raise HTTPException(status_code=404, detail="Grup bulunamadı")
+    st = str(gr.data[0].get("status") or "approved").strip().lower()
+    if st != "approved":
+        raise HTTPException(
+            status_code=403,
+            detail="Bu grup henüz yönetici onayıyla yayınlanmadı veya artık aktif değil.",
+        )
 
 
 @api_router.get("/muhabbet/neighborhoods")
@@ -16627,7 +17208,7 @@ async def muhabbet_list_groups(city: str, neighborhood_id: Optional[str] = None)
         c = (city or "").strip()
         if not c:
             return {"success": False, "groups": [], "detail": "city gerekli"}
-        q = supabase.table("groups").select("*").eq("city", c)
+        q = supabase.table("groups").select("*").eq("city", c).eq("status", "approved")
         nid = (neighborhood_id or "").strip()
         if nid:
             q = q.eq("neighborhood_id", nid)
@@ -16674,7 +17255,14 @@ async def muhabbet_my_groups(user_id: str):
         gids = list(dict.fromkeys(gids_raw))
         if not gids:
             return {"success": True, "groups": []}
-        gr = supabase.table("groups").select("*").in_("id", gids).order("name").execute()
+        gr = (
+            supabase.table("groups")
+            .select("*")
+            .in_("id", gids)
+            .eq("status", "approved")
+            .order("name")
+            .execute()
+        )
         rows_raw = list(gr.data or [])
         seen_my: set[str] = set()
         rows: list = []
@@ -16753,9 +17341,15 @@ async def muhabbet_join_group(group_id: str, body: MuhabbetJoinBody):
         if not raw:
             return {"success": False, "detail": "user_id gerekli"}
         uid = await resolve_user_id(raw)
-        gr = supabase.table("groups").select("id").eq("id", gid).limit(1).execute()
+        gr = supabase.table("groups").select("id,status").eq("id", gid).limit(1).execute()
         if not gr.data:
             return {"success": False, "detail": "Grup bulunamadı"}
+        st = str(gr.data[0].get("status") or "approved").strip().lower()
+        if st != "approved":
+            return {
+                "success": False,
+                "detail": "Bu grup henüz yönetici onayıyla yayınlanmadı. Onay sonrası katılabilirsiniz.",
+            }
         ex = (
             supabase.table("group_members")
             .select("id")
@@ -16774,6 +17368,84 @@ async def muhabbet_join_group(group_id: str, body: MuhabbetJoinBody):
     except Exception as e:
         logger.error(f"muhabbet_join_group: {e}")
         return {"success": False, "detail": str(e)}
+
+
+@api_router.post("/muhabbet/groups/create")
+async def muhabbet_create_group(
+    body: MuhabbetGroupCreateBody,
+    authorization: Annotated[Optional[str], Header(alias="Authorization")] = None,
+):
+    """Kullanıcı yeni grup önerir; kayıt pending — keşifte yalnızca admin onayı sonrası görünür."""
+    try:
+        uid = await _muhabbet_verify_bearer_matches_claimed_user(authorization, body.user_id)
+        c = (body.city or "").strip()
+        if not c:
+            raise HTTPException(status_code=400, detail="city gerekli")
+        nid = str(body.neighborhood_id or "").strip().lower()
+        uuid.UUID(nid)
+        nm = (body.name or "").strip()
+        if len(nm) < 2:
+            raise HTTPException(status_code=400, detail="Grup adı en az 2 karakter olmalı.")
+        if len(nm) > 80:
+            raise HTTPException(status_code=400, detail="Grup adı en fazla 80 karakter olabilir.")
+        desc_raw = (body.description or "").strip()
+        desc = desc_raw or None
+        if desc and len(desc) > 500:
+            raise HTTPException(status_code=400, detail="Açıklama en fazla 500 karakter olabilir.")
+        nh = supabase.table("neighborhoods").select("id, city").eq("id", nid).limit(1).execute()
+        if not nh.data:
+            raise HTTPException(status_code=400, detail="Geçersiz mahalle")
+        if str(nh.data[0].get("city") or "").strip() != c:
+            raise HTTPException(status_code=400, detail="Mahalle, seçilen şehir ile uyuşmuyor.")
+        norm = _muhabbet_normalize_group_title(nm)
+        existing = (
+            supabase.table("groups")
+            .select("id,name,status")
+            .eq("city", c)
+            .eq("neighborhood_id", nid)
+            .execute()
+        )
+        for ex in existing.data or []:
+            if _muhabbet_normalize_group_title(str(ex.get("name") or "")) != norm:
+                continue
+            stx = str(ex.get("status") or "approved").strip().lower()
+            if stx in ("pending", "approved"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Bu mahallede aynı isimde zaten bir grup var veya onay bekleyen bir öneri mevcut.",
+                )
+        ins = (
+            supabase.table("groups")
+            .insert(
+                {
+                    "neighborhood_id": nid,
+                    "city": c,
+                    "name": nm,
+                    "description": desc,
+                    "group_type": "community",
+                    "status": "pending",
+                    "created_by_user_id": uid,
+                    "member_count": 0,
+                }
+            )
+            .execute()
+        )
+        if not ins.data or not ins.data[0].get("id"):
+            return {"success": False, "detail": "Grup kaydı oluşturulamadı"}
+        row = dict(ins.data[0])
+        row["neighborhood_name"] = str(nh.data[0].get("name") or "")
+        msg = (
+            "Grup önerin alındı. Yönetici onayından sonra Leylek Muhabbeti keşfet listesinde yayınlanacak; "
+            "onaylanana kadar gruba katılım ve akış açılmaz."
+        )
+        return {"success": True, "group": row, "message": msg}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz mahalle kimliği") from None
+    except Exception as e:
+        logger.error(f"muhabbet_create_group: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ==================== LEYLEK MUHABBETİ v1 — FAZ 2 (gönderi / yorum / şikayet) ====================
@@ -16977,6 +17649,7 @@ async def muhabbet_upload_presign(
         gid = str(body.group_id).strip().lower()
         uuid.UUID(gid)
         _muhabbet_assert_group_member(gid, uid)
+        _muhabbet_require_approved_group(gid)
         _muhabbet_ensure_posts_bucket()
         ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
         ext = ext_map[body.content_type]
@@ -17017,6 +17690,7 @@ async def muhabbet_create_post(
         gid = str(body.group_id).strip().lower()
         uuid.UUID(gid)
         _muhabbet_assert_group_member(gid, uid)
+        _muhabbet_require_approved_group(gid)
         sp = _muhabbet_validate_storage_path_for_group(gid, body.image_storage_path)
         bt = (body.body_text or "").strip()
         if len(bt) < 1:
@@ -17113,6 +17787,7 @@ async def muhabbet_group_feed(
         gid = str(group_id).strip().lower()
         uuid.UUID(gid)
         _muhabbet_assert_group_member(gid, uid)
+        _muhabbet_require_approved_group(gid)
         lim = max(1, min(int(limit or 25), 50))
         off = max(0, int(offset or 0))
         res = (

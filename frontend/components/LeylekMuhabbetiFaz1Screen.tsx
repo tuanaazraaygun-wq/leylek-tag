@@ -3,7 +3,7 @@
  * Faz 2: Bearer access_token zorunlu (presign, gönderi, feed, yorum, şikayet).
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import RouteSummaryCard from './RouteSummaryCard';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -56,11 +57,43 @@ const MUHABBET_SESSION_TITLE = 'Oturum gerekli';
 const MUHABBET_SESSION_MESSAGE =
   'Leylek Muhabbeti akışı, paylaşım ve şikayet için güvenli oturum jetonu (access token) gerekir. Lütfen çıkış yapıp tekrar giriş yapın.';
 
+/** RouteSummaryCard ve keşif yüzeyi ile hizalı tasarım tokenları */
+const MUHAB_SURFACE = '#F2F2F7';
+const TEXT_PRIMARY = '#111111';
+const TEXT_SECONDARY = '#6E6E73';
+const ACCENT = '#007AFF';
+const CARD_BG = '#FFFFFF';
+const CARD_RADIUS = 20;
+const CARD_SHADOW = Platform.select({
+  ios: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 24,
+  },
+  android: { elevation: 3 },
+  default: {},
+});
+
+const BORDER_HAIRLINE = '#E5E5EA';
+const FIELD_BG = '#EFEFF4';
+const DESTRUCTIVE = '#FF3B30';
+const BTN_RADIUS = 14;
+const BTN_PAD_V = 14;
+const BTN_PAD_H = 20;
+
 export interface LeylekMuhabbetiFaz1ScreenProps {
   user: { id: string; name: string; role: string; city?: string; rating?: number };
   onBack: () => void;
   apiUrl: string;
   accessToken?: string | null;
+  /** Kart / derin bağlantı: açılışta bu gruba gidilir (feed). */
+  initialGroupId?: string | null;
+  onInitialGroupConsumed?: () => void;
+  /** RouteSummaryCard CTA: rota kurulumu (ör. Expo Router). */
+  onNavigateToRouteSetup?: () => void;
+  /** RouteSummaryCard CTA: gruba git (parent deeplink / state). */
+  onNavigateToGroup?: (groupId: string) => void;
 }
 
 type Neighborhood = {
@@ -79,6 +112,8 @@ type GroupRow = {
   member_count: number;
   neighborhood_name?: string;
   is_member?: boolean;
+  /** pending | approved | rejected — keşif listesinde yalnızca approved */
+  status?: string | null;
 };
 
 type PostRow = {
@@ -225,9 +260,12 @@ export default function LeylekMuhabbetiFaz1Screen({
   onBack,
   apiUrl,
   accessToken,
+  initialGroupId,
+  onInitialGroupConsumed,
+  onNavigateToRouteSetup,
+  onNavigateToGroup,
 }: LeylekMuhabbetiFaz1ScreenProps) {
   const tok = (accessToken || '').trim();
-
   const requireMuhabbetToken = (): boolean => {
     if (!tok) {
       Alert.alert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);
@@ -279,6 +317,49 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [reportReason, setReportReason] = useState('');
   const [reportDetails, setReportDetails] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
+
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [createGroupName, setCreateGroupName] = useState('');
+  const [createGroupDesc, setCreateGroupDesc] = useState('');
+  const [createGroupBusy, setCreateGroupBusy] = useState(false);
+
+  useEffect(() => {
+    const gid = (initialGroupId || '').trim();
+    if (!gid || !tok) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = new URLSearchParams({ user_id: user.id });
+        const res = await fetch(`${apiUrl}/muhabbet/groups/${gid}?${q}`, {
+          headers: { Authorization: `Bearer ${tok}` },
+        });
+        const data = (await res.json()) as { success?: boolean; group?: GroupRow };
+        if (cancelled) return;
+        if (data.success && data.group) {
+          const g = data.group;
+          const st = String(g.status || 'approved').toLowerCase();
+          if (st !== 'approved') {
+            Alert.alert(
+              'Grup henüz yayında değil',
+              'Bu grup yönetici onayında veya reddedilmiş olabilir. Onaylandıktan sonra akışa erişebilirsiniz.',
+            );
+            return;
+          }
+          const c = (g.city || '').trim();
+          if (c) setSelectedCity(c);
+          if (g.neighborhood_id) setSelectedNeighborhoodId(String(g.neighborhood_id));
+          setFeedGroup(g);
+        }
+      } catch {
+        /* noop */
+      } finally {
+        if (!cancelled) onInitialGroupConsumed?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialGroupId, tok, apiUrl, user.id, onInitialGroupConsumed]);
 
   const loadMyGroups = useCallback(async () => {
     try {
@@ -445,6 +526,11 @@ export default function LeylekMuhabbetiFaz1Screen({
   const openFeedFromDetail = () => {
     if (!detailGroup) return;
     if (!requireMuhabbetToken()) return;
+    const st = String(detailGroup.status || 'approved').toLowerCase();
+    if (st !== 'approved') {
+      Alert.alert('Akış', 'Bu grup henüz yönetici onayıyla yayınlanmadı.');
+      return;
+    }
     const member = detailGroup.is_member || myGroupIds.has(detailGroup.id);
     if (!member) {
       Alert.alert('Üyelik', 'Önce gruba katılmanız gerekir.');
@@ -452,6 +538,52 @@ export default function LeylekMuhabbetiFaz1Screen({
     }
     setDetailVisible(false);
     setFeedGroup(detailGroup);
+  };
+
+  const submitCreateGroup = async () => {
+    if (!requireMuhabbetToken()) return;
+    const nid = (selectedNeighborhoodId || '').trim();
+    if (!nid) {
+      Alert.alert('Mahalle', 'Önce bir mahalle seçin.');
+      return;
+    }
+    const nm = createGroupName.trim();
+    if (nm.length < 2) {
+      Alert.alert('Grup adı', 'En az 2 karakter girin.');
+      return;
+    }
+    setCreateGroupBusy(true);
+    try {
+      const res = await fetch(`${apiUrl}/muhabbet/groups/create`, {
+        method: 'POST',
+        headers: { ...authHeaders(tok), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          name: nm,
+          description: createGroupDesc.trim() || undefined,
+          city: selectedCity.trim(),
+          neighborhood_id: nid,
+        }),
+      });
+      const { ok, status, data } = await parseJsonResponse(res);
+      const payload = (data || {}) as { success?: boolean; message?: string; detail?: string };
+      if (ok && payload.success) {
+        const msg =
+          typeof payload.message === 'string' && payload.message.trim()
+            ? payload.message.trim()
+            : 'Önerin alındı. Yönetici onayından sonra keşifte görünecek.';
+        Alert.alert('Teşekkürler', msg);
+        setCreateGroupOpen(false);
+        setCreateGroupName('');
+        setCreateGroupDesc('');
+        await loadGroups();
+      } else {
+        Alert.alert('Grup önerisi', userFacingApiMessage(status, data, 'Gönderilemedi.'));
+      }
+    } catch {
+      Alert.alert('Grup önerisi', 'Bağlantı kurulamadı.');
+    }
+    setCreateGroupBusy(false);
   };
 
   const openPostDetail = async (p: PostRow) => {
@@ -707,12 +839,39 @@ export default function LeylekMuhabbetiFaz1Screen({
   );
 
   const theme = getCityTheme(selectedCity);
+  const apiBaseUrl = apiUrl.replace(/\/$/, '');
+
+  const peopleInsights = useMemo(() => {
+    const neigh = neighborhoods.find((n) => n.id === selectedNeighborhoodId);
+    const neighLabel = neigh?.name?.trim() || 'Mahalle seç';
+    const memberSum = groups.reduce((acc, g) => acc + (typeof g.member_count === 'number' ? g.member_count : 0), 0);
+    const myCount = myGroupIds.size;
+    return [
+      {
+        key: 'route',
+        title: 'Aynı Güzergah',
+        line: myCount > 0 ? `${myCount} grupta` : 'Rota ekleyince',
+        hint: myCount > 0 ? 'Üye olduğun gruplar' : 'Eşleşmeler burada',
+      },
+      {
+        key: 'hood',
+        title: 'Mahallenden',
+        line: neighLabel,
+        hint: selectedNeighborhoodId ? selectedCity : 'Önce şehir ve mahalle',
+      },
+      {
+        key: 'active',
+        title: 'Bugün aktif',
+        line: groups.length > 0 ? `${memberSum || 0} üye` : '—',
+        hint: groups.length > 0 ? `${groups.length} grup` : 'Grupları keşfet',
+      },
+    ];
+  }, [neighborhoods, selectedNeighborhoodId, selectedCity, groups, myGroupIds]);
 
   if (feedGroup) {
     return (
-      <SafeAreaView style={styles.root}>
-        <LinearGradient colors={['#0b1220', '#111827']} style={StyleSheet.absoluteFill} />
-        <View style={styles.header}>
+      <SafeAreaView style={styles.feedRoot}>
+        <View style={styles.feedHeader}>
           <TouchableOpacity
             onPress={() => {
               setFeedGroup(null);
@@ -720,13 +879,13 @@ export default function LeylekMuhabbetiFaz1Screen({
             }}
             style={styles.headerIcon}
           >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
           </TouchableOpacity>
           <View style={{ flex: 1, marginHorizontal: 8 }}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
+            <Text style={styles.feedHeaderTitle} numberOfLines={1}>
               {feedGroup.name}
             </Text>
-            <Text style={styles.headerSub} numberOfLines={1}>
+            <Text style={styles.feedHeaderSub} numberOfLines={1}>
               {feedGroup.neighborhood_name || ''} · {feedGroup.city}
             </Text>
           </View>
@@ -737,7 +896,7 @@ export default function LeylekMuhabbetiFaz1Screen({
             }}
             style={styles.headerIcon}
           >
-            <Ionicons name="add-circle-outline" size={28} color={tok ? '#38BDF8' : '#475569'} />
+            <Ionicons name="add-circle-outline" size={28} color={tok ? ACCENT : TEXT_SECONDARY} />
           </TouchableOpacity>
         </View>
 
@@ -749,31 +908,35 @@ export default function LeylekMuhabbetiFaz1Screen({
         ) : null}
 
         {feedLoading ? (
-          <ActivityIndicator color="#38BDF8" style={{ marginTop: 24 }} />
+          <ActivityIndicator color={ACCENT} style={{ marginTop: 24 }} />
         ) : (
           <FlatList
             data={feedPosts}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38BDF8" />}
+            contentContainerStyle={styles.feedListContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
             ListEmptyComponent={
-              <Text style={styles.muted}>
+              <Text style={styles.mutedLight}>
                 {tok
                   ? 'Henüz gönderi yok. + ile ilk paylaşımı siz yapın.'
                   : 'Akışı görmek için oturum jetonu gerekir (üstteki uyarı).'}
               </Text>
             }
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.postCard} onPress={() => void openPostDetail(item)} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.postCardLight}
+                onPress={() => void openPostDetail(item)}
+                activeOpacity={0.92}
+              >
                 {item.image_url ? (
-                  <Image source={{ uri: item.image_url }} style={styles.postImage} resizeMode="cover" />
+                  <Image source={{ uri: item.image_url }} style={styles.postImageLight} resizeMode="cover" />
                 ) : null}
-                <Text style={styles.postBody} numberOfLines={4}>
+                <Text style={styles.postBodyLight} numberOfLines={4}>
                   {item.body_text}
                 </Text>
-                <View style={styles.postMeta}>
-                  <Text style={styles.postAuthor}>{item.author_name || 'Kullanıcı'}</Text>
-                  <Text style={styles.postTime}>{formatPostTime(item.created_at)}</Text>
+                <View style={styles.postMetaLight}>
+                  <Text style={styles.postAuthorLight}>{item.author_name || 'Kullanıcı'}</Text>
+                  <Text style={styles.postTimeLight}>{formatPostTime(item.created_at)}</Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -781,43 +944,42 @@ export default function LeylekMuhabbetiFaz1Screen({
         )}
 
         <Modal visible={composeOpen} animationType="slide" onRequestClose={() => setComposeOpen(false)}>
-          <SafeAreaView style={styles.modalRoot}>
-            <LinearGradient colors={['#0f172a', '#1e293b']} style={StyleSheet.absoluteFill} />
+          <SafeAreaView style={styles.modalRootLight}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setComposeOpen(false)} style={styles.headerIcon}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Yeni gönderi</Text>
               <View style={{ width: 40 }} />
             </View>
-            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+            <ScrollView contentContainerStyle={styles.modalScrollPad}>
               <Text style={styles.inputLabel}>Fotoğraf (zorunlu)</Text>
               <TouchableOpacity style={styles.imagePick} onPress={() => void pickImageForCompose()}>
                 {composeImageUri ? (
                   <Image source={{ uri: composeImageUri }} style={styles.imagePickImg} resizeMode="cover" />
                 ) : (
-                  <Text style={styles.muted}>Galeriden seçmek için dokunun</Text>
+                  <Text style={styles.composeMuted}>Galeriden seçmek için dokunun</Text>
                 )}
               </TouchableOpacity>
               <Text style={[styles.inputLabel, { marginTop: 16 }]}>Kısa açıklama (zorunlu)</Text>
               <TextInput
                 style={styles.composeInput}
                 placeholder="Ne paylaşıyorsunuz?"
-                placeholderTextColor="#64748b"
+                placeholderTextColor={TEXT_SECONDARY}
                 value={composeCaption}
                 onChangeText={setComposeCaption}
                 multiline
                 maxLength={MUHABBET_POST_BODY_MAX}
               />
               <TouchableOpacity
-                style={[styles.joinBtn, composeBusy && styles.joinBtnDisabled]}
+                style={[styles.btnPrimary, composeBusy && styles.btnDisabled]}
                 disabled={composeBusy}
                 onPress={() => void submitNewPost()}
               >
                 {composeBusy ? (
-                  <ActivityIndicator color="#0f172a" />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.joinBtnText}>Yayınla</Text>
+                  <Text style={styles.btnPrimaryText}>Yayınla</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -825,13 +987,12 @@ export default function LeylekMuhabbetiFaz1Screen({
         </Modal>
 
         <Modal visible={postDetailVisible} animationType="slide" onRequestClose={() => setPostDetailVisible(false)}>
-          <SafeAreaView style={styles.modalRoot}>
-            <LinearGradient colors={['#0b1220', '#111827']} style={StyleSheet.absoluteFill} />
-            <View style={styles.header}>
+          <SafeAreaView style={styles.modalRootLight}>
+            <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setPostDetailVisible(false)} style={styles.headerIcon}>
-                <Ionicons name="arrow-back" size={24} color="#fff" />
+                <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
               </TouchableOpacity>
-              <Text style={[styles.headerTitle, { flex: 1, marginHorizontal: 8 }]} numberOfLines={1}>
+              <Text style={[styles.modalTitle, { flex: 1, marginHorizontal: 8 }]} numberOfLines={1}>
                 Gönderi
               </Text>
               <TouchableOpacity
@@ -841,18 +1002,19 @@ export default function LeylekMuhabbetiFaz1Screen({
                 }}
                 style={styles.headerIcon}
               >
-                <Ionicons name="flag-outline" size={22} color={tok ? '#F97316' : '#475569'} />
+                <Ionicons name="flag-outline" size={22} color={tok ? DESTRUCTIVE : TEXT_SECONDARY} />
               </TouchableOpacity>
             </View>
             {postDetailLoading || !postDetail ? (
-              <ActivityIndicator color="#38BDF8" style={{ marginTop: 24 }} />
+              <ActivityIndicator color={ACCENT} style={{ marginTop: 24 }} />
             ) : (
               <KeyboardAvoidingView
-                style={{ flex: 1 }}
+                style={styles.modalFlexFill}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 keyboardVerticalOffset={88}
               >
                 <FlatList
+                  style={styles.postDetailList}
                   data={comments}
                   keyExtractor={(c) => c.id}
                   ListHeaderComponent={
@@ -860,20 +1022,20 @@ export default function LeylekMuhabbetiFaz1Screen({
                       {postDetail.image_url ? (
                         <Image source={{ uri: postDetail.image_url }} style={styles.detailHero} resizeMode="cover" />
                       ) : null}
-                      <View style={{ padding: 16 }}>
+                      <View style={styles.postDetailHeaderPad}>
                         <Text style={styles.detailCaption}>{postDetail.body_text}</Text>
                         <Text style={styles.detailMeta}>
                           {postDetail.author_name || 'Kullanıcı'} · {formatPostTime(postDetail.created_at)}
                         </Text>
-                        <Text style={styles.sectionLabel}>Yorumlar</Text>
+                        <Text style={styles.sheetSectionLabel}>Yorumlar</Text>
                       </View>
                     </View>
                   }
                   ListEmptyComponent={
                     commentsLoading ? (
-                      <ActivityIndicator color="#38BDF8" style={{ marginVertical: 12 }} />
+                      <ActivityIndicator color={ACCENT} style={{ marginVertical: 12 }} />
                     ) : (
-                      <Text style={[styles.muted, { paddingHorizontal: 16 }]}>İlk yorumu siz yazın.</Text>
+                      <Text style={[styles.composeMuted, { paddingHorizontal: 16 }]}>İlk yorumu siz yazın.</Text>
                     )
                   }
                   renderItem={({ item }) => (
@@ -883,27 +1045,27 @@ export default function LeylekMuhabbetiFaz1Screen({
                       <Text style={styles.commentTime}>{formatPostTime(item.created_at)}</Text>
                     </View>
                   )}
-                  contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+                  contentContainerStyle={styles.postDetailListContent}
                 />
                 <View style={styles.commentBar}>
                   <TextInput
                     style={styles.commentInput}
                     placeholder="Yorum yazın..."
-                    placeholderTextColor="#64748b"
+                    placeholderTextColor={TEXT_SECONDARY}
                     value={newComment}
                     onChangeText={setNewComment}
                     multiline
                     maxLength={800}
                   />
                   <TouchableOpacity
-                    style={styles.commentSend}
+                    style={[styles.commentSend, (commentBusy || !newComment.trim()) && styles.btnDisabled]}
                     disabled={commentBusy || !newComment.trim()}
                     onPress={() => void submitComment()}
                   >
                     {commentBusy ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color="#FFFFFF" />
                     ) : (
-                      <Ionicons name="send" size={22} color="#fff" />
+                      <Ionicons name="send" size={22} color="#FFFFFF" />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -932,21 +1094,21 @@ export default function LeylekMuhabbetiFaz1Screen({
               <TextInput
                 style={styles.composeInput}
                 placeholder="Ek açıklama (isteğe bağlı)"
-                placeholderTextColor="#64748b"
+                placeholderTextColor={TEXT_SECONDARY}
                 value={reportDetails}
                 onChangeText={setReportDetails}
                 multiline
                 maxLength={2000}
               />
               <TouchableOpacity
-                style={[styles.joinBtn, reportBusy && styles.joinBtnDisabled]}
+                style={[styles.btnPrimary, reportBusy && styles.btnDisabled]}
                 disabled={reportBusy}
                 onPress={() => void submitReport()}
               >
                 {reportBusy ? (
-                  <ActivityIndicator color="#0f172a" />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.joinBtnText}>Şikayeti gönder</Text>
+                  <Text style={styles.btnPrimaryText}>Şikayeti gönder</Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity style={styles.closeLink} onPress={() => setReportOpen(false)}>
@@ -960,149 +1122,208 @@ export default function LeylekMuhabbetiFaz1Screen({
   }
 
   return (
-    <SafeAreaView style={styles.root}>
-      <LinearGradient colors={['#0b1220', '#111827']} style={StyleSheet.absoluteFill} />
-      <View style={styles.header}>
+    <SafeAreaView style={styles.discoveryRoot}>
+      <View style={styles.discoveryHeader}>
         <TouchableOpacity onPress={onBack} style={styles.headerIcon} accessibilityRole="button">
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Leylek Muhabbeti</Text>
+        <Text style={styles.discoveryHeaderTitle}>Leylek Muhabbeti</Text>
         <TouchableOpacity
           onPress={() => setShowCityModal(true)}
           style={styles.headerIcon}
           accessibilityRole="button"
         >
-          <Ionicons name="location" size={22} color="#38BDF8" />
+          <Ionicons name="location-outline" size={22} color={ACCENT} />
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity
-        style={styles.cityChip}
+        style={styles.cityChipLight}
         onPress={() => setShowCityModal(true)}
-        activeOpacity={0.85}
+        activeOpacity={0.88}
       >
-        <LinearGradient colors={theme.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cityChipInner}>
-          <Ionicons name={theme.icon} size={18} color="#fff" />
-          <Text style={styles.cityChipText}>{selectedCity}</Text>
-          <Ionicons name="chevron-down" size={18} color="#e2e8f0" />
-        </LinearGradient>
+        <View style={styles.cityChipLightInner}>
+          <Ionicons name={theme.icon} size={18} color={ACCENT} />
+          <Text style={styles.cityChipLightText}>{selectedCity}</Text>
+          <Ionicons name="chevron-down" size={18} color={TEXT_SECONDARY} />
+        </View>
       </TouchableOpacity>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38BDF8" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionLabel}>Mahalle</Text>
-        {nLoading ? (
-          <ActivityIndicator color="#38BDF8" style={{ marginVertical: 16 }} />
-        ) : neighborhoods.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="map-outline" size={36} color="#64748b" />
-            <Text style={styles.emptyTitle}>Bu şehirde henüz mahalle yok</Text>
-            <Text style={styles.emptySub}>
-              Veri eklendiğinde mahalle ve gruplar burada listelenir. Şehir açılış talebi için aşağıdaki düğmeyi
-              kullanabilirsiniz.
-            </Text>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => void requestCityForMuhabbet(selectedCity)}>
-              <Text style={styles.secondaryBtnText}>Şehir talebi gönder</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nChipRow}>
-            {neighborhoods.map((n) => {
-              const active = n.id === selectedNeighborhoodId;
-              return (
-                <TouchableOpacity
-                  key={n.id}
-                  onPress={() => setSelectedNeighborhoodId(n.id)}
-                  style={[styles.nChip, active && styles.nChipActive]}
-                >
-                  <Text style={[styles.nChipText, active && styles.nChipTextActive]}>{n.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        <Text style={styles.sectionLabel}>Gruplar</Text>
-        {selectedNeighborhoodId && neighborhoods.length > 0 ? (
-          <Text style={styles.groupsScopeHint}>
-            Liste:{' '}
-            <Text style={{ fontWeight: '700', color: '#e2e8f0' }}>
-              {neighborhoods.find((n) => n.id === selectedNeighborhoodId)?.name ?? '—'}
-            </Text>{' '}
-            mahallesindeki gruplar. Aynı isim farklı mahallelerde ayrı gruptur.
-          </Text>
+        {tok ? (
+          <RouteSummaryCard
+            apiBaseUrl={apiBaseUrl}
+            accessToken={tok}
+            enabled={!!tok}
+            onNavigateToGroup={onNavigateToGroup ?? (() => {})}
+            onNavigateToRouteSetup={onNavigateToRouteSetup ?? (() => {})}
+            horizontalInset={16}
+          />
         ) : null}
-        {gLoading ? (
-          <ActivityIndicator color="#38BDF8" style={{ marginVertical: 16 }} />
-        ) : groups.length === 0 ? (
-          <Text style={styles.muted}>
-            {selectedNeighborhoodId ? 'Bu mahallede henüz grup yok.' : 'Önce mahalle seçin.'}
-          </Text>
-        ) : (
-          groups.map((item) => {
-            const member = myGroupIds.has(item.id);
-            const mahalleLabel =
-              (item.neighborhood_name && item.neighborhood_name.trim()) ||
-              neighborhoods.find((n) => n.id === item.neighborhood_id)?.name ||
-              'Mahalle';
-            return (
+
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>Senin İnsanların</Text>
+          <Text style={styles.sectionSubtitle}>Aynı rota, aynı mahalle, aynı şehir</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.insightRow}
+          >
+            {peopleInsights.map((ins) => (
+              <View key={ins.key} style={styles.insightCard}>
+                <Text style={styles.insightCardTitle}>{ins.title}</Text>
+                <Text style={styles.insightCardLine} numberOfLines={1}>
+                  {ins.line}
+                </Text>
+                <Text style={styles.insightCardHint} numberOfLines={2}>
+                  {ins.hint}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>Keşfet</Text>
+          <Text style={styles.sectionSubtitle}>Mahallene göre grupları seç, sohbete katıl</Text>
+          <Text style={styles.sectionEyebrow}>Mahalle</Text>
+          {nLoading ? (
+            <ActivityIndicator color={ACCENT} style={{ marginVertical: 16 }} />
+          ) : neighborhoods.length === 0 ? (
+            <View style={styles.emptyBoxLight}>
+              <Ionicons name="map-outline" size={32} color={TEXT_SECONDARY} />
+              <Text style={styles.emptyTitleLight}>Bu şehirde henüz mahalle yok</Text>
+              <Text style={styles.emptySubLight}>
+                Veri eklendiğinde mahalle ve gruplar burada listelenir. Şehir açılış talebi için aşağıdaki düğmeyi
+                kullanabilirsiniz.
+              </Text>
+              <TouchableOpacity style={styles.secondaryBtnLight} onPress={() => void requestCityForMuhabbet(selectedCity)}>
+                <Text style={styles.secondaryBtnTextLight}>Şehir talebi gönder</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nChipRow}>
+              {neighborhoods.map((n) => {
+                const active = n.id === selectedNeighborhoodId;
+                return (
+                  <TouchableOpacity
+                    key={n.id}
+                    onPress={() => setSelectedNeighborhoodId(n.id)}
+                    style={[styles.nChipLight, active && styles.nChipLightActive]}
+                  >
+                    <Text style={[styles.nChipLightText, active && styles.nChipLightTextActive]}>{n.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          <View style={styles.discoveryGroupRow}>
+            <Text style={[styles.sectionEyebrow, { marginTop: 20, marginBottom: 0 }]}>Gruplar</Text>
+            {tok ? (
               <TouchableOpacity
-                key={item.id}
-                style={styles.groupCard}
-                onPress={() => void openGroupDetail(item)}
+                style={styles.suggestGroupBtn}
+                onPress={() => {
+                  if (!selectedNeighborhoodId) {
+                    Alert.alert('Mahalle', 'Önce mahalle seçin.');
+                    return;
+                  }
+                  setCreateGroupOpen(true);
+                }}
                 activeOpacity={0.88}
               >
-                <Text style={styles.groupMahalleLine}>Mahalle: {mahalleLabel}</Text>
-                <View style={styles.groupCardTop}>
-                  <Text style={styles.groupName}>{item.name}</Text>
-                  {member ? (
-                    <View style={styles.badgeMember}>
-                      <Text style={styles.badgeMemberText}>Üyesiniz</Text>
-                    </View>
-                  ) : null}
-                </View>
-                {item.description ? (
-                  <Text style={styles.groupDesc} numberOfLines={2}>
-                    {item.description}
-                  </Text>
-                ) : null}
-                <View style={styles.groupMeta}>
-                  <Ionicons name="people-outline" size={16} color="#94a3b8" />
-                  <Text style={styles.groupMetaText}>{item.member_count ?? 0} üye</Text>
-                </View>
+                <Ionicons name="add-circle-outline" size={18} color={ACCENT} />
+                <Text style={styles.suggestGroupBtnText}>Yeni grup öner</Text>
               </TouchableOpacity>
-            );
-          })
-        )}
+            ) : null}
+          </View>
+          {selectedNeighborhoodId && neighborhoods.length > 0 ? (
+            <Text style={styles.groupsScopeHintLight}>
+              <Text style={{ fontWeight: '600', color: TEXT_PRIMARY }}>
+                {neighborhoods.find((n) => n.id === selectedNeighborhoodId)?.name ?? '—'}
+              </Text>{' '}
+              mahallesindeki gruplar. Aynı isim farklı mahallelerde ayrı gruptur.
+            </Text>
+          ) : null}
+          {gLoading ? (
+            <ActivityIndicator color={ACCENT} style={{ marginVertical: 16 }} />
+          ) : groups.length === 0 ? (
+            <Text style={styles.mutedLight}>
+              {selectedNeighborhoodId ? 'Bu mahallede henüz grup yok.' : 'Önce mahalle seçin.'}
+            </Text>
+          ) : (
+            groups.map((item) => {
+              const member = myGroupIds.has(item.id);
+              const mahalleLabel =
+                (item.neighborhood_name && item.neighborhood_name.trim()) ||
+                neighborhoods.find((n) => n.id === item.neighborhood_id)?.name ||
+                'Mahalle';
+              const activityLine =
+                (item.description && item.description.trim()) || 'Mahalle sohbeti ve duyurular';
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.groupCardLight}
+                  onPress={() => void openGroupDetail(item)}
+                  activeOpacity={0.92}
+                >
+                  <View style={styles.groupCardLightRow}>
+                    <View style={styles.groupCardLightMain}>
+                      <View style={styles.groupNeighPill}>
+                        <Text style={styles.groupNeighPillText}>{mahalleLabel}</Text>
+                      </View>
+                      <Text style={styles.groupNameLight}>{item.name}</Text>
+                      <Text style={styles.groupActivityLight} numberOfLines={2}>
+                        {activityLine}
+                      </Text>
+                      <Text style={styles.groupMetaLightText}>
+                        {item.member_count ?? 0} üye
+                        {member ? ' · Üyesin' : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#C7C7CC" style={styles.groupChevron} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
 
-        <View style={styles.feedHintBox}>
-          <Text style={styles.feedTitle}>Gönderi akışı</Text>
-          <Text style={styles.feedSub}>
-            Üye olduğunuz bir grubu açıp &quot;Akışa git&quot; ile gerçek zamanlı paylaşımları görüntüleyebilir,
-            fotoğraflı gönderi oluşturabilirsiniz.
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>Akış</Text>
+          <Text style={styles.sectionSubtitle}>
+            Bir gruba üye olup detaydan &quot;Akışa git&quot; dediğinde gönderiler burada açılır; + ile fotoğraflı paylaşım
+            ekleyebilirsin.
           </Text>
+          <View style={styles.flowHintCard}>
+            <Text style={styles.flowHintTitle}>Gönderi akışı</Text>
+            <Text style={styles.flowHintBody}>
+              Grup kartına dokun, katıl veya akışa geç. Oturumun yoksa üstteki uyarıya dikkat et.
+            </Text>
+          </View>
         </View>
       </ScrollView>
 
       <Modal visible={showCityModal} animationType="slide" onRequestClose={() => setShowCityModal(false)}>
-        <SafeAreaView style={styles.modalRoot}>
-          <LinearGradient colors={['#0f172a', '#1e293b']} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={styles.modalRootLight}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowCityModal(false)} style={styles.headerIcon}>
-              <Ionicons name="close" size={24} color="#fff" />
+              <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Şehir seç</Text>
             <View style={{ width: 40 }} />
           </View>
           <View style={styles.searchRow}>
-            <Ionicons name="search" size={20} color="#64748b" />
+            <Ionicons name="search" size={20} color={TEXT_SECONDARY} />
             <TextInput
               style={styles.searchInput}
               placeholder="Şehir ara..."
-              placeholderTextColor="#64748b"
+              placeholderTextColor={TEXT_SECONDARY}
               value={citySearch}
               onChangeText={setCitySearch}
             />
@@ -1134,17 +1355,72 @@ export default function LeylekMuhabbetiFaz1Screen({
         </SafeAreaView>
       </Modal>
 
+      <Modal visible={createGroupOpen} animationType="slide" onRequestClose={() => setCreateGroupOpen(false)}>
+        <SafeAreaView style={styles.modalRootLight}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setCreateGroupOpen(false)} style={styles.headerIcon}>
+              <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Yeni grup öner</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <ScrollView contentContainerStyle={styles.modalScrollPad} keyboardShouldPersistTaps="handled">
+            <Text style={styles.inputLabel}>Grup adı</Text>
+            <TextInput
+              style={styles.composeInput}
+              placeholder="Örn. Sabah servisleri"
+              placeholderTextColor={TEXT_SECONDARY}
+              value={createGroupName}
+              onChangeText={setCreateGroupName}
+              maxLength={80}
+            />
+            <Text style={[styles.inputLabel, { marginTop: 14 }]}>Kısa açıklama (isteğe bağlı)</Text>
+            <TextInput
+              style={styles.composeInput}
+              placeholder="Grubun konusu"
+              placeholderTextColor={TEXT_SECONDARY}
+              value={createGroupDesc}
+              onChangeText={setCreateGroupDesc}
+              multiline
+              maxLength={500}
+            />
+            <Text style={styles.composeMuted}>
+              Önerin yönetici onayına düşer; onaylanana kadar listede görünmez.
+            </Text>
+            <TouchableOpacity
+              style={[styles.btnPrimary, createGroupBusy && styles.btnDisabled]}
+              disabled={createGroupBusy}
+              onPress={() => void submitCreateGroup()}
+            >
+              {createGroupBusy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.btnPrimaryText}>Öneriyi gönder</Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
       <Modal visible={detailVisible} transparent animationType="fade" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.detailOverlay}>
           <TouchableOpacity style={styles.detailBackdrop} activeOpacity={1} onPress={() => setDetailVisible(false)} />
           <View style={styles.detailSheet}>
             {detailLoading || !detailGroup ? (
-              <ActivityIndicator color="#38BDF8" style={{ marginVertical: 24 }} />
+              <ActivityIndicator color={ACCENT} style={{ marginVertical: 24 }} />
             ) : (
               <>
                 <Text style={styles.detailTitle}>{detailGroup.name}</Text>
                 {detailGroup.neighborhood_name ? (
                   <Text style={styles.detailNeigh}>{detailGroup.neighborhood_name} · {detailGroup.city}</Text>
+                ) : null}
+                {String(detailGroup.status || 'approved').toLowerCase() === 'pending' ? (
+                  <Text style={styles.detailPendingNote}>
+                    Bu grup yönetici onayında. Onaylanana kadar keşifte görünmez; katılım ve akış kapalıdır.
+                  </Text>
+                ) : null}
+                {String(detailGroup.status || 'approved').toLowerCase() === 'rejected' ? (
+                  <Text style={styles.detailPendingNote}>Bu grup önerisi reddedilmiş.</Text>
                 ) : null}
                 {detailGroup.description ? (
                   <Text style={styles.detailBody}>{detailGroup.description}</Text>
@@ -1153,23 +1429,25 @@ export default function LeylekMuhabbetiFaz1Screen({
                   {detailGroup.member_count ?? 0} üye
                   {detailGroup.is_member ? ' · Üyesiniz' : ''}
                 </Text>
-                {detailGroup.is_member || myGroupIds.has(detailGroup.id) ? (
-                  <TouchableOpacity style={styles.joinBtn} onPress={openFeedFromDetail}>
-                    <Text style={styles.joinBtnText}>Akışa git</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.joinBtn, joinBusy && styles.joinBtnDisabled]}
-                    disabled={joinBusy}
-                    onPress={() => void joinGroup()}
-                  >
-                    {joinBusy ? (
-                      <ActivityIndicator color="#0f172a" />
-                    ) : (
-                      <Text style={styles.joinBtnText}>Gruba katıl</Text>
-                    )}
-                  </TouchableOpacity>
-                )}
+                {String(detailGroup.status || 'approved').toLowerCase() === 'approved' ? (
+                  detailGroup.is_member || myGroupIds.has(detailGroup.id) ? (
+                    <TouchableOpacity style={styles.btnPrimary} onPress={openFeedFromDetail}>
+                      <Text style={styles.btnPrimaryText}>Akışa git</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.btnPrimary, joinBusy && styles.btnDisabled]}
+                      disabled={joinBusy}
+                      onPress={() => void joinGroup()}
+                    >
+                      {joinBusy ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.btnPrimaryText}>Gruba katıl</Text>
+                      )}
+                    </TouchableOpacity>
+                  )
+                ) : null}
                 <TouchableOpacity style={styles.closeLink} onPress={() => setDetailVisible(false)}>
                   <Text style={styles.closeLinkText}>Kapat</Text>
                 </TouchableOpacity>
@@ -1183,123 +1461,265 @@ export default function LeylekMuhabbetiFaz1Screen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0b1220' },
-  header: {
+  discoveryRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
+  discoveryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    backgroundColor: MUHAB_SURFACE,
   },
-  headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  headerSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
-  cityChip: { marginHorizontal: 16, marginBottom: 8, borderRadius: 14, overflow: 'hidden' },
-  cityChipInner: {
+  discoveryHeaderTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
+  cityChipLight: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: CARD_RADIUS,
+    backgroundColor: CARD_BG,
+    overflow: 'hidden',
+    ...CARD_SHADOW,
+  },
+  cityChipLightInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  cityChipLightText: { flex: 1, color: TEXT_PRIMARY, fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
+  feedRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
+  feedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+    backgroundColor: MUHAB_SURFACE,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5EA',
+  },
+  feedHeaderTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
+  feedHeaderSub: { color: TEXT_SECONDARY, fontSize: 12, marginTop: 2 },
+  feedListContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
+  postCardLight: {
+    backgroundColor: CARD_BG,
+    borderRadius: CARD_RADIUS,
+    marginBottom: 14,
+    overflow: 'hidden',
+    borderWidth: 0,
+    ...CARD_SHADOW,
+  },
+  postImageLight: { width: '100%', height: 200, backgroundColor: '#EFEFF4' },
+  postBodyLight: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    lineHeight: 24,
+    letterSpacing: -0.2,
+  },
+  postMetaLight: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingHorizontal: 14,
   },
-  cityChipText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
+  postAuthorLight: { color: ACCENT, fontWeight: '600', fontSize: 14 },
+  postTimeLight: { color: TEXT_SECONDARY, fontSize: 13 },
+  mutedLight: { color: TEXT_SECONDARY, fontSize: 15, marginVertical: 10, lineHeight: 22 },
+  root: { flex: 1, backgroundColor: '#0b1220' },
+  headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 32 },
-  sectionLabel: {
-    color: '#94a3b8',
-    fontSize: 12,
+  scrollContent: { paddingHorizontal: 0, paddingBottom: 36 },
+  sectionBlock: { paddingHorizontal: 16, marginTop: 8 },
+  sectionTitle: {
+    color: TEXT_PRIMARY,
+    fontSize: 22,
     fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 16,
-    marginBottom: 8,
+    letterSpacing: -0.35,
+    marginTop: 4,
   },
-  nChipRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  nChip: {
+  sectionSubtitle: {
+    color: TEXT_SECONDARY,
+    fontSize: 15,
+    lineHeight: 20,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  sectionEyebrow: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.15,
+    marginBottom: 10,
+  },
+  insightRow: { flexDirection: 'row', gap: 10, paddingRight: 16, paddingBottom: 4 },
+  insightCard: {
+    width: 148,
+    minHeight: 112,
+    backgroundColor: CARD_BG,
+    borderRadius: 18,
+    paddingVertical: 14,
     paddingHorizontal: 14,
+    ...CARD_SHADOW,
+  },
+  insightCardTitle: {
+    color: TEXT_SECONDARY,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginBottom: 6,
+  },
+  insightCardLine: { color: TEXT_PRIMARY, fontSize: 16, fontWeight: '700', letterSpacing: -0.25 },
+  insightCardHint: { color: TEXT_SECONDARY, fontSize: 12, lineHeight: 16, marginTop: 8 },
+  nChipRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  nChipLight: {
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: CARD_BG,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E5EA',
+    ...Platform.select({ ios: {}, android: { elevation: 0 }, default: {} }),
   },
-  nChipActive: { backgroundColor: '#0ea5e9', borderColor: '#38bdf8' },
-  nChipText: { color: '#cbd5e1', fontWeight: '600', fontSize: 14 },
-  nChipTextActive: { color: '#fff' },
-  groupCard: {
-    backgroundColor: '#151f32',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#243045',
+  nChipLightActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  nChipLightText: { color: TEXT_PRIMARY, fontWeight: '600', fontSize: 14 },
+  nChipLightTextActive: { color: '#FFFFFF' },
+  groupsScopeHintLight: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
   },
-  groupsScopeHint: {
-    color: '#94a3b8',
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 10,
-    marginTop: -4,
+  discoveryGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    gap: 8,
   },
-  groupMahalleLine: { color: '#94a3b8', fontSize: 12, fontWeight: '600', marginBottom: 8 },
-  groupCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  groupName: { color: '#fff', fontSize: 16, fontWeight: '700', flex: 1 },
-  badgeMember: { backgroundColor: '#14532d', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  badgeMemberText: { color: '#86efac', fontSize: 11, fontWeight: '700' },
-  groupDesc: { color: '#94a3b8', fontSize: 13, marginTop: 6 },
-  groupMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  groupMetaText: { color: '#94a3b8', fontSize: 13 },
-  muted: { color: '#64748b', fontStyle: 'italic', marginVertical: 8 },
-  emptyBox: {
-    backgroundColor: '#151f32',
-    borderRadius: 14,
+  suggestGroupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  suggestGroupBtnText: { color: ACCENT, fontSize: 15, fontWeight: '600' },
+  detailPendingNote: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  groupCardLight: {
+    backgroundColor: CARD_BG,
+    borderRadius: CARD_RADIUS,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 0,
+    ...CARD_SHADOW,
+  },
+  groupCardLightRow: { flexDirection: 'row', alignItems: 'center' },
+  groupCardLightMain: { flex: 1, paddingRight: 8 },
+  groupNeighPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EFEFF4',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  groupNeighPillText: { color: TEXT_SECONDARY, fontSize: 12, fontWeight: '600' },
+  groupNameLight: { color: TEXT_PRIMARY, fontSize: 18, fontWeight: '700', letterSpacing: -0.28 },
+  groupActivityLight: { color: TEXT_SECONDARY, fontSize: 14, lineHeight: 20, marginTop: 6 },
+  groupMetaLightText: { color: TEXT_SECONDARY, fontSize: 13, marginTop: 10, fontWeight: '500' },
+  groupChevron: { marginTop: 4 },
+  emptyBoxLight: {
+    backgroundColor: CARD_BG,
+    borderRadius: CARD_RADIUS,
     padding: 20,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#243045',
+    ...CARD_SHADOW,
   },
-  emptyTitle: { color: '#e2e8f0', fontSize: 16, fontWeight: '700', marginTop: 10, textAlign: 'center' },
-  emptySub: { color: '#94a3b8', fontSize: 13, marginTop: 8, textAlign: 'center', lineHeight: 20 },
-  secondaryBtn: {
-    marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+  emptyTitleLight: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', marginTop: 10, textAlign: 'center' },
+  emptySubLight: { color: TEXT_SECONDARY, fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  secondaryBtnLight: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#38bdf8',
+    borderColor: ACCENT,
   },
-  secondaryBtnText: { color: '#38bdf8', fontWeight: '700' },
-  feedHintBox: {
-    marginTop: 24,
-    borderRadius: 16,
-    padding: 18,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#1e293b',
+  secondaryBtnTextLight: { color: ACCENT, fontWeight: '700', fontSize: 15 },
+  flowHintCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: CARD_RADIUS,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 8,
+    ...CARD_SHADOW,
   },
-  feedTitle: { color: '#f8fafc', fontSize: 17, fontWeight: '800' },
-  feedSub: { color: '#94a3b8', fontSize: 13, marginTop: 8, lineHeight: 20 },
-  modalRoot: { flex: 1, backgroundColor: '#0f172a' },
+  flowHintTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
+  flowHintBody: { color: TEXT_SECONDARY, fontSize: 14, lineHeight: 20, marginTop: 8 },
+  muted: { color: TEXT_SECONDARY, fontStyle: 'italic', marginVertical: 8 },
+  modalRootLight: { flex: 1, backgroundColor: MUHAB_SURFACE },
+  modalScrollPad: { padding: 16, paddingBottom: 40 },
+  modalFlexFill: { flex: 1 },
+  postDetailList: { flex: 1, backgroundColor: MUHAB_SURFACE },
+  postDetailListContent: { paddingHorizontal: 16, paddingBottom: 120 },
+  postDetailHeaderPad: { padding: 16 },
+  sheetSectionLabel: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.15,
+    marginTop: 20,
+  },
+  composeMuted: { color: TEXT_SECONDARY, fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  btnPrimary: {
+    marginTop: 20,
+    backgroundColor: ACCENT,
+    paddingVertical: BTN_PAD_V,
+    paddingHorizontal: BTN_PAD_H,
+    borderRadius: BTN_RADIUS,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  btnPrimaryText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
+  btnDisabled: { opacity: 0.45 },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
     paddingVertical: 8,
+    backgroundColor: MUHAB_SURFACE,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER_HAIRLINE,
   },
-  modalTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  modalTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginHorizontal: 16,
     marginBottom: 10,
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginTop: 4,
+    backgroundColor: CARD_BG,
+    borderRadius: BTN_RADIUS,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER_HAIRLINE,
+    ...CARD_SHADOW,
   },
-  searchInput: { flex: 1, color: '#fff', fontSize: 16 },
+  searchInput: { flex: 1, color: TEXT_PRIMARY, fontSize: 16 },
   cityGrid: { paddingHorizontal: 10, paddingBottom: 24 },
   cityCardWrap: { width: '50%', padding: 6 },
   cityCard: {
@@ -1314,114 +1734,120 @@ const styles = StyleSheet.create({
   detailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   detailBackdrop: { flex: 1 },
   detailSheet: {
-    backgroundColor: '#111827',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: CARD_BG,
+    borderTopLeftRadius: CARD_RADIUS,
+    borderTopRightRadius: CARD_RADIUS,
     padding: 22,
     paddingBottom: 28,
-    borderTopWidth: 1,
-    borderColor: '#1f2937',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER_HAIRLINE,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
   },
-  detailTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  detailNeigh: { color: '#94a3b8', marginTop: 6, fontSize: 14 },
-  detailBody: { color: '#cbd5e1', marginTop: 12, fontSize: 15, lineHeight: 22 },
-  detailMembers: { color: '#64748b', marginTop: 14, fontSize: 13 },
-  joinBtn: {
-    marginTop: 18,
-    backgroundColor: '#38bdf8',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  joinBtnDisabled: { opacity: 0.55 },
-  joinBtnText: { color: '#0f172a', fontWeight: '800', fontSize: 16 },
+  detailTitle: { color: TEXT_PRIMARY, fontSize: 20, fontWeight: '700', letterSpacing: -0.35 },
+  detailNeigh: { color: TEXT_SECONDARY, marginTop: 6, fontSize: 14, lineHeight: 20 },
+  detailBody: { color: TEXT_PRIMARY, marginTop: 12, fontSize: 15, lineHeight: 22 },
+  detailMembers: { color: TEXT_SECONDARY, marginTop: 14, fontSize: 13 },
   closeLink: { marginTop: 14, alignItems: 'center', paddingVertical: 8 },
-  closeLinkText: { color: '#94a3b8', fontSize: 15 },
+  closeLinkText: { color: ACCENT, fontSize: 16, fontWeight: '600' },
   postCard: {
-    backgroundColor: '#151f32',
-    borderRadius: 14,
+    backgroundColor: CARD_BG,
+    borderRadius: CARD_RADIUS,
     marginBottom: 14,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#243045',
+    borderWidth: 0,
+    ...CARD_SHADOW,
   },
-  postImage: { width: '100%', height: 200, backgroundColor: '#1e293b' },
-  postBody: { color: '#e2e8f0', fontSize: 15, paddingHorizontal: 14, paddingTop: 10, lineHeight: 22 },
+  postImage: { width: '100%', height: 200, backgroundColor: FIELD_BG },
+  postBody: { color: TEXT_PRIMARY, fontSize: 15, paddingHorizontal: 14, paddingTop: 10, lineHeight: 22 },
   postMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  postAuthor: { color: '#38bdf8', fontWeight: '600', fontSize: 13 },
-  postTime: { color: '#64748b', fontSize: 12 },
+  postAuthor: { color: ACCENT, fontWeight: '600', fontSize: 13 },
+  postTime: { color: TEXT_SECONDARY, fontSize: 12 },
   composeInput: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 12,
-    color: '#fff',
+    backgroundColor: FIELD_BG,
+    borderRadius: BTN_RADIUS,
+    padding: 14,
+    color: TEXT_PRIMARY,
     minHeight: 100,
     textAlignVertical: 'top',
+    fontSize: 16,
+    lineHeight: 22,
   },
-  inputLabel: { color: '#94a3b8', fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  inputLabel: { color: TEXT_SECONDARY, fontSize: 13, fontWeight: '600', marginBottom: 8 },
   imagePick: {
     minHeight: 160,
-    borderRadius: 12,
-    backgroundColor: '#1e293b',
+    borderRadius: BTN_RADIUS,
+    backgroundColor: FIELD_BG,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER_HAIRLINE,
   },
   imagePickImg: { width: '100%', height: 200 },
-  detailHero: { width: '100%', height: 240, backgroundColor: '#1e293b' },
-  detailCaption: { color: '#f1f5f9', fontSize: 16, lineHeight: 24 },
-  detailMeta: { color: '#64748b', marginTop: 10, fontSize: 13 },
+  detailHero: { width: '100%', height: 240, backgroundColor: FIELD_BG },
+  detailCaption: { color: TEXT_PRIMARY, fontSize: 16, lineHeight: 24, letterSpacing: -0.2 },
+  detailMeta: { color: TEXT_SECONDARY, marginTop: 10, fontSize: 13 },
   commentRow: {
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER_HAIRLINE,
   },
-  commentAuthor: { color: '#38bdf8', fontWeight: '700', fontSize: 13 },
-  commentBody: { color: '#e2e8f0', marginTop: 4, fontSize: 15 },
-  commentTime: { color: '#64748b', fontSize: 11, marginTop: 6 },
+  commentAuthor: { color: ACCENT, fontWeight: '600', fontSize: 14 },
+  commentBody: { color: TEXT_PRIMARY, marginTop: 4, fontSize: 15, lineHeight: 22 },
+  commentTime: { color: TEXT_SECONDARY, fontSize: 12, marginTop: 6 },
   commentBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#243045',
-    backgroundColor: '#0f172a',
+    padding: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER_HAIRLINE,
+    backgroundColor: CARD_BG,
     gap: 8,
   },
   commentInput: {
     flex: 1,
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    backgroundColor: FIELD_BG,
+    borderRadius: BTN_RADIUS,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#fff',
+    color: TEXT_PRIMARY,
     maxHeight: 120,
+    fontSize: 16,
   },
   commentSend: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: ACCENT,
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: BTN_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   presetChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: '#1e293b',
+    backgroundColor: FIELD_BG,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'transparent',
   },
-  presetChipOn: { borderColor: '#38bdf8', backgroundColor: '#0c4a6e' },
-  presetChipText: { color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
-  presetChipTextOn: { color: '#fff' },
+  presetChipOn: { borderColor: ACCENT, backgroundColor: 'rgba(0, 122, 255, 0.1)' },
+  presetChipText: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '600' },
+  presetChipTextOn: { color: ACCENT },
   sessionBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',

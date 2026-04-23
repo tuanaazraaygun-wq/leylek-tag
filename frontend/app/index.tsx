@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useRouter } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar, Vibration } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,6 +55,7 @@ import AnimatedClouds from '../components/auth/AnimatedClouds';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
 import LeylekMuhabbetiFaz1Screen from '../components/LeylekMuhabbetiFaz1Screen';
+import RouteSummaryCard from '../components/RouteSummaryCard';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -570,10 +572,20 @@ class RuntimeBoundary extends React.Component<
 }
 
 export default function App() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const loginLayout = useLoginAuthLayout();
   const leylekChrome = useLeylekZekaChrome();
   const [user, setUser] = useState<User | null>(null);
+  const [muhabbetDeeplinkGroupId, setMuhabbetDeeplinkGroupId] = useState<string | null>(null);
+  const clearMuhabbetDeeplinkGroup = useCallback(() => setMuhabbetDeeplinkGroupId(null), []);
+  const handleRouteSummaryOpenGroup = useCallback((groupId: string) => {
+    setMuhabbetDeeplinkGroupId(groupId);
+    setScreen('community');
+  }, []);
+  const handleRouteSummaryOpenRouteSetup = useCallback(() => {
+    router.push('/route-setup' as never);
+  }, [router]);
   const [loading, setLoading] = useState(true);
   /** Aktif eşleşme oturumu restore edilirken kısa açıklama (splash sonrası spinner) */
   const [bootSubtitle, setBootSubtitle] = useState<string | null>(null);
@@ -3374,6 +3386,8 @@ export default function App() {
         setScreen={setScreen}
         requestLocationPermission={requestLocationPermission}
         onShowTripEndedBanner={setRoleSelectTripExitBanner}
+        onRouteSummaryOpenGroup={handleRouteSummaryOpenGroup}
+        onRouteSummaryOpenRouteSetup={handleRouteSummaryOpenRouteSetup}
       />
     ) : (
       <RuntimeBoundary name="DriverDashboard">
@@ -3404,6 +3418,10 @@ export default function App() {
         onBack={() => setScreen('role-select')}
         apiUrl={API_URL}
         accessToken={uTok.access_token ?? uTok.accessToken ?? ''}
+        initialGroupId={muhabbetDeeplinkGroupId}
+        onInitialGroupConsumed={clearMuhabbetDeeplinkGroup}
+        onNavigateToGroup={handleRouteSummaryOpenGroup}
+        onNavigateToRouteSetup={handleRouteSummaryOpenRouteSetup}
       />
     );
   }
@@ -6057,6 +6075,8 @@ function PassengerDashboard({
   setScreen,
   requestLocationPermission,
   onShowTripEndedBanner,
+  onRouteSummaryOpenGroup,
+  onRouteSummaryOpenRouteSetup,
 }: { 
   user: User; 
   logout: () => void;
@@ -6068,6 +6088,8 @@ function PassengerDashboard({
   setScreen: (screen: AppScreen) => void;
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
+  onRouteSummaryOpenGroup: (groupId: string) => void;
+  onRouteSummaryOpenRouteSetup: () => void;
 }) {
   /** Geçici: yolcu panelinde olası `undefined is not a function` — doğrudan PassengerDashboard içinde */
   const __paxFn = (label: string, fn: unknown) => {
@@ -6076,6 +6098,10 @@ function PassengerDashboard({
     }
   };
   const insets = useSafeAreaInsets();
+  const routeSummaryToken =
+    (user as { access_token?: string; accessToken?: string }).access_token ??
+    (user as { access_token?: string; accessToken?: string }).accessToken ??
+    '';
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
@@ -9243,6 +9269,15 @@ function PassengerDashboard({
                 <Ionicons name="log-out-outline" size={24} color="#EF4444" />
               </TouchableOpacity>
             </View>
+
+            <RouteSummaryCard
+              apiBaseUrl={API_URL}
+              accessToken={routeSummaryToken}
+              enabled={!!routeSummaryToken}
+              horizontalInset={4}
+              onNavigateToGroup={onRouteSummaryOpenGroup}
+              onNavigateToRouteSetup={onRouteSummaryOpenRouteSetup}
+            />
             
             {/* Nereye Gitmek İstiyorsunuz - EN ÜSTTE, leyleklerin üstünde */}
             <Text style={styles.welcomeQuestionVeryTop}>Nereye Gitmek İstiyorsunuz?</Text>

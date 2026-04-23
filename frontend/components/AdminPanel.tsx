@@ -261,6 +261,8 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const [approvingKYC, setApprovingKYC] = useState<string | null>(null);
   const [kycRejectModalUserId, setKycRejectModalUserId] = useState<string | null>(null);
   const [communityCityRequests, setCommunityCityRequests] = useState<any[]>([]);
+  const [pendingMuhabbetGroups, setPendingMuhabbetGroups] = useState<any[]>([]);
+  const [muhabbetGroupActionId, setMuhabbetGroupActionId] = useState<string | null>(null);
 
   const [kbChatLines, setKbChatLines] = useState<KbChatLine[]>([]);
   const [kbChatInput, setKbChatInput] = useState('');
@@ -432,6 +434,20 @@ function AdminContent({ adminPhone, onClose }: Props) {
       } catch {
         setCommunityCityRequests([]);
       }
+
+      try {
+        const pgRes = await fetch(
+          `${ADMIN_API_BASE}/admin/muhabbet/groups/pending?admin_phone=${encodeURIComponent(adminPhoneNorm)}&limit=100`
+        );
+        const pgData = await pgRes.json().catch(() => ({}));
+        if (pgRes.ok && pgData.success) {
+          setPendingMuhabbetGroups(pgData.groups || []);
+        } else {
+          setPendingMuhabbetGroups([]);
+        }
+      } catch {
+        setPendingMuhabbetGroups([]);
+      }
     } catch (e: any) {
       errs.push(e?.message || 'Yükleme hatası');
     }
@@ -443,6 +459,46 @@ function AdminContent({ adminPhone, onClose }: Props) {
   const refresh = () => {
     setRefreshing(true);
     loadAll();
+  };
+
+  const approveMuhabbetGroup = async (gid: string) => {
+    setMuhabbetGroupActionId(gid);
+    try {
+      const res = await fetch(
+        `${ADMIN_API_BASE}/admin/muhabbet/groups/${encodeURIComponent(gid)}/approve?admin_phone=${encodeURIComponent(adminPhoneNorm)}`,
+        { method: 'POST' }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (data.success) {
+        Alert.alert('Tamam', typeof data.message === 'string' ? data.message : 'Grup onaylandı.');
+        setPendingMuhabbetGroups((prev) => prev.filter((g) => String(g.id) !== gid));
+      } else {
+        Alert.alert('Hata', data.detail || 'Onaylanamadı');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e?.message || 'Onaylanamadı');
+    }
+    setMuhabbetGroupActionId(null);
+  };
+
+  const rejectMuhabbetGroup = async (gid: string) => {
+    setMuhabbetGroupActionId(gid);
+    try {
+      const res = await fetch(
+        `${ADMIN_API_BASE}/admin/muhabbet/groups/${encodeURIComponent(gid)}/reject?admin_phone=${encodeURIComponent(adminPhoneNorm)}`,
+        { method: 'POST' }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (data.success) {
+        Alert.alert('Tamam', typeof data.message === 'string' ? data.message : 'Grup reddedildi.');
+        setPendingMuhabbetGroups((prev) => prev.filter((g) => String(g.id) !== gid));
+      } else {
+        Alert.alert('Hata', data.detail || 'Reddedilemedi');
+      }
+    } catch (e: any) {
+      Alert.alert('Hata', e?.message || 'Reddedilemedi');
+    }
+    setMuhabbetGroupActionId(null);
   };
 
   // Send notification function
@@ -1076,6 +1132,45 @@ function AdminContent({ adminPhone, onClose }: Props) {
                   <Text style={styles.muhabbetTitle}>{r.reporter_name || 'Kullanıcı'}</Text>
                   <Text style={styles.muhabbetPhone}>{r.reporter_phone || ''}</Text>
                   <Text style={styles.muhabbetDetails}>{r.details || ''}</Text>
+                </View>
+              ))
+            )}
+
+            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Bekleyen grup önerileri</Text>
+            <Text style={styles.subtleHelp}>
+              Kullanıcıların gönderdiği yeni gruplar. Onaylanınca keşif listesinde yayınlanır.
+            </Text>
+            {pendingMuhabbetGroups.length === 0 ? (
+              <Text style={styles.emptyListText}>Bekleyen grup yok.</Text>
+            ) : (
+              pendingMuhabbetGroups.map((g) => (
+                <View key={String(g.id)} style={styles.muhabbetCard}>
+                  <Text style={styles.muhabbetMeta}>
+                    {g.created_at ? String(g.created_at).slice(0, 19).replace('T', ' ') : '—'} ·{' '}
+                    {g.city || ''} · {g.neighborhood_name || 'Mahalle'}
+                  </Text>
+                  <Text style={styles.muhabbetTitle}>{g.name || '—'}</Text>
+                  <Text style={styles.muhabbetDetails}>{g.description || '—'}</Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    <TouchableOpacity
+                      style={[styles.kycBtn, styles.kycApproveBtn, { flex: 1 }]}
+                      onPress={() => void approveMuhabbetGroup(String(g.id))}
+                      disabled={muhabbetGroupActionId === String(g.id)}
+                    >
+                      {muhabbetGroupActionId === String(g.id) ? (
+                        <ActivityIndicator color="#FFF" size="small" />
+                      ) : (
+                        <Text style={styles.kycBtnText}>Onayla</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.kycBtn, styles.kycRejectBtn, { flex: 1 }]}
+                      onPress={() => void rejectMuhabbetGroup(String(g.id))}
+                      disabled={muhabbetGroupActionId === String(g.id)}
+                    >
+                      <Text style={styles.kycBtnText}>Reddet</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ))
             )}
