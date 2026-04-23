@@ -1,11 +1,12 @@
 /**
- * Muhabbet teklif oluşturma modalı — sürücü / yolcu formları.
- * Konum: PlacesAutocomplete + harita doğrulama; ücret: /price/calculate tabanı.
+ * Muhabbet teklif oluşturma — konum, taban ücret, doğrulamalar (premium UI).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,7 +17,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
@@ -25,9 +28,29 @@ import MuhabbetEndpointPickerModal, {
   type MuhabbetCommittedPlace,
 } from './MuhabbetEndpointPickerModal';
 
-const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
-const TEXT_PRIMARY = '#111111';
-const TEXT_SECONDARY = '#6E6E73';
+const HEADER_GRAD = ['#1e3a5f', '#3B82F6'] as const;
+const SCREEN_BG = '#0c1524';
+const CARD_BG = '#FFFFFF';
+const ACCENT_ORANGE = '#EA580C';
+const ACCENT_ORANGE_SOFT = '#F97316';
+const TEXT_PRIMARY = '#0f172a';
+const TEXT_SECONDARY = '#64748b';
+const TEXT_MUTED = '#94a3b8';
+
+const CAR_BRANDS = [
+  'BMW',
+  'Mercedes',
+  'Audi',
+  'Volkswagen',
+  'Fiat',
+  'Renault',
+  'Toyota',
+  'Honda',
+  'Hyundai',
+  'Peugeot',
+  'Opel',
+  'Ford',
+] as const;
 
 function authHeader(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
@@ -47,7 +70,6 @@ function defaultDepartureHm(): { h: number; m: number } {
   return { h: d.getHours(), m: Math.round(d.getMinutes() / 5) * 5 % 60 };
 }
 
-/** Geçmişe düşen saat ertesi güne alınır (kalkış ISO ile uyumlu). */
 function buildDepartureIsoFromHm(h: number, m: number): string {
   const now = new Date();
   let d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
@@ -68,6 +90,16 @@ function departureDayLabel(h: number, m: number): string {
 function hasFiniteCoords(p: MuhabbetCommittedPlace | null): boolean {
   if (!p) return false;
   return Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
+}
+
+function userSafeSubmitError(status: number, detail: unknown, bodyText: string): string {
+  const d = typeof detail === 'string' ? detail : '';
+  if (status >= 500) return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
+  if (/column|schema|could not find|postgres|sql/i.test(d + bodyText)) {
+    return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
+  }
+  if (d.trim()) return d.trim();
+  return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
 }
 
 export type CreateListingModalProps = {
@@ -113,13 +145,11 @@ export default function CreateListingModal({
   const [priceCalcBusy, setPriceCalcBusy] = useState(false);
 
   const [seatsText, setSeatsText] = useState('');
-  const [repeatType, setRepeatType] = useState<'once' | 'daily' | 'weekly'>('once');
-  const [selectedDays, setSelectedDays] = useState('');
-  const [timeWindow, setTimeWindow] = useState('');
   const [noteBody, setNoteBody] = useState('');
   const [vehicleBrand, setVehicleBrand] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
+  const [brandSheetOpen, setBrandSheetOpen] = useState(false);
   const [passengerBudgetText, setPassengerBudgetText] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
 
@@ -205,11 +235,8 @@ export default function CreateListingModal({
   const composedNote = useMemo(() => {
     const meta: string[] = [];
     if (createRole === 'driver') {
-      meta.push(`Tekrar: ${repeatType === 'once' ? 'bir kez' : repeatType === 'daily' ? 'günlük' : 'haftalık'}`);
       const sc = parseInt(seatsText.replace(/\D/g, ''), 10);
       if (!Number.isNaN(sc) && sc > 0) meta.push(`Koltuk: ${sc}`);
-      if (selectedDays.trim()) meta.push(`Günler: ${selectedDays.trim()}`);
-      if (timeWindow.trim()) meta.push(`Vakit: ${timeWindow.trim()}`);
       const vb = vehicleBrand.trim();
       const vm = vehicleModel.trim();
       const vc = vehicleColor.trim();
@@ -236,14 +263,11 @@ export default function CreateListingModal({
     passengerBudgetText,
     priceDelta,
     priceMeta?.distance_km,
-    repeatType,
     seatsText,
-    selectedDays,
     suggestedBase,
-    timeWindow,
     vehicleBrand,
-    vehicleModel,
     vehicleColor,
+    vehicleModel,
   ]);
 
   const resetForm = () => {
@@ -259,13 +283,11 @@ export default function CreateListingModal({
     setPriceDelta(0);
     setPriceMeta(null);
     setSeatsText('');
-    setRepeatType('once');
-    setSelectedDays('');
-    setTimeWindow('');
     setNoteBody('');
     setVehicleBrand('');
     setVehicleModel('');
     setVehicleColor('');
+    setBrandSheetOpen(false);
     setPassengerBudgetText('');
   };
 
@@ -282,6 +304,11 @@ export default function CreateListingModal({
     },
     [pickerField],
   );
+
+  const onTimeChipPress = (fn: () => void) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    fn();
+  };
 
   const calcBasePrice = useCallback(async () => {
     if (!fromPoint || !toPoint) {
@@ -323,7 +350,7 @@ export default function CreateListingModal({
             ? data.detail
             : typeof data.error === 'string'
               ? data.error
-              : 'Fiyat hesaplanamadı.';
+              : 'Ücret şu an hesaplanamadı. Bağlantını kontrol edip tekrar dene.';
         Alert.alert('Ücret', msg);
         return;
       }
@@ -333,6 +360,7 @@ export default function CreateListingModal({
         distance_km: Number(data.distance_km ?? data.trip_distance_km ?? 0) || undefined,
         estimated_minutes: data.estimated_minutes,
       });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('Ücret', 'Bağlantı hatası. Tekrar deneyin.');
     } finally {
@@ -380,25 +408,34 @@ export default function CreateListingModal({
         headers: { ...authHeader(tok), 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      let rawBody = await res.text();
       if (shouldUseLegacyListingCreate(res.status)) {
         res = await fetch(`${base}/muhabbet/listings/create`, {
           method: 'POST',
           headers: { ...authHeader(tok), 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
+        rawBody = await res.text();
       }
       if (handleUnauthorizedAndMaybeRedirect(res)) return;
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
+      let d: { success?: boolean; detail?: string } = {};
+      try {
+        d = JSON.parse(rawBody) as typeof d;
+      } catch {
+        d = {};
+      }
       if (!res.ok || !d.success) {
-        Alert.alert('Teklif', typeof d.detail === 'string' && d.detail ? d.detail : 'Kaydedilemedi.');
+        const friendly = userSafeSubmitError(res.status, d.detail, rawBody);
+        Alert.alert('Teklif', friendly);
         return;
       }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Teklif', 'Teklifin açıldı.');
       onClose();
       resetForm();
       onCreated?.();
     } catch {
-      Alert.alert('Teklif', 'Bağlantı hatası.');
+      Alert.alert('Teklif', 'Teklif oluşturulamadı. Lütfen tekrar deneyin.');
     } finally {
       setCreateBusy(false);
     }
@@ -408,7 +445,7 @@ export default function CreateListingModal({
   const minutes = useMemo(() => Array.from({ length: 12 }, (_, i) => i * 5), []);
 
   const endpointSummary = (p: MuhabbetCommittedPlace | null) =>
-    p ? (p.address.length > 52 ? `${p.address.slice(0, 52)}…` : p.address) : 'Seçmek için dokun';
+    p ? (p.address.length > 52 ? `${p.address.slice(0, 52)}…` : p.address) : 'Konumu seç';
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -417,196 +454,243 @@ export default function CreateListingModal({
           title={createRole === 'driver' ? 'Sürücü teklifi oluştur' : 'Yolcu teklifi oluştur'}
           onBack={onClose}
           backIcon="close"
-          gradientColors={PRIMARY_GRAD}
+          gradientColors={[...HEADER_GRAD]}
         />
-        <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
-          <Text style={styles.inputLabel}>Şehir (şehir içi)</Text>
-          <Text style={styles.cityLock}>{city}</Text>
 
-          <Text style={styles.inputLabel}>Teklif türü</Text>
-          <View style={styles.rolePick}>
-            <TouchableOpacity
-              style={[styles.roleOpt, createRole === 'passenger' && styles.roleOptOn]}
-              onPress={() => setCreateRole('passenger')}
-            >
-              <Text style={styles.roleOptText}>Yolcu</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.roleOpt, createRole === 'driver' && styles.roleOptOn]}
-              onPress={() => setCreateRole('driver')}
-            >
-              <Text style={styles.roleOptText}>Sürücü</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.inputLabel}>Nereden</Text>
-          <TouchableOpacity style={styles.endpointRow} onPress={() => openPicker('from')} activeOpacity={0.88}>
-            <Ionicons name="navigate-circle-outline" size={22} color="#3B82F6" />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.endpointText} numberOfLines={2}>
-                {endpointSummary(fromPoint)}
-              </Text>
-              {fromPoint && mapPinRequired ? (
-                <Text style={styles.endpointMeta}>
-                  Harita: {fromPoint.mapPinConfirmed ? 'doğrulandı' : '“Tam burası” bekleniyor'}
-                </Text>
-              ) : null}
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={TEXT_SECONDARY} />
-          </TouchableOpacity>
-
-          <Text style={styles.inputLabel}>Nereye</Text>
-          <TouchableOpacity style={styles.endpointRow} onPress={() => openPicker('to')} activeOpacity={0.88}>
-            <Ionicons name="flag-outline" size={22} color="#F59E0B" />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.endpointText} numberOfLines={2}>
-                {endpointSummary(toPoint)}
-              </Text>
-              {toPoint && mapPinRequired ? (
-                <Text style={styles.endpointMeta}>
-                  Harita: {toPoint.mapPinConfirmed ? 'doğrulandı' : '“Tam burası” bekleniyor'}
-                </Text>
-              ) : null}
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={TEXT_SECONDARY} />
-          </TouchableOpacity>
-
-          <Text style={styles.inputLabel}>Saat</Text>
-          <TouchableOpacity
-            style={styles.endpointRow}
-            onPress={() => {
-              setTimeDraft({ ...departureHm });
-              setTimeModalOpen(true);
-            }}
-            activeOpacity={0.88}
+        <KeyboardAvoidingView
+          style={styles.kav}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 70 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={styles.modalScroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="time-outline" size={22} color="#3B82F6" />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.endpointText}>{departureDayLabel(departureHm.h, departureHm.m)}</Text>
-              {!departureTimeConfirmed ? (
-                <Text style={styles.endpointMeta}>Onay için dokunup altta “Tamam”a bas.</Text>
+            <Text style={styles.sectionEyebrow}>Şehir</Text>
+            <View style={styles.card}>
+              <Text style={styles.cityLock}>{city}</Text>
+            </View>
+
+            <Text style={styles.sectionEyebrow}>Teklif türü</Text>
+            <View style={styles.roleRow}>
+              <TouchableOpacity
+                style={[styles.roleChip, createRole === 'passenger' && styles.roleChipOn]}
+                onPress={() => setCreateRole('passenger')}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.roleChipText, createRole === 'passenger' && styles.roleChipTextOn]}>Yolcu</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.roleChip, createRole === 'driver' && styles.roleChipOn]}
+                onPress={() => setCreateRole('driver')}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.roleChipText, createRole === 'driver' && styles.roleChipTextOn]}>Sürücü</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sectionEyebrow}>Rota</Text>
+            <TouchableOpacity style={styles.cardRow} onPress={() => openPicker('from')} activeOpacity={0.88}>
+              <View style={[styles.icoWrap, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
+                <Ionicons name="navigate-circle-outline" size={22} color="#2563eb" />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowLabel}>Nereden</Text>
+                <Text style={styles.rowValue} numberOfLines={2}>
+                  {endpointSummary(fromPoint)}
+                </Text>
+                {fromPoint && mapPinRequired ? (
+                  <Text style={styles.rowMeta}>{fromPoint.mapPinConfirmed ? 'Harita onaylı' : 'Haritada “Tam burası” bekleniyor'}</Text>
+                ) : null}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.cardRow, { marginTop: 10 }]} onPress={() => openPicker('to')} activeOpacity={0.88}>
+              <View style={[styles.icoWrap, { backgroundColor: 'rgba(234,88,12,0.12)' }]}>
+                <Ionicons name="flag-outline" size={22} color={ACCENT_ORANGE} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowLabel}>Nereye</Text>
+                <Text style={styles.rowValue} numberOfLines={2}>
+                  {endpointSummary(toPoint)}
+                </Text>
+                {toPoint && mapPinRequired ? (
+                  <Text style={styles.rowMeta}>{toPoint.mapPinConfirmed ? 'Harita onaylı' : 'Haritada “Tam burası” bekleniyor'}</Text>
+                ) : null}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
+            </TouchableOpacity>
+
+            <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Saat</Text>
+            <TouchableOpacity
+              style={styles.cardRow}
+              onPress={() => {
+                setTimeDraft({ ...departureHm });
+                setTimeModalOpen(true);
+              }}
+              activeOpacity={0.88}
+            >
+              <View style={[styles.icoWrap, { backgroundColor: 'rgba(148,163,184,0.15)' }]}>
+                <Ionicons name="time-outline" size={22} color="#475569" />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.rowLabel}>Kalkış</Text>
+                <Text style={styles.rowTimeMain}>{departureDayLabel(departureHm.h, departureHm.m)}</Text>
+                {!departureTimeConfirmed ? (
+                  <Text style={styles.rowMeta}>Onay için dokun — altta “Tamam”</Text>
+                ) : (
+                  <Text style={styles.rowMetaOk}>Saat onaylandı</Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
+            </TouchableOpacity>
+
+            <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Ücret</Text>
+            <View style={styles.priceCard}>
+              <Text style={styles.priceLead}>Rota mesafesine göre sistem tabanı</Text>
+              <GradientButton
+                label={priceCalcBusy ? 'Hesaplanıyor…' : 'Taban fiyat hesapla'}
+                loading={priceCalcBusy}
+                onPress={() => void calcBasePrice()}
+                disabled={!fromPoint || !toPoint || (mapPinRequired && (!fromPoint.mapPinConfirmed || !toPoint.mapPinConfirmed))}
+                style={{ marginTop: 12 }}
+              />
+              {priceMeta?.distance_km != null ? (
+                <Text style={styles.priceMeta}>
+                  ~{priceMeta.distance_km} km
+                  {priceMeta.estimated_minutes != null ? ` · ~${priceMeta.estimated_minutes} dk` : ''}
+                </Text>
+              ) : null}
+              {finalPriceInt != null ? (
+                <View style={styles.priceHighlight}>
+                  <Text style={styles.priceHuge}>{finalPriceInt} ₺</Text>
+                  <Text style={styles.priceSub}>Önerilen tutar (± ile ince ayar)</Text>
+                  <View style={styles.stepRow}>
+                    <TouchableOpacity
+                      style={styles.stepPill}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setPriceDelta((d) => d - 10);
+                      }}
+                      disabled={suggestedBase == null}
+                    >
+                      <Text style={styles.stepPillText}>−10 ₺</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.stepPill}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setPriceDelta((d) => d + 10);
+                      }}
+                      disabled={suggestedBase == null}
+                    >
+                      <Text style={styles.stepPillText}>+10 ₺</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.stepPillOrange}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        setPriceDelta(0);
+                      }}
+                      disabled={suggestedBase == null}
+                    >
+                      <Text style={styles.stepPillOrangeText}>Taban</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ) : (
-                <Text style={styles.endpointMetaOk}>Saat onaylandı</Text>
+                <Text style={styles.priceHintMuted}>Önce tabanı hesapla; sonra istersen ±10 ₺ oynayabilirsin.</Text>
               )}
             </View>
-            <Ionicons name="chevron-forward" size={20} color={TEXT_SECONDARY} />
-          </TouchableOpacity>
 
-          <Text style={styles.inputLabel}>Ücret</Text>
-          <View style={styles.priceCard}>
-            <Text style={styles.priceHint}>
-              Ana uygulama ile aynı taban: nereden / nereye koordinatlarından sunucu hesaplar.
-            </Text>
-            <GradientButton
-              label={priceCalcBusy ? 'Hesaplanıyor…' : 'Taban fiyat hesapla'}
-              loading={priceCalcBusy}
-              onPress={() => void calcBasePrice()}
-              disabled={!fromPoint || !toPoint || (mapPinRequired && (!fromPoint.mapPinConfirmed || !toPoint.mapPinConfirmed))}
-              style={{ marginTop: 8 }}
-            />
-            {priceMeta?.distance_km != null ? (
-              <Text style={styles.metaSmall}>
-                ~{priceMeta.distance_km} km
-                {priceMeta.estimated_minutes != null ? ` · ~${priceMeta.estimated_minutes} dk` : ''}
-              </Text>
-            ) : null}
-            {finalPriceInt != null ? (
-              <View style={styles.priceFinalRow}>
-                <Text style={styles.priceBig}>{finalPriceInt} ₺</Text>
-                <View style={styles.stepRow}>
-                  <TouchableOpacity
-                    style={styles.stepBtn}
-                    onPress={() => setPriceDelta((d) => d - 10)}
-                    disabled={suggestedBase == null}
-                  >
-                    <Text style={styles.stepBtnText}>−10</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.stepBtn}
-                    onPress={() => setPriceDelta((d) => d + 10)}
-                    disabled={suggestedBase == null}
-                  >
-                    <Text style={styles.stepBtnText}>+10</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.stepBtn}
-                    onPress={() => setPriceDelta(0)}
-                    disabled={suggestedBase == null}
-                  >
-                    <Text style={styles.stepBtnText}>Taban</Text>
-                  </TouchableOpacity>
+            {createRole === 'driver' ? (
+              <>
+                <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Kapasite</Text>
+                <View style={styles.card}>
+                  <Text style={styles.inLabel}>Koltuk (zorunlu)</Text>
+                  <TextInput
+                    style={styles.inField}
+                    value={seatsText}
+                    onChangeText={setSeatsText}
+                    keyboardType="number-pad"
+                    placeholder="Örn. 3"
+                    placeholderTextColor={TEXT_MUTED}
+                  />
                 </View>
-              </View>
-            ) : (
-              <Text style={styles.metaSmall}>Taban alındıktan sonra ±10 ₺ ile oynayabilir veya tabana dönebilirsiniz.</Text>
-            )}
-          </View>
 
-          {createRole === 'driver' ? (
-            <>
-              <Text style={styles.inputLabel}>Koltuk (zorunlu)</Text>
-              <TextInput style={styles.input} value={seatsText} onChangeText={setSeatsText} keyboardType="number-pad" placeholder="Örn. 3" />
-              <Text style={styles.inputLabel}>Araç bilgisi (opsiyonel)</Text>
-              <TextInput style={styles.input} value={vehicleBrand} onChangeText={setVehicleBrand} placeholder="Marka (örn. Toyota)" />
-              <TextInput
-                style={[styles.input, { marginTop: 8 }]}
-                value={vehicleModel}
-                onChangeText={setVehicleModel}
-                placeholder="Model (örn. Corolla)"
-              />
-              <TextInput
-                style={[styles.input, { marginTop: 8 }]}
-                value={vehicleColor}
-                onChangeText={setVehicleColor}
-                placeholder="Renk (örn. Gri)"
-              />
-              <Text style={styles.inputLabel}>Tekrar</Text>
-              <View style={styles.rolePick}>
-                {(['once', 'daily', 'weekly'] as const).map((rt) => (
-                  <TouchableOpacity key={rt} style={[styles.roleOpt, repeatType === rt && styles.roleOptOn]} onPress={() => setRepeatType(rt)}>
-                    <Text style={styles.roleOptText}>{rt === 'once' ? 'Bir kez' : rt === 'daily' ? 'Günlük' : 'Haftalık'}</Text>
+                <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Araç bilgisi</Text>
+                <View style={styles.card}>
+                  <Text style={styles.inLabel}>Marka</Text>
+                  <TouchableOpacity style={styles.brandPick} onPress={() => setBrandSheetOpen(true)} activeOpacity={0.88}>
+                    <Text style={vehicleBrand.trim() ? styles.brandPickOn : styles.brandPickPlaceholder}>
+                      {vehicleBrand.trim() || 'Marka seç'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color={TEXT_MUTED} />
                   </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.inputLabel}>Seçili günler (opsiyonel)</Text>
-              <TextInput style={styles.input} value={selectedDays} onChangeText={setSelectedDays} placeholder="örn. Cmt–Paz" />
-              <Text style={styles.inputLabel}>Vakit penceresi (opsiyonel)</Text>
-              <TextInput style={styles.input} value={timeWindow} onChangeText={setTimeWindow} placeholder="08:00–09:00" />
-              <Text style={styles.inputLabel}>Ek not</Text>
-              <TextInput style={[styles.input, { minHeight: 88 }]} value={noteBody} onChangeText={setNoteBody} multiline placeholder="Ek bilgi" />
-              <Text style={styles.hint}>
-                Geçici: tekrar, koltuk, günler, vakit ve araç bilgisi şimdilik not metnine eklenir; kalıcı çözüm değildir.
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.inputLabel}>Bütçe üst sınırı (opsiyonel, ₺)</Text>
-              <TextInput
-                style={styles.input}
-                value={passengerBudgetText}
-                onChangeText={setPassengerBudgetText}
-                keyboardType="decimal-pad"
-                placeholder="İstersen yaz"
-              />
-              <Text style={styles.inputLabel}>Ek not</Text>
-              <TextInput style={[styles.input, { minHeight: 88 }]} value={noteBody} onChangeText={setNoteBody} multiline placeholder="Ek bilgi" />
-            </>
-          )}
+                  <Text style={[styles.inLabel, { marginTop: 14 }]}>Model</Text>
+                  <TextInput
+                    style={styles.inField}
+                    value={vehicleModel}
+                    onChangeText={setVehicleModel}
+                    placeholder="Örn. Corolla"
+                    placeholderTextColor={TEXT_MUTED}
+                  />
+                  <Text style={[styles.inLabel, { marginTop: 14 }]}>Renk</Text>
+                  <TextInput
+                    style={styles.inField}
+                    value={vehicleColor}
+                    onChangeText={setVehicleColor}
+                    placeholder="Örn. Gri"
+                    placeholderTextColor={TEXT_MUTED}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Bütçe (opsiyonel)</Text>
+                <View style={styles.card}>
+                  <TextInput
+                    style={styles.inField}
+                    value={passengerBudgetText}
+                    onChangeText={setPassengerBudgetText}
+                    keyboardType="decimal-pad"
+                    placeholder="Üst limit (₺)"
+                    placeholderTextColor={TEXT_MUTED}
+                  />
+                </View>
+              </>
+            )}
 
-          <View style={{ height: 8 }} />
-          <GradientButton
-            label="Teklifi aç"
-            loading={createBusy}
-            disabled={!canSubmit}
-            onPress={() => void submitCreate()}
-            style={{ marginTop: 8 }}
-          />
-          {!canSubmit && !createBusy ? (
-            <TouchableOpacity onPress={showMissingAlert} style={styles.missingLink}>
-              <Text style={styles.missingLinkText}>Neler eksik? — dokun ve listeyi gör</Text>
-            </TouchableOpacity>
-          ) : null}
-        </ScrollView>
+            <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Ek not</Text>
+            <View style={styles.card}>
+              <TextInput
+                style={styles.noteField}
+                value={noteBody}
+                onChangeText={setNoteBody}
+                multiline
+                placeholder="İsteğe bağlı kısa not…"
+                placeholderTextColor={TEXT_MUTED}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <GradientButton
+              label="Teklifi aç"
+              loading={createBusy}
+              disabled={!canSubmit}
+              onPress={() => void submitCreate()}
+              style={{ marginTop: 20 }}
+            />
+            {!canSubmit && !createBusy ? (
+              <TouchableOpacity onPress={showMissingAlert} style={styles.missingLink}>
+                <Text style={styles.missingLinkText}>Neler eksik?</Text>
+              </TouchableOpacity>
+            ) : null}
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         <MuhabbetEndpointPickerModal
           visible={pickerOpen}
@@ -618,18 +702,48 @@ export default function CreateListingModal({
           onCommitted={onPickerCommitted}
         />
 
-        <Modal visible={timeModalOpen} transparent animationType="fade" onRequestClose={() => setTimeModalOpen(false)}>
-          <Pressable style={styles.timeOverlay} onPress={() => setTimeModalOpen(false)}>
-            <Pressable style={styles.timeSheet} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.timeSheetTitle}>Saat seç</Text>
-              <Text style={styles.timePreview}>{departureDayLabel(timeDraft.h, timeDraft.m)}</Text>
+        <Modal visible={brandSheetOpen} transparent animationType="fade" onRequestClose={() => setBrandSheetOpen(false)}>
+          <Pressable style={styles.sheetOverlay} onPress={() => setBrandSheetOpen(false)}>
+            <Pressable style={styles.brandSheet} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.sheetTitle}>Marka seç</Text>
+              <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+                <View style={styles.brandGrid}>
+                  {CAR_BRANDS.map((b) => (
+                    <TouchableOpacity
+                      key={b}
+                      style={[styles.brandChip, vehicleBrand === b && styles.brandChipOn]}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setVehicleBrand(b);
+                        setBrandSheetOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.brandChipText, vehicleBrand === b && styles.brandChipTextOn]}>{b}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              <TouchableOpacity style={styles.sheetClose} onPress={() => setBrandSheetOpen(false)}>
+                <Text style={styles.sheetCloseText}>Kapat</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal visible={timeModalOpen} transparent animationType="slide" onRequestClose={() => setTimeModalOpen(false)}>
+          <Pressable style={styles.sheetOverlay} onPress={() => setTimeModalOpen(false)}>
+            <Pressable style={styles.timeSheetPremium} onPress={(e) => e.stopPropagation()}>
+              <LinearGradient colors={['#1e293b', '#0f172a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.timeSheetHero}>
+                <Text style={styles.timeSheetEyebrow}>Kalkış saati</Text>
+                <Text style={styles.timeSheetBig}>{departureDayLabel(timeDraft.h, timeDraft.m)}</Text>
+              </LinearGradient>
               <View style={styles.timeColumns}>
                 <ScrollView style={styles.timeScroll} showsVerticalScrollIndicator={false}>
                   {hours.map((h) => (
                     <TouchableOpacity
                       key={h}
                       style={[styles.timeChip, timeDraft.h === h && styles.timeChipOn]}
-                      onPress={() => setTimeDraft((t) => ({ ...t, h }))}
+                      onPress={() => onTimeChipPress(() => setTimeDraft((t) => ({ ...t, h })))}
                     >
                       <Text style={[styles.timeChipText, timeDraft.h === h && styles.timeChipTextOn]}>{pad2(h)}</Text>
                     </TouchableOpacity>
@@ -640,21 +754,25 @@ export default function CreateListingModal({
                     <TouchableOpacity
                       key={m}
                       style={[styles.timeChip, timeDraft.m === m && styles.timeChipOn]}
-                      onPress={() => setTimeDraft((t) => ({ ...t, m }))}
+                      onPress={() => onTimeChipPress(() => setTimeDraft((t) => ({ ...t, m })))}
                     >
                       <Text style={[styles.timeChipText, timeDraft.m === m && styles.timeChipTextOn]}>{pad2(m)}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
               </View>
-              <GradientButton
-                label="Tamam"
+              <TouchableOpacity
+                style={styles.timeConfirmBtn}
+                activeOpacity={0.9}
                 onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   setDepartureHm({ ...timeDraft });
                   setDepartureTimeConfirmed(true);
                   setTimeModalOpen(false);
                 }}
-              />
+              >
+                <Text style={styles.timeConfirmText}>Tamam</Text>
+              </TouchableOpacity>
             </Pressable>
           </Pressable>
         </Modal>
@@ -664,85 +782,208 @@ export default function CreateListingModal({
 }
 
 const styles = StyleSheet.create({
-  modalRoot: { flex: 1, backgroundColor: '#F2F2F7' },
-  modalScroll: { padding: 16, paddingBottom: 40 },
-  inputLabel: { marginTop: 12, marginBottom: 6, fontSize: 13, fontWeight: '600', color: TEXT_SECONDARY },
+  modalRoot: { flex: 1, backgroundColor: SCREEN_BG },
+  kav: { flex: 1 },
+  modalScroll: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 48 },
+  sectionEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: TEXT_MUTED,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  card: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   cityLock: { fontSize: 17, fontWeight: '700', color: TEXT_PRIMARY },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(60,60,67,0.2)',
+  roleRow: { flexDirection: 'row', gap: 10 },
+  roleChip: {
+    flex: 1,
+    paddingVertical: 14,
     borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    alignItems: 'center',
+  },
+  roleChipOn: {
+    backgroundColor: 'rgba(59,130,246,0.18)',
+    borderColor: '#3b82f6',
+  },
+  roleChipText: { fontSize: 15, fontWeight: '700', color: TEXT_MUTED },
+  roleChipTextOn: { color: '#93c5fd' },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  icoWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rowLabel: { fontSize: 12, fontWeight: '600', color: TEXT_SECONDARY },
+  rowValue: { marginTop: 4, fontSize: 15, fontWeight: '600', color: TEXT_PRIMARY },
+  rowTimeMain: { marginTop: 4, fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
+  rowMeta: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY },
+  rowMetaOk: { marginTop: 4, fontSize: 12, color: '#15803d', fontWeight: '600' },
+  priceCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.15)',
+  },
+  priceLead: { fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
+  priceMeta: { marginTop: 10, fontSize: 12, color: TEXT_SECONDARY },
+  priceHintMuted: { marginTop: 10, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
+  priceHighlight: { marginTop: 14 },
+  priceHuge: { fontSize: 36, fontWeight: '800', color: TEXT_PRIMARY, letterSpacing: -0.5 },
+  priceSub: { marginTop: 4, fontSize: 13, color: TEXT_SECONDARY },
+  stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  stepPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59,130,246,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.25)',
+  },
+  stepPillText: { fontSize: 14, fontWeight: '700', color: '#1d4ed8' },
+  stepPillOrange: {
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: 'rgba(234,88,12,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(234,88,12,0.35)',
+  },
+  stepPillOrangeText: { fontSize: 14, fontWeight: '700', color: ACCENT_ORANGE_SOFT },
+  inLabel: { fontSize: 12, fontWeight: '600', color: TEXT_SECONDARY, marginBottom: 6 },
+  inField: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.35)',
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
     color: TEXT_PRIMARY,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8fafc',
   },
-  rolePick: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  roleOpt: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(60,60,67,0.08)' },
-  roleOptOn: { backgroundColor: 'rgba(59,130,246,0.2)' },
-  roleOptText: { fontSize: 14, fontWeight: '600', color: TEXT_PRIMARY },
-  hint: { marginTop: 10, fontSize: 12, color: TEXT_SECONDARY, lineHeight: 18 },
-  endpointRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  noteField: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(60,60,67,0.2)',
-    borderRadius: 14,
+    borderColor: 'rgba(148,163,184,0.35)',
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    backgroundColor: '#fff',
+    fontSize: 16,
+    color: TEXT_PRIMARY,
+    backgroundColor: '#f8fafc',
+    minHeight: 110,
   },
-  endpointText: { fontSize: 15, color: TEXT_PRIMARY, fontWeight: '500' },
-  endpointMeta: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY },
-  endpointMetaOk: { marginTop: 4, fontSize: 12, color: '#15803D', fontWeight: '600' },
-  priceCard: {
-    borderRadius: 14,
+  brandPick: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(60,60,67,0.2)',
-    padding: 14,
-    backgroundColor: '#fff',
-  },
-  priceHint: { fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
-  metaSmall: { marginTop: 8, fontSize: 12, color: TEXT_SECONDARY },
-  priceFinalRow: { marginTop: 12 },
-  priceBig: { fontSize: 28, fontWeight: '800', color: TEXT_PRIMARY },
-  stepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  stepBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderColor: 'rgba(148,163,184,0.35)',
     borderRadius: 12,
-    backgroundColor: 'rgba(59,130,246,0.12)',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: '#f8fafc',
   },
-  stepBtnText: { fontSize: 14, fontWeight: '700', color: '#1D4ED8' },
-  missingLink: { marginTop: 10, alignSelf: 'center', paddingVertical: 6 },
-  missingLinkText: { fontSize: 13, color: '#2563EB', fontWeight: '600' },
-  timeOverlay: {
+  brandPickOn: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
+  brandPickPlaceholder: { fontSize: 16, color: TEXT_MUTED },
+  sheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
-  timeSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
+  brandSheet: {
+    backgroundColor: CARD_BG,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 28,
+    maxHeight: '70%',
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 14 },
+  brandGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  brandChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  brandChipOn: { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6' },
+  brandChipText: { fontSize: 14, fontWeight: '700', color: TEXT_PRIMARY },
+  brandChipTextOn: { color: '#1d4ed8' },
+  sheetClose: { marginTop: 16, alignSelf: 'center', paddingVertical: 10 },
+  sheetCloseText: { fontSize: 15, fontWeight: '600', color: TEXT_SECONDARY },
+  timeSheetPremium: {
+    backgroundColor: CARD_BG,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    overflow: 'hidden',
     paddingBottom: 28,
   },
-  timeSheetTitle: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8 },
-  timePreview: { fontSize: 15, fontWeight: '700', color: '#1D4ED8', marginBottom: 12 },
-  timeColumns: { flexDirection: 'row', gap: 12, maxHeight: 220, marginBottom: 16 },
+  timeSheetHero: { paddingHorizontal: 20, paddingVertical: 22 },
+  timeSheetEyebrow: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 1 },
+  timeSheetBig: { marginTop: 8, fontSize: 28, fontWeight: '800', color: '#fff' },
+  timeColumns: { flexDirection: 'row', gap: 14, paddingHorizontal: 16, maxHeight: 240, marginTop: 16 },
   timeScroll: { flex: 1 },
   timeChip: {
-    paddingVertical: 10,
+    paddingVertical: 11,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 11,
     marginBottom: 6,
-    backgroundColor: 'rgba(60,60,67,0.06)',
+    backgroundColor: '#f1f5f9',
     alignItems: 'center',
   },
-  timeChipOn: { backgroundColor: 'rgba(59,130,246,0.22)' },
-  timeChipText: { fontSize: 16, fontWeight: '600', color: TEXT_PRIMARY },
-  timeChipTextOn: { color: '#1D4ED8' },
+  timeChipOn: { backgroundColor: 'rgba(59,130,246,0.18)' },
+  timeChipText: { fontSize: 17, fontWeight: '600', color: TEXT_PRIMARY },
+  timeChipTextOn: { color: '#1d4ed8', fontWeight: '800' },
+  timeConfirmBtn: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    backgroundColor: ACCENT_ORANGE,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    shadowColor: ACCENT_ORANGE,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  timeConfirmText: { fontSize: 17, fontWeight: '800', color: '#fff' },
+  missingLink: { marginTop: 14, alignSelf: 'center', paddingVertical: 8 },
+  missingLinkText: { fontSize: 14, color: '#93c5fd', fontWeight: '600' },
 });

@@ -18000,6 +18000,29 @@ _MUHABBET_LISTING_STATUSES = frozenset({"active", "matched", "closed", "cancelle
 _MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelled"})
 
 
+def _ride_listings_owner_column() -> str:
+    """ride_listings oluşturan kullanıcı FK kolon adı (Supabase şeması ile uyum).
+    Bazı kurulumlarda tablo `user_id` ile oluşturulmuş olabiliyor — .env veya migration ile hizalayın."""
+    return (os.getenv("RIDE_LISTINGS_OWNER_COLUMN") or "created_by_user_id").strip()
+
+
+def _ride_listing_creator_uid(row: Optional[dict]) -> str:
+    """Satır hangi FK adını kullanırsa kullansın oluşturan kullanıcı id."""
+    if not row:
+        return ""
+    col = _ride_listings_owner_column()
+    return str(row.get(col) or row.get("created_by_user_id") or row.get("user_id") or "").strip().lower()
+
+
+def _ride_listing_response_row(row: dict) -> dict:
+    """İstemci ve eski kodlar için her zaman created_by_user_id anahtarı üret."""
+    r = dict(row)
+    uid = _ride_listing_creator_uid(r)
+    if uid and not r.get("created_by_user_id"):
+        r["created_by_user_id"] = uid
+    return r
+
+
 class MuhabbetListingCreateBody(BaseModel):
     """
     İlan oluşturma gövdesi.
@@ -18228,7 +18251,7 @@ def _enrich_ride_listings_creators(rows: list) -> list:
     uids: list = []
     seen: set = set()
     for r in rows:
-        u = str((r or {}).get("created_by_user_id") or "").strip()
+        u = _ride_listing_creator_uid(r or {})
         if u and u not in seen:
             seen.add(u)
             uids.append(u)
@@ -18243,7 +18266,7 @@ def _enrich_ride_listings_creators(rows: list) -> list:
         logger.warning("ride_listings enrich: %s", e)
         name_map = {}
     for r in rows:
-        u = str(r.get("created_by_user_id") or "")
+        u = _ride_listing_creator_uid(r or {})
         r["creator_name"] = name_map.get(u) or "Kullanıcı"
     return rows
 
@@ -18278,8 +18301,9 @@ async def muhabbet_listing_create(
             lrid = rid
             if not lph and rr.data[0].get("pattern_hash"):
                 lph = str(rr.data[0].get("pattern_hash")).strip() or None
+        owner_col = _ride_listings_owner_column()
         insert_payload = {
-            "created_by_user_id": uid,
+            owner_col: uid,
             "linked_user_route_id": lrid,
             "linked_pattern_hash": lph,
             "city": c,
@@ -18300,7 +18324,7 @@ async def muhabbet_listing_create(
         ins = supabase.table("ride_listings").insert(insert_payload).execute()
         if not ins.data:
             return {"success": False, "detail": "İlan kaydedilemedi"}
-        row = dict(ins.data[0])
+        row = _ride_listing_response_row(dict(ins.data[0]))
         _enrich_ride_listings_creators([row])
         return {"success": True, "listing": row}
     except HTTPException:
@@ -18311,7 +18335,13 @@ async def muhabbet_listing_create(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
         logger.error(f"muhabbet_listing_create: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        msg = str(e).lower()
+        if "could not find" in msg and "column" in msg:
+            raise HTTPException(
+                status_code=503,
+                detail="Teklif oluşturulamadı. Lütfen bir süre sonra tekrar deneyin.",
+            ) from e
+        raise HTTPException(status_code=500, detail="Teklif kaydedilemedi. Lütfen tekrar deneyin.") from e
 
 
 @api_router.post("/muhabbet/listings")
@@ -18350,7 +18380,7 @@ async def muhabbet_listings_feed(
                 raise HTTPException(status_code=400, detail="Geçersiz role_type")
             q = q.eq("role_type", rt)
         res = q.order("created_at", desc=True).limit(lim).execute()
-        rows = [dict(x) for x in (res.data or [])]
+        rows = [_ride_listing_response_row(dict(x)) for x in (res.data or [])]
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
         meta_map = _muhabbet_feed_match_request_meta_for_user(uid, lid_list)
@@ -18379,14 +18409,14 @@ async def muhabbet_listings_me(
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         lim = max(1, min(int(limit or 100), 200))
-        q = supabase.table("ride_listings").select("*").eq("created_by_user_id", uid)
+        q = supabase.table("ride_listings").select("*").eq(_ride_listings_owner_column(), uid)
         st = (status or "").strip().lower()
         if st:
             if st not in _MUHABBET_LISTING_STATUSES:
                 raise HTTPException(status_code=400, detail="Geçersiz status")
             q = q.eq("status", st)
         res = q.order("created_at", desc=True).limit(lim).execute()
-        rows = [dict(x) for x in (res.data or [])]
+        rows = [_ride_listing_response_row(dict(x)) for x in (res.data or [])]
         return {"success": True, "listings": _enrich_ride_listings_creators(rows), "count": len(rows)}
     except HTTPException:
         raise
@@ -18408,9 +18438,9 @@ async def muhabbet_listing_get(
         res = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
         if not res.data:
             return {"success": False, "listing": None, "detail": "İlan bulunamadı"}
-        row = dict(res.data[0])
+        row = _ride_listing_response_row(dict(res.data[0]))
         _enrich_ride_listings_creators([row])
-        owner = str(row.get("created_by_user_id") or "").strip().lower()
+        owner = _ride_listing_creator_uid(row)
         row["is_owner"] = owner == uid
         row["has_pending_request"] = False
         row["incoming_request_count"] = 0
@@ -18467,8 +18497,8 @@ async def muhabbet_listing_match_request(
         lr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
         if not lr.data:
             raise HTTPException(status_code=404, detail="İlan bulunamadı")
-        lst = dict(lr.data[0])
-        owner = str(lst.get("created_by_user_id") or "").strip().lower()
+        lst = _ride_listing_response_row(dict(lr.data[0]))
+        owner = _ride_listing_creator_uid(lst)
         st = str(lst.get("status") or "").strip().lower()
         if owner == uid:
             raise HTTPException(status_code=400, detail="Kendi ilanınıza istek gönderemezsiniz")
@@ -18705,7 +18735,7 @@ async def muhabbet_user_public_profile_get(
             al = (
                 supabase.table("ride_listings")
                 .select("id", count="exact")
-                .eq("created_by_user_id", tid)
+                .eq(_ride_listings_owner_column(), tid)
                 .eq("status", "active")
                 .execute()
             )
@@ -18849,11 +18879,11 @@ async def muhabbet_match_request_accept(
         if st != "pending":
             raise HTTPException(status_code=400, detail="Bu istek zaten yanıtlanmış")
         lid = str(row.get("listing_id") or "").strip().lower()
-        lr0 = supabase.table("ride_listings").select("id, status, created_by_user_id").eq("id", lid).limit(1).execute()
+        lr0 = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
         if not lr0.data:
             raise HTTPException(status_code=400, detail="İlan bulunamadı")
-        lst = lr0.data[0]
-        if str(lst.get("created_by_user_id") or "").strip().lower() != uid:
+        lst = _ride_listing_response_row(dict(lr0.data[0]))
+        if _ride_listing_creator_uid(lst) != uid:
             raise HTTPException(status_code=403, detail="Sadece ilan sahibi bu isteği kabul edebilir")
         if str(lst.get("status") or "").strip().lower() != "active":
             raise HTTPException(status_code=400, detail="İlan artık eşleşme kabul edemiyor")
