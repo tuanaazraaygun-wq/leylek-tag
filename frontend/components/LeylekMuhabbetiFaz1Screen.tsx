@@ -24,7 +24,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -114,6 +113,52 @@ function formatPostTime(iso: string): string {
     return d.toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
+  }
+}
+
+/** ImagePicker: yeni API `assets[0].uri`, eski sürümler bazen kök `uri`. */
+function imagePickerResultToLocalUri(result: ImagePicker.ImagePickerResult): string | null {
+  if (result.canceled) return null;
+  const assets = result.assets;
+  if (Array.isArray(assets) && assets.length > 0) {
+    const u = assets[0]?.uri;
+    if (typeof u === 'string' && u.trim().length > 0) return u.trim();
+  }
+  const legacy = (result as { uri?: unknown }).uri;
+  if (typeof legacy === 'string' && legacy.trim().length > 0) return legacy.trim();
+  return null;
+}
+
+/** Supabase signed PUT: expo-file-system v19 kök importta uploadAsync/FileSystemUploadType yok — fetch + blob kullan. */
+async function putLocalImageToSignedUrl(
+  localUri: string,
+  signedUrl: string,
+  contentType: string,
+): Promise<{ ok: boolean; status: number; message?: string }> {
+  if (!localUri?.trim() || !signedUrl?.trim()) {
+    return { ok: false, status: 0, message: 'Geçersiz adres' };
+  }
+  try {
+    const fileRes = await fetch(localUri);
+    if (!fileRes.ok) {
+      return { ok: false, status: fileRes.status, message: 'Fotoğraf dosyası okunamadı' };
+    }
+    const blob = await fileRes.blob();
+    const putRes = await fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType || 'image/jpeg' },
+      body: blob,
+    });
+    if (!putRes.ok) {
+      return { ok: false, status: putRes.status, message: await putRes.text().catch(() => '') };
+    }
+    return { ok: true, status: putRes.status };
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      message: e instanceof Error ? e.message : 'Yükleme hatası',
+    };
   }
 }
 
@@ -438,10 +483,14 @@ export default function LeylekMuhabbetiFaz1Screen({
       aspect: [4, 3],
       quality: 0.72,
     });
-    if (r.canceled || !r.assets[0]) return;
-    const a = r.assets[0];
-    setComposeImageUri(a.uri);
-    const mt = (a.mimeType || '').toLowerCase();
+    const uri = imagePickerResultToLocalUri(r);
+    if (!uri) {
+      Alert.alert('Fotoğraf', 'Seçilen görüntünün adresi alınamadı. Tekrar deneyin.');
+      return;
+    }
+    setComposeImageUri(uri);
+    const a = !r.canceled && Array.isArray(r.assets) && r.assets[0] ? r.assets[0] : null;
+    const mt = ((a?.mimeType as string | undefined) || '').toLowerCase();
     if (mt === 'image/png') setComposeMime('image/png');
     else if (mt === 'image/webp') setComposeMime('image/webp');
     else setComposeMime('image/jpeg');
@@ -450,7 +499,8 @@ export default function LeylekMuhabbetiFaz1Screen({
   const submitNewPost = async () => {
     if (!feedGroup || !tok) return;
     const cap = composeCaption.trim();
-    if (!composeImageUri) {
+    const fileUri = (composeImageUri || '').trim();
+    if (!fileUri) {
       Alert.alert('Gönderi', 'Fotoğraf seçmelisiniz.');
       return;
     }
@@ -479,14 +529,12 @@ export default function LeylekMuhabbetiFaz1Screen({
         setComposeBusy(false);
         return;
       }
-      const uploadOpts: Parameters<typeof FileSystem.uploadAsync>[2] = {
-        httpMethod: 'PUT',
-        headers: { 'Content-Type': composeMime },
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      };
-      const up = await FileSystem.uploadAsync(pj.signed_url as string, composeImageUri, uploadOpts);
-      if (up.status < 200 || up.status >= 300) {
-        Alert.alert('Yükleme', `Depolama hatası (${up.status})`);
+      const up = await putLocalImageToSignedUrl(fileUri, String(pj.signed_url), composeMime);
+      if (!up.ok) {
+        Alert.alert(
+          'Yükleme',
+          up.status ? `Depolama hatası (${up.status})` : up.message || 'Yükleme başarısız',
+        );
         setComposeBusy(false);
         return;
       }
