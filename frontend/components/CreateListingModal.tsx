@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
+import { API_BASE_URL } from '../lib/backendConfig';
 import MuhabbetEndpointPickerModal, {
   muhabbetListingMapPinFlowAvailable,
   type MuhabbetCommittedPlace,
@@ -139,6 +140,16 @@ function userSubmitFailureMessage(): string {
   return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
 }
 
+/** İstekler FastAPI /api altında; yanlışlıkla origin kökü verilmişse /api ekle (localhost hariç). */
+function ensureApiPathPrefix(baseUrl: string): string {
+  let s = String(baseUrl || '').trim().replace(/\/$/, '');
+  if (!s) return s;
+  if (/\/api$/i.test(s)) return s;
+  if (/localhost|127\.0\.0\.1/i.test(s)) return s;
+  console.warn('[muhabbet-create] api kökünde /api yok, ekleniyor (önce):', s);
+  return `${s}/api`.replace(/\/$/, '');
+}
+
 function hasFiniteCoords(p: MuhabbetCommittedPlace | null): boolean {
   if (!p) return false;
   return Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
@@ -166,7 +177,14 @@ export default function CreateListingModal({
   onCreated,
 }: CreateListingModalProps) {
   const tok = accessToken.trim();
-  const base = apiUrl.replace(/\/$/, '');
+  const base = useMemo(() => {
+    const raw = (apiUrl || '').trim();
+    const resolved = raw || API_BASE_URL;
+    if (!raw) {
+      console.warn('[muhabbet-create] apiUrl boş — API_BASE_URL kullanılıyor:', API_BASE_URL);
+    }
+    return ensureApiPathPrefix(resolved).replace(/\/$/, '');
+  }, [apiUrl]);
   const mapPinRequired = muhabbetListingMapPinFlowAvailable();
 
   const [createRole, setCreateRole] = useState<'driver' | 'passenger'>(initialRole);
@@ -427,15 +445,45 @@ export default function CreateListingModal({
   }, [suggestedBase, priceDelta]);
 
   const submitCreate = async () => {
-    if (!requireToken() || !tok) return;
+    const urlPrimary = `${base}/muhabbet/listings`;
+    const urlLegacy = `${base}/muhabbet/listings/create`;
+    const tokenGateOk = requireToken();
+    console.warn('[muhabbet-create] submit start', {
+      apiUrlProp: apiUrl,
+      base,
+      urlPrimary,
+      urlLegacy,
+      hasToken: !!tok,
+      requireTokenReturned: tokenGateOk,
+      canSubmit,
+      missingCount: missingReasons.length,
+    });
+
+    if (!tokenGateOk) {
+      console.warn('[muhabbet-create] early exit: requireToken() false (Alert zaten requireToken içinde olabilir)');
+      return;
+    }
+    if (!tok) {
+      console.warn('[muhabbet-create] early exit: accessToken boş (modal tok)');
+      Alert.alert('Teklif', 'Oturum bilgisi eksik. Lütfen tekrar giriş yapın.');
+      return;
+    }
     if (!canSubmit) {
+      console.warn('[muhabbet-create] validation: eksikler', missingReasons);
       showMissingAlert();
       return;
     }
     if (!fromPoint || !toPoint || suggestedBase == null || finalPriceInt == null) {
+      console.warn('[muhabbet-create] validation: guard tekrar', {
+        from: !!fromPoint,
+        to: !!toPoint,
+        suggestedBase,
+        finalPriceInt,
+      });
       showMissingAlert();
       return;
     }
+
     setCreateBusy(true);
     try {
       const listing_type = createRole === 'driver' ? 'gidiyorum' : 'gidecegim';
@@ -456,38 +504,56 @@ export default function CreateListingModal({
         price_amount: finalPriceInt,
       };
 
-      let res = await fetch(`${base}/muhabbet/listings`, {
+      const bodyJson = JSON.stringify(body);
+      console.warn('[muhabbet-create] fetch primary', urlPrimary);
+      console.warn('[muhabbet-create] request body', body);
+
+      let res = await fetch(urlPrimary, {
         method: 'POST',
         headers: { ...authHeader(tok), 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: bodyJson,
       });
       let rawBody = await res.text();
+      console.warn('[muhabbet-create] primary response', { status: res.status, bodyHead: rawBody.slice(0, 800) });
+
       if (shouldUseLegacyListingCreate(res.status)) {
-        res = await fetch(`${base}/muhabbet/listings/create`, {
+        console.warn('[muhabbet-create] fallback legacy (status 404|405|501) →', urlLegacy);
+        res = await fetch(urlLegacy, {
           method: 'POST',
           headers: { ...authHeader(tok), 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: bodyJson,
         });
         rawBody = await res.text();
+        console.warn('[muhabbet-create] legacy response', { status: res.status, bodyHead: rawBody.slice(0, 800) });
       }
-      if (handleUnauthorizedAndMaybeRedirect(res)) return;
+
+      if (handleUnauthorizedAndMaybeRedirect(res)) {
+        console.warn('[muhabbet-create] 401 — yönlendirme / oturum');
+        return;
+      }
+
       let d: { success?: boolean; detail?: string } = {};
       try {
         d = JSON.parse(rawBody) as typeof d;
-      } catch {
+        console.warn('[muhabbet-create] parsed JSON', { success: d.success, hasDetail: typeof d.detail === 'string' });
+      } catch (parseErr) {
+        console.warn('[muhabbet-create] JSON parse hatası', parseErr, 'rawHead:', rawBody.slice(0, 200));
         d = {};
       }
+
       if (!res.ok || !d.success) {
-        console.warn('[CreateListing] submit failed', res.status, rawBody.slice(0, 500));
+        console.warn('[muhabbet-create] submit başarısız (kullanıcıya sade mesaj)', res.status, rawBody.slice(0, 500));
         Alert.alert('Teklif', userSubmitFailureMessage());
         return;
       }
+      console.warn('[muhabbet-create] submit OK');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Teklif', 'Teklifin açıldı.');
       onClose();
       resetForm();
       onCreated?.();
-    } catch {
+    } catch (err) {
+      console.warn('[muhabbet-create] fetch exception', err);
       Alert.alert('Teklif', userSubmitFailureMessage());
     } finally {
       setCreateBusy(false);
@@ -736,7 +802,7 @@ export default function CreateListingModal({
             <GradientButton
               label="Teklifi aç"
               loading={createBusy}
-              disabled={!canSubmit}
+              disabled={createBusy}
               onPress={() => void submitCreate()}
               style={{ marginTop: 20 }}
             />
