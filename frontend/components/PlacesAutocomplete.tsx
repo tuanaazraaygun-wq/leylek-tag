@@ -292,7 +292,7 @@ interface PlaceResult {
   };
 }
 
-interface PlaceDetails {
+export interface PlaceDetails {
   address: string;
   latitude: number;
   longitude: number;

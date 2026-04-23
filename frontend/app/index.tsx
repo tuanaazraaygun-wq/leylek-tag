@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar, Vibration } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, FlatList, Platform, Dimensions, useWindowDimensions, Animated, Easing, Image, Linking, PermissionsAndroid, ImageBackground, Share, AppState, KeyboardAvoidingView, StatusBar, Vibration, DeviceEventEmitter } from 'react-native';
 import { appAlert } from '../contexts/AppAlertContext';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -590,6 +590,14 @@ export default function App() {
   /** Aktif eşleşme oturumu restore edilirken kısa açıklama (splash sonrası spinner) */
   const [bootSubtitle, setBootSubtitle] = useState<string | null>(null);
   const [screen, setScreen] = useState<AppScreen>('login');
+
+  /** Güzergah (route-setup) sonrası Muhabbet ekranına dön */
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('leylek:open-community', () => {
+      setScreen('community');
+    });
+    return () => sub.remove();
+  }, []);
 
   /** Leylek Zeka FAB pathname/ekran ile aynı karede senkron olsun (useEffect gecikmesi yok). */
   useLayoutEffect(() => {

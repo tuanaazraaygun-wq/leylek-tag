@@ -8,6 +8,7 @@ import {
   Easing,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const ACCENT = '#007AFF';
 const TEXT_PRIMARY = '#111111';
@@ -41,7 +42,7 @@ export type RouteSummaryCardProps = {
 
 function ctaLabelFromSummary(s: RouteSummaryPayload | null): string {
   if (!s) return '';
-  return s.has_group && s.group_id ? 'Gruba Git →' : 'Keşfet →';
+  return s.has_group && s.group_id ? 'Gruba Git' : 'Keşfet';
 }
 
 export default function RouteSummaryCard({
@@ -331,14 +332,16 @@ export default function RouteSummaryCard({
   }
 
   const hasRoute = !!(summary.route && summary.route.trim());
-  const mainLine = hasRoute
-    ? summary.route!.trim()
-    : 'Rota ekle → insanları bul';
-  const subLine =
-    summary.match_count > 0
+  const routeText = hasRoute ? summary.route!.trim() : '';
+  const mainLine = hasRoute ? `📍 ${routeText}` : 'Rota ekle, insanları bul';
+  const subLine = hasRoute
+    ? summary.match_count > 0
+      ? `🔥 Seninle aynı güzergahı kullanan ${summary.match_count} kişi var`
+      : '🔥 Henüz aynı güzergahta eşleşme yok — sen başlat'
+    : summary.match_count > 0
       ? `Bugün ${summary.match_count} kişi bu rotada`
-      : 'Henüz kimse yok';
-  const subEmphasis = summary.match_count > 0;
+      : 'Henüz kimse yok, ama ilk sen olabilirsin 🚀';
+  const subEmphasis = hasRoute ? summary.match_count > 0 : summary.match_count > 0;
 
   const onPressCta = () => {
     if (summary.has_group && summary.group_id) {
@@ -376,22 +379,34 @@ export default function RouteSummaryCard({
         ]}
       >
         <View style={styles.card}>
-          <Text style={styles.title}>Senin Güzergahın</Text>
-          {hasRoute ? (
-            <View style={styles.mainRow}>
-              <Text style={styles.routePin} accessible={false}>
-                📍
-              </Text>
-              <Text style={[styles.main, styles.mainRoute]} numberOfLines={2}>
-                {mainLine}
-              </Text>
-            </View>
-          ) : (
-            <Text style={[styles.main, styles.mainMuted]} numberOfLines={2}>
-              {mainLine}
-            </Text>
-          )}
-          <Text style={[styles.sub, subEmphasis && styles.subEmphasis]}>{subLine}</Text>
+          <LinearGradient
+            colors={['rgba(0, 122, 255, 0.07)', 'rgba(90, 200, 250, 0.02)', 'rgba(255,255,255,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.cardTopWash}
+            pointerEvents="none"
+          />
+          <View style={styles.cardContent}>
+            <Text style={styles.title}>Senin Güzergahın</Text>
+            {hasRoute ? (
+              <View style={styles.mainRouteBlock}>
+                <Text style={[styles.main, styles.mainRoute, styles.titleRouteLine]} numberOfLines={2}>
+                  {mainLine}
+                </Text>
+                <Text style={[styles.sub, subEmphasis && styles.subEmphasis, styles.subUnderRoute]}>
+                  {subLine}
+                </Text>
+                <Text style={styles.routeSummaryHint}>Bugün birlikte gidebilirsin</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.main, styles.mainMuted]} numberOfLines={2}>
+                  {mainLine}
+                </Text>
+                <Text style={[styles.sub, subEmphasis && styles.subEmphasis]}>{subLine}</Text>
+              </>
+            )}
+          </View>
           <View style={styles.divider} />
           <View style={styles.ctaSlot}>
             <View style={styles.ctaLayer} pointerEvents="none">
@@ -438,6 +453,33 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 18,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  cardTopWash: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 96,
+    zIndex: 0,
+  },
+  cardContent: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  mainRouteBlock: {
+    flex: 1,
+    flexShrink: 1,
+  },
+  subUnderRoute: {
+    marginTop: 6,
+  },
+  routeSummaryHint: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '500',
+    color: TEXT_SECONDARY,
+    letterSpacing: -0.1,
   },
   title: {
     fontSize: 13,
@@ -445,17 +487,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     color: TEXT_SECONDARY,
     marginBottom: 8,
-  },
-  mainRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  routePin: {
-    fontSize: 17,
-    lineHeight: 28,
-    marginRight: 8,
-    marginTop: 1,
   },
   main: {
     fontSize: 22,
@@ -470,6 +501,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     marginBottom: 0,
   },
+  titleRouteLine: { letterSpacing: -0.28 },
   mainMuted: {
     fontSize: 17,
     fontWeight: '600',

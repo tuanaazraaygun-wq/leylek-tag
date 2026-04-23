@@ -17991,6 +17991,956 @@ async def muhabbet_create_report(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+# ==================== LEYLEK MUHABBETİ — FAZ 1: İLAN (ride_listings) + EŞLEŞME İSTEĞİ ====================
+
+
+_MUHABBET_LISTING_TYPES = frozenset({"gidiyorum", "gidecegim", "beni_alsin", "ozel_sofor"})
+_MUHABBET_LISTING_ROLES = frozenset({"driver", "passenger", "private_driver"})
+_MUHABBET_LISTING_STATUSES = frozenset({"active", "matched", "closed", "cancelled"})
+_MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelled"})
+
+
+class MuhabbetListingCreateBody(BaseModel):
+    city: str
+    from_text: str
+    to_text: str
+    start_lat: Optional[float] = None
+    start_lng: Optional[float] = None
+    end_lat: Optional[float] = None
+    end_lng: Optional[float] = None
+    departure_time: Optional[datetime] = None
+    listing_type: str
+    role_type: str
+    price_amount: Optional[float] = None
+    note: Optional[str] = None
+    linked_user_route_id: Optional[str] = None
+    linked_pattern_hash: Optional[str] = None
+
+    @field_validator("city", "from_text", "to_text", mode="before")
+    @classmethod
+    def _strip_required(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s:
+            raise ValueError("Zorunlu alan boş olamaz")
+        return s
+
+    @field_validator("listing_type", mode="before")
+    @classmethod
+    def _lt(cls, v: str) -> str:
+        s = (v or "").strip()
+        if s not in _MUHABBET_LISTING_TYPES:
+            raise ValueError("Geçersiz listing_type")
+        return s
+
+    @field_validator("role_type", mode="before")
+    @classmethod
+    def _rt(cls, v: str) -> str:
+        s = (v or "").strip()
+        if s not in _MUHABBET_LISTING_ROLES:
+            raise ValueError("Geçersiz role_type")
+        return s
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def _note_len(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        t = (v or "").strip()
+        if len(t) > 5000:
+            raise ValueError("Not en fazla 5000 karakter olabilir")
+        return t or None
+
+
+class MuhabbetMatchRequestMessageBody(BaseModel):
+    message: Optional[str] = None
+
+    @field_validator("message", mode="before")
+    @classmethod
+    def _msg(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        t = (v or "").strip()
+        if len(t) > 2000:
+            raise ValueError("Mesaj en fazla 2000 karakter olabilir")
+        return t or None
+
+
+class MuhabbetChatMessageCreateBody(BaseModel):
+    body: str
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _body_chat(cls, v) -> str:
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            raise ValueError("Mesaj boş olamaz")
+        t = str(v).strip()
+        if len(t) > 1000:
+            raise ValueError("Mesaj en fazla 1000 karakter olabilir")
+        return t
+
+
+async def _muhabbet_listing_uid(authenticated_user_id: str) -> str:
+    return str((await resolve_user_id(authenticated_user_id)) or authenticated_user_id).strip().lower()
+
+
+def _muhabbet_listing_row_ts() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _muhabbet_listing_slim_listing(d: Optional[dict]) -> Optional[dict]:
+    """İstek cevabı için ilan özet (dar kolon)."""
+    if not d:
+        return None
+    return {
+        "id": str(d.get("id") or "").strip(),
+        "from_text": d.get("from_text"),
+        "to_text": d.get("to_text"),
+        "price_amount": d.get("price_amount"),
+        "departure_time": d.get("departure_time"),
+    }
+
+
+def _muhabbet_listing_quick_view(slim: Optional[dict]) -> dict:
+    """Gelen/giden istek listesi: tek satırda rota, fiyat, süre (listing slim ile uyumlu)."""
+    if not slim:
+        return {"route": "", "price": None, "time": None}
+    ft = (str(slim.get("from_text") or "")).strip()
+    tt = (str(slim.get("to_text") or "")).strip()
+    route = f"{ft} → {tt}" if (ft or tt) else ""
+    return {
+        "route": route,
+        "price": slim.get("price_amount"),
+        "time": slim.get("departure_time"),
+    }
+
+
+def _muhabbet_feed_incoming_count_map_ex_cancelled(listing_ids: list) -> dict:
+    """
+    Her ilan için, cancelled olmayan eşleşme isteği sayısı (social proof / feed).
+    Tek sorgu; N+1 yok.
+    """
+    lids = [str(x).strip() for x in (listing_ids or []) if x and str(x).strip()]
+    lids = list(dict.fromkeys(lids))
+    if not lids:
+        return {}
+    try:
+        res = (
+            supabase.table("listing_match_requests")
+            .select("listing_id, status")
+            .in_("listing_id", lids)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("feed incoming count: %s", e)
+        return {}
+    counts: dict = {}
+    for r in res.data or []:
+        st = str(r.get("status") or "").strip().lower()
+        if st == "cancelled":
+            continue
+        lid = str(r.get("listing_id") or "")
+        if not lid:
+            continue
+        counts[lid] = int(counts.get(lid) or 0) + 1
+    return counts
+
+
+def _muhabbet_listing_name_map_for_ids(uids: list) -> dict:
+    uids2 = [str(x).strip().lower() for x in (uids or []) if str(x).strip()]
+    uids2 = list(dict.fromkeys(uids2))
+    if not uids2:
+        return {}
+    try:
+        ur = supabase.table("users").select("id, name").in_("id", uids2).execute()
+        return {
+            str(x["id"]).strip().lower(): str(x.get("name") or "Kullanıcı")
+            for x in (ur.data or [])
+            if x.get("id")
+        }
+    except Exception as e:
+        logger.warning("listing_match user names: %s", e)
+        return {}
+
+
+def _muhabbet_feed_match_request_meta_for_user(uid: str, listing_ids: list) -> dict:
+    """
+    Feed: oturum kullanıcısı bu ilana (gönderen olarak) aksiyon özeti.
+    Dönen değer: listing_id -> { "match_request_status": none|pending|accepted, "conversation_id": str|None }
+    Öncelik: accepted (conversation_id kabul satırından) > pending. Tek sorgu.
+    """
+    uid = (uid or "").strip().lower()
+    lids = [str(x).strip() for x in (listing_ids or []) if x]
+    lids = list(dict.fromkeys(lids))
+    if not uid or not lids:
+        return {}
+    try:
+        res = (
+            supabase.table("listing_match_requests")
+            .select("listing_id, status, conversation_id")
+            .eq("sender_user_id", uid)
+            .in_("listing_id", lids)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("feed match meta: %s", e)
+        return {}
+    by_lid: dict = {}
+    for r in res.data or []:
+        lid = str(r.get("listing_id") or "")
+        if not lid:
+            continue
+        if lid not in by_lid:
+            by_lid[lid] = []
+        by_lid[lid].append(r)
+    out: dict = {}
+    default = {"match_request_status": "none", "conversation_id": None}
+    for lid in lids:
+        rows = by_lid.get(lid) or []
+        if not rows:
+            out[lid] = dict(default)
+            continue
+        accepted_rows = [x for x in rows if str(x.get("status") or "").strip().lower() == "accepted"]
+        pending_rows = [x for x in rows if str(x.get("status") or "").strip().lower() == "pending"]
+        if accepted_rows:
+            conv: Optional[str] = None
+            for a in accepted_rows:
+                cid = a.get("conversation_id")
+                if cid is not None and str(cid).strip():
+                    conv = str(cid).strip().lower()
+                    break
+            out[lid] = {"match_request_status": "accepted", "conversation_id": conv}
+        elif pending_rows:
+            out[lid] = {"match_request_status": "pending", "conversation_id": None}
+        else:
+            out[lid] = dict(default)
+    return out
+
+
+def _enrich_ride_listings_creators(rows: list) -> list:
+    if not rows:
+        return []
+    uids: list = []
+    seen: set = set()
+    for r in rows:
+        u = str((r or {}).get("created_by_user_id") or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            uids.append(u)
+    if not uids:
+        for r in rows:
+            r["creator_name"] = "Kullanıcı"
+        return rows
+    try:
+        ur = supabase.table("users").select("id, name").in_("id", uids).execute()
+        name_map: dict = {str(x["id"]): str(x.get("name") or "Kullanıcı") for x in (ur.data or []) if x.get("id")}
+    except Exception as e:
+        logger.warning("ride_listings enrich: %s", e)
+        name_map = {}
+    for r in rows:
+        u = str(r.get("created_by_user_id") or "")
+        r["creator_name"] = name_map.get(u) or "Kullanıcı"
+    return rows
+
+
+@api_router.post("/muhabbet/listings/create")
+async def muhabbet_listing_create(
+    body: MuhabbetListingCreateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yeni ilan; kimlik yalnızca JWT. linked_user_route_id opsiyonel, sahiplik kontrol edilir."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+        c = body.city
+        lrid: Optional[str] = None
+        lph = (body.linked_pattern_hash or "").strip() or None
+        if body.linked_user_route_id:
+            rid = str(body.linked_user_route_id).strip().lower()
+            uuid.UUID(rid)
+            rr = (
+                supabase.table("user_routes")
+                .select("id, user_id, pattern_hash")
+                .eq("id", rid)
+                .limit(1)
+                .execute()
+            )
+            if not rr.data:
+                raise HTTPException(status_code=400, detail="Geçersiz veya erişilemeyen güzergah kaydı")
+            if str(rr.data[0].get("user_id") or "").strip().lower() != uid:
+                raise HTTPException(status_code=403, detail="Yalnızca kendi güzergah kaydınızı bağlayabilirsiniz")
+            lrid = rid
+            if not lph and rr.data[0].get("pattern_hash"):
+                lph = str(rr.data[0].get("pattern_hash")).strip() or None
+        insert_payload = {
+            "created_by_user_id": uid,
+            "linked_user_route_id": lrid,
+            "linked_pattern_hash": lph,
+            "city": c,
+            "from_text": body.from_text,
+            "to_text": body.to_text,
+            "start_lat": body.start_lat,
+            "start_lng": body.start_lng,
+            "end_lat": body.end_lat,
+            "end_lng": body.end_lng,
+            "departure_time": body.departure_time.isoformat() if body.departure_time else None,
+            "listing_type": body.listing_type,
+            "role_type": body.role_type,
+            "price_amount": body.price_amount,
+            "note": body.note,
+            "status": "active",
+            "updated_at": _muhabbet_listing_row_ts(),
+        }
+        ins = supabase.table("ride_listings").insert(insert_payload).execute()
+        if not ins.data:
+            return {"success": False, "detail": "İlan kaydedilemedi"}
+        row = dict(ins.data[0])
+        _enrich_ride_listings_creators([row])
+        return {"success": True, "listing": row}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"muhabbet_listing_create: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/listings/feed")
+async def muhabbet_listings_feed(
+    city: str,
+    limit: int = 30,
+    listing_type: Optional[str] = None,
+    role_type: Optional[str] = None,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Şehirdeki yalnızca status=active ilanlar; match_request, conversation_id (accepted ise), social proof sayım."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        c = (city or "").strip()
+        if not c:
+            raise HTTPException(status_code=400, detail="city gerekli")
+        lim = max(1, min(int(limit or 30), 100))
+        q = supabase.table("ride_listings").select("*").eq("city", c).eq("status", "active")
+        if (listing_type or "").strip():
+            lt = (listing_type or "").strip()
+            if lt not in _MUHABBET_LISTING_TYPES:
+                raise HTTPException(status_code=400, detail="Geçersiz listing_type")
+            q = q.eq("listing_type", lt)
+        if (role_type or "").strip():
+            rt = (role_type or "").strip()
+            if rt not in _MUHABBET_LISTING_ROLES:
+                raise HTTPException(status_code=400, detail="Geçersiz role_type")
+            q = q.eq("role_type", rt)
+        res = q.order("created_at", desc=True).limit(lim).execute()
+        rows = [dict(x) for x in (res.data or [])]
+        rows = _enrich_ride_listings_creators(rows)
+        lid_list = [str(r.get("id")) for r in rows if r.get("id")]
+        meta_map = _muhabbet_feed_match_request_meta_for_user(uid, lid_list)
+        inc_map = _muhabbet_feed_incoming_count_map_ex_cancelled(lid_list)
+        for r in rows:
+            lid = str(r.get("id") or "")
+            m = meta_map.get(lid) or {"match_request_status": "none", "conversation_id": None}
+            r["match_request_status"] = m.get("match_request_status") or "none"
+            r["conversation_id"] = m.get("conversation_id")
+            r["incoming_request_count"] = int(inc_map.get(lid) or 0)
+        return {"success": True, "listings": rows, "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_listings_feed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/listings/me")
+async def muhabbet_listings_me(
+    status: Optional[str] = None,
+    limit: int = 100,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Oturum kullanıcısının ilanları; created_at desc. status isteğe bağlı (active|matched|closed|cancelled)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        lim = max(1, min(int(limit or 100), 200))
+        q = supabase.table("ride_listings").select("*").eq("created_by_user_id", uid)
+        st = (status or "").strip().lower()
+        if st:
+            if st not in _MUHABBET_LISTING_STATUSES:
+                raise HTTPException(status_code=400, detail="Geçersiz status")
+            q = q.eq("status", st)
+        res = q.order("created_at", desc=True).limit(lim).execute()
+        rows = [dict(x) for x in (res.data or [])]
+        return {"success": True, "listings": _enrich_ride_listings_creators(rows), "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_listings_me: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/listings/{listing_id}")
+async def muhabbet_listing_get(
+    listing_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """İlan detayı (JWT gerekli). is_owner, has_pending_request oturum kullanıcısına göre."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        lid = str(listing_id).strip().lower()
+        uuid.UUID(lid)
+        res = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        if not res.data:
+            return {"success": False, "listing": None, "detail": "İlan bulunamadı"}
+        row = dict(res.data[0])
+        _enrich_ride_listings_creators([row])
+        owner = str(row.get("created_by_user_id") or "").strip().lower()
+        row["is_owner"] = owner == uid
+        row["has_pending_request"] = False
+        row["incoming_request_count"] = 0
+        row["accepted_request_count"] = 0
+        if owner == uid:
+            try:
+                allr = (
+                    supabase.table("listing_match_requests")
+                    .select("status")
+                    .eq("listing_id", lid)
+                    .execute()
+                )
+                data = allr.data or []
+                row["incoming_request_count"] = len(data)
+                row["accepted_request_count"] = sum(
+                    1 for x in data if str(x.get("status") or "").strip().lower() == "accepted"
+                )
+            except Exception as e:
+                logger.warning("listing detail counts: %s", e)
+        if owner and owner != uid:
+            pnd = (
+                supabase.table("listing_match_requests")
+                .select("id")
+                .eq("listing_id", lid)
+                .eq("sender_user_id", uid)
+                .eq("status", "pending")
+                .limit(1)
+                .execute()
+            )
+            row["has_pending_request"] = bool(pnd.data)
+        return {"success": True, "listing": row}
+    except ValueError:
+        return {"success": False, "listing": None, "detail": "Geçersiz ilan kimliği"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_listing_get: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/listings/{listing_id}/match-request")
+async def muhabbet_listing_match_request(
+    listing_id: str,
+    body: MuhabbetMatchRequestMessageBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Eşleşme isteği: gönderen JWT, alıcı = ilan sahibi. Body'de yalnızca opsiyonel message.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        lid = str(listing_id).strip().lower()
+        uuid.UUID(lid)
+        lr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        if not lr.data:
+            raise HTTPException(status_code=404, detail="İlan bulunamadı")
+        lst = dict(lr.data[0])
+        owner = str(lst.get("created_by_user_id") or "").strip().lower()
+        st = str(lst.get("status") or "").strip().lower()
+        if owner == uid:
+            raise HTTPException(status_code=400, detail="Kendi ilanınıza istek gönderemezsiniz")
+        if st != "active":
+            raise HTTPException(
+                status_code=400,
+                detail="Bu ilan aktif değil veya eşleşme isteği kabul etmiyor",
+            )
+        msg = body.message
+        ins = (
+            supabase.table("listing_match_requests")
+            .insert(
+                {
+                    "listing_id": lid,
+                    "sender_user_id": uid,
+                    "receiver_user_id": owner,
+                    "status": "pending",
+                    "message": msg,
+                    "updated_at": _muhabbet_listing_row_ts(),
+                }
+            )
+            .execute()
+        )
+        if not ins.data:
+            return {"success": False, "detail": "İstek kaydedilemedi"}
+        return {"success": True, "request": dict(ins.data[0])}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz ilan kimliği") from None
+    except Exception as e:
+        err = str(e).lower()
+        if "unique" in err or "23505" in str(e) or "duplicate" in err:
+            raise HTTPException(
+                status_code=409,
+                detail="Bu ilan için zaten bekleyen bir isteğiniz var",
+            ) from e
+        logger.error(f"muhabbet_listing_match_request: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _muhabbet_listing_enrich_request_rows(req_rows: list) -> list:
+    """
+    Gelen/giden istek listesi: ilan özeti (dar kolon), sender_name, receiver_name.
+    Tek seferde ride_listings + users toplu okuma; N+1 yok.
+    """
+    if not req_rows:
+        return []
+    lids: list = []
+    seen: set = set()
+    for r in req_rows:
+        lid = str((r or {}).get("listing_id") or "")
+        if lid and lid not in seen:
+            seen.add(lid)
+            lids.append(lid)
+    uid_batch: set = set()
+    for r in req_rows:
+        d = r or {}
+        if d.get("sender_user_id"):
+            uid_batch.add(str(d.get("sender_user_id")).strip().lower())
+        if d.get("receiver_user_id"):
+            uid_batch.add(str(d.get("receiver_user_id")).strip().lower())
+    name_map: dict = _muhabbet_listing_name_map_for_ids(list(uid_batch)) if uid_batch else {}
+    lm: dict = {}
+    if lids:
+        try:
+            lr = (
+                supabase.table("ride_listings")
+                .select("id, from_text, to_text, price_amount, departure_time")
+                .in_("id", lids)
+                .execute()
+            )
+            for x in lr.data or []:
+                if x.get("id"):
+                    lm[str(x["id"])] = _muhabbet_listing_slim_listing(dict(x))
+        except Exception as e:
+            logger.warning("match_requests listing enrich: %s", e)
+    out: list = []
+    for r in req_rows:
+        d = dict(r)
+        lid = str(d.get("listing_id") or "")
+        d["listing"] = lm.get(lid)
+        s_uid = str(d.get("sender_user_id") or "")
+        r_uid = str(d.get("receiver_user_id") or "")
+        d["sender_name"] = name_map.get(s_uid.strip().lower()) or "Kullanıcı"
+        d["receiver_name"] = name_map.get(r_uid.strip().lower()) or "Kullanıcı"
+        d["quick_view"] = _muhabbet_listing_quick_view(d.get("listing"))
+        out.append(d)
+    return out
+
+
+@api_router.get("/muhabbet/match-requests/incoming")
+async def muhabbet_match_requests_incoming(
+    status: str = "pending",
+    limit: int = 50,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Gelen eşleşme istekleri; receiver = JWT kullanıcısı. Varsayılan: pending."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        st = (status or "pending").strip().lower()
+        if st not in _MUHABBET_REQ_STATUSES and st not in ("all", "*"):
+            raise HTTPException(status_code=400, detail="Geçersiz status")
+        lim = max(1, min(int(limit or 50), 200))
+        q = supabase.table("listing_match_requests").select("*").eq("receiver_user_id", uid)
+        if st not in ("all", "*"):
+            q = q.eq("status", st)
+        res = q.order("created_at", desc=True).limit(lim).execute()
+        rows = _muhabbet_listing_enrich_request_rows(list(res.data or []))
+        return {"success": True, "requests": rows, "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_match_requests_incoming: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/match-requests/outgoing")
+async def muhabbet_match_requests_outgoing(
+    status: str = "pending",
+    limit: int = 50,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Giden eşleşme istekleri; sender = JWT. Varsayılan: pending."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        st = (status or "pending").strip().lower()
+        if st not in _MUHABBET_REQ_STATUSES and st not in ("all", "*"):
+            raise HTTPException(status_code=400, detail="Geçersiz status")
+        lim = max(1, min(int(limit or 50), 200))
+        q = supabase.table("listing_match_requests").select("*").eq("sender_user_id", uid)
+        if st not in ("all", "*"):
+            q = q.eq("status", st)
+        res = q.order("created_at", desc=True).limit(lim).execute()
+        rows = _muhabbet_listing_enrich_request_rows(list(res.data or []))
+        return {"success": True, "requests": rows, "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_match_requests_outgoing: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _muhabbet_conversation_get_or_create_id(sen: str, rec: str) -> str:
+    """
+    user_a, user_b string (uuid) karşılaştırmalı sıralı; aynı çift için tek satır (UNIQUE).
+    Yarış durumunda benzersiz ihlalinde tekrar select.
+    """
+    sen = (sen or "").strip().lower()
+    rec = (rec or "").strip().lower()
+    if not sen or not rec or sen == rec:
+        raise HTTPException(status_code=400, detail="Geçersiz eşleşme katılımcıları")
+    ua, ub = (sen, rec) if sen < rec else (rec, sen)
+    ex = supabase.table("conversations").select("id").eq("user_a", ua).eq("user_b", ub).limit(1).execute()
+    if ex.data and ex.data[0].get("id"):
+        return str(ex.data[0]["id"]).strip().lower()
+    try:
+        ins = supabase.table("conversations").insert({"user_a": ua, "user_b": ub}).execute()
+        if ins.data and ins.data[0].get("id"):
+            return str(ins.data[0]["id"]).strip().lower()
+    except Exception as e:
+        err = (str(e) or "").lower()
+        if "23505" in str(e) or "unique" in err or "duplicate" in err:
+            ex2 = (
+                supabase.table("conversations")
+                .select("id")
+                .eq("user_a", ua)
+                .eq("user_b", ub)
+                .limit(1)
+                .execute()
+            )
+            if ex2.data and ex2.data[0].get("id"):
+                return str(ex2.data[0]["id"]).strip().lower()
+        logger.error("muhabbet_conversation_get_or_create_id: %s", e)
+        raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı") from e
+    raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı")
+
+
+@api_router.post("/muhabbet/match-requests/{request_id}/accept")
+async def muhabbet_match_request_accept(
+    request_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Kabul: yalnızca ilan sahibi (receiver). İdempotent: zaten kabul+conversation varsa aynı yanıt.
+    Aynı iki kullanıcı çifti için mevcut conversations satırı reuse edilir.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        rid = str(request_id).strip().lower()
+        uuid.UUID(rid)
+        rr = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
+        if not rr.data:
+            raise HTTPException(status_code=404, detail="İstek bulunamadı")
+        row = dict(rr.data[0])
+        if str(row.get("receiver_user_id") or "").strip().lower() != uid:
+            raise HTTPException(status_code=403, detail="Sadece ilan sahibi bu isteği kabul edebilir")
+        st = str(row.get("status") or "").strip().lower()
+        ecid_raw = row.get("conversation_id")
+        ecid = str(ecid_raw).strip() if ecid_raw else ""
+        if st == "accepted" and ecid:
+            fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
+            out_req = dict(fin.data[0]) if fin.data else row
+            return {
+                "success": True,
+                "chat_unlocked": True,
+                "conversation_id": ecid,
+                "request": out_req,
+                "message": "Eşleşme kabul edildi",
+            }
+        if st == "accepted" and not ecid:
+            sen0 = str(row.get("sender_user_id") or "").strip().lower()
+            rec0 = str(row.get("receiver_user_id") or "").strip().lower()
+            conversation_id = _muhabbet_conversation_get_or_create_id(sen0, rec0)
+            nowx = _muhabbet_listing_row_ts()
+            supabase.table("listing_match_requests").update(
+                {"conversation_id": conversation_id, "updated_at": nowx}
+            ).eq("id", rid).execute()
+            fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
+            out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
+            return {
+                "success": True,
+                "chat_unlocked": True,
+                "conversation_id": conversation_id,
+                "request": out_req,
+                "message": "Eşleşme kabul edildi",
+            }
+        if st != "pending":
+            raise HTTPException(status_code=400, detail="Bu istek zaten yanıtlanmış")
+        lid = str(row.get("listing_id") or "").strip().lower()
+        lr0 = supabase.table("ride_listings").select("id, status, created_by_user_id").eq("id", lid).limit(1).execute()
+        if not lr0.data:
+            raise HTTPException(status_code=400, detail="İlan bulunamadı")
+        lst = lr0.data[0]
+        if str(lst.get("created_by_user_id") or "").strip().lower() != uid:
+            raise HTTPException(status_code=403, detail="Sadece ilan sahibi bu isteği kabul edebilir")
+        if str(lst.get("status") or "").strip().lower() != "active":
+            raise HTTPException(status_code=400, detail="İlan artık eşleşme kabul edemiyor")
+        now_ts = _muhabbet_listing_row_ts()
+        sen = str(row.get("sender_user_id") or "").strip().lower()
+        rec = str(row.get("receiver_user_id") or "").strip().lower()
+        conversation_id = _muhabbet_conversation_get_or_create_id(sen, rec)
+        supabase.table("listing_match_requests").update(
+            {
+                "status": "accepted",
+                "updated_at": now_ts,
+                "conversation_id": conversation_id,
+            }
+        ).eq("id", rid).execute()
+        fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
+        out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
+        return {
+            "success": True,
+            "chat_unlocked": True,
+            "conversation_id": conversation_id,
+            "request": out_req,
+            "message": "Eşleşme kabul edildi",
+        }
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz istek kimliği") from None
+    except Exception as e:
+        logger.error(f"muhabbet_match_request_accept: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/match-requests/{request_id}/reject")
+async def muhabbet_match_request_reject(
+    request_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Red: yalnızca ilan sahibi (receiver)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        rid = str(request_id).strip().lower()
+        uuid.UUID(rid)
+        rr = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
+        if not rr.data:
+            raise HTTPException(status_code=404, detail="İstek bulunamadı")
+        row = dict(rr.data[0])
+        if str(row.get("receiver_user_id") or "").strip().lower() != uid:
+            raise HTTPException(status_code=403, detail="Sadece ilan sahibi bu isteği reddedebilir")
+        if str(row.get("status") or "") != "pending":
+            raise HTTPException(status_code=400, detail="Bu istek zaten yanıtlanmış")
+        now_ts = _muhabbet_listing_row_ts()
+        supabase.table("listing_match_requests").update(
+            {"status": "rejected", "updated_at": now_ts}
+        ).eq("id", rid).execute()
+        fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
+        out_req = dict(fin.data[0]) if fin.data else row
+        return {"success": True, "request": out_req, "message": "İstek reddedildi"}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz istek kimliği") from None
+    except Exception as e:
+        logger.error(f"muhabbet_match_request_reject: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _muhabbet_conversation_for_member_or_403(conversation_id: str, uid: str) -> dict:
+    """Sohbet satırı; yalnızca user_a | user_b erişir."""
+    uid = (uid or "").strip().lower()
+    cid = str(conversation_id or "").strip().lower()
+    try:
+        uuid.UUID(cid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Geçersiz sohbet kimliği") from e
+    r = supabase.table("conversations").select("*").eq("id", cid).limit(1).execute()
+    if not r.data:
+        raise HTTPException(status_code=404, detail="Sohbet bulunamadı")
+    c = dict(r.data[0])
+    a = str(c.get("user_a") or "").strip().lower()
+    b = str(c.get("user_b") or "").strip().lower()
+    if uid not in (a, b):
+        raise HTTPException(status_code=403, detail="Bu sohbete erişim yetkiniz yok")
+    return c
+
+
+@api_router.get("/muhabbet/conversations/me")
+async def muhabbet_conversations_me(
+    limit: int = 50,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Oturum kullanıcısının sohbetleri: karşı taraf, ilan özet, istek status; created_at desc."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+        lim = max(1, min(int(limit or 50), 100))
+        res = (
+            supabase.table("conversations")
+            .select("id, user_a, user_b, created_at")
+            .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
+            .order("created_at", desc=True)
+            .limit(lim)
+            .execute()
+        )
+        convs: list = list(res.data or [])
+        if not convs:
+            return {"success": True, "conversations": [], "count": 0}
+        cids = [str(c["id"]).strip().lower() for c in convs if c.get("id")]
+        mreq = (
+            supabase.table("listing_match_requests")
+            .select("conversation_id, listing_id, status, created_at")
+            .in_("conversation_id", cids)
+            .execute()
+        )
+        rows = list(mreq.data or [])
+        rows.sort(key=lambda x: (str(x.get("created_at") or "")), reverse=True)
+        lmr_by_cid: dict = {}
+        for r in rows:
+            cid0 = str(r.get("conversation_id") or "").strip().lower()
+            if not cid0 or cid0 in lmr_by_cid:
+                continue
+            lmr_by_cid[cid0] = r
+        lid_list: list = []
+        for lmr in lmr_by_cid.values():
+            lidv = lmr.get("listing_id")
+            if lidv:
+                lid_list.append(str(lidv).strip().lower())
+        lid_list = list(dict.fromkeys(lid_list))
+        listings_map: dict = {}
+        if lid_list:
+            lr = supabase.table("ride_listings").select("id, from_text, to_text").in_("id", lid_list).execute()
+            for x in lr.data or []:
+                if x.get("id"):
+                    listings_map[str(x["id"]).strip().lower()] = x
+        other_uids: list = []
+        for c in convs:
+            a_n = str(c.get("user_a") or "").strip().lower()
+            o = str(c.get("user_b") or "").strip() if a_n == uid else str(c.get("user_a") or "").strip()
+            if o and o not in other_uids:
+                other_uids.append(o)
+        name_map: dict = _muhabbet_listing_name_map_for_ids(other_uids) if other_uids else {}
+        # Son mesaj: konuşma başına 1 sorgu (en fazla `lim` adet, tipik 50)
+        last_by_cid: dict = {}
+        for cid in cids:
+            try:
+                msg_one = (
+                    supabase.table("messages")
+                    .select("body, created_at")
+                    .eq("conversation_id", cid)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if msg_one.data:
+                    last_by_cid[cid] = msg_one.data[0]
+            except Exception as e:
+                logger.warning("conversations_me last message %s: %s", cid, e)
+        out: list = []
+        for c in convs:
+            conv_id = str(c.get("id") or "").strip().lower()
+            a = str(c.get("user_a") or "")
+            b = str(c.get("user_b") or "")
+            a_n = a.strip().lower()
+            other = b.strip() if a_n == uid else a.strip()
+            lmr0 = lmr_by_cid.get(conv_id) if conv_id else None
+            lidk = (str(lmr0.get("listing_id") or "").strip().lower() if lmr0 and lmr0.get("listing_id") else None)
+            li = listings_map.get(lidk) if lidk else None
+            last_row = last_by_cid.get(conv_id) or {}
+            out.append(
+                {
+                    "id": conv_id,
+                    "conversation_id": conv_id,
+                    "user_a": a,
+                    "user_b": b,
+                    "other_user_id": other,
+                    "other_user_name": name_map.get((other or "").lower()) or "Kullanıcı",
+                    "listing_id": lidk,
+                    "from_text": (li or {}).get("from_text"),
+                    "to_text": (li or {}).get("to_text"),
+                    "request_status": (lmr0 or {}).get("status"),
+                    "created_at": c.get("created_at"),
+                    "last_message_body": (last_row or {}).get("body"),
+                    "last_message_at": (last_row or {}).get("created_at"),
+                }
+            )
+        return {"success": True, "conversations": out, "count": len(out)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_conversations_me: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/conversations/{conversation_id}/messages")
+async def muhabbet_conversation_messages_get(
+    conversation_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sohbet mesajları; yalnızca katılımcı; created_at artan sırada."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        _ = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        lim = max(1, min(int(limit or 100), 200))
+        off = max(0, int(offset or 0))
+        q = supabase.table("messages").select("*").eq("conversation_id", str(conversation_id).strip().lower())
+        res = q.order("created_at", desc=False).range(off, off + lim - 1).execute()
+        return {"success": True, "messages": list(res.data or []), "limit": lim, "offset": off}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_messages_get: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/messages")
+async def muhabbet_conversation_messages_post(
+    conversation_id: str,
+    msg: MuhabbetChatMessageCreateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yeni mesaj; gönderen yalnızca token kullanıcısı; katılımcı olmalı."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        _ = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        cid = str(conversation_id).strip().lower()
+        ins = (
+            supabase.table("messages")
+            .insert(
+                {
+                    "conversation_id": cid,
+                    "sender_user_id": uid,
+                    "body": msg.body,
+                }
+            )
+            .execute()
+        )
+        if not ins.data:
+            return {"success": False, "detail": "Mesaj kaydedilemedi"}
+        return {"success": True, "message": dict(ins.data[0])}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_messages_post: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 # ==================== HESAP SİLME (Google Play Zorunlu) ====================
 
 @api_router.post("/user/delete-account")

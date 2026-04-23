@@ -4,12 +4,13 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
+  Pressable,
   FlatList,
   TextInput,
   Modal,
@@ -21,10 +22,14 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import RouteSummaryCard from './RouteSummaryCard';
+import RouteSummaryCard, { type RouteSummaryPayload } from './RouteSummaryCard';
+import { ScreenHeaderGradient } from './ScreenHeaderGradient';
+import { GradientButton } from './GradientButton';
+import LeylekMuhabbetiListingInboxBlock from './LeylekMuhabbetiListingInboxBlock';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -53,6 +58,19 @@ const REPORT_PRESETS = ['Spam', 'Hakaret / nefret', 'Yasadışı içerik', 'Kiş
 
 const MUHABBET_POST_BODY_MAX = 500;
 
+/** /routes/summary `route` metnini from / to olarak ayır (ör. `A → B`) */
+function parseRouteEndpoints(route: string): { from: string; to: string } {
+  const t = route
+    .trim()
+    .replace(/\s*->\s*/gi, '→')
+    .replace(/\s*—\s*/g, '→');
+  if (t.includes('→')) {
+    const parts = t.split('→');
+    return { from: (parts[0] || '').trim(), to: parts.slice(1).join('→').trim() || '—' };
+  }
+  return { from: t || '—', to: '—' };
+}
+
 const MUHABBET_SESSION_TITLE = 'Oturum gerekli';
 const MUHABBET_SESSION_MESSAGE =
   'Leylek Muhabbeti akışı, paylaşım ve şikayet için güvenli oturum jetonu (access token) gerekir. Lütfen çıkış yapıp tekrar giriş yapın.';
@@ -77,10 +95,7 @@ const CARD_SHADOW = Platform.select({
 
 const BORDER_HAIRLINE = '#E5E5EA';
 const FIELD_BG = '#EFEFF4';
-const DESTRUCTIVE = '#FF3B30';
 const BTN_RADIUS = 14;
-const BTN_PAD_V = 14;
-const BTN_PAD_H = 20;
 
 export interface LeylekMuhabbetiFaz1ScreenProps {
   user: { id: string; name: string; role: string; city?: string; rating?: number };
@@ -265,6 +280,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   onNavigateToRouteSetup,
   onNavigateToGroup,
 }: LeylekMuhabbetiFaz1ScreenProps) {
+  const router = useRouter();
   const tok = (accessToken || '').trim();
   const requireMuhabbetToken = (): boolean => {
     if (!tok) {
@@ -290,6 +306,7 @@ export default function LeylekMuhabbetiFaz1Screen({
 
   const [myGroupIds, setMyGroupIds] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
+  const [inboxSync, setInboxSync] = useState(0);
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailGroup, setDetailGroup] = useState<GroupRow | null>(null);
@@ -322,6 +339,12 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [createGroupName, setCreateGroupName] = useState('');
   const [createGroupDesc, setCreateGroupDesc] = useState('');
   const [createGroupBusy, setCreateGroupBusy] = useState(false);
+
+  const [roadstersSummary, setRoadstersSummary] = useState<RouteSummaryPayload | null>(null);
+  const [roadstersMatches, setRoadstersMatches] = useState<
+    { match_id?: string; other_user_id: string }[]
+  >([]);
+  const [roadstersLoading, setRoadstersLoading] = useState(false);
 
   useEffect(() => {
     const gid = (initialGroupId || '').trim();
@@ -468,12 +491,68 @@ export default function LeylekMuhabbetiFaz1Screen({
     if (feedGroup) void loadFeed();
   }, [feedGroup, loadFeed]);
 
+  const loadRoadsters = useCallback(async () => {
+    if (!tok) {
+      setRoadstersSummary(null);
+      setRoadstersMatches([]);
+      return;
+    }
+    setRoadstersLoading(true);
+    try {
+      const base = apiUrl.replace(/\/$/, '');
+      const h = { Authorization: `Bearer ${tok}` };
+      const mq = new URLSearchParams({ limit: '32', city: selectedCity });
+      const [rSum, rMat] = await Promise.all([
+        fetch(`${base}/routes/summary`, { headers: h }),
+        fetch(`${base}/routes/match?${mq.toString()}`, { headers: h }),
+      ]);
+      if (rSum.ok) {
+        const j = (await rSum.json()) as RouteSummaryPayload;
+        if (
+          typeof j.match_count === 'number' &&
+          typeof j.has_group === 'boolean' &&
+          'route' in j &&
+          'group_id' in j
+        ) {
+          setRoadstersSummary(j);
+        } else {
+          setRoadstersSummary(null);
+        }
+      } else {
+        setRoadstersSummary(null);
+      }
+      if (rMat.ok) {
+        const m = (await rMat.json()) as {
+          success?: boolean;
+          matches?: { match_id?: string; other_user_id: string }[];
+        };
+        if (m.success && Array.isArray(m.matches)) {
+          setRoadstersMatches(m.matches);
+        } else {
+          setRoadstersMatches([]);
+        }
+      } else {
+        setRoadstersMatches([]);
+      }
+    } catch {
+      setRoadstersSummary(null);
+      setRoadstersMatches([]);
+    } finally {
+      setRoadstersLoading(false);
+    }
+  }, [apiUrl, tok, selectedCity]);
+
+  useEffect(() => {
+    void loadRoadsters();
+  }, [loadRoadsters]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadNeighborhoods(), loadGroups(), loadMyGroups()]);
+    setInboxSync((v) => v + 1);
+    await Promise.all([loadNeighborhoods(), loadGroups(), loadMyGroups(), loadRoadsters()]);
     if (feedGroup) await loadFeed();
     setRefreshing(false);
-  }, [loadNeighborhoods, loadGroups, loadMyGroups, feedGroup, loadFeed]);
+  }, [loadNeighborhoods, loadGroups, loadMyGroups, loadRoadsters, feedGroup, loadFeed]);
 
   const openGroupDetail = async (g: GroupRow) => {
     setDetailVisible(true);
@@ -870,35 +949,30 @@ export default function LeylekMuhabbetiFaz1Screen({
 
   if (feedGroup) {
     return (
-      <SafeAreaView style={styles.feedRoot}>
-        <View style={styles.feedHeader}>
-          <TouchableOpacity
-            onPress={() => {
-              setFeedGroup(null);
-              setFeedPosts([]);
-            }}
-            style={styles.headerIcon}
-          >
-            <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
-          </TouchableOpacity>
-          <View style={{ flex: 1, marginHorizontal: 8 }}>
-            <Text style={styles.feedHeaderTitle} numberOfLines={1}>
-              {feedGroup.name}
-            </Text>
-            <Text style={styles.feedHeaderSub} numberOfLines={1}>
-              {feedGroup.neighborhood_name || ''} · {feedGroup.city}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => {
-              if (!requireMuhabbetToken()) return;
-              setComposeOpen(true);
-            }}
-            style={styles.headerIcon}
-          >
-            <Ionicons name="add-circle-outline" size={28} color={tok ? ACCENT : TEXT_SECONDARY} />
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.feedRoot} edges={['left', 'right', 'bottom']}>
+        <ScreenHeaderGradient
+          title={feedGroup.name}
+          subtitle={
+            [feedGroup.neighborhood_name, feedGroup.city]
+              .filter((x) => (x || '').toString().trim().length > 0)
+              .join(' · ') || undefined
+          }
+          onBack={() => {
+            setFeedGroup(null);
+            setFeedPosts([]);
+          }}
+          right={
+            <TouchableOpacity
+              onPress={() => {
+                if (!requireMuhabbetToken()) return;
+                setComposeOpen(true);
+              }}
+              style={styles.headerIcon}
+            >
+              <Ionicons name="add-circle-outline" size={28} color={tok ? '#FFFFFF' : 'rgba(255,255,255,0.45)'} />
+            </TouchableOpacity>
+          }
+        />
 
         {!tok ? (
           <View style={styles.sessionBanner}>
@@ -944,14 +1018,12 @@ export default function LeylekMuhabbetiFaz1Screen({
         )}
 
         <Modal visible={composeOpen} animationType="slide" onRequestClose={() => setComposeOpen(false)}>
-          <SafeAreaView style={styles.modalRootLight}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setComposeOpen(false)} style={styles.headerIcon}>
-                <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Yeni gönderi</Text>
-              <View style={{ width: 40 }} />
-            </View>
+          <SafeAreaView style={styles.modalRootLight} edges={['left', 'right', 'bottom']}>
+            <ScreenHeaderGradient
+              title="Yeni gönderi"
+              onBack={() => setComposeOpen(false)}
+              backIcon="close"
+            />
             <ScrollView contentContainerStyle={styles.modalScrollPad}>
               <Text style={styles.inputLabel}>Fotoğraf (zorunlu)</Text>
               <TouchableOpacity style={styles.imagePick} onPress={() => void pickImageForCompose()}>
@@ -971,40 +1043,37 @@ export default function LeylekMuhabbetiFaz1Screen({
                 multiline
                 maxLength={MUHABBET_POST_BODY_MAX}
               />
-              <TouchableOpacity
-                style={[styles.btnPrimary, composeBusy && styles.btnDisabled]}
-                disabled={composeBusy}
+              <GradientButton
+                label="Yayınla"
+                loading={composeBusy}
                 onPress={() => void submitNewPost()}
-              >
-                {composeBusy ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.btnPrimaryText}>Yayınla</Text>
-                )}
-              </TouchableOpacity>
+                style={{ marginTop: 20 }}
+              />
             </ScrollView>
           </SafeAreaView>
         </Modal>
 
         <Modal visible={postDetailVisible} animationType="slide" onRequestClose={() => setPostDetailVisible(false)}>
-          <SafeAreaView style={styles.modalRootLight}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setPostDetailVisible(false)} style={styles.headerIcon}>
-                <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
-              <Text style={[styles.modalTitle, { flex: 1, marginHorizontal: 8 }]} numberOfLines={1}>
-                Gönderi
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  if (!requireMuhabbetToken()) return;
-                  setReportOpen(true);
-                }}
-                style={styles.headerIcon}
-              >
-                <Ionicons name="flag-outline" size={22} color={tok ? DESTRUCTIVE : TEXT_SECONDARY} />
-              </TouchableOpacity>
-            </View>
+          <SafeAreaView style={styles.modalRootLight} edges={['left', 'right', 'bottom']}>
+            <ScreenHeaderGradient
+              title="Gönderi"
+              onBack={() => setPostDetailVisible(false)}
+              right={
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!requireMuhabbetToken()) return;
+                    setReportOpen(true);
+                  }}
+                  style={styles.headerIcon}
+                >
+                  <Ionicons
+                    name="flag-outline"
+                    size={24}
+                    color={tok ? '#FFFFFF' : 'rgba(255,255,255,0.45)'}
+                  />
+                </TouchableOpacity>
+              }
+            />
             {postDetailLoading || !postDetail ? (
               <ActivityIndicator color={ACCENT} style={{ marginTop: 24 }} />
             ) : (
@@ -1057,17 +1126,28 @@ export default function LeylekMuhabbetiFaz1Screen({
                     multiline
                     maxLength={800}
                   />
-                  <TouchableOpacity
-                    style={[styles.commentSend, (commentBusy || !newComment.trim()) && styles.btnDisabled]}
-                    disabled={commentBusy || !newComment.trim()}
+                  <Pressable
                     onPress={() => void submitComment()}
+                    disabled={commentBusy || !newComment.trim()}
+                    style={[
+                      styles.commentSendShell,
+                      (commentBusy || !newComment.trim()) && styles.btnDisabled,
+                    ]}
                   >
-                    {commentBusy ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <Ionicons name="send" size={22} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
+                    <LinearGradient
+                      colors={['#007AFF', '#5AC8FA']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.commentSendInner}>
+                      {commentBusy ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Ionicons name="send" size={22} color="#FFFFFF" />
+                      )}
+                    </View>
+                  </Pressable>
                 </View>
               </KeyboardAvoidingView>
             )}
@@ -1100,17 +1180,12 @@ export default function LeylekMuhabbetiFaz1Screen({
                 multiline
                 maxLength={2000}
               />
-              <TouchableOpacity
-                style={[styles.btnPrimary, reportBusy && styles.btnDisabled]}
-                disabled={reportBusy}
+              <GradientButton
+                label="Şikayeti gönder"
+                loading={reportBusy}
                 onPress={() => void submitReport()}
-              >
-                {reportBusy ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.btnPrimaryText}>Şikayeti gönder</Text>
-                )}
-              </TouchableOpacity>
+                style={{ marginTop: 16 }}
+              />
               <TouchableOpacity style={styles.closeLink} onPress={() => setReportOpen(false)}>
                 <Text style={styles.closeLinkText}>Vazgeç</Text>
               </TouchableOpacity>
@@ -1122,20 +1197,30 @@ export default function LeylekMuhabbetiFaz1Screen({
   }
 
   return (
-    <SafeAreaView style={styles.discoveryRoot}>
-      <View style={styles.discoveryHeader}>
-        <TouchableOpacity onPress={onBack} style={styles.headerIcon} accessibilityRole="button">
-          <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
-        </TouchableOpacity>
-        <Text style={styles.discoveryHeaderTitle}>Leylek Muhabbeti</Text>
-        <TouchableOpacity
-          onPress={() => setShowCityModal(true)}
-          style={styles.headerIcon}
-          accessibilityRole="button"
-        >
-          <Ionicons name="location-outline" size={22} color={ACCENT} />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.discoveryRoot} edges={['left', 'right', 'bottom']}>
+      <ScreenHeaderGradient
+        title="Leylek Muhabbeti"
+        onBack={onBack}
+        right={
+          <View style={styles.headerRightRow}>
+            <TouchableOpacity
+              onPress={() => router.push('/muhabbet-conversations')}
+              style={styles.headerIcon}
+              accessibilityRole="button"
+              accessibilityLabel="Sohbetler"
+            >
+              <Ionicons name="chatbubbles-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowCityModal(true)}
+              style={styles.headerIcon}
+              accessibilityRole="button"
+            >
+              <Ionicons name="location-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        }
+      />
 
       <TouchableOpacity
         style={styles.cityChipLight}
@@ -1164,6 +1249,75 @@ export default function LeylekMuhabbetiFaz1Screen({
             onNavigateToRouteSetup={onNavigateToRouteSetup ?? (() => {})}
             horizontalInset={16}
           />
+        ) : null}
+
+        {tok ? (
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>🔥 Aynı Güzergahı Kullananlar</Text>
+            <Text style={styles.sectionSubtitle}>
+              {selectedCity} · aynı rota, tek kart
+            </Text>
+            {roadstersLoading && !roadstersSummary ? (
+              <ActivityIndicator color={ACCENT} style={{ marginVertical: 12 }} />
+            ) : null}
+            {!roadstersSummary?.route?.trim() ? (
+              <View style={styles.roadsterCard}>
+                <Text style={styles.roadsterEmptyLine}>
+                  Güzergah eklediğinde aynı hat üzerindekileri burada görürsün; Muhabbet akışıyla bağlantı kurulur.
+                </Text>
+                {onNavigateToRouteSetup ? (
+                  <GradientButton
+                    label="Güzergah ekle"
+                    onPress={onNavigateToRouteSetup}
+                    style={{ marginTop: 12 }}
+                  />
+                ) : null}
+              </View>
+            ) : (
+              (() => {
+                const r = roadstersSummary!.route!.trim();
+                const { from, to } = parseRouteEndpoints(r);
+                const n = roadstersMatches.length;
+                return (
+                  <View>
+                    <View style={styles.roadsterCard}>
+                      <Text style={styles.roadsterRouteLine} numberOfLines={2}>
+                        📍 {from} → {to}
+                      </Text>
+                      <Text style={styles.roadsterMeta}>
+                        {n > 0 ? `🔥 ${n} kişi bu rotada` : 'Henüz kimse yok, ama ilk sen olabilirsin 🚀'}
+                      </Text>
+                    </View>
+                    {roadstersSummary!.has_group && roadstersSummary!.group_id ? (
+                      <GradientButton
+                        label="Gruba Git"
+                        onPress={() => onNavigateToGroup?.(roadstersSummary!.group_id!)}
+                        style={styles.roadsterSectionCta}
+                      />
+                    ) : onNavigateToRouteSetup ? (
+                      <GradientButton
+                        label="Keşfet"
+                        onPress={onNavigateToRouteSetup}
+                        style={styles.roadsterSectionCta}
+                      />
+                    ) : null}
+                  </View>
+                );
+              })()
+            )}
+          </View>
+        ) : null}
+
+        {tok ? (
+          <View style={styles.sectionBlock}>
+            <LeylekMuhabbetiListingInboxBlock
+              apiUrl={apiUrl}
+              accessToken={tok}
+              selectedCity={selectedCity}
+              syncVersion={inboxSync}
+              requireToken={requireMuhabbetToken}
+            />
+          </View>
         ) : null}
 
         <View style={styles.sectionBlock}>
@@ -1202,9 +1356,12 @@ export default function LeylekMuhabbetiFaz1Screen({
                 Veri eklendiğinde mahalle ve gruplar burada listelenir. Şehir açılış talebi için aşağıdaki düğmeyi
                 kullanabilirsiniz.
               </Text>
-              <TouchableOpacity style={styles.secondaryBtnLight} onPress={() => void requestCityForMuhabbet(selectedCity)}>
-                <Text style={styles.secondaryBtnTextLight}>Şehir talebi gönder</Text>
-              </TouchableOpacity>
+              <GradientButton
+                variant="secondary"
+                label="Şehir talebi gönder"
+                onPress={() => void requestCityForMuhabbet(selectedCity)}
+                style={{ marginTop: 16, alignSelf: 'stretch' }}
+              />
             </View>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nChipRow}>
@@ -1227,7 +1384,6 @@ export default function LeylekMuhabbetiFaz1Screen({
             <Text style={[styles.sectionEyebrow, { marginTop: 20, marginBottom: 0 }]}>Gruplar</Text>
             {tok ? (
               <TouchableOpacity
-                style={styles.suggestGroupBtn}
                 onPress={() => {
                   if (!selectedNeighborhoodId) {
                     Alert.alert('Mahalle', 'Önce mahalle seçin.');
@@ -1236,9 +1392,18 @@ export default function LeylekMuhabbetiFaz1Screen({
                   setCreateGroupOpen(true);
                 }}
                 activeOpacity={0.88}
+                style={styles.suggestGroupBtnShell}
               >
-                <Ionicons name="add-circle-outline" size={18} color={ACCENT} />
-                <Text style={styles.suggestGroupBtnText}>Yeni grup öner</Text>
+                <LinearGradient
+                  colors={['#FF8A00', '#FFB347']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.suggestGroupBtnInner}>
+                  <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.suggestGroupBtnTextGrad}>Yeni grup öner</Text>
+                </View>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -1310,14 +1475,12 @@ export default function LeylekMuhabbetiFaz1Screen({
       </ScrollView>
 
       <Modal visible={showCityModal} animationType="slide" onRequestClose={() => setShowCityModal(false)}>
-        <SafeAreaView style={styles.modalRootLight}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCityModal(false)} style={styles.headerIcon}>
-              <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Şehir seç</Text>
-            <View style={{ width: 40 }} />
-          </View>
+        <SafeAreaView style={styles.modalRootLight} edges={['left', 'right', 'bottom']}>
+          <ScreenHeaderGradient
+            title="Şehir seç"
+            onBack={() => setShowCityModal(false)}
+            backIcon="close"
+          />
           <View style={styles.searchRow}>
             <Ionicons name="search" size={20} color={TEXT_SECONDARY} />
             <TextInput
@@ -1356,14 +1519,12 @@ export default function LeylekMuhabbetiFaz1Screen({
       </Modal>
 
       <Modal visible={createGroupOpen} animationType="slide" onRequestClose={() => setCreateGroupOpen(false)}>
-        <SafeAreaView style={styles.modalRootLight}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setCreateGroupOpen(false)} style={styles.headerIcon}>
-              <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Yeni grup öner</Text>
-            <View style={{ width: 40 }} />
-          </View>
+        <SafeAreaView style={styles.modalRootLight} edges={['left', 'right', 'bottom']}>
+          <ScreenHeaderGradient
+            title="Yeni grup öner"
+            onBack={() => setCreateGroupOpen(false)}
+            backIcon="close"
+          />
           <ScrollView contentContainerStyle={styles.modalScrollPad} keyboardShouldPersistTaps="handled">
             <Text style={styles.inputLabel}>Grup adı</Text>
             <TextInput
@@ -1387,17 +1548,12 @@ export default function LeylekMuhabbetiFaz1Screen({
             <Text style={styles.composeMuted}>
               Önerin yönetici onayına düşer; onaylanana kadar listede görünmez.
             </Text>
-            <TouchableOpacity
-              style={[styles.btnPrimary, createGroupBusy && styles.btnDisabled]}
-              disabled={createGroupBusy}
+            <GradientButton
+              label="Öneriyi gönder"
+              loading={createGroupBusy}
               onPress={() => void submitCreateGroup()}
-            >
-              {createGroupBusy ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.btnPrimaryText}>Öneriyi gönder</Text>
-              )}
-            </TouchableOpacity>
+              style={{ marginTop: 20 }}
+            />
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -1431,21 +1587,14 @@ export default function LeylekMuhabbetiFaz1Screen({
                 </Text>
                 {String(detailGroup.status || 'approved').toLowerCase() === 'approved' ? (
                   detailGroup.is_member || myGroupIds.has(detailGroup.id) ? (
-                    <TouchableOpacity style={styles.btnPrimary} onPress={openFeedFromDetail}>
-                      <Text style={styles.btnPrimaryText}>Akışa git</Text>
-                    </TouchableOpacity>
+                    <GradientButton label="Akışa git" onPress={openFeedFromDetail} style={{ marginTop: 16 }} />
                   ) : (
-                    <TouchableOpacity
-                      style={[styles.btnPrimary, joinBusy && styles.btnDisabled]}
-                      disabled={joinBusy}
+                    <GradientButton
+                      label="Gruba katıl"
+                      loading={joinBusy}
                       onPress={() => void joinGroup()}
-                    >
-                      {joinBusy ? (
-                        <ActivityIndicator color="#FFFFFF" />
-                      ) : (
-                        <Text style={styles.btnPrimaryText}>Gruba katıl</Text>
-                      )}
-                    </TouchableOpacity>
+                      style={{ marginTop: 16 }}
+                    />
                   )
                 ) : null}
                 <TouchableOpacity style={styles.closeLink} onPress={() => setDetailVisible(false)}>
@@ -1462,15 +1611,6 @@ export default function LeylekMuhabbetiFaz1Screen({
 
 const styles = StyleSheet.create({
   discoveryRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
-  discoveryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    backgroundColor: MUHAB_SURFACE,
-  },
-  discoveryHeaderTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
   cityChipLight: {
     marginHorizontal: 16,
     marginBottom: 10,
@@ -1488,18 +1628,6 @@ const styles = StyleSheet.create({
   },
   cityChipLightText: { flex: 1, color: TEXT_PRIMARY, fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
   feedRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
-  feedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-    paddingVertical: 6,
-    backgroundColor: MUHAB_SURFACE,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E5EA',
-  },
-  feedHeaderTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
-  feedHeaderSub: { color: TEXT_SECONDARY, fontSize: 12, marginTop: 2 },
   feedListContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
   postCardLight: {
     backgroundColor: CARD_BG,
@@ -1529,6 +1657,7 @@ const styles = StyleSheet.create({
   postTimeLight: { color: TEXT_SECONDARY, fontSize: 13 },
   mutedLight: { color: TEXT_SECONDARY, fontSize: 15, marginVertical: 10, lineHeight: 22 },
   root: { flex: 1, backgroundColor: '#0b1220' },
+  headerRightRow: { flexDirection: 'row', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 0, paddingBottom: 36 },
@@ -1558,10 +1687,12 @@ const styles = StyleSheet.create({
   insightCard: {
     width: 148,
     minHeight: 112,
-    backgroundColor: CARD_BG,
+    backgroundColor: 'rgba(255,255,255,0.9)',
     borderRadius: 18,
     paddingVertical: 14,
     paddingHorizontal: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(60,60,67,0.08)',
     ...CARD_SHADOW,
   },
   insightCardTitle: {
@@ -1599,21 +1730,56 @@ const styles = StyleSheet.create({
     marginTop: 4,
     gap: 8,
   },
-  suggestGroupBtn: {
+  suggestGroupBtnShell: {
+    marginTop: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  suggestGroupBtnInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
   },
-  suggestGroupBtnText: { color: ACCENT, fontSize: 15, fontWeight: '600' },
+  suggestGroupBtnTextGrad: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   detailPendingNote: {
     color: TEXT_SECONDARY,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 10,
   },
+  roadsterCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: CARD_RADIUS,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    ...CARD_SHADOW,
+  },
+  roadsterEmptyLine: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  roadsterRouteLine: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.25,
+    lineHeight: 22,
+  },
+  roadsterMeta: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  roadsterSectionCta: { marginTop: 6, marginBottom: 4 },
   groupCardLight: {
     backgroundColor: CARD_BG,
     borderRadius: CARD_RADIUS,
@@ -1647,15 +1813,6 @@ const styles = StyleSheet.create({
   },
   emptyTitleLight: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', marginTop: 10, textAlign: 'center' },
   emptySubLight: { color: TEXT_SECONDARY, fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 20 },
-  secondaryBtnLight: {
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: ACCENT,
-  },
-  secondaryBtnTextLight: { color: ACCENT, fontWeight: '700', fontSize: 15 },
   flowHintCard: {
     backgroundColor: CARD_BG,
     borderRadius: CARD_RADIUS,
@@ -1681,29 +1838,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   composeMuted: { color: TEXT_SECONDARY, fontSize: 15, lineHeight: 22, textAlign: 'center' },
-  btnPrimary: {
-    marginTop: 20,
-    backgroundColor: ACCENT,
-    paddingVertical: BTN_PAD_V,
-    paddingHorizontal: BTN_PAD_H,
-    borderRadius: BTN_RADIUS,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-  },
-  btnPrimaryText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
   btnDisabled: { opacity: 0.45 },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    backgroundColor: MUHAB_SURFACE,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: BORDER_HAIRLINE,
-  },
-  modalTitle: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700', letterSpacing: -0.25 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1828,13 +1963,19 @@ const styles = StyleSheet.create({
     maxHeight: 120,
     fontSize: 16,
   },
-  commentSend: {
-    backgroundColor: ACCENT,
+  commentSendShell: {
     width: 48,
     height: 48,
-    borderRadius: BTN_RADIUS,
+    borderRadius: 14,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  commentSendInner: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
   },
   presetChip: {
     paddingHorizontal: 14,
