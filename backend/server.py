@@ -18001,6 +18001,12 @@ _MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelle
 
 
 class MuhabbetListingCreateBody(BaseModel):
+    """
+    İlan oluşturma gövdesi.
+    Not: İstemci geçici olarak seats_count / repeat_type / selected_days / time_window
+    benzeri alanları `note` içinde gömebilir — kalıcı şema değil; sonraki fazda ayrı kolonlar eklenecek.
+    """
+
     city: str
     from_text: str
     to_text: str

@@ -4,7 +4,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -22,14 +21,16 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import RouteSummaryCard, { type RouteSummaryPayload } from './RouteSummaryCard';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
-import LeylekMuhabbetiListingInboxBlock from './LeylekMuhabbetiListingInboxBlock';
+import LeylekMuhabbetiHomeTab from './LeylekMuhabbetiHomeTab';
+import LeylekMuhabbetiListingsHub from './LeylekMuhabbetiListingsHub';
+import ConversationsScreen from './ConversationsScreen';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -280,7 +281,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   onNavigateToRouteSetup,
   onNavigateToGroup,
 }: LeylekMuhabbetiFaz1ScreenProps) {
-  const router = useRouter();
+  const tabInsets = useSafeAreaInsets();
   const tok = (accessToken || '').trim();
   const requireMuhabbetToken = (): boolean => {
     if (!tok) {
@@ -307,6 +308,9 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [myGroupIds, setMyGroupIds] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [inboxSync, setInboxSync] = useState(0);
+  const [muhabbetSurface, setMuhabbetSurface] = useState<'tabs' | 'legacy'>('tabs');
+  const [mainTab, setMainTab] = useState<'home' | 'listings' | 'chats'>('home');
+  const [listingCreateSignal, setListingCreateSignal] = useState(0);
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailGroup, setDetailGroup] = useState<GroupRow | null>(null);
@@ -553,6 +557,11 @@ export default function LeylekMuhabbetiFaz1Screen({
     if (feedGroup) await loadFeed();
     setRefreshing(false);
   }, [loadNeighborhoods, loadGroups, loadMyGroups, loadRoadsters, feedGroup, loadFeed]);
+
+  const openListingsCreate = useCallback(() => {
+    setMainTab('listings');
+    setListingCreateSignal((n) => n + 1);
+  }, []);
 
   const openGroupDetail = async (g: GroupRow) => {
     setDetailVisible(true);
@@ -1196,31 +1205,33 @@ export default function LeylekMuhabbetiFaz1Screen({
     );
   }
 
+  const leylekTabGrad = ['#3B82F6', '#60A5FA'] as const;
+
   return (
     <SafeAreaView style={styles.discoveryRoot} edges={['left', 'right', 'bottom']}>
-      <ScreenHeaderGradient
-        title="Leylek Muhabbeti"
-        onBack={onBack}
-        right={
-          <View style={styles.headerRightRow}>
-            <TouchableOpacity
-              onPress={() => router.push('/muhabbet-conversations')}
-              style={styles.headerIcon}
-              accessibilityRole="button"
-              accessibilityLabel="Sohbetler"
-            >
-              <Ionicons name="chatbubbles-outline" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setShowCityModal(true)}
-              style={styles.headerIcon}
-              accessibilityRole="button"
-            >
+      {muhabbetSurface === 'legacy' ? (
+        <ScreenHeaderGradient
+          title="Mahalle & grup keşfi"
+          onBack={() => setMuhabbetSurface('tabs')}
+          gradientColors={leylekTabGrad}
+          right={
+            <TouchableOpacity onPress={() => setShowCityModal(true)} style={styles.headerIcon} accessibilityRole="button">
               <Ionicons name="location-outline" size={24} color="#FFFFFF" />
             </TouchableOpacity>
-          </View>
-        }
-      />
+          }
+        />
+      ) : (
+        <ScreenHeaderGradient
+          title="Leylek Muhabbeti"
+          onBack={onBack}
+          gradientColors={leylekTabGrad}
+          right={
+            <TouchableOpacity onPress={() => setShowCityModal(true)} style={styles.headerIcon} accessibilityRole="button">
+              <Ionicons name="location-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          }
+        />
+      )}
 
       <TouchableOpacity
         style={styles.cityChipLight}
@@ -1234,92 +1245,13 @@ export default function LeylekMuhabbetiFaz1Screen({
         </View>
       </TouchableOpacity>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {tok ? (
-          <RouteSummaryCard
-            apiBaseUrl={apiBaseUrl}
-            accessToken={tok}
-            enabled={!!tok}
-            onNavigateToGroup={onNavigateToGroup ?? (() => {})}
-            onNavigateToRouteSetup={onNavigateToRouteSetup ?? (() => {})}
-            horizontalInset={16}
-          />
-        ) : null}
-
-        {tok ? (
-          <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>🔥 Aynı Güzergahı Kullananlar</Text>
-            <Text style={styles.sectionSubtitle}>
-              {selectedCity} · aynı rota, tek kart
-            </Text>
-            {roadstersLoading && !roadstersSummary ? (
-              <ActivityIndicator color={ACCENT} style={{ marginVertical: 12 }} />
-            ) : null}
-            {!roadstersSummary?.route?.trim() ? (
-              <View style={styles.roadsterCard}>
-                <Text style={styles.roadsterEmptyLine}>
-                  Güzergah eklediğinde aynı hat üzerindekileri burada görürsün; Muhabbet akışıyla bağlantı kurulur.
-                </Text>
-                {onNavigateToRouteSetup ? (
-                  <GradientButton
-                    label="Güzergah ekle"
-                    onPress={onNavigateToRouteSetup}
-                    style={{ marginTop: 12 }}
-                  />
-                ) : null}
-              </View>
-            ) : (
-              (() => {
-                const r = roadstersSummary!.route!.trim();
-                const { from, to } = parseRouteEndpoints(r);
-                const n = roadstersMatches.length;
-                return (
-                  <View>
-                    <View style={styles.roadsterCard}>
-                      <Text style={styles.roadsterRouteLine} numberOfLines={2}>
-                        📍 {from} → {to}
-                      </Text>
-                      <Text style={styles.roadsterMeta}>
-                        {n > 0 ? `🔥 ${n} kişi bu rotada` : 'Henüz kimse yok, ama ilk sen olabilirsin 🚀'}
-                      </Text>
-                    </View>
-                    {roadstersSummary!.has_group && roadstersSummary!.group_id ? (
-                      <GradientButton
-                        label="Gruba Git"
-                        onPress={() => onNavigateToGroup?.(roadstersSummary!.group_id!)}
-                        style={styles.roadsterSectionCta}
-                      />
-                    ) : onNavigateToRouteSetup ? (
-                      <GradientButton
-                        label="Keşfet"
-                        onPress={onNavigateToRouteSetup}
-                        style={styles.roadsterSectionCta}
-                      />
-                    ) : null}
-                  </View>
-                );
-              })()
-            )}
-          </View>
-        ) : null}
-
-        {tok ? (
-          <View style={styles.sectionBlock}>
-            <LeylekMuhabbetiListingInboxBlock
-              apiUrl={apiUrl}
-              accessToken={tok}
-              selectedCity={selectedCity}
-              syncVersion={inboxSync}
-              requireToken={requireMuhabbetToken}
-            />
-          </View>
-        ) : null}
-
+      {muhabbetSurface === 'legacy' ? (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.sectionBlock}>
           <Text style={styles.sectionTitle}>Senin İnsanların</Text>
           <Text style={styles.sectionSubtitle}>Aynı rota, aynı mahalle, aynı şehir</Text>
@@ -1473,6 +1405,89 @@ export default function LeylekMuhabbetiFaz1Screen({
           </View>
         </View>
       </ScrollView>
+      ) : (
+        <>
+          <View style={styles.tabShell}>
+            {mainTab === 'home' ? (
+              <ScrollView
+                style={[styles.scroll, { flex: 1 }]}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+                showsVerticalScrollIndicator={false}
+              >
+                <LeylekMuhabbetiHomeTab
+                  apiUrl={apiUrl}
+                  apiBaseUrl={apiBaseUrl}
+                  accessToken={tok}
+                  selectedCity={selectedCity}
+                  refreshNonce={inboxSync}
+                  roadstersSummary={roadstersSummary}
+                  roadstersMatches={roadstersMatches}
+                  roadstersLoading={roadstersLoading}
+                  onNavigateToRouteSetup={onNavigateToRouteSetup}
+                  onNavigateToGroup={onNavigateToGroup}
+                  onOpenLegacyDiscovery={() => setMuhabbetSurface('legacy')}
+                  onOpenListingsCreate={openListingsCreate}
+                />
+              </ScrollView>
+            ) : null}
+            {mainTab === 'listings' && tok ? (
+              <View style={{ flex: 1, minHeight: 0 }}>
+                <LeylekMuhabbetiListingsHub
+                  apiUrl={apiUrl}
+                  accessToken={tok}
+                  selectedCity={selectedCity}
+                  currentUserId={user.id}
+                  syncVersion={inboxSync}
+                  openCreateSignal={listingCreateSignal}
+                  requireToken={requireMuhabbetToken}
+                />
+              </View>
+            ) : null}
+            {mainTab === 'listings' && !tok ? (
+              <View style={styles.tabPlaceholder}>
+                <Text style={styles.mutedLight}>İlanlar için oturum açmalısın.</Text>
+              </View>
+            ) : null}
+            {mainTab === 'chats' && tok ? (
+              <View style={{ flex: 1, minHeight: 0 }}>
+                <ConversationsScreen
+                  apiBaseUrl={apiUrl}
+                  variant="embedded"
+                  onlyAccepted
+                  refreshNonce={inboxSync}
+                />
+              </View>
+            ) : null}
+            {mainTab === 'chats' && !tok ? (
+              <View style={styles.tabPlaceholder}>
+                <Text style={styles.mutedLight}>Sohbetler için oturum açmalısın.</Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={[styles.muhabbetTabBar, { paddingBottom: Math.max(tabInsets.bottom, 6) }]}>
+            {(['home', 'listings', 'chats'] as const).map((t) => {
+              const active = mainTab === t;
+              const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'İlanlar' : 'Sohbetler';
+              const icon =
+                t === 'home' ? ('home-outline' as const) : t === 'listings' ? ('newspaper-outline' as const) : ('chatbubbles-outline' as const);
+              return (
+                <TouchableOpacity
+                  key={t}
+                  style={styles.muhabbetTabItem}
+                  onPress={() => setMainTab(t)}
+                  activeOpacity={0.85}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Ionicons name={icon} size={22} color={active ? '#2563EB' : TEXT_SECONDARY} />
+                  <Text style={[styles.muhabbetTabLabel, active && styles.muhabbetTabLabelActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      )}
 
       <Modal visible={showCityModal} animationType="slide" onRequestClose={() => setShowCityModal(false)}>
         <SafeAreaView style={styles.modalRootLight} edges={['left', 'right', 'bottom']}>
@@ -1611,6 +1626,19 @@ export default function LeylekMuhabbetiFaz1Screen({
 
 const styles = StyleSheet.create({
   discoveryRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
+  tabShell: { flex: 1, minHeight: 0 },
+  tabPlaceholder: { flex: 1, justifyContent: 'center', padding: 24 },
+  muhabbetTabBar: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(60,60,67,0.14)',
+    backgroundColor: CARD_BG,
+    paddingTop: 6,
+    paddingHorizontal: 4,
+  },
+  muhabbetTabItem: { flex: 1, alignItems: 'center', paddingVertical: 6 },
+  muhabbetTabLabel: { marginTop: 2, fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
+  muhabbetTabLabelActive: { color: '#2563EB' },
   cityChipLight: {
     marginHorizontal: 16,
     marginBottom: 10,

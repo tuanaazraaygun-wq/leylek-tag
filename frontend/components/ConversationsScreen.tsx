@@ -7,11 +7,12 @@ import {
   FlatList,
   Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { getPersistedAccessToken } from '../lib/sessionToken';
@@ -44,6 +45,12 @@ export type MuhabbetConversationListItem = {
 export type ConversationsScreenProps = {
   /** `.../api` sonlu kök (ör. API_BASE_URL) */
   apiBaseUrl: string;
+  /** full: geri + tam ekran; embedded: sekme içi liste */
+  variant?: 'full' | 'embedded';
+  /** Yalnızca kabul edilmiş eşleşme sohbetleri (Sohbetler sekmesi) */
+  onlyAccepted?: boolean;
+  /** Üst bileşen yenilemesinde listeyi tekrar çek */
+  refreshNonce?: number;
 };
 
 function formatRouteLine(from: string | null | undefined, to: string | null | undefined): string {
@@ -107,16 +114,24 @@ function buildChatHref(
     : `/muhabbet-chat/${encodeURIComponent(conversationId)}`) as Href;
 }
 
-export default function ConversationsScreen({ apiBaseUrl }: ConversationsScreenProps) {
+export default function ConversationsScreen({
+  apiBaseUrl,
+  variant = 'full',
+  onlyAccepted = false,
+  refreshNonce = 0,
+}: ConversationsScreenProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const base = apiBaseUrl.replace(/\/$/, '');
+  const embedded = variant === 'embedded';
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState<MuhabbetConversationListItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setErr(null);
-    setLoading(true);
+    if (!embedded) setLoading(true);
     try {
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) {
@@ -141,17 +156,30 @@ export default function ConversationsScreen({ apiBaseUrl }: ConversationsScreenP
         setRows([]);
         return;
       }
-      setRows(Array.isArray(data.conversations) ? data.conversations : []);
+      let list = Array.isArray(data.conversations) ? data.conversations : [];
+      if (onlyAccepted) {
+        list = list.filter((c) => (c.request_status || '').toLowerCase() === 'accepted');
+      }
+      setRows(list);
     } catch {
       setErr('Bağlantı hatası.');
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [base]);
+  }, [base, embedded, onlyAccepted]);
 
   useEffect(() => {
     void load();
+  }, [load, refreshNonce]);
+
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   }, [load]);
 
   const openChat = (c: MuhabbetConversationListItem) => {
@@ -166,19 +194,21 @@ export default function ConversationsScreen({ apiBaseUrl }: ConversationsScreenP
     );
   };
 
-  return (
-    <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
-      <ScreenHeaderGradient
-        title="Sohbetler"
-        onBack={() => router.back()}
-        gradientColors={PRIMARY_GRAD}
-      />
-      {loading ? (
+  const listHeaderEmbedded = embedded ? (
+    <View style={styles.embedHeader}>
+      <Text style={styles.embedTitle}>Sohbetler</Text>
+      <Text style={styles.embedSub}>Kabul edilen eşleşmeler burada görünür.</Text>
+    </View>
+  ) : null;
+
+  const listBody = (
+    <>
+      {!embedded && loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
         </View>
       ) : err ? (
-        <View style={styles.centeredPad}>
+        <View style={[styles.centeredPad, embedded && { flex: 1 }]}>
           <Text style={styles.err}>{err}</Text>
           <Text style={styles.link} onPress={() => void load()}>
             Tekrar dene
@@ -188,12 +218,22 @@ export default function ConversationsScreen({ apiBaseUrl }: ConversationsScreenP
         <FlatList
           data={rows}
           keyExtractor={(item, i) => String(item.conversation_id || item.id || i)}
+          style={{ flex: 1 }}
           contentContainerStyle={rows.length === 0 ? styles.emptyList : styles.list}
+          ListHeaderComponent={embedded ? listHeaderEmbedded : undefined}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onPullRefresh()}
+              tintColor={PRIMARY_GRAD[0]}
+              colors={[PRIMARY_GRAD[0]]}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <Text style={styles.emptyTitle}>Henüz sohbet yok</Text>
               <Text style={styles.emptySub}>
-                Eşleşme kabul edildiğinde sohbetlerin burada listelenir.
+                Kabul edilen eşleşmeler burada listelenir. İlanlar sekmesinden eşleş, sonra mesajlaş.
               </Text>
             </View>
           }
@@ -226,12 +266,41 @@ export default function ConversationsScreen({ apiBaseUrl }: ConversationsScreenP
           }}
         />
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <View style={[styles.embedRoot, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        {loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
+          </View>
+        ) : (
+          listBody
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
+      <ScreenHeaderGradient
+        title="Sohbetler"
+        onBack={() => router.back()}
+        gradientColors={PRIMARY_GRAD}
+      />
+      <View style={{ flex: 1 }}>{listBody}</View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: SURFACE },
+  embedRoot: { flex: 1, backgroundColor: SURFACE },
+  embedHeader: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  embedTitle: { fontSize: 22, fontWeight: '800', color: TEXT_PRIMARY },
+  embedSub: { marginTop: 6, fontSize: 14, color: TEXT_SECONDARY, lineHeight: 20 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   centeredPad: { flex: 1, justifyContent: 'center', padding: 24 },
   list: { padding: 16, paddingBottom: 32 },
