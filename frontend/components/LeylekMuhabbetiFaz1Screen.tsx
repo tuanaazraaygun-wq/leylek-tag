@@ -50,6 +50,12 @@ const CITIES = [
 
 const REPORT_PRESETS = ['Spam', 'Hakaret / nefret', 'Yasadışı içerik', 'Kişisel veri', 'Diğer'];
 
+const MUHABBET_POST_BODY_MAX = 500;
+
+const MUHABBET_SESSION_TITLE = 'Oturum gerekli';
+const MUHABBET_SESSION_MESSAGE =
+  'Leylek Muhabbeti akışı, paylaşım ve şikayet için güvenli oturum jetonu (access token) gerekir. Lütfen çıkış yapıp tekrar giriş yapın.';
+
 export interface LeylekMuhabbetiFaz1ScreenProps {
   user: { id: string; name: string; role: string; city?: string; rating?: number };
   onBack: () => void;
@@ -91,6 +97,8 @@ type CommentRow = {
   post_id: string;
   author_user_id: string;
   body: string;
+  /** Bazı ortamlarda DB kolonu body_text ile dönebilir — gösterimde ikisi de desteklenir */
+  body_text?: string;
   created_at: string;
   author_name?: string;
 };
@@ -162,6 +170,56 @@ async function putLocalImageToSignedUrl(
   }
 }
 
+async function parseJsonResponse(res: Response): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text) as unknown;
+    } catch {
+      data = { detail: text.length > 220 ? `${text.slice(0, 220)}…` : text };
+    }
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+function parseApiErrorDetail(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const det = d.detail;
+  if (typeof det === 'string' && det.trim()) return det.trim();
+  if (Array.isArray(det)) {
+    const parts = det
+      .map((x) => {
+        if (x && typeof x === 'object' && 'msg' in x) {
+          return String((x as { msg?: unknown }).msg || '').trim();
+        }
+        return typeof x === 'string' ? x.trim() : '';
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join('\n');
+  }
+  const msg = d.message;
+  if (typeof msg === 'string' && msg.trim()) return msg.trim();
+  return null;
+}
+
+function userFacingApiMessage(status: number, data: unknown, fallback: string): string {
+  if (status === 401) {
+    return 'Oturumunuz geçersiz veya süresi dolmuş. Lütfen çıkış yapıp tekrar giriş yapın.';
+  }
+  if (status === 403) {
+    return 'Bu işlem için yetkiniz yok. Gruba üye olduğunuzdan ve hesabınızın eşleştiğinden emin olun.';
+  }
+  if (status >= 500) {
+    return parseApiErrorDetail(data) || 'Sunucuya şu an ulaşılamıyor. Lütfen bir süre sonra tekrar deneyin.';
+  }
+  if (status === 0 || Number.isNaN(status)) {
+    return 'Bağlantı kurulamadı. İnternetinizi kontrol edin.';
+  }
+  return parseApiErrorDetail(data) || fallback;
+}
+
 export default function LeylekMuhabbetiFaz1Screen({
   user,
   onBack,
@@ -169,6 +227,14 @@ export default function LeylekMuhabbetiFaz1Screen({
   accessToken,
 }: LeylekMuhabbetiFaz1ScreenProps) {
   const tok = (accessToken || '').trim();
+
+  const requireMuhabbetToken = (): boolean => {
+    if (!tok) {
+      Alert.alert(MUHABBET_SESSION_TITLE, MUHABBET_SESSION_MESSAGE);
+      return false;
+    }
+    return true;
+  };
 
   const [selectedCity, setSelectedCity] = useState(() => {
     const c = (user.city || '').trim();
@@ -269,22 +335,30 @@ export default function LeylekMuhabbetiFaz1Screen({
   }, [apiUrl, selectedCity, selectedNeighborhoodId]);
 
   const loadFeed = useCallback(async () => {
-    if (!feedGroup || !tok) return;
+    if (!feedGroup) return;
+    if (!tok) {
+      setFeedPosts([]);
+      setFeedLoading(false);
+      return;
+    }
     setFeedLoading(true);
     try {
       const q = new URLSearchParams({ limit: '30', offset: '0' });
       const res = await fetch(`${apiUrl}/muhabbet/groups/${feedGroup.id}/feed?${q.toString()}`, {
         headers: authHeaders(tok, false),
       });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.posts)) {
-        setFeedPosts(data.posts);
+      const { ok, status, data } = await parseJsonResponse(res);
+      const payload = (data || {}) as { success?: boolean; posts?: PostRow[]; detail?: unknown };
+      if (ok && payload.success && Array.isArray(payload.posts)) {
+        setFeedPosts(payload.posts);
       } else {
         setFeedPosts([]);
-        if (data.detail) Alert.alert('Akış', String(data.detail));
+        const msg = userFacingApiMessage(status, data, 'Akış yüklenemedi.');
+        if (tok) Alert.alert('Akış', msg);
       }
     } catch {
       setFeedPosts([]);
+      if (tok) Alert.alert('Akış', 'Akış yüklenirken bir sorun oluştu. Tekrar deneyin.');
     }
     setFeedLoading(false);
   }, [apiUrl, feedGroup, tok]);
@@ -370,10 +444,7 @@ export default function LeylekMuhabbetiFaz1Screen({
 
   const openFeedFromDetail = () => {
     if (!detailGroup) return;
-    if (!tok) {
-      Alert.alert('Oturum', 'Paylaşım için uygulamada oturum jetonu gerekir. Lütfen yeniden giriş yapın.');
-      return;
-    }
+    if (!requireMuhabbetToken()) return;
     const member = detailGroup.is_member || myGroupIds.has(detailGroup.id);
     if (!member) {
       Alert.alert('Üyelik', 'Önce gruba katılmanız gerekir.');
@@ -384,33 +455,52 @@ export default function LeylekMuhabbetiFaz1Screen({
   };
 
   const openPostDetail = async (p: PostRow) => {
-    if (!tok) return;
+    if (!requireMuhabbetToken()) return;
     setPostDetailVisible(true);
     setPostDetailLoading(true);
     setPostDetail(p);
     setNewComment('');
+    setComments([]);
+    let skipComments = false;
     try {
       const res = await fetch(`${apiUrl}/muhabbet/posts/${p.id}`, { headers: authHeaders(tok, false) });
-      const data = await res.json();
-      if (data.success && data.post) setPostDetail(data.post);
+      const { ok, status, data } = await parseJsonResponse(res);
+      const payload = (data || {}) as { success?: boolean; post?: PostRow };
+      if (ok && payload.success && payload.post) setPostDetail(payload.post);
+      else if (!ok || !payload.success) {
+        Alert.alert('Gönderi', userFacingApiMessage(status, data, 'Gönderi açılamadı.'));
+        skipComments = true;
+      }
     } catch {
-      /* */
+      Alert.alert('Gönderi', 'Gönderi bilgisi alınamadı.');
+      skipComments = true;
     }
     setPostDetailLoading(false);
+    if (skipComments) {
+      setCommentsLoading(false);
+      return;
+    }
     setCommentsLoading(true);
     try {
       const res = await fetch(`${apiUrl}/muhabbet/posts/${p.id}/comments`, { headers: authHeaders(tok, false) });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.comments)) setComments(data.comments);
-      else setComments([]);
+      const { ok, status, data } = await parseJsonResponse(res);
+      const payload = (data || {}) as { success?: boolean; comments?: CommentRow[] };
+      if (ok && payload.success && Array.isArray(payload.comments)) setComments(payload.comments);
+      else {
+        setComments([]);
+        if (!ok || !payload.success) {
+          Alert.alert('Yorumlar', userFacingApiMessage(status, data, 'Yorumlar yüklenemedi.'));
+        }
+      }
     } catch {
       setComments([]);
+      Alert.alert('Yorumlar', 'Yorum listesi alınamadı.');
     }
     setCommentsLoading(false);
   };
 
   const submitComment = async () => {
-    if (!postDetail || !tok) return;
+    if (!postDetail || !requireMuhabbetToken()) return;
     const t = newComment.trim();
     if (!t) return;
     setCommentBusy(true);
@@ -420,22 +510,22 @@ export default function LeylekMuhabbetiFaz1Screen({
         headers: authHeaders(tok),
         body: JSON.stringify({ user_id: user.id, body: t }),
       });
-      const data = await res.json();
-      if (data.success && data.comment) {
-        setComments((prev) => [...prev, data.comment]);
+      const { ok, status, data } = await parseJsonResponse(res);
+      const payload = (data || {}) as { success?: boolean; comment?: CommentRow };
+      if (ok && payload.success && payload.comment) {
+        setComments((prev) => [...prev, payload.comment as CommentRow]);
         setNewComment('');
       } else {
-        const msg = (data.detail as string) || JSON.stringify(data);
-        Alert.alert('Yorum', msg);
+        Alert.alert('Yorum', userFacingApiMessage(status, data, 'Yorum gönderilemedi.'));
       }
     } catch {
-      Alert.alert('Yorum', 'Gönderilemedi');
+      Alert.alert('Yorum', 'Yorum gönderilemedi. Bağlantınızı kontrol edin.');
     }
     setCommentBusy(false);
   };
 
   const submitReport = async () => {
-    if (!postDetail || !tok) return;
+    if (!postDetail || !requireMuhabbetToken()) return;
     if (!reportReason.trim()) {
       Alert.alert('Şikayet', 'Lütfen bir kategori seçin.');
       return;
@@ -452,9 +542,10 @@ export default function LeylekMuhabbetiFaz1Screen({
           details: reportDetails.trim() || undefined,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        if (data.already_reported) {
+      const { ok, status, data } = await parseJsonResponse(res);
+      const payload = (data || {}) as { success?: boolean; already_reported?: boolean };
+      if (ok && payload.success) {
+        if (payload.already_reported) {
           Alert.alert('Şikayet', 'Bu gönderiyi zaten şikayet ettiniz.');
         } else {
           Alert.alert('Teşekkürler', 'Şikayetiniz kaydedildi.');
@@ -463,15 +554,16 @@ export default function LeylekMuhabbetiFaz1Screen({
         setReportReason('');
         setReportDetails('');
       } else {
-        Alert.alert('Şikayet', (data.detail as string) || 'Kayıt başarısız');
+        Alert.alert('Şikayet', userFacingApiMessage(status, data, 'Şikayet kaydedilemedi.'));
       }
     } catch {
-      Alert.alert('Şikayet', 'Bağlantı hatası');
+      Alert.alert('Şikayet', 'Şikayet gönderilemedi. Bağlantınızı kontrol edin.');
     }
     setReportBusy(false);
   };
 
   const pickImageForCompose = async () => {
+    if (!requireMuhabbetToken()) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
@@ -497,7 +589,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   };
 
   const submitNewPost = async () => {
-    if (!feedGroup || !tok) return;
+    if (!feedGroup || !requireMuhabbetToken()) return;
     const cap = composeCaption.trim();
     const fileUri = (composeImageUri || '').trim();
     if (!fileUri) {
@@ -508,11 +600,12 @@ export default function LeylekMuhabbetiFaz1Screen({
       Alert.alert('Gönderi', 'Kısa açıklama zorunludur.');
       return;
     }
-    if (cap.length > 500) {
-      Alert.alert('Gönderi', 'Açıklama en fazla 500 karakter olabilir.');
+    if (cap.length > MUHABBET_POST_BODY_MAX) {
+      Alert.alert('Gönderi', `Açıklama en fazla ${MUHABBET_POST_BODY_MAX} karakter olabilir.`);
       return;
     }
     setComposeBusy(true);
+    let uploadOk = false;
     try {
       const pres = await fetch(`${apiUrl}/muhabbet/uploads/presign`, {
         method: 'POST',
@@ -523,21 +616,33 @@ export default function LeylekMuhabbetiFaz1Screen({
           content_type: composeMime,
         }),
       });
-      const pj = await pres.json();
-      if (!pj.success || !pj.signed_url || !pj.path) {
-        Alert.alert('Yükleme', (pj.detail as string) || 'İmzalı URL alınamadı');
+      const presParsed = await parseJsonResponse(pres);
+      const pj = (presParsed.data || {}) as {
+        success?: boolean;
+        signed_url?: string;
+        path?: string;
+        detail?: unknown;
+      };
+      if (!presParsed.ok || !pj.success || !pj.signed_url || !pj.path) {
+        Alert.alert(
+          'Fotoğraf hazırlığı',
+          userFacingApiMessage(presParsed.status, presParsed.data, 'Fotoğraf yüklemesi için adres alınamadı.'),
+        );
         setComposeBusy(false);
         return;
       }
       const up = await putLocalImageToSignedUrl(fileUri, String(pj.signed_url), composeMime);
       if (!up.ok) {
         Alert.alert(
-          'Yükleme',
-          up.status ? `Depolama hatası (${up.status})` : up.message || 'Yükleme başarısız',
+          'Fotoğraf yükleme',
+          up.status
+            ? 'Fotoğraf sunucuya yüklenemedi. Bağlantınızı veya dosya boyutunu kontrol edip tekrar deneyin.'
+            : up.message || 'Fotoğraf yüklenemedi.',
         );
         setComposeBusy(false);
         return;
       }
+      uploadOk = true;
       const cr = await fetch(`${apiUrl}/muhabbet/posts`, {
         method: 'POST',
         headers: authHeaders(tok),
@@ -548,18 +653,31 @@ export default function LeylekMuhabbetiFaz1Screen({
           image_storage_path: pj.path,
         }),
       });
-      const cj = await cr.json();
-      if (cj.success) {
+      const crParsed = await parseJsonResponse(cr);
+      const cj = (crParsed.data || {}) as { success?: boolean; detail?: unknown };
+      if (crParsed.ok && cj.success) {
         setComposeOpen(false);
         setComposeCaption('');
         setComposeImageUri(null);
         await loadFeed();
         Alert.alert('Tamam', 'Gönderiniz yayınlandı.');
       } else {
-        Alert.alert('Gönderi', (cj.detail as string) || 'Kaydedilemedi');
+        Alert.alert(
+          'Gönderi kaydı',
+          uploadOk
+            ? 'Fotoğraf yüklendi ancak gönderi metni kaydedilemedi. Metni kontrol edip tekrar deneyin; aynı fotoğrafı kullanabilirsiniz.'
+            : userFacingApiMessage(crParsed.status, crParsed.data, 'Gönderi kaydedilemedi.'),
+        );
       }
     } catch (e) {
-      Alert.alert('Gönderi', e instanceof Error ? e.message : 'Bilinmeyen hata');
+      Alert.alert(
+        'Gönderi',
+        uploadOk
+          ? 'Fotoğraf yüklendi; gönderi tamamlanırken bağlantı koptu. Lütfen tekrar deneyin.'
+          : e instanceof Error
+            ? e.message
+            : 'İşlem tamamlanamadı.',
+      );
     }
     setComposeBusy(false);
   };
@@ -612,10 +730,23 @@ export default function LeylekMuhabbetiFaz1Screen({
               {feedGroup.neighborhood_name || ''} · {feedGroup.city}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => setComposeOpen(true)} style={styles.headerIcon}>
-            <Ionicons name="add-circle-outline" size={28} color="#38BDF8" />
+          <TouchableOpacity
+            onPress={() => {
+              if (!requireMuhabbetToken()) return;
+              setComposeOpen(true);
+            }}
+            style={styles.headerIcon}
+          >
+            <Ionicons name="add-circle-outline" size={28} color={tok ? '#38BDF8' : '#475569'} />
           </TouchableOpacity>
         </View>
+
+        {!tok ? (
+          <View style={styles.sessionBanner}>
+            <Ionicons name="key-outline" size={20} color="#FBBF24" />
+            <Text style={styles.sessionBannerText}>{MUHABBET_SESSION_MESSAGE}</Text>
+          </View>
+        ) : null}
 
         {feedLoading ? (
           <ActivityIndicator color="#38BDF8" style={{ marginTop: 24 }} />
@@ -626,7 +757,11 @@ export default function LeylekMuhabbetiFaz1Screen({
             contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38BDF8" />}
             ListEmptyComponent={
-              <Text style={styles.muted}>Henüz gönderi yok. + ile ilk paylaşımı siz yapın.</Text>
+              <Text style={styles.muted}>
+                {tok
+                  ? 'Henüz gönderi yok. + ile ilk paylaşımı siz yapın.'
+                  : 'Akışı görmek için oturum jetonu gerekir (üstteki uyarı).'}
+              </Text>
             }
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.postCard} onPress={() => void openPostDetail(item)} activeOpacity={0.9}>
@@ -672,7 +807,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                 value={composeCaption}
                 onChangeText={setComposeCaption}
                 multiline
-                maxLength={500}
+                maxLength={MUHABBET_POST_BODY_MAX}
               />
               <TouchableOpacity
                 style={[styles.joinBtn, composeBusy && styles.joinBtnDisabled]}
@@ -699,8 +834,14 @@ export default function LeylekMuhabbetiFaz1Screen({
               <Text style={[styles.headerTitle, { flex: 1, marginHorizontal: 8 }]} numberOfLines={1}>
                 Gönderi
               </Text>
-              <TouchableOpacity onPress={() => setReportOpen(true)} style={styles.headerIcon}>
-                <Ionicons name="flag-outline" size={22} color="#F97316" />
+              <TouchableOpacity
+                onPress={() => {
+                  if (!requireMuhabbetToken()) return;
+                  setReportOpen(true);
+                }}
+                style={styles.headerIcon}
+              >
+                <Ionicons name="flag-outline" size={22} color={tok ? '#F97316' : '#475569'} />
               </TouchableOpacity>
             </View>
             {postDetailLoading || !postDetail ? (
@@ -738,7 +879,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                   renderItem={({ item }) => (
                     <View style={styles.commentRow}>
                       <Text style={styles.commentAuthor}>{item.author_name || 'Kullanıcı'}</Text>
-                      <Text style={styles.commentBody}>{item.body}</Text>
+                      <Text style={styles.commentBody}>{item.body_text ?? item.body}</Text>
                       <Text style={styles.commentTime}>{formatPostTime(item.created_at)}</Text>
                     </View>
                   )}
@@ -885,6 +1026,15 @@ export default function LeylekMuhabbetiFaz1Screen({
         )}
 
         <Text style={styles.sectionLabel}>Gruplar</Text>
+        {selectedNeighborhoodId && neighborhoods.length > 0 ? (
+          <Text style={styles.groupsScopeHint}>
+            Liste:{' '}
+            <Text style={{ fontWeight: '700', color: '#e2e8f0' }}>
+              {neighborhoods.find((n) => n.id === selectedNeighborhoodId)?.name ?? '—'}
+            </Text>{' '}
+            mahallesindeki gruplar. Aynı isim farklı mahallelerde ayrı gruptur.
+          </Text>
+        ) : null}
         {gLoading ? (
           <ActivityIndicator color="#38BDF8" style={{ marginVertical: 16 }} />
         ) : groups.length === 0 ? (
@@ -894,6 +1044,10 @@ export default function LeylekMuhabbetiFaz1Screen({
         ) : (
           groups.map((item) => {
             const member = myGroupIds.has(item.id);
+            const mahalleLabel =
+              (item.neighborhood_name && item.neighborhood_name.trim()) ||
+              neighborhoods.find((n) => n.id === item.neighborhood_id)?.name ||
+              'Mahalle';
             return (
               <TouchableOpacity
                 key={item.id}
@@ -901,6 +1055,7 @@ export default function LeylekMuhabbetiFaz1Screen({
                 onPress={() => void openGroupDetail(item)}
                 activeOpacity={0.88}
               >
+                <Text style={styles.groupMahalleLine}>Mahalle: {mahalleLabel}</Text>
                 <View style={styles.groupCardTop}>
                   <Text style={styles.groupName}>{item.name}</Text>
                   {member ? (
@@ -1079,6 +1234,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#243045',
   },
+  groupsScopeHint: {
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 10,
+    marginTop: -4,
+  },
+  groupMahalleLine: { color: '#94a3b8', fontSize: 12, fontWeight: '600', marginBottom: 8 },
   groupCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   groupName: { color: '#fff', fontSize: 16, fontWeight: '700', flex: 1 },
   badgeMember: { backgroundColor: '#14532d', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
@@ -1259,4 +1422,17 @@ const styles = StyleSheet.create({
   presetChipOn: { borderColor: '#38bdf8', backgroundColor: '#0c4a6e' },
   presetChipText: { color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
   presetChipTextOn: { color: '#fff' },
+  sessionBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#422006',
+    borderWidth: 1,
+    borderColor: '#a16207',
+  },
+  sessionBannerText: { flex: 1, color: '#fef3c7', fontSize: 13, lineHeight: 19 },
 });

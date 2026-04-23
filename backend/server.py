@@ -16631,7 +16631,15 @@ async def muhabbet_list_groups(city: str, neighborhood_id: Optional[str] = None)
         if nid:
             q = q.eq("neighborhood_id", nid)
         res = q.order("name").execute()
-        rows = res.data or []
+        rows_raw = list(res.data or [])
+        seen_gid: set[str] = set()
+        rows: list = []
+        for g in rows_raw:
+            gid = str(g.get("id") or "").strip().lower()
+            if not gid or gid in seen_gid:
+                continue
+            seen_gid.add(gid)
+            rows.append(g)
         n_ids = list({str(g.get("neighborhood_id")) for g in rows if g.get("neighborhood_id")})
         name_map: dict[str, str] = {}
         if n_ids:
@@ -16661,11 +16669,20 @@ async def muhabbet_my_groups(user_id: str):
             .eq("user_id", uid)
             .execute()
         )
-        gids = [str(x["group_id"]) for x in (gm.data or []) if x.get("group_id")]
+        gids_raw = [str(x["group_id"]) for x in (gm.data or []) if x.get("group_id")]
+        gids = list(dict.fromkeys(gids_raw))
         if not gids:
             return {"success": True, "groups": []}
         gr = supabase.table("groups").select("*").in_("id", gids).order("name").execute()
-        rows = gr.data or []
+        rows_raw = list(gr.data or [])
+        seen_my: set[str] = set()
+        rows: list = []
+        for g in rows_raw:
+            gid = str(g.get("id") or "").strip().lower()
+            if not gid or gid in seen_my:
+                continue
+            seen_my.add(gid)
+            rows.append(g)
         n_ids = list({str(g.get("neighborhood_id")) for g in rows if g.get("neighborhood_id")})
         name_map: dict[str, str] = {}
         if n_ids:
@@ -16761,6 +16778,8 @@ async def muhabbet_join_group(group_id: str, body: MuhabbetJoinBody):
 # ==================== LEYLEK MUHABBETİ v1 — FAZ 2 (gönderi / yorum / şikayet) ====================
 
 MUHABBET_POSTS_BUCKET = "muhabbet-posts"
+# posts.body_text — DB posts_body_len ile aynı üst sınır (migration: leylek_muhabbet_faz2_posts_comments_reports.sql)
+MUHABBET_POST_BODY_MAX_LEN = 500
 
 
 def _muhabbet_ensure_posts_bucket() -> None:
@@ -16961,8 +16980,11 @@ async def muhabbet_create_post(
         bt = (body.body_text or "").strip()
         if len(bt) < 1:
             raise HTTPException(status_code=400, detail="Kısa açıklama gerekli")
-        if len(bt) > 500:
-            raise HTTPException(status_code=400, detail="Açıklama en fazla 500 karakter")
+        if len(bt) > MUHABBET_POST_BODY_MAX_LEN:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Açıklama en fazla {MUHABBET_POST_BODY_MAX_LEN} karakter",
+            )
         ins = (
             supabase.table("posts")
             .insert(
