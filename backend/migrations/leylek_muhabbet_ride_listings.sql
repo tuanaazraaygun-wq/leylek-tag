@@ -32,3 +32,8 @@ COMMENT ON TABLE ride_listings IS 'Leylek Muhabbeti Faz1 — rota ilanları (sü
 
 -- Eski kurulumda sütun adı user_id ise backend .env: RIDE_LISTINGS_OWNER_COLUMN=user_id
 -- ve FK aynı kullanıcı tablosunu göstermeli; bu dosya varsayılan olarak created_by_user_id kullanır.
+
+-- Mevcut tabloda bu kolonlar yoksa (500 / unknown column) idempotent ekleme:
+ALTER TABLE ride_listings ADD COLUMN IF NOT EXISTS linked_user_route_id uuid;
+ALTER TABLE ride_listings ADD COLUMN IF NOT EXISTS linked_pattern_hash text;
+ALTER TABLE ride_listings ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();

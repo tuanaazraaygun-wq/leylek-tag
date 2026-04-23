@@ -18282,12 +18282,78 @@ def _enrich_ride_listings_creators(rows: list) -> list:
     return rows
 
 
+def _muhabbet_listing_core_insert_dict(
+    owner_col: str,
+    uid: str,
+    body: MuhabbetListingCreateBody,
+    city: str,
+) -> dict:
+    """ride_listings çekirdek kolonları (FK + rota + meta)."""
+    dep = body.departure_time.isoformat() if body.departure_time else None
+    return {
+        owner_col: uid,
+        "city": city,
+        "from_text": body.from_text,
+        "to_text": body.to_text,
+        "start_lat": body.start_lat,
+        "start_lng": body.start_lng,
+        "end_lat": body.end_lat,
+        "end_lng": body.end_lng,
+        "departure_time": dep,
+        "listing_type": body.listing_type,
+        "role_type": body.role_type,
+        "price_amount": body.price_amount,
+        "note": body.note,
+        "status": "active",
+    }
+
+
+def _muhabbet_listing_insert_payload_variants(
+    owner_col: str,
+    uid: str,
+    body: MuhabbetListingCreateBody,
+    city: str,
+    lrid: Optional[str],
+    lph: Optional[str],
+) -> list[dict]:
+    """
+    Eski ride_listings tablolarında linked_* veya updated_at kolonları yoksa insert kırılmasın diye
+    azalan kolon setleri (sırayla denenir).
+    """
+    core = _muhabbet_listing_core_insert_dict(owner_col, uid, body, city)
+    seen: set[str] = set()
+    out: list[dict] = []
+
+    def push(d: dict) -> None:
+        sig = json.dumps(d, sort_keys=True, default=str)
+        if sig in seen:
+            return
+        seen.add(sig)
+        out.append(d)
+
+    full = dict(core)
+    full["updated_at"] = _muhabbet_listing_row_ts()
+    if lrid is not None:
+        full["linked_user_route_id"] = lrid
+    if lph is not None:
+        full["linked_pattern_hash"] = lph
+    push(full)
+
+    no_link = dict(core)
+    no_link["updated_at"] = _muhabbet_listing_row_ts()
+    push(no_link)
+
+    push(dict(core))
+    return out
+
+
 @api_router.post("/muhabbet/listings/create")
 async def muhabbet_listing_create(
     body: MuhabbetListingCreateBody,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """Yeni ilan; kimlik yalnızca JWT. linked_user_route_id opsiyonel, sahiplik kontrol edilir."""
+    LP = "[muhabbet-listings]"
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         if not uid:
@@ -18313,35 +18379,72 @@ async def muhabbet_listing_create(
             if not lph and rr.data[0].get("pattern_hash"):
                 lph = str(rr.data[0].get("pattern_hash")).strip() or None
         owner_col = _ride_listings_owner_column()
-        insert_payload = {
-            owner_col: uid,
-            "linked_user_route_id": lrid,
-            "linked_pattern_hash": lph,
-            "city": c,
-            "from_text": body.from_text,
-            "to_text": body.to_text,
-            "start_lat": body.start_lat,
-            "start_lng": body.start_lng,
-            "end_lat": body.end_lat,
-            "end_lng": body.end_lng,
-            "departure_time": body.departure_time.isoformat() if body.departure_time else None,
-            "listing_type": body.listing_type,
-            "role_type": body.role_type,
-            "price_amount": body.price_amount,
-            "note": body.note,
-            "status": "active",
-            "updated_at": _muhabbet_listing_row_ts(),
-        }
-        # PostgREST: insert sonrası satır dönmek için .select() şart (aksi halde data boş kalır).
-        ins = supabase.table("ride_listings").insert(insert_payload).select("*").execute()
-        if not ins.data:
-            logger.error(
-                "muhabbet_listing_create: insert tamamlandı ancak dönüş satırı yok (owner_col=%s)",
-                owner_col,
+        logger.info(
+            "%s create request auth_sub=%s resolved_uid=%s owner_col=%s city=%s listing_type=%s role_type=%s "
+            "departure=%s price=%s note_len=%s linked_route=%s",
+            LP,
+            str(authenticated_user_id)[:48],
+            uid,
+            owner_col,
+            (c or "")[:80],
+            body.listing_type,
+            body.role_type,
+            body.departure_time.isoformat() if body.departure_time else None,
+            body.price_amount,
+            len(body.note or "") if body.note else 0,
+            lrid,
+        )
+        variants = _muhabbet_listing_insert_payload_variants(owner_col, uid, body, c, lrid, lph)
+        last_exc: Optional[BaseException] = None
+        ins = None
+        for idx, insert_payload in enumerate(variants):
+            logger.info("%s insert attempt idx=%s keys=%s payload=%s", LP, idx, list(insert_payload.keys()), insert_payload)
+            try:
+                ins = supabase.table("ride_listings").insert(insert_payload).select("*").execute()
+            except Exception as attempt_exc:
+                last_exc = attempt_exc
+                logger.warning("%s insert attempt idx=%s failed: %s", LP, idx, attempt_exc, exc_info=True)
+                continue
+            err_attr = getattr(ins, "error", None)
+            if err_attr:
+                logger.warning("%s insert attempt idx=%s response.error=%s", LP, idx, err_attr)
+            data = getattr(ins, "data", None)
+            logger.info(
+                "%s supabase insert result idx=%s has_data=%s count=%s",
+                LP,
+                idx,
+                bool(data),
+                getattr(ins, "count", None),
             )
-            return {"success": False, "detail": "İlan kaydedilemedi"}
+            if data:
+                logger.info("%s supabase insert row[0] keys=%s", LP, list(dict(data[0]).keys()) if data else [])
+                break
+            last_exc = RuntimeError("Supabase insert returned empty data")
+            logger.error("%s insert attempt idx=%s empty data", LP, idx)
+        if ins is None or not getattr(ins, "data", None):
+            if last_exc is not None:
+                logger.error(
+                    "%s create failed after %s payload attempts",
+                    LP,
+                    len(variants),
+                    exc_info=last_exc if isinstance(last_exc, BaseException) else False,
+                )
+            else:
+                logger.error("%s create failed: no successful insert (empty responses)", LP)
+            msg = str(last_exc or "").lower()
+            if "could not find" in msg and "column" in msg:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Teklif oluşturulamadı. Lütfen bir süre sonra tekrar deneyin.",
+                ) from last_exc
+            raise HTTPException(status_code=500, detail="Teklif kaydedilemedi. Lütfen tekrar deneyin.") from last_exc
+
         row = _ride_listing_response_row(dict(ins.data[0]))
-        _enrich_ride_listings_creators([row])
+        try:
+            _enrich_ride_listings_creators([row])
+        except Exception as enr:
+            logger.warning("%s enrich creator_name failed (non-fatal): %s", LP, enr, exc_info=True)
+        logger.info("%s create ok listing_id=%s", LP, row.get("id"))
         return {"success": True, "listing": row}
     except HTTPException:
         raise
@@ -18350,7 +18453,7 @@ async def muhabbet_listing_create(
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"muhabbet_listing_create: {e}")
+        logger.exception("%s create failed (unhandled)", LP)
         msg = str(e).lower()
         if "could not find" in msg and "column" in msg:
             raise HTTPException(
