@@ -25,12 +25,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import RouteSummaryCard, { type RouteSummaryPayload } from './RouteSummaryCard';
+import type { RouteSummaryPayload } from './RouteSummaryCard';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
+import { useRouter, type Href } from 'expo-router';
 import LeylekMuhabbetiHomeTab from './LeylekMuhabbetiHomeTab';
-import LeylekMuhabbetiListingsHub from './LeylekMuhabbetiListingsHub';
-import ConversationsScreen from './ConversationsScreen';
+import ListingsTab from './ListingsTab';
+import ConversationsScreen, { buildMuhabbetChatHref, type MuhabbetConversationListItem } from './ConversationsScreen';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -58,19 +59,6 @@ const CITIES = [
 const REPORT_PRESETS = ['Spam', 'Hakaret / nefret', 'Yasadışı içerik', 'Kişisel veri', 'Diğer'];
 
 const MUHABBET_POST_BODY_MAX = 500;
-
-/** /routes/summary `route` metnini from / to olarak ayır (ör. `A → B`) */
-function parseRouteEndpoints(route: string): { from: string; to: string } {
-  const t = route
-    .trim()
-    .replace(/\s*->\s*/gi, '→')
-    .replace(/\s*—\s*/g, '→');
-  if (t.includes('→')) {
-    const parts = t.split('→');
-    return { from: (parts[0] || '').trim(), to: parts.slice(1).join('→').trim() || '—' };
-  }
-  return { from: t || '—', to: '—' };
-}
 
 const MUHABBET_SESSION_TITLE = 'Oturum gerekli';
 const MUHABBET_SESSION_MESSAGE =
@@ -281,6 +269,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   onNavigateToRouteSetup,
   onNavigateToGroup,
 }: LeylekMuhabbetiFaz1ScreenProps) {
+  const router = useRouter();
   const tabInsets = useSafeAreaInsets();
   const tok = (accessToken || '').trim();
   const requireMuhabbetToken = (): boolean => {
@@ -311,6 +300,7 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [muhabbetSurface, setMuhabbetSurface] = useState<'tabs' | 'legacy'>('tabs');
   const [mainTab, setMainTab] = useState<'home' | 'listings' | 'chats'>('home');
   const [listingCreateSignal, setListingCreateSignal] = useState(0);
+  const [listingCreateRole, setListingCreateRole] = useState<'driver' | 'passenger'>('passenger');
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailGroup, setDetailGroup] = useState<GroupRow | null>(null);
@@ -559,9 +549,39 @@ export default function LeylekMuhabbetiFaz1Screen({
   }, [loadNeighborhoods, loadGroups, loadMyGroups, loadRoadsters, feedGroup, loadFeed]);
 
   const openListingsCreate = useCallback(() => {
+    setListingCreateRole('passenger');
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
   }, []);
+
+  const openListingCreateAs = useCallback((role: 'driver' | 'passenger') => {
+    setListingCreateRole(role);
+    setMainTab('listings');
+    setListingCreateSignal((n) => n + 1);
+  }, []);
+
+  const goMuhabbetProfile = useCallback(() => {
+    router.push(`/muhabbet-profile/${encodeURIComponent(user.id)}` as Href);
+  }, [router, user.id]);
+
+  const onPressConversationPreview = useCallback(
+    (c: MuhabbetConversationListItem) => {
+      const cid = String(c.conversation_id || c.id || '').trim();
+      if (!cid) {
+        setMainTab('chats');
+        return;
+      }
+      router.push(
+        buildMuhabbetChatHref(cid, {
+          otherUserName: c.other_user_name || 'Kullanıcı',
+          fromText: (c.from_text && String(c.from_text)) || '',
+          toText: (c.to_text && String(c.to_text)) || '',
+          otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
+        })
+      );
+    },
+    [router],
+  );
 
   const openGroupDetail = async (g: GroupRow) => {
     setDetailVisible(true);
@@ -1226,9 +1246,14 @@ export default function LeylekMuhabbetiFaz1Screen({
           onBack={onBack}
           gradientColors={leylekTabGrad}
           right={
-            <TouchableOpacity onPress={() => setShowCityModal(true)} style={styles.headerIcon} accessibilityRole="button">
-              <Ionicons name="location-outline" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+            <View style={styles.headerRightCluster}>
+              <TouchableOpacity onPress={goMuhabbetProfile} style={styles.headerIcon} accessibilityRole="button">
+                <Ionicons name="person-circle-outline" size={26} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowCityModal(true)} style={styles.headerIcon} accessibilityRole="button">
+                <Ionicons name="location-outline" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           }
         />
       )}
@@ -1428,18 +1453,24 @@ export default function LeylekMuhabbetiFaz1Screen({
                   onNavigateToGroup={onNavigateToGroup}
                   onOpenLegacyDiscovery={() => setMuhabbetSurface('legacy')}
                   onOpenListingsCreate={openListingsCreate}
+                  onOpenDriverListing={() => openListingCreateAs('driver')}
+                  onOpenPassengerListing={() => openListingCreateAs('passenger')}
+                  onOpenMatchRequests={() => router.push('/muhabbet-match-requests' as Href)}
+                  onPressConversationPreview={onPressConversationPreview}
                 />
               </ScrollView>
             ) : null}
             {mainTab === 'listings' && tok ? (
               <View style={{ flex: 1, minHeight: 0 }}>
-                <LeylekMuhabbetiListingsHub
+                <ListingsTab
                   apiUrl={apiUrl}
                   accessToken={tok}
                   selectedCity={selectedCity}
                   currentUserId={user.id}
+                  viewerAppRole={user.role}
                   syncVersion={inboxSync}
                   openCreateSignal={listingCreateSignal}
+                  initialCreateRole={listingCreateRole}
                   requireToken={requireMuhabbetToken}
                 />
               </View>
@@ -1686,6 +1717,7 @@ const styles = StyleSheet.create({
   mutedLight: { color: TEXT_SECONDARY, fontSize: 15, marginVertical: 10, lineHeight: 22 },
   root: { flex: 1, backgroundColor: '#0b1220' },
   headerRightRow: { flexDirection: 'row', alignItems: 'center' },
+  headerRightCluster: { flexDirection: 'row', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 0, paddingBottom: 36 },

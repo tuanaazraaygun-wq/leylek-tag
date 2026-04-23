@@ -2,12 +2,10 @@
  * Leylek Muhabbeti — Ana Sayfa sekmesi: özet, güzergah, ilan CTA, sohbet özeti, keşfe geçiş.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, Platform } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import RouteSummaryCard, { type RouteSummaryPayload } from './RouteSummaryCard';
-import { GradientButton } from './GradientButton';
-import { getPersistedAccessToken } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import type { MuhabbetConversationListItem } from './ConversationsScreen';
 
@@ -47,6 +45,11 @@ export type LeylekMuhabbetiHomeTabProps = {
   onNavigateToGroup?: (groupId: string) => void;
   onOpenLegacyDiscovery: () => void;
   onOpenListingsCreate: () => void;
+  onOpenDriverListing?: () => void;
+  onOpenPassengerListing?: () => void;
+  onOpenMatchRequests?: () => void;
+  /** Son sohbet satırına basılınca (conversation_id ile chat, yoksa Sohbetler sekmesi parent’ta). */
+  onPressConversationPreview?: (c: MuhabbetConversationListItem) => void;
 };
 
 export default function LeylekMuhabbetiHomeTab({
@@ -62,45 +65,76 @@ export default function LeylekMuhabbetiHomeTab({
   onNavigateToGroup,
   onOpenLegacyDiscovery,
   onOpenListingsCreate,
+  onOpenDriverListing,
+  onOpenPassengerListing,
+  onOpenMatchRequests,
+  onPressConversationPreview,
 }: LeylekMuhabbetiHomeTabProps) {
+  const openDriver = onOpenDriverListing ?? onOpenListingsCreate;
+  const openPassenger = onOpenPassengerListing ?? onOpenListingsCreate;
   const tok = accessToken.trim();
   const base = apiUrl.replace(/\/$/, '');
   const [convLoading, setConvLoading] = useState(false);
   const [convRows, setConvRows] = useState<MuhabbetConversationListItem[]>([]);
   const [pendingIncoming, setPendingIncoming] = useState(0);
+  const [feedPreview, setFeedPreview] = useState<
+    { id: string; from_text?: string | null; to_text?: string | null; role_type?: string | null; price_amount?: number | null }[]
+  >([]);
+  const [feedLoading, setFeedLoading] = useState(false);
 
   const loadPreview = useCallback(async () => {
     if (!tok) {
       setConvRows([]);
       setPendingIncoming(0);
+      setFeedPreview([]);
       return;
     }
     setConvLoading(true);
+    setFeedLoading(true);
     try {
       const h = { Authorization: `Bearer ${tok}` };
-      const [rConv, rInc] = await Promise.all([
+      const u = new URLSearchParams({ city: selectedCity.trim(), limit: '6' });
+      const [rConv, rInc, rFeed] = await Promise.all([
         fetch(`${base}/muhabbet/conversations/me?limit=8`, { headers: h }),
         fetch(`${base}/muhabbet/match-requests/incoming?status=pending&limit=50`, { headers: h }),
+        fetch(`${base}/muhabbet/listings/feed?${u.toString()}`, { headers: h }),
       ]);
-      if (!handleUnauthorizedAndMaybeRedirect(rConv)) {
+      if (
+        handleUnauthorizedAndMaybeRedirect(rConv) ||
+        handleUnauthorizedAndMaybeRedirect(rInc) ||
+        handleUnauthorizedAndMaybeRedirect(rFeed)
+      ) {
+        setConvRows([]);
+        setPendingIncoming(0);
+        setFeedPreview([]);
+        return;
+      }
+      {
         const d = (await rConv.json().catch(() => ({}))) as { success?: boolean; conversations?: MuhabbetConversationListItem[] };
         if (rConv.ok && d.success && Array.isArray(d.conversations)) {
           const acc = d.conversations.filter((c) => (c.request_status || '').toLowerCase() === 'accepted');
           setConvRows(acc.slice(0, 4));
         } else setConvRows([]);
       }
-      if (!handleUnauthorizedAndMaybeRedirect(rInc)) {
+      {
         const di = (await rInc.json().catch(() => ({}))) as { success?: boolean; requests?: unknown[] };
         if (rInc.ok && di.success && Array.isArray(di.requests)) setPendingIncoming(di.requests.length);
         else setPendingIncoming(0);
       }
+      {
+        const df = (await rFeed.json().catch(() => ({}))) as { success?: boolean; listings?: typeof feedPreview };
+        if (rFeed.ok && df.success && Array.isArray(df.listings)) setFeedPreview(df.listings.slice(0, 5));
+        else setFeedPreview([]);
+      }
     } catch {
       setConvRows([]);
       setPendingIncoming(0);
+      setFeedPreview([]);
     } finally {
       setConvLoading(false);
+      setFeedLoading(false);
     }
-  }, [base, tok]);
+  }, [base, tok, selectedCity]);
 
   useEffect(() => {
     void loadPreview();
@@ -120,6 +154,21 @@ export default function LeylekMuhabbetiHomeTab({
 
       {tok ? (
         <View style={styles.inset}>
+          <View style={styles.ctaRow}>
+            <TouchableOpacity style={styles.ctaBig} onPress={openDriver} activeOpacity={0.9}>
+              <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <Text style={styles.ctaBigEmoji}>🚗</Text>
+              <Text style={styles.ctaBigTitle}>Sürücü İlanı Ver</Text>
+              <Text style={styles.ctaBigSub}>Gidiyorum — boş koltuk paylaş</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.ctaBig} onPress={openPassenger} activeOpacity={0.9}>
+              <LinearGradient colors={['#F59E0B', '#FBBF24']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <Text style={styles.ctaBigEmoji}>🧍</Text>
+              <Text style={styles.ctaBigTitle}>Yolcu İlanı Ver</Text>
+              <Text style={styles.ctaBigSub}>Gitmek istiyorum — bütçeni yaz</Text>
+            </TouchableOpacity>
+          </View>
+
           <RouteSummaryCard
             apiBaseUrl={apiBaseUrl}
             accessToken={tok}
@@ -150,17 +199,45 @@ export default function LeylekMuhabbetiHomeTab({
           ) : (
             <Text style={styles.summaryMeta}>Güzergah ekleyerek aynı hat üzerindekilerle bağlantı kurabilirsin.</Text>
           )}
-          <GradientButton label="İlan Ver" variant="secondary" onPress={onOpenListingsCreate} style={{ marginTop: 14 }} />
         </View>
 
         {pendingIncoming > 0 ? (
-          <View style={styles.alertCard}>
+          <Pressable
+            onPress={onOpenMatchRequests}
+            disabled={!onOpenMatchRequests}
+            style={({ pressed }) => [styles.alertCard, pressed && onOpenMatchRequests && { opacity: 0.92 }]}
+          >
             <Ionicons name="notifications-outline" size={22} color={ACCENT} />
             <Text style={styles.alertText}>
-              {pendingIncoming} bekleyen eşleşme isteğin var. İlanlar sekmesinden yanıtlayabilirsin.
+              {pendingIncoming} bekleyen eşleşme isteğin var. Teklifleri görmek için dokun.
             </Text>
-          </View>
+          </Pressable>
         ) : null}
+
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Bana uygun ilanlar</Text>
+          <Text style={styles.summaryHint}>Şehrindeki son ilanlar — detay için İlanlar sekmesi</Text>
+          {feedLoading ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} /> : null}
+          {!feedLoading && feedPreview.length === 0 ? (
+            <Text style={styles.summaryMeta}>Henüz önizleme yok — ilan vererek başlat.</Text>
+          ) : (
+            feedPreview.map((L) => {
+              const r = (L.role_type || '').toLowerCase();
+              const tag = r === 'driver' || r === 'private_driver' ? 'Sürücü' : 'Yolcu';
+              return (
+                <View key={L.id} style={styles.previewRow}>
+                  <Text style={styles.previewTag}>{tag}</Text>
+                  <Text style={styles.previewRoute} numberOfLines={2}>
+                    {(L.from_text || '—').toString().trim()} → {(L.to_text || '—').toString().trim()}
+                  </Text>
+                  {L.price_amount != null && L.price_amount !== undefined ? (
+                    <Text style={styles.previewPrice}>{Number(L.price_amount).toLocaleString('tr-TR')} ₺</Text>
+                  ) : null}
+                </View>
+              );
+            })
+          )}
+        </View>
 
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Son sohbetler</Text>
@@ -169,17 +246,37 @@ export default function LeylekMuhabbetiHomeTab({
           {!convLoading && convRows.length === 0 ? (
             <Text style={styles.summaryMeta}>Henüz sohbet yok — ilanlara katıl, eşleş, konuş.</Text>
           ) : (
-            convRows.map((c) => {
+            convRows.map((c, idx) => {
               const cid = String(c.conversation_id || c.id || '');
               const last = (c.last_message_body || '').trim();
-              return (
-                <View key={cid} style={styles.convRow}>
+              const rowKey = cid ? `conv-${cid}` : `conv-i-${idx}`;
+              const row = (
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.convName} numberOfLines={1}>
                     {c.other_user_name || 'Kullanıcı'}
                   </Text>
                   <Text style={styles.convPreview} numberOfLines={1}>
                     {last || 'Sohbet başlat'}
                   </Text>
+                </View>
+              );
+              if (onPressConversationPreview) {
+                return (
+                  <Pressable
+                    key={rowKey}
+                    onPress={() => onPressConversationPreview(c)}
+                    style={({ pressed }) => [styles.convRow, pressed && { opacity: 0.88 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Sohbet: ${c.other_user_name || 'Kullanıcı'}`}
+                  >
+                    {row}
+                    <Ionicons name="chevron-forward" size={16} color={TEXT_SECONDARY} style={styles.convChevron} />
+                  </Pressable>
+                );
+              }
+              return (
+                <View key={cid} style={styles.convRow}>
+                  {row}
                 </View>
               );
             })
@@ -210,6 +307,41 @@ const styles = StyleSheet.create({
   heroCity: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
   heroSub: { color: 'rgba(255,255,255,0.92)', fontSize: 14, lineHeight: 20, marginTop: 8 },
   inset: { paddingHorizontal: 16, marginTop: 12 },
+  ctaRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  ctaBig: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    overflow: 'hidden',
+    minHeight: 120,
+    justifyContent: 'center',
+    ...CARD_SHADOW,
+  },
+  ctaBigEmoji: { fontSize: 22, color: '#fff', fontWeight: '800' },
+  ctaBigTitle: { fontSize: 15, fontWeight: '800', color: '#fff', marginTop: 6 },
+  ctaBigSub: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 4, lineHeight: 16 },
+  previewRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(60,60,67,0.1)',
+  },
+  previewTag: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: PRIMARY_GRAD[0],
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  previewRoute: { flex: 1, fontSize: 14, color: TEXT_PRIMARY, fontWeight: '600' },
+  previewPrice: { fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY },
   summaryCard: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
   summaryTitle: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
   summaryHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 6 },
@@ -225,7 +357,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   alertText: { flex: 1, fontSize: 14, color: TEXT_PRIMARY, lineHeight: 20 },
-  convRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(60,60,67,0.12)' },
+  convRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(60,60,67,0.12)',
+  },
+  convChevron: { marginLeft: 'auto' },
   convName: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY },
   convPreview: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 2 },
   legacyLink: {

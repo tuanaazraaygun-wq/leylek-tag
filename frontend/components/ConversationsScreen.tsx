@@ -33,6 +33,7 @@ const CARD_SHADOW = Platform.select({
 export type MuhabbetConversationListItem = {
   conversation_id?: string;
   id?: string;
+  other_user_id?: string;
   other_user_name?: string;
   from_text?: string | null;
   to_text?: string | null;
@@ -100,14 +101,16 @@ function formatLastMessageListTime(iso: string | undefined | null): string {
   return d.toLocaleString('tr-TR', o);
 }
 
-function buildChatHref(
+/** Muhabbet sohbet ekranı deep link (Ana sayfa önizlemesi vb. ile paylaşılır). */
+export function buildMuhabbetChatHref(
   conversationId: string,
-  p: { otherUserName: string; fromText: string; toText: string }
+  p: { otherUserName: string; fromText: string; toText: string; otherUserId?: string }
 ): Href {
   const q = new URLSearchParams();
   if (p.otherUserName) q.set('n', p.otherUserName);
   if (p.fromText) q.set('f', p.fromText);
   if (p.toText) q.set('t', p.toText);
+  if (p.otherUserId) q.set('ou', p.otherUserId);
   const s = q.toString();
   return (s
     ? `/muhabbet-chat/${encodeURIComponent(conversationId)}?${s}`
@@ -186,10 +189,11 @@ export default function ConversationsScreen({
     const cid = String(c.conversation_id || c.id || '').trim();
     if (!cid) return;
     router.push(
-      buildChatHref(cid, {
+      buildMuhabbetChatHref(cid, {
         otherUserName: c.other_user_name || 'Kullanıcı',
         fromText: (c.from_text && String(c.from_text)) || '',
         toText: (c.to_text && String(c.to_text)) || '',
+        otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
       })
     );
   };

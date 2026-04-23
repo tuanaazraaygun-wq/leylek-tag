@@ -1,31 +1,25 @@
-/**
- * Route: /muhabbet-chat/{conversationId}
- */
 import React from 'react';
 import { useLocalSearchParams } from 'expo-router';
-import ChatScreen from '../../components/ChatScreen';
 import { API_BASE_URL } from '../../lib/backendConfig';
+import MuhabbetChatScreen from '../../components/MuhabbetChatScreen';
 
 export default function MuhabbetChatRoute() {
   const p = useLocalSearchParams<{
-    conversationId?: string | string[];
+    conversationId: string | string[];
     n?: string | string[];
-    f?: string | string[];
-    t?: string | string[];
+    ou?: string | string[];
   }>();
-  const idRaw = p.conversationId;
-  const id = (Array.isArray(idRaw) ? idRaw[0] : idRaw) || '';
-  const n = (Array.isArray(p.n) ? p.n[0] : p.n) || '';
-  const f = (Array.isArray(p.f) ? p.f[0] : p.f) || '';
-  const t = (Array.isArray(p.t) ? p.t[0] : p.t) || '';
-
+  const cidRaw = p.conversationId;
+  const cid = Array.isArray(cidRaw) ? cidRaw[0] : cidRaw;
+  const n = Array.isArray(p.n) ? p.n[0] : p.n;
+  const ou = Array.isArray(p.ou) ? p.ou[0] : p.ou;
+  if (!cid) return null;
   return (
-    <ChatScreen
+    <MuhabbetChatScreen
       apiBaseUrl={API_BASE_URL}
-      conversationId={id}
-      initialOtherUserName={n}
-      initialFromText={f}
-      initialToText={t}
+      conversationId={String(cid)}
+      titleName={n ? String(n) : undefined}
+      otherUserId={ou ? String(ou) : undefined}
     />
   );
 }

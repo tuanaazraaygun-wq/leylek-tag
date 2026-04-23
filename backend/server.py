@@ -18314,6 +18314,15 @@ async def muhabbet_listing_create(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@api_router.post("/muhabbet/listings")
+async def muhabbet_listings_create_alias(
+    body: MuhabbetListingCreateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """İlan oluşturma kısa yolu; `/muhabbet/listings/create` ile aynı işlev."""
+    return await muhabbet_listing_create(body, authenticated_user_id)
+
+
 @api_router.get("/muhabbet/listings/feed")
 async def muhabbet_listings_feed(
     city: str,
@@ -18551,6 +18560,52 @@ def _muhabbet_listing_enrich_request_rows(req_rows: list) -> list:
     return out
 
 
+def _muhabbet_user_public_card(uid: str) -> dict:
+    """Muhabbet için güvenli kullanıcı özeti (profil kartı / teklif zenginleştirme)."""
+    uid = (uid or "").strip().lower()
+    if not uid:
+        return {}
+    try:
+        r = (
+            supabase.table("users")
+            .select("id, name, rating, total_trips, total_ratings, role, driver_details")
+            .eq("id", uid)
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return {"id": uid, "user_name": "Kullanıcı", "rating": 4.0, "total_trips": 0, "total_ratings": 0}
+        u = dict(r.data[0])
+        dd = _driver_details_public_for_api(u) or {}
+        return {
+            "id": uid,
+            "user_name": (u.get("name") or "Kullanıcı").strip(),
+            "rating": float(u.get("rating") or 4.0),
+            "total_trips": int(u.get("total_trips") or 0),
+            "total_ratings": int(u.get("total_ratings") or 0),
+            "role": u.get("role"),
+            "driver_details_public": dd,
+        }
+    except Exception as e:
+        logger.warning("muhabbet_user_public_card: %s", e)
+        return {"id": uid, "user_name": "Kullanıcı", "rating": 4.0, "total_trips": 0, "total_ratings": 0}
+
+
+def _muhabbet_requests_attach_sender_profiles(req_rows: list) -> list:
+    """Gelen istek satırlarına gönderen rating / yolculuk sayısı (saat uyumu: placeholder)."""
+    out: list = []
+    for row in req_rows or []:
+        d = dict(row)
+        sid = str(d.get("sender_user_id") or "").strip().lower()
+        card = _muhabbet_user_public_card(sid) if sid else {}
+        d["sender_user_name"] = card.get("user_name") or d.get("sender_name") or "Kullanıcı"
+        d["sender_rating"] = card.get("rating")
+        d["sender_total_trips"] = card.get("total_trips")
+        d["time_match_hint"] = "—"
+        out.append(d)
+    return out
+
+
 @api_router.get("/muhabbet/match-requests/incoming")
 async def muhabbet_match_requests_incoming(
     status: str = "pending",
@@ -18600,6 +18655,110 @@ async def muhabbet_match_requests_outgoing(
         raise
     except Exception as e:
         logger.error(f"muhabbet_match_requests_outgoing: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/listing-match-requests/me")
+async def muhabbet_listing_match_requests_me(
+    status: str = "pending",
+    limit: int = 50,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """İlan sahibine gelen teklifler; gönderen adı, rating, yolculuk sayısı (saat uyumu placeholder)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        st = (status or "pending").strip().lower()
+        if st not in _MUHABBET_REQ_STATUSES and st not in ("all", "*"):
+            raise HTTPException(status_code=400, detail="Geçersiz status")
+        lim = max(1, min(int(limit or 50), 200))
+        q = supabase.table("listing_match_requests").select("*").eq("receiver_user_id", uid)
+        if st not in ("all", "*"):
+            q = q.eq("status", st)
+        res = q.order("created_at", desc=True).limit(lim).execute()
+        rows = _muhabbet_listing_enrich_request_rows(list(res.data or []))
+        rows = _muhabbet_requests_attach_sender_profiles(rows)
+        return {"success": True, "requests": rows, "count": len(rows)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_listing_match_requests_me: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/users/{target_user_id}/public-profile")
+async def muhabbet_user_public_profile_get(
+    target_user_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Muhabbet profil kartı: güvenli alanlar + aktif ilan sayısı + tamamlanan eşleşme sayısı."""
+    try:
+        _ = await _muhabbet_listing_uid(authenticated_user_id)
+        tid = str(target_user_id or "").strip().lower()
+        try:
+            uuid.UUID(tid)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Geçersiz kullanıcı kimliği") from e
+        card = _muhabbet_user_public_card(tid)
+        active_listings = 0
+        completed_matches = 0
+        try:
+            al = (
+                supabase.table("ride_listings")
+                .select("id", count="exact")
+                .eq("created_by_user_id", tid)
+                .eq("status", "active")
+                .execute()
+            )
+            active_listings = int(getattr(al, "count", None) or 0)
+        except Exception as e:
+            logger.warning("public_profile active_listings: %s", e)
+        try:
+            ac = (
+                supabase.table("listing_match_requests")
+                .select("id", count="exact")
+                .eq("status", "accepted")
+                .eq("sender_user_id", tid)
+                .execute()
+            )
+            bc = (
+                supabase.table("listing_match_requests")
+                .select("id", count="exact")
+                .eq("status", "accepted")
+                .eq("receiver_user_id", tid)
+                .execute()
+            )
+            completed_matches = int(getattr(ac, "count", None) or 0) + int(getattr(bc, "count", None) or 0)
+        except Exception as e:
+            logger.warning("public_profile completed_matches: %s", e)
+        role = str(card.get("role") or "").lower()
+        dd = card.get("driver_details_public") or {}
+        extras: dict = {}
+        if role == "driver" or role == "private_driver":
+            extras = {
+                "vehicle_summary": dd,
+                "daily_trips_hint": None,
+                "weekly_earning_hint": None,
+            }
+        else:
+            extras = {"past_trips_hint": None}
+        return {
+            "success": True,
+            "profile": {
+                "id": tid,
+                "name": card.get("user_name") or "Kullanıcı",
+                "rating": card.get("rating"),
+                "total_trips": card.get("total_trips"),
+                "total_ratings": card.get("total_ratings"),
+                "role": card.get("role"),
+                "active_listings": active_listings,
+                "completed_matches": completed_matches,
+                "extras": extras,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_user_public_profile_get: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
