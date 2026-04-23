@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from typing import Annotated, List, Literal, Optional, Tuple
+from typing import Annotated, Any, List, Literal, Optional, Tuple
 
 try:
     from zoneinfo import ZoneInfo
@@ -69,6 +69,7 @@ from services.fcm_push_service import (
     is_probable_fcm_registration_token,
     send_fcm_notification_sync,
 )
+from services.muhabbet_moderation import moderate_muhabbet_text, ModerationUnavailableError
 from route_service import get_route_cached
 import trust_service as _trust_service
 from routes.admin_ai import router as admin_ai_router
@@ -16890,6 +16891,46 @@ def _muhabbet_enrich_posts_rows(rows: list) -> list:
     return out
 
 
+def _muhabbet_text_fingerprint(text: str) -> tuple[str, int]:
+    raw = (text or "").strip()
+    b = raw.encode("utf-8")
+    return hashlib.sha256(b).hexdigest(), len(raw)
+
+
+def _muhabbet_log_ai_moderation_event(
+    *,
+    user_uid: str,
+    target_kind: str,
+    decision: str,
+    group_id: Optional[str],
+    parent_post_id: Optional[str],
+    result_post_id: Optional[str],
+    result_comment_id: Optional[str],
+    content_sha256: str,
+    char_len: int,
+    model_label: Optional[str],
+    detail: Optional[str],
+) -> None:
+    try:
+        supabase.table("ai_moderation_events").insert(
+            {
+                "user_id": user_uid,
+                "target_kind": target_kind,
+                "decision": decision,
+                "group_id": group_id,
+                "parent_post_id": parent_post_id,
+                "result_post_id": result_post_id,
+                "result_comment_id": result_comment_id,
+                "content_sha256": content_sha256,
+                "char_len": char_len,
+                "model_label": model_label,
+                "detail": detail,
+            }
+        ).execute()
+    except Exception as e:
+        logger.error(f"_muhabbet_log_ai_moderation_event: {e}")
+
+
 class MuhabbetPresignBody(BaseModel):
     user_id: str
     group_id: str
@@ -16985,6 +17026,32 @@ async def muhabbet_create_post(
                 status_code=400,
                 detail=f"Açıklama en fazla {MUHABBET_POST_BODY_MAX_LEN} karakter",
             )
+        fp, clen = _muhabbet_text_fingerprint(bt)
+        try:
+            dec, mlabel, mdetail = await moderate_muhabbet_text(text=bt, target_kind="post")
+        except ModerationUnavailableError:
+            raise HTTPException(
+                status_code=503,
+                detail="Metniniz şu an güvenlik denetiminden geçirilemedi. Lütfen kısa süre sonra tekrar deneyin.",
+            ) from None
+        if dec == "block":
+            _muhabbet_log_ai_moderation_event(
+                user_uid=uid,
+                target_kind="post",
+                decision="block",
+                group_id=gid,
+                parent_post_id=None,
+                result_post_id=None,
+                result_comment_id=None,
+                content_sha256=fp,
+                char_len=clen,
+                model_label=mlabel,
+                detail=mdetail,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="İçeriğiniz topluluk kurallarına uygun değil. Lütfen ifadenizi gözden geçirip tekrar deneyin.",
+            )
         ins = (
             supabase.table("posts")
             .insert(
@@ -17000,6 +17067,20 @@ async def muhabbet_create_post(
         if not ins.data:
             return {"success": False, "detail": "Kayıt oluşturulamadı"}
         row = dict(ins.data[0])
+        new_pid = str(row.get("id") or "")
+        _muhabbet_log_ai_moderation_event(
+            user_uid=uid,
+            target_kind="post",
+            decision="allow",
+            group_id=gid,
+            parent_post_id=None,
+            result_post_id=new_pid or None,
+            result_comment_id=None,
+            content_sha256=fp,
+            char_len=clen,
+            model_label=mlabel,
+            detail=mdetail,
+        )
         row["image_url"] = _muhabbet_post_image_public_url(str(row.get("image_storage_path") or ""))
         ur = (
             supabase.table("users")
@@ -17126,12 +17207,39 @@ async def muhabbet_add_post_comment(
         uid = await _muhabbet_verify_bearer_matches_claimed_user(authorization, body.user_id)
         pid = str(post_id).strip().lower()
         uuid.UUID(pid)
-        await _muhabbet_require_post_viewer(pid, uid)
+        post_row = await _muhabbet_require_post_viewer(pid, uid)
+        gid_ctx = str(post_row.get("group_id") or "").strip().lower()
         txt = (body.body or "").strip()
         if len(txt) < 1:
             raise HTTPException(status_code=400, detail="Yorum metni gerekli")
         if len(txt) > 800:
             raise HTTPException(status_code=400, detail="Yorum en fazla 800 karakter")
+        fp, clen = _muhabbet_text_fingerprint(txt)
+        try:
+            dec, mlabel, mdetail = await moderate_muhabbet_text(text=txt, target_kind="comment")
+        except ModerationUnavailableError:
+            raise HTTPException(
+                status_code=503,
+                detail="Metniniz şu an güvenlik denetiminden geçirilemedi. Lütfen kısa süre sonra tekrar deneyin.",
+            ) from None
+        if dec == "block":
+            _muhabbet_log_ai_moderation_event(
+                user_uid=uid,
+                target_kind="comment",
+                decision="block",
+                group_id=gid_ctx or None,
+                parent_post_id=pid,
+                result_post_id=None,
+                result_comment_id=None,
+                content_sha256=fp,
+                char_len=clen,
+                model_label=mlabel,
+                detail=mdetail,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="İçeriğiniz topluluk kurallarına uygun değil. Lütfen ifadenizi gözden geçirip tekrar deneyin.",
+            )
         ins = (
             supabase.table("post_comments")
             .insert({"post_id": pid, "author_user_id": uid, "body": txt})
@@ -17140,6 +17248,20 @@ async def muhabbet_add_post_comment(
         if not ins.data:
             return {"success": False, "detail": "Yorum kaydedilemedi"}
         row = dict(ins.data[0])
+        new_cid = str(row.get("id") or "")
+        _muhabbet_log_ai_moderation_event(
+            user_uid=uid,
+            target_kind="comment",
+            decision="allow",
+            group_id=gid_ctx or None,
+            parent_post_id=pid,
+            result_post_id=None,
+            result_comment_id=new_cid or None,
+            content_sha256=fp,
+            char_len=clen,
+            model_label=mlabel,
+            detail=mdetail,
+        )
         ur = (
             supabase.table("users")
             .select("name")
