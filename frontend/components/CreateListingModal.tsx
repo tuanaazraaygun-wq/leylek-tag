@@ -19,7 +19,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
@@ -64,42 +63,85 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function addLocalDays(base: Date, n: number): Date {
+  const x = new Date(base);
+  x.setDate(x.getDate() + n);
+  return startOfLocalDay(x);
+}
+
+type DepartureTab = 'today' | 'tomorrow' | 'future';
+
 function defaultDepartureHm(): { h: number; m: number } {
   const d = new Date();
   d.setMinutes(d.getMinutes() + 50, 0, 0);
   return { h: d.getHours(), m: Math.round(d.getMinutes() / 5) * 5 % 60 };
 }
 
-function buildDepartureIsoFromHm(h: number, m: number): string {
+function buildDepartureIso(tab: DepartureTab, futureDay: Date | null, h: number, m: number): string {
   const now = new Date();
-  let d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+  let base: Date;
+  if (tab === 'today') {
+    base = startOfLocalDay(now);
+  } else if (tab === 'tomorrow') {
+    base = addLocalDays(now, 1);
+  } else {
+    base = futureDay ? startOfLocalDay(futureDay) : addLocalDays(now, 2);
+  }
+  let d = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0);
   if (d.getTime() <= now.getTime() + 5 * 60 * 1000) {
     d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
   }
   return d.toISOString();
 }
 
-function departureDayLabel(h: number, m: number): string {
-  const now = new Date();
-  let d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-  const rollsTomorrow = d.getTime() <= now.getTime() + 5 * 60 * 1000;
-  const prefix = rollsTomorrow ? 'Yarın' : 'Bugün';
-  return `${prefix} ${pad2(h)}:${pad2(m)}`;
+const TR_MONTHS = [
+  'Ocak',
+  'Şubat',
+  'Mart',
+  'Nisan',
+  'Mayıs',
+  'Haziran',
+  'Temmuz',
+  'Ağustos',
+  'Eylül',
+  'Ekim',
+  'Kasım',
+  'Aralık',
+];
+
+function formatDepartureSummary(tab: DepartureTab, futureDay: Date | null, h: number, m: number): string {
+  const hm = `${pad2(h)}:${pad2(m)}`;
+  if (tab === 'today') return `Bugün ${hm}`;
+  if (tab === 'tomorrow') return `Yarın ${hm}`;
+  if (futureDay) {
+    const dd = futureDay.getDate();
+    const mo = TR_MONTHS[futureDay.getMonth()];
+    return `${dd} ${mo} ${hm}`;
+  }
+  return hm;
+}
+
+function futureDayOptions(from: Date, count: number): Date[] {
+  const out: Date[] = [];
+  let d = addLocalDays(from, 2);
+  for (let i = 0; i < count; i++) {
+    out.push(new Date(d));
+    d = addLocalDays(d, 1);
+  }
+  return out;
+}
+
+function userSubmitFailureMessage(): string {
+  return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
 }
 
 function hasFiniteCoords(p: MuhabbetCommittedPlace | null): boolean {
   if (!p) return false;
   return Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
-}
-
-function userSafeSubmitError(status: number, detail: unknown, bodyText: string): string {
-  const d = typeof detail === 'string' ? detail : '';
-  if (status >= 500) return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
-  if (/column|schema|could not find|postgres|sql/i.test(d + bodyText)) {
-    return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
-  }
-  if (d.trim()) return d.trim();
-  return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
 }
 
 export type CreateListingModalProps = {
@@ -135,9 +177,14 @@ export default function CreateListingModal({
   const [userBias, setUserBias] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const [departureHm, setDepartureHm] = useState(defaultDepartureHm);
+  const [departureTab, setDepartureTab] = useState<DepartureTab>('today');
+  const [futurePick, setFuturePick] = useState<Date | null>(null);
   const [timeModalOpen, setTimeModalOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState(defaultDepartureHm);
+  const [timeModalTabDraft, setTimeModalTabDraft] = useState<DepartureTab>('today');
+  const [futureDraft, setFutureDraft] = useState<Date | null>(null);
   const [departureTimeConfirmed, setDepartureTimeConfirmed] = useState(false);
+  const futureOptions = useMemo(() => futureDayOptions(new Date(), 56), []);
 
   const [suggestedBase, setSuggestedBase] = useState<number | null>(null);
   const [priceDelta, setPriceDelta] = useState(0);
@@ -157,6 +204,8 @@ export default function CreateListingModal({
     if (visible) {
       setCreateRole(initialRole);
       setDepartureTimeConfirmed(false);
+      setDepartureTab('today');
+      setFuturePick(null);
     }
   }, [visible, initialRole]);
 
@@ -278,6 +327,10 @@ export default function CreateListingModal({
     const hm = defaultDepartureHm();
     setDepartureHm(hm);
     setTimeDraft(hm);
+    setDepartureTab('today');
+    setFuturePick(null);
+    setTimeModalTabDraft('today');
+    setFutureDraft(null);
     setDepartureTimeConfirmed(false);
     setSuggestedBase(null);
     setPriceDelta(0);
@@ -387,7 +440,7 @@ export default function CreateListingModal({
     try {
       const listing_type = createRole === 'driver' ? 'gidiyorum' : 'gidecegim';
       const role_type = createRole === 'driver' ? 'driver' : 'passenger';
-      const departure_time = buildDepartureIsoFromHm(departureHm.h, departureHm.m);
+      const departure_time = buildDepartureIso(departureTab, futurePick, departureHm.h, departureHm.m);
       const body: Record<string, unknown> = {
         city: city.trim(),
         from_text: fromPoint.address.trim(),
@@ -425,8 +478,8 @@ export default function CreateListingModal({
         d = {};
       }
       if (!res.ok || !d.success) {
-        const friendly = userSafeSubmitError(res.status, d.detail, rawBody);
-        Alert.alert('Teklif', friendly);
+        console.warn('[CreateListing] submit failed', res.status, rawBody.slice(0, 500));
+        Alert.alert('Teklif', userSubmitFailureMessage());
         return;
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -435,7 +488,7 @@ export default function CreateListingModal({
       resetForm();
       onCreated?.();
     } catch {
-      Alert.alert('Teklif', 'Teklif oluşturulamadı. Lütfen tekrar deneyin.');
+      Alert.alert('Teklif', userSubmitFailureMessage());
     } finally {
       setCreateBusy(false);
     }
@@ -463,7 +516,7 @@ export default function CreateListingModal({
           keyboardVerticalOffset={Platform.OS === 'ios' ? 70 : 0}
         >
           <ScrollView
-            contentContainerStyle={styles.modalScroll}
+            contentContainerStyle={[styles.modalScroll, createRole === 'driver' ? styles.modalScrollDriver : styles.modalScrollPassenger]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -528,6 +581,8 @@ export default function CreateListingModal({
               style={styles.cardRow}
               onPress={() => {
                 setTimeDraft({ ...departureHm });
+                setTimeModalTabDraft(departureTab);
+                setFutureDraft(futurePick ?? addLocalDays(new Date(), 2));
                 setTimeModalOpen(true);
               }}
               activeOpacity={0.88}
@@ -537,7 +592,9 @@ export default function CreateListingModal({
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.rowLabel}>Kalkış</Text>
-                <Text style={styles.rowTimeMain}>{departureDayLabel(departureHm.h, departureHm.m)}</Text>
+                <Text style={styles.rowTimeMain}>
+                  {formatDepartureSummary(departureTab, futurePick, departureHm.h, departureHm.m)}
+                </Text>
                 {!departureTimeConfirmed ? (
                   <Text style={styles.rowMeta}>Onay için dokun — altta “Tamam”</Text>
                 ) : (
@@ -548,7 +605,7 @@ export default function CreateListingModal({
             </TouchableOpacity>
 
             <Text style={[styles.sectionEyebrow, { marginTop: 18 }]}>Ücret</Text>
-            <View style={styles.priceCard}>
+            <View style={[styles.priceCard, createRole === 'driver' ? styles.priceCardDriver : styles.priceCardPassenger]}>
               <Text style={styles.priceLead}>Rota mesafesine göre sistem tabanı</Text>
               <GradientButton
                 label={priceCalcBusy ? 'Hesaplanıyor…' : 'Taban fiyat hesapla'}
@@ -733,10 +790,68 @@ export default function CreateListingModal({
         <Modal visible={timeModalOpen} transparent animationType="slide" onRequestClose={() => setTimeModalOpen(false)}>
           <Pressable style={styles.sheetOverlay} onPress={() => setTimeModalOpen(false)}>
             <Pressable style={styles.timeSheetPremium} onPress={(e) => e.stopPropagation()}>
-              <LinearGradient colors={['#1e293b', '#0f172a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.timeSheetHero}>
-                <Text style={styles.timeSheetEyebrow}>Kalkış saati</Text>
-                <Text style={styles.timeSheetBig}>{departureDayLabel(timeDraft.h, timeDraft.m)}</Text>
-              </LinearGradient>
+              <View style={styles.timeSheetHeaderBar}>
+                <Text style={styles.timeSheetEyebrowDark}>Kalkış zamanı</Text>
+                <Text style={styles.timeSheetSummaryText}>
+                  {formatDepartureSummary(timeModalTabDraft, timeModalTabDraft === 'future' ? futureDraft : null, timeDraft.h, timeDraft.m)}
+                </Text>
+              </View>
+
+              <View style={styles.dateTabRow}>
+                {(['today', 'tomorrow', 'future'] as const).map((tab) => {
+                  const on = timeModalTabDraft === tab;
+                  const label = tab === 'today' ? 'Bugün' : tab === 'tomorrow' ? 'Yarın' : 'İleri tarih';
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      style={[styles.dateTabChip, on && styles.dateTabChipOn]}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setTimeModalTabDraft(tab);
+                        if (tab === 'future') {
+                          setFutureDraft((prev) => prev ?? addLocalDays(new Date(), 2));
+                        }
+                      }}
+                      activeOpacity={0.88}
+                    >
+                      <Text style={[styles.dateTabChipText, on && styles.dateTabChipTextOn]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {timeModalTabDraft === 'future' ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.futureStrip}
+                  style={styles.futureStripWrap}
+                >
+                  {futureOptions.map((fd) => {
+                    const sel =
+                      !!futureDraft &&
+                      startOfLocalDay(fd).getTime() === startOfLocalDay(futureDraft).getTime();
+                    return (
+                      <TouchableOpacity
+                        key={fd.getTime()}
+                        style={[styles.futureChip, sel && styles.futureChipOn]}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setFutureDraft(new Date(fd));
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        <Text style={[styles.futureChipDow, sel && styles.futureChipTextOn]}>{TR_MONTHS[fd.getMonth()].slice(0, 3)}</Text>
+                        <Text style={[styles.futureChipDay, sel && styles.futureChipTextOn]}>{fd.getDate()}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              ) : (
+                <View style={styles.futurePlaceholder} />
+              )}
+
+              <Text style={styles.timePickLabel}>Saat</Text>
               <View style={styles.timeColumns}>
                 <ScrollView style={styles.timeScroll} showsVerticalScrollIndicator={false}>
                   {hours.map((h) => (
@@ -766,6 +881,14 @@ export default function CreateListingModal({
                 activeOpacity={0.9}
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  const tab = timeModalTabDraft;
+                  setDepartureTab(tab);
+                  if (tab === 'future') {
+                    const fp = futureDraft ?? addLocalDays(new Date(), 2);
+                    setFuturePick(fp);
+                  } else {
+                    setFuturePick(null);
+                  }
                   setDepartureHm({ ...timeDraft });
                   setDepartureTimeConfirmed(true);
                   setTimeModalOpen(false);
@@ -785,6 +908,18 @@ const styles = StyleSheet.create({
   modalRoot: { flex: 1, backgroundColor: SCREEN_BG },
   kav: { flex: 1 },
   modalScroll: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 48 },
+  modalScrollDriver: {
+    paddingTop: 14,
+    borderLeftWidth: 3,
+    paddingLeft: 13,
+    borderLeftColor: 'rgba(249,115,22,0.55)',
+  },
+  modalScrollPassenger: {
+    paddingTop: 14,
+    borderLeftWidth: 3,
+    paddingLeft: 13,
+    borderLeftColor: 'rgba(59,130,246,0.35)',
+  },
   sectionEyebrow: {
     fontSize: 12,
     fontWeight: '700',
@@ -857,6 +992,14 @@ const styles = StyleSheet.create({
     elevation: 4,
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.15)',
+  },
+  priceCardDriver: {
+    borderColor: 'rgba(234,88,12,0.38)',
+    shadowOpacity: 0.1,
+  },
+  priceCardPassenger: {
+    borderColor: 'rgba(59,130,246,0.22)',
+    shadowOpacity: 0.06,
   },
   priceLead: { fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18 },
   priceMeta: { marginTop: 10, fontSize: 12, color: TEXT_SECONDARY },
@@ -952,12 +1095,78 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     overflow: 'hidden',
-    paddingBottom: 28,
+    paddingBottom: 22,
   },
-  timeSheetHero: { paddingHorizontal: 20, paddingVertical: 22 },
-  timeSheetEyebrow: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 1 },
-  timeSheetBig: { marginTop: 8, fontSize: 28, fontWeight: '800', color: '#fff' },
-  timeColumns: { flexDirection: 'row', gap: 14, paddingHorizontal: 16, maxHeight: 240, marginTop: 16 },
+  timeSheetHeaderBar: {
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(148,163,184,0.25)',
+    backgroundColor: '#f8fafc',
+  },
+  timeSheetEyebrowDark: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: TEXT_SECONDARY,
+    textTransform: 'uppercase',
+  },
+  timeSheetSummaryText: { marginTop: 8, fontSize: 22, fontWeight: '800', color: TEXT_PRIMARY },
+  dateTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 8,
+    justifyContent: 'space-between',
+  },
+  dateTabChip: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  dateTabChipOn: {
+    backgroundColor: 'rgba(59,130,246,0.14)',
+    borderColor: '#3b82f6',
+  },
+  dateTabChipText: { fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY },
+  dateTabChipTextOn: { color: '#1d4ed8' },
+  futureStripWrap: { maxHeight: 72, marginBottom: 4 },
+  futureStrip: { paddingHorizontal: 14, gap: 8, alignItems: 'center', paddingVertical: 6 },
+  futurePlaceholder: { height: 72, marginBottom: 4 },
+  futureChip: {
+    width: 52,
+    height: 58,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  futureChipOn: {
+    backgroundColor: 'rgba(59,130,246,0.16)',
+    borderColor: '#3b82f6',
+  },
+  futureChipDow: { fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY, textTransform: 'uppercase' },
+  futureChipDay: { marginTop: 2, fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
+  futureChipTextOn: { color: '#1d4ed8' },
+  timePickLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: TEXT_SECONDARY,
+    paddingHorizontal: 18,
+    marginTop: 4,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  timeColumns: { flexDirection: 'row', gap: 14, paddingHorizontal: 16, maxHeight: 160, marginTop: 8 },
   timeScroll: { flex: 1 },
   timeChip: {
     paddingVertical: 11,

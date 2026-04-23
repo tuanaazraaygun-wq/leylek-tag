@@ -18109,7 +18109,18 @@ class MuhabbetChatMessageCreateBody(BaseModel):
 
 
 async def _muhabbet_listing_uid(authenticated_user_id: str) -> str:
-    return str((await resolve_user_id(authenticated_user_id)) or authenticated_user_id).strip().lower()
+    """JWT sub → users.id UUID. FK ride_listings ilişkisi için mutlaka geçerli UUID dönmeli."""
+    resolved = await resolve_user_id(authenticated_user_id)
+    uid = str(resolved or authenticated_user_id).strip().lower()
+    try:
+        uuid.UUID(uid)
+    except Exception:
+        logger.error(
+            "muhabbet listing: oluşturan kullanıcı kimliği UUID değil veya çözümlenemedi: %s",
+            str(authenticated_user_id)[:96],
+        )
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı") from None
+    return uid
 
 
 def _muhabbet_listing_row_ts() -> str:
@@ -18321,8 +18332,13 @@ async def muhabbet_listing_create(
             "status": "active",
             "updated_at": _muhabbet_listing_row_ts(),
         }
-        ins = supabase.table("ride_listings").insert(insert_payload).execute()
+        # PostgREST: insert sonrası satır dönmek için .select() şart (aksi halde data boş kalır).
+        ins = supabase.table("ride_listings").insert(insert_payload).select("*").execute()
         if not ins.data:
+            logger.error(
+                "muhabbet_listing_create: insert tamamlandı ancak dönüş satırı yok (owner_col=%s)",
+                owner_col,
+            )
             return {"success": False, "detail": "İlan kaydedilemedi"}
         row = _ride_listing_response_row(dict(ins.data[0]))
         _enrich_ride_listings_creators([row])
