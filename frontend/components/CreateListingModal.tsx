@@ -1,5 +1,5 @@
 /**
- * Muhabbet ilan oluşturma modalı — sürücü / yolcu formları.
+ * Muhabbet teklif oluşturma modalı — sürücü / yolcu formları (UI dili).
  * Ekstra alanların bir kısmı geçici olarak `note` içinde birleştirilir (kalıcı değildir).
  */
 import React, { useEffect, useMemo, useState } from 'react';
@@ -79,7 +79,7 @@ export default function CreateListingModal({
       const vc = vehicleColor.trim();
       if (vb || vm || vc) meta.push(`Araç: ${[vb, vm, vc].filter(Boolean).join(' · ')}`);
     } else {
-      meta.push('Yolcu ilanı');
+      meta.push('Yolcu teklifi');
       const pv = parseFloat(priceText.replace(',', '.'));
       if (!Number.isNaN(pv) && pv >= 0) meta.push(`Bütçe: ${pv} ₺`);
     }
@@ -120,7 +120,7 @@ export default function CreateListingModal({
     const ft = fromText.trim();
     const tt = toText.trim();
     if (!ft || !tt) {
-      Alert.alert('İlan', 'Nereden ve nereye alanlarını doldurun.');
+      Alert.alert('Teklif', 'Nereden ve nereye alanlarını doldurun.');
       return;
     }
     setCreateBusy(true);
@@ -159,15 +159,15 @@ export default function CreateListingModal({
       if (handleUnauthorizedAndMaybeRedirect(res)) return;
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
       if (!res.ok || !d.success) {
-        Alert.alert('İlan', typeof d.detail === 'string' && d.detail ? d.detail : 'Kaydedilemedi.');
+        Alert.alert('Teklif', typeof d.detail === 'string' && d.detail ? d.detail : 'Kaydedilemedi.');
         return;
       }
-      Alert.alert('İlan', 'İlanın yayına alındı.');
+      Alert.alert('Teklif', 'Teklifin açıldı.');
       onClose();
       resetForm();
       onCreated?.();
     } catch {
-      Alert.alert('İlan', 'Bağlantı hatası.');
+      Alert.alert('Teklif', 'Bağlantı hatası.');
     } finally {
       setCreateBusy(false);
     }
@@ -176,12 +176,17 @@ export default function CreateListingModal({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalRoot} edges={['left', 'right', 'bottom']}>
-        <ScreenHeaderGradient title="Yeni ilan" onBack={onClose} backIcon="close" gradientColors={PRIMARY_GRAD} />
+        <ScreenHeaderGradient
+          title={createRole === 'driver' ? 'Sürücü teklifi oluştur' : 'Yolcu teklifi oluştur'}
+          onBack={onClose}
+          backIcon="close"
+          gradientColors={PRIMARY_GRAD}
+        />
         <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.inputLabel}>Şehir (şehir içi)</Text>
           <Text style={styles.cityLock}>{city}</Text>
 
-          <Text style={styles.inputLabel}>İlan tipi</Text>
+          <Text style={styles.inputLabel}>Teklif türü</Text>
           <View style={styles.rolePick}>
             <TouchableOpacity
               style={[styles.roleOpt, createRole === 'passenger' && styles.roleOptOn]}
@@ -197,14 +202,14 @@ export default function CreateListingModal({
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.inputLabel}>Nereden (from_text)</Text>
+          <Text style={styles.inputLabel}>Nereden</Text>
           <TextInput style={styles.input} value={fromText} onChangeText={setFromText} placeholder="Örn. Kızılay" />
-          <Text style={styles.inputLabel}>Nereye (to_text)</Text>
+          <Text style={styles.inputLabel}>Nereye</Text>
           <TextInput style={styles.input} value={toText} onChangeText={setToText} placeholder="Örn. Batıkent" />
 
           {createRole === 'driver' ? (
             <>
-              <Text style={styles.inputLabel}>Kalkış zamanı (ISO veya okunabilir)</Text>
+              <Text style={styles.inputLabel}>Saat</Text>
               <TextInput
                 style={styles.input}
                 value={departureIso}
@@ -212,16 +217,24 @@ export default function CreateListingModal({
                 placeholder="2026-04-25T08:00:00"
                 autoCapitalize="none"
               />
-              <Text style={styles.inputLabel}>Fiyat (₺)</Text>
-              <TextInput style={styles.input} value={priceText} onChangeText={setPriceText} keyboardType="decimal-pad" placeholder="150" />
-              <Text style={styles.inputLabel}>Koltuk sayısı</Text>
+              <Text style={styles.inputLabel}>Ücret</Text>
+              <TextInput style={styles.input} value={priceText} onChangeText={setPriceText} keyboardType="decimal-pad" placeholder="150 ₺" />
+              <Text style={styles.inputLabel}>Koltuk</Text>
               <TextInput style={styles.input} value={seatsText} onChangeText={setSeatsText} keyboardType="number-pad" placeholder="3" />
-              <Text style={styles.inputLabel}>Araç markası</Text>
-              <TextInput style={styles.input} value={vehicleBrand} onChangeText={setVehicleBrand} placeholder="Toyota" />
-              <Text style={styles.inputLabel}>Araç modeli</Text>
-              <TextInput style={styles.input} value={vehicleModel} onChangeText={setVehicleModel} placeholder="Corolla" />
-              <Text style={styles.inputLabel}>Araç rengi</Text>
-              <TextInput style={styles.input} value={vehicleColor} onChangeText={setVehicleColor} placeholder="Gri" />
+              <Text style={styles.inputLabel}>Araç bilgisi</Text>
+              <TextInput style={styles.input} value={vehicleBrand} onChangeText={setVehicleBrand} placeholder="Marka (örn. Toyota)" />
+              <TextInput
+                style={[styles.input, { marginTop: 8 }]}
+                value={vehicleModel}
+                onChangeText={setVehicleModel}
+                placeholder="Model (örn. Corolla)"
+              />
+              <TextInput
+                style={[styles.input, { marginTop: 8 }]}
+                value={vehicleColor}
+                onChangeText={setVehicleColor}
+                placeholder="Renk (örn. Gri)"
+              />
               <Text style={styles.inputLabel}>Tekrar</Text>
               <View style={styles.rolePick}>
                 {(['once', 'daily', 'weekly'] as const).map((rt) => (
@@ -234,15 +247,15 @@ export default function CreateListingModal({
               <TextInput style={styles.input} value={selectedDays} onChangeText={setSelectedDays} placeholder="örn. Cmt–Paz" />
               <Text style={styles.inputLabel}>Vakit penceresi (opsiyonel)</Text>
               <TextInput style={styles.input} value={timeWindow} onChangeText={setTimeWindow} placeholder="08:00–09:00" />
-              <Text style={styles.inputLabel}>Not</Text>
+              <Text style={styles.inputLabel}>Ek not</Text>
               <TextInput style={[styles.input, { minHeight: 88 }]} value={noteBody} onChangeText={setNoteBody} multiline placeholder="Ek bilgi" />
               <Text style={styles.hint}>
-                Geçici: tekrar, koltuk, günler, vakit ve araç özeti şimdilik not metnine eklenir; kalıcı çözüm değildir.
+                Geçici: tekrar, koltuk, günler, vakit ve araç bilgisi şimdilik not metnine eklenir; kalıcı çözüm değildir.
               </Text>
             </>
           ) : (
             <>
-              <Text style={styles.inputLabel}>İstediğin zaman (desired_time, ISO)</Text>
+              <Text style={styles.inputLabel}>Saat</Text>
               <TextInput
                 style={styles.input}
                 value={departureIso}
@@ -250,15 +263,15 @@ export default function CreateListingModal({
                 placeholder="2026-04-25T08:00:00"
                 autoCapitalize="none"
               />
-              <Text style={styles.inputLabel}>Bütçe (₺)</Text>
-              <TextInput style={styles.input} value={priceText} onChangeText={setPriceText} keyboardType="decimal-pad" placeholder="120" />
-              <Text style={styles.inputLabel}>Not</Text>
+              <Text style={styles.inputLabel}>Ücret</Text>
+              <TextInput style={styles.input} value={priceText} onChangeText={setPriceText} keyboardType="decimal-pad" placeholder="120 ₺" />
+              <Text style={styles.inputLabel}>Ek not</Text>
               <TextInput style={[styles.input, { minHeight: 88 }]} value={noteBody} onChangeText={setNoteBody} multiline placeholder="Ek bilgi" />
             </>
           )}
 
           <View style={{ height: 8 }} />
-          <GradientButton label="Yayına al" loading={createBusy} onPress={() => void submitCreate()} style={{ marginTop: 8 }} />
+          <GradientButton label="Teklifi aç" loading={createBusy} onPress={() => void submitCreate()} style={{ marginTop: 8 }} />
         </ScrollView>
       </SafeAreaView>
     </Modal>

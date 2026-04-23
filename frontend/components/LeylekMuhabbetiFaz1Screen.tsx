@@ -549,16 +549,18 @@ export default function LeylekMuhabbetiFaz1Screen({
   }, [loadNeighborhoods, loadGroups, loadMyGroups, loadRoadsters, feedGroup, loadFeed]);
 
   const openListingsCreate = useCallback(() => {
+    if (!requireMuhabbetToken()) return;
     setListingCreateRole('passenger');
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
-  }, []);
+  }, [tok]);
 
   const openListingCreateAs = useCallback((role: 'driver' | 'passenger') => {
+    if (!requireMuhabbetToken()) return;
     setListingCreateRole(role);
     setMainTab('listings');
     setListingCreateSignal((n) => n + 1);
-  }, []);
+  }, [tok]);
 
   const goMuhabbetProfile = useCallback(() => {
     router.push(`/muhabbet-profile/${encodeURIComponent(user.id)}` as Href);
@@ -959,7 +961,7 @@ export default function LeylekMuhabbetiFaz1Screen({
         key: 'route',
         title: 'Aynı Güzergah',
         line: myCount > 0 ? `${myCount} grupta` : 'Rota ekleyince',
-        hint: myCount > 0 ? 'Üye olduğun gruplar' : 'Eşleşmeler burada',
+        hint: myCount > 0 ? 'Üye olduğun gruplar' : 'Gruplar ve rota burada',
       },
       {
         key: 'hood',
@@ -1477,7 +1479,7 @@ export default function LeylekMuhabbetiFaz1Screen({
             ) : null}
             {mainTab === 'listings' && !tok ? (
               <View style={styles.tabPlaceholder}>
-                <Text style={styles.mutedLight}>İlanlar için oturum açmalısın.</Text>
+                <Text style={styles.mutedLight}>Teklifler için oturum açmalısın.</Text>
               </View>
             ) : null}
             {mainTab === 'chats' && tok ? (
@@ -1499,7 +1501,7 @@ export default function LeylekMuhabbetiFaz1Screen({
           <View style={[styles.muhabbetTabBar, { paddingBottom: Math.max(tabInsets.bottom, 6) }]}>
             {(['home', 'listings', 'chats'] as const).map((t) => {
               const active = mainTab === t;
-              const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'İlanlar' : 'Sohbetler';
+              const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'Teklifler' : 'Sohbetler';
               const icon =
                 t === 'home' ? ('home-outline' as const) : t === 'listings' ? ('newspaper-outline' as const) : ('chatbubbles-outline' as const);
               return (

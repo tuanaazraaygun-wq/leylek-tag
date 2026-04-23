@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti — Ana Sayfa sekmesi: özet, güzergah, ilan CTA, sohbet özeti, keşfe geçiş.
+ * Leylek Muhabbeti — Ana Sayfa sekmesi: özet, güzergah, teklif CTA, sohbet özeti, keşfe geçiş.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
@@ -149,26 +149,31 @@ export default function LeylekMuhabbetiHomeTab({
         <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
         <Text style={styles.heroEyebrow}>Şehrin</Text>
         <Text style={styles.heroCity}>{selectedCity}</Text>
-        <Text style={styles.heroSub}>Şehir içi ilanlar ve eşleşmeler — güzergahını paylaş, yolculuğunu planla.</Text>
+        <Text style={styles.heroSub}>Şehir içi teklifler — güzergahını paylaş, teklif aç veya sana uygun teklife talep gönder.</Text>
+      </View>
+
+      {/* Teklif CTA: oturumdan bağımsız her zaman görünür (token yoksa üst ekran uyarısı + tıklamada oturum kontrolü). */}
+      <View style={styles.inset}>
+        <Text style={styles.ctaSectionTitle}>Teklif aç</Text>
+        <View style={[styles.ctaRow, !tok && styles.ctaRowDim]}>
+          <TouchableOpacity style={styles.ctaBig} onPress={openDriver} activeOpacity={0.9}>
+            <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <Text style={styles.ctaBigEmoji}>🚗</Text>
+            <Text style={styles.ctaBigTitle}>Sürücü teklifi aç</Text>
+            <Text style={styles.ctaBigSub}>Aracın varsa sürücü teklifi aç — rotanı ve koltuğu paylaş.</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.ctaBig} onPress={openPassenger} activeOpacity={0.9}>
+            <LinearGradient colors={['#F59E0B', '#FBBF24']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <Text style={styles.ctaBigEmoji}>🧍</Text>
+            <Text style={styles.ctaBigTitle}>Yolcu teklifi aç</Text>
+            <Text style={styles.ctaBigSub}>Gitmek istiyorsan yolcu teklifi aç — nereye gideceğini yaz.</Text>
+          </TouchableOpacity>
+        </View>
+        {!tok ? <Text style={styles.ctaHint}>Teklif açmak için oturum açman yeterli — butona basınca yönlendirilirsin.</Text> : null}
       </View>
 
       {tok ? (
         <View style={styles.inset}>
-          <View style={styles.ctaRow}>
-            <TouchableOpacity style={styles.ctaBig} onPress={openDriver} activeOpacity={0.9}>
-              <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-              <Text style={styles.ctaBigEmoji}>🚗</Text>
-              <Text style={styles.ctaBigTitle}>Sürücü İlanı Ver</Text>
-              <Text style={styles.ctaBigSub}>Gidiyorum — boş koltuk paylaş</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.ctaBig} onPress={openPassenger} activeOpacity={0.9}>
-              <LinearGradient colors={['#F59E0B', '#FBBF24']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-              <Text style={styles.ctaBigEmoji}>🧍</Text>
-              <Text style={styles.ctaBigTitle}>Yolcu İlanı Ver</Text>
-              <Text style={styles.ctaBigSub}>Gitmek istiyorum — bütçeni yaz</Text>
-            </TouchableOpacity>
-          </View>
-
           <RouteSummaryCard
             apiBaseUrl={apiBaseUrl}
             accessToken={tok}
@@ -193,7 +198,7 @@ export default function LeylekMuhabbetiHomeTab({
               <Text style={styles.summaryMeta}>
                 {roadstersMatches.length > 0
                   ? `${roadstersMatches.length} kişi bu rotada`
-                  : 'Bu rotada eşleşme için ilan verebilir veya ilanlara göz atabilirsin.'}
+                  : 'Bu rotada teklif açabilir veya Teklifler sekmesinden sana uygun tekliflere talep gönderebilirsin.'}
               </Text>
             </>
           ) : (
@@ -209,17 +214,17 @@ export default function LeylekMuhabbetiHomeTab({
           >
             <Ionicons name="notifications-outline" size={22} color={ACCENT} />
             <Text style={styles.alertText}>
-              {pendingIncoming} bekleyen eşleşme isteğin var. Teklifleri görmek için dokun.
+              {pendingIncoming} bekleyen talebin var. Gelen talepleri görmek için dokun.
             </Text>
           </Pressable>
         ) : null}
 
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Bana uygun ilanlar</Text>
-          <Text style={styles.summaryHint}>Şehrindeki son ilanlar — detay için İlanlar sekmesi</Text>
+          <Text style={styles.summaryTitle}>Bana uygun teklifler</Text>
+          <Text style={styles.summaryHint}>Şehrindeki son teklifler — detay için Teklifler sekmesi</Text>
           {feedLoading ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} /> : null}
           {!feedLoading && feedPreview.length === 0 ? (
-            <Text style={styles.summaryMeta}>Henüz önizleme yok — ilan vererek başlat.</Text>
+            <Text style={styles.summaryMeta}>Henüz önizleme yok — teklif açarak başlat.</Text>
           ) : (
             feedPreview.map((L) => {
               const r = (L.role_type || '').toLowerCase();
@@ -241,10 +246,10 @@ export default function LeylekMuhabbetiHomeTab({
 
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Son sohbetler</Text>
-          <Text style={styles.summaryHint}>Kabul edilen eşleşmelerden kısa özet</Text>
+          <Text style={styles.summaryHint}>Kabul edilen tekliflerden kısa özet</Text>
           {convLoading ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} /> : null}
           {!convLoading && convRows.length === 0 ? (
-            <Text style={styles.summaryMeta}>Henüz sohbet yok — ilanlara katıl, eşleş, konuş.</Text>
+            <Text style={styles.summaryMeta}>Henüz sohbet yok — teklife talep gönder, kabul sonrası konuş.</Text>
           ) : (
             convRows.map((c, idx) => {
               const cid = String(c.conversation_id || c.id || '');
@@ -307,14 +312,24 @@ const styles = StyleSheet.create({
   heroCity: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
   heroSub: { color: 'rgba(255,255,255,0.92)', fontSize: 14, lineHeight: 20, marginTop: 8 },
   inset: { paddingHorizontal: 16, marginTop: 12 },
+  ctaSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    letterSpacing: 0.3,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
   ctaRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  ctaRowDim: { opacity: 0.92 },
+  ctaHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 18 },
   ctaBig: {
     flex: 1,
     borderRadius: 18,
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 12,
     overflow: 'hidden',
-    minHeight: 120,
+    minHeight: 128,
     justifyContent: 'center',
     ...CARD_SHADOW,
   },

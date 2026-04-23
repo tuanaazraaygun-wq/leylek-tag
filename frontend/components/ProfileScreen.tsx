@@ -102,7 +102,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
               ⭐ {p.rating != null ? Number(p.rating).toFixed(1) : '—'} · 🧭 {p.total_trips ?? 0} yolculuk
             </Text>
             <Text style={styles.line}>Tamamlanan eşleşme: {p.completed_matches ?? 0}</Text>
-            <Text style={styles.line}>Aktif ilan: {p.active_listings ?? 0}</Text>
+            <Text style={styles.line}>Aktif teklif: {p.active_listings ?? 0}</Text>
           </View>
 
           {isDriver && p.extras?.vehicle_summary ? (

@@ -201,7 +201,7 @@ export default function ConversationsScreen({
   const listHeaderEmbedded = embedded ? (
     <View style={styles.embedHeader}>
       <Text style={styles.embedTitle}>Sohbetler</Text>
-      <Text style={styles.embedSub}>Kabul edilen eşleşmeler burada görünür.</Text>
+      <Text style={styles.embedSub}>Kabul edilen teklifler sonrası sohbet burada görünür.</Text>
     </View>
   ) : null;
 
@@ -237,7 +237,7 @@ export default function ConversationsScreen({
             <View style={styles.emptyBox}>
               <Text style={styles.emptyTitle}>Henüz sohbet yok</Text>
               <Text style={styles.emptySub}>
-                Kabul edilen eşleşmeler burada listelenir. İlanlar sekmesinden eşleş, sonra mesajlaş.
+                Kabul edilen teklifler sonrası sohbet burada listelenir. Teklifler sekmesinden talep gönder, kabul sonrası mesajlaş.
               </Text>
             </View>
           }

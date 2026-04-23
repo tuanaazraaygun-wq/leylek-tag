@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti — İlanlar sekmesi: filtre, feed, eşleşme, ilan oluşturma.
+ * Leylek Muhabbeti — Teklifler sekmesi: filtre, feed, talep, teklif oluşturma (UI dili).
  *
  * GEÇİCİ (test / Faz 1): seats_count, repeat_type, selected_days, time_window
  * bilgileri ayrı API kolonları yokken `note` metnine gömülür — kalıcı çözüm DEĞİLDİR.
@@ -108,8 +108,8 @@ function pushToChat(
 
 function statusLabel(st: string | null | undefined): string {
   const x = (st || '').toLowerCase();
-  if (x === 'active') return 'Yayında';
-  if (x === 'matched') return 'Eşleşti';
+  if (x === 'active') return 'Açık teklif';
+  if (x === 'matched') return 'Kabul edildi';
   if (x === 'closed') return 'Kapandı';
   if (x === 'cancelled') return 'İptal';
   return st || '—';
@@ -129,9 +129,9 @@ function viewerIsDriverRole(appRole: string): boolean {
 function matchCtaLabel(listingRole: string | null | undefined, appRole: string): string {
   const lr = (listingRole || '').toLowerCase();
   const driverListing = lr === 'driver' || lr === 'private_driver';
-  if (driverListing && !viewerIsDriverRole(appRole)) return 'Bu yolculuğa katıl';
+  if (driverListing && !viewerIsDriverRole(appRole)) return 'Bu yolculuğa katılmak istiyorum';
   if (!driverListing && viewerIsDriverRole(appRole)) return 'Bu yolcuyu alabilirim';
-  return 'Eşleşmek istiyorum';
+  return 'Talep gönder';
 }
 
 export default function ListingsTab({
@@ -248,14 +248,14 @@ export default function ListingsTab({
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
       if (!res.ok || !d.success) {
         setListings(snapshot);
-        Alert.alert('Eşleşme', typeof d.detail === 'string' && d.detail ? d.detail : 'İstek gönderilemedi.');
+        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Talep gönderilemedi.');
         return;
       }
       void loadFeed();
       void loadOutgoing();
     } catch {
       setListings(snapshot);
-      Alert.alert('Eşleşme', 'Bağlantı hatası.');
+      Alert.alert('Talep', 'Bağlantı hatası.');
     } finally {
       setMatchBusyId(null);
     }
@@ -265,7 +265,7 @@ export default function ListingsTab({
     <View style={styles.chipRow}>
       {(['all', 'driver', 'passenger'] as const).map((k) => {
         const active = roleFilter === k;
-        const label = k === 'all' ? 'Tümü' : k === 'driver' ? 'Sürücü ilanları' : 'Yolcu ilanları';
+        const label = k === 'all' ? 'Tümü' : k === 'driver' ? 'Sürücü teklifleri' : 'Yolcu teklifleri';
         return (
           <TouchableOpacity
             key={k}
@@ -283,29 +283,29 @@ export default function ListingsTab({
   return (
     <View style={styles.root}>
       <View style={styles.toolbar}>
-        {filterChips}
         <TouchableOpacity
           onPress={() => {
             setModalInitialRole('passenger');
             setCreateOpen(true);
           }}
           activeOpacity={0.9}
-          style={styles.newListingBtn}
+          style={styles.newListingBtnHero}
         >
           <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          <Ionicons name="add" size={22} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={styles.newListingBtnText}>İlan Ver</Text>
+          <Ionicons name="add-circle" size={24} color="#fff" style={{ marginRight: 8 }} />
+          <Text style={styles.newListingBtnHeroText}>Teklif aç</Text>
         </TouchableOpacity>
+        {filterChips}
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.lead}>
-          Şehir içi yolcu ve sürücü ilanları — güvenli eşleşme, kabul sonrası sohbet.
+          Şehir içi sürücü ve yolcu teklifleri — talep gönder, kabul sonrası sohbet.
         </Text>
 
         {loadingFeed ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 16 }} /> : null}
         {!loadingFeed && listings.length === 0 ? (
-          <Text style={styles.muted}>Bu filtrede ilan yok. İlk ilanı sen verebilirsin.</Text>
+          <Text style={styles.muted}>Bu filtrede teklif yok. İlk teklifi sen açabilirsin.</Text>
         ) : null}
 
         {listings.map((L) => {
@@ -356,7 +356,7 @@ export default function ListingsTab({
                   style={styles.incomingHintWrap}
                 >
                   <Text style={styles.incomingHint}>
-                    {L.incoming_request_count} eşleşme isteği — yanıtlamak için dokun
+                    {L.incoming_request_count} talep — yanıtlamak için dokun
                   </Text>
                   <Ionicons name="chevron-forward" size={16} color={ACCENT} />
                 </TouchableOpacity>
@@ -380,7 +380,7 @@ export default function ListingsTab({
                   />
                 ) : pending ? (
                   <View style={styles.sentPill}>
-                    <Text style={styles.sentPillText}>İstek gönderildi</Text>
+                    <Text style={styles.sentPillText}>Talep gönderildi</Text>
                   </View>
                 ) : (
                   <GradientButton
@@ -395,24 +395,24 @@ export default function ListingsTab({
           );
         })}
 
-        <Text style={styles.sectionTitle}>Gelen teklifler</Text>
-        <Text style={styles.muted}>İlanına gelen eşleşme isteklerini ayrı ekranda yönet.</Text>
+        <Text style={styles.sectionTitle}>Gelen talepler</Text>
+        <Text style={styles.muted}>Teklifine gelen talepleri ayrı ekranda yönet.</Text>
         <GradientButton
-          label="Gelen teklifleri aç"
+          label="Gelen talepleri aç"
           variant="secondary"
           onPress={() => router.push('/muhabbet-match-requests' as Href)}
           style={{ marginTop: 10, marginBottom: 8 }}
         />
 
-        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Giden istekler</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Giden talepler</Text>
         {loadingOut ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} /> : null}
-        {!loadingOut && outgoing.length === 0 ? <Text style={styles.muted}>Henüz istek yok.</Text> : null}
+        {!loadingOut && outgoing.length === 0 ? <Text style={styles.muted}>Henüz talep yok.</Text> : null}
         {outgoing.map((r) => {
           const st = (r.status || '').toLowerCase();
           const isAcc = st === 'accepted' && r.conversation_id;
           return (
             <View key={r.id} style={styles.card}>
-              <Text style={styles.cardName}>{r.receiver_name || 'İlan sahibi'}</Text>
+              <Text style={styles.cardName}>{r.receiver_name || 'Teklif sahibi'}</Text>
               <Text style={styles.cardRoute}>{routeLine(r.listing?.from_text, r.listing?.to_text)}</Text>
               <Text style={styles.mutedSmall}>{st === 'pending' ? 'Beklemede' : st === 'accepted' ? 'Kabul' : st === 'rejected' ? 'Red' : st}</Text>
               {isAcc ? (
@@ -454,7 +454,7 @@ export default function ListingsTab({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  toolbar: { paddingHorizontal: 16, paddingBottom: 8, gap: 10 },
+  toolbar: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, gap: 12 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     paddingHorizontal: 12,
@@ -465,15 +465,18 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: 'rgba(59,130,246,0.2)' },
   chipText: { fontSize: 14, fontWeight: '600', color: TEXT_SECONDARY },
   chipTextOn: { color: '#1D4ED8' },
-  newListingBtn: {
+  newListingBtnHero: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    minHeight: 52,
     overflow: 'hidden',
+    ...CARD_SHADOW,
   },
-  newListingBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  newListingBtnHeroText: { color: '#fff', fontWeight: '800', fontSize: 17 },
   scroll: { paddingHorizontal: 16, paddingBottom: 24 },
   lead: { color: TEXT_SECONDARY, fontSize: 14, lineHeight: 20, marginBottom: 12 },
   muted: { color: TEXT_SECONDARY, fontSize: 15, marginVertical: 8 },

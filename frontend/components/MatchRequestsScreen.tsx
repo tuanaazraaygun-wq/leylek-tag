@@ -1,5 +1,5 @@
 /**
- * Muhabbet — ilan sahibine gelen eşleşme teklifleri (/listing-match-requests/me).
+ * Muhabbet — teklif sahibine gelen talepler (/listing-match-requests/me).
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -139,7 +139,7 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
         detail?: string;
       };
       if (!res.ok || !d.success || !d.conversation_id) {
-        Alert.alert('İstek', typeof d.detail === 'string' && d.detail ? d.detail : 'Kabul edilemedi.');
+        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Kabul edilemedi.');
         return;
       }
       const sid = String(row.sender_user_id || '').trim();
@@ -152,7 +152,7 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
       });
       void load();
     } catch {
-      Alert.alert('İstek', 'Bağlantı hatası.');
+      Alert.alert('Talep', 'Bağlantı hatası.');
     } finally {
       setBusyId(null);
       setBusyAction(null);
@@ -172,12 +172,12 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
       });
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
       if (!res.ok || !d.success) {
-        Alert.alert('İstek', typeof d.detail === 'string' && d.detail ? d.detail : 'Reddedilemedi.');
+        Alert.alert('Talep', typeof d.detail === 'string' && d.detail ? d.detail : 'Reddedilemedi.');
         return;
       }
       void load();
     } catch {
-      Alert.alert('İstek', 'Bağlantı hatası.');
+      Alert.alert('Talep', 'Bağlantı hatası.');
     } finally {
       setBusyId(null);
       setBusyAction(null);
@@ -193,7 +193,7 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
       <ScreenHeaderGradient
-        title="Gelen teklifler"
+        title="Gelen talepler"
         onBack={onBack ?? (() => router.back())}
         gradientColors={PRIMARY_GRAD}
       />
@@ -208,9 +208,9 @@ export default function MatchRequestsScreen({ apiBaseUrl, onBack }: MatchRequest
             <RefreshControl refreshing={refreshing} onRefresh={() => void onPull()} tintColor={PRIMARY_GRAD[0]} />
           }
         >
-          <Text style={styles.lead}>İlanına gelen eşleşme istekleri — kabul sonrası sohbet açılır.</Text>
+          <Text style={styles.lead}>Teklifine gelen talepler — kabul sonrası sohbet açılır.</Text>
           {rows.length === 0 ? (
-            <Text style={styles.muted}>Bekleyen teklif yok.</Text>
+            <Text style={styles.muted}>Bekleyen talep yok.</Text>
           ) : (
             rows.map((r) => {
               const name = (r.sender_user_name || r.sender_name || 'Kullanıcı').trim();
