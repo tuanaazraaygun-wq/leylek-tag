@@ -17994,10 +17994,52 @@ async def muhabbet_create_report(
 # ==================== LEYLEK MUHABBETİ — FAZ 1: İLAN (ride_listings) + EŞLEŞME İSTEĞİ ====================
 
 
+# İstemci CreateListingModal: driver -> gidiyorum + driver; passenger -> gidecegim + passenger
 _MUHABBET_LISTING_TYPES = frozenset({"gidiyorum", "gidecegim", "beni_alsin", "ozel_sofor"})
 _MUHABBET_LISTING_ROLES = frozenset({"driver", "passenger", "private_driver"})
 _MUHABBET_LISTING_STATUSES = frozenset({"active", "matched", "closed", "cancelled"})
 _MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelled"})
+
+# ride_listings INSERT — migration: backend/migrations/leylek_muhabbet_ride_listings.sql
+# + yaygın owner kolon adları. Tabloda olmayan anahtarlar sanitize ile atılır.
+_RIDE_LISTINGS_INSERT_COLUMN_WHITELIST = frozenset(
+    {
+        "created_by_user_id",
+        "user_id",
+        "creator_user_id",
+        "linked_user_route_id",
+        "linked_pattern_hash",
+        "city",
+        "from_text",
+        "to_text",
+        "start_lat",
+        "start_lng",
+        "end_lat",
+        "end_lng",
+        "departure_time",
+        "listing_type",
+        "role_type",
+        "price_amount",
+        "note",
+        "status",
+        "updated_at",
+    }
+)
+
+
+def _sanitize_ride_listing_insert_row(row: dict, owner_col: str) -> dict:
+    """Supabase ride_listings şemasında olmayan kolonları insert'ten çıkar (owner_col her zaman izinli)."""
+    out: dict = {}
+    dropped: list = []
+    oc = (owner_col or "").strip()
+    for k, v in (row or {}).items():
+        if k == oc or k in _RIDE_LISTINGS_INSERT_COLUMN_WHITELIST:
+            out[k] = v
+        else:
+            dropped.append(k)
+    if dropped:
+        logger.warning("[muhabbet-listings] sanitize: tablo whitelist'inde olmayan kolonlar atıldı: %s", dropped)
+    return out
 
 
 def _ride_listings_owner_column() -> str:
@@ -18379,6 +18421,11 @@ async def muhabbet_listing_create(
             if not lph and rr.data[0].get("pattern_hash"):
                 lph = str(rr.data[0].get("pattern_hash")).strip() or None
         owner_col = _ride_listings_owner_column()
+        try:
+            body_dump = body.model_dump(mode="json")
+        except Exception:
+            body_dump = body.model_dump()
+        logger.info("%s validated body model_dump=%s", LP, body_dump)
         logger.info(
             "%s create request auth_sub=%s resolved_uid=%s owner_col=%s city=%s listing_type=%s role_type=%s "
             "departure=%s price=%s note_len=%s linked_route=%s",
@@ -18398,12 +18445,20 @@ async def muhabbet_listing_create(
         last_exc: Optional[BaseException] = None
         ins = None
         for idx, insert_payload in enumerate(variants):
-            logger.info("%s insert attempt idx=%s keys=%s payload=%s", LP, idx, list(insert_payload.keys()), insert_payload)
+            payload = _sanitize_ride_listing_insert_row(insert_payload, owner_col)
+            logger.info(
+                "%s insert attempt idx=%s keys=%s raw_keys=%s payload=%s",
+                LP,
+                idx,
+                list(payload.keys()),
+                list(insert_payload.keys()),
+                payload,
+            )
             try:
-                ins = supabase.table("ride_listings").insert(insert_payload).select("*").execute()
+                ins = supabase.table("ride_listings").insert(payload).select("*").execute()
             except Exception as attempt_exc:
                 last_exc = attempt_exc
-                logger.warning("%s insert attempt idx=%s failed: %s", LP, idx, attempt_exc, exc_info=True)
+                logger.exception("%s insert attempt idx=%s Supabase insert exception", LP, idx)
                 continue
             err_attr = getattr(ins, "error", None)
             if err_attr:
@@ -18432,12 +18487,13 @@ async def muhabbet_listing_create(
             else:
                 logger.error("%s create failed: no successful insert (empty responses)", LP)
             msg = str(last_exc or "").lower()
+            dbg = (f" ({str(last_exc)})" if last_exc else "")[:950]
             if "could not find" in msg and "column" in msg:
                 raise HTTPException(
                     status_code=503,
-                    detail="Teklif oluşturulamadı. Lütfen bir süre sonra tekrar deneyin.",
+                    detail=f"Teklif oluşturulamadı. Lütfen bir süre sonra tekrar deneyin.{dbg}",
                 ) from last_exc
-            raise HTTPException(status_code=500, detail="Teklif kaydedilemedi. Lütfen tekrar deneyin.") from last_exc
+            raise HTTPException(status_code=500, detail=f"Teklif kaydedilemedi. Lütfen tekrar deneyin.{dbg}") from last_exc
 
         row = _ride_listing_response_row(dict(ins.data[0]))
         try:
@@ -18455,12 +18511,13 @@ async def muhabbet_listing_create(
     except Exception as e:
         logger.exception("%s create failed (unhandled)", LP)
         msg = str(e).lower()
+        dbg = (f" ({str(e)})")[:950]
         if "could not find" in msg and "column" in msg:
             raise HTTPException(
                 status_code=503,
-                detail="Teklif oluşturulamadı. Lütfen bir süre sonra tekrar deneyin.",
+                detail=f"Teklif oluşturulamadı. Lütfen bir süre sonra tekrar deneyin.{dbg}",
             ) from e
-        raise HTTPException(status_code=500, detail="Teklif kaydedilemedi. Lütfen tekrar deneyin.") from e
+        raise HTTPException(status_code=500, detail=f"Teklif kaydedilemedi. Lütfen tekrar deneyin.{dbg}") from e
 
 
 @api_router.post("/muhabbet/listings")
@@ -18469,6 +18526,10 @@ async def muhabbet_listings_create_alias(
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
     """İlan oluşturma kısa yolu; `/muhabbet/listings/create` ile aynı işlev."""
+    logger.info(
+        "[muhabbet-listings] POST /muhabbet/listings (alias -> muhabbet_listing_create) auth_sub=%s",
+        str(authenticated_user_id)[:48],
+    )
     return await muhabbet_listing_create(body, authenticated_user_id)
 
 

@@ -486,6 +486,7 @@ export default function CreateListingModal({
 
     setCreateBusy(true);
     try {
+      // Backend ile birebir: server.py _MUHABBET_LISTING_TYPES / _MUHABBET_LISTING_ROLES
       const listing_type = createRole === 'driver' ? 'gidiyorum' : 'gidecegim';
       const role_type = createRole === 'driver' ? 'driver' : 'passenger';
       const departure_time = buildDepartureIso(departureTab, futurePick, departureHm.h, departureHm.m);
