@@ -30,7 +30,7 @@ import { GradientButton } from './GradientButton';
 import { useRouter, type Href } from 'expo-router';
 import LeylekMuhabbetiHomeTab from './LeylekMuhabbetiHomeTab';
 import ListingsTab from './ListingsTab';
-import ConversationsScreen, { buildMuhabbetChatHref, type MuhabbetConversationListItem } from './ConversationsScreen';
+import ConversationsScreen from './ConversationsScreen';
 
 const CITY_THEMES: Record<string, { gradient: [string, string]; icon: keyof typeof Ionicons.glyphMap }> = {
   Ankara: { gradient: ['#1a1a2e', '#16213e'], icon: 'business' },
@@ -300,6 +300,8 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [mainTab, setMainTab] = useState<'home' | 'listings' | 'chats'>('home');
   const [listingCreateSignal, setListingCreateSignal] = useState(0);
   const [listingCreateRole, setListingCreateRole] = useState<'driver' | 'passenger'>('passenger');
+  const [listingFocusId, setListingFocusId] = useState<string | null>(null);
+  const [listingFocusNonce, setListingFocusNonce] = useState(0);
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailGroup, setDetailGroup] = useState<GroupRow | null>(null);
@@ -500,28 +502,18 @@ export default function LeylekMuhabbetiFaz1Screen({
     setListingCreateSignal((n) => n + 1);
   }, [tok]);
 
+  const openListingsForListing = useCallback((listingId: string) => {
+    const id = (listingId || '').trim();
+    if (id) {
+      setListingFocusId(id);
+      setListingFocusNonce((n) => n + 1);
+    }
+    setMainTab('listings');
+  }, []);
+
   const goMuhabbetProfile = useCallback(() => {
     router.push(`/muhabbet-profile/${encodeURIComponent(user.id)}` as Href);
   }, [router, user.id]);
-
-  const onPressConversationPreview = useCallback(
-    (c: MuhabbetConversationListItem) => {
-      const cid = String(c.conversation_id || c.id || '').trim();
-      if (!cid) {
-        setMainTab('chats');
-        return;
-      }
-      router.push(
-        buildMuhabbetChatHref(cid, {
-          otherUserName: c.other_user_name || 'Kullanıcı',
-          fromText: (c.from_text && String(c.from_text)) || '',
-          toText: (c.to_text && String(c.to_text)) || '',
-          otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
-        })
-      );
-    },
-    [router],
-  );
 
   const openGroupDetail = async (g: GroupRow) => {
     setDetailVisible(true);
@@ -1384,12 +1376,14 @@ export default function LeylekMuhabbetiFaz1Screen({
                   accessToken={tok}
                   selectedCity={selectedCity}
                   refreshNonce={inboxSync}
-                  onOpenLegacyDiscovery={() => setMuhabbetSurface('legacy')}
                   onOpenListingsCreate={openListingsCreate}
                   onOpenDriverListing={() => openListingCreateAs('driver')}
                   onOpenPassengerListing={() => openListingCreateAs('passenger')}
                   onOpenMatchRequests={() => router.push('/muhabbet-match-requests' as Href)}
-                  onPressConversationPreview={onPressConversationPreview}
+                  onOpenListingsForListing={openListingsForListing}
+                  currentUserId={user.id}
+                  viewerAppRole={user.role}
+                  requireToken={requireMuhabbetToken}
                 />
               </ScrollView>
             ) : null}
@@ -1405,6 +1399,8 @@ export default function LeylekMuhabbetiFaz1Screen({
                   openCreateSignal={listingCreateSignal}
                   initialCreateRole={listingCreateRole}
                   requireToken={requireMuhabbetToken}
+                  focusListingId={listingFocusId}
+                  focusListingNonce={listingFocusNonce}
                 />
               </View>
             ) : null}
@@ -1604,9 +1600,9 @@ const styles = StyleSheet.create({
   muhabbetTabLabel: { marginTop: 2, fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
   muhabbetTabLabelActive: { color: '#2563EB' },
   cityChipLight: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: CARD_RADIUS,
+    marginHorizontal: 14,
+    marginBottom: 8,
+    borderRadius: 18,
     backgroundColor: CARD_BG,
     overflow: 'hidden',
     ...CARD_SHADOW,
@@ -1614,11 +1610,12 @@ const styles = StyleSheet.create({
   cityChipLightInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
   },
-  cityChipLightText: { flex: 1, color: TEXT_PRIMARY, fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
+  cityChipLightText: { color: TEXT_PRIMARY, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
   feedRoot: { flex: 1, backgroundColor: MUHAB_SURFACE },
   feedListContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
   postCardLight: {

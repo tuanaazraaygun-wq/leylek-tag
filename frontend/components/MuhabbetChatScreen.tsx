@@ -312,9 +312,17 @@ export default function MuhabbetChatScreen({
         .toLowerCase();
       const text = String(payload?.text ?? '');
       const created = String(payload?.created_at || new Date().toISOString());
+      const myLo = (myId || '').trim().toLowerCase();
       setRows((prev) => {
-        if (prev.some((m) => m.id === mid)) return prev;
-        return [...prev, { id: mid, body: text, sender_user_id: sid, created_at: created }];
+        let next = prev;
+        if (myLo && sid === myLo) {
+          next = prev.filter((m) => {
+            if (!String(m.id).startsWith('local-')) return true;
+            return String(m.body || '') !== text;
+          });
+        }
+        if (next.some((m) => m.id === mid)) return next;
+        return [...next, { id: mid, body: text, sender_user_id: sid, created_at: created }];
       });
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     };
@@ -338,11 +346,30 @@ export default function MuhabbetChatScreen({
       socket.off('message', onMsg);
       socket.off('message_deleted', onDel);
     };
+  }, [cid, myId]);
+
+  useEffect(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    const onMuErr = (p: { code?: string; detail?: string; conversation_id?: string; max?: number }) => {
+      const conv = p?.conversation_id != null ? String(p.conversation_id).toLowerCase() : '';
+      if (conv && conv !== cid.toLowerCase()) return;
+      const det = typeof p?.detail === 'string' ? p.detail : '';
+      if (p?.code === 'text_too_long') {
+        Alert.alert('Mesaj çok uzun', det || `En fazla ${p?.max ?? 2000} karakter.`);
+        return;
+      }
+      Alert.alert('Sohbet', det || 'İşlem yapılamadı.');
+    };
+    socket.on('muhabbet_error', onMuErr);
+    return () => {
+      socket.off('muhabbet_error', onMuErr);
+    };
   }, [cid]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
-      if (!cid || !messageId) return;
+      if (!cid || !messageId || String(messageId).startsWith('local-')) return;
       getOrCreateSocket().emit('delete_message', { message_id: messageId, conversation_id: cid });
     },
     [cid]
@@ -351,6 +378,16 @@ export default function MuhabbetChatScreen({
   const send = async () => {
     const body = draft.trim();
     if (!body || !cid) return;
+    const myLo = (myId || '').trim().toLowerCase();
+    const pendingId =
+      myLo && body ? `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}` : null;
+    if (pendingId) {
+      setRows((p) => [
+        ...p,
+        { id: pendingId, body, sender_user_id: myLo, created_at: new Date().toISOString() },
+      ]);
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    }
     setDraft('');
     setSending(true);
     try {
@@ -376,6 +413,9 @@ export default function MuhabbetChatScreen({
     } catch {
       Alert.alert('Gönderilemedi', 'Socket bağlantısını kontrol edin.');
       setDraft(body);
+      if (pendingId) {
+        setRows((p) => p.filter((m) => m.id !== pendingId));
+      }
     } finally {
       setSending(false);
     }
@@ -483,7 +523,7 @@ export default function MuhabbetChatScreen({
       } catch {
         /* noop */
       }
-      socket.emit('leylek_pair_request', { conversation_id: cid });
+      socket.emit('leylek_pair_match_request', { conversation_id: cid });
     } catch {
       if (tmo) {
         clearTimeout(tmo);
@@ -561,10 +601,9 @@ export default function MuhabbetChatScreen({
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               ListHeaderComponent={
                 <View style={styles.privacyBanner}>
-                  <Text style={styles.privacyBannerTxt}>
-                    Güvenliğiniz bizim önceliğimizdir.{'\n'}
-                    Mesaj içerikleri sunucularımızda saklanmaz.{'\n'}
-                    Yazışmalar yalnızca görüşme sırasında geçici olarak iletilir.
+                  <Text style={styles.privacyBannerTxt} numberOfLines={4}>
+                    Güvenliğiniz bizim önceliğimizdir. Mesaj içerikleri sunucularımızda saklanmaz. Yazışmalar yalnızca
+                    görüşme sırasında geçici olarak iletilir.
                   </Text>
                 </View>
               }

@@ -5,7 +5,7 @@
  * bilgileri ayrı API kolonları yokken `note` metnine gömülür — kalıcı çözüm DEĞİLDİR.
  * Sonraki faz: ride_listings + API + migration ile gerçek kolonlara taşınacak.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -43,6 +43,8 @@ export type FeedListing = {
   match_request_status?: string;
   conversation_id?: string | null;
   incoming_request_count?: number;
+  transport_label?: string | null;
+  vehicle_kind?: string | null;
 };
 
 type MatchRequestRow = {
@@ -67,6 +69,9 @@ export type ListingsTabProps = {
   openCreateSignal: number;
   initialCreateRole?: 'driver' | 'passenger';
   requireToken: () => boolean;
+  /** Ana sayfadan teklif kartına basılınca bu ilan üste taşınır (nonce her odakta artırılmalı). */
+  focusListingId?: string | null;
+  focusListingNonce?: number;
 };
 
 /** @deprecated ListingsTab kullanın */
@@ -122,6 +127,14 @@ function roleBadge(role: string | undefined): { label: string; tone: 'drv' | 'pa
   return { label: 'Yolcu', tone: 'pax' };
 }
 
+function transportLine(L: FeedListing): string {
+  const tl = (L.transport_label || '').trim();
+  if (tl) return tl;
+  const vk = (L.vehicle_kind || '').toLowerCase();
+  if (vk === 'motor' || vk === 'motorcycle') return 'Motor';
+  return 'Araç';
+}
+
 export default function ListingsTab({
   apiUrl,
   accessToken,
@@ -132,6 +145,8 @@ export default function ListingsTab({
   openCreateSignal,
   initialCreateRole = 'passenger',
   requireToken,
+  focusListingId = null,
+  focusListingNonce = 0,
 }: ListingsTabProps) {
   const router = useRouter();
   const tok = accessToken.trim();
@@ -179,8 +194,16 @@ export default function ListingsTab({
         return;
       }
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; listings?: FeedListing[] };
-      if (res.ok && d.success && Array.isArray(d.listings)) setListings(d.listings);
-      else setListings([]);
+      if (res.ok && d.success && Array.isArray(d.listings)) {
+        const openOnly = d.listings.filter((row) => {
+          const st = (row.status || '').toLowerCase();
+          if (st === 'matched' || st === 'closed' || st === 'cancelled') return false;
+          const m = (row.match_request_status || '').toLowerCase();
+          if (m === 'accepted' && row.conversation_id) return false;
+          return true;
+        });
+        setListings(openOnly);
+      } else setListings([]);
     } catch {
       setListings([]);
     } finally {
@@ -220,6 +243,25 @@ export default function ListingsTab({
   useEffect(() => {
     if (tok) void loadAll();
   }, [tok, loadAll, selectedCity, syncVersion]);
+
+  const orderedListings = useMemo(() => {
+    const fid = (focusListingId || '').trim();
+    if (!fid) return listings;
+    const i = listings.findIndex((x) => x.id === fid);
+    if (i <= 0) return listings;
+    const copy = [...listings];
+    const [head] = copy.splice(i, 1);
+    return [head, ...copy];
+  }, [listings, focusListingId, focusListingNonce]);
+
+  const [focusHighlightId, setFocusHighlightId] = useState<string | null>(null);
+  useEffect(() => {
+    const fid = (focusListingId || '').trim();
+    if (!fid || !focusListingNonce) return;
+    setFocusHighlightId(fid);
+    const t = setTimeout(() => setFocusHighlightId(null), 4500);
+    return () => clearTimeout(t);
+  }, [focusListingId, focusListingNonce]);
 
   const sendMatchRequest = async (listingId: string) => {
     if (!requireToken() || !tok) return;
@@ -302,24 +344,29 @@ export default function ListingsTab({
           <Text style={styles.muted}>Bu filtrede teklif yok. İlk teklifi sen açabilirsin.</Text>
         ) : null}
 
-        {listings.map((L) => {
+        {orderedListings.map((L) => {
           const own = String(L.created_by_user_id || '').toLowerCase() === String(currentUserId || '').toLowerCase();
           const st = (L.match_request_status || 'none').toLowerCase();
           const rb = roleBadge(L.role_type || undefined);
           const accepted = st === 'accepted' && L.conversation_id;
           const pending = st === 'pending';
           const isDrvCard = rb.tone === 'drv';
+          const focused = focusHighlightId === L.id;
           return (
             <View
               key={L.id}
               style={[
                 styles.card,
                 isDrvCard ? styles.cardThemeDriver : styles.cardThemePassenger,
+                focused && styles.cardFocused,
               ]}
             >
               <View style={styles.cardTop}>
                 <View style={[styles.rolePill, rb.tone === 'drv' ? styles.rolePillDrv : styles.rolePillPax]}>
                   <Text style={styles.rolePillText}>{rb.label}</Text>
+                </View>
+                <View style={styles.transportPill}>
+                  <Text style={styles.transportPillText}>{transportLine(L)}</Text>
                 </View>
                 <Text style={styles.statusPill}>{statusLabel(L.status)}</Text>
               </View>
@@ -485,12 +532,25 @@ const styles = StyleSheet.create({
   card: { backgroundColor: CARD_BG, borderRadius: 14, padding: 12, marginBottom: 10, ...CARD_SHADOW },
   cardThemeDriver: { borderLeftWidth: 4, borderLeftColor: '#3B82F6' },
   cardThemePassenger: { borderLeftWidth: 4, borderLeftColor: '#F59E0B' },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  cardTop: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginBottom: 4 },
+  transportPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(22, 163, 74, 0.35)',
+  },
+  transportPillText: { fontSize: 10, fontWeight: '800', color: '#15803D' },
+  cardFocused: {
+    borderWidth: 2,
+    borderColor: '#2563EB',
+  },
   rolePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   rolePillDrv: { backgroundColor: 'rgba(59,130,246,0.2)' },
   rolePillPax: { backgroundColor: 'rgba(245,158,11,0.22)' },
   rolePillText: { fontSize: 11, fontWeight: '800', color: TEXT_PRIMARY },
-  statusPill: { fontSize: 11, fontWeight: '600', color: TEXT_SECONDARY },
+  statusPill: { fontSize: 11, fontWeight: '600', color: TEXT_SECONDARY, marginLeft: 'auto' },
   cardName: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY },
   cardRoute: { marginTop: 2, fontSize: 14, color: TEXT_PRIMARY, lineHeight: 20 },
   metaLine: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY },

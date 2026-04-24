@@ -284,9 +284,9 @@ socket_id_to_user: dict[str, str] = {}
 
 
 def muhabbet_room(conversation_id: str) -> str:
-    """Leylek Muhabbeti socket odası — tüm ilgili emit/join'ler aynı adı kullanır: `muhabbet` + id (ayırıcı yok)."""
+    """Leylek Muhabbeti socket odası — tek biçim: `muhabbet_` + conversation_id (küçük harf UUID)."""
     c = str(conversation_id or "").strip().lower()
-    return f"muhabbet{c}" if c else "muhabbet"
+    return f"muhabbet_{c}" if c else "muhabbet_"
 
 
 def _muhabbet_socket_uid_from_sid(sid: str) -> Optional[str]:
@@ -18236,6 +18236,7 @@ _RIDE_LISTINGS_INSERT_COLUMN_WHITELIST = frozenset(
         "note",
         "status",
         "updated_at",
+        "vehicle_kind",
     }
 )
 
@@ -18275,6 +18276,11 @@ def _ride_listing_response_row(row: dict) -> dict:
     uid = _ride_listing_creator_uid(r)
     if uid and not r.get("created_by_user_id"):
         r["created_by_user_id"] = uid
+    vk = str(r.get("vehicle_kind") or "car").strip().lower()
+    if vk not in ("car", "motorcycle"):
+        vk = "car"
+    r["vehicle_kind"] = vk
+    r["transport_label"] = "Motor" if vk == "motorcycle" else "Araç"
     return r
 
 
@@ -18299,6 +18305,7 @@ class MuhabbetListingCreateBody(BaseModel):
     note: Optional[str] = None
     linked_user_route_id: Optional[str] = None
     linked_pattern_hash: Optional[str] = None
+    vehicle_kind: Optional[str] = Field(default="car", description="car | motorcycle")
 
     @field_validator("city", "from_text", "to_text", mode="before")
     @classmethod
@@ -18333,6 +18340,14 @@ class MuhabbetListingCreateBody(BaseModel):
         if len(t) > 5000:
             raise ValueError("Not en fazla 5000 karakter olabilir")
         return t or None
+
+    @field_validator("vehicle_kind", mode="before")
+    @classmethod
+    def _vehicle_kind_v(cls, v: Optional[str]) -> str:
+        s = str(v or "car").strip().lower()
+        if s not in ("car", "motorcycle"):
+            raise ValueError("vehicle_kind car veya motorcycle olmalı")
+        return s
 
 
 class MuhabbetMatchRequestMessageBody(BaseModel):
@@ -18732,6 +18747,7 @@ def _muhabbet_listing_core_insert_dict(
         "role_type": body.role_type,
         "price_amount": body.price_amount,
         "note": body.note,
+        "vehicle_kind": body.vehicle_kind or "car",
         "status": "active",
     }
 
@@ -18919,6 +18935,19 @@ async def muhabbet_listings_create_alias(
     return await muhabbet_listing_create(body, authenticated_user_id)
 
 
+def _muhabbet_listing_departure_passed(row: Optional[dict]) -> bool:
+    """Geçmiş kalkış zamanı — feed'de gösterilmez."""
+    if not row:
+        return False
+    dep = row.get("departure_time")
+    if dep is None or dep == "":
+        return False
+    try:
+        return _parse_iso_dt(dep) < datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
 @api_router.get("/muhabbet/listings/feed")
 async def muhabbet_listings_feed(
     city: str,
@@ -18951,7 +18980,7 @@ async def muhabbet_listings_feed(
         rows = [
             r
             for r in rows
-            if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key
+            if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key and not _muhabbet_listing_departure_passed(r)
         ][:lim]
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
@@ -19627,6 +19656,23 @@ def _muhabbet_conversation_get_or_create_id(sen: str, rec: str) -> str:
     raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı")
 
 
+def _muhabbet_close_listing_after_match_accept(listing_id: str, accepted_request_id: str) -> None:
+    """Kabul sonrası: ilan matched; aynı ilana diğer bekleyen talepleri iptal."""
+    lid = str(listing_id or "").strip().lower()
+    rid = str(accepted_request_id or "").strip().lower()
+    if not lid or not rid:
+        return
+    now_ts = _muhabbet_listing_row_ts()
+    try:
+        supabase.table("ride_listings").update({"status": "matched", "updated_at": now_ts}).eq("id", lid).execute()
+    except Exception as e:
+        logger.warning("ride_listings->matched lid=%s err=%s", lid[:12], e)
+    try:
+        supabase.table("listing_match_requests").update({"status": "cancelled", "updated_at": now_ts}).eq("listing_id", lid).eq("status", "pending").neq("id", rid).execute()
+    except Exception as e:
+        logger.warning("listing_match_requests cancel peers: %s", e)
+
+
 @api_router.post("/muhabbet/match-requests/{request_id}/accept")
 async def muhabbet_match_request_accept(
     request_id: str,
@@ -19652,6 +19698,9 @@ async def muhabbet_match_request_accept(
         if st == "accepted" and ecid:
             fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
             out_req = dict(fin.data[0]) if fin.data else row
+            lid_done = str(row.get("listing_id") or "").strip().lower()
+            if lid_done:
+                _muhabbet_close_listing_after_match_accept(lid_done, rid)
             return {
                 "success": True,
                 "chat_unlocked": True,
@@ -19671,6 +19720,8 @@ async def muhabbet_match_request_accept(
             fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
             out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
             await _muhabbet_notify_match_accepted(sen0, rec0, conversation_id, lid_rec)
+            if lid_rec:
+                _muhabbet_close_listing_after_match_accept(lid_rec, rid)
             return {
                 "success": True,
                 "chat_unlocked": True,
@@ -19703,6 +19754,8 @@ async def muhabbet_match_request_accept(
         fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
         out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
         await _muhabbet_notify_match_accepted(sen, rec, conversation_id, lid)
+        if lid:
+            _muhabbet_close_listing_after_match_accept(lid, rid)
         return {
             "success": True,
             "chat_unlocked": True,
@@ -19821,6 +19874,7 @@ async def sio_muhabbet_send(sid, data):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
     if not uid:
+        await sio.emit("muhabbet_error", {"code": "not_registered", "detail": "Önce socket register gerekli"}, room=sid)
         return
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
     text = str(data.get("text") or data.get("body") or "").strip()
@@ -19966,9 +20020,8 @@ def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict
     }
 
 
-@sio.on("leylek_pair_request")
-async def sio_leylek_pair_request(sid, data):
-    """REST yerine: eşleşme isteği DB satırı + aynı odaya leylek_pair_match_request."""
+async def _sio_leylek_pair_request_handler(sid, data):
+    """İstemci: leylek_pair_request veya leylek_pair_match_request — DB + leylek_pair_match_request emit."""
     if not isinstance(data, dict):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
@@ -20006,6 +20059,16 @@ async def sio_leylek_pair_request(sid, data):
         {"code": "sent", "request_id": rid, "message": "Eşleşme isteği gönderildi"},
         room=sid,
     )
+
+
+@sio.on("leylek_pair_request")
+async def sio_leylek_pair_request(sid, data):
+    await _sio_leylek_pair_request_handler(sid, data)
+
+
+@sio.on("leylek_pair_match_request")
+async def sio_leylek_pair_match_request(sid, data):
+    await _sio_leylek_pair_request_handler(sid, data)
 
 
 async def _leylek_pair_accept_from_socket(uid: str, cid: str, rid: str) -> dict:
@@ -20326,10 +20389,10 @@ async def muhabbet_leylek_pair_request_create(
     conversation_id: str,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Eşleşme isteği yalnızca Socket.IO `leylek_pair_request` ile gönderilir."""
+    """Eşleşme isteği yalnızca Socket.IO ile gönderilir (leylek_pair_match_request veya leylek_pair_request)."""
     raise HTTPException(
         status_code=410,
-        detail="Eşleşme isteği HTTP ile verilmez; Socket.IO leylek_pair_request kullanın.",
+        detail="Eşleşme isteği HTTP ile verilmez; Socket.IO leylek_pair_match_request (veya leylek_pair_request) kullanın.",
     )
 
 

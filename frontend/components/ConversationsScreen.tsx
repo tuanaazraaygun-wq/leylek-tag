@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Platform,
@@ -208,21 +209,51 @@ export default function ConversationsScreen({
     [base, load]
   );
 
-  const onConfirmHideModal = useCallback(async () => {
+  const runHideForConversation = useCallback(
+    async (cidRaw: string) => {
+      const cid = cidRaw.trim();
+      if (!cid) return;
+      setHideBusy(true);
+      try {
+        await doHide(cid);
+      } finally {
+        setHideBusy(false);
+        setHideTarget(null);
+      }
+    },
+    [doHide]
+  );
+
+  const onHideFromListOnly = useCallback(() => {
     const c = hideTarget;
     const cid = c ? String(c.conversation_id || c.id || '').trim() : '';
     if (!cid) {
       setHideTarget(null);
       return;
     }
-    setHideBusy(true);
-    try {
-      await doHide(cid);
-    } finally {
-      setHideBusy(false);
+    void runHideForConversation(cid);
+  }, [hideTarget, runHideForConversation]);
+
+  const onDeleteChatPressed = useCallback(() => {
+    const c = hideTarget;
+    const cid = c ? String(c.conversation_id || c.id || '').trim() : '';
+    if (!cid) {
       setHideTarget(null);
+      return;
     }
-  }, [hideTarget, doHide]);
+    Alert.alert(
+      'Sohbeti sil',
+      'Mesaj içerikleri sunucularımızda saklanmaz. Bu işlem sohbeti listenizden kaldırır.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Sohbeti sil',
+          style: 'destructive',
+          onPress: () => void runHideForConversation(cid),
+        },
+      ]
+    );
+  }, [hideTarget, runHideForConversation]);
 
   const openHideModal = useCallback((c: MuhabbetConversationListItem) => {
     setHideTarget(c);
@@ -340,30 +371,35 @@ export default function ConversationsScreen({
           onPress={() => (hideBusy ? null : setHideTarget(null))}
         />
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Sohbeti gizle</Text>
+          <Text style={styles.modalTitle}>Sohbet</Text>
           <Text style={styles.modalBody}>
-            Bu sohbet yalnızca sizin listenizden kaldırılır; kayıtlar sunucuda kalır.
+            Mesaj içerikleri sunucularımızda saklanmaz. Aşağıdaki seçenekler sohbeti yalnızca sizin listenizden kaldırır.
           </Text>
-          <View style={styles.modalRow}>
-            <Pressable
-              onPress={() => (hideBusy ? null : setHideTarget(null))}
-              style={({ pressed }) => [styles.modalBtnSec, pressed && { opacity: 0.88 }]}
-              disabled={hideBusy}
-            >
-              <Text style={styles.modalBtnSecTxt}>Vazgeç</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void onConfirmHideModal()}
-              style={({ pressed }) => [styles.modalBtnPri, pressed && !hideBusy && { opacity: 0.9 }]}
-              disabled={hideBusy}
-            >
-              {hideBusy ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.modalBtnPriTxt}>Gizle</Text>
-              )}
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={() => (hideBusy ? null : void onHideFromListOnly())}
+            style={({ pressed }) => [styles.modalBtnPri, pressed && !hideBusy && { opacity: 0.9 }]}
+            disabled={hideBusy}
+          >
+            {hideBusy ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.modalBtnPriTxt}>Listemden gizle</Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => (hideBusy ? null : void onDeleteChatPressed())}
+            style={({ pressed }) => [styles.modalBtnDanger, pressed && !hideBusy && { opacity: 0.9 }]}
+            disabled={hideBusy}
+          >
+            <Text style={styles.modalBtnDangerTxt}>Sohbeti sil</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => (hideBusy ? null : setHideTarget(null))}
+            style={({ pressed }) => [styles.modalBtnSec, pressed && { opacity: 0.88 }]}
+            disabled={hideBusy}
+          >
+            <Text style={styles.modalBtnSecTxt}>Vazgeç</Text>
+          </Pressable>
         </View>
       </View>
     </Modal>
@@ -448,24 +484,35 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
   modalBody: { marginTop: 10, fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22 },
-  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
-  modalBtnSec: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(60,60,67,0.1)',
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  modalBtnSecTxt: { fontSize: 16, fontWeight: '600', color: '#374151' },
   modalBtnPri: {
-    paddingVertical: 12,
+    marginTop: 18,
+    paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 12,
-    backgroundColor: '#DC2626',
-    minWidth: 100,
+    backgroundColor: PRIMARY_GRAD[0],
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalBtnPriTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  modalBtnDanger: {
+    marginTop: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: 'rgba(220,38,38,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(220,38,38,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnDangerTxt: { fontSize: 16, fontWeight: '700', color: '#B91C1C' },
+  modalBtnSec: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(60,60,67,0.1)',
+    alignItems: 'center',
+  },
+  modalBtnSecTxt: { fontSize: 16, fontWeight: '600', color: '#374151' },
 });
