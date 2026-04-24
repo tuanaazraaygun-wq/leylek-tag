@@ -41,7 +41,7 @@ const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 
 /** Muhabbet mesaj satırı — sunucu DB tutmaz; id istemci UUID veya socket message_id. */
-export type OutMessageStatus = 'sending' | 'sent' | 'delivered' | 'seen';
+export type OutMessageStatus = 'sending' | 'sent' | 'delivered' | 'seen' | 'failed';
 
 function newClientMessageUuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -118,13 +118,19 @@ function DeliveryTicks({ status }: { status: OutMessageStatus }) {
   if (status === 'sending') {
     return <Ionicons name="time-outline" size={14} color="#9CA3AF" style={{ marginLeft: 3 }} />;
   }
+  if (status === 'failed') {
+    return <Ionicons name="alert-circle-outline" size={16} color="#DC2626" style={{ marginLeft: 3 }} />;
+  }
   if (status === 'sent') {
     return <Ionicons name="checkmark" size={15} color="#9CA3AF" style={{ marginLeft: 3 }} />;
   }
   if (status === 'delivered') {
     return <Ionicons name="checkmark-done-outline" size={15} color="#6B7280" style={{ marginLeft: 3 }} />;
   }
-  return <Ionicons name="checkmark-done" size={15} color="#3B82F6" style={{ marginLeft: 3 }} />;
+  if (status === 'seen') {
+    return <Ionicons name="checkmark-done" size={15} color="#3B82F6" style={{ marginLeft: 3 }} />;
+  }
+  return null;
 }
 
 /**
@@ -180,8 +186,25 @@ export default function MuhabbetChatScreen({
   const roomJoinedRef = useRef(false);
   /** Ekran mount / unmount: açıkken message_seen gönder */
   const chatSessionActiveRef = useRef(true);
+  /** message_id -> 8 sn ack bekleme (timeout iptali onAck’te) */
+  const ackTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
+
+  const clearAckWait = useCallback((messageId: string) => {
+    const t = ackTimeoutsRef.current.get(messageId);
+    if (t) clearTimeout(t);
+    ackTimeoutsRef.current.delete(messageId);
+  }, []);
+
+  const emitJoinForChat = useCallback(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    if (!socket.connected) return;
+    notifyAuthTokenBecameAvailableForSocket();
+    console.log('[chat] join emitted', cid);
+    socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+  }, [cid]);
 
   useEffect(() => {
     myIdRef.current = myId;
@@ -396,6 +419,7 @@ export default function MuhabbetChatScreen({
       if (cancelled) return;
       if (socket.connected) {
         console.log('[chat] socket connected');
+        console.log('[chat] current socket id =', socket.id);
       }
       const regOk = await waitForNextRegisterSuccess(socket, 15000);
       if (cancelled) return;
@@ -404,6 +428,7 @@ export default function MuhabbetChatScreen({
         return;
       }
       console.log('[chat] registered');
+      console.log('[chat] current socket id =', socket.id);
       emitJoin();
       setTimeout(() => {
         if (!cancelled && socket.connected) emitJoin();
@@ -425,7 +450,6 @@ export default function MuhabbetChatScreen({
       sender_id?: string;
       created_at?: string;
     }) => {
-      console.log('[chat] received message', msg);
       const conv = msg?.conversation_id != null ? String(msg.conversation_id).toLowerCase() : '';
       if (conv !== cidLo) {
         if (__DEV__) {
@@ -435,6 +459,7 @@ export default function MuhabbetChatScreen({
       }
       const mid = String(msg?.message_id || '').trim();
       if (!mid) return;
+      console.log('[chat] received message message_id=', mid, msg);
       const senderLo = String(msg?.sender_id || '')
         .trim()
         .toLowerCase();
@@ -476,12 +501,16 @@ export default function MuhabbetChatScreen({
       }
     };
 
-    const onAck = (p: { conversation_id?: string; message_id?: string }) => {
+    const onAck = (p: { conversation_id?: string; message_id?: string; status?: string }) => {
       const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
       if (c && c !== cidLo) return;
       const mid = String(p?.message_id || '').trim();
       if (!mid) return;
-      console.log('[chat] received ack', mid);
+      const st = String(p?.status || 'sent').toLowerCase();
+      if (st !== 'sent' && p?.status != null) return;
+      clearAckWait(mid);
+      console.log('[chat] current socket id =', socket.id);
+      console.log('[chat] received ack message_id=', mid, p);
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       setRows((prev) =>
         prev.map((m) => {
@@ -532,6 +561,7 @@ export default function MuhabbetChatScreen({
     };
 
     const onSocketConnect = () => {
+      console.log('[chat] current socket id =', socket.id);
       roomJoinedRef.current = false;
       setRoomJoined(false);
       void runRegisterAndJoin();
@@ -576,6 +606,8 @@ export default function MuhabbetChatScreen({
       chatSessionActiveRef.current = false;
       roomJoinedRef.current = false;
       setRoomJoined(false);
+      ackTimeoutsRef.current.forEach((t) => clearTimeout(t));
+      ackTimeoutsRef.current.clear();
       appSub.remove();
       try {
         socket.emit('leave_muhabbet_conversation', { conversation_id: cid });
@@ -596,7 +628,7 @@ export default function MuhabbetChatScreen({
         );
       }
     };
-  }, [cid]);
+  }, [cid, clearAckWait]);
 
   useEffect(() => {
     if (!cid) return;
@@ -636,17 +668,63 @@ export default function MuhabbetChatScreen({
     [cid]
   );
 
+  const scheduleAckTimeout = useCallback(
+    (messageId: string) => {
+      clearAckWait(messageId);
+      const tmo = setTimeout(() => {
+        ackTimeoutsRef.current.delete(messageId);
+        setRows((prev) =>
+          prev.map((m) =>
+            m.id === messageId && m.out_status === 'sending' ? { ...m, out_status: 'failed' as const } : m
+          )
+        );
+        console.log('[chat] ack timeout message_id=', messageId);
+      }, 8000);
+      ackTimeoutsRef.current.set(messageId, tmo);
+    },
+    [clearAckWait]
+  );
+
+  const resendMessage = useCallback(
+    (row: ChatMessageRow) => {
+      const body = (row.body || '').trim();
+      const messageId = row.id;
+      if (!body || !cid || !messageId) return;
+      const socket = getOrCreateSocket();
+      if (!socket.connected) {
+        Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
+        return;
+      }
+      if (!roomJoinedRef.current) {
+        emitJoinForChat();
+      }
+      setRows((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, out_status: 'sending' as const } : m))
+      );
+      scheduleAckTimeout(messageId);
+      console.log('[chat] sending muhabbet_send message_id=', messageId);
+      try {
+        socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+      } catch {
+        clearAckWait(messageId);
+        setRows((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, out_status: 'failed' as const } : m))
+        );
+      }
+    },
+    [cid, clearAckWait, emitJoinForChat, scheduleAckTimeout]
+  );
+
   const send = async () => {
     const body = draft.trim();
     if (!body || !cid) return;
     const socket = getOrCreateSocket();
     if (!socket.connected) {
-      Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, tekrar deneyin.');
+      Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
       return;
     }
     if (!roomJoinedRef.current) {
-      Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, tekrar deneyin.');
-      return;
+      emitJoinForChat();
     }
     const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
     if (!myLo) {
@@ -667,10 +745,12 @@ export default function MuhabbetChatScreen({
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     setDraft('');
     setSending(true);
-    console.log('[chat] sending muhabbet_send', messageId);
+    scheduleAckTimeout(messageId);
+    console.log('[chat] sending muhabbet_send message_id=', messageId);
     try {
       socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
     } catch {
+      clearAckWait(messageId);
       Alert.alert('Gönderilemedi', 'Bağlantı hatası.');
       setDraft(body);
       setRows((p) => p.filter((m) => m.id !== messageId));
@@ -904,6 +984,16 @@ export default function MuhabbetChatScreen({
                         {time ? <Text style={styles.tTimeMine}>{time}</Text> : null}
                         {item.out_status ? <DeliveryTicks status={item.out_status} /> : null}
                       </View>
+                      {item.out_status === 'failed' ? (
+                        <Pressable
+                          onPress={() => resendMessage(item)}
+                          style={({ pressed }) => [styles.resendRow, pressed && { opacity: 0.75 }]}
+                          accessibilityRole="button"
+                          accessibilityLabel="Tekrar gönder"
+                        >
+                          <Text style={styles.resendTxt}>Tekrar gönder</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   );
                 }
@@ -1094,6 +1184,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   tTimeMine: { fontSize: 11, color: TEXT_SECONDARY, textAlign: 'right' },
+  resendRow: { alignSelf: 'flex-end', marginTop: 4, paddingVertical: 4, paddingHorizontal: 2 },
+  resendTxt: { fontSize: 12, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
   routeSafetyTxt: {

@@ -300,6 +300,28 @@ def _muhabbet_user_socket_online(uid: str) -> bool:
 def _muhabbet_socket_uid_from_sid(sid: str) -> Optional[str]:
     return (socket_id_to_user.get(sid) or None) if sid else None
 
+
+def _muhabbet_parse_client_message_id(raw: Any) -> Tuple[Optional[str], Optional[str]]:
+    """İstemci message_id (UUID). Dönüş: (id_küçük_harf, hata_metni). hata_metni doluysa isteği reddet."""
+    if raw is None:
+        return (None, None)
+    s = str(raw).strip()
+    if not s:
+        return (None, None)
+    try:
+        return (str(uuid.UUID(s)).lower(), None)
+    except (ValueError, AttributeError, TypeError):
+        return (None, "Geçersiz message_id (UUID gerekli)")
+
+
+def _muhabbet_room_peer_count(room: str) -> int:
+    """Oda üyesi sayısı (gönderen dahil). Bilinmiyorsa -1."""
+    try:
+        return sum(1 for _ in sio.manager.get_participants("/", room))
+    except Exception:
+        return -1
+
+
 @sio.event
 async def connect(sid, environ):
     print(f"SOCKET CONNECTED: {sid}")
@@ -1593,7 +1615,7 @@ async def emit_passenger_offer_revoked(
 
 
 async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> None:
-    """Tek kullanıcıya socket event: önce connected_users sid, yoksa user_<uuid> room."""
+    """Kullanıcıya socket event: connected_users’daki tüm sid’lere to=emit; yoksa user_<uuid> odası."""
     try:
         if user_id is None:
             return
@@ -1607,13 +1629,23 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
         except Exception:
             pass
         room = _normalize_user_room(raw)
-        sid = connected_users.get(raw) or connected_users.get(str(user_id).strip())
-        if sid:
-            await sio.emit(event_name, payload, to=sid)
-            logger.info(f"📤 {event_name} to=sid user={raw[:13]}…")
+        sids = _all_sids_for_registered_user(raw)
+        if sids:
+            for sid in sids:
+                try:
+                    await sio.emit(event_name, payload, to=sid)
+                except Exception as em:
+                    logger.warning("%s emit to=sid sid=%s err=%s", event_name, sid, em)
+            if event_name == "message_ack":
+                logger.info("[muhabbet_ack] sent user=%s sids=%s", raw, sids)
+            else:
+                logger.info("📤 %s to=sids user=%s… count=%s", event_name, raw[:13], len(sids))
         else:
             await sio.emit(event_name, payload, room=room)
-            logger.info(f"📤 {event_name} room={room} (sid yok)")
+            if event_name == "message_ack":
+                logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", raw, room)
+            else:
+                logger.info("📤 %s room=%s (sid yok)", event_name, room)
     except Exception as e:
         logger.warning(f"{event_name} emit hatası: {e}")
 
@@ -1642,6 +1674,25 @@ def _connected_sid_for_user(user_id: str) -> str | None:
         if isinstance(k, str) and k.strip().lower() == ul:
             return s
     return None
+
+
+def _all_sids_for_registered_user(user_id: str) -> list[str]:
+    """Aynı user_id için connected_users anahtarlarında görünen tüm benzersiz sid'ler (reconnect / çok sekme)."""
+    ul = str(user_id or "").strip().lower()
+    if not ul:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for k, s in list(connected_users.items()):
+        if not isinstance(k, str) or not s:
+            continue
+        if str(k).strip().lower() != ul:
+            continue
+        ss = str(s)
+        if ss not in seen:
+            seen.add(ss)
+            out.append(ss)
+    return out
 
 
 async def emit_trip_force_ended_to_party(
@@ -18264,6 +18315,23 @@ def _muhabbet_user_can_act_as_driver(user_id: str) -> bool:
         return False
 
 
+def _muhabbet_viewer_effective_driver_vehicle_kind(user_id: str) -> str:
+    """Yolcu ilanı talibi için efektif araç türü (car | motorcycle)."""
+    uid = str(user_id or "").strip().lower()
+    if not uid:
+        return "car"
+    try:
+        r = supabase.table("users").select("id, driver_details, role").eq("id", uid).limit(1).execute()
+        if not r.data:
+            return "car"
+        row = dict(r.data[0])
+        v = _canonical_vehicle_kind(_effective_driver_vehicle_kind(row)) or "car"
+        v = str(v).strip().lower()
+        return v if v in ("car", "motorcycle") else "car"
+    except Exception:
+        return "car"
+
+
 def _muhabbet_listing_offer_kind(row: Optional[dict]) -> str:
     """
     Talip CTA kuralları: driver_offer (sürücü ilanı) | passenger_offer (yolcu ilanı).
@@ -18301,6 +18369,55 @@ def _muhabbet_public_display_name(
     if len(parts) == 1:
         return parts[0]
     return f"{parts[0]} {parts[-1][0].upper()}."
+
+
+def _muhabbet_match_semantic_roles_for_conversation(conversation_id: str) -> dict:
+    """
+    Kabul edilmiş listing_match_requests + ilan offer_kind (listing_type türevi) + actor_intent.
+    - passenger_offer: ilan sahibi = yolcu (passenger), talep eden actor_intent (talip = driver).
+    - driver_offer: ilan sahibi = sürücü (driver), talep eden actor_intent (talip = passenger).
+    Dönüş: { uid_lower: 'driver'|'passenger', ... }.
+    """
+    cid = (conversation_id or "").strip().lower()
+    out: dict = {}
+    if not cid:
+        return out
+    try:
+        mq = (
+            supabase.table("listing_match_requests")
+            .select("sender_user_id,receiver_user_id,listing_id,actor_intent,status")
+            .eq("conversation_id", cid)
+            .eq("status", "accepted")
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not mq.data:
+            return out
+        row = dict(mq.data[0])
+        sen = str(row.get("sender_user_id") or "").strip().lower()
+        rec = str(row.get("receiver_user_id") or "").strip().lower()
+        lid = str(row.get("listing_id") or "").strip().lower()
+        intent = str(row.get("actor_intent") or "passenger").strip().lower()
+        if intent not in ("driver", "passenger"):
+            intent = "passenger"
+        if not lid or not sen or not rec:
+            return out
+        lr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        if not lr.data:
+            return out
+        lst = _ride_listing_response_row(dict(lr.data[0]))
+        owner = _ride_listing_creator_uid(lst)
+        if not owner or owner != rec:
+            return out
+        offer_kind = _muhabbet_listing_offer_kind(lst)
+        owner_sem = "driver" if offer_kind == "driver_offer" else "passenger"
+        out[owner] = owner_sem
+        out[sen] = intent
+        return out
+    except Exception as e:
+        logger.warning("match_semantic_roles conv=%s err=%s", cid[:12], e)
+        return out
 
 
 # ride_listings INSERT — migration: backend/migrations/leylek_muhabbet_ride_listings.sql
@@ -18468,6 +18585,8 @@ class MuhabbetListingLifecycleBody(BaseModel):
 
 class MuhabbetMatchRequestMessageBody(BaseModel):
     message: Optional[str] = None
+    """Muhabbet: yolcu ilanına sürücü niyeti driver; sürücü ilanına yolcu niyeti passenger (KYC sürücü de passenger gönderebilir)."""
+    actor_intent: Optional[str] = None
 
     @field_validator("message", mode="before")
     @classmethod
@@ -18478,6 +18597,18 @@ class MuhabbetMatchRequestMessageBody(BaseModel):
         if len(t) > 2000:
             raise ValueError("Mesaj en fazla 2000 karakter olabilir")
         return t or None
+
+    @field_validator("actor_intent", mode="before")
+    @classmethod
+    def _actor_intent_v(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s:
+            return None
+        if s not in ("driver", "passenger"):
+            raise ValueError("actor_intent driver veya passenger olmalıdır")
+        return s
 
 
 class MuhabbetChatMessageCreateBody(BaseModel):
@@ -19186,11 +19317,13 @@ async def muhabbet_listings_feed(
             r["incoming_request_count"] = int(inc_map.get(lid) or 0)
             r["muhabbet_offer_kind"] = _muhabbet_listing_offer_kind(r)
         can_drv = _muhabbet_user_can_act_as_driver(uid)
+        viewer_vk = _muhabbet_viewer_effective_driver_vehicle_kind(uid) if can_drv else None
         return {
             "success": True,
             "listings": rows,
             "count": len(rows),
             "viewer_can_act_as_driver": can_drv,
+            "viewer_driver_vehicle_kind": viewer_vk,
         }
     except HTTPException:
         raise
@@ -19221,7 +19354,14 @@ async def muhabbet_listings_me(
         for r in rows:
             r["muhabbet_offer_kind"] = _muhabbet_listing_offer_kind(r)
         can_drv = _muhabbet_user_can_act_as_driver(uid)
-        return {"success": True, "listings": rows, "count": len(rows), "viewer_can_act_as_driver": can_drv}
+        viewer_vk = _muhabbet_viewer_effective_driver_vehicle_kind(uid) if can_drv else None
+        return {
+            "success": True,
+            "listings": rows,
+            "count": len(rows),
+            "viewer_can_act_as_driver": can_drv,
+            "viewer_driver_vehicle_kind": viewer_vk,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -19315,33 +19455,58 @@ async def muhabbet_listing_match_request(
             raise HTTPException(status_code=400, detail="Bu ilanın süresi doldu; yeni talep gönderilemez")
         offer_kind = _muhabbet_listing_offer_kind(lst)
         can_drv = _muhabbet_user_can_act_as_driver(uid)
+        raw_ai = getattr(body, "actor_intent", None)
+        if raw_ai is None or (isinstance(raw_ai, str) and not str(raw_ai).strip()):
+            actor_intent = "driver" if offer_kind == "passenger_offer" else "passenger"
+        else:
+            actor_intent = str(raw_ai).strip().lower()
+        if actor_intent not in ("driver", "passenger"):
+            raise HTTPException(status_code=400, detail="actor_intent driver veya passenger olmalıdır")
         if offer_kind == "passenger_offer":
+            if actor_intent != "driver":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Yolcu ilanına yalnızca sürücü niyeti (actor_intent=driver) ile talip olunur.",
+                )
             if not can_drv:
                 raise HTTPException(
                     status_code=403,
                     detail="Bu yolcu ilanına talip olmak için onaylı sürücü doğrulamanız gerekir.",
                 )
-        else:
-            if can_drv:
+            list_vk = str(_canonical_vehicle_kind(lst.get("vehicle_kind")) or "car").strip().lower()
+            if list_vk not in ("car", "motorcycle"):
+                list_vk = "car"
+            req_vk = _muhabbet_viewer_effective_driver_vehicle_kind(uid)
+            if list_vk != req_vk:
                 raise HTTPException(
-                    status_code=403,
-                    detail="Onaylı sürücü hesabınızla başka sürücü ilanına talip olamazsınız; yolcu teklifi açabilirsiniz.",
+                    status_code=400,
+                    detail="Bu yolcu ilanının araç türü (araba/motor) ile sürücü doğrulamanızdaki araç türü eşleşmiyor.",
+                )
+        else:
+            if actor_intent != "passenger":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Sürücü ilanına yalnızca yolcu niyeti (actor_intent=passenger) ile talep gönderilir.",
                 )
         msg = body.message
-        ins = (
-            supabase.table("listing_match_requests")
-            .insert(
-                {
-                    "listing_id": lid,
-                    "sender_user_id": uid,
-                    "receiver_user_id": owner,
-                    "status": "pending",
-                    "message": msg,
-                    "updated_at": _muhabbet_listing_row_ts(),
-                }
-            )
-            .execute()
-        )
+        ins_row = {
+            "listing_id": lid,
+            "sender_user_id": uid,
+            "receiver_user_id": owner,
+            "status": "pending",
+            "message": msg,
+            "updated_at": _muhabbet_listing_row_ts(),
+            "actor_intent": actor_intent,
+        }
+        try:
+            ins = supabase.table("listing_match_requests").insert(ins_row).execute()
+        except Exception as ins_exc:
+            err_s = str(ins_exc).lower()
+            if "actor_intent" in err_s or "column" in err_s:
+                ins_row.pop("actor_intent", None)
+                ins = supabase.table("listing_match_requests").insert(ins_row).execute()
+            else:
+                raise
         if not ins.data:
             return {"success": False, "detail": "İstek kaydedilemedi"}
         await _muhabbet_notify_match_request_pending(owner, lid, uid)
@@ -20170,8 +20335,14 @@ async def sio_join_muhabbet_conversation(sid, data):
     """Muhabbet sohbet odası — yalnızca JWT register sonrası; katılımcı doğrulanır."""
     if not isinstance(data, dict):
         data = {}
+    try:
+        _dj = json.dumps(data, default=str)[:480]
+    except Exception:
+        _dj = str(data)[:480]
+    logger.info("[muhabbet_join] received sid=%s data=%s", sid, _dj)
     uid = _muhabbet_socket_uid_from_sid(sid)
     if not uid:
+        logger.warning("[muhabbet_join] not_registered sid=%s", sid)
         await sio.emit("muhabbet_error", {"code": "not_registered", "detail": "Önce socket register gerekli"}, room=sid)
         return
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
@@ -20183,6 +20354,7 @@ async def sio_join_muhabbet_conversation(sid, data):
     room = muhabbet_room(cid)
     await sio.enter_room(sid, room)
     await sio.emit("joined_muhabbet", {"conversation_id": cid, "room": room}, room=sid)
+    logger.info("[muhabbet_join] ok sid=%s user=%s room=%s", sid, uid, room)
 
 
 @sio.on("leave_muhabbet_conversation")
@@ -20206,29 +20378,62 @@ async def sio_muhabbet_send(sid, data):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
     if not uid:
+        logger.warning("[muhabbet_send] not_registered sid=%s", sid)
         await sio.emit("muhabbet_error", {"code": "not_registered", "detail": "Önce socket register gerekli"}, room=sid)
         return
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
     text = str(data.get("text") or data.get("body") or "").strip()
-    logger.info("[muhabbet_send] received conversation_id=%s user_id=%s text_len=%s", cid or None, uid, len(text))
     if not cid or not text:
         return
     if len(text) > 2000:
         await sio.emit("muhabbet_error", {"code": "text_too_long", "max": 2000}, room=sid)
         return
+    raw_mid = data.get("message_id") if "message_id" in data else data.get("messageId")
+    parsed_mid, mid_err = _muhabbet_parse_client_message_id(raw_mid)
+    if mid_err:
+        await sio.emit(
+            "muhabbet_error",
+            {"code": "bad_message_id", "detail": mid_err, "conversation_id": cid},
+            room=sid,
+        )
+        return
+    msg_id = parsed_mid or str(uuid.uuid4())
+    logger.info(
+        "[muhabbet_send] received sid=%s message_id=%s conversation_id=%s text_len=%s",
+        sid,
+        msg_id,
+        cid,
+        len(text),
+    )
     try:
         crow = _muhabbet_conversation_for_member_or_403(cid, uid)
     except HTTPException:
         await sio.emit("muhabbet_error", {"code": "forbidden", "conversation_id": cid}, room=sid)
         return
-    logger.info("[muhabbet_send] participants ok conversation_id=%s", cid)
-    msg_id = str(uuid.uuid4())
+    a = str(crow.get("user_a") or "").strip().lower()
+    b = str(crow.get("user_b") or "").strip().lower()
+    recipient = b if a == uid else a
+    logger.info(
+        "[muhabbet_send] participants ok sender=%s receiver=%s conversation_id=%s",
+        uid,
+        recipient or None,
+        cid,
+    )
     now_iso = datetime.now(timezone.utc).isoformat()
     room = muhabbet_room(cid)
     try:
         await sio.enter_room(sid, room)
     except Exception as e:
         logger.warning("muhabbet_send enter_room: %s", e)
+    peer_n = _muhabbet_room_peer_count(room)
+    try:
+        await emit_socket_event_to_user(
+            uid,
+            "message_ack",
+            {"conversation_id": cid, "message_id": msg_id, "status": "sent"},
+        )
+    except Exception as e:
+        logger.warning("muhabbet_send message_ack: %s", e)
     payload = {
         "conversation_id": cid,
         "text": text,
@@ -20237,21 +20442,21 @@ async def sio_muhabbet_send(sid, data):
         "created_at": now_iso,
     }
     await sio.emit("message", payload, room=room)
-    logger.info("[muhabbet_send] emitted room=%s message_id=%s", room, msg_id)
+    logger.info("[muhabbet_send] emitted room=%s message_id=%s peers_in_room=%s", room, msg_id, peer_n)
     try:
-        a = str(crow.get("user_a") or "").strip().lower()
-        b = str(crow.get("user_b") or "").strip().lower()
-        recipient = b if a == uid else a
-        if recipient and not _muhabbet_user_socket_online(recipient):
-            preview = text[:50] + ("…" if len(text) > 50 else "")
-            asyncio.create_task(
-                send_push_notification(
-                    recipient,
-                    "Yeni mesaj",
-                    preview,
-                    {"type": "muhabbet_message", "conversation_id": cid, "sender_id": uid},
+        if recipient:
+            online = _muhabbet_user_socket_online(recipient)
+            # Odada yalnız gönderen (veya alıcı odada değil) → FCM; çevrimdışıysa da FCM.
+            if (not online) or peer_n < 2:
+                preview = text[:50] + ("…" if len(text) > 50 else "")
+                asyncio.create_task(
+                    send_push_notification(
+                        recipient,
+                        "Yeni mesaj",
+                        preview,
+                        {"type": "muhabbet_message", "conversation_id": cid, "sender_id": uid},
+                    )
                 )
-            )
     except Exception as e:
         logger.warning("muhabbet_send push: %s", e)
 
@@ -20278,6 +20483,41 @@ async def sio_delete_message(sid, data):
         {"message_id": mid, "conversation_id": cid},
         room=room,
     )
+
+
+async def _muhabbet_route_message_receipt(sid: str, data: Any, out_event: str) -> None:
+    """message_delivered / message_seen: emitter alıcıdır; yazar (sender_id) aynı event adıyla bilgilendirilir."""
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    if not uid:
+        logger.warning("[%s] not_registered sid=%s", out_event, sid)
+        await sio.emit("muhabbet_error", {"code": "not_registered", "detail": "Önce socket register gerekli"}, room=sid)
+        return
+    cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
+    mid = str(data.get("message_id") or data.get("messageId") or "").strip().lower()
+    author = str(data.get("sender_id") or data.get("sender_user_id") or "").strip().lower()
+    if not cid or not mid or not author:
+        return
+    try:
+        crow = _muhabbet_conversation_for_member_or_403(cid, uid)
+    except HTTPException:
+        return
+    a = str(crow.get("user_a") or "").strip().lower()
+    b = str(crow.get("user_b") or "").strip().lower()
+    if uid not in (a, b) or author not in (a, b) or uid == author:
+        return
+    await emit_socket_event_to_user(author, out_event, {"conversation_id": cid, "message_id": mid})
+
+
+@sio.on("message_delivered")
+async def sio_message_delivered(sid, data):
+    await _muhabbet_route_message_receipt(sid, data, "message_delivered")
+
+
+@sio.on("message_seen")
+async def sio_message_seen(sid, data):
+    await _muhabbet_route_message_receipt(sid, data, "message_seen")
 
 
 def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict:
@@ -20333,6 +20573,9 @@ def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict
     initiator_role = ""
     if ir.data and ir.data[0].get("id"):
         initiator_role = str(ir.data[0].get("role") or "").strip().lower()
+    sem = _muhabbet_match_semantic_roles_for_conversation(cid)
+    if sem.get(uid):
+        initiator_role = str(sem.get(uid) or "").strip().lower()
     ins = (
         supabase.table("muhabbet_leylek_pair_requests")
         .insert(
@@ -20671,13 +20914,20 @@ async def muhabbet_conversation_messages_get(
                     role_map[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
         except Exception as e:
             logger.warning("messages_get roles: %s", e)
+        sem = _muhabbet_match_semantic_roles_for_conversation(cid)
+        if sem:
+            my_r = sem.get(uid)
+            oth_r = sem.get(other_uid)
+        else:
+            my_r = role_map.get(uid)
+            oth_r = role_map.get(other_uid)
         ms = str(c_row.get("match_source") or "").strip().lower()
         matched_at = c_row.get("matched_at")
         leylek_matched = bool(matched_at) and ms in ("leylek_key", "leylek_key_inchat")
         ctx = {
             "other_user_id": other_uid,
-            "my_role": role_map.get(uid),
-            "other_role": role_map.get(other_uid),
+            "my_role": my_r,
+            "other_role": oth_r,
             "matched_via_leylek_key": leylek_matched,
             "matched_at": matched_at,
             "ephemeral_chat": True,

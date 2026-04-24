@@ -54,6 +54,11 @@ function isDriverRole(r: string | null | undefined): boolean {
   return x === 'driver' || x === 'private_driver';
 }
 
+function homeListingVehicleKind(L: HomeFeedListing): 'car' | 'motorcycle' {
+  const v = (L.vehicle_kind || 'car').toString().toLowerCase();
+  return v === 'motorcycle' || v === 'motor' ? 'motorcycle' : 'car';
+}
+
 function offerKindFromHomeListing(L: HomeFeedListing): 'driver_offer' | 'passenger_offer' {
   const k = (L.muhabbet_offer_kind || '').toLowerCase();
   if (k === 'driver_offer' || k === 'passenger_offer') return k;
@@ -246,6 +251,7 @@ export default function LeylekMuhabbetiHomeTab({
   const [windowOffset, setWindowOffset] = useState(0);
   const [matchBusyId, setMatchBusyId] = useState<string | null>(null);
   const [viewerCanActAsDriver, setViewerCanActAsDriver] = useState(false);
+  const [viewerDriverVk, setViewerDriverVk] = useState<'car' | 'motorcycle' | null>(null);
 
   const loadPreview = useCallback(async () => {
     const cityQ = (selectedCity || '').trim();
@@ -259,6 +265,7 @@ export default function LeylekMuhabbetiHomeTab({
       setPendingIncoming(0);
       setFeedPreview([]);
       setViewerCanActAsDriver(false);
+      setViewerDriverVk(null);
       return;
     }
     setFeedLoading(true);
@@ -284,8 +291,11 @@ export default function LeylekMuhabbetiHomeTab({
           success?: boolean;
           listings?: HomeFeedListing[];
           viewer_can_act_as_driver?: boolean;
+          viewer_driver_vehicle_kind?: string | null;
         };
         if (typeof df.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(df.viewer_can_act_as_driver);
+        const vkh = (df.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+        setViewerDriverVk(vkh === 'motorcycle' ? 'motorcycle' : vkh === 'car' ? 'car' : null);
         if (rFeed.ok && df.success && Array.isArray(df.listings)) {
           const list = df.listings.filter((row) => {
             const ls = (row.status || '').toLowerCase();
@@ -438,6 +448,12 @@ export default function LeylekMuhabbetiHomeTab({
               {visibleOffers.map((L) => {
                 const drvOffer = offerKindFromHomeListing(L) === 'driver_offer';
                 const actor = drvOffer ? ('passenger' as const) : ('driver' as const);
+                const effVk = viewerDriverVk ?? (viewerCanActAsDriver ? 'car' : null);
+                const vehicleOk =
+                  drvOffer ||
+                  !viewerCanActAsDriver ||
+                  effVk === null ||
+                  homeListingVehicleKind(L) === effVk;
                 return (
                 <CompactOfferCard
                   key={L.id}
@@ -458,7 +474,7 @@ export default function LeylekMuhabbetiHomeTab({
                       .trim()
                       .toLowerCase() === uidLo ||
                     ['pending', 'accepted'].includes((L.match_request_status || '').toLowerCase()) ||
-                    (!drvOffer && !viewerCanActAsDriver)
+                    (!drvOffer && (!viewerCanActAsDriver || !vehicleOk))
                   }
                 />
                 );

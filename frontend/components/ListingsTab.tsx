@@ -160,6 +160,11 @@ function offerKindFromListing(L: FeedListing): 'driver_offer' | 'passenger_offer
 }
 
 /** Kullanıcıya “Araba” göster; API alan adları değişmez. */
+function listingVehicleKindNorm(L: { vehicle_kind?: string | null }): 'car' | 'motorcycle' {
+  const v = (L.vehicle_kind || 'car').toString().toLowerCase();
+  return v === 'motorcycle' || v === 'motor' ? 'motorcycle' : 'car';
+}
+
 function transportLine(L: FeedListing): string {
   const tl = (L.transport_label || '').trim();
   const vk = (L.vehicle_kind || '').toLowerCase();
@@ -199,6 +204,8 @@ export default function ListingsTab({
   const [matchBusyId, setMatchBusyId] = useState<string | null>(null);
   /** Sunucu KYC tabanlı; uygulama rolünden bağımsız (feed / ilanlarım yanıtı). */
   const [viewerCanActAsDriver, setViewerCanActAsDriver] = useState(false);
+  /** Yolcu ilanı talip CTA: ilan vehicle_kind ile eşleşen efektif sürücü türü (feed/me kök alanı). */
+  const [viewerDriverVk, setViewerDriverVk] = useState<'car' | 'motorcycle' | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [modalInitialRole, setModalInitialRole] = useState<'driver' | 'passenger'>(initialCreateRole);
@@ -216,6 +223,7 @@ export default function ListingsTab({
     if (!tok) {
       setListings([]);
       setViewerCanActAsDriver(false);
+      setViewerDriverVk(null);
       return;
     }
     if (segment === 'mine') {
@@ -244,8 +252,11 @@ export default function ListingsTab({
         success?: boolean;
         listings?: FeedListing[];
         viewer_can_act_as_driver?: boolean;
+        viewer_driver_vehicle_kind?: string | null;
       };
       if (typeof d.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(d.viewer_can_act_as_driver);
+      const vkFeed = (d.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+      setViewerDriverVk(vkFeed === 'motorcycle' ? 'motorcycle' : vkFeed === 'car' ? 'car' : null);
       if (res.ok && d.success && Array.isArray(d.listings)) {
         const openOnly = d.listings.filter((row) => {
           const st = (row.status || '').toLowerCase();
@@ -267,6 +278,7 @@ export default function ListingsTab({
     if (!tok) {
       setMyListings([]);
       setViewerCanActAsDriver(false);
+      setViewerDriverVk(null);
       return;
     }
     setLoadingMine(true);
@@ -283,8 +295,11 @@ export default function ListingsTab({
         success?: boolean;
         listings?: FeedListing[];
         viewer_can_act_as_driver?: boolean;
+        viewer_driver_vehicle_kind?: string | null;
       };
       if (typeof d.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(d.viewer_can_act_as_driver);
+      const vk2 = (d.viewer_driver_vehicle_kind || '').toString().toLowerCase();
+      setViewerDriverVk(vk2 === 'motorcycle' ? 'motorcycle' : vk2 === 'car' ? 'car' : null);
       if (res.ok && d.success && Array.isArray(d.listings)) {
         const cityKey = (selectedCity || '').trim().toLowerCase();
         const rows = cityKey
@@ -357,7 +372,7 @@ export default function ListingsTab({
     return () => clearTimeout(t);
   }, [focusListingId, focusListingNonce]);
 
-  const sendMatchRequest = async (listingId: string) => {
+  const sendMatchRequest = async (listingId: string, actorIntent: 'driver' | 'passenger') => {
     if (!requireToken() || !tok) return;
     setMatchBusyId(listingId);
     const snapshot = listings;
@@ -368,7 +383,7 @@ export default function ListingsTab({
       const res = await fetch(`${base}/muhabbet/listings/${encodeURIComponent(listingId)}/match-request`, {
         method: 'POST',
         headers: { ...authHeader(tok), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: null }),
+        body: JSON.stringify({ message: null, actor_intent: actorIntent }),
       });
       if (handleUnauthorizedAndMaybeRedirect(res)) {
         setListings(snapshot);
@@ -541,11 +556,12 @@ export default function ListingsTab({
             ? `${Number(L.price_amount).toLocaleString('tr-TR')} ₺`
             : '—';
         const passengerOffer = offerKindFromListing(L) === 'passenger_offer';
+        const listVk = listingVehicleKindNorm(L);
+        const effViewerVk = viewerDriverVk ?? (viewerCanActAsDriver ? 'car' : null);
+        const vehicleOk =
+          !passengerOffer || !viewerCanActAsDriver || effViewerVk === null || listVk === effViewerVk;
         const canRequest =
-          !own &&
-          (passengerOffer ? viewerCanActAsDriver : !viewerCanActAsDriver) &&
-          !accepted &&
-          !pending;
+          !own && (passengerOffer ? viewerCanActAsDriver && vehicleOk : true) && !accepted && !pending;
         return (
           <View
             key={L.id}
@@ -610,6 +626,11 @@ export default function ListingsTab({
                 </>
               ) : null}
             </Text>
+            {isDrvCard ? (
+              <Text style={styles.vehicleKindLine}>
+                Araç: {listingVehicleKindNorm(L) === 'motorcycle' ? 'Motor' : 'Araba'}
+              </Text>
+            ) : null}
             {L.note ? (
               <Text style={styles.note} numberOfLines={2}>
                 {L.note}
@@ -653,9 +674,15 @@ export default function ListingsTab({
                 </View>
               ) : (
                 <GradientButton
-                  label={isDrvCard ? 'Beni de al' : 'Bu yolcuya talibim'}
+                  label={
+                    isDrvCard
+                      ? viewerCanActAsDriver
+                        ? 'Yolcu olarak beni de al'
+                        : 'Beni de al'
+                      : 'Bu yolcuya talibim'
+                  }
                   loading={matchBusyId === L.id}
-                  onPress={() => void sendMatchRequest(L.id)}
+                  onPress={() => void sendMatchRequest(L.id, isDrvCard ? 'passenger' : 'driver')}
                   disabled={!canRequest}
                   style={{ marginTop: 12, opacity: canRequest ? 1 : 0.5 }}
                 />
@@ -663,9 +690,11 @@ export default function ListingsTab({
             ) : null}
             {!own && !accepted && !pending && !canRequest ? (
               <Text style={styles.roleHint}>
-                {passengerOffer
-                  ? 'Bu ilana talip olmak için onaylı sürücü doğrulamanız gerekir.'
-                  : 'Bu sürücü ilanına talip olmak için yolcu olarak devam etmelisiniz (onaylı sürücü hesapları bu yolla talip olamaz).'}
+                {passengerOffer && viewerCanActAsDriver && !vehicleOk
+                  ? 'Bu yolcu ilanı farklı araç türü (araba/motor) talep ediyor; profilinizdeki araç türüyle eşleşmiyor.'
+                  : passengerOffer
+                    ? 'Bu ilana talip olmak için sürücü hesabı (onaylı sürücü doğrulaması) gerekir.'
+                    : null}
               </Text>
             ) : null}
             {own &&
@@ -891,6 +920,7 @@ const styles = StyleSheet.create({
   priceLabel: { fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY },
   priceValue: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
   metaLine: { marginTop: 2, fontSize: 14, color: TEXT_SECONDARY, lineHeight: 20 },
+  vehicleKindLine: { marginTop: 4, fontSize: 13, fontWeight: '700', color: '#1E40AF' },
   note: { marginTop: 6, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 19 },
   incomingHintWrap: {
     marginTop: 12,
