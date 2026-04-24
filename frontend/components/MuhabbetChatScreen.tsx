@@ -8,7 +8,6 @@ import {
   Alert,
   Animated,
   AppState,
-  type AppStateStatus,
   Easing,
   FlatList,
   KeyboardAvoidingView,
@@ -30,6 +29,7 @@ import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToke
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
+import { subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
@@ -560,25 +560,14 @@ export default function MuhabbetChatScreen({
       setRows((prev) => prev.filter((m) => m.id.toLowerCase() !== mid));
     };
 
-    const onSocketConnect = () => {
-      console.log('[chat] current socket id =', socket.id);
+    const refreshChatSocketSession = (reason: string) => {
+      if (cancelled) return;
+      console.log('[chat] socket session refresh', reason);
       roomJoinedRef.current = false;
       setRoomJoined(false);
       void runRegisterAndJoin();
     };
-
-    const onAppState = (s: AppStateStatus) => {
-      if (s !== 'active' || cancelled) return;
-      if (!socket.connected) {
-        void runRegisterAndJoin();
-        return;
-      }
-      notifyAuthTokenBecameAvailableForSocket();
-      emitJoin();
-      setTimeout(() => {
-        if (!cancelled && socket.connected) emitJoin();
-      }, 1000);
-    };
+    const unsubSessionRefresh = subscribeSocketSessionRefresh(refreshChatSocketSession);
 
     socket.on('joined_muhabbet', onJoinedMuhabbet);
     socket.on('message', onMsg);
@@ -586,9 +575,6 @@ export default function MuhabbetChatScreen({
     socket.on('message_delivered', onDelivered);
     socket.on('message_seen', onSeenEvt);
     socket.on('message_deleted', onDel);
-    socket.on('connect', onSocketConnect);
-    socket.on('reconnect', onSocketConnect);
-    const appSub = AppState.addEventListener('change', onAppState);
 
     let onAnyDbg: ((event: string, ...args: unknown[]) => void) | null = null;
     if (__DEV__) {
@@ -608,7 +594,7 @@ export default function MuhabbetChatScreen({
       setRoomJoined(false);
       ackTimeoutsRef.current.forEach((t) => clearTimeout(t));
       ackTimeoutsRef.current.clear();
-      appSub.remove();
+      unsubSessionRefresh();
       try {
         socket.emit('leave_muhabbet_conversation', { conversation_id: cid });
       } catch {
@@ -620,8 +606,6 @@ export default function MuhabbetChatScreen({
       socket.off('message_delivered', onDelivered);
       socket.off('message_seen', onSeenEvt);
       socket.off('message_deleted', onDel);
-      socket.off('connect', onSocketConnect);
-      socket.off('reconnect', onSocketConnect);
       if (onAnyDbg) {
         (socket as unknown as { offAny?: (cb: (event: string, ...args: unknown[]) => void) => void }).offAny?.(
           onAnyDbg
