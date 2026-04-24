@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
+  type AppStateStatus,
   Easing,
   FlatList,
   KeyboardAvoidingView,
@@ -16,6 +18,7 @@ import {
   Text,
   TextInput,
   View,
+  __DEV__,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,7 +28,7 @@ import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
-import { getOrCreateSocket, useSocketContext } from '../contexts/SocketContext';
+import { getOrCreateSocket } from '../contexts/SocketContext';
 import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
@@ -36,6 +39,17 @@ const PAX_BUBBLE_GRAD = ['#f7971e', '#ffd200'] as const;
 const SEND_BTN_GRAD = ['#4facfe', '#00f2fe'] as const;
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
+
+/** Muhabbet mesaj satırı — sunucu DB tutmaz; id istemci UUID veya socket message_id. */
+export type OutMessageStatus = 'sending' | 'sent' | 'delivered' | 'seen';
+
+function newClientMessageUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 const BUBBLE_SHADOW = Platform.select({
   ios: {
@@ -53,6 +67,8 @@ export type ChatMessageRow = {
   body?: string | null;
   sender_user_id?: string | null;
   created_at?: string | null;
+  /** Giden mesaj: gönderim / okundu bilgisi */
+  out_status?: OutMessageStatus;
 };
 
 export type ChatContext = {
@@ -98,9 +114,24 @@ function isDriverAppRole(r: string | null | undefined): boolean {
   return x === 'driver' || x === 'private_driver';
 }
 
-/** Muhabbet mesajı: JWT `register` ack gelmeden sunucu `not_registered` döner; kısa süre bekle. */
-function waitForRegisteredAck(socket: Socket, alreadyRegistered: boolean, timeoutMs: number): Promise<boolean> {
-  if (alreadyRegistered) return Promise.resolve(true);
+function DeliveryTicks({ status }: { status: OutMessageStatus }) {
+  if (status === 'sending') {
+    return <Ionicons name="time-outline" size={14} color="#9CA3AF" style={{ marginLeft: 3 }} />;
+  }
+  if (status === 'sent') {
+    return <Ionicons name="checkmark" size={15} color="#9CA3AF" style={{ marginLeft: 3 }} />;
+  }
+  if (status === 'delivered') {
+    return <Ionicons name="checkmark-done-outline" size={15} color="#6B7280" style={{ marginLeft: 3 }} />;
+  }
+  return <Ionicons name="checkmark-done" size={15} color="#3B82F6" style={{ marginLeft: 3 }} />;
+}
+
+/**
+ * Bir sonraki `registered` success ack’ini bekle (kısayol yok).
+ * Reconnect’te Context ref’i gecikince “zaten kayıtlı” sanılıp join atlanmasını önler.
+ */
+function waitForNextRegisterSuccess(socket: Socket, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (ok: boolean) => {
@@ -128,8 +159,6 @@ export default function MuhabbetChatScreen({
 }: MuhabbetChatScreenProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isRegistered } = useSocketContext();
-  const isRegisteredRef = useRef(isRegistered);
   const base = apiBaseUrl.replace(/\/$/, '');
   const cid = (conversationId || '').trim();
 
@@ -146,12 +175,13 @@ export default function MuhabbetChatScreen({
   const lastLeylekPairRequestAtRef = useRef(0);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
   const ctaPulse = useRef(new Animated.Value(1)).current;
+  /** Sohbet odası (joined_muhabbet) — mesaj almak için gerekli */
+  const [roomJoined, setRoomJoined] = useState(false);
+  const roomJoinedRef = useRef(false);
+  /** Ekran mount / unmount: açıkken message_seen gönder */
+  const chatSessionActiveRef = useRef(true);
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
-
-  useEffect(() => {
-    isRegisteredRef.current = isRegistered;
-  }, [isRegistered]);
 
   useEffect(() => {
     myIdRef.current = myId;
@@ -327,67 +357,244 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     if (!cid) return;
     const socket = getOrCreateSocket();
-    const join = () => {
+    const cidLo = cid.trim().toLowerCase();
+    let cancelled = false;
+    chatSessionActiveRef.current = true;
+    roomJoinedRef.current = false;
+    setRoomJoined(false);
+
+    const emitJoin = () => {
+      if (cancelled || !socket.connected) return;
       notifyAuthTokenBecameAvailableForSocket();
+      console.log('[chat] join emitted', cid);
       socket.emit('join_muhabbet_conversation', { conversation_id: cid });
     };
-    if (socket.connected) join();
-    else socket.on('connect', join);
-    socket.on('reconnect', join);
-    const joinRetry = setTimeout(() => {
-      if (socket.connected) join();
-    }, 1200);
 
-    const onMsg = (payload: {
+    const runRegisterAndJoin = async () => {
+      if (cancelled) return;
+      notifyAuthTokenBecameAvailableForSocket();
+      if (!socket.connected) {
+        try {
+          socket.connect();
+        } catch {
+          /* noop */
+        }
+        await new Promise<void>((resolve) => {
+          if (socket.connected) {
+            resolve();
+            return;
+          }
+          const t = setTimeout(() => resolve(), 12000);
+          const onC = () => {
+            clearTimeout(t);
+            socket.off('connect', onC);
+            resolve();
+          };
+          socket.on('connect', onC);
+        });
+      }
+      if (cancelled) return;
+      if (socket.connected) {
+        console.log('[chat] socket connected');
+      }
+      const regOk = await waitForNextRegisterSuccess(socket, 15000);
+      if (cancelled) return;
+      if (!regOk) {
+        console.warn('[chat] register ack timeout — join atlanıyor; tekrar denenecek');
+        return;
+      }
+      console.log('[chat] registered');
+      emitJoin();
+      setTimeout(() => {
+        if (!cancelled && socket.connected) emitJoin();
+      }, 1000);
+    };
+
+    const onJoinedMuhabbet = (p: { conversation_id?: string; room?: string }) => {
+      const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+      if (c !== cidLo) return;
+      roomJoinedRef.current = true;
+      setRoomJoined(true);
+      console.log('[chat] joined room', c);
+    };
+
+    const onMsg = (msg: {
       conversation_id?: string;
       message_id?: string;
       text?: string;
       sender_id?: string;
       created_at?: string;
     }) => {
-      const conv = payload?.conversation_id != null ? String(payload.conversation_id).toLowerCase() : '';
-      if (conv !== cid.toLowerCase()) return;
-      const mid = String(payload?.message_id || '').trim();
+      console.log('[chat] received message', msg);
+      const conv = msg?.conversation_id != null ? String(msg.conversation_id).toLowerCase() : '';
+      if (conv !== cidLo) {
+        if (__DEV__) {
+          console.warn('[chat] message ignored: conversation_id mismatch', { conv, expected: cidLo });
+        }
+        return;
+      }
+      const mid = String(msg?.message_id || '').trim();
       if (!mid) return;
-      const sid = String(payload?.sender_id || '')
+      const senderLo = String(msg?.sender_id || '')
         .trim()
         .toLowerCase();
-      const text = String(payload?.text ?? '');
-      const created = String(payload?.created_at || new Date().toISOString());
+      const text = String(msg?.text ?? '');
+      const created = String(msg?.created_at || new Date().toISOString());
       const myLo = (myIdRef.current || '').trim().toLowerCase();
+      const isMine = Boolean(myLo && senderLo === myLo);
+
       setRows((prev) => {
-        let next = prev;
-        if (myLo && sid === myLo) {
-          next = prev.filter((m) => {
-            if (!String(m.id).startsWith('local-')) return true;
-            return String(m.body || '') !== text;
-          });
+        if (prev.some((m) => m.id === mid)) {
+          if (__DEV__) console.log('[chat] message dedupe skip', mid);
+          return prev;
         }
-        if (next.some((m) => m.id === mid)) return next;
-        return [...next, { id: mid, body: text, sender_user_id: sid, created_at: created }];
+        return [...prev, { id: mid, body: text, sender_user_id: senderLo, created_at: created }];
       });
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+
+      if (!isMine && myLo) {
+        try {
+          socket.emit('message_delivered', {
+            conversation_id: cid,
+            message_id: mid,
+            sender_id: senderLo,
+          });
+        } catch {
+          /* noop */
+        }
+        if (AppState.currentState === 'active' && chatSessionActiveRef.current) {
+          try {
+            socket.emit('message_seen', {
+              conversation_id: cid,
+              message_id: mid,
+              sender_id: senderLo,
+            });
+          } catch {
+            /* noop */
+          }
+        }
+      }
     };
+
+    const onAck = (p: { conversation_id?: string; message_id?: string }) => {
+      const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+      if (c && c !== cidLo) return;
+      const mid = String(p?.message_id || '').trim();
+      if (!mid) return;
+      console.log('[chat] received ack', mid);
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
+      setRows((prev) =>
+        prev.map((m) => {
+          if (m.id !== mid) return m;
+          if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
+          return { ...m, out_status: 'sent' };
+        })
+      );
+    };
+
+    const onDelivered = (p: { conversation_id?: string; message_id?: string }) => {
+      const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+      if (c && c !== cidLo) return;
+      const mid = String(p?.message_id || '').trim();
+      if (!mid) return;
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
+      setRows((prev) =>
+        prev.map((m) => {
+          if (m.id !== mid) return m;
+          if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
+          if (m.out_status === 'seen') return m;
+          return { ...m, out_status: 'delivered' };
+        })
+      );
+    };
+
+    const onSeenEvt = (p: { conversation_id?: string; message_id?: string }) => {
+      const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+      if (c && c !== cidLo) return;
+      const mid = String(p?.message_id || '').trim();
+      if (!mid) return;
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
+      setRows((prev) =>
+        prev.map((m) => {
+          if (m.id !== mid) return m;
+          if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
+          return { ...m, out_status: 'seen' };
+        })
+      );
+    };
+
     const onDel = (payload: { message_id?: string; conversation_id?: string }) => {
       const conv = payload?.conversation_id != null ? String(payload.conversation_id).toLowerCase() : '';
-      if (conv && conv !== cid.toLowerCase()) return;
+      if (conv && conv !== cidLo) return;
       const mid = payload?.message_id != null ? String(payload.message_id).toLowerCase() : '';
       if (!mid) return;
       setRows((prev) => prev.filter((m) => m.id.toLowerCase() !== mid));
     };
+
+    const onSocketConnect = () => {
+      roomJoinedRef.current = false;
+      setRoomJoined(false);
+      void runRegisterAndJoin();
+    };
+
+    const onAppState = (s: AppStateStatus) => {
+      if (s !== 'active' || cancelled) return;
+      if (!socket.connected) {
+        void runRegisterAndJoin();
+        return;
+      }
+      notifyAuthTokenBecameAvailableForSocket();
+      emitJoin();
+      setTimeout(() => {
+        if (!cancelled && socket.connected) emitJoin();
+      }, 1000);
+    };
+
+    socket.on('joined_muhabbet', onJoinedMuhabbet);
     socket.on('message', onMsg);
+    socket.on('message_ack', onAck);
+    socket.on('message_delivered', onDelivered);
+    socket.on('message_seen', onSeenEvt);
     socket.on('message_deleted', onDel);
+    socket.on('connect', onSocketConnect);
+    socket.on('reconnect', onSocketConnect);
+    const appSub = AppState.addEventListener('change', onAppState);
+
+    let onAnyDbg: ((event: string, ...args: unknown[]) => void) | null = null;
+    if (__DEV__) {
+      onAnyDbg = (event: string, ...args: unknown[]) => {
+        if (event === 'heartbeat' || event === 'pong_keepalive') return;
+        console.log('[socket event]', event, args[0]);
+      };
+      (socket as unknown as { onAny: (cb: (event: string, ...args: unknown[]) => void) => void }).onAny(onAnyDbg);
+    }
+
+    void runRegisterAndJoin();
+
     return () => {
-      clearTimeout(joinRetry);
+      cancelled = true;
+      chatSessionActiveRef.current = false;
+      roomJoinedRef.current = false;
+      setRoomJoined(false);
+      appSub.remove();
       try {
         socket.emit('leave_muhabbet_conversation', { conversation_id: cid });
       } catch {
         /* noop */
       }
-      socket.off('connect', join);
-      socket.off('reconnect', join);
+      socket.off('joined_muhabbet', onJoinedMuhabbet);
       socket.off('message', onMsg);
+      socket.off('message_ack', onAck);
+      socket.off('message_delivered', onDelivered);
+      socket.off('message_seen', onSeenEvt);
       socket.off('message_deleted', onDel);
+      socket.off('connect', onSocketConnect);
+      socket.off('reconnect', onSocketConnect);
+      if (onAnyDbg) {
+        (socket as unknown as { offAny?: (cb: (event: string, ...args: unknown[]) => void) => void }).offAny?.(
+          onAnyDbg
+        );
+      }
     };
   }, [cid]);
 
@@ -409,6 +616,10 @@ export default function MuhabbetChatScreen({
         }
         return;
       }
+      if (p?.code === 'bad_message_id') {
+        Alert.alert('Mesaj', det || 'Geçersiz mesaj kimliği.');
+        return;
+      }
       Alert.alert('Sohbet', det || 'İşlem yapılamadı.');
     };
     socket.on('muhabbet_error', onMuErr);
@@ -419,7 +630,7 @@ export default function MuhabbetChatScreen({
 
   const deleteMessage = useCallback(
     (messageId: string) => {
-      if (!cid || !messageId || String(messageId).startsWith('local-')) return;
+      if (!cid || !messageId) return;
       getOrCreateSocket().emit('delete_message', { message_id: messageId, conversation_id: cid });
     },
     [cid]
@@ -428,49 +639,41 @@ export default function MuhabbetChatScreen({
   const send = async () => {
     const body = draft.trim();
     if (!body || !cid) return;
-    const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
-    const pendingId =
-      myLo && body ? `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}` : null;
-    if (pendingId) {
-      setRows((p) => [
-        ...p,
-        { id: pendingId, body, sender_user_id: myLo, created_at: new Date().toISOString() },
-      ]);
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    const socket = getOrCreateSocket();
+    if (!socket.connected) {
+      Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, tekrar deneyin.');
+      return;
     }
+    if (!roomJoinedRef.current) {
+      Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, tekrar deneyin.');
+      return;
+    }
+    const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
+    if (!myLo) {
+      Alert.alert('Sohbet', 'Kullanıcı bilgisi yüklenemedi.');
+      return;
+    }
+    const messageId = newClientMessageUuid();
+    setRows((p) => [
+      ...p,
+      {
+        id: messageId,
+        body,
+        sender_user_id: myLo,
+        created_at: new Date().toISOString(),
+        out_status: 'sending',
+      },
+    ]);
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     setDraft('');
     setSending(true);
+    console.log('[chat] sending muhabbet_send', messageId);
     try {
-      const socket = getOrCreateSocket();
-      if (!socket.connected) {
-        socket.connect();
-        await new Promise<void>((resolve) => {
-          if (socket.connected) {
-            resolve();
-            return;
-          }
-          const t = setTimeout(() => resolve(), 10000);
-          const onC = () => {
-            clearTimeout(t);
-            socket.off('connect', onC);
-            resolve();
-          };
-          socket.on('connect', onC);
-        });
-      }
-      const regOk = await waitForRegisteredAck(socket, isRegisteredRef.current, 12000);
-      if (!regOk) {
-        throw new Error('register_timeout');
-      }
-      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-      socket.emit('muhabbet_send', { conversation_id: cid, text: body });
-    } catch (e) {
-      const msg = e instanceof Error && e.message === 'register_timeout' ? 'Bağlantı hazır değil. Tekrar deneyin.' : 'Socket bağlantısını kontrol edin.';
-      Alert.alert('Gönderilemedi', msg);
+      socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
+    } catch {
+      Alert.alert('Gönderilemedi', 'Bağlantı hatası.');
       setDraft(body);
-      if (pendingId) {
-        setRows((p) => p.filter((m) => m.id !== pendingId));
-      }
+      setRows((p) => p.filter((m) => m.id !== messageId));
     } finally {
       setSending(false);
     }
@@ -655,11 +858,19 @@ export default function MuhabbetChatScreen({
               keyboardDismissMode="none"
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               ListHeaderComponent={
-                <View style={styles.privacyBanner}>
-                  <Text style={styles.privacyBannerTxt} numberOfLines={4}>
-                    Güvenliğiniz bizim önceliğimizdir. Mesaj içerikleri sunucularımızda saklanmaz. Yazışmalar yalnızca
-                    görüşme sırasında geçici olarak iletilir.
-                  </Text>
+                <View>
+                  {!roomJoined ? (
+                    <View style={styles.connectingStrip} accessibilityRole="alert">
+                      <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} style={{ marginRight: 8 }} />
+                      <Text style={styles.connectingStripTxt}>Sohbet bağlantısı kuruluyor…</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.privacyBanner}>
+                    <Text style={styles.privacyBannerTxt} numberOfLines={4}>
+                      Güvenliğiniz bizim önceliğimizdir. Mesaj içerikleri sunucularımızda saklanmaz. Yazışmalar yalnızca
+                      görüşme sırasında geçici olarak iletilir.
+                    </Text>
+                  </View>
                 </View>
               }
               renderItem={({ item }) => {
@@ -689,7 +900,10 @@ export default function MuhabbetChatScreen({
                           <Ionicons name="trash-outline" size={17} color="#6B7280" />
                         </Pressable>
                       </View>
-                      {time ? <Text style={styles.tTimeMine}>{time}</Text> : null}
+                      <View style={styles.timeRowMine}>
+                        {time ? <Text style={styles.tTimeMine}>{time}</Text> : null}
+                        {item.out_status ? <DeliveryTicks status={item.out_status} /> : null}
+                      </View>
                     </View>
                   );
                 }
@@ -832,6 +1046,19 @@ const styles = StyleSheet.create({
   },
   matchBadgeTxt: { flex: 1, fontSize: 13, color: '#fff', fontWeight: '700', lineHeight: 18 },
   list: { padding: 12, paddingBottom: 8, flexGrow: 1 },
+  connectingStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  connectingStripTxt: { fontSize: 13, color: '#1D4ED8', fontWeight: '600' },
   privacyBanner: {
     backgroundColor: 'rgba(22, 163, 74, 0.12)',
     borderRadius: 12,
@@ -859,7 +1086,14 @@ const styles = StyleSheet.create({
   bubbleAlignStart: { alignSelf: 'flex-start' },
   bubblePad: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
   tGrad: { color: '#fff', fontSize: 16, lineHeight: 22, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.12)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
-  tTimeMine: { fontSize: 11, color: TEXT_SECONDARY, textAlign: 'right', marginTop: 4 },
+  timeRowMine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+    gap: 4,
+  },
+  tTimeMine: { fontSize: 11, color: TEXT_SECONDARY, textAlign: 'right' },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
   routeSafetyTxt: {
