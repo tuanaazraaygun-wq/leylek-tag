@@ -18455,7 +18455,7 @@ async def muhabbet_listing_create(
                 payload,
             )
             try:
-                ins = supabase.table("ride_listings").insert(payload).select("*").execute()
+                ins = supabase.table("ride_listings").insert(payload).execute()
             except Exception as attempt_exc:
                 last_exc = attempt_exc
                 logger.exception("%s insert attempt idx=%s Supabase insert exception", LP, idx)
