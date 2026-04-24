@@ -140,6 +140,20 @@ function userSubmitFailureMessage(): string {
   return 'Teklif oluşturulamadı. Lütfen tekrar deneyin.';
 }
 
+function detailFromMuhabbetCreateJson(d: unknown): string | null {
+  if (!d || typeof d !== 'object') return null;
+  const det = (d as { detail?: unknown }).detail;
+  if (typeof det === 'string' && det.trim()) return det.trim();
+  if (Array.isArray(det) && det.length > 0) {
+    const first = det[0];
+    if (first && typeof first === 'object' && 'msg' in first) {
+      const m = (first as { msg?: unknown }).msg;
+      if (typeof m === 'string' && m.trim()) return m.trim();
+    }
+  }
+  return null;
+}
+
 /** İstekler FastAPI /api altında; yanlışlıkla origin kökü verilmişse /api ekle (localhost hariç). */
 function ensureApiPathPrefix(baseUrl: string): string {
   let s = String(baseUrl || '').trim().replace(/\/$/, '');
@@ -544,7 +558,15 @@ export default function CreateListingModal({
 
       if (!res.ok || !d.success) {
         console.warn('[muhabbet-create] submit başarısız (kullanıcıya sade mesaj)', res.status, rawBody.slice(0, 500));
-        Alert.alert('Teklif', userSubmitFailureMessage());
+        const parsed = (() => {
+          try {
+            return JSON.parse(rawBody) as unknown;
+          } catch {
+            return null;
+          }
+        })();
+        const serverDetail = detailFromMuhabbetCreateJson(parsed);
+        Alert.alert('Teklif', serverDetail || userSubmitFailureMessage());
         return;
       }
       console.warn('[muhabbet-create] submit OK');

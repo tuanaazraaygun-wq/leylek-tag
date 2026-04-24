@@ -289,6 +289,14 @@ def muhabbet_room(conversation_id: str) -> str:
     return f"muhabbet_{c}" if c else "muhabbet_"
 
 
+def _muhabbet_user_socket_online(uid: str) -> bool:
+    """Socket `register` sonrası connected_users haritasında aktif sid var mı (push dedupe)."""
+    u = (uid or "").strip().lower()
+    if not u:
+        return False
+    return bool(connected_users.get(u) or connected_users.get(uid))
+
+
 def _muhabbet_socket_uid_from_sid(sid: str) -> Optional[str]:
     return (socket_id_to_user.get(sid) or None) if sid else None
 
@@ -18823,6 +18831,29 @@ def _muhabbet_listing_insert_payload_variants(
     return out
 
 
+def _muhabbet_listings_opened_today_utc_count(uid: str, owner_col: str) -> int:
+    """UTC günü 00:00 sonrası açılmış Muhabbet ilanları (listing_type ∈ muhabbet); cancelled dahil."""
+    u = str(uid or "").strip().lower()
+    if not u:
+        return 0
+    day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    oc = (owner_col or "").strip()
+    lt_list = list(_MUHABBET_LISTING_TYPES)
+    try:
+        res = (
+            supabase.table("ride_listings")
+            .select("id", count="exact")
+            .eq(oc, u)
+            .gte("created_at", day_start)
+            .in_("listing_type", lt_list)
+            .execute()
+        )
+        return int(getattr(res, "count", None) or 0)
+    except Exception as e:
+        logger.warning("[muhabbet-listings] today_open_count query failed: %s", e)
+        raise
+
+
 @api_router.post("/muhabbet/listings/create")
 async def muhabbet_listing_create(
     body: MuhabbetListingCreateBody,
@@ -18834,6 +18865,16 @@ async def muhabbet_listing_create(
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         if not uid:
             raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
+        owner_col = _ride_listings_owner_column()
+        try:
+            opened_today = _muhabbet_listings_opened_today_utc_count(uid, owner_col)
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Teklif limiti kontrol edilemedi. Lütfen kısa süre sonra tekrar deneyin.",
+            ) from None
+        if opened_today >= 3:
+            raise HTTPException(status_code=400, detail="Bugün en fazla 3 teklif açabilirsiniz.")
         c = body.city
         lrid: Optional[str] = None
         lph = (body.linked_pattern_hash or "").strip() or None
@@ -18854,7 +18895,6 @@ async def muhabbet_listing_create(
             lrid = rid
             if not lph and rr.data[0].get("pattern_hash"):
                 lph = str(rr.data[0].get("pattern_hash")).strip() or None
-        owner_col = _ride_listings_owner_column()
         try:
             body_dump = body.model_dump(mode="json")
         except Exception:
@@ -19031,6 +19071,8 @@ async def muhabbet_listings_feed(
             if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key
             and not _muhabbet_listing_departure_passed(r)
             and not _muhabbet_listing_offer_expired(r)
+            and not (r.get("matched_conversation_id") or r.get("accepted_match_request_id"))
+            and str(r.get("status") or "").strip().lower() == "active"
         ][:lim]
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
@@ -20011,14 +20053,18 @@ async def sio_muhabbet_send(sid, data):
         return
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
     text = str(data.get("text") or data.get("body") or "").strip()
+    logger.info("[muhabbet_send] received conversation_id=%s user_id=%s text_len=%s", cid or None, uid, len(text))
     if not cid or not text:
         return
     if len(text) > 2000:
         await sio.emit("muhabbet_error", {"code": "text_too_long", "max": 2000}, room=sid)
         return
-    if not _muhabbet_conversation_member_ok(cid, uid):
+    try:
+        crow = _muhabbet_conversation_for_member_or_403(cid, uid)
+    except HTTPException:
         await sio.emit("muhabbet_error", {"code": "forbidden", "conversation_id": cid}, room=sid)
         return
+    logger.info("[muhabbet_send] participants ok conversation_id=%s", cid)
     msg_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
     room = muhabbet_room(cid)
@@ -20034,20 +20080,21 @@ async def sio_muhabbet_send(sid, data):
         "created_at": now_iso,
     }
     await sio.emit("message", payload, room=room)
+    logger.info("[muhabbet_send] emitted room=%s message_id=%s", room, msg_id)
     try:
-        crow = _muhabbet_conversation_for_member_or_403(cid, uid)
         a = str(crow.get("user_a") or "").strip().lower()
         b = str(crow.get("user_b") or "").strip().lower()
         recipient = b if a == uid else a
-        preview = text[:50] + ("…" if len(text) > 50 else "")
-        asyncio.create_task(
-            send_push_notification(
-                recipient,
-                "Yeni mesaj",
-                preview,
-                {"type": "muhabbet_message", "conversation_id": cid, "sender_id": uid},
+        if recipient and not _muhabbet_user_socket_online(recipient):
+            preview = text[:50] + ("…" if len(text) > 50 else "")
+            asyncio.create_task(
+                send_push_notification(
+                    recipient,
+                    "Yeni mesaj",
+                    preview,
+                    {"type": "muhabbet_message", "conversation_id": cid, "sender_id": uid},
+                )
             )
-        )
     except Exception as e:
         logger.warning("muhabbet_send push: %s", e)
 

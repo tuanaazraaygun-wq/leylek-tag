@@ -22,9 +22,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
+import type { Socket } from 'socket.io-client';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
-import { getOrCreateSocket } from '../contexts/SocketContext';
+import { getOrCreateSocket, useSocketContext } from '../contexts/SocketContext';
+import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
@@ -96,6 +98,27 @@ function isDriverAppRole(r: string | null | undefined): boolean {
   return x === 'driver' || x === 'private_driver';
 }
 
+/** Muhabbet mesajı: JWT `register` ack gelmeden sunucu `not_registered` döner; kısa süre bekle. */
+function waitForRegisteredAck(socket: Socket, alreadyRegistered: boolean, timeoutMs: number): Promise<boolean> {
+  if (alreadyRegistered) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(tid);
+      socket.off('registered', onReg);
+      resolve(ok);
+    };
+    const tid = setTimeout(() => finish(false), timeoutMs);
+    const onReg = (data: { success?: boolean }) => {
+      if (data?.success === true) finish(true);
+    };
+    socket.on('registered', onReg);
+    notifyAuthTokenBecameAvailableForSocket();
+  });
+}
+
 export default function MuhabbetChatScreen({
   apiBaseUrl,
   conversationId,
@@ -105,10 +128,13 @@ export default function MuhabbetChatScreen({
 }: MuhabbetChatScreenProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isRegistered } = useSocketContext();
+  const isRegisteredRef = useRef(isRegistered);
   const base = apiBaseUrl.replace(/\/$/, '');
   const cid = (conversationId || '').trim();
 
   const [myId, setMyId] = useState<string>('');
+  const myIdRef = useRef('');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ChatMessageRow[]>([]);
   const [ctx, setCtx] = useState<ChatContext | null>(null);
@@ -122,6 +148,14 @@ export default function MuhabbetChatScreen({
   const ctaPulse = useRef(new Animated.Value(1)).current;
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
+
+  useEffect(() => {
+    isRegisteredRef.current = isRegistered;
+  }, [isRegistered]);
+
+  useEffect(() => {
+    myIdRef.current = myId;
+  }, [myId]);
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -151,7 +185,11 @@ export default function MuhabbetChatScreen({
         const raw = await getPersistedUserRaw();
         if (!raw || cancelled) return;
         const u = JSON.parse(raw) as { id?: string };
-        if (u?.id) setMyId(String(u.id).trim().toLowerCase());
+        if (u?.id) {
+          const lo = String(u.id).trim().toLowerCase();
+          myIdRef.current = lo;
+          setMyId(lo);
+        }
       } catch {
         /* noop */
       }
@@ -290,11 +328,15 @@ export default function MuhabbetChatScreen({
     if (!cid) return;
     const socket = getOrCreateSocket();
     const join = () => {
+      notifyAuthTokenBecameAvailableForSocket();
       socket.emit('join_muhabbet_conversation', { conversation_id: cid });
     };
     if (socket.connected) join();
     else socket.on('connect', join);
     socket.on('reconnect', join);
+    const joinRetry = setTimeout(() => {
+      if (socket.connected) join();
+    }, 1200);
 
     const onMsg = (payload: {
       conversation_id?: string;
@@ -312,7 +354,7 @@ export default function MuhabbetChatScreen({
         .toLowerCase();
       const text = String(payload?.text ?? '');
       const created = String(payload?.created_at || new Date().toISOString());
-      const myLo = (myId || '').trim().toLowerCase();
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
       setRows((prev) => {
         let next = prev;
         if (myLo && sid === myLo) {
@@ -336,6 +378,7 @@ export default function MuhabbetChatScreen({
     socket.on('message', onMsg);
     socket.on('message_deleted', onDel);
     return () => {
+      clearTimeout(joinRetry);
       try {
         socket.emit('leave_muhabbet_conversation', { conversation_id: cid });
       } catch {
@@ -346,7 +389,7 @@ export default function MuhabbetChatScreen({
       socket.off('message', onMsg);
       socket.off('message_deleted', onDel);
     };
-  }, [cid, myId]);
+  }, [cid]);
 
   useEffect(() => {
     if (!cid) return;
@@ -357,6 +400,13 @@ export default function MuhabbetChatScreen({
       const det = typeof p?.detail === 'string' ? p.detail : '';
       if (p?.code === 'text_too_long') {
         Alert.alert('Mesaj çok uzun', det || `En fazla ${p?.max ?? 2000} karakter.`);
+        return;
+      }
+      if (p?.code === 'not_registered') {
+        notifyAuthTokenBecameAvailableForSocket();
+        if (conv && conv === cid.toLowerCase()) {
+          Alert.alert('Bağlantı', det || 'Oturum doğrulanıyor. Bir saniye sonra tekrar deneyin.');
+        }
         return;
       }
       Alert.alert('Sohbet', det || 'İşlem yapılamadı.');
@@ -378,7 +428,7 @@ export default function MuhabbetChatScreen({
   const send = async () => {
     const body = draft.trim();
     if (!body || !cid) return;
-    const myLo = (myId || '').trim().toLowerCase();
+    const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
     const pendingId =
       myLo && body ? `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}` : null;
     if (pendingId) {
@@ -408,10 +458,15 @@ export default function MuhabbetChatScreen({
           socket.on('connect', onC);
         });
       }
+      const regOk = await waitForRegisteredAck(socket, isRegisteredRef.current, 12000);
+      if (!regOk) {
+        throw new Error('register_timeout');
+      }
       socket.emit('join_muhabbet_conversation', { conversation_id: cid });
       socket.emit('muhabbet_send', { conversation_id: cid, text: body });
-    } catch {
-      Alert.alert('Gönderilemedi', 'Socket bağlantısını kontrol edin.');
+    } catch (e) {
+      const msg = e instanceof Error && e.message === 'register_timeout' ? 'Bağlantı hazır değil. Tekrar deneyin.' : 'Socket bağlantısını kontrol edin.';
+      Alert.alert('Gönderilemedi', msg);
       setDraft(body);
       if (pendingId) {
         setRows((p) => p.filter((m) => m.id !== pendingId));
@@ -667,38 +722,44 @@ export default function MuhabbetChatScreen({
               }}
             />
           )}
-          <View style={styles.keyRow}>
-            <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
-              <View style={styles.keyCtaGlow}>
-                <Pressable
-                  onPress={() => void sendLeylekPairRequest()}
-                  disabled={pairRequestLoading || !!ctx?.matched_via_leylek_key}
-                  style={({ pressed }) => [pressed && !pairRequestLoading && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Leylek Anahtar ile eşleşme isteği gönder"
-                >
-                  <LinearGradient
-                    colors={['#6366F1', '#7C3AED']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[styles.keyCta, pairRequestLoading && { opacity: 0.75 }]}
+          {!ctx?.matched_via_leylek_key ? (
+            <View style={styles.keyRow}>
+              <Text style={styles.routeSafetyTxt}>
+                Önce güzergâh, ücret ve buluşma noktasını netleştirin. Leylek Anahtar ile eşleşmeden yolculuğa
+                başlamayın.
+              </Text>
+              <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
+                <View style={styles.keyCtaGlow}>
+                  <Pressable
+                    onPress={() => void sendLeylekPairRequest()}
+                    disabled={pairRequestLoading}
+                    style={({ pressed }) => [pressed && !pairRequestLoading && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Leylek Anahtar ile eşleşme isteği gönder"
                   >
-                    {pairRequestLoading ? (
-                      <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-                    ) : (
-                      <Ionicons name="key" size={18} color="#fff" style={{ marginRight: 8 }} />
-                    )}
-                    <Text style={styles.keyCtaTxt}>
-                      {pairRequestLoading ? 'Gönderiliyor…' : 'Leylek Anahtar ile eşleş'}
-                    </Text>
-                  </LinearGradient>
-                </Pressable>
-              </View>
-            </Animated.View>
-            <Pressable onPress={openLeylekKey} style={styles.keyCodeLink} hitSlop={8}>
-              <Text style={styles.keyCodeLinkTxt}>Anahtar kodunu kendin girmek için tıkla</Text>
-            </Pressable>
-          </View>
+                    <LinearGradient
+                      colors={['#6366F1', '#7C3AED']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[styles.keyCta, pairRequestLoading && { opacity: 0.75 }]}
+                    >
+                      {pairRequestLoading ? (
+                        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                      ) : (
+                        <Ionicons name="key" size={18} color="#fff" style={{ marginRight: 8 }} />
+                      )}
+                      <Text style={styles.keyCtaTxt}>
+                        {pairRequestLoading ? 'Gönderiliyor…' : 'Leylek Anahtar ile eşleş'}
+                      </Text>
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </Animated.View>
+              <Pressable onPress={openLeylekKey} style={styles.keyCodeLink} hitSlop={8}>
+                <Text style={styles.keyCodeLinkTxt}>Anahtar kodunu kendin girmek için tıkla</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <TextInput
               style={styles.input}
@@ -801,6 +862,15 @@ const styles = StyleSheet.create({
   tTimeMine: { fontSize: 11, color: TEXT_SECONDARY, textAlign: 'right', marginTop: 4 },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
+  routeSafetyTxt: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#92400E',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
   keyCtaGlow: {
     borderRadius: 16,
     ...Platform.select({
