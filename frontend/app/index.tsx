@@ -55,7 +55,6 @@ import AnimatedClouds from '../components/auth/AnimatedClouds';
 import { LoginBrandHeader } from '../components/auth/LoginBrandHeader';
 import { LoginScreen } from '../components/auth/LoginScreen';
 import LeylekMuhabbetiFaz1Screen from '../components/LeylekMuhabbetiFaz1Screen';
-import RouteSummaryCard from '../components/RouteSummaryCard';
 // Push notifications - Expo Push ile (Firebase olmadan)
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -3394,8 +3393,6 @@ export default function App() {
         setScreen={setScreen}
         requestLocationPermission={requestLocationPermission}
         onShowTripEndedBanner={setRoleSelectTripExitBanner}
-        onRouteSummaryOpenGroup={handleRouteSummaryOpenGroup}
-        onRouteSummaryOpenRouteSetup={handleRouteSummaryOpenRouteSetup}
       />
     ) : (
       <RuntimeBoundary name="DriverDashboard">
@@ -6083,8 +6080,6 @@ function PassengerDashboard({
   setScreen,
   requestLocationPermission,
   onShowTripEndedBanner,
-  onRouteSummaryOpenGroup,
-  onRouteSummaryOpenRouteSetup,
 }: { 
   user: User; 
   logout: () => void;
@@ -6096,8 +6091,6 @@ function PassengerDashboard({
   setScreen: (screen: AppScreen) => void;
   requestLocationPermission: () => Promise<boolean>;
   onShowTripEndedBanner?: (message: string) => void;
-  onRouteSummaryOpenGroup: (groupId: string) => void;
-  onRouteSummaryOpenRouteSetup: () => void;
 }) {
   /** Geçici: yolcu panelinde olası `undefined is not a function` — doğrudan PassengerDashboard içinde */
   const __paxFn = (label: string, fn: unknown) => {
@@ -6106,10 +6099,6 @@ function PassengerDashboard({
     }
   };
   const insets = useSafeAreaInsets();
-  const routeSummaryToken =
-    (user as { access_token?: string; accessToken?: string }).access_token ??
-    (user as { access_token?: string; accessToken?: string }).accessToken ??
-    '';
 
   const [activeTag, setActiveTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(false);
@@ -9277,15 +9266,6 @@ function PassengerDashboard({
                 <Ionicons name="log-out-outline" size={24} color="#EF4444" />
               </TouchableOpacity>
             </View>
-
-            <RouteSummaryCard
-              apiBaseUrl={API_URL}
-              accessToken={routeSummaryToken}
-              enabled={!!routeSummaryToken}
-              horizontalInset={4}
-              onNavigateToGroup={onRouteSummaryOpenGroup}
-              onNavigateToRouteSetup={onRouteSummaryOpenRouteSetup}
-            />
             
             {/* Nereye Gitmek İstiyorsunuz - EN ÜSTTE, leyleklerin üstünde */}
             <Text style={styles.welcomeQuestionVeryTop}>Nereye Gitmek İstiyorsunuz?</Text>

@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
+import MuhabbetWatermark from './MuhabbetWatermark';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 
@@ -276,12 +277,13 @@ export default function ConversationsScreen({
   if (embedded) {
     return (
       <View style={[styles.embedRoot, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <MuhabbetWatermark />
         {loading ? (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
           </View>
         ) : (
-          listBody
+          <View style={{ flex: 1, zIndex: 1 }}>{listBody}</View>
         )}
       </View>
     );
@@ -289,19 +291,20 @@ export default function ConversationsScreen({
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right', 'bottom']}>
+      <MuhabbetWatermark />
       <ScreenHeaderGradient
         title="Sohbetler"
         onBack={() => router.back()}
         gradientColors={PRIMARY_GRAD}
       />
-      <View style={{ flex: 1 }}>{listBody}</View>
+      <View style={{ flex: 1, zIndex: 1 }}>{listBody}</View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: SURFACE },
-  embedRoot: { flex: 1, backgroundColor: SURFACE },
+  embedRoot: { flex: 1, backgroundColor: SURFACE, position: 'relative' },
   embedHeader: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
   embedTitle: { fontSize: 22, fontWeight: '800', color: TEXT_PRIMARY },
   embedSub: { marginTop: 6, fontSize: 14, color: TEXT_SECONDARY, lineHeight: 20 },

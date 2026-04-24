@@ -25,7 +25,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import type { RouteSummaryPayload } from './RouteSummaryCard';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { useRouter, type Href } from 'expo-router';
@@ -334,12 +333,6 @@ export default function LeylekMuhabbetiFaz1Screen({
   const [createGroupDesc, setCreateGroupDesc] = useState('');
   const [createGroupBusy, setCreateGroupBusy] = useState(false);
 
-  const [roadstersSummary, setRoadstersSummary] = useState<RouteSummaryPayload | null>(null);
-  const [roadstersMatches, setRoadstersMatches] = useState<
-    { match_id?: string; other_user_id: string }[]
-  >([]);
-  const [roadstersLoading, setRoadstersLoading] = useState(false);
-
   useEffect(() => {
     const gid = (initialGroupId || '').trim();
     if (!gid || !tok) return;
@@ -485,68 +478,13 @@ export default function LeylekMuhabbetiFaz1Screen({
     if (feedGroup) void loadFeed();
   }, [feedGroup, loadFeed]);
 
-  const loadRoadsters = useCallback(async () => {
-    if (!tok) {
-      setRoadstersSummary(null);
-      setRoadstersMatches([]);
-      return;
-    }
-    setRoadstersLoading(true);
-    try {
-      const base = apiUrl.replace(/\/$/, '');
-      const h = { Authorization: `Bearer ${tok}` };
-      const mq = new URLSearchParams({ limit: '32', city: selectedCity });
-      const [rSum, rMat] = await Promise.all([
-        fetch(`${base}/routes/summary`, { headers: h }),
-        fetch(`${base}/routes/match?${mq.toString()}`, { headers: h }),
-      ]);
-      if (rSum.ok) {
-        const j = (await rSum.json()) as RouteSummaryPayload;
-        if (
-          typeof j.match_count === 'number' &&
-          typeof j.has_group === 'boolean' &&
-          'route' in j &&
-          'group_id' in j
-        ) {
-          setRoadstersSummary(j);
-        } else {
-          setRoadstersSummary(null);
-        }
-      } else {
-        setRoadstersSummary(null);
-      }
-      if (rMat.ok) {
-        const m = (await rMat.json()) as {
-          success?: boolean;
-          matches?: { match_id?: string; other_user_id: string }[];
-        };
-        if (m.success && Array.isArray(m.matches)) {
-          setRoadstersMatches(m.matches);
-        } else {
-          setRoadstersMatches([]);
-        }
-      } else {
-        setRoadstersMatches([]);
-      }
-    } catch {
-      setRoadstersSummary(null);
-      setRoadstersMatches([]);
-    } finally {
-      setRoadstersLoading(false);
-    }
-  }, [apiUrl, tok, selectedCity]);
-
-  useEffect(() => {
-    void loadRoadsters();
-  }, [loadRoadsters]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setInboxSync((v) => v + 1);
-    await Promise.all([loadNeighborhoods(), loadGroups(), loadMyGroups(), loadRoadsters()]);
+    await Promise.all([loadNeighborhoods(), loadGroups(), loadMyGroups()]);
     if (feedGroup) await loadFeed();
     setRefreshing(false);
-  }, [loadNeighborhoods, loadGroups, loadMyGroups, loadRoadsters, feedGroup, loadFeed]);
+  }, [loadNeighborhoods, loadGroups, loadMyGroups, feedGroup, loadFeed]);
 
   const openListingsCreate = useCallback(() => {
     if (!requireMuhabbetToken()) return;
@@ -949,7 +887,6 @@ export default function LeylekMuhabbetiFaz1Screen({
   );
 
   const theme = getCityTheme(selectedCity);
-  const apiBaseUrl = apiUrl.replace(/\/$/, '');
 
   const peopleInsights = useMemo(() => {
     const neigh = neighborhoods.find((n) => n.id === selectedNeighborhoodId);
@@ -1444,15 +1381,9 @@ export default function LeylekMuhabbetiFaz1Screen({
               >
                 <LeylekMuhabbetiHomeTab
                   apiUrl={apiUrl}
-                  apiBaseUrl={apiBaseUrl}
                   accessToken={tok}
                   selectedCity={selectedCity}
                   refreshNonce={inboxSync}
-                  roadstersSummary={roadstersSummary}
-                  roadstersMatches={roadstersMatches}
-                  roadstersLoading={roadstersLoading}
-                  onNavigateToRouteSetup={onNavigateToRouteSetup}
-                  onNavigateToGroup={onNavigateToGroup}
                   onOpenLegacyDiscovery={() => setMuhabbetSurface('legacy')}
                   onOpenListingsCreate={openListingsCreate}
                   onOpenDriverListing={() => openListingCreateAs('driver')}
@@ -1485,7 +1416,7 @@ export default function LeylekMuhabbetiFaz1Screen({
             {mainTab === 'chats' && tok ? (
               <View style={{ flex: 1, minHeight: 0 }}>
                 <ConversationsScreen
-                  apiBaseUrl={apiUrl}
+                  apiBaseUrl={apiUrl.replace(/\/$/, '')}
                   variant="embedded"
                   onlyAccepted
                   refreshNonce={inboxSync}

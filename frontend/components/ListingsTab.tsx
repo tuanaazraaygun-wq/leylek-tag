@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import CreateListingModal from './CreateListingModal';
+import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 const ACCENT = '#F59E0B';
@@ -121,25 +122,12 @@ function roleBadge(role: string | undefined): { label: string; tone: 'drv' | 'pa
   return { label: 'Yolcu', tone: 'pax' };
 }
 
-function viewerIsDriverRole(appRole: string): boolean {
-  const r = (appRole || '').toLowerCase();
-  return r === 'driver' || r === 'private_driver';
-}
-
-function matchCtaLabel(listingRole: string | null | undefined, appRole: string): string {
-  const lr = (listingRole || '').toLowerCase();
-  const driverListing = lr === 'driver' || lr === 'private_driver';
-  if (driverListing && !viewerIsDriverRole(appRole)) return 'Bu yolculuğa katılmak istiyorum';
-  if (!driverListing && viewerIsDriverRole(appRole)) return 'Bu yolcuyu alabilirim';
-  return 'Talep gönder';
-}
-
 export default function ListingsTab({
   apiUrl,
   accessToken,
   selectedCity,
   currentUserId,
-  viewerAppRole,
+  viewerAppRole: _viewerAppRole,
   syncVersion,
   openCreateSignal,
   initialCreateRole = 'passenger',
@@ -173,9 +161,14 @@ export default function ListingsTab({
       setListings([]);
       return;
     }
+    const cityQ = (selectedCity || '').trim();
+    if (!cityQ) {
+      setListings([]);
+      return;
+    }
     setLoadingFeed(true);
     try {
-      const u = new URLSearchParams({ city: selectedCity, limit: '40' });
+      const u = new URLSearchParams({ city: cityQ, limit: '40' });
       if (roleFilter === 'driver') u.set('role_type', 'driver');
       if (roleFilter === 'passenger') u.set('role_type', 'passenger');
       const res = await fetch(`${base}/muhabbet/listings/feed?${u.toString()}`, {
@@ -282,6 +275,7 @@ export default function ListingsTab({
 
   return (
     <View style={styles.root}>
+      <MuhabbetWatermark />
       <View style={styles.toolbar}>
         <TouchableOpacity
           onPress={() => {
@@ -316,7 +310,13 @@ export default function ListingsTab({
           const pending = st === 'pending';
           const isDrvCard = rb.tone === 'drv';
           return (
-            <View key={L.id} style={styles.card}>
+            <View
+              key={L.id}
+              style={[
+                styles.card,
+                isDrvCard ? styles.cardThemeDriver : styles.cardThemePassenger,
+              ]}
+            >
               <View style={styles.cardTop}>
                 <View style={[styles.rolePill, rb.tone === 'drv' ? styles.rolePillDrv : styles.rolePillPax]}>
                   <Text style={styles.rolePillText}>{rb.label}</Text>
@@ -345,7 +345,7 @@ export default function ListingsTab({
                   : '—'}
               </Text>
               {L.note ? (
-                <Text style={styles.note} numberOfLines={3}>
+                <Text style={styles.note} numberOfLines={2}>
                   {L.note}
                 </Text>
               ) : null}
@@ -384,10 +384,10 @@ export default function ListingsTab({
                   </View>
                 ) : (
                   <GradientButton
-                    label={matchCtaLabel(L.role_type || undefined, viewerAppRole)}
+                    label="Talibim"
                     loading={matchBusyId === L.id}
                     onPress={() => void sendMatchRequest(L.id)}
-                    style={{ marginTop: 12 }}
+                    style={{ marginTop: 10 }}
                   />
                 )
               ) : null}
@@ -453,8 +453,8 @@ export default function ListingsTab({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  toolbar: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, gap: 12 },
+  root: { flex: 1, position: 'relative' },
+  toolbar: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, gap: 12, zIndex: 1 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     paddingHorizontal: 12,
@@ -477,22 +477,24 @@ const styles = StyleSheet.create({
     ...CARD_SHADOW,
   },
   newListingBtnHeroText: { color: '#fff', fontWeight: '800', fontSize: 17 },
-  scroll: { paddingHorizontal: 16, paddingBottom: 24 },
+  scroll: { paddingHorizontal: 16, paddingBottom: 24, zIndex: 1 },
   lead: { color: TEXT_SECONDARY, fontSize: 14, lineHeight: 20, marginBottom: 12 },
   muted: { color: TEXT_SECONDARY, fontSize: 15, marginVertical: 8 },
   mutedSmall: { color: TEXT_SECONDARY, fontSize: 13, marginTop: 4 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 8, marginBottom: 8 },
-  card: { backgroundColor: CARD_BG, borderRadius: 18, padding: 14, marginBottom: 12, ...CARD_SHADOW },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  rolePill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  rolePillDrv: { backgroundColor: 'rgba(245,158,11,0.2)' },
-  rolePillPax: { backgroundColor: 'rgba(59,130,246,0.15)' },
-  rolePillText: { fontSize: 12, fontWeight: '800', color: TEXT_PRIMARY },
-  statusPill: { fontSize: 12, fontWeight: '600', color: TEXT_SECONDARY },
-  cardName: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
-  cardRoute: { marginTop: 4, fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
-  metaLine: { marginTop: 6, fontSize: 13, color: TEXT_SECONDARY },
-  note: { marginTop: 8, fontSize: 14, color: TEXT_PRIMARY, lineHeight: 20 },
+  card: { backgroundColor: CARD_BG, borderRadius: 14, padding: 12, marginBottom: 10, ...CARD_SHADOW },
+  cardThemeDriver: { borderLeftWidth: 4, borderLeftColor: '#3B82F6' },
+  cardThemePassenger: { borderLeftWidth: 4, borderLeftColor: '#F59E0B' },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  rolePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  rolePillDrv: { backgroundColor: 'rgba(59,130,246,0.2)' },
+  rolePillPax: { backgroundColor: 'rgba(245,158,11,0.22)' },
+  rolePillText: { fontSize: 11, fontWeight: '800', color: TEXT_PRIMARY },
+  statusPill: { fontSize: 11, fontWeight: '600', color: TEXT_SECONDARY },
+  cardName: { fontSize: 15, fontWeight: '700', color: TEXT_PRIMARY },
+  cardRoute: { marginTop: 2, fontSize: 14, color: TEXT_PRIMARY, lineHeight: 20 },
+  metaLine: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY },
+  note: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, lineHeight: 18 },
   incomingHintWrap: {
     marginTop: 8,
     flexDirection: 'row',

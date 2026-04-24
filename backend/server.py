@@ -282,7 +282,12 @@ connected_users = {}
 @sio.event
 async def connect(sid, environ):
     print(f"SOCKET CONNECTED: {sid}")
-    logger.info("SOCKET_CONNECT sid=%s", sid)
+    _pi = (environ or {}).get("PATH_INFO") or ""
+    logger.info(
+        "SOCKET_CONNECT sid=%s path_info=%s (nginx /socket.io/ → bu süreç olmalı; /api ile karıştırma)",
+        sid,
+        _pi[:160],
+    )
     logger.info(f"🔌 Socket bağlandı: {sid}")
     logger.info(f"🔌 Toplam bağlı: {len(connected_users) + 1}")
 
@@ -361,6 +366,20 @@ async def register(sid, data):
             client_declares_uid,
             resolved_uid,
         )
+
+    # Aynı kullanıcıda çift bağlantı: yeni register gelince eski sid kapat (stale emit / yarış)
+    old_sid = connected_users.get(resolved_uid) or connected_users.get(resolved_lower)
+    if old_sid and old_sid != sid:
+        logger.warning(
+            "SOCKET_REGISTER_DEDUP user=%s old_sid=%s new_sid=%s",
+            resolved_lower[:16],
+            old_sid,
+            sid,
+        )
+        try:
+            await sio.disconnect(old_sid)
+        except Exception as _dedup_ex:
+            logger.warning("SOCKET_REGISTER_DEDUP_DISCONNECT_FAIL: %s", _dedup_ex)
 
     connected_users[resolved_uid] = sid
     connected_users[resolved_lower] = sid
@@ -3083,7 +3102,8 @@ async def api_ai_chat(request: Request):
 api_router.include_router(legal_router)
 
 # ==================== SOCKET.IO ASGI APP ====================
-# Socket.IO'yu /api/socket.io path'inde çalıştır
+# socketio.ASGIApp(..., socketio_path="/socket.io") — istemci path: /socket.io ( /api altında DEĞİL ).
+# Nginx: location /socket.io/ → socket_app dinleyen port (ör. 8001); location /api/ → aynı veya API portu.
 # NOT: socket_app dosyanın sonunda oluşturulacak (route'lar eklendikten sonra)
 SOCKET_SERVER_PORT = int(os.getenv("PORT", "8001"))
 
@@ -3101,6 +3121,22 @@ async def startup():
     last_cleanup_time = datetime.utcnow()
     print("🚀 SOCKET SERVER RUNNING ON PORT:", SOCKET_SERVER_PORT)
     logger.info("✅ Server started with Supabase + Socket.IO (path: /socket.io)")
+    try:
+        _fcm_cfg = is_fcm_configured()
+    except Exception:
+        _fcm_cfg = False
+    logger.info(
+        "[startup] push FCM: configured=%s (FIREBASE_SERVICE_ACCOUNT_* / GOOGLE_APPLICATION_CREDENTIALS)",
+        _fcm_cfg,
+    )
+    if not _fcm_cfg:
+        logger.warning(
+            "[startup] push FCM devre dışı — teklif/çağrı push’ları gönderilmez; socket event’leri yine çalışır."
+        )
+    logger.info(
+        "[startup] socket.io: in-memory sio/connected_users — nginx ile /api ve /socket.io AYNI uvicorn "
+        "(socket_app) portuna gitmeli; ayrı 8000/8001 split emit'leri kırar. Örnek: deploy/nginx-api-socket-split.example.conf"
+    )
     # Deploy doğrulama: bu satır yoksa ride/create hâlâ eski imza ile çalışıyordur (422, logda Pydantic uyarısı yok)
     logger.info("ride/create handler: manual Request.json parse + explicit validation (2026-03-31)")
     logger.info(
@@ -3462,7 +3498,25 @@ async def get_route_info(origin_lat, origin_lng, dest_lat, dest_lng):
     except Exception as e:
         logger.warning(f"Route info error: {e}")
 
-    return None
+    # Google yok / OSRM hata veya rota yok: kuş uçuşu + yol çarpanı (fiyat uçları 200 dönebilsin)
+    air_km = float(haversine_distance(ola, olo, dla, dlo))
+    road_km = max(0.1, air_km * 1.35)
+    duration_min = max(5, int(round((road_km / 35.0) * 60.0)))
+    logger.warning(
+        "OSRM failed, haversine fallback used air_km=%.3f road_km=%.3f duration_min=%s",
+        air_km,
+        road_km,
+        duration_min,
+    )
+    out = {
+        "distance_km": round(road_km, 1),
+        "duration_min": duration_min,
+        "distance_text": f"{round(road_km, 1)} km",
+        "duration_text": f"{duration_min} dk",
+        "source": "haversine_fallback",
+    }
+    _route_info_cache_set(ck, out)
+    return out
 
 
 @api_router.get("/route-metrics")
@@ -12129,6 +12183,12 @@ async def verify_boarding_qr(
 
         if not qr_token:
             return {"success": False, "detail": "qr_token veya geçerli scanned_data gerekli"}
+        logger.info(
+            "QR_VERIFY_BOARDING_HIT scanner_resolved=%s qr_token_prefix=%s scanned_len=%s",
+            str(scanner_user_id)[:16],
+            (qr_token[:8] + "…") if len(qr_token) > 8 else qr_token,
+            len(scanned_data or ""),
+        )
 
         qr_data = active_boarding_qr_codes.get(qr_token)
         if not qr_data:
@@ -12204,6 +12264,18 @@ async def verify_boarding_qr(
         try:
             p_room = _normalize_user_room(str(pax))
             d_room = _normalize_user_room(str(drv))
+            p_sid = _connected_sid_for_user(str(pax)) if pax else None
+            d_sid = _connected_sid_for_user(str(drv)) if drv else None
+            logger.info(
+                "QR_VERIFY_BOARDING_EMIT tag_id=%s status matched->in_progress event=boarding_confirmed "
+                "rooms=%s,%s pax_sid=%s drv_sid=%s connected_map_entries=%s",
+                tag_id,
+                p_room,
+                d_room,
+                p_sid,
+                d_sid,
+                len(connected_users),
+            )
             await sio.emit("boarding_confirmed", {**payload, "reason": "qr_boarding"}, room=p_room)
             await sio.emit("boarding_confirmed", {**payload, "reason": "qr_boarding"}, room=d_room)
         except Exception as sock_err:
@@ -14352,7 +14424,8 @@ async def calculate_price(request: CalculatePriceRequest):
         )
 
         if not route_info:
-            raise HTTPException(status_code=503, detail="Rota bilgisi alınamadı")
+            # Geçersiz koordinat vb.; get_route_info artık geçerli noktalarda haversine döner
+            raise HTTPException(status_code=400, detail="Geçersiz koordinatlar")
 
         trip_distance_km = float(route_info["distance_km"])
         estimated_minutes = int(route_info["duration_min"])
@@ -18244,6 +18317,68 @@ def _muhabbet_listing_name_map_for_ids(uids: list) -> dict:
         return {}
 
 
+def _muhabbet_feed_city_key(city: str) -> str:
+    """Şehir karşılaştırması: trim + casefold (feed istemcisi ile DB aynı ada yakınsın)."""
+    return (city or "").strip().casefold()
+
+
+async def _muhabbet_notify_match_request_pending(
+    listing_owner_uid: str,
+    listing_id: str,
+    sender_uid: str,
+) -> None:
+    """Yeni talip: ilan sahibine socket + push (best-effort; yolculuk akışına dokunmaz)."""
+    try:
+        nm = _muhabbet_listing_name_map_for_ids([sender_uid])
+        sname = nm.get(str(sender_uid).strip().lower()) or "Bir kullanıcı"
+        payload = {
+            "type": "muhabbet_match_request_pending",
+            "listing_id": str(listing_id),
+            "sender_user_id": str(sender_uid).strip().lower(),
+        }
+        await sio.emit("muhabbet_match_request_pending", payload, room=_normalize_user_room(listing_owner_uid))
+        asyncio.create_task(
+            send_push_notification(
+                str(listing_owner_uid).strip(),
+                "Yeni talep",
+                f"{sname} teklifine talip oldu",
+                payload,
+            )
+        )
+    except Exception as e:
+        logger.warning("muhabbet_notify_match_request_pending: %s", e)
+
+
+async def _muhabbet_notify_match_accepted(
+    sender_uid: str,
+    receiver_uid: str,
+    conversation_id: str,
+    listing_id: str,
+) -> None:
+    """Kabul sonrası iki tarafa socket + push (best-effort)."""
+    try:
+        payload = {
+            "type": "muhabbet_match_accepted",
+            "conversation_id": str(conversation_id),
+            "listing_id": str(listing_id),
+        }
+        su = str(sender_uid).strip().lower()
+        ru = str(receiver_uid).strip().lower()
+        await sio.emit("muhabbet_match_accepted", payload, room=_normalize_user_room(su))
+        await sio.emit("muhabbet_match_accepted", payload, room=_normalize_user_room(ru))
+        nm = _muhabbet_listing_name_map_for_ids([su, ru])
+        name_r = nm.get(ru) or "Kullanıcı"
+        name_s = nm.get(su) or "Kullanıcı"
+        asyncio.create_task(
+            send_push_notification(su, "Teklif kabul edildi", f"{name_r} ile sohbet açıldı", payload)
+        )
+        asyncio.create_task(
+            send_push_notification(ru, "Teklif kabul edildi", f"{name_s} ile sohbet açıldı", payload)
+        )
+    except Exception as e:
+        logger.warning("muhabbet_notify_match_accepted: %s", e)
+
+
 def _muhabbet_feed_match_request_meta_for_user(uid: str, listing_ids: list) -> dict:
     """
     Feed: oturum kullanıcısı bu ilana (gönderen olarak) aksiyon özeti.
@@ -18544,11 +18679,12 @@ async def muhabbet_listings_feed(
     """Şehirdeki yalnızca status=active ilanlar; match_request, conversation_id (accepted ise), social proof sayım."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
-        c = (city or "").strip()
-        if not c:
+        c_raw = (city or "").strip()
+        if not c_raw:
             raise HTTPException(status_code=400, detail="city gerekli")
+        c_key = _muhabbet_feed_city_key(c_raw)
         lim = max(1, min(int(limit or 30), 100))
-        q = supabase.table("ride_listings").select("*").eq("city", c).eq("status", "active")
+        q = supabase.table("ride_listings").select("*").ilike("city", c_raw).eq("status", "active")
         if (listing_type or "").strip():
             lt = (listing_type or "").strip()
             if lt not in _MUHABBET_LISTING_TYPES:
@@ -18561,6 +18697,11 @@ async def muhabbet_listings_feed(
             q = q.eq("role_type", rt)
         res = q.order("created_at", desc=True).limit(lim).execute()
         rows = [_ride_listing_response_row(dict(x)) for x in (res.data or [])]
+        rows = [
+            r
+            for r in rows
+            if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key
+        ][:lim]
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
         meta_map = _muhabbet_feed_match_request_meta_for_user(uid, lid_list)
@@ -18704,6 +18845,7 @@ async def muhabbet_listing_match_request(
         )
         if not ins.data:
             return {"success": False, "detail": "İstek kaydedilemedi"}
+        await _muhabbet_notify_match_request_pending(owner, lid, uid)
         return {"success": True, "request": dict(ins.data[0])}
     except HTTPException:
         raise
@@ -19042,6 +19184,7 @@ async def muhabbet_match_request_accept(
         if st == "accepted" and not ecid:
             sen0 = str(row.get("sender_user_id") or "").strip().lower()
             rec0 = str(row.get("receiver_user_id") or "").strip().lower()
+            lid_rec = str(row.get("listing_id") or "").strip().lower()
             conversation_id = _muhabbet_conversation_get_or_create_id(sen0, rec0)
             nowx = _muhabbet_listing_row_ts()
             supabase.table("listing_match_requests").update(
@@ -19049,6 +19192,7 @@ async def muhabbet_match_request_accept(
             ).eq("id", rid).execute()
             fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
             out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
+            await _muhabbet_notify_match_accepted(sen0, rec0, conversation_id, lid_rec)
             return {
                 "success": True,
                 "chat_unlocked": True,
@@ -19080,6 +19224,7 @@ async def muhabbet_match_request_accept(
         ).eq("id", rid).execute()
         fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
         out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
+        await _muhabbet_notify_match_accepted(sen, rec, conversation_id, lid)
         return {
             "success": True,
             "chat_unlocked": True,
@@ -19313,6 +19458,56 @@ async def muhabbet_conversation_messages_post(
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
         logger.error(f"muhabbet_conversation_messages_post: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/messages/{message_id}/delete")
+async def muhabbet_conversation_message_soft_delete(
+    conversation_id: str,
+    message_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Yalnızca mesaj sahibi; yumuşak silme (deleted_at, body yer tutucu)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id).strip().lower()
+        mid = str(message_id).strip().lower()
+        uuid.UUID(cid)
+        uuid.UUID(mid)
+        _ = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        mr = (
+            supabase.table("messages")
+            .select("*")
+            .eq("id", mid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not mr.data:
+            raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
+        mrow = dict(mr.data[0])
+        if str(mrow.get("sender_user_id") or "").strip().lower() != uid:
+            raise HTTPException(status_code=403, detail="Yalnızca kendi mesajını silebilirsin")
+        if mrow.get("deleted_at"):
+            return {"success": True, "message": mrow}
+        now_ts = _muhabbet_listing_row_ts()
+        supabase.table("messages").update(
+            {
+                "deleted_at": now_ts,
+                "deleted_by_user_id": uid,
+                "body": "·",
+            }
+        ).eq("id", mid).eq("conversation_id", cid).eq("sender_user_id", uid).execute()
+        fin = supabase.table("messages").select("*").eq("id", mid).limit(1).execute()
+        if not fin.data:
+            return {"success": True, "message": mrow}
+        return {"success": True, "message": dict(fin.data[0])}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz kimlik") from None
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_message_soft_delete: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

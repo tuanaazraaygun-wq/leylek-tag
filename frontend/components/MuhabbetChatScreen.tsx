@@ -30,6 +30,7 @@ export type ChatMessageRow = {
   body?: string | null;
   sender_user_id?: string | null;
   created_at?: string | null;
+  deleted_at?: string | null;
 };
 
 export type MuhabbetChatScreenProps = {
@@ -39,6 +40,26 @@ export type MuhabbetChatScreenProps = {
   otherUserId?: string;
   onBack?: () => void;
 };
+
+function formatMessageTimeLabel(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(String(iso));
+  if (Number.isNaN(d.getTime())) return '';
+  const today = new Date();
+  const sameCalDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  if (sameCalDay) {
+    return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleString('tr-TR', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export default function MuhabbetChatScreen({
   apiBaseUrl,
@@ -57,7 +78,10 @@ export default function MuhabbetChatScreen({
   const [rows, setRows] = useState<ChatMessageRow[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
+
+  const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +129,30 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     void load();
   }, [load]);
+
+  const softDelete = async (messageId: string) => {
+    if (!cid || !messageId) return;
+    const token = (await getPersistedAccessToken())?.trim();
+    if (!token) return;
+    setDeletingId(messageId);
+    try {
+      const res = await fetch(
+        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages/${encodeURIComponent(messageId)}/delete`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (handleUnauthorizedAndMaybeRedirect(res)) return;
+      const d = (await res.json().catch(() => ({}))) as { success?: boolean; message?: ChatMessageRow };
+      if (res.ok && d.success && d.message) {
+        setRows((prev) => prev.map((m) => (m.id === messageId ? (d.message as ChatMessageRow) : m)));
+      } else {
+        void load();
+      }
+    } catch {
+      void load();
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const send = async () => {
     const body = draft.trim();
@@ -170,9 +218,9 @@ export default function MuhabbetChatScreen({
         right={headerRight}
       />
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={keyboardOffset}
       >
         {loading ? (
           <View style={styles.center}>
@@ -184,20 +232,45 @@ export default function MuhabbetChatScreen({
             data={rows}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
             renderItem={({ item }) => {
               const mine = myId && String(item.sender_user_id || '').toLowerCase() === myId;
+              const del = item.deleted_at;
               return (
-                <View style={[styles.bubbleWrap, mine ? styles.bubbleWrapMine : styles.bubbleWrapTheirs]}>
-                  {mine ? (
-                    <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubble}>
-                      <Text style={styles.bubbleTextMine}>{item.body || ''}</Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.bubbleTheirs}>
-                      <Text style={styles.bubbleTextTheirs}>{item.body || ''}</Text>
-                    </View>
-                  )}
+                <View style={[styles.bubbleCol, mine ? styles.bubbleColMine : styles.bubbleColTheirs]}>
+                  <View style={[styles.bubbleWrap, mine ? styles.bubbleWrapMine : styles.bubbleWrapTheirs]}>
+                    {del ? (
+                      <View style={styles.bubbleDeleted}>
+                        <Text style={styles.bubbleDeletedText}>Bu mesaj silindi</Text>
+                      </View>
+                    ) : mine ? (
+                      <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubble}>
+                        <Text style={styles.bubbleTextMine}>{item.body || ''}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.bubbleTheirs}>
+                        <Text style={styles.bubbleTextTheirs}>{item.body || ''}</Text>
+                      </View>
+                    )}
+                    {mine && !del ? (
+                      <Pressable
+                        onPress={() => void softDelete(item.id)}
+                        disabled={deletingId === item.id}
+                        style={({ pressed }) => [styles.delBtn, pressed && { opacity: 0.6 }]}
+                        hitSlop={8}
+                        accessibilityLabel="Mesajı sil"
+                      >
+                        <Ionicons name="trash-outline" size={16} color={TEXT_SECONDARY} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  {item.created_at ? (
+                    <Text style={[styles.timeLbl, mine ? styles.timeLblMine : styles.timeLblTheirs]}>
+                      {formatMessageTimeLabel(item.created_at)}
+                    </Text>
+                  ) : null}
                 </View>
               );
             }}
@@ -228,19 +301,35 @@ export default function MuhabbetChatScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F2F2F7' },
+  kav: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  list: { padding: 12, paddingBottom: 8 },
-  bubbleWrap: { marginVertical: 4, maxWidth: '88%' },
-  bubbleWrapMine: { alignSelf: 'flex-end' },
+  list: { padding: 12, paddingBottom: 8, flexGrow: 1 },
+  bubbleCol: { marginBottom: 10, maxWidth: '92%' },
+  bubbleColMine: { alignSelf: 'flex-end' },
+  bubbleColTheirs: { alignSelf: 'flex-start' },
+  bubbleWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  bubbleWrapMine: { alignSelf: 'flex-end', flexDirection: 'row-reverse', justifyContent: 'flex-end' },
   bubbleWrapTheirs: { alignSelf: 'flex-start' },
-  bubble: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
+  delBtn: { padding: 4, marginBottom: 2 },
+  timeLbl: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
+  timeLblMine: { textAlign: 'right', alignSelf: 'flex-end' },
+  timeLblTheirs: { textAlign: 'left', alignSelf: 'flex-start' },
+  bubble: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14, maxWidth: '100%' },
   bubbleTheirs: {
     borderRadius: 18,
     paddingVertical: 10,
     paddingHorizontal: 14,
     backgroundColor: '#E5E7EB',
+    maxWidth: '100%',
   },
+  bubbleDeleted: {
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(60,60,67,0.08)',
+  },
+  bubbleDeletedText: { fontSize: 13, color: TEXT_SECONDARY, fontStyle: 'italic' },
   bubbleTextMine: { color: '#fff', fontSize: 16, lineHeight: 22 },
   bubbleTextTheirs: { color: TEXT_PRIMARY, fontSize: 16, lineHeight: 22 },
   composer: {

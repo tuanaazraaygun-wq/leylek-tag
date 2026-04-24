@@ -1,11 +1,11 @@
 /**
- * Leylek Muhabbeti — Ana Sayfa sekmesi: özet, güzergah, teklif CTA, sohbet özeti, keşfe geçiş.
+ * Leylek Muhabbeti — Ana Sayfa sekmesi: teklif CTA, sohbet özeti, keşfe geçiş.
  */
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import RouteSummaryCard, { type RouteSummaryPayload } from './RouteSummaryCard';
+import MuhabbetWatermark from './MuhabbetWatermark';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import type { MuhabbetConversationListItem } from './ConversationsScreen';
 
@@ -20,29 +20,11 @@ const CARD_SHADOW = Platform.select({
   default: {},
 });
 
-function parseRouteEndpoints(route: string): { from: string; to: string } {
-  const t = route
-    .trim()
-    .replace(/\s*->\s*/gi, '→')
-    .replace(/\s*—\s*/g, '→');
-  if (t.includes('→')) {
-    const parts = t.split('→');
-    return { from: (parts[0] || '').trim(), to: parts.slice(1).join('→').trim() || '—' };
-  }
-  return { from: t || '—', to: '—' };
-}
-
 export type LeylekMuhabbetiHomeTabProps = {
   apiUrl: string;
-  apiBaseUrl: string;
   accessToken: string;
   selectedCity: string;
   refreshNonce: number;
-  roadstersSummary: RouteSummaryPayload | null;
-  roadstersMatches: { match_id?: string; other_user_id: string }[];
-  roadstersLoading: boolean;
-  onNavigateToRouteSetup?: () => void;
-  onNavigateToGroup?: (groupId: string) => void;
   onOpenLegacyDiscovery: () => void;
   onOpenListingsCreate: () => void;
   onOpenDriverListing?: () => void;
@@ -54,15 +36,9 @@ export type LeylekMuhabbetiHomeTabProps = {
 
 export default function LeylekMuhabbetiHomeTab({
   apiUrl,
-  apiBaseUrl,
   accessToken,
   selectedCity,
   refreshNonce,
-  roadstersSummary,
-  roadstersMatches,
-  roadstersLoading,
-  onNavigateToRouteSetup,
-  onNavigateToGroup,
   onOpenLegacyDiscovery,
   onOpenListingsCreate,
   onOpenDriverListing,
@@ -74,6 +50,27 @@ export default function LeylekMuhabbetiHomeTab({
   const openPassenger = onOpenPassengerListing ?? onOpenListingsCreate;
   const tok = accessToken.trim();
   const base = apiUrl.replace(/\/$/, '');
+  const ctaPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ctaPulse, {
+          toValue: 0.94,
+          duration: 2200,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(ctaPulse, {
+          toValue: 1,
+          duration: 2200,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [ctaPulse]);
   const [convLoading, setConvLoading] = useState(false);
   const [convRows, setConvRows] = useState<MuhabbetConversationListItem[]>([]);
   const [pendingIncoming, setPendingIncoming] = useState(0);
@@ -83,6 +80,15 @@ export default function LeylekMuhabbetiHomeTab({
   const [feedLoading, setFeedLoading] = useState(false);
 
   const loadPreview = useCallback(async () => {
+    const cityQ = (selectedCity || '').trim();
+    if (!cityQ) {
+      setConvRows([]);
+      setPendingIncoming(0);
+      setFeedPreview([]);
+      setConvLoading(false);
+      setFeedLoading(false);
+      return;
+    }
     if (!tok) {
       setConvRows([]);
       setPendingIncoming(0);
@@ -93,7 +99,7 @@ export default function LeylekMuhabbetiHomeTab({
     setFeedLoading(true);
     try {
       const h = { Authorization: `Bearer ${tok}` };
-      const u = new URLSearchParams({ city: selectedCity.trim(), limit: '6' });
+      const u = new URLSearchParams({ city: cityQ, limit: '6' });
       const [rConv, rInc, rFeed] = await Promise.all([
         fetch(`${base}/muhabbet/conversations/me?limit=8`, { headers: h }),
         fetch(`${base}/muhabbet/match-requests/incoming?status=pending&limit=50`, { headers: h }),
@@ -140,11 +146,9 @@ export default function LeylekMuhabbetiHomeTab({
     void loadPreview();
   }, [loadPreview, refreshNonce, selectedCity]);
 
-  const routeLine =
-    roadstersSummary?.route?.trim() ? parseRouteEndpoints(roadstersSummary.route.trim()) : null;
-
   return (
     <View style={styles.root}>
+      <MuhabbetWatermark />
       <View style={styles.hero}>
         <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
         <Text style={styles.heroEyebrow}>Şehrin</Text>
@@ -156,56 +160,27 @@ export default function LeylekMuhabbetiHomeTab({
       <View style={styles.inset}>
         <Text style={styles.ctaSectionTitle}>Teklif aç</Text>
         <View style={[styles.ctaRow, !tok && styles.ctaRowDim]}>
-          <TouchableOpacity style={styles.ctaBig} onPress={openDriver} activeOpacity={0.9}>
-            <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <Text style={styles.ctaBigEmoji}>🚗</Text>
-            <Text style={styles.ctaBigTitle}>Sürücü teklifi aç</Text>
-            <Text style={styles.ctaBigSub}>Aracın varsa sürücü teklifi aç — rotanı ve koltuğu paylaş.</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.ctaBig} onPress={openPassenger} activeOpacity={0.9}>
-            <LinearGradient colors={['#F59E0B', '#FBBF24']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <Text style={styles.ctaBigEmoji}>🧍</Text>
-            <Text style={styles.ctaBigTitle}>Yolcu teklifi aç</Text>
-            <Text style={styles.ctaBigSub}>Gitmek istiyorsan yolcu teklifi aç — nereye gideceğini yaz.</Text>
-          </TouchableOpacity>
+          <Animated.View style={[styles.ctaBig, { opacity: ctaPulse }]}>
+            <TouchableOpacity style={styles.ctaBigInner} onPress={openDriver} activeOpacity={0.9}>
+              <LinearGradient colors={[...PRIMARY_GRAD]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <Text style={styles.ctaBigEmoji}>🚗</Text>
+              <Text style={styles.ctaBigTitle}>Sürücü teklifi aç</Text>
+              <Text style={styles.ctaBigSub}>Aracın varsa sürücü teklifi aç — rotanı ve koltuğu paylaş.</Text>
+            </TouchableOpacity>
+          </Animated.View>
+          <Animated.View style={[styles.ctaBig, { opacity: ctaPulse }]}>
+            <TouchableOpacity style={styles.ctaBigInner} onPress={openPassenger} activeOpacity={0.9}>
+              <LinearGradient colors={['#F59E0B', '#FBBF24']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <Text style={styles.ctaBigEmoji}>🧍</Text>
+              <Text style={styles.ctaBigTitle}>Yolcu teklifi aç</Text>
+              <Text style={styles.ctaBigSub}>Gitmek istiyorsan yolcu teklifi aç — nereye gideceğini yaz.</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
         {!tok ? <Text style={styles.ctaHint}>Teklif açmak için oturum açman yeterli — butona basınca yönlendirilirsin.</Text> : null}
       </View>
 
-      {tok ? (
-        <View style={styles.inset}>
-          <RouteSummaryCard
-            apiBaseUrl={apiBaseUrl}
-            accessToken={tok}
-            enabled={!!tok}
-            onNavigateToGroup={onNavigateToGroup ?? (() => {})}
-            onNavigateToRouteSetup={onNavigateToRouteSetup ?? (() => {})}
-            horizontalInset={0}
-          />
-        </View>
-      ) : null}
-
       <View style={styles.inset}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Güzergah özeti</Text>
-          {roadstersLoading && !roadstersSummary ? (
-            <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} />
-          ) : routeLine ? (
-            <>
-              <Text style={styles.routeBig} numberOfLines={2}>
-                {routeLine.from} → {routeLine.to}
-              </Text>
-              <Text style={styles.summaryMeta}>
-                {roadstersMatches.length > 0
-                  ? `${roadstersMatches.length} kişi bu rotada`
-                  : 'Bu rotada teklif açabilir veya Teklifler sekmesinden sana uygun tekliflere talep gönderebilirsin.'}
-              </Text>
-            </>
-          ) : (
-            <Text style={styles.summaryMeta}>Güzergah ekleyerek aynı hat üzerindekilerle bağlantı kurabilirsin.</Text>
-          )}
-        </View>
-
         {pendingIncoming > 0 ? (
           <Pressable
             onPress={onOpenMatchRequests}
@@ -299,7 +274,7 @@ export default function LeylekMuhabbetiHomeTab({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, position: 'relative' },
   hero: {
     marginHorizontal: 16,
     marginTop: 4,
@@ -311,7 +286,7 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600' },
   heroCity: { color: '#fff', fontSize: 28, fontWeight: '800', marginTop: 4 },
   heroSub: { color: 'rgba(255,255,255,0.92)', fontSize: 14, lineHeight: 20, marginTop: 8 },
-  inset: { paddingHorizontal: 16, marginTop: 12 },
+  inset: { paddingHorizontal: 16, marginTop: 12, zIndex: 1 },
   ctaSectionTitle: {
     fontSize: 13,
     fontWeight: '800',
@@ -325,17 +300,22 @@ const styles = StyleSheet.create({
   ctaHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 6, lineHeight: 18 },
   ctaBig: {
     flex: 1,
+    minHeight: 132,
     borderRadius: 18,
-    paddingVertical: 18,
-    paddingHorizontal: 12,
     overflow: 'hidden',
-    minHeight: 128,
-    justifyContent: 'center',
     ...CARD_SHADOW,
   },
-  ctaBigEmoji: { fontSize: 22, color: '#fff', fontWeight: '800' },
-  ctaBigTitle: { fontSize: 15, fontWeight: '800', color: '#fff', marginTop: 6 },
-  ctaBigSub: { fontSize: 12, color: 'rgba(255,255,255,0.9)', marginTop: 4, lineHeight: 16 },
+  ctaBigInner: {
+    flex: 1,
+    minHeight: 132,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  ctaBigEmoji: { fontSize: 24, color: '#fff', fontWeight: '800' },
+  ctaBigTitle: { fontSize: 16, fontWeight: '800', color: '#fff', marginTop: 6 },
+  ctaBigSub: { fontSize: 13, color: 'rgba(255,255,255,0.92)', marginTop: 4, lineHeight: 18 },
   previewRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -361,7 +341,6 @@ const styles = StyleSheet.create({
   summaryTitle: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
   summaryHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 6 },
   summaryMeta: { fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22, marginTop: 4 },
-  routeBig: { fontSize: 18, fontWeight: '700', color: TEXT_PRIMARY, marginTop: 6, lineHeight: 26 },
   alertCard: {
     flexDirection: 'row',
     alignItems: 'center',

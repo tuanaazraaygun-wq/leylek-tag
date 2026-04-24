@@ -69,7 +69,10 @@ function getOrCreateSocket(): Socket {
     });
 
     singletonSocket.on('connect_error', (err) => {
-      console.log('❌ CONNECT ERROR:', err.message);
+      console.warn('❌ [SocketContext] connect_error:', err.message, '| SOCKET_URL=', SOCKET_URL, '| path=/socket.io');
+      console.warn(
+        '[SocketContext] nginx: /socket.io/ → socket_app (uvicorn socket_app, örn. 8001). /api/ ayrı porta gidiyorsa bile socket kök hostta /socket.io olmalı (BACKEND_BASE_URL’e /api eklemeyin). Örnek: deploy/nginx-api-socket-split.example.conf',
+      );
     });
 
     singletonSocket.on('disconnect', (reason) => {
