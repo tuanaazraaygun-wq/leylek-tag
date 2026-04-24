@@ -18440,6 +18440,53 @@ async def _muhabbet_notify_leylek_key_matched(
         logger.warning("muhabbet_notify_leylek_key_matched: %s", e)
 
 
+_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC = 60
+
+
+def _muhabbet_role_label_tr(role_raw: str) -> str:
+    r = (role_raw or "").strip().lower()
+    if r in ("driver", "private_driver"):
+        return "Sürücü"
+    if r == "passenger":
+        return "Yolcu"
+    return "Kullanıcı"
+
+
+async def _muhabbet_notify_leylek_pair_request(
+    target_uid: str,
+    initiator_uid: str,
+    conversation_id: str,
+    request_id: str,
+    initiator_role: str,
+) -> None:
+    """Sohbet ekranındaki eşleşme isteği: hedefe socket + push (yolculuk/QR ayrı)."""
+    try:
+        nm = _muhabbet_listing_name_map_for_ids([initiator_uid])
+        iname = nm.get(str(initiator_uid).strip().lower()) or "Bir kullanıcı"
+        role_l = _muhabbet_role_label_tr(initiator_role)
+        ru = (initiator_role or "").strip().lower()
+        payload = {
+            "type": "leylek_pair_match_request",
+            "request_id": str(request_id).strip().lower(),
+            "conversation_id": str(conversation_id).strip().lower(),
+            "initiator_user_id": str(initiator_uid).strip().lower(),
+            "initiator_name": iname,
+            "initiator_role": ru,
+            "initiator_role_label": role_l,
+        }
+        await sio.emit("leylek_pair_match_request", payload, room=_normalize_user_room(str(target_uid).strip().lower()))
+        asyncio.create_task(
+            send_push_notification(
+                str(target_uid).strip(),
+                "Leylek Anahtar eşleşme isteği",
+                f"{role_l} {iname} sizinle Leylek Anahtar ile eşleşmek istiyor",
+                payload,
+            )
+        )
+    except Exception as e:
+        logger.warning("muhabbet_notify_leylek_pair_request: %s", e)
+
+
 def _muhabbet_feed_match_request_meta_for_user(uid: str, listing_ids: list) -> dict:
     """
     Feed: oturum kullanıcısı bu ilana (gönderen olarak) aksiyon özeti.
@@ -19593,15 +19640,31 @@ async def muhabbet_conversations_me(
         if not uid:
             raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
         lim = max(1, min(int(limit or 50), 100))
+        hidden_ids: set = set()
+        try:
+            hid = (
+                supabase.table("user_conversation_hides")
+                .select("conversation_id")
+                .eq("user_id", uid)
+                .execute()
+            )
+            for h in hid.data or []:
+                cid_h = str(h.get("conversation_id") or "").strip().lower()
+                if cid_h:
+                    hidden_ids.add(cid_h)
+        except Exception as e:
+            logger.warning("conversations_me hides: %s", e)
+        fetch_lim = min(100, lim + len(hidden_ids))
         res = (
             supabase.table("conversations")
             .select("id, user_a, user_b, created_at")
             .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
             .order("created_at", desc=True)
-            .limit(lim)
+            .limit(fetch_lim)
             .execute()
         )
-        convs: list = list(res.data or [])
+        raw_convs = [c for c in (res.data or []) if str(c.get("id") or "").strip().lower() not in hidden_ids]
+        convs: list = raw_convs[:lim]
         if not convs:
             return {"success": True, "conversations": [], "count": 0}
         cids = [str(c["id"]).strip().lower() for c in convs if c.get("id")]
@@ -19734,11 +19797,12 @@ async def muhabbet_conversation_messages_get(
             logger.warning("messages_get roles: %s", e)
         ms = str(c_row.get("match_source") or "").strip().lower()
         matched_at = c_row.get("matched_at")
+        leylek_matched = bool(matched_at) and ms in ("leylek_key", "leylek_key_inchat")
         ctx = {
             "other_user_id": other_uid,
             "my_role": role_map.get(uid),
             "other_role": role_map.get(other_uid),
-            "matched_via_leylek_key": ms == "leylek_key" and bool(matched_at),
+            "matched_via_leylek_key": leylek_matched,
             "matched_at": matched_at,
         }
         return {
@@ -19838,6 +19902,210 @@ async def muhabbet_conversation_message_soft_delete(
         raise HTTPException(status_code=400, detail="Geçersiz kimlik") from None
     except Exception as e:
         logger.error(f"muhabbet_conversation_message_soft_delete: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/leylek-pair-request")
+async def muhabbet_leylek_pair_request_create(
+    conversation_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Sohbetten Leylek Anahtar eşleşme isteği: karşı tarafa socket + push.
+    Aynı konuşmada 60 sn cooldown; bekleyen istek varken yeni satır oluşturulmaz.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        c_row = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        cid = str(conversation_id).strip().lower()
+        a = str(c_row.get("user_a") or "").strip().lower()
+        b = str(c_row.get("user_b") or "").strip().lower()
+        target = b if a == uid else a
+        now = datetime.now(timezone.utc)
+        lastq = (
+            supabase.table("muhabbet_leylek_pair_requests")
+            .select("id, status, created_at")
+            .eq("conversation_id", cid)
+            .eq("initiator_user_id", uid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if lastq.data:
+            last = dict(lastq.data[0])
+            st = str(last.get("status") or "").strip().lower()
+            if st == "pending":
+                return {
+                    "success": True,
+                    "request_id": str(last.get("id")).strip().lower(),
+                    "pending": True,
+                    "message": "Bekleyen isteğiniz var",
+                }
+            created_at = last.get("created_at")
+            try:
+                cdt = _parse_iso_dt(created_at) if created_at else None
+            except Exception:
+                cdt = None
+            if cdt is not None and (now - cdt).total_seconds() < float(_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC):
+                wait = int(_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC - (now - cdt).total_seconds())
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Çok sık istek. {max(1, wait)} sn sonra tekrar deneyin.",
+                )
+        ir = supabase.table("users").select("id, role").eq("id", uid).limit(1).execute()
+        initiator_role = ""
+        if ir.data and ir.data[0].get("id"):
+            initiator_role = str(ir.data[0].get("role") or "").strip().lower()
+        ins = (
+            supabase.table("muhabbet_leylek_pair_requests")
+            .insert(
+                {
+                    "conversation_id": cid,
+                    "initiator_user_id": uid,
+                    "target_user_id": target,
+                    "status": "pending",
+                }
+            )
+            .execute()
+        )
+        if not ins.data or not ins.data[0].get("id"):
+            raise HTTPException(status_code=500, detail="İstek oluşturulamadı")
+        rid = str(ins.data[0]["id"]).strip().lower()
+        await _muhabbet_notify_leylek_pair_request(target, uid, cid, rid, initiator_role)
+        return {
+            "success": True,
+            "request_id": rid,
+            "pending": False,
+            "message": "Eşleşme isteği gönderildi",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        err = (str(e) or "").lower()
+        if "muhabbet_leylek_pair_requests" in err or "does not exist" in err or "42p01" in err:
+            raise HTTPException(
+                status_code=503,
+                detail="Sohbet eşleşme isteği için veritabanı migration gerekli (muhabbet_leylek_pair_requests).",
+            ) from e
+        logger.error(f"muhabbet_leylek_pair_request_create: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/leylek-pair-requests/{request_id}/accept")
+async def muhabbet_leylek_pair_request_accept(
+    conversation_id: str,
+    request_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Kabul: yalnızca hedef kullanıcı; conversation matched + leylek_key_inchat."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        c_row = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        cid = str(conversation_id).strip().lower()
+        rid = str(request_id).strip().lower()
+        uuid.UUID(rid)
+        rr = (
+            supabase.table("muhabbet_leylek_pair_requests")
+            .select("*")
+            .eq("id", rid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not rr.data:
+            raise HTTPException(status_code=404, detail="İstek bulunamadı")
+        row = dict(rr.data[0])
+        if str(row.get("target_user_id") or "").strip().lower() != uid:
+            raise HTTPException(status_code=403, detail="Bu isteği yalnızca karşı taraf yanıtlayabilir")
+        if str(row.get("status") or "").strip().lower() != "pending":
+            raise HTTPException(status_code=400, detail="Bu istek artık geçerli değil")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        initiator = str(row.get("initiator_user_id") or "").strip().lower()
+        supabase.table("muhabbet_leylek_pair_requests").update(
+            {"status": "accepted", "responded_at": now_iso}
+        ).eq("id", rid).execute()
+        supabase.table("conversations").update(
+            {
+                "matched_at": now_iso,
+                "match_source": "leylek_key_inchat",
+            }
+        ).eq("id", cid).execute()
+        await _muhabbet_notify_leylek_key_matched(initiator, uid, cid)
+        return {
+            "success": True,
+            "conversation_id": cid,
+            "message": "Leylek Anahtar ile eşleşme tamamlandı",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_pair_request_accept: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/leylek-pair-requests/{request_id}/decline")
+async def muhabbet_leylek_pair_request_decline(
+    conversation_id: str,
+    request_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Red: yalnızca hedef kullanıcı."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        _ = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        cid = str(conversation_id).strip().lower()
+        rid = str(request_id).strip().lower()
+        uuid.UUID(rid)
+        rr = (
+            supabase.table("muhabbet_leylek_pair_requests")
+            .select("*")
+            .eq("id", rid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not rr.data:
+            raise HTTPException(status_code=404, detail="İstek bulunamadı")
+        row = dict(rr.data[0])
+        if str(row.get("target_user_id") or "").strip().lower() != uid:
+            raise HTTPException(status_code=403, detail="Bu isteği yalnızca karşı taraf yanıtlayabilir")
+        if str(row.get("status") or "").strip().lower() != "pending":
+            return {"success": True, "message": "İstek zaten yanıtlanmış"}
+        now_iso = datetime.now(timezone.utc).isoformat()
+        supabase.table("muhabbet_leylek_pair_requests").update(
+            {"status": "declined", "responded_at": now_iso}
+        ).eq("id", rid).execute()
+        return {"success": True, "message": "İstek reddedildi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_pair_request_decline: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/hide")
+async def muhabbet_conversation_hide(
+    conversation_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Sohbet listesinden gizle; mesajlar ve sohbet satırı silinmez."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        _ = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        cid = str(conversation_id).strip().lower()
+        try:
+            supabase.table("user_conversation_hides").insert({"user_id": uid, "conversation_id": cid}).execute()
+        except Exception as ie:
+            err = (str(ie) or "").lower()
+            if "23505" in str(ie) or "unique" in err or "duplicate" in err:
+                pass
+            else:
+                raise
+        return {"success": True, "message": "Sohbet listeden gizlendi"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_hide: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

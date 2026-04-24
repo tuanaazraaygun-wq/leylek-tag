@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   FlatList,
@@ -22,12 +23,27 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
+import { getOrCreateSocket } from '../contexts/SocketContext';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
-const ORANGE_GRAD = ['#F59E0B', '#FBBF24'] as const;
+/** Sürücü / yolcu balon — istenen gradientler */
+const DRIVER_BUBBLE_GRAD = ['#4facfe', '#00f2fe'] as const;
+const PAX_BUBBLE_GRAD = ['#f7971e', '#ffd200'] as const;
+const SEND_BTN_GRAD = ['#4facfe', '#00f2fe'] as const;
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
+
+const BUBBLE_SHADOW = Platform.select({
+  ios: {
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+  },
+  android: { elevation: 3 },
+  default: {},
+});
 
 export type ChatMessageRow = {
   id: string;
@@ -95,6 +111,8 @@ export default function MuhabbetChatScreen({
   const [ctx, setCtx] = useState<ChatContext | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [pairRequestLoading, setPairRequestLoading] = useState(false);
+  const pairRequestBusyRef = useRef(false);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
   const ctaPulse = useRef(new Animated.Value(1)).current;
 
@@ -180,6 +198,19 @@ export default function MuhabbetChatScreen({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!cid) return;
+    const s = getOrCreateSocket();
+    const onMatch = (data: { conversation_id?: string }) => {
+      const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
+      if (m && m === cid.toLowerCase()) void load();
+    };
+    s.on('leylek_key_match_completed', onMatch);
+    return () => {
+      s.off('leylek_key_match_completed', onMatch);
+    };
+  }, [cid, load]);
+
   const send = async () => {
     const body = draft.trim();
     if (!body || !cid) return;
@@ -232,6 +263,43 @@ export default function MuhabbetChatScreen({
     router.push('/leylek-anahtar' as Href);
   }, [router]);
 
+  const sendLeylekPairRequest = useCallback(async () => {
+    const token = (await getPersistedAccessToken())?.trim();
+    if (!token || !cid || pairRequestBusyRef.current) return;
+    pairRequestBusyRef.current = true;
+    setPairRequestLoading(true);
+    try {
+      const res = await fetch(
+        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-request`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
+      );
+      const d = (await res.json().catch(() => ({}))) as {
+        detail?: string;
+        message?: string;
+        pending?: boolean;
+      };
+      if (res.status === 429) {
+        Alert.alert('Çok sık istek', typeof d.detail === 'string' ? d.detail : 'Lütfen kısa bir süre sonra tekrar deneyin.');
+        return;
+      }
+      if (handleUnauthorizedAndMaybeRedirect(res)) return;
+      if (!res.ok) {
+        Alert.alert('İstek gönderilemedi', typeof d.detail === 'string' ? d.detail : 'Tekrar deneyin.');
+        return;
+      }
+      if (d.pending) {
+        Alert.alert('Bekleyen istek', d.message || 'Zaten bir eşleşme isteğiniz var.');
+        return;
+      }
+      Alert.alert('Gönderildi', d.message || 'Karşı taraf onaylarsa eşleşme tamamlanır.');
+    } catch {
+      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
+    } finally {
+      pairRequestBusyRef.current = false;
+      setPairRequestLoading(false);
+    }
+  }, [base, cid]);
+
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (
     <Pressable onPress={openOtherProfile} style={styles.headerIcon} accessibilityRole="button">
@@ -252,12 +320,14 @@ export default function MuhabbetChatScreen({
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right']}>
       <LinearGradient
-        colors={['#E8F4FF', '#FFF8F0', '#E8F4FF']}
+        colors={['#F5F7FA', '#E8EEF5', '#FAF6F0']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <MuhabbetWatermark />
+      <View style={styles.wmWrap} pointerEvents="none">
+        <MuhabbetWatermark />
+      </View>
       <View style={styles.layer}>
         <ScreenHeaderGradient
           title={titleName || 'Sohbet'}
@@ -267,8 +337,12 @@ export default function MuhabbetChatScreen({
         />
         {ctx?.matched_via_leylek_key ? (
           <View style={styles.matchStrip}>
-            <Ionicons name="shield-checkmark" size={16} color="#166534" />
-            <Text style={styles.matchStripTxt}>Leylek Anahtar ile eşleşme kaydı oluşturuldu</Text>
+            <View style={styles.matchBadge}>
+              <Ionicons name="shield-checkmark" size={15} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.matchBadgeTxt} numberOfLines={2}>
+                Leylek Anahtar ile eşleşme tamamlandı
+              </Text>
+            </View>
           </View>
         ) : null}
         <KeyboardAvoidingView
@@ -286,16 +360,14 @@ export default function MuhabbetChatScreen({
               data={rows}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.list}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="none"
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               ListHeaderComponent={
                 <View style={styles.warnCard}>
-                  <Ionicons name="warning" size={20} color="#B45309" style={{ marginRight: 8 }} />
+                  <Ionicons name="information-circle-outline" size={20} color="#B45309" style={{ marginRight: 8 }} />
                   <Text style={styles.warnTxt}>
-                    Güvenliğiniz için eşleşmeden önce buluşma noktasını, alınma noktasını, varış bilgisini ve ücreti
-                    karşılıklı teyit edin. Leylek Anahtar ile eşleşme tamamlanmadan yolculuğa başlamayın. Bu alan yalnızca
-                    ön görüşme içindir.
+                    Yolculuğa başlamadan önce bilgileri doğrulayın. Leylek Anahtar ile eşleşmeden hareket etmeyin.
                   </Text>
                 </View>
               }
@@ -303,39 +375,25 @@ export default function MuhabbetChatScreen({
                 const { mine, drv } = bubbleForMsg(item);
                 const time = formatMessageTimeLabel(item.created_at);
                 if (mine) {
-                  if (drv) {
-                    return (
-                      <View style={styles.bubbleColMine}>
-                        <LinearGradient colors={PRIMARY_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubblePad}>
-                          <Text style={styles.tMine}>{item.body || ''}</Text>
-                        </LinearGradient>
-                        {time ? <Text style={styles.tTimeMine}>{time}</Text> : null}
-                      </View>
-                    );
-                  }
+                  const g = drv ? DRIVER_BUBBLE_GRAD : PAX_BUBBLE_GRAD;
                   return (
                     <View style={styles.bubbleColMine}>
-                      <LinearGradient colors={ORANGE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubblePad}>
-                        <Text style={styles.tMine}>{item.body || ''}</Text>
-                      </LinearGradient>
+                      <View style={[styles.bubbleShadowWrap, styles.bubbleAlignEnd]}>
+                        <LinearGradient colors={g} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubblePad}>
+                          <Text style={styles.tGrad}>{item.body || ''}</Text>
+                        </LinearGradient>
+                      </View>
                       {time ? <Text style={styles.tTimeMine}>{time}</Text> : null}
                     </View>
                   );
                 }
-                if (drv) {
-                  return (
-                    <View style={styles.bubbleColTheirs}>
-                      <View style={[styles.bubbleTheirs, styles.bubbleTheirsDriver]}>
-                        <Text style={styles.tTheirsD}>{item.body || ''}</Text>
-                      </View>
-                      {time ? <Text style={styles.tTimeTheirs}>{time}</Text> : null}
-                    </View>
-                  );
-                }
+                const g2 = drv ? DRIVER_BUBBLE_GRAD : PAX_BUBBLE_GRAD;
                 return (
                   <View style={styles.bubbleColTheirs}>
-                    <View style={[styles.bubbleTheirs, styles.bubbleTheirsPax]}>
-                      <Text style={styles.tTheirsP}>{item.body || ''}</Text>
+                    <View style={[styles.bubbleShadowWrap, styles.bubbleAlignStart]}>
+                      <LinearGradient colors={g2} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubblePad}>
+                        <Text style={styles.tGrad}>{item.body || ''}</Text>
+                      </LinearGradient>
                     </View>
                     {time ? <Text style={styles.tTimeTheirs}>{time}</Text> : null}
                   </View>
@@ -345,18 +403,35 @@ export default function MuhabbetChatScreen({
           )}
           <View style={styles.keyRow}>
             <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
-              <Pressable onPress={openLeylekKey} style={({ pressed }) => [pressed && { opacity: 0.9 }]}>
-                <LinearGradient
-                  colors={['#2563EB', '#7C3AED']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.keyCta}
+              <View style={styles.keyCtaGlow}>
+                <Pressable
+                  onPress={() => void sendLeylekPairRequest()}
+                  disabled={pairRequestLoading}
+                  style={({ pressed }) => [pressed && !pairRequestLoading && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Leylek Anahtar ile eşleşme isteği gönder"
                 >
-                  <Ionicons name="key" size={18} color="#fff" style={{ marginRight: 8 }} />
-                  <Text style={styles.keyCtaTxt}>Leylek Anahtar ile eşleş</Text>
-                </LinearGradient>
-              </Pressable>
+                  <LinearGradient
+                    colors={['#6366F1', '#7C3AED']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.keyCta, pairRequestLoading && { opacity: 0.75 }]}
+                  >
+                    {pairRequestLoading ? (
+                      <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                    ) : (
+                      <Ionicons name="key" size={18} color="#fff" style={{ marginRight: 8 }} />
+                    )}
+                    <Text style={styles.keyCtaTxt}>
+                      {pairRequestLoading ? 'Gönderiliyor…' : 'Leylek Anahtar ile eşleş'}
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
             </Animated.View>
+            <Pressable onPress={openLeylekKey} style={styles.keyCodeLink} hitSlop={8}>
+              <Text style={styles.keyCodeLinkTxt}>Anahtar kodunu kendin girmek için tıkla</Text>
+            </Pressable>
           </View>
           <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <TextInput
@@ -371,9 +446,24 @@ export default function MuhabbetChatScreen({
             <Pressable
               onPress={() => void send()}
               disabled={sending || !draft.trim()}
-              style={[styles.sendBtn, (!draft.trim() || sending) && { opacity: 0.45 }]}
+              style={({ pressed }) => [
+                styles.sendBtnWrap,
+                (!draft.trim() || sending) && { opacity: 0.4 },
+                pressed && draft.trim() && !sending && { opacity: 0.9, transform: [{ scale: 0.96 }] },
+              ]}
             >
-              <Ionicons name="send" size={22} color="#fff" />
+              <LinearGradient
+                colors={SEND_BTN_GRAD}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.sendBtnGrad}
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="arrow-up" size={22} color="#fff" />
+                )}
+              </LinearGradient>
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -383,45 +473,75 @@ export default function MuhabbetChatScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F2F2F7' },
+  root: { flex: 1, backgroundColor: '#EEF1F5' },
+  wmWrap: { ...StyleSheet.absoluteFillObject, opacity: 0.4, zIndex: 0 },
   layer: { flex: 1, zIndex: 1 },
   kav: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   matchStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(22,101,52,0.1)',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    gap: 6,
+    alignItems: 'center',
   },
-  matchStripTxt: { flex: 1, fontSize: 12, color: '#166534', fontWeight: '600' },
+  matchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16A34A',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    maxWidth: '96%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#16a34a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.28,
+        shadowRadius: 4,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  matchBadgeTxt: { flex: 1, fontSize: 13, color: '#fff', fontWeight: '700', lineHeight: 18 },
   list: { padding: 12, paddingBottom: 8, flexGrow: 1 },
   warnCard: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(245,158,11,0.12)',
+    backgroundColor: 'rgba(245,158,11,0.1)',
     borderRadius: 14,
     padding: 12,
     marginBottom: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(180,83,9,0.25)',
+    borderColor: 'rgba(180,83,9,0.2)',
   },
   warnTxt: { flex: 1, fontSize: 13, color: '#713F12', lineHeight: 19, fontWeight: '500' },
   bubbleColMine: { alignSelf: 'flex-end', maxWidth: '90%', marginBottom: 8 },
   bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '90%', marginBottom: 8 },
+  bubbleShadowWrap: { ...BUBBLE_SHADOW, borderRadius: 18, maxWidth: '100%' },
+  bubbleAlignEnd: { alignSelf: 'flex-end' },
+  bubbleAlignStart: { alignSelf: 'flex-start' },
   bubblePad: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
-  tMine: { color: '#fff', fontSize: 16, lineHeight: 22 },
-  bubbleTheirs: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
-  bubbleTheirsDriver: { backgroundColor: 'rgba(59,130,246,0.18)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.35)' },
-  bubbleTheirsPax: { backgroundColor: 'rgba(245,158,11,0.2)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)' },
-  tTheirsD: { color: '#1E3A5F', fontSize: 16, lineHeight: 22, fontWeight: '500' },
-  tTheirsP: { color: '#7C2D12', fontSize: 16, lineHeight: 22, fontWeight: '500' },
+  tGrad: { color: '#fff', fontSize: 16, lineHeight: 22, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.12)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
   tTimeMine: { fontSize: 11, color: TEXT_SECONDARY, textAlign: 'right', marginTop: 4 },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
-  keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.65)' },
+  keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
+  keyCtaGlow: {
+    borderRadius: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#6366f1',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+      },
+      android: { elevation: 5 },
+      default: {},
+    }),
+  },
   keyCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 },
   keyCtaTxt: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  keyCodeLink: { alignSelf: 'center', marginTop: 6, marginBottom: 2, paddingVertical: 4 },
+  keyCodeLinkTxt: { fontSize: 12, color: '#4F46E5', fontWeight: '600' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -429,26 +549,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(60,60,67,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderTopColor: 'rgba(60,60,67,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(60,60,67,0.2)',
-    paddingHorizontal: 12,
+    borderColor: 'rgba(60,60,67,0.14)',
+    paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 16,
     color: TEXT_PRIMARY,
+    backgroundColor: 'rgba(255,255,255,0.95)',
   },
-  sendBtn: {
+  sendBtnWrap: { borderRadius: 22, overflow: 'hidden', ...BUBBLE_SHADOW },
+  sendBtnGrad: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: PRIMARY_GRAD[0],
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },

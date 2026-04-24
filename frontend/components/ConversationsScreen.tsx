@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -133,6 +134,8 @@ export default function ConversationsScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState<MuhabbetConversationListItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [hideTarget, setHideTarget] = useState<MuhabbetConversationListItem | null>(null);
+  const [hideBusy, setHideBusy] = useState(false);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -186,6 +189,44 @@ export default function ConversationsScreen({
       setRefreshing(false);
     }
   }, [load]);
+
+  const doHide = useCallback(
+    async (cid: string) => {
+      try {
+        const token = (await getPersistedAccessToken())?.trim();
+        if (!token) return;
+        const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/hide`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (handleUnauthorizedAndMaybeRedirect(res)) return;
+        if (res.ok) await load();
+      } catch {
+        /* noop */
+      }
+    },
+    [base, load]
+  );
+
+  const onConfirmHideModal = useCallback(async () => {
+    const c = hideTarget;
+    const cid = c ? String(c.conversation_id || c.id || '').trim() : '';
+    if (!cid) {
+      setHideTarget(null);
+      return;
+    }
+    setHideBusy(true);
+    try {
+      await doHide(cid);
+    } finally {
+      setHideBusy(false);
+      setHideTarget(null);
+    }
+  }, [hideTarget, doHide]);
+
+  const openHideModal = useCallback((c: MuhabbetConversationListItem) => {
+    setHideTarget(c);
+  }, []);
 
   const openChat = (c: MuhabbetConversationListItem) => {
     const cid = String(c.conversation_id || c.id || '').trim();
@@ -245,26 +286,35 @@ export default function ConversationsScreen({
           }
           renderItem={({ item }) => {
             const last = (item.last_message_body && String(item.last_message_body).trim()) || '';
-            const lastLine = last ? (last.length > 80 ? `${last.slice(0, 80)}…` : last) : 'Sohbet başlat';
+            const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Sohbet başlat';
+            const or = (item.other_user_role || '').toLowerCase();
+            const driverish = or === 'driver' || or === 'private_driver';
             return (
               <Pressable
-                style={({ pressed }) => [styles.card, pressed && { opacity: 0.92 }]}
+                style={({ pressed }) => [
+                  styles.card,
+                  driverish ? styles.cardDriver : styles.cardPax,
+                  { transform: [{ scale: pressed ? 0.97 : 1 }] },
+                ]}
                 onPress={() => openChat(item)}
+                onLongPress={() => openHideModal(item)}
+                delayLongPress={450}
+                accessibilityHint="Sohbetten kaldırmak için basılı tutun"
               >
-                <View style={styles.cardTop}>
+                <View style={styles.cardRow1}>
                   <Text style={styles.name} numberOfLines={1}>
                     {item.other_user_name || 'Kullanıcı'}
                   </Text>
                   {item.last_message_at ? (
-                    <Text style={styles.timeSmall}>
+                    <Text style={styles.timeRight}>
                       {formatLastMessageListTime(String(item.last_message_at))}
                     </Text>
                   ) : null}
                 </View>
-                <Text style={styles.route} numberOfLines={1}>
+                <Text style={styles.routeCompact} numberOfLines={1}>
                   {formatRouteLine(item.from_text, item.to_text)}
                 </Text>
-                <Text style={styles.preview} numberOfLines={2}>
+                <Text style={styles.previewSub} numberOfLines={2}>
                   {lastLine}
                 </Text>
               </Pressable>
@@ -273,6 +323,50 @@ export default function ConversationsScreen({
         />
       )}
     </>
+  );
+
+  const hideModal = (
+    <Modal
+      visible={!!hideTarget}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {
+        if (!hideBusy) setHideTarget(null);
+      }}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => (hideBusy ? null : setHideTarget(null))}
+        />
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Sohbeti gizle</Text>
+          <Text style={styles.modalBody}>
+            Bu sohbet yalnızca sizin listenizden kaldırılır; kayıtlar sunucuda kalır.
+          </Text>
+          <View style={styles.modalRow}>
+            <Pressable
+              onPress={() => (hideBusy ? null : setHideTarget(null))}
+              style={({ pressed }) => [styles.modalBtnSec, pressed && { opacity: 0.88 }]}
+              disabled={hideBusy}
+            >
+              <Text style={styles.modalBtnSecTxt}>Vazgeç</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void onConfirmHideModal()}
+              style={({ pressed }) => [styles.modalBtnPri, pressed && !hideBusy && { opacity: 0.9 }]}
+              disabled={hideBusy}
+            >
+              {hideBusy ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.modalBtnPriTxt}>Gizle</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 
   if (embedded) {
@@ -286,6 +380,7 @@ export default function ConversationsScreen({
         ) : (
           <View style={{ flex: 1, zIndex: 1 }}>{listBody}</View>
         )}
+        {hideModal}
       </View>
     );
   }
@@ -298,7 +393,10 @@ export default function ConversationsScreen({
         onBack={() => router.back()}
         gradientColors={PRIMARY_GRAD}
       />
-      <View style={{ flex: 1, zIndex: 1 }}>{listBody}</View>
+      <View style={{ flex: 1, zIndex: 1 }}>
+        {listBody}
+        {hideModal}
+      </View>
     </SafeAreaView>
   );
 }
@@ -311,17 +409,63 @@ const styles = StyleSheet.create({
   embedSub: { marginTop: 6, fontSize: 14, color: TEXT_SECONDARY, lineHeight: 20 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   centeredPad: { flex: 1, justifyContent: 'center', padding: 24 },
-  list: { padding: 16, paddingBottom: 32 },
-  emptyList: { flexGrow: 1, padding: 16 },
+  list: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 36 },
+  emptyList: { flexGrow: 1, padding: 18 },
   err: { color: '#C00', fontSize: 15, textAlign: 'center' },
   link: { marginTop: 12, color: ACCENT, fontWeight: '600', textAlign: 'center' },
-  card: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 10, ...CARD_SHADOW },
-  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  name: { flex: 1, fontSize: 17, fontWeight: '700', color: TEXT_PRIMARY },
-  timeSmall: { fontSize: 12, color: TEXT_SECONDARY },
-  route: { marginTop: 4, color: TEXT_SECONDARY, fontSize: 14, fontWeight: '500' },
-  preview: { marginTop: 8, color: TEXT_PRIMARY, fontSize: 15, lineHeight: 21, opacity: 0.9 },
+  card: {
+    backgroundColor: CARD_BG,
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+    ...CARD_SHADOW,
+  },
+  cardDriver: { borderLeftWidth: 4, borderLeftColor: '#2563EB', backgroundColor: '#F0F7FF' },
+  cardPax: { borderLeftWidth: 4, borderLeftColor: '#EA580C', backgroundColor: '#FFFAF0' },
+  cardRow1: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  name: { flex: 1, fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
+  timeRight: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '500', marginTop: 1 },
+  routeCompact: { marginTop: 6, color: TEXT_SECONDARY, fontSize: 12, fontWeight: '500' },
+  previewSub: { marginTop: 6, color: '#4B5563', fontSize: 14, lineHeight: 20, fontWeight: '500' },
   emptyBox: { alignItems: 'center', paddingVertical: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: TEXT_PRIMARY },
   emptySub: { marginTop: 8, textAlign: 'center', color: TEXT_SECONDARY, fontSize: 15, lineHeight: 22, paddingHorizontal: 12 },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 20,
+    zIndex: 2,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
+  modalBody: { marginTop: 10, fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22 },
+  modalRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
+  modalBtnSec: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(60,60,67,0.1)',
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  modalBtnSecTxt: { fontSize: 16, fontWeight: '600', color: '#374151' },
+  modalBtnPri: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnPriTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
 });

@@ -15,9 +15,143 @@ const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 const CARD_BG = '#FFFFFF';
 const CARD_SHADOW = Platform.select({
-  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
-  android: { elevation: 2 },
+  ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 10 },
+  android: { elevation: 3 },
   default: {},
+});
+
+/** Bana uygun teklifler: mavi (sürücü) / turuncu (yolcu) glow + nereden/nereye yeşil etiket */
+type OfferCardProps = {
+  fromText: string;
+  toText: string;
+  isDriver: boolean;
+  priceAmount?: number | null;
+  pulse: Animated.Value;
+};
+
+function OfferCard({ fromText, toText, isDriver, priceAmount, pulse }: OfferCardProps) {
+  const glowOpacity = pulse.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.35, 0.62, 0.35],
+  });
+  const glowScale = pulse.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.99, 1.008, 0.99],
+  });
+  const labelPulse = pulse.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.72, 1, 0.72],
+  });
+  const arrowY = pulse.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, 3, 0],
+  });
+
+  const from = (fromText || '—').toString().trim() || '—';
+  const to = (toText || '—').toString().trim() || '—';
+  const glowColor = isDriver ? 'rgba(59,130,246,0.5)' : 'rgba(245,158,11,0.48)';
+  const roleLabel = isDriver ? 'Sürücü' : 'Yolcu';
+  const priceStr =
+    priceAmount != null && !Number.isNaN(Number(priceAmount))
+      ? `${Number(priceAmount).toLocaleString('tr-TR')} ₺`
+      : null;
+
+  return (
+    <View style={ocStyles.cardSlot}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          ocStyles.glowRing,
+          {
+            backgroundColor: glowColor,
+            opacity: glowOpacity,
+            transform: [{ scale: glowScale }],
+          },
+        ]}
+      />
+      <View style={ocStyles.card}>
+        <View style={ocStyles.topRow}>
+          <View
+            style={[
+              ocStyles.rolePill,
+              { backgroundColor: isDriver ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.16)' },
+            ]}
+          >
+            <Text style={[ocStyles.rolePillText, { color: isDriver ? '#1D4ED8' : '#C2410C' }]}>{roleLabel}</Text>
+          </View>
+          {priceStr ? <Text style={ocStyles.priceText}>{priceStr}</Text> : <View style={{ width: 8 }} />}
+        </View>
+
+        <View style={ocStyles.routeBlock}>
+          <Animated.View style={{ opacity: labelPulse }}>
+            <View style={ocStyles.tagGreen}>
+              <Text style={ocStyles.tagGreenText}>NEREDEN</Text>
+            </View>
+          </Animated.View>
+          <Text style={ocStyles.bigPlace} numberOfLines={2}>
+            {from}
+          </Text>
+          <Animated.View style={{ alignItems: 'center', marginVertical: 2, transform: [{ translateY: arrowY }] }}>
+            <Ionicons name="chevron-down" size={16} color="#86868B" />
+          </Animated.View>
+          <Animated.View style={{ opacity: labelPulse }}>
+            <View style={ocStyles.tagGreen}>
+              <Text style={ocStyles.tagGreenText}>NEREYE</Text>
+            </View>
+          </Animated.View>
+          <Text style={ocStyles.bigPlace} numberOfLines={2}>
+            {to}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const ocStyles = StyleSheet.create({
+  cardSlot: {
+    position: 'relative',
+    marginBottom: 10,
+  },
+  glowRing: {
+    position: 'absolute',
+    left: -3,
+    right: -3,
+    top: -3,
+    bottom: -3,
+    borderRadius: 20,
+  },
+  card: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    padding: 16,
+    ...CARD_SHADOW,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  rolePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  rolePillText: { fontSize: 13, fontWeight: '800' },
+  priceText: { fontSize: 15, fontWeight: '800', color: '#6E6E73' },
+  routeBlock: { gap: 0 },
+  tagGreen: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(22, 163, 74, 0.14)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(22, 163, 74, 0.35)',
+  },
+  tagGreenText: { fontSize: 11, fontWeight: '800', color: '#15803D', letterSpacing: 0.3 },
+  bigPlace: { fontSize: 18, fontWeight: '800', color: '#111', marginTop: 4, lineHeight: 24 },
 });
 
 export type LeylekMuhabbetiHomeTabProps = {
@@ -51,6 +185,7 @@ export default function LeylekMuhabbetiHomeTab({
   const tok = accessToken.trim();
   const base = apiUrl.replace(/\/$/, '');
   const ctaPulse = useRef(new Animated.Value(1)).current;
+  const offerPulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
@@ -71,6 +206,30 @@ export default function LeylekMuhabbetiHomeTab({
     anim.start();
     return () => anim.stop();
   }, [ctaPulse]);
+
+  useEffect(() => {
+    const a = Animated.loop(
+      Animated.sequence([
+        Animated.timing(offerPulse, {
+          toValue: 1,
+          duration: 1300,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(offerPulse, {
+          toValue: 0,
+          duration: 1300,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    a.start();
+    return () => {
+      a.stop();
+      offerPulse.setValue(0);
+    };
+  }, [offerPulse]);
   const [convLoading, setConvLoading] = useState(false);
   const [convRows, setConvRows] = useState<MuhabbetConversationListItem[]>([]);
   const [pendingIncoming, setPendingIncoming] = useState(0);
@@ -194,26 +353,25 @@ export default function LeylekMuhabbetiHomeTab({
           </Pressable>
         ) : null}
 
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Bana uygun teklifler</Text>
-          <Text style={styles.summaryHint}>Şehrindeki son teklifler — detay için Teklifler sekmesi</Text>
+        <View style={[styles.summaryCard, styles.offersCardPad]}>
+          <Text style={styles.offersSectionTitle}>Bana uygun teklifler</Text>
+          <Text style={styles.offersSectionHint}>Şehrindeki son teklifler — detay için Teklifler sekmesi</Text>
           {feedLoading ? <ActivityIndicator color={PRIMARY_GRAD[0]} style={{ marginVertical: 8 }} /> : null}
           {!feedLoading && feedPreview.length === 0 ? (
-            <Text style={styles.summaryMeta}>Henüz önizleme yok — teklif açarak başlat.</Text>
+            <Text style={styles.offersEmpty}>Henüz önizleme yok — teklif açarak başlat.</Text>
           ) : (
             feedPreview.map((L) => {
               const r = (L.role_type || '').toLowerCase();
-              const tag = r === 'driver' || r === 'private_driver' ? 'Sürücü' : 'Yolcu';
+              const isDriver = r === 'driver' || r === 'private_driver';
               return (
-                <View key={L.id} style={styles.previewRow}>
-                  <Text style={styles.previewTag}>{tag}</Text>
-                  <Text style={styles.previewRoute} numberOfLines={2}>
-                    {(L.from_text || '—').toString().trim()} → {(L.to_text || '—').toString().trim()}
-                  </Text>
-                  {L.price_amount != null && L.price_amount !== undefined ? (
-                    <Text style={styles.previewPrice}>{Number(L.price_amount).toLocaleString('tr-TR')} ₺</Text>
-                  ) : null}
-                </View>
+                <OfferCard
+                  key={L.id}
+                  fromText={(L.from_text || '—').toString()}
+                  toText={(L.to_text || '—').toString()}
+                  isDriver={isDriver}
+                  priceAmount={L.price_amount}
+                  pulse={offerPulse}
+                />
               );
             })
           )}
@@ -316,27 +474,10 @@ const styles = StyleSheet.create({
   ctaBigEmoji: { fontSize: 24, color: '#fff', fontWeight: '800' },
   ctaBigTitle: { fontSize: 16, fontWeight: '800', color: '#fff', marginTop: 6 },
   ctaBigSub: { fontSize: 13, color: 'rgba(255,255,255,0.92)', marginTop: 4, lineHeight: 18 },
-  previewRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(60,60,67,0.1)',
-  },
-  previewTag: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: PRIMARY_GRAD[0],
-    backgroundColor: 'rgba(59,130,246,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  previewRoute: { flex: 1, fontSize: 14, color: TEXT_PRIMARY, fontWeight: '600' },
-  previewPrice: { fontSize: 13, fontWeight: '700', color: TEXT_SECONDARY },
+  offersCardPad: { paddingBottom: 18 },
+  offersSectionTitle: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY },
+  offersSectionHint: { fontSize: 14, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 8, lineHeight: 20 },
+  offersEmpty: { fontSize: 17, color: TEXT_SECONDARY, lineHeight: 24, marginTop: 4 },
   summaryCard: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
   summaryTitle: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
   summaryHint: { fontSize: 13, color: TEXT_SECONDARY, marginTop: 4, marginBottom: 6 },
