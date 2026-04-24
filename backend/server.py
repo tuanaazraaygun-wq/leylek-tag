@@ -18210,7 +18210,7 @@ async def muhabbet_create_report(
 # İstemci CreateListingModal: driver -> gidiyorum + driver; passenger -> gidecegim + passenger
 _MUHABBET_LISTING_TYPES = frozenset({"gidiyorum", "gidecegim", "beni_alsin", "ozel_sofor"})
 _MUHABBET_LISTING_ROLES = frozenset({"driver", "passenger", "private_driver"})
-_MUHABBET_LISTING_STATUSES = frozenset({"active", "matched", "closed", "cancelled"})
+_MUHABBET_LISTING_STATUSES = frozenset({"active", "pending_chat", "matched", "closed", "cancelled"})
 _MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelled"})
 
 # ride_listings INSERT — migration: backend/migrations/leylek_muhabbet_ride_listings.sql
@@ -18237,6 +18237,10 @@ _RIDE_LISTINGS_INSERT_COLUMN_WHITELIST = frozenset(
         "status",
         "updated_at",
         "vehicle_kind",
+        "expires_at",
+        "accepted_match_request_id",
+        "accepted_user_id",
+        "matched_conversation_id",
     }
 )
 
@@ -18281,6 +18285,14 @@ def _ride_listing_response_row(row: dict) -> dict:
         vk = "car"
     r["vehicle_kind"] = vk
     r["transport_label"] = "Motor" if vk == "motorcycle" else "Araç"
+    try:
+        exp_d = _parse_iso_dt(r.get("expires_at"))
+        if exp_d is not None:
+            r["muhabbet_offer_expired"] = exp_d < datetime.now(timezone.utc)
+        else:
+            r["muhabbet_offer_expired"] = False
+    except Exception:
+        r["muhabbet_offer_expired"] = False
     return r
 
 
@@ -18347,6 +18359,20 @@ class MuhabbetListingCreateBody(BaseModel):
         s = str(v or "car").strip().lower()
         if s not in ("car", "motorcycle"):
             raise ValueError("vehicle_kind car veya motorcycle olmalı")
+        return s
+
+
+class MuhabbetListingLifecycleBody(BaseModel):
+    """Süresi dolmuş aktif Muhabbet ilanı: uzat veya kapat (yalnızca ilan sahibi)."""
+
+    action: str
+
+    @field_validator("action", mode="before")
+    @classmethod
+    def _lifecycle_act(cls, v: str) -> str:
+        s = str(v or "").strip().lower()
+        if s not in ("continue", "close"):
+            raise ValueError("action 'continue' veya 'close' olmalı")
         return s
 
 
@@ -18725,6 +18751,11 @@ def _enrich_ride_listings_creators(rows: list) -> list:
     return rows
 
 
+def _muhabbet_listing_expires_at_default_iso() -> str:
+    """Yeni ilan: feed görünürlüğü +60 dk."""
+    return (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat()
+
+
 def _muhabbet_listing_core_insert_dict(
     owner_col: str,
     uid: str,
@@ -18749,6 +18780,7 @@ def _muhabbet_listing_core_insert_dict(
         "note": body.note,
         "vehicle_kind": body.vehicle_kind or "car",
         "status": "active",
+        "expires_at": _muhabbet_listing_expires_at_default_iso(),
     }
 
 
@@ -18948,6 +18980,22 @@ def _muhabbet_listing_departure_passed(row: Optional[dict]) -> bool:
         return False
 
 
+def _muhabbet_listing_offer_expired(row: Optional[dict]) -> bool:
+    """Muhabbet ilan süresi (expires_at) dolmuş mu — feed'de gösterilmez."""
+    if not row:
+        return False
+    raw = row.get("expires_at")
+    if raw is None or str(raw).strip() == "":
+        return False
+    try:
+        exp = _parse_iso_dt(raw)
+        if exp is None:
+            return False
+        return exp < datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
 @api_router.get("/muhabbet/listings/feed")
 async def muhabbet_listings_feed(
     city: str,
@@ -18956,7 +19004,7 @@ async def muhabbet_listings_feed(
     role_type: Optional[str] = None,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Şehirdeki yalnızca status=active ilanlar; match_request, conversation_id (accepted ise), social proof sayım."""
+    """Şehirdeki yalnızca status=active ve expires_at gelecekteki ilanlar; match_request özeti, social proof sayım."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         c_raw = (city or "").strip()
@@ -18980,7 +19028,9 @@ async def muhabbet_listings_feed(
         rows = [
             r
             for r in rows
-            if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key and not _muhabbet_listing_departure_passed(r)
+            if _muhabbet_feed_city_key(str(r.get("city") or "")) == c_key
+            and not _muhabbet_listing_departure_passed(r)
+            and not _muhabbet_listing_offer_expired(r)
         ][:lim]
         rows = _enrich_ride_listings_creators(rows)
         lid_list = [str(r.get("id")) for r in rows if r.get("id")]
@@ -19006,7 +19056,7 @@ async def muhabbet_listings_me(
     limit: int = 100,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Oturum kullanıcısının ilanları; created_at desc. status isteğe bağlı (active|matched|closed|cancelled)."""
+    """Oturum kullanıcısının ilanları; created_at desc. status isteğe bağlı (active|pending_chat|matched|closed|cancelled)."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         lim = max(1, min(int(limit or 100), 200))
@@ -19108,6 +19158,8 @@ async def muhabbet_listing_match_request(
                 status_code=400,
                 detail="Bu ilan aktif değil veya eşleşme isteği kabul etmiyor",
             )
+        if _muhabbet_listing_offer_expired(lst):
+            raise HTTPException(status_code=400, detail="Bu ilanın süresi doldu; yeni talep gönderilemez")
         msg = body.message
         ins = (
             supabase.table("listing_match_requests")
@@ -19139,6 +19191,53 @@ async def muhabbet_listing_match_request(
                 detail="Bu ilan için zaten bekleyen bir isteğiniz var",
             ) from e
         logger.error(f"muhabbet_listing_match_request: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/listings/{listing_id}/lifecycle")
+async def muhabbet_listing_lifecycle(
+    listing_id: str,
+    body: MuhabbetListingLifecycleBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Süresi dolmuş aktif Muhabbet ilanı: +60 dk uzat (continue) veya kapat (close).
+    Yalnızca ilan sahibi; normal yolculuk akışına dokunmaz.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        lid = str(listing_id).strip().lower()
+        uuid.UUID(lid)
+        lr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        if not lr.data:
+            raise HTTPException(status_code=404, detail="İlan bulunamadı")
+        row = _ride_listing_response_row(dict(lr.data[0]))
+        if _ride_listing_creator_uid(row) != uid:
+            raise HTTPException(status_code=403, detail="Yalnızca kendi ilanınız için kullanılabilir")
+        st = str(row.get("status") or "").strip().lower()
+        if st != "active":
+            raise HTTPException(status_code=400, detail="Bu işlem yalnızca aktif ilanlar için geçerlidir")
+        if not _muhabbet_listing_offer_expired(row):
+            raise HTTPException(status_code=400, detail="İlan süresi henüz dolmadı")
+        now_ts = _muhabbet_listing_row_ts()
+        if body.action == "continue":
+            new_exp = (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat()
+            supabase.table("ride_listings").update({"expires_at": new_exp, "updated_at": now_ts}).eq("id", lid).execute()
+        else:
+            supabase.table("ride_listings").update({"status": "cancelled", "updated_at": now_ts}).eq("id", lid).execute()
+        fr = supabase.table("ride_listings").select("*").eq("id", lid).limit(1).execute()
+        out = _ride_listing_response_row(dict(fr.data[0])) if fr.data else row
+        try:
+            _enrich_ride_listings_creators([out])
+        except Exception:
+            pass
+        return {"success": True, "listing": out}
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz ilan kimliği") from None
+    except Exception as e:
+        logger.error("muhabbet_listing_lifecycle: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -19656,21 +19755,51 @@ def _muhabbet_conversation_get_or_create_id(sen: str, rec: str) -> str:
     raise HTTPException(status_code=500, detail="Sohbet oluşturulamadı")
 
 
-def _muhabbet_close_listing_after_match_accept(listing_id: str, accepted_request_id: str) -> None:
-    """Kabul sonrası: ilan matched; aynı ilana diğer bekleyen talepleri iptal."""
+def _muhabbet_apply_listing_after_match_request_accepted(
+    listing_id: str,
+    accepted_request_id: str,
+    conversation_id: str,
+    accepted_sender_uid: str,
+) -> None:
+    """
+    Talip kabulü: ilan pending_chat + kabul alanları; feed'den düşer.
+    Aynı ilandaki diğer bekleyen talepleri iptal eder.
+    """
     lid = str(listing_id or "").strip().lower()
     rid = str(accepted_request_id or "").strip().lower()
-    if not lid or not rid:
+    cid = str(conversation_id or "").strip().lower()
+    sender = str(accepted_sender_uid or "").strip().lower()
+    if not lid or not rid or not cid or not sender:
         return
     now_ts = _muhabbet_listing_row_ts()
     try:
-        supabase.table("ride_listings").update({"status": "matched", "updated_at": now_ts}).eq("id", lid).execute()
+        supabase.table("ride_listings").update(
+            {
+                "status": "pending_chat",
+                "accepted_match_request_id": rid,
+                "accepted_user_id": sender,
+                "matched_conversation_id": cid,
+                "updated_at": now_ts,
+            }
+        ).eq("id", lid).eq("status", "active").execute()
     except Exception as e:
-        logger.warning("ride_listings->matched lid=%s err=%s", lid[:12], e)
+        logger.warning("ride_listings->pending_chat lid=%s err=%s", lid[:12], e)
     try:
         supabase.table("listing_match_requests").update({"status": "cancelled", "updated_at": now_ts}).eq("listing_id", lid).eq("status", "pending").neq("id", rid).execute()
     except Exception as e:
         logger.warning("listing_match_requests cancel peers: %s", e)
+
+
+def _muhabbet_mark_ride_listing_matched_for_muhabbet_conversation(conversation_id: str) -> None:
+    """Sohbet içi Leylek Anahtar kabulü: ilgili ilan matched (pending_chat → matched)."""
+    cid = str(conversation_id or "").strip().lower()
+    if not cid:
+        return
+    now_ts = _muhabbet_listing_row_ts()
+    try:
+        supabase.table("ride_listings").update({"status": "matched", "updated_at": now_ts}).eq("matched_conversation_id", cid).eq("status", "pending_chat").execute()
+    except Exception as e:
+        logger.warning("ride_listings->matched conv=%s err=%s", cid[:12], e)
 
 
 @api_router.post("/muhabbet/match-requests/{request_id}/accept")
@@ -19699,12 +19828,14 @@ async def muhabbet_match_request_accept(
             fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
             out_req = dict(fin.data[0]) if fin.data else row
             lid_done = str(row.get("listing_id") or "").strip().lower()
-            if lid_done:
-                _muhabbet_close_listing_after_match_accept(lid_done, rid)
+            sen_done = str(row.get("sender_user_id") or "").strip().lower()
+            ecid_n = str(ecid_raw).strip().lower()
+            if lid_done and ecid_n and sen_done:
+                _muhabbet_apply_listing_after_match_request_accepted(lid_done, rid, ecid_n, sen_done)
             return {
                 "success": True,
                 "chat_unlocked": True,
-                "conversation_id": ecid,
+                "conversation_id": ecid_n,
                 "request": out_req,
                 "message": "Eşleşme kabul edildi",
             }
@@ -19720,8 +19851,8 @@ async def muhabbet_match_request_accept(
             fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
             out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
             await _muhabbet_notify_match_accepted(sen0, rec0, conversation_id, lid_rec)
-            if lid_rec:
-                _muhabbet_close_listing_after_match_accept(lid_rec, rid)
+            if lid_rec and sen0:
+                _muhabbet_apply_listing_after_match_request_accepted(lid_rec, rid, str(conversation_id).strip().lower(), sen0)
             return {
                 "success": True,
                 "chat_unlocked": True,
@@ -19740,6 +19871,8 @@ async def muhabbet_match_request_accept(
             raise HTTPException(status_code=403, detail="Sadece ilan sahibi bu isteği kabul edebilir")
         if str(lst.get("status") or "").strip().lower() != "active":
             raise HTTPException(status_code=400, detail="İlan artık eşleşme kabul edemiyor")
+        if _muhabbet_listing_offer_expired(lst):
+            raise HTTPException(status_code=400, detail="İlan süresi doldu")
         now_ts = _muhabbet_listing_row_ts()
         sen = str(row.get("sender_user_id") or "").strip().lower()
         rec = str(row.get("receiver_user_id") or "").strip().lower()
@@ -19754,8 +19887,8 @@ async def muhabbet_match_request_accept(
         fin = supabase.table("listing_match_requests").select("*").eq("id", rid).limit(1).execute()
         out_req = dict(fin.data[0]) if fin.data else {**row, "conversation_id": conversation_id}
         await _muhabbet_notify_match_accepted(sen, rec, conversation_id, lid)
-        if lid:
-            _muhabbet_close_listing_after_match_accept(lid, rid)
+        if lid and sen:
+            _muhabbet_apply_listing_after_match_request_accepted(lid, rid, str(conversation_id).strip().lower(), sen)
         return {
             "success": True,
             "chat_unlocked": True,
@@ -20106,6 +20239,7 @@ async def _leylek_pair_accept_from_socket(uid: str, cid: str, rid: str) -> dict:
             "match_source": "leylek_key_inchat",
         }
     ).eq("id", cid).execute()
+    _muhabbet_mark_ride_listing_matched_for_muhabbet_conversation(cid)
     await _muhabbet_notify_leylek_key_matched(initiator, uid, cid)
     return {"ok": True, "conversation_id": cid}
 
