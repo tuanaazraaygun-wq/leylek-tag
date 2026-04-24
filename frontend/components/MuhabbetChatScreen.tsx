@@ -8,9 +8,11 @@ import {
   Alert,
   Animated,
   AppState,
+  DeviceEventEmitter,
   Easing,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -30,6 +32,14 @@ import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect'
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import { subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
+import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
+import {
+  coerceMessageCreatedAt,
+  loadMuhabbetMessagesLocal,
+  normalizeMuhabbetMessageId,
+  persistMuhabbetChatRowsLocal,
+  storedMessagesToDisplayRows,
+} from '../lib/muhabbetMessagesStorage';
 import MuhabbetWatermark from './MuhabbetWatermark';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
@@ -69,6 +79,8 @@ export type ChatMessageRow = {
   created_at?: string | null;
   /** Giden mesaj: gönderim / okundu bilgisi */
   out_status?: OutMessageStatus;
+  /** Cihazda saklanan rol (socket anında ctx’den yazılır) */
+  sender_role?: string | null;
 };
 
 export type ChatContext = {
@@ -112,6 +124,17 @@ function formatMessageTimeLabel(iso: string | null | undefined): string {
 function isDriverAppRole(r: string | null | undefined): boolean {
   const x = (r || '').toLowerCase();
   return x === 'driver' || x === 'private_driver';
+}
+
+function sortRowsByCreatedAtAsc(items: ChatMessageRow[]): ChatMessageRow[] {
+  return [...items].sort(
+    (a, b) =>
+      new Date(String(a.created_at || 0)).getTime() - new Date(String(b.created_at || 0)).getTime()
+  );
+}
+
+function rowIdLo(m: Pick<ChatMessageRow, 'id'>): string {
+  return normalizeMuhabbetMessageId(m.id);
 }
 
 function DeliveryTicks({ status }: { status: OutMessageStatus }) {
@@ -171,15 +194,23 @@ export default function MuhabbetChatScreen({
   const [myId, setMyId] = useState<string>('');
   const myIdRef = useRef('');
   const [loading, setLoading] = useState(true);
+  /** Yerel mesajlar AsyncStorage’dan okunana kadar liste gösterme */
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [rows, setRows] = useState<ChatMessageRow[]>([]);
+  const rowsRef = useRef<ChatMessageRow[]>([]);
+  rowsRef.current = rows;
+  const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctx, setCtx] = useState<ChatContext | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [pairRequestLoading, setPairRequestLoading] = useState(false);
+  /** Karşı taraftan gelen Leylek Anahtar eşleşme isteği (modal) */
+  const [pairInModal, setPairInModal] = useState<{ rid: string; fromLo: string } | null>(null);
   const pairRequestBusyRef = useRef(false);
   /** İstemci tarafı 60 sn eşleşme isteği aralığı (sunucu cooldown ile uyumlu) */
   const lastLeylekPairRequestAtRef = useRef(0);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
+  const ctxRef = useRef<ChatContext | null>(null);
   const ctaPulse = useRef(new Animated.Value(1)).current;
   /** Sohbet odası (joined_muhabbet) — mesaj almak için gerekli */
   const [roomJoined, setRoomJoined] = useState(false);
@@ -209,6 +240,10 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     myIdRef.current = myId;
   }, [myId]);
+
+  useEffect(() => {
+    ctxRef.current = ctx;
+  }, [ctx]);
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -252,10 +287,34 @@ export default function MuhabbetChatScreen({
     };
   }, []);
 
-  /** Sadece rol / eşleşme bağlamı; mesaj geçmişi API'den gelmez. */
+  /** Önce yerel mesajlar (LOCAL) → sonra bağlam API (ctx). Socket join ayrı effect’te isLoadingMessages sonrası. */
   const loadContext = useCallback(async () => {
-    if (!cid) return;
+    if (!cid) {
+      setIsLoadingMessages(false);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setIsLoadingMessages(true);
+    try {
+      const localItems = await loadMuhabbetMessagesLocal(cid);
+      const mapped: ChatMessageRow[] = sortRowsByCreatedAtAsc(
+        storedMessagesToDisplayRows(localItems).map((m) => ({
+          id: normalizeMuhabbetMessageId(m.id),
+          body: m.body,
+          sender_user_id: m.sender_user_id,
+          created_at: coerceMessageCreatedAt(m.created_at),
+          out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
+          sender_role: m.sender_role,
+        }))
+      );
+      console.log('[chat] local load count=', mapped.length);
+      setRows(mapped);
+    } catch {
+      setRows([]);
+    } finally {
+      setIsLoadingMessages(false);
+    }
     try {
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) {
@@ -277,13 +336,10 @@ export default function MuhabbetChatScreen({
       };
       if (res.ok && d.success) {
         setCtx(d.context || null);
-        setRows([]);
       } else {
-        setRows([]);
         setCtx(null);
       }
     } catch {
-      setRows([]);
       setCtx(null);
     } finally {
       setLoading(false);
@@ -344,31 +400,7 @@ export default function MuhabbetChatScreen({
           }
         }
         if (me && fromLo === me) return;
-        Alert.alert(
-          'Eşleşme isteği',
-          'Karşı taraf sizinle eşleşmek istiyor.',
-          [
-            {
-              text: 'Daha sonra',
-              style: 'cancel',
-              onPress: () => {
-                socket.emit('leylek_pair_decline', { conversation_id: cid, request_id: rid });
-              },
-            },
-            {
-              text: 'Eşleş',
-              onPress: () => {
-                try {
-                  socket.emit('join_muhabbet_conversation', { conversation_id: cid });
-                } catch {
-                  /* noop */
-                }
-                socket.emit('leylek_pair_accept', { conversation_id: cid, request_id: rid });
-              },
-            },
-          ],
-          { cancelable: true }
-        );
+        setPairInModal({ rid, fromLo });
       })();
     };
     socket.on('leylek_pair_match_request', onReq);
@@ -378,7 +410,7 @@ export default function MuhabbetChatScreen({
   }, [cid, myId]);
 
   useEffect(() => {
-    if (!cid) return;
+    if (!cid || isLoadingMessages) return;
     const socket = getOrCreateSocket();
     const cidLo = cid.trim().toLowerCase();
     let cancelled = false;
@@ -457,23 +489,36 @@ export default function MuhabbetChatScreen({
         }
         return;
       }
-      const mid = String(msg?.message_id || '').trim();
-      if (!mid) return;
-      console.log('[chat] received message message_id=', mid, msg);
+      const id = normalizeMuhabbetMessageId(msg?.message_id);
+      if (!id) return;
+      console.log('[chat] socket message received id=', id);
       const senderLo = String(msg?.sender_id || '')
         .trim()
         .toLowerCase();
       const text = String(msg?.text ?? '');
-      const created = String(msg?.created_at || new Date().toISOString());
+      const created = coerceMessageCreatedAt(msg?.created_at);
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       const isMine = Boolean(myLo && senderLo === myLo);
+      const myR = (ctxRef.current?.my_role || '').trim().toLowerCase();
+      const oR = (ctxRef.current?.other_role || '').trim().toLowerCase();
+      const roleFor = (isMine ? myR : oR) || null;
 
       setRows((prev) => {
-        if (prev.some((m) => m.id === mid)) {
-          if (__DEV__) console.log('[chat] message dedupe skip', mid);
+        if (prev.some((m) => rowIdLo(m) === id)) {
+          console.log('[chat] dedupe skip id=', id);
           return prev;
         }
-        return [...prev, { id: mid, body: text, sender_user_id: senderLo, created_at: created }];
+        return sortRowsByCreatedAtAsc([
+          ...prev,
+          {
+            id,
+            body: text,
+            sender_user_id: senderLo,
+            created_at: created,
+            sender_role: roleFor,
+            ...(isMine ? { out_status: 'sent' as const } : {}),
+          },
+        ]);
       });
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
 
@@ -481,7 +526,7 @@ export default function MuhabbetChatScreen({
         try {
           socket.emit('message_delivered', {
             conversation_id: cid,
-            message_id: mid,
+            message_id: id,
             sender_id: senderLo,
           });
         } catch {
@@ -491,7 +536,7 @@ export default function MuhabbetChatScreen({
           try {
             socket.emit('message_seen', {
               conversation_id: cid,
-              message_id: mid,
+              message_id: id,
               sender_id: senderLo,
             });
           } catch {
@@ -504,7 +549,7 @@ export default function MuhabbetChatScreen({
     const onAck = (p: { conversation_id?: string; message_id?: string; status?: string }) => {
       const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
       if (c && c !== cidLo) return;
-      const mid = String(p?.message_id || '').trim();
+      const mid = normalizeMuhabbetMessageId(p?.message_id);
       if (!mid) return;
       const st = String(p?.status || 'sent').toLowerCase();
       if (st !== 'sent' && p?.status != null) return;
@@ -514,7 +559,7 @@ export default function MuhabbetChatScreen({
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       setRows((prev) =>
         prev.map((m) => {
-          if (m.id !== mid) return m;
+          if (rowIdLo(m) !== mid) return m;
           if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
           return { ...m, out_status: 'sent' };
         })
@@ -524,12 +569,12 @@ export default function MuhabbetChatScreen({
     const onDelivered = (p: { conversation_id?: string; message_id?: string }) => {
       const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
       if (c && c !== cidLo) return;
-      const mid = String(p?.message_id || '').trim();
+      const mid = normalizeMuhabbetMessageId(p?.message_id);
       if (!mid) return;
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       setRows((prev) =>
         prev.map((m) => {
-          if (m.id !== mid) return m;
+          if (rowIdLo(m) !== mid) return m;
           if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
           if (m.out_status === 'seen') return m;
           return { ...m, out_status: 'delivered' };
@@ -540,12 +585,12 @@ export default function MuhabbetChatScreen({
     const onSeenEvt = (p: { conversation_id?: string; message_id?: string }) => {
       const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
       if (c && c !== cidLo) return;
-      const mid = String(p?.message_id || '').trim();
+      const mid = normalizeMuhabbetMessageId(p?.message_id);
       if (!mid) return;
       const myLo = (myIdRef.current || '').trim().toLowerCase();
       setRows((prev) =>
         prev.map((m) => {
-          if (m.id !== mid) return m;
+          if (rowIdLo(m) !== mid) return m;
           if (!myLo || String(m.sender_user_id || '').trim().toLowerCase() !== myLo) return m;
           return { ...m, out_status: 'seen' };
         })
@@ -555,9 +600,9 @@ export default function MuhabbetChatScreen({
     const onDel = (payload: { message_id?: string; conversation_id?: string }) => {
       const conv = payload?.conversation_id != null ? String(payload.conversation_id).toLowerCase() : '';
       if (conv && conv !== cidLo) return;
-      const mid = payload?.message_id != null ? String(payload.message_id).toLowerCase() : '';
+      const mid = normalizeMuhabbetMessageId(payload?.message_id);
       if (!mid) return;
-      setRows((prev) => prev.filter((m) => m.id.toLowerCase() !== mid));
+      setRows((prev) => prev.filter((m) => rowIdLo(m) !== mid));
     };
 
     const refreshChatSocketSession = (reason: string) => {
@@ -612,7 +657,109 @@ export default function MuhabbetChatScreen({
         );
       }
     };
-  }, [cid, clearAckWait]);
+  }, [cid, clearAckWait, isLoadingMessages]);
+
+  useEffect(() => {
+    if (!cid || isLoadingMessages) return;
+    if (persistDebounceRef.current) clearTimeout(persistDebounceRef.current);
+    persistDebounceRef.current = setTimeout(() => {
+      persistDebounceRef.current = null;
+      void persistMuhabbetChatRowsLocal(cid, rowsRef.current);
+    }, 300);
+    return () => {
+      if (persistDebounceRef.current) {
+        clearTimeout(persistDebounceRef.current);
+        persistDebounceRef.current = null;
+      }
+    };
+  }, [cid, rows, isLoadingMessages]);
+
+  useEffect(() => {
+    if (!cid) return;
+    const cidLo = cid.trim().toLowerCase();
+    const sub = DeviceEventEmitter.addListener(MUHABBET_NEW_LOCAL_MESSAGE, (payload: Record<string, unknown>) => {
+      const pcid = payload?.conversation_id != null ? String(payload.conversation_id).trim().toLowerCase() : '';
+      if (pcid !== cidLo) return;
+      const id = normalizeMuhabbetMessageId(payload?.message_id);
+      if (!id) return;
+      const senderLo = payload?.sender_id != null ? String(payload.sender_id).trim().toLowerCase() : '';
+      const text = payload?.text != null ? String(payload.text) : '';
+      const created = coerceMessageCreatedAt(payload?.created_at);
+      const myLo = (myIdRef.current || '').trim().toLowerCase();
+      const isMine = Boolean(myLo && senderLo && senderLo === myLo);
+      const myR = (ctxRef.current?.my_role || '').trim().toLowerCase();
+      const oR = (ctxRef.current?.other_role || '').trim().toLowerCase();
+      const roleFor = (isMine ? myR : oR) || null;
+      setRows((prev) => {
+        if (prev.some((m) => rowIdLo(m) === id)) {
+          console.log('[chat] dedupe skip id=', id);
+          return prev;
+        }
+        return sortRowsByCreatedAtAsc([
+          ...prev,
+          {
+            id,
+            body: text,
+            sender_user_id: senderLo,
+            created_at: created,
+            sender_role: roleFor,
+            ...(isMine ? { out_status: 'sent' as const } : {}),
+          },
+        ]);
+      });
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    });
+    return () => sub.remove();
+  }, [cid]);
+
+  useEffect(() => {
+    if (!cid || isLoadingMessages) return;
+    const cidNorm = cid.trim().toLowerCase();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      void (async () => {
+        try {
+          const localItems = await loadMuhabbetMessagesLocal(cidNorm);
+          const fromDisk: ChatMessageRow[] = sortRowsByCreatedAtAsc(
+            storedMessagesToDisplayRows(localItems).map((m) => ({
+              id: normalizeMuhabbetMessageId(m.id),
+              body: m.body,
+              sender_user_id: m.sender_user_id,
+              created_at: coerceMessageCreatedAt(m.created_at),
+              out_status: (m.out_status as OutMessageStatus | undefined) || undefined,
+              sender_role: m.sender_role,
+            }))
+          );
+          setRows((prev) => {
+            const pending = prev.filter((m) => m.out_status === 'sending');
+            const merged = [...fromDisk];
+            for (const pend of pending) {
+              if (!merged.some((m) => rowIdLo(m) === rowIdLo(pend))) merged.push(pend);
+            }
+            return sortRowsByCreatedAtAsc(merged);
+          });
+        } catch {
+          /* noop */
+        }
+      })();
+    });
+    return () => sub.remove();
+  }, [cid, isLoadingMessages]);
+
+  useEffect(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    const cidLo = cid.trim().toLowerCase();
+    const onDeclined = (p: { conversation_id?: string }) => {
+      const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+      if (c && c !== cidLo) return;
+      Alert.alert('Eşleşme', 'Karşı taraf şu an eşleşmeyi kabul etmedi.');
+    };
+    socket.on('leylek_pair_declined', onDeclined);
+    return () => {
+      socket.off('leylek_pair_declined', onDeclined);
+    };
+  }, [cid]);
 
   useEffect(() => {
     if (!cid) return;
@@ -657,11 +804,13 @@ export default function MuhabbetChatScreen({
       clearAckWait(messageId);
       const tmo = setTimeout(() => {
         ackTimeoutsRef.current.delete(messageId);
-        setRows((prev) =>
-          prev.map((m) =>
-            m.id === messageId && m.out_status === 'sending' ? { ...m, out_status: 'failed' as const } : m
-          )
-        );
+      setRows((prev) =>
+        prev.map((m) =>
+          rowIdLo(m) === rowIdLo({ id: messageId }) && m.out_status === 'sending'
+            ? { ...m, out_status: 'failed' as const }
+            : m
+        )
+      );
         console.log('[chat] ack timeout message_id=', messageId);
       }, 8000);
       ackTimeoutsRef.current.set(messageId, tmo);
@@ -683,7 +832,7 @@ export default function MuhabbetChatScreen({
         emitJoinForChat();
       }
       setRows((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, out_status: 'sending' as const } : m))
+        prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
       scheduleAckTimeout(messageId);
       console.log('[chat] sending muhabbet_send message_id=', messageId);
@@ -692,7 +841,9 @@ export default function MuhabbetChatScreen({
       } catch {
         clearAckWait(messageId);
         setRows((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, out_status: 'failed' as const } : m))
+          prev.map((m) =>
+            rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'failed' as const } : m
+          )
         );
       }
     },
@@ -715,17 +866,22 @@ export default function MuhabbetChatScreen({
       Alert.alert('Sohbet', 'Kullanıcı bilgisi yüklenemedi.');
       return;
     }
-    const messageId = newClientMessageUuid();
-    setRows((p) => [
-      ...p,
-      {
-        id: messageId,
-        body,
-        sender_user_id: myLo,
-        created_at: new Date().toISOString(),
-        out_status: 'sending',
-      },
-    ]);
+    const messageId = normalizeMuhabbetMessageId(newClientMessageUuid());
+    const roleMine = (ctx?.my_role || '').trim().toLowerCase();
+    const createdIso = coerceMessageCreatedAt(undefined);
+    setRows((p) =>
+      sortRowsByCreatedAtAsc([
+        ...p,
+        {
+          id: messageId,
+          body,
+          sender_user_id: myLo,
+          created_at: createdIso,
+          out_status: 'sending',
+          sender_role: roleMine || null,
+        },
+      ])
+    );
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     setDraft('');
     setSending(true);
@@ -737,7 +893,7 @@ export default function MuhabbetChatScreen({
       clearAckWait(messageId);
       Alert.alert('Gönderilemedi', 'Bağlantı hatası.');
       setDraft(body);
-      setRows((p) => p.filter((m) => m.id !== messageId));
+      setRows((p) => p.filter((m) => rowIdLo(m) !== rowIdLo({ id: messageId })));
     } finally {
       setSending(false);
     }
@@ -748,10 +904,6 @@ export default function MuhabbetChatScreen({
     if (!ou) return;
     router.push(`/muhabbet-profile/${encodeURIComponent(ou)}` as Href);
   }, [otherUserId, ctx, router]);
-
-  const openLeylekKey = useCallback(() => {
-    router.push('/leylek-anahtar' as Href);
-  }, [router]);
 
   const sendLeylekPairRequest = useCallback(async () => {
     if (!cid || pairRequestBusyRef.current) return;
@@ -870,10 +1022,38 @@ export default function MuhabbetChatScreen({
 
   const bubbleForMsg = (item: ChatMessageRow) => {
     const mine = myId && String(item.sender_user_id || '').toLowerCase() === myId;
-    const sr = mine ? myR : oR;
+    const srStored = (item.sender_role && String(item.sender_role).trim()) || '';
+    const sr = srStored || (mine ? myR : oR);
     const drv = isDriverAppRole(sr);
     return { mine, drv };
   };
+
+  const closePairModalDecline = useCallback(() => {
+    if (!cid || !pairInModal) return;
+    const socket = getOrCreateSocket();
+    try {
+      socket.emit('leylek_pair_decline', { conversation_id: cid, request_id: pairInModal.rid });
+    } catch {
+      /* noop */
+    }
+    setPairInModal(null);
+  }, [cid, pairInModal]);
+
+  const acceptPairFromModal = useCallback(() => {
+    if (!cid || !pairInModal) return;
+    const socket = getOrCreateSocket();
+    try {
+      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+    } catch {
+      /* noop */
+    }
+    try {
+      socket.emit('leylek_pair_accept', { conversation_id: cid, request_id: pairInModal.rid });
+    } catch {
+      /* noop */
+    }
+    setPairInModal(null);
+  }, [cid, pairInModal]);
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right']}>
@@ -908,7 +1088,7 @@ export default function MuhabbetChatScreen({
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={keyboardOffset}
         >
-          {loading ? (
+          {isLoadingMessages ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
             </View>
@@ -930,9 +1110,9 @@ export default function MuhabbetChatScreen({
                     </View>
                   ) : null}
                   <View style={styles.privacyBanner}>
-                    <Text style={styles.privacyBannerTxt} numberOfLines={4}>
-                      Güvenliğiniz bizim önceliğimizdir. Mesaj içerikleri sunucularımızda saklanmaz. Yazışmalar yalnızca
-                      görüşme sırasında geçici olarak iletilir.
+                    <Text style={styles.privacyBannerTxt} numberOfLines={5}>
+                      Mesaj içerikleri sunucularımızda saklanmaz. Görüşmeler yalnızca cihazınızda tutulur; istediğiniz
+                      zaman silebilirsiniz.
                     </Text>
                   </View>
                 </View>
@@ -1043,9 +1223,6 @@ export default function MuhabbetChatScreen({
                   </Pressable>
                 </View>
               </Animated.View>
-              <Pressable onPress={openLeylekKey} style={styles.keyCodeLink} hitSlop={8}>
-                <Text style={styles.keyCodeLinkTxt}>Anahtar kodunu kendin girmek için tıkla</Text>
-              </Pressable>
             </View>
           ) : null}
           <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
@@ -1082,6 +1259,38 @@ export default function MuhabbetChatScreen({
             </Pressable>
           </View>
         </KeyboardAvoidingView>
+        <Modal
+          visible={!!pairInModal}
+          transparent
+          animationType="fade"
+          onRequestClose={closePairModalDecline}
+        >
+          <View style={styles.pairModalRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closePairModalDecline} />
+            <View style={styles.pairModalCard}>
+              <Text style={styles.pairModalTitle}>Leylek Anahtar eşleşme isteği</Text>
+              <Text style={styles.pairModalBody}>
+                Karşı taraf güzergâh, ücret ve buluşma bilgisini onaylayarak sizinle eşleşmek istiyor.
+              </Text>
+              <Pressable
+                onPress={acceptPairFromModal}
+                style={({ pressed }) => [styles.pairModalPri, pressed && { opacity: 0.92 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Eşleş"
+              >
+                <Text style={styles.pairModalPriTxt}>Eşleş</Text>
+              </Pressable>
+              <Pressable
+                onPress={closePairModalDecline}
+                style={({ pressed }) => [styles.pairModalSec, pressed && { opacity: 0.88 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Müsait değilim"
+              >
+                <Text style={styles.pairModalSecTxt}>Müsait değilim</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -1196,8 +1405,39 @@ const styles = StyleSheet.create({
   },
   keyCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 },
   keyCtaTxt: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  keyCodeLink: { alignSelf: 'center', marginTop: 6, marginBottom: 2, paddingVertical: 4 },
-  keyCodeLinkTxt: { fontSize: 12, color: '#4F46E5', fontWeight: '600' },
+  pairModalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  pairModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 20,
+    zIndex: 2,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
+  pairModalTitle: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
+  pairModalBody: { marginTop: 10, fontSize: 15, color: TEXT_SECONDARY, lineHeight: 22 },
+  pairModalPri: {
+    marginTop: 18,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#16A34A',
+    alignItems: 'center',
+  },
+  pairModalPriTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  pairModalSec: {
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(60,60,67,0.1)',
+    alignItems: 'center',
+  },
+  pairModalSecTxt: { fontSize: 16, fontWeight: '600', color: '#374151' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',

@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
   FlatList,
   Modal,
   Platform,
@@ -20,6 +21,12 @@ import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import MuhabbetWatermark from './MuhabbetWatermark';
 import { getPersistedAccessToken } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
+import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
+import {
+  clearMuhabbetMessagesLocal,
+  coerceMessageCreatedAt,
+  getLastMessageFromLocal,
+} from '../lib/muhabbetMessagesStorage';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 const ACCENT = '#F59E0B';
@@ -169,7 +176,30 @@ export default function ConversationsScreen({
       if (onlyAccepted) {
         list = list.filter((c) => (c.request_status || '').toLowerCase() === 'accepted');
       }
-      setRows(list);
+      const enriched = await Promise.all(
+        list.map(async (c) => {
+          const cid = String(c.conversation_id || c.id || '').trim();
+          if (!cid) return c;
+          try {
+            const lp = await getLastMessageFromLocal(cid);
+            if (lp) {
+              return {
+                ...c,
+                last_message_body: lp.text,
+                last_message_at: lp.created_at,
+              };
+            }
+          } catch {
+            /* noop */
+          }
+          return {
+            ...c,
+            last_message_body: null,
+            last_message_at: null,
+          };
+        })
+      );
+      setRows(enriched);
     } catch {
       setErr('Bağlantı hatası.');
       setRows([]);
@@ -181,6 +211,26 @@ export default function ConversationsScreen({
   useEffect(() => {
     void load();
   }, [load, refreshNonce]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = DeviceEventEmitter.addListener(MUHABBET_NEW_LOCAL_MESSAGE, (payload: Record<string, unknown>) => {
+      if (String(payload?.type || '').trim() !== 'muhabbet_message') return;
+      const conv =
+        payload.conversation_id != null ? String(payload.conversation_id).trim().toLowerCase() : '';
+      if (!conv) return;
+      const text = payload.text != null ? String(payload.text) : '';
+      const at = coerceMessageCreatedAt(payload.created_at);
+      setRows((prev) =>
+        prev.map((c) => {
+          const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
+          if (cid !== conv) return c;
+          return { ...c, last_message_body: text || null, last_message_at: at };
+        })
+      );
+    });
+    return () => sub.remove();
+  }, []);
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -249,7 +299,15 @@ export default function ConversationsScreen({
         {
           text: 'Sohbeti sil',
           style: 'destructive',
-          onPress: () => void runHideForConversation(cid),
+          onPress: () =>
+            void (async () => {
+              try {
+                await clearMuhabbetMessagesLocal(cid);
+              } catch {
+                /* noop */
+              }
+              await runHideForConversation(cid);
+            })(),
         },
       ]
     );
@@ -317,7 +375,7 @@ export default function ConversationsScreen({
           }
           renderItem={({ item }) => {
             const last = (item.last_message_body && String(item.last_message_body).trim()) || '';
-            const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Sohbet başlat';
+            const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Henüz mesaj yok';
             const or = (item.other_user_role || '').toLowerCase();
             const driverish = or === 'driver' || or === 'private_driver';
             return (
