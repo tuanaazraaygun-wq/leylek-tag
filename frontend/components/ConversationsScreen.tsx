@@ -36,6 +36,7 @@ export type MuhabbetConversationListItem = {
   id?: string;
   other_user_id?: string;
   other_user_name?: string;
+  other_user_role?: string | null;
   from_text?: string | null;
   to_text?: string | null;
   last_message_body?: string | null;

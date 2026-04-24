@@ -26,6 +26,7 @@ import json
 import time
 import bcrypt
 import math
+import re
 import asyncio
 import sys
 import jwt
@@ -18379,6 +18380,66 @@ async def _muhabbet_notify_match_accepted(
         logger.warning("muhabbet_notify_match_accepted: %s", e)
 
 
+_LEYLEK_KEY_TTL_MIN = 15
+_LEYLEK_KEY_ALPH = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+
+def _gen_leylek_key_display() -> str:
+    """Kısa, tahmin edilmesi zor format: LX-XXXX-XXXX (O/0/1/I yok)."""
+    ch4 = lambda: "".join(secrets.choice(_LEYLEK_KEY_ALPH) for _ in range(4))
+    return f"LX-{ch4()}-{ch4()}"
+
+
+def _normalize_leylek_key_input(raw: Optional[str]) -> Optional[str]:
+    """Girdi esnek; dönen canonical key_code (benzersiz)."""
+    if raw is None or not str(raw).strip():
+        return None
+    s = re.sub(r"[^0-9A-Za-z]", "", str(raw).strip()).upper()
+    if s.startswith("LX"):
+        s = s[2:]
+    if len(s) < 8:
+        return None
+    a, b = s[:4], s[4:8]
+    return f"LX-{a}-{b}"
+
+
+def _vehicle_label_from_driver_details(dd: Optional[dict]) -> str:
+    if not dd or not isinstance(dd, dict):
+        return ""
+    brand = str(dd.get("vehicle_brand") or dd.get("brand") or "").strip()
+    model = str(dd.get("vehicle_model") or dd.get("model") or "").strip()
+    plate = str(dd.get("vehicle_plate") or dd.get("plate") or "").strip()
+    line = f"{brand} {model}".strip()
+    if line and plate:
+        return f"{line} · {plate}"
+    return line or plate or ""
+
+
+async def _muhabbet_notify_leylek_key_matched(
+    user_a: str,
+    user_b: str,
+    conversation_id: str,
+) -> None:
+    try:
+        payload = {
+            "type": "leylek_key_match_completed",
+            "conversation_id": str(conversation_id).strip().lower(),
+        }
+        ua = str(user_a).strip().lower()
+        ub = str(user_b).strip().lower()
+        await sio.emit("leylek_key_match_completed", payload, room=_normalize_user_room(ua))
+        await sio.emit("leylek_key_match_completed", payload, room=_normalize_user_room(ub))
+        nm = _muhabbet_listing_name_map_for_ids([ua, ub])
+        asyncio.create_task(
+            send_push_notification(ua, "Eşleşme tamamlandı", f"{nm.get(ub) or 'Kullanıcı'} ile Leylek Anahtar eşleşmesi gerçekleşti", payload)
+        )
+        asyncio.create_task(
+            send_push_notification(ub, "Eşleşme tamamlandı", f"{nm.get(ua) or 'Kullanıcı'} ile Leylek Anahtar eşleşmesi gerçekleşti", payload)
+        )
+    except Exception as e:
+        logger.warning("muhabbet_notify_leylek_key_matched: %s", e)
+
+
 def _muhabbet_feed_match_request_meta_for_user(uid: str, listing_ids: list) -> dict:
     """
     Feed: oturum kullanıcısı bu ilana (gönderen olarak) aksiyon özeti.
@@ -18920,15 +18981,28 @@ def _muhabbet_user_public_card(uid: str) -> dict:
     try:
         r = (
             supabase.table("users")
-            .select("id, name, rating, total_trips, total_ratings, role, driver_details")
+            .select("id, name, rating, total_trips, total_ratings, role, driver_details, profile_photo, muhabbet_bio")
             .eq("id", uid)
             .limit(1)
             .execute()
         )
         if not r.data:
-            return {"id": uid, "user_name": "Kullanıcı", "rating": 4.0, "total_trips": 0, "total_ratings": 0}
+            return {
+                "id": uid,
+                "user_name": "Kullanıcı",
+                "rating": 4.0,
+                "total_trips": 0,
+                "total_ratings": 0,
+                "profile_photo": None,
+                "muhabbet_bio": None,
+            }
         u = dict(r.data[0])
         dd = _driver_details_public_for_api(u) or {}
+        bio = u.get("muhabbet_bio")
+        if isinstance(bio, str):
+            bio = bio.strip()[:500] or None
+        else:
+            bio = None
         return {
             "id": uid,
             "user_name": (u.get("name") or "Kullanıcı").strip(),
@@ -18937,10 +19011,20 @@ def _muhabbet_user_public_card(uid: str) -> dict:
             "total_ratings": int(u.get("total_ratings") or 0),
             "role": u.get("role"),
             "driver_details_public": dd,
+            "profile_photo": u.get("profile_photo"),
+            "muhabbet_bio": bio,
         }
     except Exception as e:
         logger.warning("muhabbet_user_public_card: %s", e)
-        return {"id": uid, "user_name": "Kullanıcı", "rating": 4.0, "total_trips": 0, "total_ratings": 0}
+        return {
+            "id": uid,
+            "user_name": "Kullanıcı",
+            "rating": 4.0,
+            "total_trips": 0,
+            "total_ratings": 0,
+            "profile_photo": None,
+            "muhabbet_bio": None,
+        }
 
 
 def _muhabbet_requests_attach_sender_profiles(req_rows: list) -> list:
@@ -19084,10 +19168,12 @@ async def muhabbet_user_public_profile_get(
             logger.warning("public_profile completed_matches: %s", e)
         role = str(card.get("role") or "").lower()
         dd = card.get("driver_details_public") or {}
+        vlabel = _vehicle_label_from_driver_details(dd if isinstance(dd, dict) else {})
         extras: dict = {}
         if role == "driver" or role == "private_driver":
             extras = {
                 "vehicle_summary": dd,
+                "vehicle_label": vlabel or None,
                 "daily_trips_hint": None,
                 "weekly_earning_hint": None,
             }
@@ -19104,6 +19190,8 @@ async def muhabbet_user_public_profile_get(
                 "role": card.get("role"),
                 "active_listings": active_listings,
                 "completed_matches": completed_matches,
+                "profile_photo": card.get("profile_photo"),
+                "muhabbet_bio": card.get("muhabbet_bio"),
                 "extras": extras,
             },
         }
@@ -19112,6 +19200,206 @@ async def muhabbet_user_public_profile_get(
     except Exception as e:
         logger.error(f"muhabbet_user_public_profile_get: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+class MuhabbetBioUpdateBody(BaseModel):
+    bio: str = ""
+
+    @field_validator("bio", mode="before")
+    @classmethod
+    def _bio_muhabbet(cls, v) -> str:
+        t = (v or "").strip() if v is not None else ""
+        if len(t) > 500:
+            raise ValueError("Açıklama en fazla 500 karakter olabilir")
+        return t
+
+
+class LeylekKeyRedeemBody(BaseModel):
+    code: str
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _code_req(cls, v) -> str:
+        t = (v or "").strip() if v is not None else ""
+        if not t:
+            raise ValueError("Leylek Anahtar gerekli")
+        return t
+
+
+@api_router.put("/muhabbet/me/bio")
+async def muhabbet_me_bio_update(
+    body: MuhabbetBioUpdateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Leylek Muhabbeti kısa açıklama (KVKK: gönüllü)."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        supabase.table("users").update(
+            {
+                "muhabbet_bio": body.bio or None,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", uid).execute()
+        return {"success": True, "bio": body.bio or None}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"muhabbet_me_bio_update: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/leylek-key/create")
+async def muhabbet_leylek_key_create(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Tek kullanımlık Leylek Anahtar üretir; TTL: 15 dk.
+    Çakışmada (nadiren) yeniden dener.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        now = datetime.now(timezone.utc)
+        exp = now + timedelta(minutes=_LEYLEK_KEY_TTL_MIN)
+        ts = now.isoformat()
+        exs = exp.isoformat()
+        last_exc: Optional[Exception] = None
+        for _attempt in range(6):
+            disp = _gen_leylek_key_display()
+            kc = _normalize_leylek_key_input(disp)
+            if not kc:
+                continue
+            try:
+                ins = (
+                    supabase.table("leylek_keys")
+                    .insert(
+                        {
+                            "key_code": kc,
+                            "key_display": disp,
+                            "created_by_user_id": uid,
+                            "status": "active",
+                            "expires_at": exs,
+                            "created_at": ts,
+                            "updated_at": ts,
+                        }
+                    )
+                    .select("*")
+                    .execute()
+                )
+                if ins.data and ins.data[0].get("id"):
+                    row = dict(ins.data[0])
+                    return {
+                        "success": True,
+                        "key": row.get("key_display") or disp,
+                        "key_id": str(row.get("id")).strip().lower(),
+                        "expires_at": row.get("expires_at") or exs,
+                    }
+            except Exception as e:
+                err = (str(e) or "").lower()
+                last_exc = e
+                if "unique" in err or "23505" in str(e) or "duplicate" in err:
+                    continue
+                raise
+        raise HTTPException(
+            status_code=500,
+            detail="Anahtar oluşturulamadı" if not last_exc else str(last_exc),
+        ) from last_exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_key_create: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/leylek-key/redeem")
+async def muhabbet_leylek_key_redeem(
+    body: LeylekKeyRedeemBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """
+    Anahtarı girer: geçerli, süre içi, tek kullanımlık, oluşturucu değil.
+    Muhabbet conversation üzerinde match_source=leylek_key yazar; yolculuk/QR etkilenmez.
+    """
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        kc = _normalize_leylek_key_input(body.code)
+        if not kc:
+            raise HTTPException(status_code=400, detail="Geçersiz anahtar formatı (LX-XXXX-XXXX).")
+        now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
+        kr = supabase.table("leylek_keys").select("*").eq("key_code", kc).limit(1).execute()
+        if not kr.data:
+            raise HTTPException(status_code=404, detail="Anahtar bulunamadı.")
+        row = dict(kr.data[0])
+        creator = str(row.get("created_by_user_id") or "").strip().lower()
+        if creator == uid:
+            raise HTTPException(status_code=400, detail="Kendi anahtarınızı kullanamazsınız.")
+        st = str(row.get("status") or "").strip().lower()
+        if st != "active" or row.get("used_at"):
+            raise HTTPException(status_code=400, detail="Bu anahtar artık geçerli değil.")
+        exp_raw = row.get("expires_at")
+        try:
+            exp_d = _parse_iso_dt(exp_raw) if exp_raw else None
+        except Exception:
+            exp_d = None
+        if exp_d is not None and exp_d < now:
+            supabase.table("leylek_keys").update({"status": "expired", "updated_at": now_iso}).eq("id", row.get("id")).execute()
+            raise HTTPException(status_code=400, detail="Anahtarın süresi doldu.")
+        kid = str(row.get("id") or "").strip().lower()
+        up = (
+            supabase.table("leylek_keys")
+            .update(
+                {
+                    "used_at": now_iso,
+                    "used_by_user_id": uid,
+                    "status": "used",
+                    "updated_at": now_iso,
+                }
+            )
+            .eq("id", kid)
+            .eq("status", "active")
+            .is_("used_at", None)
+            .execute()
+        )
+        if not up.data:
+            raise HTTPException(status_code=409, detail="Anahtar eşzamanlı olarak kullanıldı; tekrar deneyin.")
+        try:
+            uuid.UUID(creator)
+            uuid.UUID(uid)
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail="Geçersiz kullanıcı kaydı") from e
+        conv_id = _muhabbet_conversation_get_or_create_id(creator, uid)
+        supabase.table("conversations").update(
+            {
+                "matched_at": now_iso,
+                "match_source": "leylek_key",
+                "leylek_key_id": kid,
+            }
+        ).eq("id", conv_id).execute()
+        supabase.table("leylek_keys").update({"related_conversation_id": conv_id, "updated_at": now_iso}).eq("id", kid).execute()
+        await _muhabbet_notify_leylek_key_matched(creator, uid, conv_id)
+        return {
+            "success": True,
+            "conversation_id": conv_id,
+            "message": "Eşleşme Leylek Anahtar ile tamamlandı. Sohbetinizde ön bilgileri teyit edebilirsiniz.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_leylek_key_redeem: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _parse_iso_dt(val: object) -> Optional[datetime]:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return datetime.fromisoformat(s)
 
 
 def _muhabbet_conversation_get_or_create_id(sen: str, rec: str) -> str:
@@ -19350,6 +19638,15 @@ async def muhabbet_conversations_me(
             if o and o not in other_uids:
                 other_uids.append(o)
         name_map: dict = _muhabbet_listing_name_map_for_ids(other_uids) if other_uids else {}
+        role_by_uid: dict = {}
+        if other_uids:
+            try:
+                rr = supabase.table("users").select("id, role").in_("id", other_uids).execute()
+                for x in rr.data or []:
+                    if x.get("id"):
+                        role_by_uid[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
+            except Exception as e:
+                logger.warning("conversations_me roles: %s", e)
         # Son mesaj: konuşma başına 1 sorgu (en fazla `lim` adet, tipik 50)
         last_by_cid: dict = {}
         for cid in cids:
@@ -19385,6 +19682,7 @@ async def muhabbet_conversations_me(
                     "user_b": b,
                     "other_user_id": other,
                     "other_user_name": name_map.get((other or "").lower()) or "Kullanıcı",
+                    "other_user_role": role_by_uid.get((other or "").strip().lower()),
                     "listing_id": lidk,
                     "from_text": (li or {}).get("from_text"),
                     "to_text": (li or {}).get("to_text"),
@@ -19409,15 +19707,47 @@ async def muhabbet_conversation_messages_get(
     offset: int = 0,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Sohbet mesajları; yalnızca katılımcı; created_at artan sırada."""
+    """Sohbet mesajları; yalnızca katılımcı; created_at artan sırada + rol bağlamı."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
-        _ = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
+        c_row = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
         lim = max(1, min(int(limit or 100), 200))
         off = max(0, int(offset or 0))
-        q = supabase.table("messages").select("*").eq("conversation_id", str(conversation_id).strip().lower())
+        cid = str(conversation_id).strip().lower()
+        q = supabase.table("messages").select("*").eq("conversation_id", cid)
         res = q.order("created_at", desc=False).range(off, off + lim - 1).execute()
-        return {"success": True, "messages": list(res.data or []), "limit": lim, "offset": off}
+        a = str(c_row.get("user_a") or "").strip().lower()
+        b = str(c_row.get("user_b") or "").strip().lower()
+        other_uid = b if a == uid else a
+        role_map: dict = {}
+        try:
+            ur = (
+                supabase.table("users")
+                .select("id, role")
+                .in_("id", [uid, other_uid])
+                .execute()
+            )
+            for x in ur.data or []:
+                if x.get("id"):
+                    role_map[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
+        except Exception as e:
+            logger.warning("messages_get roles: %s", e)
+        ms = str(c_row.get("match_source") or "").strip().lower()
+        matched_at = c_row.get("matched_at")
+        ctx = {
+            "other_user_id": other_uid,
+            "my_role": role_map.get(uid),
+            "other_role": role_map.get(other_uid),
+            "matched_via_leylek_key": ms == "leylek_key" and bool(matched_at),
+            "matched_at": matched_at,
+        }
+        return {
+            "success": True,
+            "messages": list(res.data or []),
+            "limit": lim,
+            "offset": off,
+            "context": ctx,
+        }
     except HTTPException:
         raise
     except Exception as e:

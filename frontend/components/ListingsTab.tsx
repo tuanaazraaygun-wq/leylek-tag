@@ -384,7 +384,7 @@ export default function ListingsTab({
                   </View>
                 ) : (
                   <GradientButton
-                    label="Talibim"
+                    label={isDrvCard ? 'Beni de al' : 'Bu yolcuya talibim'}
                     loading={matchBusyId === L.id}
                     onPress={() => void sendMatchRequest(L.id)}
                     style={{ marginTop: 10 }}
