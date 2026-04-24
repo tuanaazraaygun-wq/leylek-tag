@@ -349,14 +349,14 @@ export default function LeylekMuhabbetiHomeTab({
   const uidLo = (currentUserId || '').trim().toLowerCase();
 
   const sendHomeMatchRequest = useCallback(
-    async (listingId: string) => {
+    async (listingId: string, actorIntent: 'driver' | 'passenger') => {
       if (!requireToken() || !tok) return;
       setMatchBusyId(listingId);
       try {
         const res = await fetch(`${base}/muhabbet/listings/${encodeURIComponent(listingId)}/match-request`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: null }),
+          body: JSON.stringify({ message: null, actor_intent: actorIntent }),
         });
         const d = (await res.json().catch(() => ({}))) as { success?: boolean; detail?: string };
         if (handleUnauthorizedAndMaybeRedirect(res) || !res.ok || !d.success) {
@@ -435,13 +435,22 @@ export default function LeylekMuhabbetiHomeTab({
                 transform: [{ translateY: listSlide }],
               }}
             >
-              {visibleOffers.map((L) => (
+              {visibleOffers.map((L) => {
+                const drvOffer = offerKindFromHomeListing(L) === 'driver_offer';
+                const actor = drvOffer ? ('passenger' as const) : ('driver' as const);
+                return (
                 <CompactOfferCard
                   key={L.id}
                   item={L}
                   onPressCard={() => onOpenListingsForListing?.(L.id)}
-                  onPressCta={() => void sendHomeMatchRequest(L.id)}
-                  ctaLabel={offerKindFromHomeListing(L) === 'driver_offer' ? 'Beni de al' : 'Bu yolcuya talibim'}
+                  onPressCta={() => void sendHomeMatchRequest(L.id, actor)}
+                  ctaLabel={
+                    drvOffer
+                      ? viewerCanActAsDriver
+                        ? 'Yolcu olarak beni de al'
+                        : 'Beni de al'
+                      : 'Bu yolcuya talibim'
+                  }
                   ctaBusy={matchBusyId === L.id}
                   ctaDisabled={
                     !tok ||
@@ -449,10 +458,11 @@ export default function LeylekMuhabbetiHomeTab({
                       .trim()
                       .toLowerCase() === uidLo ||
                     ['pending', 'accepted'].includes((L.match_request_status || '').toLowerCase()) ||
-                    (offerKindFromHomeListing(L) === 'passenger_offer' ? !viewerCanActAsDriver : viewerCanActAsDriver)
+                    (!drvOffer && !viewerCanActAsDriver)
                   }
                 />
-              ))}
+                );
+              })}
             </Animated.View>
           ) : null}
         </View>
