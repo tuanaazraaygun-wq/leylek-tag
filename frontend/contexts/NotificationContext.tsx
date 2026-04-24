@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { router, type Href } from 'expo-router';
 
 /** Bildirim handler: yalnızca `app/_layout.tsx` (çift tanım sıcak yenilemede son import’un kazanması riskini kaldırır). */
 
@@ -127,6 +128,24 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       trigger: null, // Hemen gönder
     });
   };
+
+  /** FCM / yerel bildirim: Muhabbet mesajı veya eşleşme — sohbet ekranına git */
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const data = lastTappedNotificationData as Record<string, unknown> | null;
+    if (!data) return;
+    const t = String(data.type || '');
+    const cid = data.conversation_id != null ? String(data.conversation_id).trim() : '';
+    if (
+      cid &&
+      (t === 'muhabbet_message' ||
+        t === 'leylek_pair_match_request' ||
+        t === 'leylek_key_match_completed')
+    ) {
+      router.push(`/muhabbet-chat/${encodeURIComponent(cid)}` as Href);
+      clearLastTappedNotification();
+    }
+  }, [lastTappedNotificationData, clearLastTappedNotification]);
 
   return (
     <NotificationContext.Provider

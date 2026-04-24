@@ -16,18 +16,9 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import {
-  ActivityIndicator,
-  AppState,
-  AppStateStatus,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { BACKEND_BASE_URL, API_BASE_URL } from '../lib/backendConfig';
-import { waitForPersistedAccessToken, getPersistedAccessToken } from '../lib/sessionToken';
+import { AppState, AppStateStatus } from 'react-native';
+import { BACKEND_BASE_URL } from '../lib/backendConfig';
+import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
 import { useNotifications } from './NotificationContext';
 
@@ -214,17 +205,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
   } | null>(null);
   const [incomingCallPresentToken, setIncomingCallPresentToken] = useState(0);
 
-  /** Muhabbet: karşı taraftan gelen “Leylek Anahtar ile eşleş” isteği (modal). */
-  const [leylekPairRequest, setLeylekPairRequest] = useState<{
-    request_id: string;
-    conversation_id: string;
-    initiator_user_id: string;
-    initiator_name: string;
-    initiator_role_label: string;
-  } | null>(null);
-  const [leylekPairBusy, setLeylekPairBusy] = useState(false);
-  const leylekPairRequestRef = useRef<typeof leylekPairRequest>(null);
-  
   // 🔥 REF - Callback'lerde güncel veri için!
   const incomingCallDataRef = useRef<typeof incomingCallData>(null);
   
@@ -237,10 +217,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
     incomingCallDataRef.current = incomingCallData;
   }, [incomingCallData]);
 
-  useEffect(() => {
-    leylekPairRequestRef.current = leylekPairRequest;
-  }, [leylekPairRequest]);
-  
   useEffect(() => {
     userIdRef.current = userId;
     userRoleRef.current = userRole;
@@ -516,28 +492,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
     };
     socket.on('incoming_call', handleIncomingCall);
 
-    const handleLeylekPairRequest = (data: any) => {
-      const myId = userIdRef.current;
-      const init =
-        data?.initiator_user_id != null ? String(data.initiator_user_id).trim().toLowerCase() : '';
-      if (myId && init && init === String(myId).trim().toLowerCase()) {
-        return;
-      }
-      const rid = data?.request_id;
-      const cid = data?.conversation_id;
-      if (!rid || !cid) return;
-      setLeylekPairRequest({
-        request_id: String(rid).trim().toLowerCase(),
-        conversation_id: String(cid).trim().toLowerCase(),
-        initiator_user_id: String(data?.initiator_user_id || '')
-          .trim()
-          .toLowerCase(),
-        initiator_name: String(data?.initiator_name || 'Kullanıcı'),
-        initiator_role_label: String(data?.initiator_role_label || 'Kullanıcı'),
-      });
-    };
-    socket.on('leylek_pair_match_request', handleLeylekPairRequest);
-
     // Socket zaten bağlıysa `connect` bir daha tetiklenmez (ilk yükleme yarışı, Fast Refresh).
     // Her başarılı oturumda sunucuya register gitmesi için aynı yolu çalıştır.
     if (socket.connected) {
@@ -556,7 +510,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
       socket.off('reconnect', handleReconnect);
       socket.off('registered', handleRegistered);
       socket.off('incoming_call', handleIncomingCall);
-      socket.off('leylek_pair_match_request', handleLeylekPairRequest);
       // Socket'i KAPATMIYORUZ - singleton kalıcı
     };
   }, [scheduleSocketRegister]);
@@ -822,32 +775,6 @@ export function SocketProvider({ children }: SocketProviderProps) {
     incomingCallDataRef.current = null;  // 🔥 Ref'i de temizle!
   }, []);
 
-  const onLeylekPairRespond = useCallback(async (accept: boolean) => {
-    const pr = leylekPairRequestRef.current;
-    if (!pr) return;
-    setLeylekPairBusy(true);
-    try {
-      const token = (await getPersistedAccessToken())?.trim();
-      if (!token) {
-        setLeylekPairRequest(null);
-        return;
-      }
-      const path = accept ? 'accept' : 'decline';
-      const b = API_BASE_URL.replace(/\/$/, '');
-      const url = `${b}/muhabbet/conversations/${encodeURIComponent(pr.conversation_id)}/leylek-pair-requests/${encodeURIComponent(pr.request_id)}/${path}`;
-      const res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { detail?: string; message?: string };
-        console.warn('leylek_pair_respond', res.status, d?.detail || d?.message);
-      }
-    } catch (e) {
-      console.warn('leylek_pair_respond', e);
-    } finally {
-      setLeylekPairBusy(false);
-      setLeylekPairRequest(null);
-    }
-  }, []);
-
   // 🔥 REF GETTER - Callback'lerde güncel veri için!
   const getIncomingCallData = useCallback(() => {
     return incomingCallDataRef.current;
@@ -887,81 +814,8 @@ export function SocketProvider({ children }: SocketProviderProps) {
     syncSocketSessionFromApp,
   };
 
-  return (
-    <SocketContext.Provider value={value}>
-      {children}
-      <Modal
-        visible={!!leylekPairRequest}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (leylekPairBusy) return;
-          if (leylekPairRequestRef.current) void onLeylekPairRespond(false);
-        }}
-      >
-        <View style={lprStyles.backdrop}>
-          <View style={lprStyles.card}>
-            <Text style={lprStyles.title}>Leylek Anahtar eşleşme isteği</Text>
-            <Text style={lprStyles.body}>
-              {leylekPairRequest
-                ? `${leylekPairRequest.initiator_role_label} ${leylekPairRequest.initiator_name} sizinle Leylek Anahtar ile eşleşmek istiyor.`
-                : ''}
-            </Text>
-            {leylekPairBusy ? (
-              <ActivityIndicator size="small" color="#2563EB" style={{ marginVertical: 12 }} />
-            ) : (
-              <View style={lprStyles.row}>
-                <Pressable
-                  onPress={() => void onLeylekPairRespond(false)}
-                  style={({ pressed }) => [lprStyles.btnSec, pressed && { opacity: 0.85 }]}
-                >
-                  <Text style={lprStyles.btnSecTxt}>Daha sonra</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void onLeylekPairRespond(true)}
-                  style={({ pressed }) => [lprStyles.btnPri, pressed && { opacity: 0.9 }]}
-                >
-                  <Text style={lprStyles.btnPriTxt}>Eşleş</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-    </SocketContext.Provider>
-  );
+  return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 }
-
-const lprStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 20,
-  },
-  title: { fontSize: 18, fontWeight: '800', color: '#111', marginBottom: 10 },
-  body: { fontSize: 15, color: '#374151', lineHeight: 22, marginBottom: 8 },
-  row: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 12 },
-  btnSec: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(60,60,67,0.1)',
-  },
-  btnSecTxt: { fontSize: 16, fontWeight: '600', color: '#374151' },
-  btnPri: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: '#2563EB',
-  },
-  btnPriTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
-});
 
 // ═══════════════════════════════════════════════════════════════════
 // HOOK

@@ -4,6 +4,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { API_BASE_URL } from './backendConfig';
+import { getPersistedAccessToken } from './sessionToken';
 
 let lastRegisteredFcm: { userId: string; token: string } | null = null;
 
@@ -72,6 +73,26 @@ export async function registerFcmTokenWithBackend(
         bodyPreview: raw.slice(0, 240),
       });
       return false;
+    }
+    /** Çoklu cihaz tablosu + JWT (Expo save-push-token bazen anonim istekle de çalışır) */
+    try {
+      const bearer = (await getPersistedAccessToken())?.trim();
+      if (bearer) {
+        const r2 = await fetch(`${API_BASE_URL}/user/push-token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearer}`,
+          },
+          body: JSON.stringify({ token }),
+        });
+        if (!r2.ok) {
+          const t2 = await r2.text().catch(() => '');
+          console.log('PUSH_TOKEN_REGISTER_USER_PUSH_TOKENS', { httpStatus: r2.status, bodyPreview: t2.slice(0, 200) });
+        }
+      }
+    } catch (e) {
+      console.log('PUSH_TOKEN_REGISTER_USER_PUSH_TOKENS_ERR', { message: String(e) });
     }
     lastRegisteredFcm = { userId, token };
     console.log('PUSH_TOKEN_REGISTER_SUCCESS', { transport: 'fcm' });

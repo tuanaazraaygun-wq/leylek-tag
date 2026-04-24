@@ -113,7 +113,7 @@ def send_fcm_notification_sync(
         from firebase_admin import messaging
 
         str_data = _stringify_fcm_data(data)
-        ch = expo_android_channel_id_for_data(str_data) or android_channel_id or "default"
+        ch = expo_android_channel_id_for_data(str_data) or "default"
         msg = messaging.Message(
             token=token.strip(),
             notification=messaging.Notification(title=title or "", body=body or ""),

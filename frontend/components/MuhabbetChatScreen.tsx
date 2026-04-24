@@ -1,5 +1,6 @@
 /**
- * Muhabbet 1:1 sohbet — ön görüşme; tam eşleşme Leylek Anahtar ile.
+ * Muhabbet 1:1 sohbet — mesaj içeriği sunucuda tutulmaz; yalnızca Socket.IO ile odaya yayın.
+ * REST mesaj endpoint’leri devre dışı; bağlam (roller, eşleşme) GET ile alınır.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -58,6 +59,8 @@ export type ChatContext = {
   other_role?: string | null;
   matched_via_leylek_key?: boolean;
   matched_at?: string | null;
+  /** Sunucu geçmiş mesaj tutmaz */
+  ephemeral_chat?: boolean;
 };
 
 export type MuhabbetChatScreenProps = {
@@ -113,6 +116,8 @@ export default function MuhabbetChatScreen({
   const [sending, setSending] = useState(false);
   const [pairRequestLoading, setPairRequestLoading] = useState(false);
   const pairRequestBusyRef = useRef(false);
+  /** İstemci tarafı 60 sn eşleşme isteği aralığı (sunucu cooldown ile uyumlu) */
+  const lastLeylekPairRequestAtRef = useRef(0);
   const listRef = useRef<FlatList<ChatMessageRow>>(null);
   const ctaPulse = useRef(new Animated.Value(1)).current;
 
@@ -156,7 +161,8 @@ export default function MuhabbetChatScreen({
     };
   }, []);
 
-  const load = useCallback(async () => {
+  /** Sadece rol / eşleşme bağlamı; mesaj geçmişi API'den gelmez. */
+  const loadContext = useCallback(async () => {
     if (!cid) return;
     setLoading(true);
     try {
@@ -166,7 +172,7 @@ export default function MuhabbetChatScreen({
         setCtx(null);
         return;
       }
-      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages?limit=200`, {
+      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages?limit=1`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (handleUnauthorizedAndMaybeRedirect(res)) {
@@ -176,12 +182,11 @@ export default function MuhabbetChatScreen({
       }
       const d = (await res.json().catch(() => ({}))) as {
         success?: boolean;
-        messages?: ChatMessageRow[];
         context?: ChatContext;
       };
-      if (res.ok && d.success && Array.isArray(d.messages)) {
-        setRows(d.messages);
+      if (res.ok && d.success) {
         setCtx(d.context || null);
+        setRows([]);
       } else {
         setRows([]);
         setCtx(null);
@@ -195,61 +200,184 @@ export default function MuhabbetChatScreen({
   }, [base, cid]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadContext();
+  }, [loadContext]);
 
   useEffect(() => {
     if (!cid) return;
     const s = getOrCreateSocket();
     const onMatch = (data: { conversation_id?: string }) => {
       const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
-      if (m && m === cid.toLowerCase()) void load();
+      if (m && m === cid.toLowerCase()) void loadContext();
     };
     s.on('leylek_key_match_completed', onMatch);
+    s.on('leylek_pair_match_completed', onMatch);
     return () => {
       s.off('leylek_key_match_completed', onMatch);
+      s.off('leylek_pair_match_completed', onMatch);
     };
-  }, [cid, load]);
+  }, [cid, loadContext]);
+
+  /** Karşı taraftan gelen eşleşme isteği — yalnız bu sohbet odasındayken (join_muhabbet_conversation). */
+  useEffect(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    const cidLo = cid.toLowerCase();
+    const onReq = (data: {
+      conversation_id?: string;
+      request_id?: string;
+      from_user_id?: string;
+      initiator_user_id?: string;
+    }) => {
+      const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
+      if (conv !== cidLo) return;
+      const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
+      if (!rid) return;
+      const fromLo = String(
+        data?.from_user_id != null ? data.from_user_id : data?.initiator_user_id != null ? data.initiator_user_id : ''
+      )
+        .trim()
+        .toLowerCase();
+      if (!fromLo) return;
+      void (async () => {
+        let me = (myId || '').trim().toLowerCase();
+        if (!me) {
+          try {
+            const raw = await getPersistedUserRaw();
+            if (raw) {
+              const u = JSON.parse(raw) as { id?: string };
+              if (u?.id) me = String(u.id).trim().toLowerCase();
+            }
+          } catch {
+            /* noop */
+          }
+        }
+        if (me && fromLo === me) return;
+        Alert.alert(
+          'Eşleşme isteği',
+          'Karşı taraf sizinle eşleşmek istiyor.',
+          [
+            {
+              text: 'Daha sonra',
+              style: 'cancel',
+              onPress: () => {
+                socket.emit('leylek_pair_decline', { conversation_id: cid, request_id: rid });
+              },
+            },
+            {
+              text: 'Eşleş',
+              onPress: () => {
+                try {
+                  socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+                } catch {
+                  /* noop */
+                }
+                socket.emit('leylek_pair_accept', { conversation_id: cid, request_id: rid });
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+      })();
+    };
+    socket.on('leylek_pair_match_request', onReq);
+    return () => {
+      socket.off('leylek_pair_match_request', onReq);
+    };
+  }, [cid, myId]);
+
+  useEffect(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    const join = () => {
+      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+    };
+    if (socket.connected) join();
+    else socket.on('connect', join);
+    socket.on('reconnect', join);
+
+    const onMsg = (payload: {
+      conversation_id?: string;
+      message_id?: string;
+      text?: string;
+      sender_id?: string;
+      created_at?: string;
+    }) => {
+      const conv = payload?.conversation_id != null ? String(payload.conversation_id).toLowerCase() : '';
+      if (conv !== cid.toLowerCase()) return;
+      const mid = String(payload?.message_id || '').trim();
+      if (!mid) return;
+      const sid = String(payload?.sender_id || '')
+        .trim()
+        .toLowerCase();
+      const text = String(payload?.text ?? '');
+      const created = String(payload?.created_at || new Date().toISOString());
+      setRows((prev) => {
+        if (prev.some((m) => m.id === mid)) return prev;
+        return [...prev, { id: mid, body: text, sender_user_id: sid, created_at: created }];
+      });
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    };
+    const onDel = (payload: { message_id?: string; conversation_id?: string }) => {
+      const conv = payload?.conversation_id != null ? String(payload.conversation_id).toLowerCase() : '';
+      if (conv && conv !== cid.toLowerCase()) return;
+      const mid = payload?.message_id != null ? String(payload.message_id).toLowerCase() : '';
+      if (!mid) return;
+      setRows((prev) => prev.filter((m) => m.id.toLowerCase() !== mid));
+    };
+    socket.on('message', onMsg);
+    socket.on('message_deleted', onDel);
+    return () => {
+      try {
+        socket.emit('leave_muhabbet_conversation', { conversation_id: cid });
+      } catch {
+        /* noop */
+      }
+      socket.off('connect', join);
+      socket.off('reconnect', join);
+      socket.off('message', onMsg);
+      socket.off('message_deleted', onDel);
+    };
+  }, [cid]);
+
+  const deleteMessage = useCallback(
+    (messageId: string) => {
+      if (!cid || !messageId) return;
+      getOrCreateSocket().emit('delete_message', { message_id: messageId, conversation_id: cid });
+    },
+    [cid]
+  );
 
   const send = async () => {
     const body = draft.trim();
     if (!body || !cid) return;
-    const token = (await getPersistedAccessToken())?.trim();
-    if (!token) return;
-    const tempId = `temp-${Date.now()}`;
-    const optimistic: ChatMessageRow = {
-      id: tempId,
-      body,
-      sender_user_id: myId,
-      created_at: new Date().toISOString(),
-    };
-    setRows((prev) => [...prev, optimistic]);
     setDraft('');
     setSending(true);
     try {
-      const res = await fetch(`${base}/muhabbet/conversations/${encodeURIComponent(cid)}/messages`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body }),
-      });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setRows((prev) => prev.filter((m) => m.id !== tempId));
-        return;
+      const socket = getOrCreateSocket();
+      if (!socket.connected) {
+        socket.connect();
+        await new Promise<void>((resolve) => {
+          if (socket.connected) {
+            resolve();
+            return;
+          }
+          const t = setTimeout(() => resolve(), 10000);
+          const onC = () => {
+            clearTimeout(t);
+            socket.off('connect', onC);
+            resolve();
+          };
+          socket.on('connect', onC);
+        });
       }
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; message?: ChatMessageRow; detail?: string };
-      if (!res.ok || !d.success || !d.message) {
-        setRows((prev) => prev.filter((m) => m.id !== tempId));
-        return;
-      }
-      setRows((prev) => {
-        const rest = prev.filter((m) => m.id !== tempId);
-        return [...rest, d.message as ChatMessageRow];
-      });
+      socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+      socket.emit('muhabbet_send', { conversation_id: cid, text: body });
     } catch {
-      setRows((prev) => prev.filter((m) => m.id !== tempId));
+      Alert.alert('Gönderilemedi', 'Socket bağlantısını kontrol edin.');
+      setDraft(body);
     } finally {
       setSending(false);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     }
   };
 
@@ -264,41 +392,109 @@ export default function MuhabbetChatScreen({
   }, [router]);
 
   const sendLeylekPairRequest = useCallback(async () => {
+    if (!cid || pairRequestBusyRef.current) return;
     const token = (await getPersistedAccessToken())?.trim();
-    if (!token || !cid || pairRequestBusyRef.current) return;
+    if (!token) {
+      Alert.alert('Oturum', 'Giriş yapın ve tekrar deneyin.');
+      return;
+    }
+    const now = Date.now();
+    if (lastLeylekPairRequestAtRef.current + 60_000 > now) {
+      const w = Math.ceil((lastLeylekPairRequestAtRef.current + 60_000 - now) / 1000);
+      Alert.alert('Çok sık istek', `${Math.max(1, w)} sn sonra tekrar deneyebilirsiniz.`);
+      return;
+    }
     pairRequestBusyRef.current = true;
     setPairRequestLoading(true);
-    try {
-      const res = await fetch(
-        `${base}/muhabbet/conversations/${encodeURIComponent(cid)}/leylek-pair-request`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
-      );
-      const d = (await res.json().catch(() => ({}))) as {
-        detail?: string;
-        message?: string;
-        pending?: boolean;
-      };
-      if (res.status === 429) {
-        Alert.alert('Çok sık istek', typeof d.detail === 'string' ? d.detail : 'Lütfen kısa bir süre sonra tekrar deneyin.');
-        return;
-      }
-      if (handleUnauthorizedAndMaybeRedirect(res)) return;
-      if (!res.ok) {
-        Alert.alert('İstek gönderilemedi', typeof d.detail === 'string' ? d.detail : 'Tekrar deneyin.');
-        return;
-      }
-      if (d.pending) {
-        Alert.alert('Bekleyen istek', d.message || 'Zaten bir eşleşme isteğiniz var.');
-        return;
-      }
-      Alert.alert('Gönderildi', d.message || 'Karşı taraf onaylarsa eşleşme tamamlanır.');
-    } catch {
-      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
-    } finally {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
       pairRequestBusyRef.current = false;
       setPairRequestLoading(false);
+    };
+    const socket = getOrCreateSocket();
+    let tmo: ReturnType<typeof setTimeout> | null = null;
+    const onErr = (p: { code?: string; detail?: string }) => {
+      if (tmo) {
+        clearTimeout(tmo);
+        tmo = null;
+      }
+      socket.off('leylek_pair_error', onErr);
+      socket.off('leylek_pair_info', onInfo);
+      finish();
+      const det = typeof p?.detail === 'string' ? p.detail : '';
+      if (p?.code === 'cooldown') {
+        Alert.alert('Çok sık istek', det || 'Lütfen kısa bir süre sonra tekrar deneyin.');
+        return;
+      }
+      Alert.alert('İstek gönderilemedi', det || 'Tekrar deneyin.');
+    };
+    const onInfo = (p: { code?: string; message?: string; request_id?: string }) => {
+      if (tmo) {
+        clearTimeout(tmo);
+        tmo = null;
+      }
+      socket.off('leylek_pair_error', onErr);
+      socket.off('leylek_pair_info', onInfo);
+      finish();
+      const code = String(p?.code || '');
+      if (code === 'pending') {
+        Alert.alert('Bekleyen istek', p?.message || 'Zaten bir eşleşme isteğiniz var.');
+        return;
+      }
+      if (code === 'sent') {
+        lastLeylekPairRequestAtRef.current = Date.now();
+        Alert.alert('Gönderildi', p?.message || 'Karşı taraf onaylarsa eşleşme tamamlanır.');
+        return;
+      }
+      Alert.alert('Bilgi', p?.message || 'İşlem tamam.');
+    };
+    try {
+      if (!socket.connected) {
+        socket.connect();
+        await new Promise<void>((resolve) => {
+          if (socket.connected) {
+            resolve();
+            return;
+          }
+          const t = setTimeout(() => resolve(), 10000);
+          const onC = () => {
+            clearTimeout(t);
+            socket.off('connect', onC);
+            resolve();
+          };
+          socket.on('connect', onC);
+        });
+      }
+      socket.off('leylek_pair_error', onErr);
+      socket.off('leylek_pair_info', onInfo);
+      socket.on('leylek_pair_error', onErr);
+      socket.on('leylek_pair_info', onInfo);
+      tmo = setTimeout(() => {
+        tmo = null;
+        socket.off('leylek_pair_error', onErr);
+        socket.off('leylek_pair_info', onInfo);
+        finish();
+        Alert.alert('Zaman aşımı', 'Sunucudan yanıt alınamadı. Bağlantınızı kontrol edin.');
+      }, 15000);
+      try {
+        socket.emit('join_muhabbet_conversation', { conversation_id: cid });
+      } catch {
+        /* noop */
+      }
+      socket.emit('leylek_pair_request', { conversation_id: cid });
+    } catch {
+      if (tmo) {
+        clearTimeout(tmo);
+        tmo = null;
+      }
+      socket.off('leylek_pair_error', onErr);
+      socket.off('leylek_pair_info', onInfo);
+      finish();
+      Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
     }
-  }, [base, cid]);
+  }, [cid]);
 
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (
@@ -364,10 +560,11 @@ export default function MuhabbetChatScreen({
               keyboardDismissMode="none"
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               ListHeaderComponent={
-                <View style={styles.warnCard}>
-                  <Ionicons name="information-circle-outline" size={20} color="#B45309" style={{ marginRight: 8 }} />
-                  <Text style={styles.warnTxt}>
-                    Yolculuğa başlamadan önce bilgileri doğrulayın. Leylek Anahtar ile eşleşmeden hareket etmeyin.
+                <View style={styles.privacyBanner}>
+                  <Text style={styles.privacyBannerTxt}>
+                    Güvenliğiniz bizim önceliğimizdir.{'\n'}
+                    Mesaj içerikleri sunucularımızda saklanmaz.{'\n'}
+                    Yazışmalar yalnızca görüşme sırasında geçici olarak iletilir.
                   </Text>
                 </View>
               }
@@ -378,10 +575,25 @@ export default function MuhabbetChatScreen({
                   const g = drv ? DRIVER_BUBBLE_GRAD : PAX_BUBBLE_GRAD;
                   return (
                     <View style={styles.bubbleColMine}>
-                      <View style={[styles.bubbleShadowWrap, styles.bubbleAlignEnd]}>
-                        <LinearGradient colors={g} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubblePad}>
-                          <Text style={styles.tGrad}>{item.body || ''}</Text>
-                        </LinearGradient>
+                      <View style={styles.bubbleRowMine}>
+                        <View style={[styles.bubbleShadowWrap, styles.bubbleAlignEnd, styles.bubbleMax]}>
+                          <LinearGradient
+                            colors={g}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.bubblePad}
+                          >
+                            <Text style={styles.tGrad}>{item.body || ''}</Text>
+                          </LinearGradient>
+                        </View>
+                        <Pressable
+                          onPress={() => deleteMessage(item.id)}
+                          style={({ pressed }) => [styles.trashHit, pressed && { opacity: 0.65 }]}
+                          hitSlop={6}
+                          accessibilityLabel="Mesajı kaldır"
+                        >
+                          <Ionicons name="trash-outline" size={17} color="#6B7280" />
+                        </Pressable>
                       </View>
                       {time ? <Text style={styles.tTimeMine}>{time}</Text> : null}
                     </View>
@@ -390,10 +602,25 @@ export default function MuhabbetChatScreen({
                 const g2 = drv ? DRIVER_BUBBLE_GRAD : PAX_BUBBLE_GRAD;
                 return (
                   <View style={styles.bubbleColTheirs}>
-                    <View style={[styles.bubbleShadowWrap, styles.bubbleAlignStart]}>
-                      <LinearGradient colors={g2} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bubblePad}>
-                        <Text style={styles.tGrad}>{item.body || ''}</Text>
-                      </LinearGradient>
+                    <View style={styles.bubbleRowTheirs}>
+                      <Pressable
+                        onPress={() => deleteMessage(item.id)}
+                        style={({ pressed }) => [styles.trashHit, pressed && { opacity: 0.65 }]}
+                        hitSlop={6}
+                        accessibilityLabel="Mesajı kaldır"
+                      >
+                        <Ionicons name="trash-outline" size={17} color="#6B7280" />
+                      </Pressable>
+                      <View style={[styles.bubbleShadowWrap, styles.bubbleAlignStart, styles.bubbleMax]}>
+                        <LinearGradient
+                          colors={g2}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.bubblePad}
+                        >
+                          <Text style={styles.tGrad}>{item.body || ''}</Text>
+                        </LinearGradient>
+                      </View>
                     </View>
                     {time ? <Text style={styles.tTimeTheirs}>{time}</Text> : null}
                   </View>
@@ -406,7 +633,7 @@ export default function MuhabbetChatScreen({
               <View style={styles.keyCtaGlow}>
                 <Pressable
                   onPress={() => void sendLeylekPairRequest()}
-                  disabled={pairRequestLoading}
+                  disabled={pairRequestLoading || !!ctx?.matched_via_leylek_key}
                   style={({ pressed }) => [pressed && !pairRequestLoading && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
                   accessibilityRole="button"
                   accessibilityLabel="Leylek Anahtar ile eşleşme isteği gönder"
@@ -505,18 +732,28 @@ const styles = StyleSheet.create({
   },
   matchBadgeTxt: { flex: 1, fontSize: 13, color: '#fff', fontWeight: '700', lineHeight: 18 },
   list: { padding: 12, paddingBottom: 8, flexGrow: 1 },
-  warnCard: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(245,158,11,0.1)',
-    borderRadius: 14,
-    padding: 12,
+  privacyBanner: {
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     marginBottom: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(180,83,9,0.2)',
+    borderColor: 'rgba(22, 163, 74, 0.2)',
   },
-  warnTxt: { flex: 1, fontSize: 13, color: '#713F12', lineHeight: 19, fontWeight: '500' },
-  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '90%', marginBottom: 8 },
-  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '90%', marginBottom: 8 },
+  privacyBannerTxt: {
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#14532D',
+    fontWeight: '500',
+  },
+  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '96%', marginBottom: 8 },
+  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '96%', marginBottom: 8 },
+  bubbleRowMine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  bubbleRowTheirs: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 6 },
+  trashHit: { padding: 2 },
+  bubbleMax: { maxWidth: '88%' },
   bubbleShadowWrap: { ...BUBBLE_SHADOW, borderRadius: 18, maxWidth: '100%' },
   bubbleAlignEnd: { alignSelf: 'flex-end' },
   bubbleAlignStart: { alignSelf: 'flex-start' },
