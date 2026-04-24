@@ -23,6 +23,7 @@ import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import { GradientButton } from './GradientButton';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 import { API_BASE_URL } from '../lib/backendConfig';
+import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import MuhabbetEndpointPickerModal, {
   muhabbetListingMapPinFlowAvailable,
   type MuhabbetCommittedPlace,
@@ -231,6 +232,8 @@ export default function CreateListingModal({
   const [brandSheetOpen, setBrandSheetOpen] = useState(false);
   const [passengerBudgetText, setPassengerBudgetText] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
+  /** Teklif satırı: car | motorcycle (API ile aynı). */
+  const [offerVehicleKind, setOfferVehicleKind] = useState<'car' | 'motorcycle'>('car');
 
   useEffect(() => {
     if (visible) {
@@ -238,8 +241,46 @@ export default function CreateListingModal({
       setDepartureTimeConfirmed(false);
       setDepartureTab('today');
       setFuturePick(null);
+      setOfferVehicleKind('car');
     }
   }, [visible, initialRole]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await getPersistedUserRaw();
+        const tok = (await getPersistedAccessToken())?.trim();
+        if (!raw || !tok || cancelled) return;
+        const u = JSON.parse(raw) as { id?: string };
+        const uid = u?.id ? String(u.id).trim() : '';
+        if (!uid) return;
+        const res = await fetch(`${base}/driver/kyc/status?user_id=${encodeURIComponent(uid)}`, {
+          headers: { Authorization: `Bearer ${tok}` },
+        });
+        const d = (await res.json().catch(() => ({}))) as {
+          vehicle_kind?: string;
+          passenger_preferred_vehicle?: string;
+        };
+        if (cancelled) return;
+        const pick =
+          createRole === 'driver'
+            ? d.vehicle_kind === 'motorcycle'
+              ? 'motorcycle'
+              : 'car'
+            : d.passenger_preferred_vehicle === 'motorcycle'
+              ? 'motorcycle'
+              : 'car';
+        setOfferVehicleKind(pick);
+      } catch {
+        /* varsayılan car */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, createRole, base]);
 
   useEffect(() => {
     if (!visible) return;
@@ -374,6 +415,7 @@ export default function CreateListingModal({
     setVehicleColor('');
     setBrandSheetOpen(false);
     setPassengerBudgetText('');
+    setOfferVehicleKind('car');
   };
 
   const openPicker = (field: 'from' | 'to') => {
@@ -517,6 +559,7 @@ export default function CreateListingModal({
         note: composedNote,
         departure_time,
         price_amount: finalPriceInt,
+        vehicle_kind: offerVehicleKind,
       };
 
       const bodyJson = JSON.stringify(body);
@@ -629,6 +672,24 @@ export default function CreateListingModal({
                 activeOpacity={0.85}
               >
                 <Text style={[styles.roleChipText, createRole === 'driver' && styles.roleChipTextOn]}>Sürücü</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Taşıma türü</Text>
+            <View style={styles.roleRow}>
+              <TouchableOpacity
+                style={[styles.roleChip, offerVehicleKind === 'car' && styles.roleChipOn]}
+                onPress={() => setOfferVehicleKind('car')}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.roleChipText, offerVehicleKind === 'car' && styles.roleChipTextOn]}>Araba</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.roleChip, offerVehicleKind === 'motorcycle' && styles.roleChipOn]}
+                onPress={() => setOfferVehicleKind('motorcycle')}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.roleChipText, offerVehicleKind === 'motorcycle' && styles.roleChipTextOn]}>Motor</Text>
               </TouchableOpacity>
             </View>
 
@@ -766,7 +827,7 @@ export default function CreateListingModal({
                   />
                 </View>
 
-                <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Araç bilgisi</Text>
+                <Text style={[styles.sectionEyebrow, { marginTop: 14 }]}>Marka ve model</Text>
                 <View style={styles.card}>
                   <Text style={styles.inLabel}>Marka</Text>
                   <TouchableOpacity style={styles.brandPick} onPress={() => setBrandSheetOpen(true)} activeOpacity={0.88}>

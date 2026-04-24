@@ -47,6 +47,8 @@ export type FeedListing = {
   note?: string | null;
   status?: string | null;
   listing_type?: string | null;
+  /** Backend: driver_offer | passenger_offer */
+  muhabbet_offer_kind?: string | null;
   role_type?: string | null;
   creator_name?: string | null;
   created_by_user_id?: string;
@@ -148,6 +150,15 @@ function isDriverListing(role: string | undefined): boolean {
   return r === 'driver' || r === 'private_driver';
 }
 
+function offerKindFromListing(L: FeedListing): 'driver_offer' | 'passenger_offer' {
+  const k = (L.muhabbet_offer_kind || '').toLowerCase();
+  if (k === 'driver_offer' || k === 'passenger_offer') return k;
+  const lt = (L.listing_type || '').toLowerCase();
+  if (lt === 'gidiyorum' || lt === 'ozel_sofor') return 'driver_offer';
+  if (lt === 'gidecegim' || lt === 'beni_alsin') return 'passenger_offer';
+  return isDriverListing(L.role_type || undefined) ? 'driver_offer' : 'passenger_offer';
+}
+
 /** Kullanıcıya “Araba” göster; API alan adları değişmez. */
 function transportLine(L: FeedListing): string {
   const tl = (L.transport_label || '').trim();
@@ -186,6 +197,8 @@ export default function ListingsTab({
   const [loadingOut, setLoadingOut] = useState(false);
   const [outgoing, setOutgoing] = useState<MatchRequestRow[]>([]);
   const [matchBusyId, setMatchBusyId] = useState<string | null>(null);
+  /** Sunucu KYC tabanlı; uygulama rolünden bağımsız (feed / ilanlarım yanıtı). */
+  const [viewerCanActAsDriver, setViewerCanActAsDriver] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [modalInitialRole, setModalInitialRole] = useState<'driver' | 'passenger'>(initialCreateRole);
@@ -202,6 +215,7 @@ export default function ListingsTab({
   const loadFeed = useCallback(async () => {
     if (!tok) {
       setListings([]);
+      setViewerCanActAsDriver(false);
       return;
     }
     if (segment === 'mine') {
@@ -226,7 +240,12 @@ export default function ListingsTab({
         setListings([]);
         return;
       }
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; listings?: FeedListing[] };
+      const d = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        listings?: FeedListing[];
+        viewer_can_act_as_driver?: boolean;
+      };
+      if (typeof d.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(d.viewer_can_act_as_driver);
       if (res.ok && d.success && Array.isArray(d.listings)) {
         const openOnly = d.listings.filter((row) => {
           const st = (row.status || '').toLowerCase();
@@ -247,6 +266,7 @@ export default function ListingsTab({
   const loadMyListings = useCallback(async () => {
     if (!tok) {
       setMyListings([]);
+      setViewerCanActAsDriver(false);
       return;
     }
     setLoadingMine(true);
@@ -259,7 +279,12 @@ export default function ListingsTab({
         setMyListings([]);
         return;
       }
-      const d = (await res.json().catch(() => ({}))) as { success?: boolean; listings?: FeedListing[] };
+      const d = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        listings?: FeedListing[];
+        viewer_can_act_as_driver?: boolean;
+      };
+      if (typeof d.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(d.viewer_can_act_as_driver);
       if (res.ok && d.success && Array.isArray(d.listings)) {
         const cityKey = (selectedCity || '').trim().toLowerCase();
         const rows = cityKey
@@ -366,9 +391,6 @@ export default function ListingsTab({
     }
   };
 
-  const vr = (viewerAppRole || '').trim().toLowerCase();
-  const viewerIsDriver = vr === 'driver' || vr === 'private_driver';
-
   const SEGMENTS: { key: ListingsSegment; label: string }[] = [
     { key: 'all', label: 'Tümü' },
     { key: 'driver', label: 'Sürücü teklifleri' },
@@ -382,8 +404,8 @@ export default function ListingsTab({
     if (segment === 'mine') return orderedListings;
     const uid = String(currentUserId || '').trim().toLowerCase();
     return orderedListings.filter((L) => {
-      if (segment === 'driver') return isDriverListing(L.role_type || undefined);
-      if (segment === 'passenger') return !isDriverListing(L.role_type || undefined);
+      if (segment === 'driver') return offerKindFromListing(L) === 'driver_offer';
+      if (segment === 'passenger') return offerKindFromListing(L) === 'passenger_offer';
       return true;
     });
   }, [orderedListings, segment, currentUserId]);
@@ -509,18 +531,19 @@ export default function ListingsTab({
       {filteredListings.map((L) => {
         const own = String(L.created_by_user_id || '').toLowerCase() === String(currentUserId || '').toLowerCase();
         const st = (L.match_request_status || 'none').toLowerCase();
-        const rb = roleBadge(L.role_type || undefined);
+        const isDrvCard = offerKindFromListing(L) === 'driver_offer';
+        const rb = isDrvCard ? roleBadge('driver') : roleBadge('passenger');
         const accepted = st === 'accepted' && L.conversation_id;
         const pending = st === 'pending';
-        const isDrvCard = rb.tone === 'drv';
         const focused = focusHighlightId === L.id;
         const priceStr =
           L.price_amount != null && L.price_amount !== undefined
             ? `${Number(L.price_amount).toLocaleString('tr-TR')} ₺`
             : '—';
+        const passengerOffer = offerKindFromListing(L) === 'passenger_offer';
         const canRequest =
           !own &&
-          ((isDrvCard && !viewerIsDriver) || (!isDrvCard && viewerIsDriver)) &&
+          (passengerOffer ? viewerCanActAsDriver : !viewerCanActAsDriver) &&
           !accepted &&
           !pending;
         return (
@@ -639,7 +662,11 @@ export default function ListingsTab({
               )
             ) : null}
             {!own && !accepted && !pending && !canRequest ? (
-              <Text style={styles.roleHint}>Bu teklif türü için uygulama rolün uygun değil (sürücü / yolcu).</Text>
+              <Text style={styles.roleHint}>
+                {passengerOffer
+                  ? 'Bu ilana talip olmak için onaylı sürücü doğrulamanız gerekir.'
+                  : 'Bu sürücü ilanına talip olmak için yolcu olarak devam etmelisiniz (onaylı sürücü hesapları bu yolla talip olamaz).'}
+              </Text>
             ) : null}
             {own &&
             segment === 'mine' &&

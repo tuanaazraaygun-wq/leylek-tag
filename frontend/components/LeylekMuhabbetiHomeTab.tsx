@@ -38,6 +38,8 @@ type HomeFeedListing = {
   id: string;
   from_text?: string | null;
   to_text?: string | null;
+  listing_type?: string | null;
+  muhabbet_offer_kind?: string | null;
   role_type?: string | null;
   price_amount?: number | null;
   transport_label?: string | null;
@@ -50,6 +52,15 @@ type HomeFeedListing = {
 function isDriverRole(r: string | null | undefined): boolean {
   const x = (r || '').toLowerCase();
   return x === 'driver' || x === 'private_driver';
+}
+
+function offerKindFromHomeListing(L: HomeFeedListing): 'driver_offer' | 'passenger_offer' {
+  const k = (L.muhabbet_offer_kind || '').toLowerCase();
+  if (k === 'driver_offer' || k === 'passenger_offer') return k;
+  const lt = (L.listing_type || '').toLowerCase();
+  if (lt === 'gidiyorum' || lt === 'ozel_sofor') return 'driver_offer';
+  if (lt === 'gidecegim' || lt === 'beni_alsin') return 'passenger_offer';
+  return isDriverRole(L.role_type) ? 'driver_offer' : 'passenger_offer';
 }
 
 /** Kullanıcıya görünen taşıma etiketi (API’deki “Araç” → Araba). */
@@ -75,7 +86,7 @@ type CompactOfferCardProps = {
 };
 
 function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled, ctaBusy }: CompactOfferCardProps) {
-  const isDriver = isDriverRole(item.role_type);
+  const isDriver = offerKindFromHomeListing(item) === 'driver_offer';
   const glow = isDriver ? 'rgba(59,130,246,0.38)' : 'rgba(245,158,11,0.36)';
   const from = (item.from_text || '—').toString().trim() || '—';
   const to = (item.to_text || '—').toString().trim() || '—';
@@ -234,6 +245,7 @@ export default function LeylekMuhabbetiHomeTab({
   const [feedLoading, setFeedLoading] = useState(false);
   const [windowOffset, setWindowOffset] = useState(0);
   const [matchBusyId, setMatchBusyId] = useState<string | null>(null);
+  const [viewerCanActAsDriver, setViewerCanActAsDriver] = useState(false);
 
   const loadPreview = useCallback(async () => {
     const cityQ = (selectedCity || '').trim();
@@ -246,6 +258,7 @@ export default function LeylekMuhabbetiHomeTab({
     if (!tok) {
       setPendingIncoming(0);
       setFeedPreview([]);
+      setViewerCanActAsDriver(false);
       return;
     }
     setFeedLoading(true);
@@ -267,7 +280,12 @@ export default function LeylekMuhabbetiHomeTab({
         else setPendingIncoming(0);
       }
       {
-        const df = (await rFeed.json().catch(() => ({}))) as { success?: boolean; listings?: HomeFeedListing[] };
+        const df = (await rFeed.json().catch(() => ({}))) as {
+          success?: boolean;
+          listings?: HomeFeedListing[];
+          viewer_can_act_as_driver?: boolean;
+        };
+        if (typeof df.viewer_can_act_as_driver === 'boolean') setViewerCanActAsDriver(df.viewer_can_act_as_driver);
         if (rFeed.ok && df.success && Array.isArray(df.listings)) {
           const list = df.listings.filter((row) => {
             const ls = (row.status || '').toLowerCase();
@@ -329,8 +347,6 @@ export default function LeylekMuhabbetiHomeTab({
   }, [feedPreview, windowOffset]);
 
   const uidLo = (currentUserId || '').trim().toLowerCase();
-  const vr = (viewerAppRole || '').trim().toLowerCase();
-  const viewerIsDriver = vr === 'driver' || vr === 'private_driver';
 
   const sendHomeMatchRequest = useCallback(
     async (listingId: string) => {
@@ -425,7 +441,7 @@ export default function LeylekMuhabbetiHomeTab({
                   item={L}
                   onPressCard={() => onOpenListingsForListing?.(L.id)}
                   onPressCta={() => void sendHomeMatchRequest(L.id)}
-                  ctaLabel={isDriverRole(L.role_type) ? 'Beni de al' : 'Bu yolcuya talibim'}
+                  ctaLabel={offerKindFromHomeListing(L) === 'driver_offer' ? 'Beni de al' : 'Bu yolcuya talibim'}
                   ctaBusy={matchBusyId === L.id}
                   ctaDisabled={
                     !tok ||
@@ -433,7 +449,7 @@ export default function LeylekMuhabbetiHomeTab({
                       .trim()
                       .toLowerCase() === uidLo ||
                     ['pending', 'accepted'].includes((L.match_request_status || '').toLowerCase()) ||
-                    (isDriverRole(L.role_type) ? viewerIsDriver : !viewerIsDriver)
+                    (offerKindFromHomeListing(L) === 'passenger_offer' ? !viewerCanActAsDriver : viewerCanActAsDriver)
                   }
                 />
               ))}

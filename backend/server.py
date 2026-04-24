@@ -5868,34 +5868,43 @@ async def get_driver_kyc_status(user_id: str):
     try:
         result = supabase.table("users").select("phone, driver_details").eq("id", user_id).execute()
         if not result.data:
-            return {"kyc_status": "none", "is_driver": False}
+            return {"kyc_status": "none", "is_driver": False, "vehicle_kind": "car", "passenger_preferred_vehicle": "car"}
         
         user = result.data[0]
         phone = (user.get("phone") or "").replace("+90", "").replace(" ", "").replace("-", "")
         # Admin numaraları KYC olmadan sürücü olarak girebilir
         if phone in ADMIN_PHONE_NUMBERS:
+            dd0 = _driver_details_as_dict(user)
+            vk0 = _canonical_vehicle_kind(dd0.get("vehicle_kind"))
+            pp0 = _canonical_vehicle_kind(dd0.get("passenger_preferred_vehicle"))
             return {
                 "kyc_status": "approved",
                 "is_driver": True,
                 "is_verified": True,
                 "rejection_reason": None,
-                "submitted_at": None
+                "submitted_at": None,
+                "vehicle_kind": vk0 or "car",
+                "passenger_preferred_vehicle": pp0 or "car",
             }
         
-        driver_details = user.get("driver_details") or {}
+        driver_details = _driver_details_as_dict(user)
         kyc_status = driver_details.get("kyc_status", "none")
         is_verified = driver_details.get("is_verified", False)
-        
+        vk = _canonical_vehicle_kind(driver_details.get("vehicle_kind")) or "car"
+        pp = _canonical_vehicle_kind(driver_details.get("passenger_preferred_vehicle")) or "car"
+
         return {
             "kyc_status": kyc_status,
             "is_driver": kyc_status == "approved" and is_verified,
             "is_verified": is_verified,
             "rejection_reason": driver_details.get("kyc_rejection_reason"),
-            "submitted_at": driver_details.get("kyc_submitted_at")
+            "submitted_at": driver_details.get("kyc_submitted_at"),
+            "vehicle_kind": vk,
+            "passenger_preferred_vehicle": pp,
         }
     except Exception as e:
         logger.error(f"KYC status error: {e}")
-        return {"kyc_status": "none", "is_driver": False}
+        return {"kyc_status": "none", "is_driver": False, "vehicle_kind": "car", "passenger_preferred_vehicle": "car"}
 
 @api_router.get("/admin/kyc/pending")
 async def get_pending_kyc_requests(admin_phone: str):
@@ -18221,6 +18230,79 @@ _MUHABBET_LISTING_ROLES = frozenset({"driver", "passenger", "private_driver"})
 _MUHABBET_LISTING_STATUSES = frozenset({"active", "pending_chat", "matched", "closed", "cancelled"})
 _MUHABBET_REQ_STATUSES = frozenset({"pending", "accepted", "rejected", "cancelled"})
 
+
+def _muhabbet_phone_digits10(phone: Optional[str]) -> str:
+    """Admin telefon listesi ile karşılaştırma için son 10 hane."""
+    if not phone:
+        return ""
+    s = "".join(ch for ch in str(phone) if ch.isdigit())
+    return s[-10:] if len(s) >= 10 else s
+
+
+def _muhabbet_user_can_act_as_driver(user_id: str) -> bool:
+    """
+    Leylek Muhabbeti sürücü yetkisi: driver_details.kyc_status=approved ve is_verified=True
+    (GET /driver/kyc/status ile aynı). Admin telefonları her zaman sürücü sayılır.
+    """
+    uid = str(user_id or "").strip().lower()
+    if not uid:
+        return False
+    try:
+        r = supabase.table("users").select("phone, driver_details").eq("id", uid).limit(1).execute()
+        if not r.data:
+            return False
+        u = dict(r.data[0])
+        digits = _muhabbet_phone_digits10(str(u.get("phone") or ""))
+        if digits and digits in ADMIN_PHONE_NUMBERS:
+            return True
+        dd = _driver_details_as_dict(u)
+        if str(dd.get("kyc_status") or "").strip().lower() == "approved" and bool(dd.get("is_verified", False)):
+            return True
+        return False
+    except Exception as e:
+        logger.warning("_muhabbet_user_can_act_as_driver uid=%s err=%s", uid[:12], e)
+        return False
+
+
+def _muhabbet_listing_offer_kind(row: Optional[dict]) -> str:
+    """
+    Talip CTA kuralları: driver_offer (sürücü ilanı) | passenger_offer (yolcu ilanı).
+    Öncelik listing_type; belirsizse role_type ile geri dönüş.
+    """
+    if not row:
+        return "passenger_offer"
+    lt = str(row.get("listing_type") or "").strip().lower()
+    if lt in ("gidiyorum", "ozel_sofor"):
+        return "driver_offer"
+    if lt in ("gidecegim", "beni_alsin"):
+        return "passenger_offer"
+    rt = str(row.get("role_type") or "").strip().lower()
+    if rt in ("driver", "private_driver"):
+        return "driver_offer"
+    return "passenger_offer"
+
+
+def _muhabbet_public_display_name(
+    full_name: Optional[str],
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+) -> str:
+    """Muhabbet / teklif kartları: tam soyisim gösterme — 'Ahmet' veya 'Ahmet Y.'"""
+    fn = (str(first_name).strip() if first_name is not None else "") or ""
+    if fn:
+        ln = (str(last_name).strip() if last_name is not None else "") or ""
+        if len(ln) >= 1:
+            return f"{fn} {ln[0].upper()}."
+        return fn
+    raw = (str(full_name or "").strip())
+    if not raw:
+        return "Kullanıcı"
+    parts = raw.split()
+    if len(parts) == 1:
+        return parts[0]
+    return f"{parts[0]} {parts[-1][0].upper()}."
+
+
 # ride_listings INSERT — migration: backend/migrations/leylek_muhabbet_ride_listings.sql
 # + yaygın owner kolon adları. Tabloda olmayan anahtarlar sanitize ile atılır.
 _RIDE_LISTINGS_INSERT_COLUMN_WHITELIST = frozenset(
@@ -18292,7 +18374,7 @@ def _ride_listing_response_row(row: dict) -> dict:
     if vk not in ("car", "motorcycle"):
         vk = "car"
     r["vehicle_kind"] = vk
-    r["transport_label"] = "Motor" if vk == "motorcycle" else "Araç"
+    r["transport_label"] = "Motor" if vk == "motorcycle" else "Araba"
     try:
         exp_d = _parse_iso_dt(r.get("expires_at"))
         if exp_d is not None:
@@ -18495,9 +18577,16 @@ def _muhabbet_listing_name_map_for_ids(uids: list) -> dict:
     if not uids2:
         return {}
     try:
-        ur = supabase.table("users").select("id, name").in_("id", uids2).execute()
+        ur = (
+            supabase.table("users")
+            .select("id, name, first_name, last_name")
+            .in_("id", uids2)
+            .execute()
+        )
         return {
-            str(x["id"]).strip().lower(): str(x.get("name") or "Kullanıcı")
+            str(x["id"]).strip().lower(): _muhabbet_public_display_name(
+                x.get("name"), x.get("first_name"), x.get("last_name")
+            )
             for x in (ur.data or [])
             if x.get("id")
         }
@@ -18748,14 +18837,25 @@ def _enrich_ride_listings_creators(rows: list) -> list:
             r["creator_name"] = "Kullanıcı"
         return rows
     try:
-        ur = supabase.table("users").select("id, name").in_("id", uids).execute()
-        name_map: dict = {str(x["id"]): str(x.get("name") or "Kullanıcı") for x in (ur.data or []) if x.get("id")}
+        ur = (
+            supabase.table("users")
+            .select("id, name, first_name, last_name")
+            .in_("id", uids)
+            .execute()
+        )
+        name_map = {
+            str(x["id"]).strip().lower(): _muhabbet_public_display_name(
+                x.get("name"), x.get("first_name"), x.get("last_name")
+            )
+            for x in (ur.data or [])
+            if x.get("id")
+        }
     except Exception as e:
         logger.warning("ride_listings enrich: %s", e)
         name_map = {}
     for r in rows:
         u = _ride_listing_creator_uid(r or {})
-        r["creator_name"] = name_map.get(u) or "Kullanıcı"
+        r["creator_name"] = name_map.get((u or "").strip().lower()) or "Kullanıcı"
     return rows
 
 
@@ -18873,8 +18973,8 @@ async def muhabbet_listing_create(
                 status_code=503,
                 detail="Teklif limiti kontrol edilemedi. Lütfen kısa süre sonra tekrar deneyin.",
             ) from None
-        if opened_today >= 3:
-            raise HTTPException(status_code=400, detail="Bugün en fazla 3 teklif açabilirsiniz.")
+        if opened_today >= 20:
+            raise HTTPException(status_code=400, detail="Bugün en fazla 20 teklif açabilirsiniz.")
         c = body.city
         lrid: Optional[str] = None
         lph = (body.linked_pattern_hash or "").strip() or None
@@ -19084,7 +19184,14 @@ async def muhabbet_listings_feed(
             r["match_request_status"] = m.get("match_request_status") or "none"
             r["conversation_id"] = m.get("conversation_id")
             r["incoming_request_count"] = int(inc_map.get(lid) or 0)
-        return {"success": True, "listings": rows, "count": len(rows)}
+            r["muhabbet_offer_kind"] = _muhabbet_listing_offer_kind(r)
+        can_drv = _muhabbet_user_can_act_as_driver(uid)
+        return {
+            "success": True,
+            "listings": rows,
+            "count": len(rows),
+            "viewer_can_act_as_driver": can_drv,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -19110,7 +19217,11 @@ async def muhabbet_listings_me(
             q = q.eq("status", st)
         res = q.order("created_at", desc=True).limit(lim).execute()
         rows = [_ride_listing_response_row(dict(x)) for x in (res.data or [])]
-        return {"success": True, "listings": _enrich_ride_listings_creators(rows), "count": len(rows)}
+        rows = _enrich_ride_listings_creators(rows)
+        for r in rows:
+            r["muhabbet_offer_kind"] = _muhabbet_listing_offer_kind(r)
+        can_drv = _muhabbet_user_can_act_as_driver(uid)
+        return {"success": True, "listings": rows, "count": len(rows), "viewer_can_act_as_driver": can_drv}
     except HTTPException:
         raise
     except Exception as e:
@@ -19202,6 +19313,20 @@ async def muhabbet_listing_match_request(
             )
         if _muhabbet_listing_offer_expired(lst):
             raise HTTPException(status_code=400, detail="Bu ilanın süresi doldu; yeni talep gönderilemez")
+        offer_kind = _muhabbet_listing_offer_kind(lst)
+        can_drv = _muhabbet_user_can_act_as_driver(uid)
+        if offer_kind == "passenger_offer":
+            if not can_drv:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Bu yolcu ilanına talip olmak için onaylı sürücü doğrulamanız gerekir.",
+                )
+        else:
+            if can_drv:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Onaylı sürücü hesabınızla başka sürücü ilanına talip olamazsınız; yolcu teklifi açabilirsiniz.",
+                )
         msg = body.message
         ins = (
             supabase.table("listing_match_requests")
@@ -19341,7 +19466,9 @@ def _muhabbet_user_public_card(uid: str) -> dict:
     try:
         r = (
             supabase.table("users")
-            .select("id, name, rating, total_trips, total_ratings, role, driver_details, profile_photo, muhabbet_bio")
+            .select(
+                "id, name, first_name, last_name, gender, rating, total_trips, total_ratings, role, driver_details, profile_photo, muhabbet_bio"
+            )
             .eq("id", uid)
             .limit(1)
             .execute()
@@ -19355,6 +19482,8 @@ def _muhabbet_user_public_card(uid: str) -> dict:
                 "total_ratings": 0,
                 "profile_photo": None,
                 "muhabbet_bio": None,
+                "is_kyc_driver": False,
+                "gender": None,
             }
         u = dict(r.data[0])
         dd = _driver_details_public_for_api(u) or {}
@@ -19363,9 +19492,20 @@ def _muhabbet_user_public_card(uid: str) -> dict:
             bio = bio.strip()[:500] or None
         else:
             bio = None
+        disp = _muhabbet_public_display_name(u.get("name"), u.get("first_name"), u.get("last_name"))
+        kyc_drv = _muhabbet_user_can_act_as_driver(uid)
+        vk = _canonical_vehicle_kind(dd.get("vehicle_kind")) if isinstance(dd, dict) else None
+        vphoto = None
+        if isinstance(dd, dict):
+            vphoto = dd.get("vehicle_photo_url") or dd.get("vehicle_photo") or dd.get("motorcycle_photo_url")
+        gen = u.get("gender")
+        if isinstance(gen, str):
+            gen = gen.strip().lower() or None
+        else:
+            gen = None
         return {
             "id": uid,
-            "user_name": (u.get("name") or "Kullanıcı").strip(),
+            "user_name": disp,
             "rating": float(u.get("rating") or 4.0),
             "total_trips": int(u.get("total_trips") or 0),
             "total_ratings": int(u.get("total_ratings") or 0),
@@ -19373,6 +19513,10 @@ def _muhabbet_user_public_card(uid: str) -> dict:
             "driver_details_public": dd,
             "profile_photo": u.get("profile_photo"),
             "muhabbet_bio": bio,
+            "is_kyc_driver": kyc_drv,
+            "gender": gen,
+            "vehicle_photo_url": str(vphoto).strip() if vphoto else None,
+            "vehicle_kind_canonical": vk,
         }
     except Exception as e:
         logger.warning("muhabbet_user_public_card: %s", e)
@@ -19384,6 +19528,8 @@ def _muhabbet_user_public_card(uid: str) -> dict:
             "total_ratings": 0,
             "profile_photo": None,
             "muhabbet_bio": None,
+            "is_kyc_driver": False,
+            "gender": None,
         }
 
 
@@ -19526,14 +19672,22 @@ async def muhabbet_user_public_profile_get(
             completed_matches = int(getattr(ac, "count", None) or 0) + int(getattr(bc, "count", None) or 0)
         except Exception as e:
             logger.warning("public_profile completed_matches: %s", e)
-        role = str(card.get("role") or "").lower()
+        is_kyc = bool(card.get("is_kyc_driver"))
         dd = card.get("driver_details_public") or {}
         vlabel = _vehicle_label_from_driver_details(dd if isinstance(dd, dict) else {})
+        vk_can = card.get("vehicle_kind_canonical")
+        vk_lbl = "Motor" if vk_can == "motorcycle" else ("Araba" if vk_can == "car" else None)
+        vphoto = card.get("vehicle_photo_url")
+        gen_raw = card.get("gender")
+        gen = str(gen_raw).strip().lower() if gen_raw else ""
+        gender_label = "Kadın" if gen == "female" else ("Erkek" if gen == "male" else None)
         extras: dict = {}
-        if role == "driver" or role == "private_driver":
+        if is_kyc:
             extras = {
                 "vehicle_summary": dd,
-                "vehicle_label": vlabel or None,
+                "vehicle_label": (vlabel or vk_lbl or None),
+                "vehicle_kind_label": vk_lbl,
+                "vehicle_photo_url": vphoto,
                 "daily_trips_hint": None,
                 "weekly_earning_hint": None,
             }
@@ -19548,6 +19702,9 @@ async def muhabbet_user_public_profile_get(
                 "total_trips": card.get("total_trips"),
                 "total_ratings": card.get("total_ratings"),
                 "role": card.get("role"),
+                "is_kyc_driver": is_kyc,
+                "gender": gen_raw if gen else None,
+                "gender_label": gender_label,
                 "active_listings": active_listings,
                 "completed_matches": completed_matches,
                 "profile_photo": card.get("profile_photo"),

@@ -41,6 +41,10 @@ export type PublicProfilePayload = {
   total_trips?: number | null;
   total_ratings?: number | null;
   role?: string | null;
+  /** KYC onaylı sürücü — rozet ve sürücü kartı için (uygulama rolünden bağımsız). */
+  is_kyc_driver?: boolean;
+  gender?: string | null;
+  gender_label?: string | null;
   active_listings?: number;
   completed_matches?: number;
   profile_photo?: string | null;
@@ -48,6 +52,8 @@ export type PublicProfilePayload = {
   extras?: {
     vehicle_summary?: Record<string, unknown> | null;
     vehicle_label?: string | null;
+    vehicle_kind_label?: string | null;
+    vehicle_photo_url?: string | null;
     daily_trips_hint?: number | null;
     weekly_earning_hint?: number | null;
     past_trips_hint?: unknown;
@@ -69,6 +75,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const [bioDraft, setBioDraft] = useState('');
   const [savingBio, setSavingBio] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingVehicle, setUploadingVehicle] = useState(false);
   const [keyBusy, setKeyBusy] = useState(false);
   const [lastKey, setLastKey] = useState<string | null>(null);
 
@@ -123,9 +130,11 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     void load();
   }, [load]);
 
-  const role = (p?.role || '').toLowerCase();
-  const isDriver = role === 'driver' || role === 'private_driver';
+  const showDriverExtras = p?.is_kyc_driver === true;
   const vLabel = (p?.extras?.vehicle_label as string) || '';
+  const vKind = (p?.extras?.vehicle_kind_label as string) || '';
+  const vPhoto = (p?.extras?.vehicle_photo_url as string) || '';
+  const gLabel = (p?.gender_label as string) || '';
 
   const saveBio = async () => {
     if (!isSelf) return;
@@ -195,6 +204,56 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     }
   };
 
+  const pickVehiclePhoto = async () => {
+    if (!isSelf || !showDriverExtras || !myId) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.65,
+    });
+    const uri = !result.canceled && result.assets?.[0]?.uri ? result.assets[0].uri : null;
+    if (!uri) return;
+    setUploadingVehicle(true);
+    try {
+      const token = (await getPersistedAccessToken())?.trim();
+      if (!token) return;
+      const form = new FormData();
+      form.append('file', {
+        uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
+        name: 'vehicle.jpg',
+        type: 'image/jpeg',
+      } as any);
+      const res = await fetch(`${base}/storage/upload-vehicle-photo?user_id=${encodeURIComponent(myId)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const d = (await res.json().catch(() => ({}))) as { success?: boolean; url?: string; detail?: string };
+      if (!res.ok || !d.success || !d.url) {
+        Alert.alert('Araç fotoğrafı', typeof d.detail === 'string' && d.detail ? d.detail : 'Yüklenemedi.');
+        return;
+      }
+      setP((prev) =>
+        prev
+          ? {
+              ...prev,
+              extras: { ...(prev.extras || {}), vehicle_photo_url: d.url },
+            }
+          : prev,
+      );
+    } catch {
+      Alert.alert('Araç fotoğrafı', 'Yükleme hatası.');
+    } finally {
+      setUploadingVehicle(false);
+    }
+  };
+
   const createLeylekKey = async () => {
     if (!isSelf) return;
     setKeyBusy(true);
@@ -253,9 +312,10 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                 </View>
               ) : null}
             </Pressable>
-            <Text style={styles.name}>{p.name || 'Kullanıcı'}</Text>
+            <Text style={styles.name}>{p.name?.trim() ? p.name : 'Kullanıcı'}</Text>
             <Text style={styles.badgeLine}>
-              {isDriver ? 'Sürücü' : 'Yolcu'} · ⭐ {p.rating != null ? Number(p.rating).toFixed(1) : '—'} · 🧭 {p.total_trips ?? 0}{' '}
+              {p?.is_kyc_driver ? 'Sürücü' : 'Yolcu'}
+              {gLabel ? ` · ${gLabel}` : ''} · ⭐ {p.rating != null ? Number(p.rating).toFixed(1) : '—'} · 🧭 {p.total_trips ?? 0}{' '}
               yolculuk
             </Text>
             <View style={styles.statRow}>
@@ -270,15 +330,41 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
             </View>
           </View>
 
-          {isDriver && vLabel ? (
+          {showDriverExtras && (vLabel || vKind || vPhoto) ? (
             <View style={styles.card}>
-              <Text style={styles.section}>Araç bilgisi</Text>
-              <Text style={styles.bodyText}>{vLabel}</Text>
+              <Text style={styles.section}>Sürücü bilgileri</Text>
+              {vKind ? (
+                <View style={styles.kindPill}>
+                  <Text style={styles.kindPillTxt}>{vKind}</Text>
+                </View>
+              ) : null}
+              {vPhoto ? (
+                <Image source={{ uri: vPhoto }} style={styles.vehicleImg} />
+              ) : null}
+              {isSelf ? (
+                <Pressable onPress={() => void pickVehiclePhoto()} style={({ pressed }) => [styles.vehPhotoBtn, pressed && { opacity: 0.88 }]}>
+                  {uploadingVehicle ? (
+                    <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} />
+                  ) : (
+                    <Text style={styles.vehPhotoBtnTxt}>{vPhoto ? 'Araç fotoğrafını değiştir' : 'Araç fotoğrafı yükle'}</Text>
+                  )}
+                </Pressable>
+              ) : null}
+              {vLabel ? <Text style={[styles.bodyText, { marginTop: 10 }]}>{vLabel}</Text> : null}
             </View>
-          ) : isDriver && !vLabel ? (
+          ) : showDriverExtras && !vLabel && !vKind && !vPhoto ? (
             <View style={styles.card}>
-              <Text style={styles.section}>Araç</Text>
-              <Text style={styles.mutedSmall}>Araç marka/model profilinizde tanımlı değil.</Text>
+              <Text style={styles.section}>Taşıt</Text>
+              <Text style={styles.mutedSmall}>Marka/model KYC profilinizde tanımlı değil.</Text>
+              {isSelf ? (
+                <Pressable onPress={() => void pickVehiclePhoto()} style={({ pressed }) => [styles.vehPhotoBtn, { marginTop: 10 }, pressed && { opacity: 0.88 }]}>
+                  {uploadingVehicle ? (
+                    <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} />
+                  ) : (
+                    <Text style={styles.vehPhotoBtnTxt}>Araç fotoğrafı yükle</Text>
+                  )}
+                </Pressable>
+              ) : null}
             </View>
           ) : (
             <View style={styles.card}>
@@ -445,4 +531,23 @@ const styles = StyleSheet.create({
   keyOut: { marginTop: 12, padding: 12, backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: 12 },
   keyHint: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '600' },
   keyBig: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 6 },
+  kindPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(59,130,246,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 10,
+  },
+  kindPillTxt: { fontSize: 13, fontWeight: '800', color: '#1D4ED8' },
+  vehicleImg: {
+    width: '100%',
+    maxWidth: 360,
+    height: 180,
+    borderRadius: 14,
+    backgroundColor: '#E5E5EA',
+    alignSelf: 'center',
+  },
+  vehPhotoBtn: { marginTop: 10, alignSelf: 'flex-start', paddingVertical: 8 },
+  vehPhotoBtnTxt: { fontSize: 14, fontWeight: '700', color: PRIMARY_GRAD[0] },
 });
