@@ -1,6 +1,6 @@
 /**
- * Leylek Muhabbeti: mesaj içeriği yalnızca cihazda (AsyncStorage).
- * Sunucu kalıcı mesaj metni tutmaz.
+ * Leylek Muhabbeti: mesajlar cihazda (AsyncStorage) + sunucuda en fazla ~90 gün (muhabbet_messages).
+ * Açılışta yerel + API birleştirilir.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -166,6 +166,96 @@ export async function persistMuhabbetChatRowsLocal(
       )
     );
   await saveMuhabbetMessagesLocal(c, items);
+}
+
+/** GET /muhabbet/conversations/:id/messages satırları → depolama biçimi */
+export function storedMessagesFromConversationApi(
+  conversationId: string,
+  apiMessages: Array<{ id?: string; body?: string; sender_user_id?: string; created_at?: string }>
+): StoredMuhabbetMessage[] {
+  const cid = String(conversationId || '').trim().toLowerCase();
+  const out: StoredMuhabbetMessage[] = [];
+  for (const m of apiMessages || []) {
+    const id = normalizeMuhabbetMessageId(m.id);
+    if (!id) continue;
+    out.push(
+      normalizeStored(
+        {
+          message_id: id,
+          conversation_id: cid,
+          sender_id: m.sender_user_id != null ? String(m.sender_user_id).trim().toLowerCase() : '',
+          text: m.body != null ? String(m.body) : '',
+          created_at: coerceMessageCreatedAt(m.created_at),
+        },
+        cid
+      )
+    );
+  }
+  return out;
+}
+
+/**
+ * Yerel (optimistic, push) + sunucu son 200: id bazlı birleştirme.
+ * Aynı id: sunucu metni esas; gönderende hâlâ `sending` ise o satır korunur.
+ */
+export function mergeMuhabbetLocalWithServer(
+  local: StoredMuhabbetMessage[],
+  server: StoredMuhabbetMessage[],
+  myUserId: string
+): StoredMuhabbetMessage[] {
+  const my = String(myUserId || '').trim().toLowerCase();
+  const byServer = new Map<string, StoredMuhabbetMessage>();
+  for (const s of server) {
+    const sid = normalizeMuhabbetMessageId(s.message_id);
+    if (sid) byServer.set(sid, normalizeStored({ ...s, message_id: sid }, s.conversation_id));
+  }
+  const merged: StoredMuhabbetMessage[] = [];
+  const usedLocal = new Set<string>();
+
+  for (const [mid, srow] of byServer) {
+    const loc = local.find((l) => normalizeMuhabbetMessageId(l.message_id) === mid);
+    usedLocal.add(mid);
+    if (loc && String(loc.sender_id || '').trim().toLowerCase() === my && loc.out_status === 'sending') {
+      merged.push(
+        normalizeStored(
+          {
+            ...srow,
+            out_status: 'sending',
+            text: (loc.text && loc.text.trim() !== '' ? loc.text : srow.text) || srow.text,
+            created_at: loc.created_at || srow.created_at,
+            sender_role: loc.sender_role ?? srow.sender_role,
+          },
+          srow.conversation_id
+        )
+      );
+    } else {
+      merged.push(
+        normalizeStored(
+          {
+            ...srow,
+            sender_role: loc?.sender_role ?? srow.sender_role,
+            out_status:
+              loc && String(loc.sender_id || '').trim().toLowerCase() === my
+                ? loc.out_status || srow.out_status
+                : srow.out_status,
+          },
+          srow.conversation_id
+        )
+      );
+    }
+  }
+
+  for (const l of local) {
+    const lid = normalizeMuhabbetMessageId(l.message_id);
+    if (!lid || usedLocal.has(lid)) continue;
+    merged.push(normalizeStored(l, l.conversation_id));
+  }
+
+  merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  if (merged.length > MUHABBET_MAX_MESSAGES_PER_CONVERSATION) {
+    return merged.slice(merged.length - MUHABBET_MAX_MESSAGES_PER_CONVERSATION);
+  }
+  return merged;
 }
 
 export async function getLocalConversationLastPreview(

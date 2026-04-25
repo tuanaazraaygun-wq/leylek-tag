@@ -20,6 +20,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { BACKEND_BASE_URL } from '../lib/backendConfig';
 import { waitForPersistedAccessToken } from '../lib/sessionToken';
 import { setSocketRegisterScheduler } from '../lib/socketRegisterScheduler';
+import { publishSocketSessionRefresh } from '../lib/socketSessionRefresh';
 import { useNotifications } from './NotificationContext';
 
 // REST ile aynı origin (lib/backendConfig) — ayrı sunucu = teklif görünmez
@@ -40,68 +41,80 @@ let singletonSocket: Socket | null = null;
 let pingInterval: NodeJS.Timeout | null = null;
 
 export function getOrCreateSocket(): Socket {
-  if (!singletonSocket) {
-    console.log(
-      '🔌 [SocketContext] Socket URL =',
-      SOCKET_URL,
-      '(app.json extra.backendUrl / EXPO_PUBLIC_BACKEND_URL — API ile aynı olmalı)'
-    );
-    singletonSocket = io(SOCKET_URL, {
-      path: '/socket.io',
-      transports: ['polling', 'websocket'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      timeout: 20000,
-    });
-
-    let reconnectAttempts = 0;
-
-    singletonSocket.on('connect', () => {
-      console.log('✅ CONNECTED:', singletonSocket?.id);
-      reconnectAttempts = 0;
-      if (pingInterval) clearInterval(pingInterval);
-      pingInterval = setInterval(() => {
-        if (singletonSocket?.connected) {
-          singletonSocket.emit('heartbeat', { timestamp: Date.now() });
-        }
-      }, 20000);
-    });
-
-    singletonSocket.on('connect_error', (err) => {
-      console.warn('❌ [SocketContext] connect_error:', err.message, '| SOCKET_URL=', SOCKET_URL, '| path=/socket.io');
-      console.warn(
-        '[SocketContext] nginx: /socket.io/ → socket_app (uvicorn socket_app, örn. 8001). /api/ ayrı porta gidiyorsa bile socket kök hostta /socket.io olmalı (BACKEND_BASE_URL’e /api eklemeyin). Örnek: deploy/nginx-api-socket-split.example.conf',
-      );
-    });
-
-    singletonSocket.on('disconnect', (reason) => {
-      console.log('⚠️ DISCONNECTED');
-      if (pingInterval) {
-        clearInterval(pingInterval);
-        pingInterval = null;
-      }
-      if (reason === 'io server disconnect') {
-        singletonSocket?.connect();
-      } else if (reason === 'transport close' || reason === 'transport error') {
-        reconnectAttempts++;
-        const delay = Math.min(500 * reconnectAttempts, 3000);
-        setTimeout(() => {
-          if (singletonSocket && !singletonSocket.connected) {
-            singletonSocket.connect();
-          }
-        }, delay);
-      } else if (reason === 'ping timeout') {
-        singletonSocket?.connect();
-      }
-    });
-
-    singletonSocket.on('reconnect', () => {
-      reconnectAttempts = 0;
-    });
-
-    singletonSocket.on('pong_keepalive', () => {});
+  if (singletonSocket) {
+    return singletonSocket;
   }
+
+  console.log(
+    '🔌 [SocketContext] Socket URL =',
+    SOCKET_URL,
+    '(app.json extra.backendUrl / EXPO_PUBLIC_BACKEND_URL — API ile aynı olmalı)'
+  );
+
+  singletonSocket = io(SOCKET_URL, {
+    path: '/socket.io',
+    transports: ['websocket', 'polling'],
+    forceNew: false,
+    autoConnect: true,
+    reconnection: true,
+    reconnectionAttempts: Number.POSITIVE_INFINITY,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+  });
+
+  singletonSocket.on('connect', () => {
+    const id = singletonSocket?.id;
+    console.log('[socket] connected', id);
+    if (pingInterval) clearInterval(pingInterval);
+    pingInterval = setInterval(() => {
+      if (singletonSocket?.connected) {
+        singletonSocket.emit('heartbeat', { timestamp: Date.now() });
+      }
+    }, 20000);
+    publishSocketSessionRefresh('socket_connect');
+  });
+
+  singletonSocket.on('connect_error', (err) => {
+    console.warn('❌ [SocketContext] connect_error:', err.message, '| SOCKET_URL=', SOCKET_URL, '| path=/socket.io');
+    console.warn(
+      '[SocketContext] nginx: /socket.io/ → socket_app (uvicorn socket_app, örn. 8001). /api/ ayrı porta gidiyorsa bile socket kök hostta /socket.io olmalı (BACKEND_BASE_URL’e /api eklemeyin). Örnek: deploy/nginx-api-socket-split.example.conf',
+    );
+  });
+
+  singletonSocket.on('disconnect', (reason) => {
+    console.log('[socket] disconnect', reason);
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+    if (reason === 'io server disconnect') {
+      singletonSocket?.connect();
+    }
+  });
+
+  try {
+    const mgr = singletonSocket.io;
+    mgr.on('reconnect_attempt', (attempt: number) => {
+      console.log('[socket] reconnect_attempt', attempt);
+    });
+    mgr.on('reconnect_error', (err: Error) => {
+      console.warn('[socket] reconnect_error', err?.message || err);
+    });
+    mgr.on('reconnect_failed', () => {
+      console.warn('[socket] reconnect_failed');
+    });
+  } catch (e) {
+    console.warn('[socket] manager reconnect listeners:', e);
+  }
+
+  singletonSocket.on('reconnect', (attempt?: number) => {
+    console.log('[socket] reconnect', { id: singletonSocket?.id, attempt });
+    publishSocketSessionRefresh('socket_reconnect');
+  });
+
+  singletonSocket.on('pong_keepalive', () => {});
+
   return singletonSocket;
 }
 
@@ -544,6 +557,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
             socket.connect();
           } else {
             scheduleSocketRegister('app_foreground');
+            publishSocketSessionRefresh('app_active');
             // 🔥 Bağlıysa bile 30 saniyeden fazla arka plandaysa yeniden register ol
             if (backgroundDuration > 30000 && userIdRef.current && userRoleRef.current) {
               console.log('📱 [SocketProvider] Uzun arka plan süresi, re-register yapılıyor...');

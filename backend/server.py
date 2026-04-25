@@ -18893,24 +18893,35 @@ async def _muhabbet_notify_leylek_pair_request(
     request_id: str,
     initiator_role: str,
 ) -> None:
-    """Sohbet ekranındaki eşleşme isteği: hedefe socket + push (yolculuk/QR ayrı)."""
+    """Sohbet ekranındaki eşleşme isteği: hedefe socket; push yalnız hedef socket yoksa."""
     try:
         nm = _muhabbet_listing_name_map_for_ids([initiator_uid])
         iname = nm.get(str(initiator_uid).strip().lower()) or "Bir kullanıcı"
         role_l = _muhabbet_role_label_tr(initiator_role)
         ru = (initiator_role or "").strip().lower()
         iu = str(initiator_uid).strip().lower()
+        created_iso = datetime.now(timezone.utc).isoformat()
+        tgt = str(target_uid).strip().lower()
         payload = {
             "type": "leylek_pair_match_request",
             "request_id": str(request_id).strip().lower(),
             "conversation_id": str(conversation_id).strip().lower(),
+            "requester_user_id": iu,
+            "target_user_id": tgt,
             "from_user_id": iu,
             "initiator_user_id": iu,
             "initiator_name": iname,
             "initiator_role": ru,
             "initiator_role_label": role_l,
+            "created_at": created_iso,
+            "title": "Leylek Anahtar eşleşme isteği",
+            "body": "Karşı taraf sizinle eşleşmek istiyor.",
         }
-        tgt = str(target_uid).strip().lower()
+        try:
+            sids = _all_sids_for_registered_user(tgt)
+            logger.info("[leylek_pair_request] target_sids=%s", [str(s) for s in sids] if sids else [])
+        except Exception as _e:
+            logger.warning("[leylek_pair_request] target_sids log err=%s", _e)
         await emit_socket_event_to_user(tgt, "leylek_pair_match_request", payload)
         logger.info(
             "[leylek_pair_request] emitted target=%s conversation_id=%s request_id=%s",
@@ -18918,15 +18929,18 @@ async def _muhabbet_notify_leylek_pair_request(
             str(conversation_id).strip().lower(),
             str(request_id).strip().lower()[:13],
         )
-        asyncio.create_task(
-            send_push_notification(
-                str(target_uid).strip(),
-                "Eşleşme isteği",
-                "Biri sizinle eşleşmek istiyor",
-                payload,
+        if not _muhabbet_user_socket_online(tgt):
+            asyncio.create_task(
+                send_push_notification(
+                    str(target_uid).strip(),
+                    str(payload.get("title") or "Leylek Anahtar eşleşme isteği"),
+                    str(payload.get("body") or "Karşı taraf sizinle eşleşmek istiyor."),
+                    payload,
+                )
             )
-        )
-        logger.info("[leylek_pair_request] push sent target=%s", tgt[:13] if tgt else "")
+            logger.info("[leylek_pair_request] push sent target=%s", tgt[:13] if tgt else "")
+        else:
+            logger.info("[leylek_pair_request] push skipped target_online=%s", tgt[:13] if tgt else "")
     except Exception as e:
         logger.warning("muhabbet_notify_leylek_pair_request: %s", e)
 
@@ -20362,6 +20376,118 @@ def _muhabbet_conversation_member_ok(conversation_id: str, uid: str) -> bool:
         return False
 
 
+def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: str, created_iso: str) -> bool:
+    """Kalıcı mesaj satırı; idempotent (aynı id+conversation varsa True)."""
+    cid = str(cid or "").strip().lower()
+    mid = str(msg_id or "").strip().lower()
+    su = str(sender_id or "").strip().lower()
+    row = {
+        "id": mid,
+        "conversation_id": cid,
+        "sender_id": su,
+        "text": text,
+        "created_at": created_iso,
+    }
+    try:
+        supabase.table("muhabbet_messages").insert(row).execute()
+        return True
+    except Exception as e:
+        try:
+            q = (
+                supabase.table("muhabbet_messages")
+                .select("id")
+                .eq("id", mid)
+                .eq("conversation_id", cid)
+                .limit(1)
+                .execute()
+            )
+            if q.data:
+                return True
+        except Exception:
+            pass
+        logger.warning("[muhabbet_send] db insert failed conversation_id=%s message_id=%s err=%s", cid, mid, e)
+        return False
+
+
+def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 200) -> list:
+    """expires_at > şimdi; deleted_for_user_ids içinde uid yok."""
+    uid_lo = str(uid or "").strip().lower()
+    cid = str(cid or "").strip().lower()
+    lim = max(1, min(int(limit or 200), 200))
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        res = (
+            supabase.table("muhabbet_messages")
+            .select("id,sender_id,text,created_at,deleted_for_user_ids")
+            .eq("conversation_id", cid)
+            .gt("expires_at", now_iso)
+            .order("created_at", desc=True)
+            .limit(min(lim * 2, 400))
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("muhabbet_messages_fetch: %s", e)
+        return []
+    out: list = []
+    for r in res.data or []:
+        del_ids = r.get("deleted_for_user_ids") or []
+        del_lo = {str(x).strip().lower() for x in del_ids if x}
+        if uid_lo in del_lo:
+            continue
+        out.append(
+            {
+                "id": str(r.get("id") or "").strip().lower(),
+                "body": r.get("text") or "",
+                "sender_user_id": str(r.get("sender_id") or "").strip().lower(),
+                "created_at": r.get("created_at"),
+            }
+        )
+        if len(out) >= lim:
+            break
+    try:
+        out.reverse()
+    except Exception:
+        pass
+    return out
+
+
+def _muhabbet_message_delete_for_user_db(cid: str, mid: str, uid: str) -> str:
+    """Dönüş: ok | not_found | error"""
+    cid = str(cid or "").strip().lower()
+    mid = str(mid or "").strip().lower()
+    uid_lo = str(uid or "").strip().lower()
+    try:
+        uuid.UUID(mid)
+        uuid.UUID(cid)
+        uuid.UUID(uid_lo)
+    except ValueError:
+        return "error"
+    try:
+        r = (
+            supabase.table("muhabbet_messages")
+            .select("id,deleted_for_user_ids")
+            .eq("id", mid)
+            .eq("conversation_id", cid)
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return "not_found"
+        row = dict(r.data[0])
+        arr_raw = list(row.get("deleted_for_user_ids") or [])
+        have = {str(x).strip().lower() for x in arr_raw if x}
+        if uid_lo in have:
+            return "ok"
+        arr_raw.append(uid_lo)
+        supabase.table("muhabbet_messages").update({"deleted_for_user_ids": arr_raw}).eq("id", mid).eq(
+            "conversation_id", cid
+        ).execute()
+        return "ok"
+    except Exception as e:
+        logger.warning("muhabbet_message_delete_for_user_db: %s", e)
+        return "error"
+
+
 @sio.on("join_muhabbet_conversation")
 async def sio_join_muhabbet_conversation(sid, data):
     """Muhabbet sohbet odası — yalnızca JWT register sonrası; katılımcı doğrulanır."""
@@ -20405,7 +20531,7 @@ async def sio_leave_muhabbet_conversation(sid, data):
 
 @sio.on("muhabbet_send")
 async def sio_muhabbet_send(sid, data):
-    """Leylek Muhabbeti: mesaj içeriği DB'ye yazılmaz; yalnızca odaya yayın."""
+    """Leylek Muhabbeti: mesaj DB'ye (90 gün), ardından ack + oda yayını + koşullu FCM."""
     if not isinstance(data, dict):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
@@ -20458,6 +20584,13 @@ async def sio_muhabbet_send(sid, data):
     except Exception as e:
         logger.warning("muhabbet_send enter_room: %s", e)
     peer_n = _muhabbet_room_peer_count(room)
+    if not _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso):
+        await sio.emit(
+            "muhabbet_error",
+            {"code": "db_error", "detail": "Mesaj kaydedilemedi", "conversation_id": cid},
+            room=sid,
+        )
+        return
     try:
         await emit_socket_event_to_user(
             uid,
@@ -20509,9 +20642,7 @@ async def sio_muhabbet_send(sid, data):
 
 @sio.on("delete_message")
 async def sio_delete_message(sid, data):
-    """
-    Sohbet katılımcısı (her iki taraf) mesajı tüm tarafta siler; sunucu içerik tutmaz.
-    """
+    """İstemci uyumluluğu: yalnızca silen kullanıcı için gizle (delete-for-me); karşı taraf görür."""
     if not isinstance(data, dict):
         data = {}
     uid = _muhabbet_socket_uid_from_sid(sid)
@@ -20523,12 +20654,19 @@ async def sio_delete_message(sid, data):
         return
     if not _muhabbet_conversation_member_ok(cid, uid):
         return
-    room = muhabbet_room(cid)
-    await sio.emit(
-        "message_deleted",
-        {"message_id": mid, "conversation_id": cid},
-        room=room,
-    )
+    st = _muhabbet_message_delete_for_user_db(cid, mid, uid)
+    if st == "not_found":
+        return
+    if st != "ok":
+        return
+    try:
+        await emit_socket_event_to_user(
+            str(uid).strip().lower(),
+            "message_deleted",
+            {"message_id": mid, "conversation_id": cid},
+        )
+    except Exception as e:
+        logger.warning("delete_message emit: %s", e)
 
 
 async def _muhabbet_route_message_receipt(sid: str, data: Any, out_event: str) -> None:
@@ -20688,11 +20826,15 @@ async def _sio_leylek_pair_request_handler(sid, data):
         await _muhabbet_notify_leylek_pair_request(str(target), uid, cid, rid, role)
     except Exception as e:
         logger.warning("leylek_pair_request notify: %s", e)
-    await sio.emit(
-        "leylek_pair_info",
-        {"code": "sent", "request_id": rid, "message": "Eşleşme isteği gönderildi"},
-        room=sid,
-    )
+    try:
+        await emit_socket_event_to_user(
+            str(uid).strip().lower(),
+            "leylek_pair_request_sent",
+            {"request_id": rid, "conversation_id": cid},
+        )
+        logger.info("[leylek_pair_request] ack sent requester=%s", str(uid)[:13])
+    except Exception as e:
+        logger.warning("leylek_pair_request_sent emit: %s", e)
 
 
 @sio.on("leylek_pair_request")
@@ -20912,7 +21054,7 @@ async def muhabbet_conversations_me(
                         role_by_uid[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
             except Exception as e:
                 logger.warning("conversations_me roles: %s", e)
-        # Muhabbet mesaj içeriği sunucuda saklanmaz; önizleme yok
+        # Sohbet listesi: last_message alanı şimdilik boş (isteğe bağlı muhabbet_messages özeti)
         out: list = []
         for c in convs:
             conv_id = str(c.get("id") or "").strip().lower()
@@ -20956,7 +21098,7 @@ async def muhabbet_conversation_messages_get(
     offset: int = 0,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Mesaj içeriği sunucuda tutulmaz; yalnızca rol/işlem bağlamı + boş liste döner."""
+    """Son mesajlar (varsayılan 200): muhabbet_messages; expires_at ve delete-for-me filtreli."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
         c_row = _muhabbet_conversation_for_member_or_403(conversation_id, uid)
@@ -20995,11 +21137,13 @@ async def muhabbet_conversation_messages_get(
             "other_role": oth_r,
             "matched_via_leylek_key": leylek_matched,
             "matched_at": matched_at,
-            "ephemeral_chat": True,
+            "ephemeral_chat": False,
         }
+        msgs = _muhabbet_messages_fetch_visible_for_user(cid, uid, lim)
+        _ = off  # API uyumluluğu; sayfalama ileride genişletilebilir
         return {
             "success": True,
-            "messages": [],
+            "messages": msgs,
             "limit": lim,
             "offset": off,
             "context": ctx,
@@ -21017,11 +21161,36 @@ async def muhabbet_conversation_messages_post(
     msg: MuhabbetChatMessageCreateBody,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Devre dışı: Muhabbet mesajları sunucuda saklanmaz; Socket.IO `muhabbet_send` kullanın."""
+    """Metinli mesaj yalnızca Socket.IO `muhabbet_send` ile; sunucu `muhabbet_messages` tablosunda ~90 gün saklar."""
     raise HTTPException(
         status_code=410,
-        detail="Muhabbet mesajları sunucuda saklanmaz; yalnızca canlı Socket.IO (muhabbet_send) ile iletilir.",
+        detail="Mesaj göndermek için Socket.IO muhabbet_send kullanın; içerik sunucuda ~90 gün tutulur.",
     )
+
+
+@api_router.post("/muhabbet/conversations/{conversation_id}/messages/{message_id}/delete-for-me")
+async def muhabbet_conversation_message_delete_for_me(
+    conversation_id: str,
+    message_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Mesajı yalnızca bu kullanıcı için gizle; karşı taraf görmeye devam eder."""
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        cid = str(conversation_id).strip().lower()
+        mid = str(message_id).strip().lower()
+        _ = _muhabbet_conversation_for_member_or_403(cid, uid)
+        st = _muhabbet_message_delete_for_user_db(cid, mid, uid)
+        if st == "not_found":
+            raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
+        if st != "ok":
+            raise HTTPException(status_code=500, detail="Silinemedi")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_conversation_message_delete_for_me: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @api_router.post("/muhabbet/conversations/{conversation_id}/messages/{message_id}/delete")
@@ -21030,10 +21199,10 @@ async def muhabbet_conversation_message_soft_delete(
     message_id: str,
     authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
 ):
-    """Devre dışı: silme Socket.IO `delete_message` ile yapılır."""
+    """Eski yol: delete-for-me kullanın."""
     raise HTTPException(
         status_code=410,
-        detail="Mesaj silme sunucu veritabanı üzerinden yapılmaz; Socket.IO delete_message kullanın.",
+        detail="POST .../messages/{id}/delete-for-me kullanın veya Socket.IO delete_message.",
     )
 
 
