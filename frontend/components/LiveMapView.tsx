@@ -3265,6 +3265,13 @@ export default function LiveMapView({
     };
   }, [isDriver, navigationMode, onTrustRequest, guvenHintOpacity]);
 
+  /**
+   * Normal ride icin kritik driver -> pickup navigation flow.
+   * Backend/socket kaynakli pickup_lat/pickup_lng string gelebilir; koordinatlar
+   * number'a parse edilmeden validation'a sokulmayacak.
+   * Origin ve destination fallback zincirleri bozulmayacak.
+   * Sorun olursa once YOLCUYA_GIT_BLOCKED_EXACT loguna bak.
+   */
   const handleYolcuyaGitPress = useCallback(() => {
     void tapButtonHaptic();
     try {

@@ -10862,8 +10862,10 @@ function driverOtherLocationPickupFallback(
 }
 
 /**
- * `_emit_driver_on_the_way_route` / eşleşme: `{ tag, route, pickup_lat, pickup_lng, ... }`;
- * klasik `ride_matched` ise çoğunlukla düz `tag_id` alanları.
+ * Normal ride driver socket normalization.
+ * Backend payload shape: `{ tag, route, route_info, pickup_lat, pickup_lng }`.
+ * route_info activeTag icine merge edilmeli; pickup koordinatlari number'a normalize edilmeli.
+ * Bu akis Leylek Muhabbeti ile karistirilmayacak.
  */
 function normalizeDriverMatchSocketPayload(raw: unknown): {
   tag_id: string;
