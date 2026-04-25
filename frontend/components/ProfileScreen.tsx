@@ -1,20 +1,5 @@
-/**
- * Leylek Muhabbeti — kullanıcı profili (kendi / karşı taraf).
- * Leylek Anahtar eşleşmesi yalnızca sohbet içi akıştan yapılır.
- */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Platform,
-} from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,6 +10,7 @@ import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToke
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
+const VEHICLE_PH = ['#DBEAFE', '#E0E7FF'] as const;
 const ORANGE_GRAD = ['#F59E0B', '#FBBF24'] as const;
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
@@ -37,34 +23,20 @@ const CARD_SHADOW = Platform.select({
 
 export type PublicProfilePayload = {
   id?: string;
-  name?: string;
   full_name?: string;
   public_name?: string;
   role_label?: string | null;
+  is_kyc_driver?: boolean;
   rating?: number | null;
   total_trips?: number | null;
-  total_ratings?: number | null;
-  role?: string | null;
-  /** KYC onaylı sürücü — rozet ve sürücü kartı için (uygulama rolünden bağımsız). */
-  is_kyc_driver?: boolean;
-  gender?: string | null;
-  gender_label?: string | null;
-  active_listings?: number;
-  active_listings_count?: number;
+  completed_trips?: number | null;
   completed_matches?: number;
+  active_listings_count?: number;
   about?: string | null;
-  profile_photo?: string | null;
   profile_photo_url?: string | null;
+  vehicle_photo_url?: string | null;
+  vehicle_kind_label?: string | null;
   muhabbet_bio?: string | null;
-  extras?: {
-    vehicle_summary?: Record<string, unknown> | null;
-    vehicle_label?: string | null;
-    vehicle_kind_label?: string | null;
-    vehicle_photo_url?: string | null;
-    daily_trips_hint?: number | null;
-    weekly_earning_hint?: number | null;
-    past_trips_hint?: unknown;
-  };
 };
 
 export type ProfileScreenProps = {
@@ -72,6 +44,13 @@ export type ProfileScreenProps = {
   userId: string;
   onBack?: () => void;
 };
+
+function initialsFromName(name: string): string {
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'LK';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
+}
 
 export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScreenProps) {
   const router = useRouter();
@@ -90,67 +69,51 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     (async () => {
       try {
         const raw = await getPersistedUserRaw();
-        if (raw) {
-          const u = JSON.parse(raw) as { id?: string };
-          if (u?.id) setMyId(String(u.id).trim().toLowerCase());
-        }
+        if (!raw) return;
+        const u = JSON.parse(raw) as { id?: string };
+        if (u?.id) setMyId(String(u.id).trim().toLowerCase());
       } catch {
         /* noop */
       }
     })();
   }, []);
 
-  const isSelf = useMemo(
-    () => myId && userId && myId === String(userId).trim().toLowerCase(),
-    [myId, userId],
-  );
+  const isSelf = useMemo(() => myId && userId && myId === String(userId).trim().toLowerCase(), [myId, userId]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const token = (await getPersistedAccessToken())?.trim();
-      if (!token) {
-        setP(null);
-        return;
-      }
-      const uid = encodeURIComponent(userId.trim());
-      const path = isSelf ? '/muhabbet/profile/me' : `/muhabbet/profile/${uid}`;
-      const res = await fetch(`${base}${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (handleUnauthorizedAndMaybeRedirect(res)) {
-        setP(null);
-        return;
-      }
+      if (!token) return setP(null);
+      const path = isSelf ? '/muhabbet/profile/me' : `/muhabbet/profile/${encodeURIComponent(userId.trim())}`;
+      const res = await fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (handleUnauthorizedAndMaybeRedirect(res)) return setP(null);
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; profile?: PublicProfilePayload };
-      if (res.ok && d.success && d.profile) {
-        setP(d.profile);
-        setBioDraft((d.profile.about || d.profile.muhabbet_bio || '').trim());
-      } else setP(null);
+      if (!res.ok || !d.success || !d.profile) return setP(null);
+      setP(d.profile);
+      setBioDraft((d.profile.about || d.profile.muhabbet_bio || '').trim());
     } catch {
       setP(null);
     } finally {
       setLoading(false);
     }
-  }, [base, userId, isSelf]);
+  }, [base, isSelf, userId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const showDriverExtras = p?.is_kyc_driver === true;
-  const profilePhoto = (p?.profile_photo_url || p?.profile_photo || '').trim();
-  const vLabel = ((p?.extras?.vehicle_label as string) || p?.vehicle_kind_label || '').trim();
-  const vKind = ((p?.extras?.vehicle_kind_label as string) || p?.vehicle_kind_label || '').trim();
-  const vPhoto = ((p?.extras?.vehicle_photo_url as string) || p?.vehicle_photo_url || '').trim();
-  const gLabel = (p?.gender_label as string) || '';
-  const displayName = isSelf
-    ? (p?.full_name || p?.public_name || 'Leylek kullanıcısı')
-    : (p?.public_name || 'Leylek kullanıcısı');
-  const roleLabel = (p?.role_label || (p?.is_kyc_driver ? 'Sürücü' : 'Yolcu')) as string;
+  const displayName = isSelf ? p?.full_name || p?.public_name || 'Leylek kullanıcısı' : p?.public_name || 'Leylek kullanıcısı';
+  const roleLabel = p?.role_label || (p?.is_kyc_driver ? 'Sürücü' : 'Yolcu');
+  const photo = (p?.profile_photo_url || '').trim();
+  const vehiclePhoto = (p?.vehicle_photo_url || '').trim();
+  const vehicleKind = (p?.vehicle_kind_label || '').trim() || 'Araba';
+  const completedTrips = Number(p?.completed_trips ?? p?.total_trips ?? 0);
+  const rating = p?.rating != null ? Number(p.rating).toFixed(1) : '—';
   const completedMatches = Number(p?.completed_matches || 0);
-  const activeListingsCount = Number(p?.active_listings_count ?? p?.active_listings ?? 0);
+  const activeListings = Number(p?.active_listings_count || 0);
   const aboutText = (p?.about || p?.muhabbet_bio || '').trim();
+  const showDriverExtras = p?.is_kyc_driver === true;
 
   const saveBio = async () => {
     if (!isSelf) return;
@@ -169,7 +132,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         Alert.alert('Profil', typeof d.detail === 'string' && d.detail ? d.detail : 'Kaydedilemedi.');
         return;
       }
-      setP((prev) => (prev ? { ...prev, muhabbet_bio: bioDraft.trim() || null } : prev));
+      setP((prev) => (prev ? { ...prev, about: bioDraft.trim() || null } : prev));
     } catch {
       Alert.alert('Profil', 'Bağlantı hatası.');
     } finally {
@@ -180,15 +143,12 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const pickPhoto = async () => {
     if (!isSelf) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
-      return;
-    }
+    if (status !== 'granted') return Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.6,
+      quality: 0.65,
     });
     const uri = !result.canceled && result.assets?.[0]?.uri ? result.assets[0].uri : null;
     if (!uri) return;
@@ -201,18 +161,11 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
         name: 'profile.jpg',
         type: 'image/jpeg',
-      } as any);
-      const res = await fetch(`${base}/muhabbet/profile/photo`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
+      } as never);
+      const res = await fetch(`${base}/muhabbet/profile/photo`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; url?: string; detail?: string };
-      if (!res.ok || !d.success || !d.url) {
-        Alert.alert('Fotoğraf', typeof d.detail === 'string' && d.detail ? d.detail : 'Yüklenemedi.');
-        return;
-      }
-      setP((prev) => (prev ? { ...prev, profile_photo: d.url } : prev));
+      if (!res.ok || !d.success || !d.url) return Alert.alert('Fotoğraf', d.detail || 'Yüklenemedi.');
+      setP((prev) => (prev ? { ...prev, profile_photo_url: d.url } : prev));
     } catch {
       Alert.alert('Fotoğraf', 'Yükleme hatası.');
     } finally {
@@ -223,10 +176,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const pickVehiclePhoto = async () => {
     if (!isSelf || !showDriverExtras) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
-      return;
-    }
+    if (status !== 'granted') return Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -244,25 +194,11 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
         name: 'vehicle.jpg',
         type: 'image/jpeg',
-      } as any);
-      const res = await fetch(`${base}/muhabbet/profile/vehicle-photo`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
+      } as never);
+      const res = await fetch(`${base}/muhabbet/profile/vehicle-photo`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; url?: string; detail?: string };
-      if (!res.ok || !d.success || !d.url) {
-        Alert.alert('Araç fotoğrafı', typeof d.detail === 'string' && d.detail ? d.detail : 'Yüklenemedi.');
-        return;
-      }
-      setP((prev) =>
-        prev
-          ? {
-              ...prev,
-              extras: { ...(prev.extras || {}), vehicle_photo_url: d.url },
-            }
-          : prev,
-      );
+      if (!res.ok || !d.success || !d.url) return Alert.alert('Araç fotoğrafı', d.detail || 'Yüklenemedi.');
+      setP((prev) => (prev ? { ...prev, vehicle_photo_url: d.url } : prev));
     } catch {
       Alert.alert('Araç fotoğrafı', 'Yükleme hatası.');
     } finally {
@@ -277,16 +213,10 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     try {
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) return;
-      const res = await fetch(`${base}/muhabbet/leylek-key/create`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${base}/muhabbet/leylek-key/create`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       if (handleUnauthorizedAndMaybeRedirect(res)) return;
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; key?: string; detail?: string };
-      if (!res.ok || !d.success || !d.key) {
-        Alert.alert('Leylek Anahtar', typeof d.detail === 'string' && d.detail ? d.detail : 'Oluşturulamadı.');
-        return;
-      }
+      if (!res.ok || !d.success || !d.key) return Alert.alert('Leylek Anahtar', d.detail || 'Oluşturulamadı.');
       setLastKey(d.key);
     } catch {
       Alert.alert('Leylek Anahtar', 'Bağlantı hatası.');
@@ -303,163 +233,100 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
           <ActivityIndicator size="large" color={PRIMARY_GRAD[0]} />
         </View>
       ) : !p ? (
-        <View style={styles.centerPad}>
+        <View style={styles.center}>
           <Text style={styles.muted}>Profil yüklenemedi.</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.headerCard}>
+          <View style={styles.heroCard}>
             <Pressable onPress={() => (isSelf ? void pickPhoto() : null)} style={styles.avatarWrap}>
-              {profilePhoto ? (
-                <Image source={{ uri: profilePhoto }} style={styles.avatar} />
+              {photo ? (
+                <Image source={{ uri: photo }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatarPh}>
-                  <Ionicons name="person" size={44} color="#8E8E93" />
-                </View>
+                <LinearGradient colors={PRIMARY_GRAD} style={styles.avatarFallback}>
+                  <Text style={styles.avatarInitials}>{initialsFromName(displayName)}</Text>
+                </LinearGradient>
               )}
-              {isSelf && uploading ? (
-                <View style={styles.avOverlay}>
-                  <ActivityIndicator color="#fff" />
-                </View>
-              ) : null}
               {isSelf ? (
-                <View style={styles.editBadge}>
-                  <Ionicons name="camera" size={16} color="#fff" />
-                </View>
+                <View style={styles.avatarEditBadge}>{uploading ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="camera" size={14} color="#fff" />}</View>
               ) : null}
             </Pressable>
             <Text style={styles.name}>{displayName}</Text>
-            <Text style={styles.badgeLine}>
-              {roleLabel}
-              {gLabel ? ` · ${gLabel}` : ''} · ⭐ {p.rating != null ? Number(p.rating).toFixed(1) : '—'} · 🧭 {p.total_trips ?? 0}{' '}
-              yolculuk
-            </Text>
-            <View style={styles.statRow}>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{completedMatches}</Text>
-                <Text style={styles.statLab}>Tamamlanan eşleşme</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statNum}>{activeListingsCount}</Text>
-                <Text style={styles.statLab}>Aktif teklif</Text>
-              </View>
+            <View style={styles.badgesRow}>
+              <Text style={[styles.badgePill, roleLabel === 'Sürücü' ? styles.badgeDriver : styles.badgePassenger]}>{roleLabel}</Text>
+              {showDriverExtras ? <Text style={[styles.badgePill, styles.badgeKyc]}>KYC Onaylı</Text> : null}
             </View>
             {isSelf ? (
-              <Pressable onPress={() => void pickPhoto()} style={({ pressed }) => [styles.photoBtn, pressed && { opacity: 0.88 }]}>
-                <Text style={styles.photoBtnTxt}>Fotoğrafı değiştir</Text>
+              <Pressable onPress={() => void pickPhoto()} style={styles.inlineLinkBtn}>
+                <Text style={styles.inlineLinkTxt}>Profil fotoğrafı değiştir</Text>
               </Pressable>
             ) : null}
           </View>
 
-          {showDriverExtras && (vLabel || vKind || vPhoto) ? (
+          <View style={styles.statGrid}>
+            <View style={styles.statCard}><Text style={styles.statNum}>{completedTrips}</Text><Text style={styles.statLab}>Tamamlanan yolculuk</Text></View>
+            <View style={styles.statCard}><Text style={styles.statNum}>{rating}</Text><Text style={styles.statLab}>Puan</Text></View>
+            <View style={styles.statCard}><Text style={styles.statNum}>{completedMatches}</Text><Text style={styles.statLab}>Başarılı eşleşme</Text></View>
+            <View style={styles.statCard}><Text style={styles.statNum}>{activeListings}</Text><Text style={styles.statLab}>Aktif teklif</Text></View>
+          </View>
+
+          {showDriverExtras ? (
             <View style={styles.card}>
-              <Text style={styles.section}>Sürücü bilgileri</Text>
-              {vKind ? (
-                <View style={styles.kindPill}>
-                  <Text style={styles.kindPillTxt}>{vKind}</Text>
-                </View>
-              ) : null}
-              {vPhoto ? (
-                <Image source={{ uri: vPhoto }} style={styles.vehicleImg} />
-              ) : null}
+              <Text style={styles.section}>Araç kartı</Text>
+              {vehiclePhoto ? (
+                <Image source={{ uri: vehiclePhoto }} style={styles.vehicleImg} />
+              ) : (
+                <LinearGradient colors={VEHICLE_PH} style={styles.vehiclePh}>
+                  <Ionicons name="car-sport" size={34} color="#3B82F6" />
+                  <Text style={styles.vehiclePhTxt}>Araç fotoğrafı eklenmemiş</Text>
+                </LinearGradient>
+              )}
+              <View style={styles.vehicleMetaRow}>
+                <Text style={styles.vehicleMetaKey}>Araç türü</Text>
+                <Text style={styles.vehicleMetaVal}>{vehicleKind}</Text>
+              </View>
               {isSelf ? (
-                <Pressable onPress={() => void pickVehiclePhoto()} style={({ pressed }) => [styles.vehPhotoBtn, pressed && { opacity: 0.88 }]}>
-                  {uploadingVehicle ? (
-                    <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} />
-                  ) : (
-                    <Text style={styles.vehPhotoBtnTxt}>{vPhoto ? 'Araç fotoğrafını değiştir' : 'Araç fotoğrafı yükle'}</Text>
-                  )}
-                </Pressable>
-              ) : null}
-              {vLabel ? <Text style={[styles.bodyText, { marginTop: 10 }]}>{vLabel}</Text> : null}
-            </View>
-          ) : showDriverExtras && !vLabel && !vKind && !vPhoto ? (
-            <View style={styles.card}>
-              <Text style={styles.section}>Taşıt</Text>
-              <Text style={styles.mutedSmall}>Marka/model KYC profilinizde tanımlı değil.</Text>
-              {isSelf ? (
-                <Pressable onPress={() => void pickVehiclePhoto()} style={({ pressed }) => [styles.vehPhotoBtn, { marginTop: 10 }, pressed && { opacity: 0.88 }]}>
-                  {uploadingVehicle ? (
-                    <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} />
-                  ) : (
-                    <Text style={styles.vehPhotoBtnTxt}>Araç fotoğrafı yükle</Text>
-                  )}
+                <Pressable onPress={() => void pickVehiclePhoto()} style={styles.inlineLinkBtn}>
+                  {uploadingVehicle ? <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} /> : <Text style={styles.inlineLinkTxt}>Araç fotoğrafı değiştir</Text>}
                 </Pressable>
               ) : null}
             </View>
-          ) : (
-            <View style={styles.card}>
-              <Text style={styles.section}>Yolcu profili</Text>
-              <Text style={styles.mutedSmall}>Leylek Muhabbeti üzerinden güvenli ön görüşme ve eşleşme için profil bilgileriniz görüntülenir.</Text>
-            </View>
-          )}
+          ) : null}
 
           <View style={styles.card}>
             <Text style={styles.section}>Hakkımda</Text>
             {isSelf ? (
               <>
                 <TextInput
-                  style={styles.bioIn}
+                  style={styles.bioInput}
                   value={bioDraft}
                   onChangeText={setBioDraft}
-                  placeholder="Kısa açıklama (isteğe bağlı, en fazla 500 karakter)"
+                  placeholder="Kısa açıklama (en fazla 500 karakter)"
                   placeholderTextColor={TEXT_SECONDARY}
                   multiline
                   maxLength={500}
                 />
-                <Pressable onPress={() => void saveBio()} style={({ pressed }) => [styles.saveRow, pressed && { opacity: 0.88 }]}>
-                  {savingBio ? (
-                    <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} />
-                  ) : (
-                    <Text style={styles.saveTxt}>Açıklamayı kaydet</Text>
-                  )}
+                <Pressable onPress={() => void saveBio()} style={styles.saveBtn}>
+                  {savingBio ? <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} /> : <Text style={styles.inlineLinkTxt}>Hakkımda düzenle</Text>}
                 </Pressable>
               </>
-            ) : aboutText ? (
-              <Text style={styles.bodyText}>{aboutText}</Text>
             ) : (
-              <Text style={styles.mutedSmall}>Açıklama eklenmemiş.</Text>
+              <Text style={styles.aboutText}>{aboutText || 'Açıklama eklenmemiş.'}</Text>
             )}
           </View>
 
           {isSelf ? (
             <View style={styles.card}>
               <Text style={styles.section}>Leylek Anahtar</Text>
-              <Text style={styles.official}>
-                Leylek Anahtar, ön görüşme sonrası iki tarafın onayıyla güvenli eşleşme başlatır. Anahtar tek
-                kullanımlıktır ve kısa süre içinde geçerliliğini kaybeder.
-              </Text>
-              <Pressable
-                onPress={() => void createLeylekKey()}
-                disabled={keyBusy}
-                style={({ pressed }) => [styles.ctaOr, pressed && { opacity: 0.9 }]}
-              >
-                <LinearGradient colors={ORANGE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ctaIn}>
-                  {keyBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaTxt}>Leylek Anahtar Oluştur</Text>}
+              <Text style={styles.helpText}>Sohbet içi güvenli eşleşme için tek kullanımlık anahtar.</Text>
+              <Pressable disabled={keyBusy} onPress={() => void createLeylekKey()} style={styles.keyBtnWrap}>
+                <LinearGradient colors={ORANGE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.keyBtn}>
+                  {keyBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.keyBtnTxt}>Leylek Anahtar Oluştur</Text>}
                 </LinearGradient>
               </Pressable>
-              {lastKey ? (
-                <View style={styles.keyOut}>
-                  <Text style={styles.keyHint}>Oluşturduğunuz anahtar (paylaşın):</Text>
-                  <Text style={styles.keyBig} selectable>
-                    {lastKey}
-                  </Text>
-                </View>
-              ) : null}
-              <Text style={[styles.mutedSmall, { marginTop: 14 }]}>
-                Eşleşmeyi tamamlamak için ilgili sohbette &quot;Leylek Anahtar ile eşleş&quot; düğmesini kullanın; manuel kod
-                girişi Leylek Muhabbeti için kullanılmaz.
-              </Text>
+              {lastKey ? <Text style={styles.keyOut}>{lastKey}</Text> : null}
             </View>
-          ) : (
-            <View style={styles.card}>
-              <Text style={styles.section}>Eşleşme</Text>
-              <Text style={styles.mutedSmall}>
-                Sohbet ön görüşmedir. Güvenli yolculuk eşleşmesi için sohbet içindeki &quot;Leylek Anahtar ile eşleş&quot;
-                akışını kullanın.
-              </Text>
-            </View>
-          )}
+          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -467,99 +334,42 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F2F2F7' },
+  root: { flex: 1, backgroundColor: '#F3F4F6' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  centerPad: { padding: 24 },
-  scroll: { padding: 16, paddingBottom: 40 },
-  headerCard: { alignItems: 'center', marginBottom: 8 },
+  muted: { color: TEXT_SECONDARY, fontSize: 15 },
+  scroll: { padding: 16, paddingBottom: 36 },
+  heroCard: { backgroundColor: CARD_BG, borderRadius: 22, padding: 18, alignItems: 'center', marginBottom: 12, ...CARD_SHADOW },
   avatarWrap: { position: 'relative' },
-  avatar: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#E5E5EA' },
-  avatarPh: {
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    backgroundColor: '#E5E5EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderRadius: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editBadge: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    backgroundColor: PRIMARY_GRAD[0],
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  name: { fontSize: 24, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 12 },
-  badgeLine: { fontSize: 14, color: TEXT_SECONDARY, marginTop: 4, textAlign: 'center' },
-  statRow: { flexDirection: 'row', gap: 12, marginTop: 16, width: '100%', justifyContent: 'center' },
-  statBox: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    minWidth: 120,
-    alignItems: 'center',
-    ...CARD_SHADOW,
-  },
+  avatar: { width: 118, height: 118, borderRadius: 59, backgroundColor: '#E5E7EB' },
+  avatarFallback: { width: 118, height: 118, borderRadius: 59, justifyContent: 'center', alignItems: 'center' },
+  avatarInitials: { color: '#fff', fontSize: 34, fontWeight: '800' },
+  avatarEditBadge: { position: 'absolute', right: 1, bottom: 1, backgroundColor: '#2563EB', borderRadius: 16, width: 32, height: 32, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  name: { marginTop: 12, fontSize: 25, fontWeight: '800', color: TEXT_PRIMARY, textAlign: 'center' },
+  badgesRow: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' },
+  badgePill: { paddingVertical: 6, paddingHorizontal: 11, borderRadius: 999, fontSize: 12, fontWeight: '800' },
+  badgeDriver: { backgroundColor: 'rgba(37,99,235,0.14)', color: '#1D4ED8' },
+  badgePassenger: { backgroundColor: 'rgba(249,115,22,0.16)', color: '#C2410C' },
+  badgeKyc: { backgroundColor: 'rgba(22,163,74,0.14)', color: '#15803D' },
+  inlineLinkBtn: { marginTop: 11, paddingVertical: 6, paddingHorizontal: 10 },
+  inlineLinkTxt: { color: '#2563EB', fontSize: 14, fontWeight: '700' },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
+  statCard: { width: '48%', backgroundColor: CARD_BG, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 10, alignItems: 'center', ...CARD_SHADOW },
   statNum: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
-  statLab: { fontSize: 12, color: TEXT_SECONDARY, marginTop: 4, textAlign: 'center' },
-  photoBtn: { marginTop: 12, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: 'rgba(59,130,246,0.12)' },
-  photoBtnTxt: { color: '#1D4ED8', fontWeight: '700', fontSize: 13 },
+  statLab: { marginTop: 4, fontSize: 12, color: TEXT_SECONDARY, textAlign: 'center' },
   card: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
   section: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8 },
-  bodyText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
-  official: { fontSize: 14, color: '#3C3C43', lineHeight: 20, marginBottom: 12 },
-  muted: { fontSize: 15, color: TEXT_SECONDARY, textAlign: 'center' },
-  mutedSmall: { fontSize: 13, color: TEXT_SECONDARY, lineHeight: 18, marginTop: 4 },
-  bioIn: {
-    minHeight: 80,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(60,60,67,0.2)',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    color: TEXT_PRIMARY,
-    textAlignVertical: 'top',
-  },
-  saveRow: { marginTop: 10, alignSelf: 'flex-end' },
-  saveTxt: { color: PRIMARY_GRAD[0], fontWeight: '700' },
-  ctaOr: { borderRadius: 14, overflow: 'hidden' },
-  ctaBl: { borderRadius: 14, overflow: 'hidden' },
-  ctaIn: { paddingVertical: 14, alignItems: 'center', minHeight: 50, justifyContent: 'center' },
-  ctaTxt: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  keyOut: { marginTop: 12, padding: 12, backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: 12 },
-  keyHint: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '600' },
-  keyBig: { fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY, marginTop: 6 },
-  kindPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(59,130,246,0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 10,
-  },
-  kindPillTxt: { fontSize: 13, fontWeight: '800', color: '#1D4ED8' },
-  vehicleImg: {
-    width: '100%',
-    maxWidth: 360,
-    height: 180,
-    borderRadius: 14,
-    backgroundColor: '#E5E5EA',
-    alignSelf: 'center',
-  },
-  vehPhotoBtn: { marginTop: 10, alignSelf: 'flex-start', paddingVertical: 8 },
-  vehPhotoBtnTxt: { fontSize: 14, fontWeight: '700', color: PRIMARY_GRAD[0] },
+  vehicleImg: { width: '100%', height: 180, borderRadius: 14, backgroundColor: '#E5E7EB' },
+  vehiclePh: { width: '100%', height: 160, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  vehiclePhTxt: { fontSize: 13, color: '#475569', fontWeight: '600' },
+  vehicleMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  vehicleMetaKey: { color: TEXT_SECONDARY, fontSize: 13, fontWeight: '700' },
+  vehicleMetaVal: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '800' },
+  bioInput: { minHeight: 84, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(15,23,42,0.2)', borderRadius: 12, padding: 12, fontSize: 15, color: TEXT_PRIMARY, textAlignVertical: 'top' },
+  saveBtn: { marginTop: 8, alignSelf: 'flex-end' },
+  aboutText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },
+  helpText: { color: TEXT_SECONDARY, fontSize: 14, lineHeight: 20, marginBottom: 10 },
+  keyBtnWrap: { borderRadius: 14, overflow: 'hidden' },
+  keyBtn: { minHeight: 48, justifyContent: 'center', alignItems: 'center' },
+  keyBtnTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  keyOut: { marginTop: 10, fontSize: 18, fontWeight: '800', color: TEXT_PRIMARY },
 });

@@ -94,15 +94,34 @@ export type ChatMessageRow = {
 export type ChatContext = {
   other_user_id?: string;
   other_user_public_name?: string;
+  other_user_profile_photo_url?: string;
+  other_user_role_label?: string;
   public_name?: string;
   name?: string;
   my_role?: string | null;
   other_role?: string | null;
   matched_via_leylek_key?: boolean;
   matched_at?: string | null;
+  match_source?: string | null;
   /** Sunucu geçmiş mesaj tutmaz */
   ephemeral_chat?: boolean;
 };
+
+type ChatSystemCard = {
+  id: string;
+  tone: 'blue' | 'green' | 'orange';
+  text: string;
+};
+
+function chatInitials(nameRaw: string): string {
+  const parts = String(nameRaw || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return 'LK';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
+}
 
 export type MuhabbetChatScreenProps = {
   apiBaseUrl: string;
@@ -270,6 +289,7 @@ export default function MuhabbetChatScreen({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [pairRequestLoading, setPairRequestLoading] = useState(false);
+  const [systemCards, setSystemCards] = useState<ChatSystemCard[]>([]);
   /** Karşı taraftan gelen Leylek Anahtar eşleşme isteği (modal) */
   const [pairInModal, setPairInModal] = useState<{ rid: string; fromLo: string } | null>(null);
   /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
@@ -291,6 +311,10 @@ export default function MuhabbetChatScreen({
   const ackTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
+  const pushSystemCard = useCallback((tone: ChatSystemCard['tone'], text: string) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setSystemCards((prev) => [...prev, { id, tone, text }].slice(-8));
+  }, []);
 
   const clearAckWait = useCallback((messageId: string) => {
     const t = ackTimeoutsRef.current.get(messageId);
@@ -530,7 +554,10 @@ export default function MuhabbetChatScreen({
     const s = getOrCreateSocket();
     const onMatch = (data: { conversation_id?: string }) => {
       const m = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
-      if (m && m === cid.toLowerCase()) void loadContext();
+      if (m && m === cid.toLowerCase()) {
+        pushSystemCard('green', 'Leylek Anahtar ile eşleşme tamamlandı.');
+        void loadContext();
+      }
     };
     s.on('leylek_key_match_completed', onMatch);
     s.on('leylek_pair_match_completed', onMatch);
@@ -538,7 +565,7 @@ export default function MuhabbetChatScreen({
       s.off('leylek_key_match_completed', onMatch);
       s.off('leylek_pair_match_completed', onMatch);
     };
-  }, [cid, loadContext]);
+  }, [cid, loadContext, pushSystemCard]);
 
   /** Karşı taraftan Leylek Anahtar isteği — sunucu emit_socket_event_to_user ile (oda join şart değil). */
   useEffect(() => {
@@ -938,13 +965,14 @@ export default function MuhabbetChatScreen({
     const onDeclined = (p: { conversation_id?: string }) => {
       const c = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
       if (c && c !== cidLo) return;
+      pushSystemCard('orange', 'Karşı taraf şu an müsait değil.');
       Alert.alert('Eşleşme', 'Karşı taraf şu an eşleşmeyi kabul etmedi.');
     };
     socket.on('leylek_pair_declined', onDeclined);
     return () => {
       socket.off('leylek_pair_declined', onDeclined);
     };
-  }, [cid]);
+  }, [cid, pushSystemCard]);
 
   useEffect(() => {
     if (!cid) return;
@@ -1206,6 +1234,7 @@ export default function MuhabbetChatScreen({
       offPair();
       finish();
       lastLeylekPairRequestAtRef.current = Date.now();
+      pushSystemCard('blue', 'Eşleşme isteği gönderildi.');
       Alert.alert('Eşleşme isteği gönderildi.', 'Karşı taraf onaylarsa eşleşme tamamlanır.');
     };
     const onErr = (p: { code?: string; detail?: string }) => {
@@ -1231,6 +1260,7 @@ export default function MuhabbetChatScreen({
       finish();
       const code = String(p?.code || '');
       if (code === 'pending') {
+        pushSystemCard('orange', p?.message || 'Karşı tarafta bekleyen bir eşleşme isteği var.');
         Alert.alert('Bekleyen istek', p?.message || 'Zaten bir eşleşme isteğiniz var.');
         return;
       }
@@ -1279,7 +1309,7 @@ export default function MuhabbetChatScreen({
       finish();
       Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
     }
-  }, [cid]);
+  }, [cid, pushSystemCard]);
 
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (
@@ -1294,6 +1324,8 @@ export default function MuhabbetChatScreen({
     (ctx?.other_user_public_name && String(ctx.other_user_public_name).trim()) ||
     (ctx?.public_name && String(ctx.public_name).trim()) ||
     'Leylek kullanıcısı';
+  const chatHeaderRole = (ctx?.other_user_role_label && String(ctx.other_user_role_label).trim()) || (isDriverAppRole(oR) ? 'Sürücü' : 'Yolcu');
+  const chatHeaderPhoto = (ctx?.other_user_profile_photo_url || '').trim();
 
   const bubbleForMsg = (item: ChatMessageRow) => {
     const mine = myId && String(item.sender_user_id || '').toLowerCase() === myId;
@@ -1327,8 +1359,9 @@ export default function MuhabbetChatScreen({
     } catch {
       /* noop */
     }
+    pushSystemCard('green', 'Karşı taraf kabul etti. Eşleşme tamamlanıyor...');
     setPairInModal(null);
-  }, [cid, pairInModal]);
+  }, [cid, pairInModal, pushSystemCard]);
 
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right']}>
@@ -1348,6 +1381,27 @@ export default function MuhabbetChatScreen({
           gradientColors={PRIMARY_GRAD}
           right={headerRight}
         />
+        <Pressable onPress={openOtherProfile} style={styles.peerHeaderCard}>
+          {chatHeaderPhoto ? (
+            <Image source={{ uri: chatHeaderPhoto }} style={styles.peerAvatar} />
+          ) : (
+            <View style={styles.peerAvatarFallback}>
+              <Text style={styles.peerAvatarInitials}>{chatInitials(chatHeaderTitle)}</Text>
+            </View>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.peerName} numberOfLines={1}>{chatHeaderTitle}</Text>
+            <View style={styles.peerBadgesRow}>
+              <Text style={[styles.peerRolePill, chatHeaderRole === 'Sürücü' ? styles.peerRoleDriver : styles.peerRolePax]}>{chatHeaderRole}</Text>
+              {ctx?.matched_via_leylek_key ? (
+                <Text style={styles.peerMatchedPill}>Leylek Anahtar eşleşti</Text>
+              ) : (
+                <Text style={styles.peerPreviewPill}>Ön görüşme</Text>
+              )}
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+        </Pressable>
         {ctx?.matched_via_leylek_key ? (
           <View style={styles.matchStrip}>
             <View style={styles.matchBadge}>
@@ -1378,6 +1432,23 @@ export default function MuhabbetChatScreen({
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               ListHeaderComponent={
                 <View>
+                  {ctx?.matched_at ? (
+                    <View style={styles.systemPermanentOk}>
+                      <Ionicons name="checkmark-circle" size={15} color="#15803D" />
+                      <Text style={styles.systemPermanentOkTxt}>Leylek Anahtar ile eşleşme tamamlandı</Text>
+                    </View>
+                  ) : null}
+                  {systemCards.map((s) => (
+                    <View
+                      key={s.id}
+                      style={[
+                        styles.systemCard,
+                        s.tone === 'green' ? styles.systemCardGreen : s.tone === 'orange' ? styles.systemCardOrange : styles.systemCardBlue,
+                      ]}
+                    >
+                      <Text style={styles.systemCardTxt}>{s.text}</Text>
+                    </View>
+                  ))}
                   {!roomJoined ? (
                     <View style={styles.connectingStrip} accessibilityRole="alert">
                       <ActivityIndicator size="small" color={PRIMARY_GRAD[0]} style={{ marginRight: 8 }} />
@@ -1602,6 +1673,36 @@ const styles = StyleSheet.create({
   kav: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerIcon: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  peerHeaderCard: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 6,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...BUBBLE_SHADOW,
+  },
+  peerAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#E5E7EB' },
+  peerAvatarFallback: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center' },
+  peerAvatarInitials: { color: '#1D4ED8', fontSize: 13, fontWeight: '800' },
+  peerName: { fontSize: 15, fontWeight: '800', color: TEXT_PRIMARY },
+  peerBadgesRow: { marginTop: 4, flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  peerRolePill: { fontSize: 10, fontWeight: '800', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
+  peerRoleDriver: { color: '#1D4ED8', backgroundColor: 'rgba(37,99,235,0.14)' },
+  peerRolePax: { color: '#C2410C', backgroundColor: 'rgba(249,115,22,0.18)' },
+  peerMatchedPill: { fontSize: 10, fontWeight: '800', color: '#15803D', backgroundColor: 'rgba(22,163,74,0.14)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
+  peerPreviewPill: { fontSize: 10, fontWeight: '800', color: '#B45309', backgroundColor: 'rgba(245,158,11,0.18)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
+  systemPermanentOk: { marginHorizontal: 14, marginBottom: 8, backgroundColor: 'rgba(22,163,74,0.14)', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  systemPermanentOkTxt: { color: '#166534', fontSize: 12, fontWeight: '700' },
+  systemCard: { marginHorizontal: 14, marginBottom: 6, borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10 },
+  systemCardBlue: { backgroundColor: 'rgba(37,99,235,0.12)' },
+  systemCardGreen: { backgroundColor: 'rgba(22,163,74,0.12)' },
+  systemCardOrange: { backgroundColor: 'rgba(245,158,11,0.16)' },
+  systemCardTxt: { fontSize: 12, fontWeight: '700', color: '#1F2937' },
   matchStrip: {
     paddingVertical: 8,
     paddingHorizontal: 12,

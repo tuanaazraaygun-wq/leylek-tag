@@ -7,6 +7,7 @@ import {
   Alert,
   DeviceEventEmitter,
   FlatList,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import MuhabbetWatermark from './MuhabbetWatermark';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
@@ -48,14 +50,25 @@ export type MuhabbetConversationListItem = {
   other_user_name?: string;
   other_user_public_name?: string;
   other_user_role?: string | null;
+  other_user_role_label?: string | null;
+  other_user_profile_photo_url?: string | null;
   from_text?: string | null;
   to_text?: string | null;
   last_message_body?: string | null;
   last_message_at?: string | null;
   request_status?: string | null;
+  matched_at?: string | null;
+  match_source?: string | null;
   created_at?: string;
   unread_count?: number;
 };
+
+function initialsFromPublicName(nameRaw: string): string {
+  const parts = (nameRaw || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'LK';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
+}
 
 export type ConversationsScreenProps = {
   /** `.../api` sonlu kök (ör. API_BASE_URL) */
@@ -415,6 +428,13 @@ export default function ConversationsScreen({
     setHideTarget(c);
   }, []);
 
+  const openProfileFromModal = useCallback(() => {
+    const ou = hideTarget?.other_user_id ? String(hideTarget.other_user_id).trim() : '';
+    if (!ou) return;
+    setHideTarget(null);
+    router.push(`/muhabbet-profile/${encodeURIComponent(ou)}` as Href);
+  }, [hideTarget, router]);
+
   const openChat = (c: MuhabbetConversationListItem) => {
     const cid = String(c.conversation_id || c.id || '').trim();
     if (!cid) return;
@@ -490,6 +510,14 @@ export default function ConversationsScreen({
             const driverish = or === 'driver' || or === 'private_driver';
             const unreadCount = Math.max(0, Number(item.unread_count || 0));
             const unread = unreadCount > 0;
+            const publicName =
+              (item.other_user_public_name && String(item.other_user_public_name).trim()) ||
+              (item.other_user_name && String(item.other_user_name).trim()) ||
+              'Leylek kullanıcısı';
+            const roleLabel = item.other_user_role_label || (driverish ? 'Sürücü' : 'Yolcu');
+            const hasMatched = Boolean(item.matched_at) || (item.request_status || '').toLowerCase() === 'accepted';
+            const hasPending = (item.request_status || '').toLowerCase() === 'pending';
+            const photoUrl = (item.other_user_profile_photo_url || '').trim();
             return (
               <Pressable
                 style={({ pressed }) => [
@@ -503,18 +531,42 @@ export default function ConversationsScreen({
                 accessibilityHint="Sohbetten kaldırmak için basılı tutun"
               >
                 <View style={styles.cardRow1}>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {(item.other_user_public_name && String(item.other_user_public_name).trim()) ||
-                      (item.other_user_name && String(item.other_user_name).trim()) ||
-                      'Leylek kullanıcısı'}
-                  </Text>
+                  <View style={styles.leftMain}>
+                    {photoUrl ? (
+                      <Image source={{ uri: photoUrl }} style={styles.avatar} />
+                    ) : (
+                      <View style={styles.avatarFallback}>
+                        <Text style={styles.avatarInitials}>{initialsFromPublicName(publicName)}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.name} numberOfLines={1}>
+                        {publicName}
+                      </Text>
+                      <View style={styles.badgesLine}>
+                        <Text style={[styles.rolePill, driverish ? styles.rolePillDriver : styles.rolePillPax]}>{roleLabel}</Text>
+                        {hasMatched ? <Text style={styles.matchedPill}>Eşleşti</Text> : null}
+                        {!hasMatched && hasPending ? <Text style={styles.pendingPill}>Görüşme</Text> : null}
+                      </View>
+                    </View>
+                  </View>
                   <View style={styles.metaRight}>
                     {item.last_message_at ? (
                       <Text style={[styles.timeRight, unread && styles.timeRightUnread]}>
                         {formatLastMessageListTime(String(item.last_message_at))}
                       </Text>
                     ) : null}
-                    {unread ? <View style={styles.unreadDot} /> : null}
+                    {unread ? (
+                      unreadCount > 9 ? (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadBadgeTxt}>9+</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadBadgeTxt}>{unreadCount}</Text>
+                        </View>
+                      )
+                    ) : null}
                   </View>
                 </View>
                 <Text style={styles.routeCompact} numberOfLines={1}>
@@ -567,6 +619,13 @@ export default function ConversationsScreen({
             disabled={hideBusy}
           >
             <Text style={styles.modalBtnDangerTxt}>Sohbeti sil</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => (hideBusy ? null : void openProfileFromModal())}
+            style={({ pressed }) => [styles.modalBtnPri, { backgroundColor: '#0EA5E9', marginTop: 10 }, pressed && !hideBusy && { opacity: 0.9 }]}
+            disabled={hideBusy}
+          >
+            <Text style={styles.modalBtnPriTxt}>Profili görüntüle</Text>
           </Pressable>
           <Pressable
             onPress={() => (hideBusy ? null : setHideTarget(null))}
@@ -635,17 +694,31 @@ const styles = StyleSheet.create({
   cardDriver: { borderLeftWidth: 4, borderLeftColor: '#2563EB', backgroundColor: '#F0F7FF' },
   cardPax: { borderLeftWidth: 4, borderLeftColor: '#EA580C', backgroundColor: '#FFFAF0' },
   cardRow1: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  leftMain: { flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1, minWidth: 0 },
+  avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E5E7EB' },
+  avatarFallback: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center' },
+  avatarInitials: { color: '#1D4ED8', fontWeight: '800', fontSize: 14 },
   name: { flex: 1, fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
+  badgesLine: { marginTop: 4, flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  rolePill: { fontSize: 10, fontWeight: '800', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
+  rolePillDriver: { color: '#1D4ED8', backgroundColor: 'rgba(37,99,235,0.14)' },
+  rolePillPax: { color: '#C2410C', backgroundColor: 'rgba(249,115,22,0.16)' },
+  matchedPill: { fontSize: 10, fontWeight: '800', color: '#15803D', backgroundColor: 'rgba(22,163,74,0.14)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
+  pendingPill: { fontSize: 10, fontWeight: '800', color: '#B45309', backgroundColor: 'rgba(245,158,11,0.18)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
   timeRight: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '500', marginTop: 1 },
   timeRightUnread: { color: '#1D4ED8', fontWeight: '700' },
   metaRight: { alignItems: 'flex-end', justifyContent: 'flex-start', minWidth: 64 },
-  unreadDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 99,
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#2563EB',
     marginTop: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
+  unreadBadgeTxt: { color: '#fff', fontSize: 11, fontWeight: '800' },
   routeCompact: { marginTop: 6, color: TEXT_SECONDARY, fontSize: 12, fontWeight: '500' },
   previewSub: { marginTop: 6, color: '#4B5563', fontSize: 14, lineHeight: 20, fontWeight: '500' },
   previewSubUnread: { color: '#0F172A', fontWeight: '800' },

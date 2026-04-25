@@ -20009,6 +20009,7 @@ def _muhabbet_profile_payload_for_user(uid: str, include_full_name: bool) -> dic
         "vehicle_photo_url": vphoto,
         "vehicle_kind_label": vk_lbl,
         "rating": card.get("rating"),
+        "completed_trips": int(card.get("total_trips") or 0),
         "completed_matches": completed_matches,
         "active_listings_count": active_listings,
         "about": card.get("muhabbet_bio"),
@@ -21210,7 +21211,7 @@ async def muhabbet_conversations_me(
         fetch_lim = min(100, lim + len(hidden_ids))
         res = (
             supabase.table("conversations")
-            .select("id, user_a, user_b, created_at")
+            .select("id, user_a, user_b, created_at, matched_at, match_source")
             .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
             .order("created_at", desc=True)
             .limit(fetch_lim)
@@ -21255,12 +21256,21 @@ async def muhabbet_conversations_me(
                 other_uids.append(o)
         name_map: dict = _muhabbet_listing_name_map_for_ids(other_uids) if other_uids else {}
         role_by_uid: dict = {}
+        photo_by_uid: dict = {}
+        kyc_driver_by_uid: dict = {}
         if other_uids:
             try:
-                rr = supabase.table("users").select("id, role").in_("id", other_uids).execute()
+                rr = supabase.table("users").select("id, role, profile_photo, driver_details").in_("id", other_uids).execute()
                 for x in rr.data or []:
                     if x.get("id"):
-                        role_by_uid[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
+                        xid = str(x["id"]).strip().lower()
+                        role_by_uid[xid] = str(x.get("role") or "").strip().lower()
+                        photo_by_uid[xid] = x.get("profile_photo")
+                        ddx = _driver_details_as_dict(x)
+                        kyc_driver_by_uid[xid] = (
+                            str(ddx.get("kyc_status") or "").strip().lower() == "approved"
+                            and bool(ddx.get("is_verified", False))
+                        )
             except Exception as e:
                 logger.warning("conversations_me roles: %s", e)
         role_map_full: dict = {}
@@ -21296,12 +21306,18 @@ async def muhabbet_conversations_me(
                     "other_user_name": name_map.get((other or "").lower()) or "Leylek kullanıcısı",
                     "other_user_public_name": name_map.get((other or "").lower()) or "Leylek kullanıcısı",
                     "other_user_role": other_role or role_by_uid.get((other or "").strip().lower()),
+                    "other_user_role_label": "Sürücü"
+                    if bool(kyc_driver_by_uid.get((other or "").strip().lower()))
+                    else "Yolcu",
+                    "other_user_profile_photo_url": photo_by_uid.get((other or "").strip().lower()),
                     "my_role": my_role,
                     "other_role": other_role,
                     "listing_id": lidk,
                     "from_text": (li or {}).get("from_text"),
                     "to_text": (li or {}).get("to_text"),
                     "request_status": (lmr0 or {}).get("status"),
+                    "match_source": c.get("match_source"),
+                    "matched_at": c.get("matched_at"),
                     "created_at": c.get("created_at"),
                     "last_message_body": lm.get("last_message_body"),
                     "last_message_at": lm.get("last_message_at"),
@@ -21333,16 +21349,25 @@ async def muhabbet_conversation_messages_get(
         b = str(c_row.get("user_b") or "").strip().lower()
         other_uid = b if a == uid else a
         role_map: dict = {}
+        photo_map: dict = {}
+        kyc_map: dict = {}
         try:
             ur = (
                 supabase.table("users")
-                .select("id, role")
+                .select("id, role, profile_photo, driver_details")
                 .in_("id", [uid, other_uid])
                 .execute()
             )
             for x in ur.data or []:
                 if x.get("id"):
-                    role_map[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
+                    xid = str(x["id"]).strip().lower()
+                    role_map[xid] = str(x.get("role") or "").strip().lower()
+                    photo_map[xid] = x.get("profile_photo")
+                    ddx = _driver_details_as_dict(x)
+                    kyc_map[xid] = (
+                        str(ddx.get("kyc_status") or "").strip().lower() == "approved"
+                        and bool(ddx.get("is_verified", False))
+                    )
         except Exception as e:
             logger.warning("messages_get roles: %s", e)
         sem = _muhabbet_match_semantic_roles_for_conversation(cid)
@@ -21362,10 +21387,13 @@ async def muhabbet_conversation_messages_get(
             "other_user_public_name": other_public_name,
             "public_name": other_public_name,
             "name": other_public_name,
+            "other_user_profile_photo_url": photo_map.get(other_uid),
+            "other_user_role_label": "Sürücü" if bool(kyc_map.get(other_uid)) else "Yolcu",
             "my_role": my_r,
             "other_role": oth_r,
             "matched_via_leylek_key": leylek_matched,
             "matched_at": matched_at,
+            "match_source": ms or None,
             "ephemeral_chat": False,
         }
         msgs = _muhabbet_messages_fetch_visible_for_user(cid, uid, lim)
