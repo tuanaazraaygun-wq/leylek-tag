@@ -718,7 +718,7 @@ function AdminContent({ adminPhone, onClose }: Props) {
           style={[styles.tabBtn, tab === 'muhabbet' && styles.tabActive]}
           onPress={() => setTab('muhabbet')}
         >
-          <Text style={[styles.tabText, tab === 'muhabbet' && styles.tabTextActive]}>Muhabbet</Text>
+          <Text style={[styles.tabText, tab === 'muhabbet' && styles.tabTextActive]}>Teklif Sende</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabBtn, tab === 'notif' && styles.tabActive]}
@@ -1114,12 +1114,12 @@ function AdminContent({ adminPhone, onClose }: Props) {
           </View>
         )}
 
-        {/* Leylek Muhabbeti — şehir açma talepleri */}
+        {/* Leylek Teklif Sende — şehir açma talepleri */}
         {tab === 'muhabbet' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Muhabbet şehir talepleri</Text>
+            <Text style={styles.sectionTitle}>Teklif Sende şehir talepleri</Text>
             <Text style={styles.subtleHelp}>
-              Kullanıcılar Ankara dışındaki illerde &quot;Leylek Muhabbetine katın&quot; ile gönderdiği istekler.
+              Kullanıcılar Ankara dışındaki illerde &quot;Leylek Teklif Sende'ye katın&quot; ile gönderdiği istekler.
             </Text>
             {communityCityRequests.length === 0 ? (
               <Text style={styles.emptyListText}>Henüz talep yok.</Text>

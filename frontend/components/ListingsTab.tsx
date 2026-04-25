@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti — Teklifler sekmesi: filtre, feed, talep, teklif oluşturma (UI dili).
+ * Leylek Teklif Sende — Teklifler sekmesi: filtre, feed, talep, teklif oluşturma (UI dili).
  *
  * GEÇİCİ (test / Faz 1): seats_count, repeat_type, selected_days, time_window
  * bilgileri ayrı API kolonları yokken `note` metnine gömülür — kalıcı çözüm DEĞİLDİR.

@@ -3339,7 +3339,7 @@ export default function App() {
             )}
           </View>
 
-          {/* Devam Et + Leylek Muhabbeti — altta, arka plandaki görsel daha görünür kalsın */}
+          {/* Devam Et + Leylek Teklif Sende — altta, arka plandaki görsel daha görünür kalsın */}
           <View style={styles.roleBottomFooterColumn}>
             <RoleSelectLeylekAIFloating />
             <TouchableOpacity
@@ -3373,7 +3373,7 @@ export default function App() {
                 <Ionicons name="chatbubbles" size={28} color="#FFF" />
               </View>
               <View style={styles.communityTextBox}>
-                <Text style={styles.communityBtnTitleProminent}>Leylek Muhabbeti</Text>
+                <Text style={styles.communityBtnTitleProminent}>Leylek Teklif Sende</Text>
                 <Text style={styles.communityBtnSubProminent}>Şehir topluluğuna katıl</Text>
               </View>
               <View style={styles.communityArrow}>
@@ -3430,7 +3430,7 @@ export default function App() {
     );
   }
 
-  // Community Screen - Leylek Muhabbeti (Faz 1–2: mahalle / grup / gönderi akışı)
+  // Community Screen - Leylek Teklif Sende (Faz 1–2: mahalle / grup / gönderi akışı)
   if (user && screen === 'community') {
     const uTok = user as { access_token?: string; accessToken?: string };
     return (

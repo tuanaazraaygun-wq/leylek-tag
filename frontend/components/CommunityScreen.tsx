@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti (Community) Screen
+ * Leylek Teklif Sende (Community) Screen
  * v7 - MODERN TWITTER + WHATSAPP + DISCORD TASARIMI
  * Supabase Realtime ile anlık mesajlaşma
  */
@@ -374,7 +374,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
             <TouchableOpacity onPress={onBack} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
-            <Text style={styles.cityPickerTitle}>Leylek Muhabbeti</Text>
+            <Text style={styles.cityPickerTitle}>Leylek Teklif Sende</Text>
             <View style={{ width: 40 }} />
           </View>
           
@@ -416,11 +416,11 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
                     const cityLabel = item;
                     Alert.alert(
                       'Bilgi',
-                      `Şu anda yalnızca ${COMMUNITY_LIVE_CITY} ili kullanıcıları Leylek Muhabbeti'ne katılabilir. Talep oluşturmak için aşağıdaki butona dokunun.`,
+                      `Şu anda yalnızca ${COMMUNITY_LIVE_CITY} ili kullanıcıları Leylek Teklif Sende'ye katılabilir. Talep oluşturmak için aşağıdaki butona dokunun.`,
                       [
                         { text: 'İptal', style: 'cancel' },
                         {
-                          text: `${cityLabel}'yi Leylek Muhabbetine katın`,
+                          text: `${cityLabel}'yi Leylek Teklif Sende'ye katın`,
                           onPress: async () => {
                             try {
                               const q = new URLSearchParams({
@@ -588,7 +588,7 @@ export default function CommunityScreen({ user, onBack, apiUrl }: CommunityScree
           </TouchableOpacity>
           
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Leylek Muhabbeti</Text>
+            <Text style={styles.headerTitle}>Leylek Teklif Sende</Text>
             <Text style={styles.headerCity}>{selectedCity}</Text>
             <View style={styles.onlineContainer}>
               <View style={styles.onlineDot} />

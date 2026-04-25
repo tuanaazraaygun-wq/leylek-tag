@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti v1 — Faz 1–2: şehir / mahalle / grup / katılım + grup akışı, gönderi, yorum, şikayet.
+ * Leylek Teklif Sende v1 — Faz 1–2: şehir / mahalle / grup / katılım + grup akışı, gönderi, yorum, şikayet.
  * Faz 2: Bearer access_token zorunlu (presign, gönderi, feed, yorum, şikayet).
  */
 
@@ -61,7 +61,7 @@ const MUHABBET_POST_BODY_MAX = 500;
 
 const MUHABBET_SESSION_TITLE = 'Oturum gerekli';
 const MUHABBET_SESSION_MESSAGE =
-  'Leylek Muhabbeti akışı, paylaşım ve şikayet için güvenli oturum jetonu (access token) gerekir. Lütfen çıkış yapıp tekrar giriş yapın.';
+  'Leylek Teklif Sende akışı, paylaşım ve şikayet için güvenli oturum jetonu (access token) gerekir. Lütfen çıkış yapıp tekrar giriş yapın.';
 
 /** RouteSummaryCard ve keşif yüzeyi ile hizalı tasarım tokenları */
 const MUHAB_SURFACE = '#F2F2F7';
@@ -1173,7 +1173,7 @@ export default function LeylekMuhabbetiFaz1Screen({
         />
       ) : (
         <ScreenHeaderGradient
-          title="Leylek Muhabbeti"
+          title="Leylek Teklif Sende"
           onBack={onBack}
           gradientColors={leylekTabGrad}
           right={

@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti — Ana Sayfa sekmesi: teklif CTA, günün teklifleri (liste + hafif rotasyon).
+ * Leylek Teklif Sende — Ana Sayfa sekmesi: teklif CTA, günün teklifleri (liste + hafif rotasyon).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {

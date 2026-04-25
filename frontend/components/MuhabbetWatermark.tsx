@@ -2,7 +2,7 @@ import React from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
 /**
- * Leylek Muhabbeti sekmeleri — tek Image, düşük opaklık, etkileşim yok.
+ * Leylek Teklif Sende sekmeleri — tek Image, düşük opaklık, etkileşim yok.
  */
 export default function MuhabbetWatermark() {
   return (

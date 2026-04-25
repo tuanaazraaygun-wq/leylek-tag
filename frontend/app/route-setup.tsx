@@ -83,7 +83,7 @@ export default function RouteSetupScreen() {
       Alert.alert(
         dup ? 'Zaten kayıtlı' : 'Güzergahın yayında 🚀',
         dup
-          ? 'Bu güzergahı daha önce kaydetmiştin. Muhabbet tarafında aynı şekilde görünürsün.'
+          ? 'Bu güzergahı daha önce kaydetmiştin. Teklif Sende tarafında aynı şekilde görünürsün.'
           : 'Artık aynı yolu kullanan insanları görebilirsin',
         [
           {

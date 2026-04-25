@@ -1,5 +1,5 @@
 /**
- * Leylek Muhabbeti: sohbet listesi (conversations/me).
+ * Leylek Teklif Sende: sohbet listesi (conversations/me).
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {

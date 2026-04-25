@@ -2,7 +2,7 @@
 
 ## Normal Ride Driver Navigation Flow
 
-Normal ride sisteminde surucu eslesmeden sonra yolcuya gitmek icin driver -> pickup navigation akisina girer. Bu akis normal ride icin kritiktir ve Leylek Muhabbeti mimarisiyle karistirilmamalidir.
+Normal ride sisteminde surucu eslesmeden sonra yolcuya gitmek icin driver -> pickup navigation akisina girer. Bu akis normal ride icin kritiktir ve Leylek Teklif Sende mimarisiyle karistirilmamalidir.
 
 Temel akış:
 
