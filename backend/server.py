@@ -18374,25 +18374,37 @@ def _muhabbet_listing_offer_kind(row: Optional[dict]) -> str:
     return "passenger_offer"
 
 
+def _muhabbet_full_name(full_name: Optional[str], first_name: Optional[str], last_name: Optional[str]) -> str:
+    fn = (str(first_name or "")).strip()
+    ln = (str(last_name or "")).strip()
+    if fn and ln:
+        return f"{fn} {ln}".strip()
+    if fn:
+        return fn
+    raw = str(full_name or "").strip()
+    return raw
+
+
 def _muhabbet_public_display_name(
     full_name: Optional[str],
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
 ) -> str:
-    """Muhabbet / teklif kartları: tam soyisim gösterme — 'Ahmet' veya 'Ahmet Y.'"""
-    fn = (str(first_name).strip() if first_name is not None else "") or ""
+    """Karşı tarafa gösterilen ad: Ad + Soyad baş harfi (ör. Ahmet C.)."""
+    fn = (str(first_name or "")).strip()
+    ln = (str(last_name or "")).strip()
+    if fn and ln:
+        return f"{fn} {ln[0].upper()}."
     if fn:
-        ln = (str(last_name).strip() if last_name is not None else "") or ""
-        if len(ln) >= 1:
-            return f"{fn} {ln[0].upper()}."
         return fn
-    raw = (str(full_name or "").strip())
-    if not raw:
-        return "Kullanıcı"
-    parts = raw.split()
-    if len(parts) == 1:
-        return parts[0]
-    return f"{parts[0]} {parts[-1][0].upper()}."
+    raw = str(full_name or "").strip()
+    if raw:
+        parts = [p for p in raw.split() if p]
+        if len(parts) >= 2:
+            return f"{parts[0]} {parts[1][0].upper()}."
+        if len(parts) == 1:
+            return parts[0]
+    return "Leylek kullanıcısı"
 
 
 def _muhabbet_match_semantic_roles_for_conversation(conversation_id: str) -> dict:
@@ -19687,7 +19699,7 @@ def _muhabbet_user_public_card(uid: str) -> dict:
         if not r.data:
             return {
                 "id": uid,
-                "user_name": "Kullanıcı",
+                "user_name": "Leylek kullanıcısı",
                 "rating": 4.0,
                 "total_trips": 0,
                 "total_ratings": 0,
@@ -19717,6 +19729,8 @@ def _muhabbet_user_public_card(uid: str) -> dict:
         return {
             "id": uid,
             "user_name": disp,
+            "public_name": disp,
+            "full_name": _muhabbet_full_name(u.get("name"), u.get("first_name"), u.get("last_name")) or disp,
             "rating": float(u.get("rating") or 4.0),
             "total_trips": int(u.get("total_trips") or 0),
             "total_ratings": int(u.get("total_ratings") or 0),
@@ -19733,7 +19747,7 @@ def _muhabbet_user_public_card(uid: str) -> dict:
         logger.warning("muhabbet_user_public_card: %s", e)
         return {
             "id": uid,
-            "user_name": "Kullanıcı",
+            "user_name": "Leylek kullanıcısı",
             "rating": 4.0,
             "total_trips": 0,
             "total_ratings": 0,
@@ -19908,25 +19922,122 @@ async def muhabbet_user_public_profile_get(
             "success": True,
             "profile": {
                 "id": tid,
-                "name": card.get("user_name") or "Kullanıcı",
+                "name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
+                "public_name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
+                "full_name": card.get("full_name") or card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
                 "rating": card.get("rating"),
                 "total_trips": card.get("total_trips"),
                 "total_ratings": card.get("total_ratings"),
                 "role": card.get("role"),
+                "role_label": "Sürücü" if is_kyc else "Yolcu",
                 "is_kyc_driver": is_kyc,
                 "gender": gen_raw if gen else None,
                 "gender_label": gender_label,
                 "active_listings": active_listings,
                 "completed_matches": completed_matches,
                 "profile_photo": card.get("profile_photo"),
+                "profile_photo_url": card.get("profile_photo"),
                 "muhabbet_bio": card.get("muhabbet_bio"),
+                "about": card.get("muhabbet_bio"),
                 "extras": extras,
+                "vehicle_photo_url": vphoto,
+                "vehicle_kind_label": vk_lbl,
             },
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"muhabbet_user_public_profile_get: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _muhabbet_profile_payload_for_user(uid: str, include_full_name: bool) -> dict:
+    card = _muhabbet_user_public_card(uid)
+    is_kyc = bool(card.get("is_kyc_driver"))
+    dd = card.get("driver_details_public") or {}
+    vlabel = _vehicle_label_from_driver_details(dd if isinstance(dd, dict) else {})
+    vk_can = card.get("vehicle_kind_canonical")
+    vk_lbl = "Motor" if vk_can == "motorcycle" else ("Araba" if vk_can == "car" else None)
+    vphoto = card.get("vehicle_photo_url")
+    active_listings = 0
+    completed_matches = 0
+    try:
+        al = (
+            supabase.table("ride_listings")
+            .select("id", count="exact")
+            .eq(_ride_listings_owner_column(), uid)
+            .eq("status", "active")
+            .execute()
+        )
+        active_listings = int(getattr(al, "count", None) or 0)
+    except Exception as e:
+        logger.warning("profile_payload active_listings: %s", e)
+    try:
+        ac = (
+            supabase.table("listing_match_requests")
+            .select("id", count="exact")
+            .eq("status", "accepted")
+            .eq("sender_user_id", uid)
+            .execute()
+        )
+        bc = (
+            supabase.table("listing_match_requests")
+            .select("id", count="exact")
+            .eq("status", "accepted")
+            .eq("receiver_user_id", uid)
+            .execute()
+        )
+        completed_matches = int(getattr(ac, "count", None) or 0) + int(getattr(bc, "count", None) or 0)
+    except Exception as e:
+        logger.warning("profile_payload completed_matches: %s", e)
+    out = {
+        "id": uid,
+        "public_name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
+        "role_label": "Sürücü" if is_kyc else "Yolcu",
+        "is_kyc_driver": is_kyc,
+        "profile_photo_url": card.get("profile_photo"),
+        "vehicle_photo_url": vphoto,
+        "vehicle_kind_label": vk_lbl,
+        "rating": card.get("rating"),
+        "completed_matches": completed_matches,
+        "active_listings_count": active_listings,
+        "about": card.get("muhabbet_bio"),
+    }
+    if include_full_name:
+        out["full_name"] = card.get("full_name") or out["public_name"]
+    return out
+
+
+@api_router.get("/muhabbet/profile/me")
+async def muhabbet_profile_me_get(
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        uid = await _muhabbet_listing_uid(authenticated_user_id)
+        return {"success": True, "profile": _muhabbet_profile_payload_for_user(uid, include_full_name=True)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_profile_me_get: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.get("/muhabbet/profile/{target_user_id}")
+async def muhabbet_profile_public_get(
+    target_user_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    try:
+        _ = await _muhabbet_listing_uid(authenticated_user_id)
+        tid = str(target_user_id or "").strip().lower()
+        uuid.UUID(tid)
+        return {"success": True, "profile": _muhabbet_profile_payload_for_user(tid, include_full_name=False)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Geçersiz kullanıcı kimliği") from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"muhabbet_profile_public_get: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -19976,6 +20087,33 @@ async def muhabbet_me_bio_update(
     except Exception as e:
         logger.error(f"muhabbet_me_bio_update: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@api_router.post("/muhabbet/profile/about")
+async def muhabbet_profile_about_update(
+    body: MuhabbetBioUpdateBody,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Profil düzenleme aliası: `about` alanı users.muhabbet_bio'ya yazılır."""
+    return await muhabbet_me_bio_update(body, authenticated_user_id)
+
+
+@api_router.post("/muhabbet/profile/photo")
+async def muhabbet_profile_photo_upload(
+    file: UploadFile = File(...),
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    return await upload_profile_photo(uid, file)
+
+
+@api_router.post("/muhabbet/profile/vehicle-photo")
+async def muhabbet_profile_vehicle_photo_upload(
+    file: UploadFile = File(...),
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    return await upload_vehicle_photo(uid, file)
 
 
 @api_router.post("/muhabbet/leylek-key/create")
@@ -20456,6 +20594,42 @@ def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 2
     return out
 
 
+def _muhabbet_last_message_map_for_user(conversation_ids: list[str], uid: str) -> dict[str, dict]:
+    """Sohbet listesi: kullanıcıya görünür son mesaj (expires_at + delete-for-me filtreli)."""
+    cids = [str(x).strip().lower() for x in (conversation_ids or []) if x]
+    cids = list(dict.fromkeys(cids))
+    if not cids:
+        return {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    uid_lo = str(uid or "").strip().lower()
+    try:
+        res = (
+            supabase.table("muhabbet_messages")
+            .select("conversation_id,text,created_at,deleted_for_user_ids")
+            .in_("conversation_id", cids)
+            .gt("expires_at", now_iso)
+            .order("created_at", desc=True)
+            .limit(min(max(600, len(cids) * 40), 3000))
+            .execute()
+        )
+    except Exception as e:
+        logger.warning("conversations_me last_message fetch: %s", e)
+        return {}
+    out: dict[str, dict] = {}
+    for r in res.data or []:
+        cid = str(r.get("conversation_id") or "").strip().lower()
+        if not cid or cid in out:
+            continue
+        del_ids = {str(x).strip().lower() for x in (r.get("deleted_for_user_ids") or []) if x}
+        if uid_lo in del_ids:
+            continue
+        out[cid] = {
+            "last_message_body": str(r.get("text") or ""),
+            "last_message_at": r.get("created_at"),
+        }
+    return out
+
+
 def _muhabbet_message_delete_for_user_db(cid: str, mid: str, uid: str) -> str:
     """Dönüş: ok | not_found | error"""
     cid = str(cid or "").strip().lower()
@@ -20620,6 +20794,19 @@ async def sio_muhabbet_send(sid, data):
     }
     await sio.emit("message", payload, room=room)
     logger.info("[muhabbet_send] emitted room=%s conversation_id=%s message_id=%s peers_in_room=%s", room, cid, msg_id, peer_n)
+    try:
+        conv_payload = {
+            "conversation_id": cid,
+            "last_message_body": text,
+            "last_message_at": now_iso,
+            "sender_id": uid,
+            "unread_for_user_id": recipient,
+        }
+        await emit_socket_event_to_user(uid, "muhabbet_conversation_updated", conv_payload)
+        if recipient:
+            await emit_socket_event_to_user(recipient, "muhabbet_conversation_updated", conv_payload)
+    except Exception as e:
+        logger.warning("muhabbet_send conversation_updated: %s", e)
     try:
         if recipient:
             ru = str(recipient).strip().lower()
@@ -21066,7 +21253,15 @@ async def muhabbet_conversations_me(
                         role_by_uid[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
             except Exception as e:
                 logger.warning("conversations_me roles: %s", e)
-        # Sohbet listesi: last_message alanı şimdilik boş (isteğe bağlı muhabbet_messages özeti)
+        role_map_full: dict = {}
+        try:
+            rr2 = supabase.table("users").select("id, role").in_("id", [uid] + other_uids).execute()
+            for x in rr2.data or []:
+                if x.get("id"):
+                    role_map_full[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
+        except Exception as e:
+            logger.warning("conversations_me role_map_full: %s", e)
+        last_map = _muhabbet_last_message_map_for_user(cids, uid)
         out: list = []
         for c in convs:
             conv_id = str(c.get("id") or "").strip().lower()
@@ -21077,6 +21272,10 @@ async def muhabbet_conversations_me(
             lmr0 = lmr_by_cid.get(conv_id) if conv_id else None
             lidk = (str(lmr0.get("listing_id") or "").strip().lower() if lmr0 and lmr0.get("listing_id") else None)
             li = listings_map.get(lidk) if lidk else None
+            sem = _muhabbet_match_semantic_roles_for_conversation(conv_id)
+            my_role = sem.get(uid) if sem else role_map_full.get(uid)
+            other_role = sem.get(other.lower()) if sem else role_map_full.get(other.lower())
+            lm = last_map.get(conv_id) or {}
             out.append(
                 {
                     "id": conv_id,
@@ -21085,14 +21284,16 @@ async def muhabbet_conversations_me(
                     "user_b": b,
                     "other_user_id": other,
                     "other_user_name": name_map.get((other or "").lower()) or "Kullanıcı",
-                    "other_user_role": role_by_uid.get((other or "").strip().lower()),
+                    "other_user_role": other_role or role_by_uid.get((other or "").strip().lower()),
+                    "my_role": my_role,
+                    "other_role": other_role,
                     "listing_id": lidk,
                     "from_text": (li or {}).get("from_text"),
                     "to_text": (li or {}).get("to_text"),
                     "request_status": (lmr0 or {}).get("status"),
                     "created_at": c.get("created_at"),
-                    "last_message_body": None,
-                    "last_message_at": None,
+                    "last_message_body": lm.get("last_message_body"),
+                    "last_message_at": lm.get("last_message_at"),
                 }
             )
         return {"success": True, "conversations": out, "count": len(out)}

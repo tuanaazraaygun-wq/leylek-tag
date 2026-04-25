@@ -38,6 +38,9 @@ const CARD_SHADOW = Platform.select({
 export type PublicProfilePayload = {
   id?: string;
   name?: string;
+  full_name?: string;
+  public_name?: string;
+  role_label?: string | null;
   rating?: number | null;
   total_trips?: number | null;
   total_ratings?: number | null;
@@ -47,8 +50,11 @@ export type PublicProfilePayload = {
   gender?: string | null;
   gender_label?: string | null;
   active_listings?: number;
+  active_listings_count?: number;
   completed_matches?: number;
+  about?: string | null;
   profile_photo?: string | null;
+  profile_photo_url?: string | null;
   muhabbet_bio?: string | null;
   extras?: {
     vehicle_summary?: Record<string, unknown> | null;
@@ -108,7 +114,8 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         return;
       }
       const uid = encodeURIComponent(userId.trim());
-      const res = await fetch(`${base}/muhabbet/users/${uid}/public-profile`, {
+      const path = isSelf ? '/muhabbet/profile/me' : `/muhabbet/profile/${uid}`;
+      const res = await fetch(`${base}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (handleUnauthorizedAndMaybeRedirect(res)) {
@@ -118,24 +125,32 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
       const d = (await res.json().catch(() => ({}))) as { success?: boolean; profile?: PublicProfilePayload };
       if (res.ok && d.success && d.profile) {
         setP(d.profile);
-        setBioDraft((d.profile.muhabbet_bio || '').trim());
+        setBioDraft((d.profile.about || d.profile.muhabbet_bio || '').trim());
       } else setP(null);
     } catch {
       setP(null);
     } finally {
       setLoading(false);
     }
-  }, [base, userId]);
+  }, [base, userId, isSelf]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const showDriverExtras = p?.is_kyc_driver === true;
-  const vLabel = (p?.extras?.vehicle_label as string) || '';
-  const vKind = (p?.extras?.vehicle_kind_label as string) || '';
-  const vPhoto = (p?.extras?.vehicle_photo_url as string) || '';
+  const profilePhoto = (p?.profile_photo_url || p?.profile_photo || '').trim();
+  const vLabel = ((p?.extras?.vehicle_label as string) || p?.vehicle_kind_label || '').trim();
+  const vKind = ((p?.extras?.vehicle_kind_label as string) || p?.vehicle_kind_label || '').trim();
+  const vPhoto = ((p?.extras?.vehicle_photo_url as string) || p?.vehicle_photo_url || '').trim();
   const gLabel = (p?.gender_label as string) || '';
+  const displayName = isSelf
+    ? (p?.full_name || p?.name || p?.public_name || 'Leylek kullanıcısı')
+    : (p?.public_name || p?.name || 'Leylek kullanıcısı');
+  const roleLabel = (p?.role_label || (p?.is_kyc_driver ? 'Sürücü' : 'Yolcu')) as string;
+  const completedMatches = Number(p?.completed_matches || 0);
+  const activeListingsCount = Number(p?.active_listings_count ?? p?.active_listings ?? 0);
+  const aboutText = (p?.about || p?.muhabbet_bio || '').trim();
 
   const saveBio = async () => {
     if (!isSelf) return;
@@ -143,8 +158,8 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
     try {
       const token = (await getPersistedAccessToken())?.trim();
       if (!token) return;
-      const res = await fetch(`${base}/muhabbet/me/bio`, {
-        method: 'PUT',
+      const res = await fetch(`${base}/muhabbet/profile/about`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ bio: bioDraft.trim() }),
       });
@@ -176,7 +191,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
       quality: 0.6,
     });
     const uri = !result.canceled && result.assets?.[0]?.uri ? result.assets[0].uri : null;
-    if (!uri || !myId) return;
+    if (!uri) return;
     setUploading(true);
     try {
       const token = (await getPersistedAccessToken())?.trim();
@@ -187,7 +202,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         name: 'profile.jpg',
         type: 'image/jpeg',
       } as any);
-      const res = await fetch(`${base}/storage/upload-profile-photo?user_id=${encodeURIComponent(myId)}`, {
+      const res = await fetch(`${base}/muhabbet/profile/photo`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,
@@ -206,7 +221,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   };
 
   const pickVehiclePhoto = async () => {
-    if (!isSelf || !showDriverExtras || !myId) return;
+    if (!isSelf || !showDriverExtras) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('İzin', 'Fotoğraf seçmek için galeri izni gerekir.');
@@ -230,7 +245,7 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         name: 'vehicle.jpg',
         type: 'image/jpeg',
       } as any);
-      const res = await fetch(`${base}/storage/upload-vehicle-photo?user_id=${encodeURIComponent(myId)}`, {
+      const res = await fetch(`${base}/muhabbet/profile/vehicle-photo`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,
@@ -295,8 +310,8 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.headerCard}>
             <Pressable onPress={() => (isSelf ? void pickPhoto() : null)} style={styles.avatarWrap}>
-              {p.profile_photo ? (
-                <Image source={{ uri: p.profile_photo }} style={styles.avatar} />
+              {profilePhoto ? (
+                <Image source={{ uri: profilePhoto }} style={styles.avatar} />
               ) : (
                 <View style={styles.avatarPh}>
                   <Ionicons name="person" size={44} color="#8E8E93" />
@@ -313,22 +328,27 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                 </View>
               ) : null}
             </Pressable>
-            <Text style={styles.name}>{p.name?.trim() ? p.name : 'Kullanıcı'}</Text>
+            <Text style={styles.name}>{displayName}</Text>
             <Text style={styles.badgeLine}>
-              {p?.is_kyc_driver ? 'Sürücü' : 'Yolcu'}
+              {roleLabel}
               {gLabel ? ` · ${gLabel}` : ''} · ⭐ {p.rating != null ? Number(p.rating).toFixed(1) : '—'} · 🧭 {p.total_trips ?? 0}{' '}
               yolculuk
             </Text>
             <View style={styles.statRow}>
               <View style={styles.statBox}>
-                <Text style={styles.statNum}>{p.completed_matches ?? 0}</Text>
+                <Text style={styles.statNum}>{completedMatches}</Text>
                 <Text style={styles.statLab}>Tamamlanan eşleşme</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={styles.statNum}>{p.active_listings ?? 0}</Text>
+                <Text style={styles.statNum}>{activeListingsCount}</Text>
                 <Text style={styles.statLab}>Aktif teklif</Text>
               </View>
             </View>
+            {isSelf ? (
+              <Pressable onPress={() => void pickPhoto()} style={({ pressed }) => [styles.photoBtn, pressed && { opacity: 0.88 }]}>
+                <Text style={styles.photoBtnTxt}>Fotoğrafı değiştir</Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {showDriverExtras && (vLabel || vKind || vPhoto) ? (
@@ -395,8 +415,8 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   )}
                 </Pressable>
               </>
-            ) : p.muhabbet_bio ? (
-              <Text style={styles.bodyText}>{p.muhabbet_bio}</Text>
+            ) : aboutText ? (
+              <Text style={styles.bodyText}>{aboutText}</Text>
             ) : (
               <Text style={styles.mutedSmall}>Açıklama eklenmemiş.</Text>
             )}
@@ -496,6 +516,8 @@ const styles = StyleSheet.create({
   },
   statNum: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY },
   statLab: { fontSize: 12, color: TEXT_SECONDARY, marginTop: 4, textAlign: 'center' },
+  photoBtn: { marginTop: 12, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: 'rgba(59,130,246,0.12)' },
+  photoBtnTxt: { color: '#1D4ED8', fontWeight: '700', fontSize: 13 },
   card: { backgroundColor: CARD_BG, borderRadius: 18, padding: 16, marginBottom: 12, ...CARD_SHADOW },
   section: { fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8 },
   bodyText: { fontSize: 15, color: TEXT_PRIMARY, lineHeight: 22 },

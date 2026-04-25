@@ -19,14 +19,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, type Href } from 'expo-router';
 import { ScreenHeaderGradient } from './ScreenHeaderGradient';
 import MuhabbetWatermark from './MuhabbetWatermark';
-import { getPersistedAccessToken } from '../lib/sessionToken';
+import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect';
-import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
+import { MUHABBET_CONVERSATION_READ, MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import {
   clearMuhabbetMessagesLocal,
   coerceMessageCreatedAt,
   getLastMessageFromLocal,
 } from '../lib/muhabbetMessagesStorage';
+import { getOrCreateSocket } from '../contexts/SocketContext';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 const ACCENT = '#F59E0B';
@@ -52,6 +53,7 @@ export type MuhabbetConversationListItem = {
   last_message_at?: string | null;
   request_status?: string | null;
   created_at?: string;
+  unread_count?: number;
 };
 
 export type ConversationsScreenProps = {
@@ -141,9 +143,35 @@ export default function ConversationsScreen({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState<MuhabbetConversationListItem[]>([]);
+  const [myUserId, setMyUserId] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [hideTarget, setHideTarget] = useState<MuhabbetConversationListItem | null>(null);
   const [hideBusy, setHideBusy] = useState(false);
+
+  const sortConversations = useCallback((items: MuhabbetConversationListItem[]) => {
+    return [...items].sort((a, b) => {
+      const ta = new Date(String(a.last_message_at || a.created_at || 0)).getTime();
+      const tb = new Date(String(b.last_message_at || b.created_at || 0)).getTime();
+      return tb - ta;
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const raw = await getPersistedUserRaw();
+        if (!raw || cancelled) return;
+        const u = JSON.parse(raw) as { id?: string };
+        if (u?.id) setMyUserId(String(u.id).trim().toLowerCase());
+      } catch {
+        /* noop */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -182,11 +210,12 @@ export default function ConversationsScreen({
           if (!cid) return c;
           try {
             const lp = await getLastMessageFromLocal(cid);
-            if (lp) {
+            if (lp && !String(c.last_message_body || '').trim()) {
               return {
                 ...c,
                 last_message_body: lp.text,
                 last_message_at: lp.created_at,
+                unread_count: c.unread_count || 0,
               };
             }
           } catch {
@@ -194,19 +223,20 @@ export default function ConversationsScreen({
           }
           return {
             ...c,
-            last_message_body: null,
-            last_message_at: null,
+            last_message_body: c.last_message_body ?? null,
+            last_message_at: c.last_message_at ?? null,
+            unread_count: c.unread_count || 0,
           };
         })
       );
-      setRows(enriched);
+      setRows(sortConversations(enriched));
     } catch {
       setErr('Bağlantı hatası.');
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [base, embedded, onlyAccepted]);
+  }, [base, embedded, onlyAccepted, sortConversations]);
 
   useEffect(() => {
     void load();
@@ -221,16 +251,83 @@ export default function ConversationsScreen({
       if (!conv) return;
       const text = payload.text != null ? String(payload.text) : '';
       const at = coerceMessageCreatedAt(payload.created_at);
+      const senderId = payload.sender_id != null ? String(payload.sender_id).trim().toLowerCase() : '';
+      setRows((prev) => {
+        const mapped = prev.map((c) => {
+          const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
+          if (cid !== conv) return c;
+          const isIncoming = Boolean(senderId && myUserId && senderId !== myUserId);
+          return {
+            ...c,
+            last_message_body: text || null,
+            last_message_at: at,
+            unread_count: isIncoming ? Math.max(1, Number(c.unread_count || 0) + 1) : Number(c.unread_count || 0),
+          };
+        });
+        return sortConversations(mapped);
+      });
+    });
+    return () => sub.remove();
+  }, [myUserId, sortConversations]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = DeviceEventEmitter.addListener(MUHABBET_CONVERSATION_READ, (payload: Record<string, unknown>) => {
+      const conv = payload?.conversation_id != null ? String(payload.conversation_id).trim().toLowerCase() : '';
+      if (!conv) return;
       setRows((prev) =>
         prev.map((c) => {
           const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
           if (cid !== conv) return c;
-          return { ...c, last_message_body: text || null, last_message_at: at };
+          return { ...c, unread_count: 0 };
         })
       );
     });
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const socket = getOrCreateSocket();
+    const onConversationUpdated = (payload: {
+      conversation_id?: string;
+      last_message_body?: string;
+      last_message_at?: string;
+      sender_id?: string;
+      unread_for_user_id?: string;
+    }) => {
+      const conv = payload?.conversation_id != null ? String(payload.conversation_id).trim().toLowerCase() : '';
+      if (!conv) return;
+      const body = payload?.last_message_body != null ? String(payload.last_message_body) : '';
+      const at = coerceMessageCreatedAt(payload?.last_message_at);
+      const sender = payload?.sender_id != null ? String(payload.sender_id).trim().toLowerCase() : '';
+      const unreadFor = payload?.unread_for_user_id != null ? String(payload.unread_for_user_id).trim().toLowerCase() : '';
+      setRows((prev) => {
+        let found = false;
+        const next = prev.map((c) => {
+          const cid = String(c.conversation_id || c.id || '').trim().toLowerCase();
+          if (cid !== conv) return c;
+          found = true;
+          const isUnreadForMe = Boolean(myUserId && unreadFor && unreadFor === myUserId && sender && sender !== myUserId);
+          return {
+            ...c,
+            last_message_body: body || c.last_message_body || null,
+            last_message_at: at,
+            unread_count: isUnreadForMe ? Math.max(1, Number(c.unread_count || 0) + 1) : Number(c.unread_count || 0),
+          };
+        });
+        if (!found) {
+          void load();
+          return prev;
+        }
+        return sortConversations(next);
+      });
+    };
+    socket.on('muhabbet_conversation_updated', onConversationUpdated);
+    return () => {
+      socket.off('muhabbet_conversation_updated', onConversationUpdated);
+    };
+  }, [load, myUserId, sortConversations]);
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -320,9 +417,17 @@ export default function ConversationsScreen({
   const openChat = (c: MuhabbetConversationListItem) => {
     const cid = String(c.conversation_id || c.id || '').trim();
     if (!cid) return;
+    setRows((prev) =>
+      prev.map((x) => {
+        const xc = String(x.conversation_id || x.id || '').trim().toLowerCase();
+        if (xc !== cid.toLowerCase()) return x;
+        return { ...x, unread_count: 0 };
+      })
+    );
+    DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
     router.push(
       buildMuhabbetChatHref(cid, {
-        otherUserName: c.other_user_name || 'Kullanıcı',
+        otherUserName: c.other_user_name || 'Leylek kullanıcısı',
         fromText: (c.from_text && String(c.from_text)) || '',
         toText: (c.to_text && String(c.to_text)) || '',
         otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
@@ -378,6 +483,8 @@ export default function ConversationsScreen({
             const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Henüz mesaj yok';
             const or = (item.other_user_role || '').toLowerCase();
             const driverish = or === 'driver' || or === 'private_driver';
+            const unreadCount = Math.max(0, Number(item.unread_count || 0));
+            const unread = unreadCount > 0;
             return (
               <Pressable
                 style={({ pressed }) => [
@@ -392,18 +499,21 @@ export default function ConversationsScreen({
               >
                 <View style={styles.cardRow1}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {item.other_user_name || 'Kullanıcı'}
+                    {item.other_user_name || 'Leylek kullanıcısı'}
                   </Text>
-                  {item.last_message_at ? (
-                    <Text style={styles.timeRight}>
-                      {formatLastMessageListTime(String(item.last_message_at))}
-                    </Text>
-                  ) : null}
+                  <View style={styles.metaRight}>
+                    {item.last_message_at ? (
+                      <Text style={[styles.timeRight, unread && styles.timeRightUnread]}>
+                        {formatLastMessageListTime(String(item.last_message_at))}
+                      </Text>
+                    ) : null}
+                    {unread ? <View style={styles.unreadDot} /> : null}
+                  </View>
                 </View>
                 <Text style={styles.routeCompact} numberOfLines={1}>
                   {formatRouteLine(item.from_text, item.to_text)}
                 </Text>
-                <Text style={styles.previewSub} numberOfLines={2}>
+                <Text style={[styles.previewSub, unread && styles.previewSubUnread]} numberOfLines={2}>
                   {lastLine}
                 </Text>
               </Pressable>
@@ -520,8 +630,18 @@ const styles = StyleSheet.create({
   cardRow1: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   name: { flex: 1, fontSize: 17, fontWeight: '800', color: TEXT_PRIMARY },
   timeRight: { fontSize: 12, color: TEXT_SECONDARY, fontWeight: '500', marginTop: 1 },
+  timeRightUnread: { color: '#1D4ED8', fontWeight: '700' },
+  metaRight: { alignItems: 'flex-end', justifyContent: 'flex-start', minWidth: 64 },
+  unreadDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 99,
+    backgroundColor: '#2563EB',
+    marginTop: 6,
+  },
   routeCompact: { marginTop: 6, color: TEXT_SECONDARY, fontSize: 12, fontWeight: '500' },
   previewSub: { marginTop: 6, color: '#4B5563', fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  previewSubUnread: { color: '#0F172A', fontWeight: '800' },
   emptyBox: { alignItems: 'center', paddingVertical: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: TEXT_PRIMARY },
   emptySub: { marginTop: 8, textAlign: 'center', color: TEXT_SECONDARY, fontSize: 15, lineHeight: 22, paddingHorizontal: 12 },

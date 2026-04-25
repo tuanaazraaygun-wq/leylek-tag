@@ -519,7 +519,7 @@ export default function ListingsTab({
                   if (!r.conversation_id) return;
                   pushToChat(router, {
                     conversationId: r.conversation_id,
-                    otherUserName: (r.receiver_name || 'Kullanıcı').trim(),
+                    otherUserName: (r.receiver_name || 'Leylek kullanıcısı').trim(),
                     fromText: String(r.listing?.from_text || ''),
                     toText: String(r.listing?.to_text || ''),
                     otherUserId: r.receiver_user_id ? String(r.receiver_user_id) : undefined,
@@ -594,7 +594,7 @@ export default function ListingsTab({
               </View>
             ) : null}
             <Text style={styles.cardNameLg} numberOfLines={1}>
-              {L.creator_name || 'Kullanıcı'}
+              {L.creator_name || 'Leylek kullanıcısı'}
             </Text>
             <View style={styles.routeBlock}>
               <View style={styles.routeEnd}>
@@ -660,7 +660,7 @@ export default function ListingsTab({
                   onPress={() =>
                     pushToChat(router, {
                       conversationId: L.conversation_id!,
-                      otherUserName: (L.creator_name || 'Kullanıcı').trim(),
+                      otherUserName: (L.creator_name || 'Leylek kullanıcısı').trim(),
                       fromText: String(L.from_text || ''),
                       toText: String(L.to_text || ''),
                       otherUserId: L.created_by_user_id ? String(L.created_by_user_id) : undefined,
@@ -707,7 +707,7 @@ export default function ListingsTab({
                 onPress={() =>
                   pushToChat(router, {
                     conversationId: String(L.matched_conversation_id),
-                    otherUserName: 'Kullanıcı',
+                    otherUserName: 'Leylek kullanıcısı',
                     fromText: String(L.from_text || ''),
                     toText: String(L.to_text || ''),
                     otherUserId: L.accepted_user_id ? String(L.accepted_user_id) : undefined,
