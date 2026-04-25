@@ -20376,7 +20376,7 @@ def _muhabbet_conversation_member_ok(conversation_id: str, uid: str) -> bool:
         return False
 
 
-def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: str, created_iso: str) -> bool:
+def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: str, created_iso: str) -> tuple[bool, str]:
     """Kalıcı mesaj satırı; idempotent (aynı id+conversation varsa True)."""
     cid = str(cid or "").strip().lower()
     mid = str(msg_id or "").strip().lower()
@@ -20390,7 +20390,7 @@ def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: s
     }
     try:
         supabase.table("muhabbet_messages").insert(row).execute()
-        return True
+        return (True, "")
     except Exception as e:
         try:
             q = (
@@ -20402,11 +20402,16 @@ def _muhabbet_messages_try_insert(cid: str, msg_id: str, sender_id: str, text: s
                 .execute()
             )
             if q.data:
-                return True
+                return (True, "")
         except Exception:
             pass
-        logger.warning("[muhabbet_send] db insert failed conversation_id=%s message_id=%s err=%s", cid, mid, e)
-        return False
+        err_txt = str(e)
+        logger.warning("[muhabbet_send] db insert failed conversation_id=%s message_id=%s err=%s", cid, mid, err_txt)
+        if "relation" in err_txt.lower() and "muhabbet_messages" in err_txt.lower():
+            logger.error(
+                "[muhabbet_send] muhabbet_messages table missing or migration not applied; run leylek_muhabbet_messages_retention.sql"
+            )
+        return (False, err_txt)
 
 
 def _muhabbet_messages_fetch_visible_for_user(cid: str, uid: str, limit: int = 200) -> list:
@@ -20539,6 +20544,7 @@ async def sio_muhabbet_send(sid, data):
         logger.warning("[muhabbet_send] not_registered sid=%s", sid)
         await sio.emit("muhabbet_error", {"code": "not_registered", "detail": "Önce socket register gerekli"}, room=sid)
         return
+    logger.info("[muhabbet_send] user=%s sid=%s", str(uid)[:13], sid)
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
     text = str(data.get("text") or data.get("body") or "").strip()
     if not cid or not text:
@@ -20556,18 +20562,14 @@ async def sio_muhabbet_send(sid, data):
         )
         return
     msg_id = parsed_mid or str(uuid.uuid4())
-    logger.info(
-        "[muhabbet_send] received sid=%s message_id=%s conversation_id=%s text_len=%s",
-        sid,
-        msg_id,
-        cid,
-        len(text),
-    )
+    logger.info("[muhabbet_send] received sid=%s conversation_id=%s message_id=%s", sid, cid, msg_id)
     try:
         crow = _muhabbet_conversation_for_member_or_403(cid, uid)
     except HTTPException:
-        await sio.emit("muhabbet_error", {"code": "forbidden", "conversation_id": cid}, room=sid)
+        logger.info("[muhabbet_send] participant_ok=false conversation_id=%s user=%s", cid, str(uid)[:13])
+        await sio.emit("muhabbet_error", {"code": "forbidden", "conversation_id": cid, "message_id": msg_id}, room=sid)
         return
+    logger.info("[muhabbet_send] participant_ok=true conversation_id=%s user=%s", cid, str(uid)[:13])
     a = str(crow.get("user_a") or "").strip().lower()
     b = str(crow.get("user_b") or "").strip().lower()
     recipient = b if a == uid else a
@@ -20584,10 +20586,18 @@ async def sio_muhabbet_send(sid, data):
     except Exception as e:
         logger.warning("muhabbet_send enter_room: %s", e)
     peer_n = _muhabbet_room_peer_count(room)
-    if not _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso):
+    db_ok, db_err = _muhabbet_messages_try_insert(cid, msg_id, uid, text, now_iso)
+    logger.info("[muhabbet_send] db_insert_ok=%s conversation_id=%s message_id=%s error=%s", db_ok, cid, msg_id, db_err[:300] if db_err else "")
+    if not db_ok:
         await sio.emit(
             "muhabbet_error",
-            {"code": "db_error", "detail": "Mesaj kaydedilemedi", "conversation_id": cid},
+            {
+                "code": "message_db_insert_failed",
+                "message": "Mesaj gönderilemedi. Lütfen tekrar deneyin.",
+                "detail": "Mesaj gönderilemedi. Lütfen tekrar deneyin.",
+                "conversation_id": cid,
+                "message_id": msg_id,
+            },
             room=sid,
         )
         return
@@ -20599,6 +20609,8 @@ async def sio_muhabbet_send(sid, data):
         )
     except Exception as e:
         logger.warning("muhabbet_send message_ack: %s", e)
+    else:
+        logger.info("[muhabbet_send] ack_sent user=%s conversation_id=%s message_id=%s", str(uid)[:13], cid, msg_id)
     payload = {
         "conversation_id": cid,
         "text": text,
@@ -20607,7 +20619,7 @@ async def sio_muhabbet_send(sid, data):
         "created_at": now_iso,
     }
     await sio.emit("message", payload, room=room)
-    logger.info("[muhabbet_send] emitted room=%s message_id=%s peers_in_room=%s", room, msg_id, peer_n)
+    logger.info("[muhabbet_send] emitted room=%s conversation_id=%s message_id=%s peers_in_room=%s", room, cid, msg_id, peer_n)
     try:
         if recipient:
             ru = str(recipient).strip().lower()

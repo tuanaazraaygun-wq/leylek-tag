@@ -145,6 +145,23 @@ function rowIdLo(m: Pick<ChatMessageRow, 'id'>): string {
   return normalizeMuhabbetMessageId(m.id);
 }
 
+function markMessageFailedById(rows: ChatMessageRow[], messageId: string): ChatMessageRow[] {
+  const mid = normalizeMuhabbetMessageId(messageId);
+  if (!mid) return rows;
+  return rows.map((m) => (rowIdLo(m) === mid && m.out_status === 'sending' ? { ...m, out_status: 'failed' } : m));
+}
+
+function markLatestSendingFailed(rows: ChatMessageRow[]): ChatMessageRow[] {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].out_status === 'sending') {
+      const next = [...rows];
+      next[i] = { ...next[i], out_status: 'failed' };
+      return next;
+    }
+  }
+  return rows;
+}
+
 /** AppState / disk yenilemesinde önceki state (ör. sending) kaybolmasın */
 function mergeChatRowsFromDiskWithPrev(fromDisk: ChatMessageRow[], prev: ChatMessageRow[]): ChatMessageRow[] {
   const byId = new Map<string, ChatMessageRow>();
@@ -287,6 +304,39 @@ export default function MuhabbetChatScreen({
     console.log('[chat] join emitted', cid);
     socket.emit('join_muhabbet_conversation', { conversation_id: cid });
   }, [cid]);
+
+  const ensureSocketReadyForSend = useCallback(async (): Promise<boolean> => {
+    if (!cid) return false;
+    const socket = getOrCreateSocket();
+    notifyAuthTokenBecameAvailableForSocket();
+    if (!socket.connected) {
+      try {
+        socket.connect();
+      } catch {
+        return false;
+      }
+      await new Promise<void>((resolve) => {
+        if (socket.connected) {
+          resolve();
+          return;
+        }
+        const t = setTimeout(() => resolve(), 10000);
+        const onC = () => {
+          clearTimeout(t);
+          socket.off('connect', onC);
+          resolve();
+        };
+        socket.on('connect', onC);
+      });
+    }
+    if (!socket.connected) return false;
+    const regOk = await waitForNextRegisterSuccess(socket, 12000);
+    if (!regOk) return false;
+    roomJoinedRef.current = false;
+    setRoomJoined(false);
+    emitJoinForChat();
+    return true;
+  }, [cid, emitJoinForChat]);
 
   useEffect(() => {
     myIdRef.current = myId;
@@ -873,23 +923,33 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     if (!cid) return;
     const socket = getOrCreateSocket();
-    const onMuErr = (p: { code?: string; detail?: string; conversation_id?: string; max?: number }) => {
+    const onMuErr = (p: { code?: string; detail?: string; message?: string; message_id?: string; conversation_id?: string; max?: number }) => {
       const conv = p?.conversation_id != null ? String(p.conversation_id).toLowerCase() : '';
       if (conv && conv !== cid.toLowerCase()) return;
       const det = typeof p?.detail === 'string' ? p.detail : '';
+      const msg = typeof p?.message === 'string' ? p.message : '';
+      const errMid = normalizeMuhabbetMessageId(p?.message_id);
+      console.log('[chat] muhabbet_error', p);
       if (p?.code === 'text_too_long') {
         Alert.alert('Mesaj çok uzun', det || `En fazla ${p?.max ?? 2000} karakter.`);
         return;
       }
       if (p?.code === 'not_registered') {
         notifyAuthTokenBecameAvailableForSocket();
+        setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
         if (conv && conv === cid.toLowerCase()) {
           Alert.alert('Bağlantı', det || 'Oturum doğrulanıyor. Bir saniye sonra tekrar deneyin.');
         }
         return;
       }
       if (p?.code === 'bad_message_id') {
+        setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
         Alert.alert('Mesaj', det || 'Geçersiz mesaj kimliği.');
+        return;
+      }
+      if (p?.code === 'message_db_insert_failed' || p?.code === 'forbidden') {
+        setRows((prev) => (errMid ? markMessageFailedById(prev, errMid) : markLatestSendingFailed(prev)));
+        Alert.alert('Gönderilemedi', msg || det || 'Mesaj gönderilemedi. Lütfen tekrar deneyin.');
         return;
       }
       Alert.alert('Sohbet', det || 'İşlem yapılamadı.');
@@ -961,14 +1021,17 @@ export default function MuhabbetChatScreen({
   );
 
   const resendMessage = useCallback(
-    (row: ChatMessageRow) => {
+    async (row: ChatMessageRow) => {
       const body = (row.body || '').trim();
       const messageId = row.id;
       if (!body || !cid || !messageId) return;
       const socket = getOrCreateSocket();
       if (!socket.connected) {
-        Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
-        return;
+        const ok = await ensureSocketReadyForSend();
+        if (!ok) {
+          Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
+          return;
+        }
       }
       if (!roomJoinedRef.current) {
         emitJoinForChat();
@@ -989,7 +1052,7 @@ export default function MuhabbetChatScreen({
         );
       }
     },
-    [cid, clearAckWait, emitJoinForChat, scheduleAckTimeout]
+    [cid, clearAckWait, emitJoinForChat, scheduleAckTimeout, ensureSocketReadyForSend]
   );
 
   const send = async () => {
@@ -997,8 +1060,11 @@ export default function MuhabbetChatScreen({
     if (!body || !cid) return;
     const socket = getOrCreateSocket();
     if (!socket.connected) {
-      Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
-      return;
+      const ok = await ensureSocketReadyForSend();
+      if (!ok) {
+        Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
+        return;
+      }
     }
     if (!roomJoinedRef.current) {
       emitJoinForChat();
