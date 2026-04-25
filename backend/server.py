@@ -1749,31 +1749,126 @@ async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) 
         logger.warning("driver_on_the_way users lookup (non-fatal): %s", ex_udrv)
 
     if dlat is None or dlng is None:
-        d_la = p_la
-        d_lo = p_lo
-    else:
-        try:
-            d_la = float(dlat)
-            d_lo = float(dlng)
-        except (TypeError, ValueError):
-            d_la = p_la
-            d_lo = p_lo
+        logger.warning("driver_on_the_way skip: missing driver coords driver_id=%s", did[:96])
+        return
+    try:
+        d_la = float(dlat)
+        d_lo = float(dlng)
+    except (TypeError, ValueError):
+        logger.warning("driver_on_the_way skip: invalid driver coords driver_id=%s", did[:96])
+        return
 
-    route = await get_route_info(d_la, d_lo, p_la, p_lo)
+    droplat, droplng = tag_row.get("dropoff_lat"), tag_row.get("dropoff_lng")
+    if droplat is None or droplng is None:
+        logger.warning("driver_on_the_way skip: missing dropoff coords tag_id=%s", tag_row.get("id"))
+        return
+    try:
+        d2_la = float(droplat)
+        d2_lo = float(droplng)
+    except (TypeError, ValueError):
+        logger.warning("driver_on_the_way skip: invalid dropoff coords tag_id=%s", tag_row.get("id"))
+        return
+
+    pickup_route = await get_route_info(d_la, d_lo, p_la, p_lo)
+    trip_route = await get_route_info(p_la, p_lo, d2_la, d2_lo)
+    if (
+        not isinstance(pickup_route, dict)
+        or not isinstance(trip_route, dict)
+        or str(pickup_route.get("source", "")).strip().lower() == "haversine_fallback"
+        or str(trip_route.get("source", "")).strip().lower() == "haversine_fallback"
+    ):
+        logger.warning(
+            "driver_on_the_way skip: non-road route source tag_id=%s driver_id=%s pickup_source=%s trip_source=%s",
+            tag_row.get("id"),
+            did[:96],
+            pickup_route.get("source") if isinstance(pickup_route, dict) else None,
+            trip_route.get("source") if isinstance(trip_route, dict) else None,
+        )
+        return
+    try:
+        pickup_distance_km = (
+            float(pickup_route["distance_km"]) if pickup_route and pickup_route.get("distance_km") is not None else None
+        )
+        pickup_eta_min = (
+            int(round(float(pickup_route["duration_min"])))
+            if pickup_route and pickup_route.get("duration_min") is not None
+            else None
+        )
+        trip_distance_km = (
+            float(trip_route["distance_km"]) if trip_route and trip_route.get("distance_km") is not None else None
+        )
+        trip_duration_min = (
+            int(round(float(trip_route["duration_min"])))
+            if trip_route and trip_route.get("duration_min") is not None
+            else None
+        )
+    except (TypeError, ValueError, KeyError):
+        pickup_distance_km = None
+        pickup_eta_min = None
+        trip_distance_km = None
+        trip_duration_min = None
+    if (
+        pickup_distance_km is None
+        or pickup_eta_min is None
+        or trip_distance_km is None
+        or trip_duration_min is None
+    ):
+        logger.warning(
+            "driver_on_the_way skip: real route metrics unavailable tag_id=%s driver_id=%s",
+            tag_row.get("id"),
+            did[:96],
+        )
+        return
+
+    route_out: dict[str, Any] = {
+        "pickup_distance_km": pickup_distance_km,
+        "pickup_eta_min": pickup_eta_min,
+        "distance_to_passenger_km": pickup_distance_km,
+        "time_to_passenger_min": pickup_eta_min,
+        "trip_distance_km": trip_distance_km,
+        "trip_duration_min": trip_duration_min,
+        "distance_km": trip_distance_km,
+        "estimated_minutes": trip_duration_min,
+    }
+    if isinstance(pickup_route, dict):
+        op = pickup_route.get("overview_polyline")
+        if isinstance(op, str) and len(op) > 2:
+            route_out["overview_polyline"] = op
+        coords = pickup_route.get("coordinates")
+        if isinstance(coords, list) and len(coords) >= 2:
+            route_out["coordinates"] = coords
+
     tag_out = {k: v for k, v in tag_row.items() if v is not None}
-    route_out = {k: v for k, v in (route or {}).items() if v is not None}
-    dm = route.get("duration_min") if route else None
+    tag_out["pickup_distance_km"] = pickup_distance_km
+    tag_out["pickup_eta_min"] = pickup_eta_min
+    tag_out["distance_to_passenger_km"] = pickup_distance_km
+    tag_out["time_to_passenger_min"] = pickup_eta_min
+    tag_out["trip_distance_km"] = trip_distance_km
+    tag_out["trip_duration_min"] = trip_duration_min
+    tag_out["distance_km"] = trip_distance_km
+    tag_out["estimated_minutes"] = trip_duration_min
+    tag_out["route_info"] = route_out
     body = {
         "tag": tag_out,
         "route": route_out,
         "pickup_lat": p_la,
         "pickup_lng": p_lo,
-        "distance_km": route.get("distance_km") if route else None,
-        "estimated_minutes": dm,
-        "duration": dm,
+        "pickup_distance_km": pickup_distance_km,
+        "pickup_eta_min": pickup_eta_min,
+        "distance_to_passenger_km": pickup_distance_km,
+        "time_to_passenger_min": pickup_eta_min,
+        "trip_distance_km": trip_distance_km,
+        "trip_duration_min": trip_duration_min,
+        "distance_km": trip_distance_km,
+        "estimated_minutes": trip_duration_min,
+        "duration": trip_duration_min,
+        "route_info": route_out,
     }
+    print("[ROUTE_ACCEPT] driver_to_pickup=", pickup_distance_km, pickup_eta_min)
+    print("[ROUTE_ACCEPT] pickup_to_dropoff=", trip_distance_km, trip_duration_min)
+    print("[ROUTE_ACCEPT] emit_driver_id=", did, "tag_id=", tag_row.get("id"))
     room = f"user_{did}"
-    print("ROUTE TO DRIVER:", did, route)
+    print("ROUTE TO DRIVER:", did, route_out)
     print("ROOM:", room)
     try:
         await sio.emit("driver_on_the_way", body, room=room)
@@ -8483,6 +8578,9 @@ async def driver_accept_offer_http(
 
         pickup_distance_km = None
         pickup_eta_min = None
+        trip_distance_km = None
+        trip_duration_min = None
+        route_info_payload: dict[str, Any] = {}
         try:
             udrv = (
                 supabase.table("users")
@@ -8492,20 +8590,65 @@ async def driver_accept_offer_http(
                 .execute()
             )
             plat, plng = updated_tag.get("pickup_lat"), updated_tag.get("pickup_lng")
-            if udrv.data and plat is not None and plng is not None:
+            dplat, dplng = updated_tag.get("dropoff_lat"), updated_tag.get("dropoff_lng")
+            if (
+                udrv.data
+                and plat is not None
+                and plng is not None
+                and dplat is not None
+                and dplng is not None
+            ):
                 dlat, dlng = udrv.data[0].get("latitude"), udrv.data[0].get("longitude")
                 if dlat is not None and dlng is not None:
                     ri_pk = await get_route_info(
                         float(dlat), float(dlng), float(plat), float(plng)
                     )
-                    if ri_pk:
+                    ri_trip = await get_route_info(
+                        float(plat), float(plng), float(dplat), float(dplng)
+                    )
+                    if (
+                        ri_pk
+                        and ri_trip
+                        and str(ri_pk.get("source", "")).strip().lower() != "haversine_fallback"
+                        and str(ri_trip.get("source", "")).strip().lower() != "haversine_fallback"
+                    ):
                         pickup_distance_km = float(ri_pk["distance_km"])
-                        pickup_eta_min = int(ri_pk["duration_min"])
+                        pickup_eta_min = int(round(float(ri_pk["duration_min"])))
+                        trip_distance_km = float(ri_trip["distance_km"])
+                        trip_duration_min = int(round(float(ri_trip["duration_min"])))
+                        route_info_payload = {
+                            "pickup_distance_km": pickup_distance_km,
+                            "pickup_eta_min": pickup_eta_min,
+                            "distance_to_passenger_km": pickup_distance_km,
+                            "time_to_passenger_min": pickup_eta_min,
+                            "trip_distance_km": trip_distance_km,
+                            "trip_duration_min": trip_duration_min,
+                            "distance_km": trip_distance_km,
+                            "estimated_minutes": trip_duration_min,
+                        }
+                        op = ri_pk.get("overview_polyline") if isinstance(ri_pk, dict) else None
+                        if isinstance(op, str) and len(op) > 2:
+                            route_info_payload["overview_polyline"] = op
+                        coords = ri_pk.get("coordinates") if isinstance(ri_pk, dict) else None
+                        if isinstance(coords, list) and len(coords) >= 2:
+                            route_info_payload["coordinates"] = coords
         except Exception as _pke:
             logger.warning(f"driver/accept-offer pickup_distance: {_pke}")
+        print("[ROUTE_ACCEPT] driver_to_pickup=", pickup_distance_km, pickup_eta_min)
+        print("[ROUTE_ACCEPT] pickup_to_dropoff=", trip_distance_km, trip_duration_min)
+        print("[ROUTE_ACCEPT] emit_driver_id=", resolved_driver_id, "tag_id=", tid)
 
-        trip_dk = updated_tag.get("distance_km")
-        est_min = updated_tag.get("estimated_minutes")
+        trip_dk = trip_distance_km
+        est_min = trip_duration_min
+        updated_tag["pickup_distance_km"] = pickup_distance_km
+        updated_tag["pickup_eta_min"] = pickup_eta_min
+        updated_tag["distance_to_passenger_km"] = pickup_distance_km
+        updated_tag["time_to_passenger_min"] = pickup_eta_min
+        updated_tag["trip_distance_km"] = trip_distance_km
+        updated_tag["trip_duration_min"] = trip_duration_min
+        updated_tag["distance_km"] = trip_distance_km
+        updated_tag["estimated_minutes"] = trip_duration_min
+        updated_tag["route_info"] = route_info_payload
 
         payload = {
             "trip_id": tid,
@@ -8527,8 +8670,12 @@ async def driver_accept_offer_http(
             "trip_distance_km": trip_dk,
             "pickup_distance_km": pickup_distance_km,
             "pickup_eta_min": pickup_eta_min,
+            "distance_to_passenger_km": pickup_distance_km,
+            "time_to_passenger_min": pickup_eta_min,
             "estimated_minutes": est_min,
             "trip_duration_min": est_min,
+            "route_info": route_info_payload,
+            "tag": {k: v for k, v in updated_tag.items() if v is not None},
             "status": "matched",
             "matched_at": updated_tag.get("matched_at") or matched_at,
             "passenger_payment_method": updated_tag.get("passenger_payment_method"),
@@ -14502,6 +14649,9 @@ async def handle_driver_accept_offer(sid, data):
 
         pickup_distance_km = None
         pickup_eta_min = None
+        trip_distance_km = None
+        trip_duration_min = None
+        route_info_payload: dict[str, Any] = {}
         try:
             udrv_sock = (
                 supabase.table("users")
@@ -14511,7 +14661,14 @@ async def handle_driver_accept_offer(sid, data):
                 .execute()
             )
             plat_s, plng_s = tag.get("pickup_lat"), tag.get("pickup_lng")
-            if udrv_sock.data and plat_s is not None and plng_s is not None:
+            dplat_s, dplng_s = tag.get("dropoff_lat"), tag.get("dropoff_lng")
+            if (
+                udrv_sock.data
+                and plat_s is not None
+                and plng_s is not None
+                and dplat_s is not None
+                and dplng_s is not None
+            ):
                 dlat_s, dlng_s = udrv_sock.data[0].get("latitude"), udrv_sock.data[0].get(
                     "longitude"
                 )
@@ -14519,15 +14676,53 @@ async def handle_driver_accept_offer(sid, data):
                     ri_sock = await get_route_info(
                         float(dlat_s), float(dlng_s), float(plat_s), float(plng_s)
                     )
-                    if ri_sock:
+                    ri_trip_sock = await get_route_info(
+                        float(plat_s), float(plng_s), float(dplat_s), float(dplng_s)
+                    )
+                    if (
+                        ri_sock
+                        and ri_trip_sock
+                        and str(ri_sock.get("source", "")).strip().lower() != "haversine_fallback"
+                        and str(ri_trip_sock.get("source", "")).strip().lower() != "haversine_fallback"
+                    ):
                         pickup_distance_km = float(ri_sock["distance_km"])
-                        pickup_eta_min = int(ri_sock["duration_min"])
+                        pickup_eta_min = int(round(float(ri_sock["duration_min"])))
+                        trip_distance_km = float(ri_trip_sock["distance_km"])
+                        trip_duration_min = int(round(float(ri_trip_sock["duration_min"])))
+                        route_info_payload = {
+                            "pickup_distance_km": pickup_distance_km,
+                            "pickup_eta_min": pickup_eta_min,
+                            "distance_to_passenger_km": pickup_distance_km,
+                            "time_to_passenger_min": pickup_eta_min,
+                            "trip_distance_km": trip_distance_km,
+                            "trip_duration_min": trip_duration_min,
+                            "distance_km": trip_distance_km,
+                            "estimated_minutes": trip_duration_min,
+                        }
+                        op = ri_sock.get("overview_polyline") if isinstance(ri_sock, dict) else None
+                        if isinstance(op, str) and len(op) > 2:
+                            route_info_payload["overview_polyline"] = op
+                        coords = ri_sock.get("coordinates") if isinstance(ri_sock, dict) else None
+                        if isinstance(coords, list) and len(coords) >= 2:
+                            route_info_payload["coordinates"] = coords
         except Exception as _pks:
             logger.warning(f"driver_accept_offer pickup_distance: {_pks}")
 
         matched_at = datetime.utcnow().isoformat()
-        trip_dk_sock = tag.get("distance_km")
-        est_min_sock = tag.get("estimated_minutes")
+        print("[ROUTE_ACCEPT] driver_to_pickup=", pickup_distance_km, pickup_eta_min)
+        print("[ROUTE_ACCEPT] pickup_to_dropoff=", trip_distance_km, trip_duration_min)
+        print("[ROUTE_ACCEPT] emit_driver_id=", resolved_driver_id, "tag_id=", tid)
+        trip_dk_sock = trip_distance_km
+        est_min_sock = trip_duration_min
+        tag["pickup_distance_km"] = pickup_distance_km
+        tag["pickup_eta_min"] = pickup_eta_min
+        tag["distance_to_passenger_km"] = pickup_distance_km
+        tag["time_to_passenger_min"] = pickup_eta_min
+        tag["trip_distance_km"] = trip_distance_km
+        tag["trip_duration_min"] = trip_duration_min
+        tag["distance_km"] = trip_distance_km
+        tag["estimated_minutes"] = trip_duration_min
+        tag["route_info"] = route_info_payload
         passenger_location_sock: Optional[dict] = None
         if pr and pr.data:
             u_sock = pr.data[0]
@@ -14570,6 +14765,10 @@ async def handle_driver_accept_offer(sid, data):
             "trip_duration_min": est_min_sock,
             "pickup_distance_km": pickup_distance_km,
             "pickup_eta_min": pickup_eta_min,
+            "distance_to_passenger_km": pickup_distance_km,
+            "time_to_passenger_min": pickup_eta_min,
+            "route_info": route_info_payload,
+            "tag": {k: v for k, v in tag.items() if v is not None},
             "status": "matched",
             "matched_at": matched_at,
             "passenger_payment_method": tag.get("passenger_payment_method"),

@@ -10847,24 +10847,49 @@ function normalizeDriverMatchSocketPayload(raw: unknown): {
       ? { ...(tag.route_info as Record<string, unknown>) }
       : {};
 
+  const readNum = (...vals: unknown[]): number | null => {
+    for (const v of vals) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+  };
+
+  const pickupKmFromPayload = readNum(
+    r.pickup_distance_km,
+    r.distance_to_passenger_km,
+    r.route_info && typeof r.route_info === 'object'
+      ? (r.route_info as Record<string, unknown>).pickup_distance_km
+      : null,
+    tag?.pickup_distance_km,
+    tag?.distance_to_passenger_km,
+  );
+  const pickupMinFromPayload = readNum(
+    r.pickup_eta_min,
+    r.time_to_passenger_min,
+    r.route_info && typeof r.route_info === 'object'
+      ? (r.route_info as Record<string, unknown>).pickup_eta_min
+      : null,
+    tag?.pickup_eta_min,
+    tag?.time_to_passenger_min,
+  );
+
   if (route) {
-    const dk = Number(route.distance_km);
-    const dm = Number(route.duration_min);
-    if (Number.isFinite(dk) && dk > 0) riBase.pickup_distance_km = dk;
-    if (Number.isFinite(dm) && dm > 0) riBase.pickup_eta_min = Math.max(1, Math.round(dm));
+    const dk = readNum(route.pickup_distance_km, route.distance_to_passenger_km, route.distance_km);
+    const dm = readNum(route.pickup_eta_min, route.time_to_passenger_min, route.duration_min);
+    if (dk != null) riBase.pickup_distance_km = dk;
+    if (dm != null) riBase.pickup_eta_min = Math.max(1, Math.round(dm));
     const op = route.overview_polyline;
     if (typeof op === 'string' && op.length > 2) riBase.overview_polyline = op;
     if (Array.isArray(route.coordinates) && route.coordinates.length >= 2) {
       riBase.coordinates = route.coordinates;
     }
   }
-  const topDm = Number(r.estimated_minutes ?? r.duration);
-  const topDk = Number(r.distance_km);
-  if (!(Number(riBase.pickup_distance_km) > 0) && Number.isFinite(topDk) && topDk > 0) {
-    riBase.pickup_distance_km = topDk;
+  if (!(Number(riBase.pickup_distance_km) > 0) && pickupKmFromPayload != null) {
+    riBase.pickup_distance_km = pickupKmFromPayload;
   }
-  if (!(Number(riBase.pickup_eta_min) > 0) && Number.isFinite(topDm) && topDm > 0) {
-    riBase.pickup_eta_min = Math.max(1, Math.round(topDm));
+  if (!(Number(riBase.pickup_eta_min) > 0) && pickupMinFromPayload != null) {
+    riBase.pickup_eta_min = Math.max(1, Math.round(pickupMinFromPayload));
   }
 
   merged.route_info = riBase;
