@@ -14701,14 +14701,75 @@ async def _parse_create_ride_offer_json(http_request: Request) -> CreateRideOffe
         raise HTTPException(status_code=422, detail=e.errors()) from e
 
 
-async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
+async def _resolve_passenger_id_for_normal_ride_create(
+    payload_passenger_id: Optional[str], auth_user_id: Optional[str] = None
+) -> tuple[Optional[str], str]:
+    """Normal ride/create için payload/auth kimliğini users.id UUID'ye çöz."""
+    raw = str(payload_passenger_id or "").strip()
+    auth_raw = str(auth_user_id or "").strip()
+    # 1) payload UUID ise doğrudan users.id kontrolü
+    if raw:
+        try:
+            uuid_raw = str(uuid.UUID(raw)).strip().lower()
+            by_uuid = supabase.table("users").select("id").eq("id", uuid_raw).limit(1).execute()
+            if by_uuid.data and by_uuid.data[0].get("id"):
+                return str(by_uuid.data[0]["id"]).strip().lower(), "payload_uuid"
+        except Exception:
+            pass
+        # 2) payload users.id
+        try:
+            by_id = supabase.table("users").select("id").eq("id", raw).limit(1).execute()
+            if by_id.data and by_id.data[0].get("id"):
+                return str(by_id.data[0]["id"]).strip().lower(), "payload_users_id"
+        except Exception:
+            pass
+        # 3) payload users.auth_id
+        try:
+            by_auth = supabase.table("users").select("id").eq("auth_id", raw).limit(1).execute()
+            if by_auth.data and by_auth.data[0].get("id"):
+                return str(by_auth.data[0]["id"]).strip().lower(), "payload_auth_id"
+        except Exception:
+            pass
+        # 4) payload users.mongo_id
+        try:
+            by_mongo = supabase.table("users").select("id").eq("mongo_id", raw).limit(1).execute()
+            if by_mongo.data and by_mongo.data[0].get("id"):
+                return str(by_mongo.data[0]["id"]).strip().lower(), "payload_mongo_id"
+        except Exception:
+            pass
+    # 5) payload boş/çözümsüzse auth_user_id ile çöz
+    if auth_raw:
+        try:
+            by_auth = supabase.table("users").select("id").eq("auth_id", auth_raw).limit(1).execute()
+            if by_auth.data and by_auth.data[0].get("id"):
+                return str(by_auth.data[0]["id"]).strip().lower(), "auth_user_id_auth_id"
+        except Exception:
+            pass
+        try:
+            by_uuid = supabase.table("users").select("id").eq("id", auth_raw).limit(1).execute()
+            if by_uuid.data and by_uuid.data[0].get("id"):
+                return str(by_uuid.data[0]["id"]).strip().lower(), "auth_user_id_users_id"
+        except Exception:
+            pass
+    return None, "not_found"
+
+
+async def _create_ride_offer_execute(
+    payload: CreateRideOfferRequest,
+    auth_user_id: Optional[str] = None,
+):
     """Teklif oluşturma iş mantığı (tag insert + dispatch)."""
     try:
-        # Her zaman canonical UUID ile ilerle (eski id/telefon kaynaklı eşleşme kaçaklarını önler)
-        passenger_id = await resolve_user_id(
-            str(payload.passenger_id).strip() if payload.passenger_id else ""
+        raw_passenger_id = str(payload.passenger_id or "").strip()
+        logger.info("[ride/create] raw passenger_id=%s", raw_passenger_id[:96])
+        logger.info("[ride/create] auth_user_id=%s", str(auth_user_id or "")[:96])
+        passenger_id, reason = await _resolve_passenger_id_for_normal_ride_create(
+            payload_passenger_id=raw_passenger_id,
+            auth_user_id=auth_user_id,
         )
+        logger.info("[ride/create] resolved passenger_id=%s", str(passenger_id or "")[:96])
         if not passenger_id:
+            logger.error("[ride/create] resolve failed reason=%s", reason)
             return {"success": False, "error": "Geçersiz yolcu kimliği"}
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = (payload.tag_id and str(payload.tag_id).strip()) or str(uuid.uuid4())
@@ -14958,7 +15019,7 @@ async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
 async def create_ride_offer(http_request: Request):
     """Martı TAG — yolcu teklifi; gövde JSON, Request üzerinden okunur."""
     payload = await _parse_create_ride_offer_json(http_request)
-    return await _create_ride_offer_execute(payload)
+    return await _create_ride_offer_execute(payload, auth_user_id=None)
 
 
 @api_router.post("/ride/create")
@@ -14967,8 +15028,17 @@ async def create_ride(http_request: Request):
     Yolcu teklif oluşturma — POST /api/ride/create
     create-offer ile aynı: tag insert + rolling_dispatch_start.
     """
+    auth_user_id = None
+    try:
+        authorization = http_request.headers.get("Authorization")
+        if authorization:
+            parts = str(authorization).strip().split(None, 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+                auth_user_id = verify_access_token(parts[1].strip())
+    except Exception:
+        auth_user_id = None
     payload = await _parse_create_ride_offer_json(http_request)
-    return await _create_ride_offer_execute(payload)
+    return await _create_ride_offer_execute(payload, auth_user_id=auth_user_id)
 
 
 @api_router.post("/ride/accept")
