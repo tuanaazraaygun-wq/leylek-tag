@@ -310,6 +310,10 @@ sio = socketio.AsyncServer(
 
 # Aktif kullanıcılar: {user_id: socket_id}
 connected_users = {}
+# Aktif kullanıcılar (çoklu soket): {user_id: set(socket_id)}
+connected_user_sids: dict[str, set[str]] = {}
+# sid -> kayıtlı user_id anahtarları (disconnect temizliği için)
+socket_sid_to_keys: dict[str, set[str]] = {}
 # connect sid -> düşürülmüş user_id (muhabbet socket yöneticileri için)
 socket_id_to_user: dict[str, str] = {}
 
@@ -393,12 +397,40 @@ async def connect(sid, environ):
 async def disconnect(sid):
     print("❌ SOCKET CLIENT DISCONNECTED:", sid)
     socket_id_to_user.pop(sid, None)
+    mapped_keys = socket_sid_to_keys.pop(sid, set())
+    for key in list(mapped_keys):
+        try:
+            sset = connected_user_sids.get(key)
+            if sset and sid in sset:
+                sset.discard(sid)
+                if not sset:
+                    connected_user_sids.pop(key, None)
+            cur = connected_users.get(key)
+            if cur == sid:
+                nxt = None
+                sset2 = connected_user_sids.get(key)
+                if sset2:
+                    nxt = next(iter(sset2), None)
+                if nxt:
+                    connected_users[key] = nxt
+                else:
+                    connected_users.pop(key, None)
+        except Exception:
+            pass
     # Aynı sid'e kayıtlı tüm key'leri kaldır (orijinal + normalized user_id)
     to_remove = [uid for uid, s in connected_users.items() if s == sid]
     for uid in to_remove:
         del connected_users[uid]
     if to_remove:
         logger.info(f"🔌 Socket ayrıldı: {sid} (user: {to_remove})")
+        for uid in to_remove:
+            if not isinstance(uid, str):
+                continue
+            _uid = uid.strip()
+            if not _uid:
+                continue
+            _sids = _all_sids_for_registered_user(_uid)
+            logger.info("[SOCKET MAP] user_id=%s sids=%s", _uid[:96], _sids)
     else:
         logger.info(f"🔌 Socket ayrıldı: {sid}")
 
@@ -452,11 +484,20 @@ async def register(sid, data):
     role = data.get("role")
     raw = str(authed_uid).strip()
     try:
-        resolved_uid = await resolve_user_id(raw) or raw
+        resolved_uid = await resolve_user_id(raw)
     except Exception:
+        resolved_uid = None
+    if not resolved_uid:
+        logger.warning(
+            "[SOCKET WARNING] fallback to raw sub sid=%s token_sub=%s client_user_id=%s",
+            sid,
+            raw[:96],
+            client_declares_uid[:96],
+        )
         resolved_uid = raw
     resolved_uid = str(resolved_uid).strip()
     resolved_lower = resolved_uid.lower()
+    raw_lower = raw.lower()
 
     if client_declares_uid and client_declares_uid.lower() != resolved_lower:
         logger.warning(
@@ -466,24 +507,19 @@ async def register(sid, data):
             resolved_uid,
         )
 
-    # Aynı kullanıcıda çift bağlantı: yeni register gelince eski sid kapat (stale emit / yarış)
-    old_sid = connected_users.get(resolved_uid) or connected_users.get(resolved_lower)
-    if old_sid and old_sid != sid:
-        logger.warning(
-            "SOCKET_REGISTER_DEDUP user=%s old_sid=%s new_sid=%s",
-            resolved_lower[:16],
-            old_sid,
-            sid,
-        )
-        try:
-            socket_id_to_user.pop(old_sid, None)
-            await sio.disconnect(old_sid)
-        except Exception as _dedup_ex:
-            logger.warning("SOCKET_REGISTER_DEDUP_DISCONNECT_FAIL: %s", _dedup_ex)
-
+    # Dual mapping: hem users.id hem auth_id(sub) anahtarlarında sid bulunabilir.
     connected_users[resolved_uid] = sid
     connected_users[resolved_lower] = sid
+    connected_user_sids.setdefault(resolved_uid, set()).add(sid)
+    connected_user_sids.setdefault(resolved_lower, set()).add(sid)
+    socket_sid_to_keys.setdefault(sid, set()).update({resolved_uid, resolved_lower})
+    if raw_lower and raw_lower != resolved_lower:
+        connected_users[raw_lower] = sid
+        connected_user_sids.setdefault(raw_lower, set()).add(sid)
+        socket_sid_to_keys.setdefault(sid, set()).add(raw_lower)
     socket_id_to_user[sid] = resolved_lower
+    logger.info("[SOCKET MAP] user_id=%s sids=%s", resolved_lower[:96], _all_sids_for_registered_user(resolved_lower))
+    logger.info("[SOCKET MAP FULL] connected_users keys=%s", list(connected_users.keys()))
 
     room_name = _normalize_user_room(resolved_uid)
     await sio.enter_room(sid, room_name)
@@ -1675,31 +1711,75 @@ async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> 
     try:
         if user_id is None:
             return
-        raw = str(user_id).strip().lower()
-        if not raw:
+        raw_in = str(user_id).strip()
+        if not raw_in:
             return
+        keys_to_try: set[str] = set()
+        keys_to_try.add(raw_in)
+        keys_to_try.add(raw_in.lower())
+        resolved_uid = None
         try:
-            resolved = await resolve_user_id(raw)
-            if resolved:
-                raw = str(resolved).strip().lower()
+            resolved_uid = await resolve_user_id(raw_in)
+            if resolved_uid:
+                rs = str(resolved_uid).strip()
+                if rs:
+                    keys_to_try.add(rs)
+                    keys_to_try.add(rs.lower())
         except Exception:
             pass
-        room = _normalize_user_room(raw)
-        sids = _all_sids_for_registered_user(raw)
-        if sids:
-            for sid in sids:
+
+        # Reverse alias lookup: aynı sid seti altındaki tüm key alias'larını da dahil et.
+        alias_keys: set[str] = set()
+        initial_sids: set[str] = set()
+        for k in list(keys_to_try):
+            for sid in connected_user_sids.get(str(k), set()):
+                if sid:
+                    initial_sids.add(str(sid))
+        if initial_sids:
+            for k, sid_set in connected_user_sids.items():
+                if not sid_set:
+                    continue
+                for sid in sid_set:
+                    if str(sid) in initial_sids:
+                        alias_keys.add(str(k))
+                        break
+        keys_to_try.update(alias_keys)
+
+        all_sids: set[str] = set()
+        for key in keys_to_try:
+            for sid in connected_user_sids.get(str(key), set()):
+                if sid:
+                    all_sids.add(str(sid))
+
+        logger.info(
+            "[EMIT DEBUG] user_id=%s keys_to_try=%s resolved=%s final_sids=%s",
+            raw_in[:96],
+            sorted(keys_to_try),
+            str(resolved_uid or "")[:96],
+            sorted(all_sids),
+        )
+
+        room = _normalize_user_room(str(resolved_uid or raw_in))
+        if all_sids:
+            for sid in all_sids:
                 try:
                     await sio.emit(event_name, payload, to=sid)
                 except Exception as em:
                     logger.warning("%s emit to=sid sid=%s err=%s", event_name, sid, em)
             if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=%s", raw, sids)
+                logger.info("[muhabbet_ack] sent user=%s sids=%s", str(resolved_uid or raw_in).lower(), sorted(all_sids))
             else:
-                logger.info("📤 %s to=sids user=%s… count=%s", event_name, raw[:13], len(sids))
+                logger.info(
+                    "📤 %s to=sids user=%s… count=%s tried_keys=%s",
+                    event_name,
+                    str(resolved_uid or raw_in).lower()[:13],
+                    len(all_sids),
+                    sorted(keys_to_try),
+                )
         else:
             await sio.emit(event_name, payload, room=room)
             if event_name == "message_ack":
-                logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", raw, room)
+                logger.info("[muhabbet_ack] sent user=%s sids=[] room_fallback=%s", str(resolved_uid or raw_in).lower(), room)
             else:
                 logger.info("📤 %s room=%s (sid yok)", event_name, room)
     except Exception as e:
@@ -1737,6 +1817,9 @@ def _all_sids_for_registered_user(user_id: str) -> list[str]:
     ul = str(user_id or "").strip().lower()
     if not ul:
         return []
+    direct = connected_user_sids.get(ul)
+    if direct:
+        return sorted(str(s) for s in direct if s)
     seen: set[str] = set()
     out: list[str] = []
     for k, s in list(connected_users.items()):
@@ -8392,14 +8475,20 @@ async def driver_accept_offer_http(
                 await sio.emit("tag_matched", payload, room=driver_target)
                 await sio.emit("ride_matched", payload, room=driver_target)
             if passenger_id:
+                passenger_sids = _all_sids_for_registered_user(str(passenger_id))
                 passenger_sid = connected_users.get(
                     str(passenger_id).strip().lower()
                 ) or connected_users.get(passenger_id)
                 passenger_room = _normalize_user_room(passenger_id)
                 passenger_target = passenger_sid or passenger_room
+                logger.info("[emit] passenger_id=%s", str(passenger_id)[:96])
+                logger.info("[emit] passenger_sids=%s", passenger_sids)
                 if passenger_target:
+                    logger.info("[emit] sending ride_matched")
                     await sio.emit("tag_matched", payload, room=passenger_target)
                     await sio.emit("ride_matched", payload, room=passenger_target)
+                else:
+                    logger.error("[emit] passenger_sid_empty passenger_id=%s", str(passenger_id)[:96])
         except Exception as sock_e:
             logger.warning(f"driver/accept-offer HTTP socket emit: {sock_e}")
 
@@ -14418,14 +14507,20 @@ async def handle_driver_accept_offer(sid, data):
         # İstenen net match event: sürücü room'una ride_matched
         await sio.emit("ride_matched", payload, room=f"user_{str(resolved_driver_id).strip().lower()}")
         if passenger_id:
+            passenger_sids = _all_sids_for_registered_user(str(passenger_id))
             passenger_sid = connected_users.get(str(passenger_id).strip().lower()) or connected_users.get(passenger_id)
             passenger_room = _normalize_user_room(passenger_id)
             passenger_target = passenger_sid or passenger_room
+            logger.info("[emit] passenger_id=%s", str(passenger_id)[:96])
+            logger.info("[emit] passenger_sids=%s", passenger_sids)
             if passenger_target:
+                logger.info("[emit] sending ride_matched")
                 await sio.emit("driver_matched", payload, room=passenger_target)
                 await sio.emit("tag_matched", payload, room=passenger_target)
             # İstenen net match event: yolcu room'una ride_matched
             await sio.emit("ride_matched", payload, room=f"user_{str(passenger_id).strip().lower()}")
+            if not passenger_target:
+                logger.error("[emit] passenger_sid_empty passenger_id=%s", str(passenger_id)[:96])
         logger.info("SOCKET EMIT DONE driver_accept_offer")
     except Exception as e:
         logger.warning(f"driver_accept_offer post-match (non-fatal): {e}")
@@ -15605,7 +15700,13 @@ async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request 
         except Exception as _pla:
             logger.warning(f"passenger_location (accept_ride socket): {_pla}")
         if passenger_id:
+            logger.info("[emit] passenger_id=%s", str(passenger_id)[:96])
+            logger.info("[emit] passenger_sids=%s", _all_sids_for_registered_user(str(passenger_id)))
+            logger.info("[emit] sending ride_matched")
             await emit_socket_event_to_user(passenger_id, "ride_accepted", match_socket_payload)
+            await emit_socket_event_to_user(passenger_id, "ride_matched", match_socket_payload)
+            if not _all_sids_for_registered_user(str(passenger_id)):
+                logger.error("[emit] passenger_sid_empty passenger_id=%s", str(passenger_id)[:96])
         await emit_socket_event_to_user(resolved_driver_id, "ride_matched", match_socket_payload)
         
         # Push (Expo) — teklif kanalıyla aynı

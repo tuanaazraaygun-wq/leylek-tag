@@ -6930,6 +6930,7 @@ function PassengerDashboard({
     },
     // 🆕 TAG EŞLEŞTİ - Yolcu teklifi kabul ettiğinde
     onTagMatched: (data) => {
+      console.log('[PASSENGER EVENT RECEIVED]', 'tag_matched', data);
       console.log('[normal-passenger-flow] matched_event_received=tag_matched');
       console.log('🤝 YOLCU - TAG EŞLEŞTİ (Socket):', data);
       // 🔊 EŞLEŞME SESİ - Ding ding ding
@@ -6984,10 +6985,12 @@ function PassengerDashboard({
       }
       
       // Backend'den de çek (ekstra bilgiler için)
+      setScreen('dashboard');
       setTimeout(() => loadActiveTag(), 1000);
     },
     // Backend accept_ride: doğrudan eşleşme socket’i (yolcu)
     onRideAccepted: (data) => {
+      console.log('[PASSENGER EVENT RECEIVED]', 'ride_accepted', data);
       console.log('[normal-passenger-flow] matched_event_received=ride_accepted');
       console.log('✅ YOLCU - ride_accepted (Socket):', data);
       playMatchSound();
@@ -7041,6 +7044,7 @@ function PassengerDashboard({
     },
     // Sürücü HTTP/socket eşleşmesi — ride_matched (tag_matched ile aynı yük)
     onRideMatched: (data) => {
+      console.log('[PASSENGER EVENT RECEIVED]', 'ride_matched', data);
       console.log('[normal-passenger-flow] matched_event_received=ride_matched');
       console.log('✅ YOLCU - ride_matched (Socket):', data);
       playMatchSound();
@@ -8532,6 +8536,7 @@ function PassengerDashboard({
       setActiveTag(mergedTag as Tag);
       console.log('[normal-passenger-flow] offer_sent tag_id=', resolvedTagId);
       console.log('[normal-passenger-flow] waiting_screen=true');
+      setScreen('dashboard');
       setCurrentRequestId(requestId);
 
       if (emitCreateTagRequest) {
