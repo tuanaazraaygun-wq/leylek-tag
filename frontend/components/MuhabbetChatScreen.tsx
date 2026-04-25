@@ -1226,6 +1226,13 @@ export default function MuhabbetChatScreen({
 
   const sendLeylekPairRequest = useCallback(async () => {
     if (!cid || pairRequestBusyRef.current) return;
+    const socket = getOrCreateSocket();
+    console.log("[leylek-pair] pressed", {
+      cid,
+      socketConnected: socket?.connected,
+      socketId: socket?.id,
+      pairRequestLoading,
+    });
     const token = (await getPersistedAccessToken())?.trim();
     if (!token) {
       Alert.alert('Oturum', 'Giriş yapın ve tekrar deneyin.');
@@ -1246,7 +1253,6 @@ export default function MuhabbetChatScreen({
       pairRequestBusyRef.current = false;
       setPairRequestLoading(false);
     };
-    const socket = getOrCreateSocket();
     let tmo: ReturnType<typeof setTimeout> | null = null;
     const offPair = () => {
       socket.off('leylek_pair_error', onErr);
@@ -1294,21 +1300,11 @@ export default function MuhabbetChatScreen({
       Alert.alert('Bilgi', p?.message || 'İşlem tamam.');
     };
     try {
-      if (!socket.connected) {
-        socket.connect();
-        await new Promise<void>((resolve) => {
-          if (socket.connected) {
-            resolve();
-            return;
-          }
-          const t = setTimeout(() => resolve(), 10000);
-          const onC = () => {
-            clearTimeout(t);
-            socket.off('connect', onC);
-            resolve();
-          };
-          socket.on('connect', onC);
-        });
+      const ready = await ensureSocketReadyForSend();
+      if (!ready) {
+        finish();
+        Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+        return;
       }
       offPair();
       socket.on('leylek_pair_error', onErr);
@@ -1326,7 +1322,9 @@ export default function MuhabbetChatScreen({
         /* noop */
       }
       console.log('[chat] send leylek pair request conversation=', cid);
-      socket.emit('leylek_pair_match_request', { conversation_id: cid });
+      const payload = { conversation_id: cid };
+      console.log("[leylek-pair] emit payload", payload);
+      socket.emit('leylek_pair_match_request', payload);
     } catch {
       if (tmo) {
         clearTimeout(tmo);
@@ -1336,7 +1334,7 @@ export default function MuhabbetChatScreen({
       finish();
       Alert.alert('Bağlantı hatası', 'İnternet bağlantınızı kontrol edin.');
     }
-  }, [cid, pushSystemCard]);
+  }, [cid, ensureSocketReadyForSend, pairRequestLoading, pushSystemCard]);
 
   const profileTarget = (otherUserId || ctx?.other_user_id || '').trim();
   const headerRight = profileTarget ? (

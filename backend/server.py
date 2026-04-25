@@ -21895,8 +21895,15 @@ async def _sio_leylek_pair_request_handler(sid, data):
     """İstemci: leylek_pair_request veya leylek_pair_match_request — DB + leylek_pair_match_request emit."""
     if not isinstance(data, dict):
         data = {}
+    logger.info("[leylek_pair_request] received payload=%s", data)
     uid = _muhabbet_socket_uid_from_sid(sid)
     if not uid:
+        logger.warning("[leylek_pair_request] not_registered sid=%s payload=%s", sid, data)
+        await sio.emit(
+            "leylek_pair_error",
+            {"code": "not_registered", "message": "Bağlantı hazırlanıyor. Lütfen tekrar deneyin."},
+            room=sid,
+        )
         return
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
     if not cid:
@@ -21922,6 +21929,7 @@ async def _sio_leylek_pair_request_handler(sid, data):
     rid = r["request_id"]
     target = r["target"]
     role = r.get("initiator_role") or ""
+    logger.info("[leylek_pair_request] requester=%s target=%s conversation=%s", uid, target, cid)
     logger.info(
         "[leylek_pair_request] participants requester=%s target=%s conversation_id=%s request_id=%s",
         str(uid)[:13],
