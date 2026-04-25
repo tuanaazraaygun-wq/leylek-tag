@@ -21253,14 +21253,13 @@ async def muhabbet_conversations_me(
             .execute()
         )
         raw_convs = [c for c in (res.data or []) if str(c.get("id") or "").strip().lower() not in hidden_ids]
-        convs: list = raw_convs[:lim]
-        if not convs:
+        raw_cids = [str(c["id"]).strip().lower() for c in raw_convs if c.get("id")]
+        if not raw_cids:
             return {"success": True, "conversations": [], "count": 0}
-        cids = [str(c["id"]).strip().lower() for c in convs if c.get("id")]
         mreq = (
             supabase.table("listing_match_requests")
             .select("conversation_id, listing_id, status, created_at")
-            .in_("conversation_id", cids)
+            .in_("conversation_id", raw_cids)
             .execute()
         )
         rows = list(mreq.data or [])
@@ -21271,6 +21270,25 @@ async def muhabbet_conversations_me(
             if not cid0 or cid0 in lmr_by_cid:
                 continue
             lmr_by_cid[cid0] = r
+        filtered_convs: list = []
+        for c in raw_convs:
+            cid0 = str(c.get("id") or "").strip().lower()
+            if not cid0:
+                continue
+            st = str((lmr_by_cid.get(cid0) or {}).get("status") or "").strip().lower()
+            if st == "accepted":
+                filtered_convs.append(c)
+                continue
+            if str(c.get("last_message") or "").strip():
+                filtered_convs.append(c)
+                continue
+            if c.get("last_message_at"):
+                filtered_convs.append(c)
+                continue
+        convs: list = filtered_convs[:lim]
+        if not convs:
+            return {"success": True, "conversations": [], "count": 0}
+        cids = [str(c["id"]).strip().lower() for c in convs if c.get("id")]
         lid_list: list = []
         for lmr in lmr_by_cid.values():
             lidv = lmr.get("listing_id")
