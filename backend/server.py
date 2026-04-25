@@ -3425,30 +3425,24 @@ def get_authenticated_user_id_from_authorization(
 
 async def resolve_user_id(user_id: str) -> str:
     """
-    MongoDB ID'yi Supabase UUID'ye dönüştür
-    Eğer zaten UUID ise olduğu gibi döndür
+    JWT sub/auth_id -> users.id (UUID) eşlemesi.
+    Yalnızca users.id döner; bulunamazsa None.
     """
     if not user_id:
         return None
-    
-    # UUID formatı kontrolü (8-4-4-4-12)
-    import re
-    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
-    
-    if uuid_pattern.match(user_id):
-        # UUID tek biçimde (socket room / dispatch_queue ile uyum)
-        return str(user_id).strip().lower()
-    
-    # MongoDB ID olabilir, mongo_id ile ara
+
+    raw = str(user_id).strip()
+    if not raw:
+        return None
+
     try:
-        result = supabase.table("users").select("id").eq("mongo_id", user_id).execute()
+        result = supabase.table("users").select("id").eq("auth_id", raw).limit(1).execute()
         if result.data:
             return str(result.data[0]["id"]).strip().lower()
     except Exception as e:
-        logger.warning(f"User ID resolve error: {e}")
-    
-    # Bulunamadıysa orijinal değeri döndür
-    return user_id
+        logger.warning("resolve_user_id auth_id lookup error: %s", e)
+
+    return None
 
 
 async def passenger_location_for_driver_socket(
@@ -18664,7 +18658,13 @@ class MuhabbetChatMessageCreateBody(BaseModel):
 async def _muhabbet_listing_uid(authenticated_user_id: str) -> str:
     """JWT sub → users.id UUID. FK ride_listings ilişkisi için mutlaka geçerli UUID dönmeli."""
     resolved = await resolve_user_id(authenticated_user_id)
-    uid = str(resolved or authenticated_user_id).strip().lower()
+    uid = str(resolved or "").strip().lower()
+    if not uid:
+        logger.error(
+            "muhabbet listing: auth_id resolve edilemedi auth_sub=%s",
+            str(authenticated_user_id)[:96],
+        )
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı") from None
     try:
         uuid.UUID(uid)
     except Exception:
@@ -21226,6 +21226,11 @@ async def muhabbet_conversations_me(
     """Oturum kullanıcısının sohbetleri: karşı taraf, ilan özet, istek status; created_at desc."""
     try:
         uid = await _muhabbet_listing_uid(authenticated_user_id)
+        logger.info(
+            "conversations_me debug auth_sub=%s resolved_uid=%s",
+            str(authenticated_user_id)[:96],
+            str(uid)[:96],
+        )
         if not uid:
             raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
         lim = max(1, min(int(limit or 50), 100))
@@ -21252,6 +21257,7 @@ async def muhabbet_conversations_me(
             .limit(fetch_lim)
             .execute()
         )
+        logger.info("conversations_me debug query_rows=%s uid=%s", len(res.data or []), str(uid)[:96])
         raw_convs = [c for c in (res.data or []) if str(c.get("id") or "").strip().lower() not in hidden_ids]
         raw_cids = [str(c["id"]).strip().lower() for c in raw_convs if c.get("id")]
         if not raw_cids:
