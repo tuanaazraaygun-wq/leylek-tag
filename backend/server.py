@@ -1706,6 +1706,82 @@ async def emit_passenger_offer_revoked(
         logger.warning(f"passenger_offer_revoked emit hatası: {e}")
 
 
+async def _emit_driver_on_the_way_route(tag_row: dict, resolved_driver_id: str) -> None:
+    """Eşleşme sonrası: sürücü konumu → alış rotası; driver_on_the_way + ride_matched (sürücü navigasyon uyumu)."""
+    if not supabase or not isinstance(tag_row, dict):
+        return
+    did = str(resolved_driver_id or "").strip()
+    if not did:
+        return
+    plat, plng = tag_row.get("pickup_lat"), tag_row.get("pickup_lng")
+    if plat is None or plng is None:
+        logger.warning("driver_on_the_way skip: missing pickup tag_id=%s", tag_row.get("id"))
+        return
+    try:
+        p_la = float(plat)
+        p_lo = float(plng)
+    except (TypeError, ValueError):
+        logger.warning("driver_on_the_way skip: invalid pickup coords tag_id=%s", tag_row.get("id"))
+        return
+
+    dlat: Any = None
+    dlng: Any = None
+    try:
+        udrv = (
+            supabase.table("users")
+            .select("latitude, longitude")
+            .eq("id", did)
+            .limit(1)
+            .execute()
+        )
+        if not udrv.data and "-" in did:
+            udrv = (
+                supabase.table("users")
+                .select("latitude, longitude")
+                .eq("id", did.lower())
+                .limit(1)
+                .execute()
+            )
+        if udrv.data:
+            dlat = udrv.data[0].get("latitude")
+            dlng = udrv.data[0].get("longitude")
+    except Exception as ex_udrv:
+        logger.warning("driver_on_the_way users lookup (non-fatal): %s", ex_udrv)
+
+    if dlat is None or dlng is None:
+        d_la = p_la
+        d_lo = p_lo
+    else:
+        try:
+            d_la = float(dlat)
+            d_lo = float(dlng)
+        except (TypeError, ValueError):
+            d_la = p_la
+            d_lo = p_lo
+
+    route = await get_route_info(d_la, d_lo, p_la, p_lo)
+    tag_out = {k: v for k, v in tag_row.items() if v is not None}
+    route_out = {k: v for k, v in (route or {}).items() if v is not None}
+    dm = route.get("duration_min") if route else None
+    body = {
+        "tag": tag_out,
+        "route": route_out,
+        "pickup_lat": p_la,
+        "pickup_lng": p_lo,
+        "distance_km": route.get("distance_km") if route else None,
+        "estimated_minutes": dm,
+        "duration": dm,
+    }
+    room = f"user_{did}"
+    print("ROUTE TO DRIVER:", did, route)
+    print("ROOM:", room)
+    try:
+        await sio.emit("driver_on_the_way", body, room=room)
+        await sio.emit("ride_matched", body, room=room)
+    except Exception as ex:
+        logger.warning("driver_on_the_way / ride_matched emit failed driver_id=%s err=%s", did[:96], ex)
+
+
 async def emit_socket_event_to_user(user_id, event_name: str, payload: dict) -> None:
     """Kullanıcıya socket event: connected_users’daki tüm sid’lere to=emit; yoksa user_<uuid> odası."""
     try:
@@ -8466,6 +8542,10 @@ async def driver_accept_offer_http(
         except Exception as _plh:
             logger.warning(f"passenger_location (driver/accept-offer HTTP): {_plh}")
         try:
+            await _emit_driver_on_the_way_route(updated_tag, resolved_driver_id)
+        except Exception as _dotw:
+            logger.warning("driver_on_the_way HTTP (non-fatal): %s", _dotw)
+        try:
             driver_sid = connected_users.get(
                 str(resolved_driver_id).strip().lower()
             ) or connected_users.get(resolved_driver_id)
@@ -14496,6 +14576,10 @@ async def handle_driver_accept_offer(sid, data):
         }
         if passenger_location_sock:
             payload["passenger_location"] = passenger_location_sock
+        try:
+            await _emit_driver_on_the_way_route(tag, resolved_driver_id)
+        except Exception as _dotw_sock:
+            logger.warning("driver_on_the_way socket (non-fatal): %s", _dotw_sock)
         driver_sid = connected_users.get(str(resolved_driver_id).strip().lower()) or connected_users.get(
             resolved_driver_id
         )
