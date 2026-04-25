@@ -189,6 +189,15 @@ interface LiveMapViewProps {
   onDriverEnteredDestinationNavigation?: () => void;
   /** Sürücü "Yolcuya Git" — doğrulamadan hemen önce (index’te DRIVER_NAV_COORDS vb.) */
   onDriverYolcuyaGitAttempt?: () => void;
+  /**
+   * Sürücü: origin/dest yedekleri (pickup, GPS alias) + YOLCUYA_GIT_VALIDATION alanı (activeTag).
+   * Yalnız normal yolculuk; index’te userLocation / activeTag geçer.
+   */
+  driverYolcuyaGitCoordContext?: {
+    driverLocation?: { latitude: number; longitude: number } | null;
+    currentLocation?: { latitude: number; longitude: number } | null;
+    activeTag?: Record<string, unknown> | null;
+  } | null;
 }
 
 /**
@@ -447,6 +456,108 @@ function isOsrmCoordComponent(n: unknown): n is number {
 function isValidRouteEndpoint(loc: { latitude?: unknown; longitude?: unknown } | null | undefined): loc is MapLatLng {
   if (!loc) return false;
   return isOsrmCoordComponent(loc.latitude) && isOsrmCoordComponent(loc.longitude);
+}
+
+/**
+ * Rota uçu: string / JSON’den gelen enlem-boylamı sayıya çevir; OSRM/uyarılarda sadece sayı vardı.
+ */
+function parseRouteEndpoint(
+  loc: { latitude?: unknown; longitude?: unknown } | null | undefined,
+): MapLatLng | null {
+  if (loc == null) return null;
+  const la = Number(loc.latitude);
+  const lo = Number(loc.longitude);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  const out: MapLatLng = { latitude: la, longitude: lo };
+  return isValidMapCoord(out) ? out : null;
+}
+
+function pickCoordNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Sürücü → yolcu: activeTag yedek (index driverPassengerCoordsForMap ile aynı alanlar) */
+function pickDriverPickupDestFromActiveTag(
+  tag: Record<string, unknown> | null | undefined,
+): MapLatLng | null {
+  if (!tag) return null;
+  const pl = tag.passenger_location;
+  if (pl && typeof pl === 'object') {
+    const o = pl as Record<string, unknown>;
+    const la = o.latitude ?? o.lat;
+    const lo = o.longitude ?? o.lng;
+    const p = parseRouteEndpoint({ latitude: la, longitude: lo });
+    if (p) return p;
+  }
+  const pLat = pickCoordNumber(tag.pickup_lat);
+  const pLng = pickCoordNumber(tag.pickup_lng);
+  if (pLat != null && pLng != null) {
+    return parseRouteEndpoint({ latitude: pLat, longitude: pLng });
+  }
+  const paxLa = pickCoordNumber(tag.passenger_latitude ?? tag.passenger_lat);
+  const paxLo = pickCoordNumber(tag.passenger_longitude ?? tag.passenger_lng);
+  if (paxLa != null && paxLo != null) {
+    return parseRouteEndpoint({ latitude: paxLa, longitude: paxLo });
+  }
+  return null;
+}
+
+function resolveYolcuyaGitDriverOrigin(
+  ctx: { driverLocation?: { latitude?: unknown; longitude?: unknown } | null; currentLocation?: { latitude?: unknown; longitude?: unknown } | null } | null | undefined,
+  userLocation: { latitude?: unknown; longitude?: unknown } | null | undefined,
+  navMapCoord: MapLatLng | null,
+  navStable: MapLatLng | null,
+): MapLatLng | null {
+  const cands: (
+    | { latitude?: unknown; longitude?: unknown }
+    | null
+    | undefined
+  )[] = [ctx?.driverLocation, userLocation, ctx?.currentLocation, navMapCoord, navStable];
+  for (const c of cands) {
+    const p = parseRouteEndpoint(c);
+    if (p) return p;
+  }
+  return null;
+}
+
+function resolveYolcuyaGitDriverDest(
+  otherLocation: { latitude?: unknown; longitude?: unknown } | null | undefined,
+  activeTag: Record<string, unknown> | null | undefined,
+): MapLatLng | null {
+  const o0 = parseRouteEndpoint(otherLocation);
+  if (o0) return o0;
+  return pickDriverPickupDestFromActiveTag(activeTag);
+}
+
+function computeMeetingRouteEndpoints(
+  isDriver: boolean,
+  userLocation: { latitude: number; longitude: number } | null,
+  otherLocation: { latitude: number; longitude: number } | null,
+  driverYolcuyaContext: {
+    driverLocation?: { latitude: number; longitude: number } | null;
+    currentLocation?: { latitude: number; longitude: number } | null;
+    activeTag?: Record<string, unknown> | null;
+  } | null | undefined,
+  navDriverMapCoord: MapLatLng | null,
+  navDriverStable: MapLatLng | null,
+): { ul: MapLatLng | null; ol: MapLatLng | null } {
+  if (!isDriver) {
+    return {
+      ul: parseRouteEndpoint(userLocation),
+      ol: parseRouteEndpoint(otherLocation),
+    };
+  }
+  return {
+    ul: resolveYolcuyaGitDriverOrigin(
+      driverYolcuyaContext,
+      userLocation,
+      navDriverMapCoord,
+      navDriverStable,
+    ),
+    ol: resolveYolcuyaGitDriverDest(otherLocation, driverYolcuyaContext?.activeTag ?? null),
+  };
 }
 
 /** OSRM encoded polyline (precision 5) → harita koordinatları */
@@ -1421,6 +1532,10 @@ function bearingAlongRouteAheadDeg(
     const pre = polyline[polyline.length - 2];
     return bearingDegrees(pre, tail);
   }
+  if (!ahead) {
+    const tail = polyline[polyline.length - 1];
+    return bearingDegrees(anchor, tail);
+  }
   return bearingDegrees(anchor, ahead);
 }
 
@@ -1690,6 +1805,7 @@ export default function LiveMapView({
   boardingConfirmed = false,
   onDriverEnteredDestinationNavigation,
   onDriverYolcuyaGitAttempt,
+  driverYolcuyaGitCoordContext = null,
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -1773,36 +1889,6 @@ export default function LiveMapView({
   useEffect(() => {
     meetingRouteCoordinatesRef.current = meetingRouteCoordinates;
   }, [meetingRouteCoordinates]);
-
-  const driverMapDebugPayload = useMemo(
-    () => ({
-      tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
-      navigationMode,
-      navigationStage,
-      hasUserLocation: isValidRouteEndpoint(userLocation),
-      hasOtherLocation: isValidRouteEndpoint(otherLocation),
-      meetingRouteCoordinatesLength: meetingRouteCoordinates.length,
-      otherLocationFromPickupFallback: pickupFallbackForDriver,
-      isDriver,
-    }),
-    [
-      tagId,
-      navigationMode,
-      navigationStage,
-      userLocation?.latitude,
-      userLocation?.longitude,
-      otherLocation?.latitude,
-      otherLocation?.longitude,
-      meetingRouteCoordinates.length,
-      pickupFallbackForDriver,
-      isDriver,
-    ],
-  );
-
-  useEffect(() => {
-    if (!isDriver) return;
-    console.log('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
-  }, [isDriver, driverMapDebugPayload]);
 
   const [meetingDistance, setMeetingDistance] = useState<number | null>(null);
   const [meetingDuration, setMeetingDuration] = useState<number | null>(null);
@@ -1988,6 +2074,36 @@ export default function LiveMapView({
   useEffect(() => {
     navigationStageRef.current = navigationStage;
   }, [navigationStage]);
+
+  const driverMapDebugPayload = useMemo(
+    () => ({
+      tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
+      navigationMode,
+      navigationStage,
+      hasUserLocation: isValidRouteEndpoint(userLocation),
+      hasOtherLocation: isValidRouteEndpoint(otherLocation),
+      meetingRouteCoordinatesLength: meetingRouteCoordinates.length,
+      otherLocationFromPickupFallback: pickupFallbackForDriver,
+      isDriver,
+    }),
+    [
+      tagId,
+      navigationMode,
+      navigationStage,
+      userLocation?.latitude,
+      userLocation?.longitude,
+      otherLocation?.latitude,
+      otherLocation?.longitude,
+      meetingRouteCoordinates.length,
+      pickupFallbackForDriver,
+      isDriver,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isDriver) return;
+    console.log('DRIVER_ROUTE_RENDER_STATE', driverMapDebugPayload);
+  }, [isDriver, driverMapDebugPayload]);
 
   useEffect(() => {
     console.log('NAVIGATION_MODE_CHANGED', {
@@ -2426,6 +2542,7 @@ export default function LiveMapView({
     if (!isValidMapCoord(userLocation)) {
       return;
     }
+    const uLoc = userLocation as MapLatLng;
     const poly =
       navigationStage === 'pickup' && meetingRouteCoordinates.length >= 2
         ? meetingRouteCoordinates
@@ -2433,8 +2550,8 @@ export default function LiveMapView({
           ? destinationRoute
           : [];
     let candidate: MapLatLng = {
-      latitude: userLocation.latitude,
-      longitude: userLocation.longitude,
+      latitude: uLoc.latitude,
+      longitude: uLoc.longitude,
     };
     if (poly.length >= 2) {
       const { point, distM } = closestPointOnPolyline(candidate, poly);
@@ -3102,13 +3219,24 @@ export default function LiveMapView({
       return;
     }
 
-    const userOk = isValidRouteEndpoint(userLocation);
-    const otherOk = isValidRouteEndpoint(otherLocation);
-    if (!userOk || !otherOk) {
-      console.log('YOLCUYA_GIT_BLOCKED', {
-        reason: !userOk && !otherOk ? 'invalid_coords_both' : !userOk ? 'invalid_user_location' : 'invalid_other_location',
-        userLocation,
+    const at = driverYolcuyaGitCoordContext?.activeTag ?? null;
+    const yolcuyaOrigin = resolveYolcuyaGitDriverOrigin(
+      driverYolcuyaGitCoordContext,
+      userLocation,
+      navDriverMapCoord,
+      navDriverStableRef.current,
+    );
+    const yolcuyaDest = resolveYolcuyaGitDriverDest(otherLocation, at);
+    if (!isValidMapCoord(yolcuyaOrigin) || !isValidMapCoord(yolcuyaDest)) {
+      console.log('YOLCUYA_GIT_VALIDATION', {
+        driverLocation: driverYolcuyaGitCoordContext?.driverLocation ?? null,
         otherLocation,
+        userLocation,
+        currentLocation: driverYolcuyaGitCoordContext?.currentLocation ?? null,
+        activeTag: at,
+        pickup_lat: at?.pickup_lat,
+        pickup_lng: at?.pickup_lng,
+        passenger_location: at?.passenger_location,
       });
       Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
       return;
@@ -3170,6 +3298,8 @@ export default function LiveMapView({
     setNavigationStage,
     setNavFollowResumeTick,
     onDriverYolcuyaGitAttempt,
+    driverYolcuyaGitCoordContext,
+    navDriverMapCoord,
   ]);
   
   useEffect(() => {
@@ -3912,19 +4042,25 @@ export default function LiveMapView({
 
   /** GPS titreşiminde meeting-route effect’ini her tick tetikleme — ~11 m kovada anahtar */
   const meetingRouteFetchStableKey = useMemo(() => {
-    const ul = userLocation;
-    const ol = otherLocation;
+    const { ul, ol } = computeMeetingRouteEndpoints(
+      isDriver,
+      userLocation,
+      otherLocation,
+      driverYolcuyaGitCoordContext,
+      navDriverMapCoord,
+      navDriverStableRef.current,
+    );
     const r4 = (n: number | undefined) =>
       typeof n === 'number' && Number.isFinite(n) ? Math.round(n * 1e4) / 1e4 : 'x';
-    if (!isValidRouteEndpoint(ul) || !isValidRouteEndpoint(ol)) {
+    if (!isValidMapCoord(ul) || !isValidMapCoord(ol)) {
       return `inv|${isDriver}|${navigationMode}|${navigationStage}|${pickupFallbackForDriver}|${String(tagId ?? '')}`;
     }
     return [
       'm',
-      r4(ul.latitude),
-      r4(ul.longitude),
-      r4(ol.latitude),
-      r4(ol.longitude),
+      r4(ul!.latitude),
+      r4(ul!.longitude),
+      r4(ol!.latitude),
+      r4(ol!.longitude),
       isDriver,
       navigationMode,
       navigationStage,
@@ -3932,11 +4068,11 @@ export default function LiveMapView({
       String(tagId ?? ''),
     ].join('|');
   }, [
-    userLocation?.latitude,
-    userLocation?.longitude,
-    otherLocation?.latitude,
-    otherLocation?.longitude,
     isDriver,
+    userLocation,
+    otherLocation,
+    driverYolcuyaGitCoordContext,
+    navDriverMapCoord,
     navigationMode,
     navigationStage,
     pickupFallbackForDriver,
@@ -3963,17 +4099,26 @@ export default function LiveMapView({
     let cancelled = false;
 
     const fetchRoute = async () => {
-      const ul = userLocation;
-      const ol = otherLocation;
+      const { ul, ol } = computeMeetingRouteEndpoints(
+        isDriver,
+        userLocation,
+        otherLocation,
+        driverYolcuyaGitCoordContext,
+        navDriverMapCoord,
+        navDriverStableRef.current,
+      );
       const navOn = navigationModeRef.current;
       const navStage = navigationStageRef.current;
 
-      const valid = isValidRouteEndpoint(ul) && isValidRouteEndpoint(ol);
+      const valid = isValidMapCoord(ul) && isValidMapCoord(ol);
       if (!valid) {
-        console.log('Route skipped - invalid coords', { userLocation, otherLocation });
+        console.log('Route skipped - invalid coords', { userLocation, otherLocation, resolved: { ul, ol } });
         clearMeetingRouteRef.current('invalid_coords');
         return;
       }
+
+      const uMeet = ul as MapLatLng;
+      const oMeet = ol as MapLatLng;
 
       if (isDriver && navOn && navStage === 'destination') {
         return;
@@ -3987,8 +4132,8 @@ export default function LiveMapView({
         otherLocation,
       });
 
-      const start = isDriver ? ul : ol;
-      const end = isDriver ? ol : ul;
+      const start = isDriver ? uMeet : oMeet;
+      const end = isDriver ? oMeet : uMeet;
 
       const meetingEndpointsKeyHere = () =>
         meetingEndpointsKey(start.latitude, start.longitude, end.latitude, end.longitude);

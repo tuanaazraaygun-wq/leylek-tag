@@ -12891,6 +12891,26 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     driverBoardingQrModalVisible,
   ]);
 
+  /** LiveMapView Yolcuya Git: sürücü GPS + activeTag pickup alanları; referans her render yenilenmesin */
+  const driverYolcuyaGitCoordContext = useMemo(
+    () => ({
+      driverLocation: userLocation,
+      currentLocation: userLocation,
+      activeTag: activeTag
+        ? (activeTag as unknown as Record<string, unknown>)
+        : null,
+    }),
+    [
+      userLocation?.latitude,
+      userLocation?.longitude,
+      activeTag?.id,
+      activeTag?.status,
+      (activeTag as { pickup_lat?: number } | null)?.pickup_lat,
+      (activeTag as { pickup_lng?: number } | null)?.pickup_lng,
+      (activeTag as { passenger_location?: unknown } | null)?.passenger_location,
+    ],
+  );
+
   const driverEndReqSig =
     activeTag?.end_request &&
     typeof activeTag.end_request === 'object' &&
@@ -13898,6 +13918,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             tagStartedAt={activeTag?.started_at ?? null}
             boardingConfirmed={!!activeTag?.boarding_confirmed_at}
             onDriverEnteredDestinationNavigation={handleDriverEnteredDestinationNavigation}
+            driverYolcuyaGitCoordContext={driverYolcuyaGitCoordContext}
             onDriverYolcuyaGitAttempt={() => {
               console.log('DRIVER_NAV_COORDS', {
                 driverLocation: userLocation,
