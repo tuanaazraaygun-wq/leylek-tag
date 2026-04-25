@@ -1465,6 +1465,51 @@ export default function MuhabbetChatScreen({
                       <Text style={styles.systemPermanentOkTxt}>Leylek Anahtar ile eşleşme tamamlandı</Text>
                     </View>
                   ) : null}
+                  {ctx?.matched_via_leylek_key ? (
+                    <View style={styles.secureMatchCard}>
+                      <View style={styles.secureMatchHeader}>
+                        <View style={styles.secureMatchIcon}>
+                          <Ionicons name="shield-checkmark" size={20} color="#fff" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.secureMatchTitle}>
+                            Leylek Anahtarı ile güvenli bağlantı kuruldu
+                          </Text>
+                          <Text style={styles.secureMatchSub}>
+                            Bu eşleşme Leylek Teklif Sende içinde doğrulandı. Sohbete devam edebilir, anlaşma detaylarını netleştirebilirsiniz.
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.secureStatusList}>
+                        <View style={styles.secureStatusItem}>
+                          <Ionicons name="person-circle-outline" size={15} color="#15803D" />
+                          <Text style={styles.secureStatusTxt}>Kimlik: Leylek profili</Text>
+                        </View>
+                        <View style={styles.secureStatusItem}>
+                          <Ionicons name="checkmark-circle-outline" size={15} color="#15803D" />
+                          <Text style={styles.secureStatusTxt}>Durum: Eşleşme doğrulandı</Text>
+                        </View>
+                        <View style={styles.secureStatusItem}>
+                          <Ionicons name="car-sport-outline" size={15} color="#15803D" />
+                          <Text style={styles.secureStatusTxt}>Sonraki adım: Anlaşmayı yolculuğa çevir</Text>
+                        </View>
+                      </View>
+                      {/* Leylek Teklif Sende only: UI-only plan, no backend or normal ride call. */}
+                      <Pressable
+                        disabled
+                        style={styles.convertPlanButton}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: true }}
+                        accessibilityLabel="Bu anlaşmayı yolculuğa çevir"
+                      >
+                        <Ionicons name="car-sport-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
+                        <Text style={styles.convertPlanButtonTxt}>Bu anlaşmayı yolculuğa çevir</Text>
+                      </Pressable>
+                      <Text style={styles.convertPlanSub}>
+                        Yakında: Bu sohbet anlaşmasını güvenli yolculuğa dönüştürebileceksiniz.
+                      </Text>
+                    </View>
+                  ) : null}
                   {hasOutgoingPendingPairRequest ? (
                     <View style={styles.systemPermanentPending}>
                       <Ionicons name="time-outline" size={15} color="#1D4ED8" />
@@ -1599,26 +1644,7 @@ export default function MuhabbetChatScreen({
               }}
             />
           )}
-          {ctx?.matched_via_leylek_key ? (
-            <View style={styles.convertPlanRow}>
-              <View style={styles.convertPlanCard}>
-                {/* Leylek Teklif Sende only: planned UI, no normal ride/tags/dispatch call. */}
-                <Pressable
-                  disabled
-                  style={styles.convertPlanButton}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: true }}
-                  accessibilityLabel="Bu anlaşmayı yolculuğa çevir"
-                >
-                  <Ionicons name="car-sport-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
-                  <Text style={styles.convertPlanButtonTxt}>Bu anlaşmayı yolculuğa çevir</Text>
-                </Pressable>
-                <Text style={styles.convertPlanSub}>
-                  Yakında: Bu sohbet anlaşmasını güvenli yolculuğa dönüştürebileceksiniz.
-                </Text>
-              </View>
-            </View>
-          ) : (
+          {!ctx?.matched_via_leylek_key ? (
             <View style={styles.keyRow}>
               <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
                 <View style={styles.keyCtaGlow}>
@@ -1648,7 +1674,7 @@ export default function MuhabbetChatScreen({
                 </View>
               </Animated.View>
             </View>
-          )}
+          ) : null}
           <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <TextInput
               style={styles.input}
@@ -1856,9 +1882,15 @@ const styles = StyleSheet.create({
   resendTxt: { fontSize: 12, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
-  convertPlanRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 6, backgroundColor: 'rgba(255,255,255,0.72)' },
-  convertPlanCard: { borderRadius: 16, padding: 10, backgroundColor: 'rgba(100,116,139,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(100,116,139,0.22)' },
-  convertPlanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(148,163,184,0.18)' },
+  secureMatchCard: { marginHorizontal: 14, marginBottom: 10, borderRadius: 18, padding: 14, backgroundColor: '#F0FDF4', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(22,163,74,0.28)' },
+  secureMatchHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  secureMatchIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#16A34A' },
+  secureMatchTitle: { color: '#14532D', fontSize: 16, fontWeight: '900', lineHeight: 21 },
+  secureMatchSub: { marginTop: 6, color: '#166534', fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  secureStatusList: { marginTop: 12, gap: 7 },
+  secureStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  secureStatusTxt: { color: '#14532D', fontSize: 12, fontWeight: '800', flex: 1 },
+  convertPlanButton: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(148,163,184,0.18)' },
   convertPlanButtonTxt: { color: '#475569', fontSize: 15, fontWeight: '800' },
   convertPlanSub: { marginTop: 8, color: '#64748B', fontSize: 12, fontWeight: '600', lineHeight: 17, textAlign: 'center' },
   keyCtaGlow: {
