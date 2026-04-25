@@ -21672,6 +21672,17 @@ async def sio_muhabbet_send(sid, data):
             )
         except Exception as e:
             logger.error("muhabbet_send touch conversation failed cid=%s message_id=%s err=%s", cid, msg_id, e)
+        try:
+            # Leylek Teklif Sende only: a new chat message should restore the conversation
+            # for both Muhabbet participants. This does not touch normal ride tags/dispatch/route.
+            unhide_users = [x for x in [uid, recipient] if x]
+            if unhide_users:
+                supabase.table("user_conversation_hides").delete().eq("conversation_id", cid).in_(
+                    "user_id", unhide_users
+                ).execute()
+                logger.info("[muhabbet-unhide] conversation_id=%s users=%s", cid, unhide_users)
+        except Exception as e:
+            logger.warning("muhabbet_send unhide conversation failed cid=%s err=%s", cid, e)
     try:
         await emit_socket_event_to_user(
             uid,
