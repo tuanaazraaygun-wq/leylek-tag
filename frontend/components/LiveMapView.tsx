@@ -521,13 +521,26 @@ function pickDriverPickupDestFromActiveTag(
   tag: Record<string, unknown> | null | undefined,
 ): MapLatLng | null {
   if (!tag) return null;
-  const pl = tag.passenger_location;
-  if (pl && typeof pl === 'object') {
-    const o = pl as Record<string, unknown>;
-    const la = o.latitude ?? o.lat;
-    const lo = o.longitude ?? o.lng;
-    const p = parseRouteEndpoint({ latitude: la, longitude: lo });
-    if (p) return p;
+  const plRaw = tag.passenger_location;
+  if (plRaw != null) {
+    if (typeof plRaw === 'object') {
+      const o = plRaw as Record<string, unknown>;
+      const la = o.latitude ?? o.lat;
+      const lo = o.longitude ?? o.lng;
+      const p = parseRouteEndpoint({ latitude: la, longitude: lo });
+      if (p) return p;
+    } else if (typeof plRaw === 'string' && plRaw.trim().startsWith('{')) {
+      try {
+        const o = JSON.parse(plRaw) as Record<string, unknown>;
+        const p = parseRouteEndpoint({
+          latitude: o.latitude ?? o.lat,
+          longitude: o.longitude ?? o.lng,
+        });
+        if (p) return p;
+      } catch {
+        /* noop */
+      }
+    }
   }
   const pLat = pickCoordNumber(tag.pickup_lat);
   const pLng = pickCoordNumber(tag.pickup_lng);
@@ -547,12 +560,21 @@ function resolveYolcuyaGitDriverOrigin(
   userLocation: { latitude?: unknown; longitude?: unknown } | null | undefined,
   navMapCoord: MapLatLng | null,
   navStable: MapLatLng | null,
+  extraCandidates?: readonly ({ latitude?: unknown; longitude?: unknown } | MapLatLng | null | undefined)[],
 ): MapLatLng | null {
   const cands: (
     | { latitude?: unknown; longitude?: unknown }
+    | MapLatLng
     | null
     | undefined
-  )[] = [ctx?.driverLocation, userLocation, ctx?.currentLocation, navMapCoord, navStable];
+  )[] = [
+    ctx?.driverLocation,
+    userLocation,
+    ctx?.currentLocation,
+    navMapCoord,
+    navStable,
+    ...(extraCandidates ?? []),
+  ];
   for (const c of cands) {
     const p = parseRouteEndpoint(c);
     if (p) return p;
@@ -2213,6 +2235,16 @@ export default function LiveMapView({
   /** Nav modunda araç marker’ı: rota snap + drift filtresi (ham GPS yerine) */
   const [navDriverMapCoord, setNavDriverMapCoord] = useState<MapLatLng | null>(null);
   const navDriverStableRef = useRef<MapLatLng | null>(null);
+  /** Eşleşme haritası sürücü pini (parse edilmiş) — Yolcuya Git origin yedeği */
+  const driverMapPinCoordRef = useRef<MapLatLng | null>(null);
+  useEffect(() => {
+    if (!isDriver) {
+      driverMapPinCoordRef.current = null;
+      return;
+    }
+    const p = parseRouteEndpoint(userLocation);
+    if (p) driverMapPinCoordRef.current = p;
+  }, [isDriver, userLocation]);
   /** Nav başına bir kez Güven ipucu animasyonu */
   const guvenNavHintShownRef = useRef(false);
   /** Takip yeniden başladıktan sonra kısa süre: daha yumuşak merkez lerp + uzun anim */
@@ -3257,26 +3289,52 @@ export default function LiveMapView({
       return;
     }
 
-    const at = driverYolcuyaGitCoordContext?.activeTag ?? null;
-    const yolcuyaOrigin = resolveYolcuyaGitDriverOrigin(
-      driverYolcuyaGitCoordContext,
+    const ctx = driverYolcuyaGitCoordContext;
+    const activeTag = (ctx?.activeTag ?? null) as Record<string, unknown> | null;
+    const anchorFallback = resolveNavigationAnchor(
+      navDriverStableRef,
+      navDriverMapCoord,
+      userLocation as { latitude: number; longitude: number } | null,
+    );
+    const origin = resolveYolcuyaGitDriverOrigin(
+      ctx,
       userLocation,
       navDriverMapCoord,
       navDriverStableRef.current,
+      [driverMapPinCoordRef.current, anchorFallback],
     );
-    const yolcuyaDest = resolveYolcuyaGitDriverDest(otherLocation, at);
-    if (!isValidMapCoord(yolcuyaOrigin) || !isValidMapCoord(yolcuyaDest)) {
-      console.log('YOLCUYA_GIT_VALIDATION', {
-        driverLocation: driverYolcuyaGitCoordContext?.driverLocation ?? null,
-        otherLocation,
+    const destination = resolveYolcuyaGitDriverDest(otherLocation, activeTag);
+
+    const originOk = isValidMapCoord(origin);
+    const destOk = isValidMapCoord(destination);
+
+    if (!originOk || !destOk) {
+      console.log('YOLCUYA_GIT_BLOCKED_EXACT', {
+        origin,
+        destination,
+        driverLocation: ctx?.driverLocation ?? null,
         userLocation,
-        currentLocation: driverYolcuyaGitCoordContext?.currentLocation ?? null,
-        activeTag: at,
-        pickup_lat: at?.pickup_lat,
-        pickup_lng: at?.pickup_lng,
-        passenger_location: at?.passenger_location,
+        currentLocation: ctx?.currentLocation ?? null,
+        otherLocation,
+        navDriverMapCoord,
+        navDriverStableRef: navDriverStableRef.current,
+        activeTag,
+        pickup_lat: activeTag?.pickup_lat,
+        pickup_lng: activeTag?.pickup_lng,
+        passenger_location: activeTag?.passenger_location,
+        originOk,
+        destOk,
+        driverMapPinCoordRef: driverMapPinCoordRef.current,
       });
-      Alert.alert('Konum', 'Harita için sizin ve yolcunun konumu gerekli.');
+      let alertBody: string;
+      if (!originOk && !destOk) {
+        alertBody = 'Eksik: origin=MISSING destination=MISSING';
+      } else if (!originOk) {
+        alertBody = 'Eksik: origin=MISSING (sürücü GPS / konum)';
+      } else {
+        alertBody = 'Eksik: destination=MISSING (yolcu / alış noktası)';
+      }
+      Alert.alert('Konum', alertBody);
       return;
     }
 
