@@ -187,6 +187,8 @@ interface LiveMapViewProps {
   boardingConfirmed?: boolean;
   /** Sürücü: navigasyon pickup → destination geçişi (biniş sonrası hedef fazı) — yolcuya bildirim tetiklemek için */
   onDriverEnteredDestinationNavigation?: () => void;
+  /** Sürücü "Yolcuya Git" — doğrulamadan hemen önce (index’te DRIVER_NAV_COORDS vb.) */
+  onDriverYolcuyaGitAttempt?: () => void;
 }
 
 /**
@@ -1687,6 +1689,7 @@ export default function LiveMapView({
   otherLocationFromPickupFallback = false,
   boardingConfirmed = false,
   onDriverEnteredDestinationNavigation,
+  onDriverYolcuyaGitAttempt,
 }: LiveMapViewProps) {
   /** Sürücü + yolcu pini pickup yedeği: meeting/dest guard ve loglar tek bayrak (yolcu ekranında hep false) */
   const pickupFallbackForDriver = isDriver && !!otherLocationFromPickupFallback;
@@ -3077,6 +3080,11 @@ export default function LiveMapView({
 
   const handleYolcuyaGitPress = useCallback(() => {
     void tapButtonHaptic();
+    try {
+      onDriverYolcuyaGitAttempt?.();
+    } catch {
+      /* noop */
+    }
 
     console.log('YOLCUYA_GIT_PRESS_START', {
       isDriver,
@@ -3161,6 +3169,7 @@ export default function LiveMapView({
     setNavigationMode,
     setNavigationStage,
     setNavFollowResumeTick,
+    onDriverYolcuyaGitAttempt,
   ]);
   
   useEffect(() => {

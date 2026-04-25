@@ -388,6 +388,9 @@ interface Tag {
   driver_longitude?: number;
   passenger_latitude?: number;
   passenger_longitude?: number;
+  /** Nav / harita alias (pickup ile aynı) */
+  passenger_lat?: number;
+  passenger_lng?: number;
   /** Sürücü zorla bitir — yolcu onayı beklerken (backend tags.end_request) */
   end_request?: {
     kind?: string;
@@ -10773,6 +10776,43 @@ function normalizePassengerLocationFromSocket(data: Record<string, unknown>): {
   return null;
 }
 
+/** JSON/socket koordinatı — LiveMapView `isValidRouteEndpoint` yalnız `number` kabul eder */
+function parsePickCoord(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Sürücü eşleşme: yolcuya gidiş pini + Yolcuya Git — tüm alias’lar aynı pickup koordinatı (sayı).
+ * Kaynak: payload.pickup_lat/lng veya tag.pickup_lat/lng.
+ */
+function buildDriverPickupCoordFields(
+  pickupLat: unknown,
+  pickupLng: unknown,
+): {
+  pickup_lat?: number;
+  pickup_lng?: number;
+  passenger_location?: { latitude: number; longitude: number };
+  passenger_latitude?: number;
+  passenger_longitude?: number;
+  passenger_lat?: number;
+  passenger_lng?: number;
+} {
+  const la = parsePickCoord(pickupLat);
+  const lo = parsePickCoord(pickupLng);
+  if (la == null || lo == null) return {};
+  return {
+    pickup_lat: la,
+    pickup_lng: lo,
+    passenger_location: { latitude: la, longitude: lo },
+    passenger_latitude: la,
+    passenger_longitude: lo,
+    passenger_lat: la,
+    passenger_lng: lo,
+  };
+}
+
 function driverPassengerCoordsForMap(
   polled: { latitude: number; longitude: number } | null,
   tag: Tag | null,
@@ -10781,18 +10821,22 @@ function driverPassengerCoordsForMap(
     return polled;
   }
   const pl = tag?.passenger_location;
-  if (pl && Number.isFinite(pl.latitude) && Number.isFinite(pl.longitude)) {
-    return { latitude: pl.latitude, longitude: pl.longitude };
+  if (pl) {
+    const la = parsePickCoord(pl.latitude);
+    const lo = parsePickCoord(pl.longitude);
+    if (la != null && lo != null) {
+      return { latitude: la, longitude: lo };
+    }
   }
-  const plat = tag?.pickup_lat;
-  const plng = tag?.pickup_lng;
-  if (Number.isFinite(plat) && Number.isFinite(plng)) {
-    return { latitude: plat as number, longitude: plng as number };
+  const plat = parsePickCoord(tag?.pickup_lat);
+  const plng = parsePickCoord(tag?.pickup_lng);
+  if (plat != null && plng != null) {
+    return { latitude: plat, longitude: plng };
   }
-  const paxlat = tag?.passenger_latitude;
-  const paxlng = tag?.passenger_longitude;
-  if (Number.isFinite(paxlat) && Number.isFinite(paxlng)) {
-    return { latitude: paxlat as number, longitude: paxlng as number };
+  const paxlat = parsePickCoord(tag?.passenger_latitude ?? tag?.passenger_lat);
+  const paxlng = parsePickCoord(tag?.passenger_longitude ?? tag?.passenger_lng);
+  if (paxlat != null && paxlng != null) {
+    return { latitude: paxlat, longitude: paxlng };
   }
   return null;
 }
@@ -10807,10 +10851,14 @@ function driverOtherLocationPickupFallback(
     return false;
   }
   const pl = tag.passenger_location;
-  if (pl && Number.isFinite(pl.latitude) && Number.isFinite(pl.longitude)) {
-    return false;
+  if (pl) {
+    const la = parsePickCoord(pl.latitude);
+    const lo = parsePickCoord(pl.longitude);
+    if (la != null && lo != null) {
+      return false;
+    }
   }
-  return Number.isFinite(tag.pickup_lat) && Number.isFinite(tag.pickup_lng);
+  return parsePickCoord(tag.pickup_lat) != null && parsePickCoord(tag.pickup_lng) != null;
 }
 
 /**
@@ -11447,13 +11495,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     const tripKm = Number(d.trip_distance_km ?? d.distance_km);
     const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
     const fromSocketLoc = normalizePassengerLocationFromSocket(d);
-    const pickupLat = Number(d.pickup_lat);
-    const pickupLng = Number(d.pickup_lng);
-    const passenger_location =
-      fromSocketLoc ??
-      (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
-        ? { latitude: pickupLat, longitude: pickupLng }
-        : undefined);
+    const coordFields = buildDriverPickupCoordFields(d.pickup_lat, d.pickup_lng);
+    const socketPlOnly: { passenger_location?: { latitude: number; longitude: number } } = {};
+    if (!coordFields.passenger_location && fromSocketLoc) {
+      const la = parsePickCoord((fromSocketLoc as { latitude: unknown }).latitude);
+      const lo = parsePickCoord((fromSocketLoc as { longitude: unknown }).longitude);
+      if (la != null && lo != null) {
+        socketPlOnly.passenger_location = { latitude: la, longitude: lo };
+      }
+    }
 
     const uiStatus = tagStatusRaw === 'in_progress' ? 'in_progress' : 'matched';
 
@@ -11469,8 +11519,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       driver_name: d.driver_name as string | undefined,
       pickup_location: d.pickup_location as string | undefined,
       dropoff_location: d.dropoff_location as string | undefined,
-      pickup_lat: d.pickup_lat as number | undefined,
-      pickup_lng: d.pickup_lng as number | undefined,
+      pickup_lat: coordFields.pickup_lat ?? (d.pickup_lat as number | undefined),
+      pickup_lng: coordFields.pickup_lng ?? (d.pickup_lng as number | undefined),
       dropoff_lat: d.dropoff_lat as number | undefined,
       dropoff_lng: d.dropoff_lng as number | undefined,
       offered_price: (d.offered_price ?? d.final_price) as number | undefined,
@@ -11490,7 +11540,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       passenger_payment_method: normalizePassengerPaymentMethod(
         d.passenger_payment_method as unknown,
       ) ?? undefined,
-      ...(passenger_location ? { passenger_location } : {}),
+      ...coordFields,
+      ...socketPlOnly,
     };
     setActiveTag(matchedTag as Tag);
     setScreen('dashboard');
@@ -11791,13 +11842,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
         const tripKm = Number(d.trip_distance_km ?? d.distance_km);
         const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
         const fromSocketLoc = normalizePassengerLocationFromSocket(d);
-        const pickupLat = Number(d.pickup_lat);
-        const pickupLng = Number(d.pickup_lng);
-        const passenger_location =
-          fromSocketLoc ??
-          (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
-            ? { latitude: pickupLat, longitude: pickupLng }
-            : undefined);
+        const coordFields = buildDriverPickupCoordFields(d.pickup_lat, d.pickup_lng);
+        const socketPlOnly: { passenger_location?: { latitude: number; longitude: number } } = {};
+        if (!coordFields.passenger_location && fromSocketLoc) {
+          const la = parsePickCoord((fromSocketLoc as { latitude: unknown }).latitude);
+          const lo = parsePickCoord((fromSocketLoc as { longitude: unknown }).longitude);
+          if (la != null && lo != null) {
+            socketPlOnly.passenger_location = { latitude: la, longitude: lo };
+          }
+        }
         const matchedTag = {
           id: data.tag_id,
           tag_id: data.tag_id,
@@ -11807,8 +11860,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           driver_name: data.driver_name,
           pickup_location: data.pickup_location,
           dropoff_location: data.dropoff_location,
-          pickup_lat: data.pickup_lat,
-          pickup_lng: data.pickup_lng,
           dropoff_lat: data.dropoff_lat,
           dropoff_lng: data.dropoff_lng,
           offered_price: data.offered_price,
@@ -11828,7 +11879,8 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
           passenger_payment_method: normalizePassengerPaymentMethod(
             (data as { passenger_payment_method?: unknown }).passenger_payment_method,
           ) ?? undefined,
-          ...(passenger_location ? { passenger_location } : {}),
+          ...coordFields,
+          ...socketPlOnly,
         };
         console.log('🔥 ŞOFÖR - ActiveTag ANINDA güncelleniyor:', matchedTag);
         setActiveTag(matchedTag as Tag);
@@ -13846,6 +13898,15 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
             tagStartedAt={activeTag?.started_at ?? null}
             boardingConfirmed={!!activeTag?.boarding_confirmed_at}
             onDriverEnteredDestinationNavigation={handleDriverEnteredDestinationNavigation}
+            onDriverYolcuyaGitAttempt={() => {
+              console.log('DRIVER_NAV_COORDS', {
+                driverLocation: userLocation,
+                activeTag,
+                passenger_location: activeTag?.passenger_location,
+                pickup_lat: activeTag?.pickup_lat,
+                pickup_lng: activeTag?.pickup_lng,
+              });
+            }}
             price={activeTag?.final_price}
             offeredPrice={activeTag?.offered_price}
             routeInfo={{
