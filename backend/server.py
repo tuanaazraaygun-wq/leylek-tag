@@ -22082,6 +22082,7 @@ async def muhabbet_conversations_me(
             str(authenticated_user_id)[:96],
             str(uid)[:96],
         )
+        logger.info("[muhabbet-conversations] uid=%s", uid)
         if not uid:
             raise HTTPException(status_code=401, detail="Geçersiz kullanıcı")
         lim = max(1, min(int(limit or 50), 100))
@@ -22109,8 +22110,11 @@ async def muhabbet_conversations_me(
             .execute()
         )
         logger.info("conversations_me debug query_rows=%s uid=%s", len(res.data or []), str(uid)[:96])
+        logger.info("[muhabbet-conversations] query_rows=%s", len(res.data or []))
+        logger.info("[muhabbet-conversations] hidden_count=%s", len(hidden_ids))
         raw_convs = [c for c in (res.data or []) if str(c.get("id") or "").strip().lower() not in hidden_ids]
         raw_cids = [str(c["id"]).strip().lower() for c in raw_convs if c.get("id")]
+        logger.info("[muhabbet-conversations] raw_cids=%s", len(raw_cids))
         if not raw_cids:
             return {"success": True, "conversations": [], "count": 0}
         mreq = (
@@ -22128,6 +22132,7 @@ async def muhabbet_conversations_me(
                 continue
             lmr_by_cid[cid0] = r
         last_map = _muhabbet_last_message_map_for_user(raw_cids, uid)
+        logger.info("[muhabbet-conversations] last_message_map_count=%s", len(last_map))
         filtered_convs: list = []
         for c in raw_convs:
             cid0 = str(c.get("id") or "").strip().lower()
@@ -22151,6 +22156,7 @@ async def muhabbet_conversations_me(
                 logger.info("[muhabbet-conversations] include conversation_id=%s reason=%s", cid0, reason)
                 filtered_convs.append(c)
                 continue
+        logger.info("[muhabbet-conversations] filtered_count=%s", len(filtered_convs))
         convs: list = filtered_convs[:lim]
         if not convs:
             return {"success": True, "conversations": [], "count": 0}
@@ -22246,6 +22252,7 @@ async def muhabbet_conversations_me(
                     "last_message_at": last_at,
                 }
             )
+        logger.info("[muhabbet-conversations] returned_count=%s", len(out))
         return {"success": True, "conversations": out, "count": len(out)}
     except HTTPException:
         raise
