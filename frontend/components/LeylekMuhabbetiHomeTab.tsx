@@ -36,6 +36,8 @@ const CTA_CARD_SHADOW = Platform.select({
 
 type HomeFeedListing = {
   id: string;
+  creator_name?: string | null;
+  creator_public_name?: string | null;
   from_text?: string | null;
   to_text?: string | null;
   listing_type?: string | null;
@@ -101,6 +103,7 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
       : '—';
   const transport = transportLabelForUser(item);
   const roleLabel = isDriver ? 'Sürücü' : 'Yolcu';
+  const creatorPublic = (item.creator_public_name || item.creator_name || 'Leylek kullanıcısı').trim();
 
   return (
     <Pressable
@@ -134,6 +137,9 @@ function CompactOfferCard({ item, onPressCard, onPressCta, ctaLabel, ctaDisabled
             </Text>
           </View>
         </View>
+        <Text style={cs.creatorLine} numberOfLines={1}>
+          {creatorPublic}
+        </Text>
         <Pressable
           onPress={(e) => {
             e?.stopPropagation?.();
@@ -206,6 +212,7 @@ const cs = StyleSheet.create({
   ctaDriver: { backgroundColor: '#2563EB' },
   ctaPassenger: { backgroundColor: '#EA580C' },
   ctaTxt: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  creatorLine: { marginBottom: 8, fontSize: 12, color: '#6B7280', fontWeight: '700' },
 });
 
 export type LeylekMuhabbetiHomeTabProps = {

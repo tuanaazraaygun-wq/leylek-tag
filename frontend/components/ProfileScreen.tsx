@@ -145,8 +145,8 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
   const vPhoto = ((p?.extras?.vehicle_photo_url as string) || p?.vehicle_photo_url || '').trim();
   const gLabel = (p?.gender_label as string) || '';
   const displayName = isSelf
-    ? (p?.full_name || p?.name || p?.public_name || 'Leylek kullanıcısı')
-    : (p?.public_name || p?.name || 'Leylek kullanıcısı');
+    ? (p?.full_name || p?.public_name || 'Leylek kullanıcısı')
+    : (p?.public_name || 'Leylek kullanıcısı');
   const roleLabel = (p?.role_label || (p?.is_kyc_driver ? 'Sürücü' : 'Yolcu')) as string;
   const completedMatches = Number(p?.completed_matches || 0);
   const activeListingsCount = Number(p?.active_listings_count ?? p?.active_listings ?? 0);

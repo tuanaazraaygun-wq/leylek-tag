@@ -51,6 +51,7 @@ export type FeedListing = {
   muhabbet_offer_kind?: string | null;
   role_type?: string | null;
   creator_name?: string | null;
+  creator_public_name?: string | null;
   created_by_user_id?: string;
   match_request_status?: string;
   conversation_id?: string | null;
@@ -71,7 +72,9 @@ type MatchRequestRow = {
   sender_user_id?: string | null;
   receiver_user_id?: string | null;
   sender_name?: string | null;
+  sender_public_name?: string | null;
   receiver_name?: string | null;
+  receiver_public_name?: string | null;
   listing?: { from_text?: string | null; to_text?: string | null } | null;
 };
 
@@ -519,7 +522,7 @@ export default function ListingsTab({
                   if (!r.conversation_id) return;
                   pushToChat(router, {
                     conversationId: r.conversation_id,
-                    otherUserName: (r.receiver_name || 'Leylek kullanıcısı').trim(),
+                    otherUserName: (r.receiver_public_name || r.receiver_name || 'Leylek kullanıcısı').trim(),
                     fromText: String(r.listing?.from_text || ''),
                     toText: String(r.listing?.to_text || ''),
                     otherUserId: r.receiver_user_id ? String(r.receiver_user_id) : undefined,
@@ -594,7 +597,7 @@ export default function ListingsTab({
               </View>
             ) : null}
             <Text style={styles.cardNameLg} numberOfLines={1}>
-              {L.creator_name || 'Leylek kullanıcısı'}
+              {L.creator_public_name || L.creator_name || 'Leylek kullanıcısı'}
             </Text>
             <View style={styles.routeBlock}>
               <View style={styles.routeEnd}>
@@ -660,7 +663,7 @@ export default function ListingsTab({
                   onPress={() =>
                     pushToChat(router, {
                       conversationId: L.conversation_id!,
-                      otherUserName: (L.creator_name || 'Leylek kullanıcısı').trim(),
+                      otherUserName: (L.creator_public_name || L.creator_name || 'Leylek kullanıcısı').trim(),
                       fromText: String(L.from_text || ''),
                       toText: String(L.to_text || ''),
                       otherUserId: L.created_by_user_id ? String(L.created_by_user_id) : undefined,

@@ -46,6 +46,7 @@ export type MuhabbetConversationListItem = {
   id?: string;
   other_user_id?: string;
   other_user_name?: string;
+  other_user_public_name?: string;
   other_user_role?: string | null;
   from_text?: string | null;
   to_text?: string | null;
@@ -425,9 +426,13 @@ export default function ConversationsScreen({
       })
     );
     DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
+    const otherPublicName =
+      (c.other_user_public_name && String(c.other_user_public_name).trim()) ||
+      (c.other_user_name && String(c.other_user_name).trim()) ||
+      'Leylek kullanıcısı';
     router.push(
       buildMuhabbetChatHref(cid, {
-        otherUserName: c.other_user_name || 'Leylek kullanıcısı',
+        otherUserName: otherPublicName,
         fromText: (c.from_text && String(c.from_text)) || '',
         toText: (c.to_text && String(c.to_text)) || '',
         otherUserId: c.other_user_id ? String(c.other_user_id) : undefined,
@@ -499,7 +504,9 @@ export default function ConversationsScreen({
               >
                 <View style={styles.cardRow1}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {item.other_user_name || 'Leylek kullanıcısı'}
+                    {(item.other_user_public_name && String(item.other_user_public_name).trim()) ||
+                      (item.other_user_name && String(item.other_user_name).trim()) ||
+                      'Leylek kullanıcısı'}
                   </Text>
                   <View style={styles.metaRight}>
                     {item.last_message_at ? (

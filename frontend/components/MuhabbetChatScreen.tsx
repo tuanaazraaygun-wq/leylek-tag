@@ -32,7 +32,7 @@ import { handleUnauthorizedAndMaybeRedirect } from '../lib/muhabbetAuthRedirect'
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { notifyAuthTokenBecameAvailableForSocket } from '../lib/socketRegisterScheduler';
 import { publishSocketSessionRefresh, subscribeSocketSessionRefresh } from '../lib/socketSessionRefresh';
-import { MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
+import { MUHABBET_CONVERSATION_READ, MUHABBET_NEW_LOCAL_MESSAGE } from '../lib/muhabbetLocalMessageEvents';
 import {
   coerceMessageCreatedAt,
   loadMuhabbetMessagesLocal,
@@ -93,6 +93,9 @@ export type ChatMessageRow = {
 
 export type ChatContext = {
   other_user_id?: string;
+  other_user_public_name?: string;
+  public_name?: string;
+  name?: string;
   my_role?: string | null;
   other_role?: string | null;
   matched_via_leylek_key?: boolean;
@@ -242,7 +245,6 @@ function waitForNextRegisterSuccess(socket: Socket, timeoutMs: number): Promise<
 export default function MuhabbetChatScreen({
   apiBaseUrl,
   conversationId,
-  titleName,
   otherUserId,
   onBack,
 }: MuhabbetChatScreenProps) {
@@ -502,6 +504,11 @@ export default function MuhabbetChatScreen({
 
   useEffect(() => {
     if (cid) console.log('[chat] route conversation_id=', cid);
+  }, [cid]);
+
+  useEffect(() => {
+    if (!cid) return;
+    DeviceEventEmitter.emit(MUHABBET_CONVERSATION_READ, { conversation_id: cid });
   }, [cid]);
 
   useEffect(() => {
@@ -1283,6 +1290,10 @@ export default function MuhabbetChatScreen({
 
   const myR = (ctx?.my_role || '').toLowerCase();
   const oR = (ctx?.other_role || '').toLowerCase();
+  const chatHeaderTitle =
+    (ctx?.other_user_public_name && String(ctx.other_user_public_name).trim()) ||
+    (ctx?.public_name && String(ctx.public_name).trim()) ||
+    'Leylek kullanıcısı';
 
   const bubbleForMsg = (item: ChatMessageRow) => {
     const mine = myId && String(item.sender_user_id || '').toLowerCase() === myId;
@@ -1332,7 +1343,7 @@ export default function MuhabbetChatScreen({
       </View>
       <View style={styles.layer}>
         <ScreenHeaderGradient
-          title={titleName || 'Sohbet'}
+          title={chatHeaderTitle}
           onBack={onBack ?? (() => router.back())}
           gradientColors={PRIMARY_GRAD}
           right={headerRight}
@@ -1558,7 +1569,7 @@ export default function MuhabbetChatScreen({
             <View style={styles.pairModalCard}>
               <Text style={styles.pairModalTitle}>Leylek Anahtar eşleşme isteği</Text>
               <Text style={styles.pairModalBody}>
-                Güzergâh, ücret ve buluşma bilgilerini onayladıysanız eşleşebilirsiniz.
+                {chatHeaderTitle} ile güzergâh, ücret ve buluşma bilgilerini onayladıysanız eşleşebilirsiniz.
               </Text>
               <Pressable
                 onPress={acceptPairFromModal}

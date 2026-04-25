@@ -19023,7 +19023,8 @@ def _enrich_ride_listings_creators(rows: list) -> list:
             uids.append(u)
     if not uids:
         for r in rows:
-            r["creator_name"] = "Kullanıcı"
+            r["creator_name"] = "Leylek kullanıcısı"
+            r["creator_public_name"] = "Leylek kullanıcısı"
         return rows
     try:
         ur = (
@@ -19044,7 +19045,9 @@ def _enrich_ride_listings_creators(rows: list) -> list:
         name_map = {}
     for r in rows:
         u = _ride_listing_creator_uid(r or {})
-        r["creator_name"] = name_map.get((u or "").strip().lower()) or "Kullanıcı"
+        pn = name_map.get((u or "").strip().lower()) or "Leylek kullanıcısı"
+        r["creator_name"] = pn
+        r["creator_public_name"] = pn
     return rows
 
 
@@ -19674,8 +19677,12 @@ def _muhabbet_listing_enrich_request_rows(req_rows: list) -> list:
         d["listing"] = lm.get(lid)
         s_uid = str(d.get("sender_user_id") or "")
         r_uid = str(d.get("receiver_user_id") or "")
-        d["sender_name"] = name_map.get(s_uid.strip().lower()) or "Kullanıcı"
-        d["receiver_name"] = name_map.get(r_uid.strip().lower()) or "Kullanıcı"
+        s_pub = name_map.get(s_uid.strip().lower()) or "Leylek kullanıcısı"
+        r_pub = name_map.get(r_uid.strip().lower()) or "Leylek kullanıcısı"
+        d["sender_name"] = s_pub
+        d["sender_public_name"] = s_pub
+        d["receiver_name"] = r_pub
+        d["receiver_public_name"] = r_pub
         d["quick_view"] = _muhabbet_listing_quick_view(d.get("listing"))
         out.append(d)
     return out
@@ -19765,7 +19772,7 @@ def _muhabbet_requests_attach_sender_profiles(req_rows: list) -> list:
         d = dict(row)
         sid = str(d.get("sender_user_id") or "").strip().lower()
         card = _muhabbet_user_public_card(sid) if sid else {}
-        d["sender_user_name"] = card.get("user_name") or d.get("sender_name") or "Kullanıcı"
+        d["sender_user_name"] = card.get("public_name") or card.get("user_name") or d.get("sender_name") or "Leylek kullanıcısı"
         d["sender_rating"] = card.get("rating")
         d["sender_total_trips"] = card.get("total_trips")
         d["time_match_hint"] = "—"
@@ -19924,7 +19931,8 @@ async def muhabbet_user_public_profile_get(
                 "id": tid,
                 "name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
                 "public_name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
-                "full_name": card.get("full_name") or card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
+                # legacy alan: karşı tarafta tam ad sızdırmamak için public_name ile aynı tutulur
+                "full_name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
                 "rating": card.get("rating"),
                 "total_trips": card.get("total_trips"),
                 "total_ratings": card.get("total_ratings"),
@@ -19993,6 +20001,8 @@ def _muhabbet_profile_payload_for_user(uid: str, include_full_name: bool) -> dic
     out = {
         "id": uid,
         "public_name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
+        # legacy alan: muhabbet UI'da her yerde public_name kullanılmalı
+        "name": card.get("public_name") or card.get("user_name") or "Leylek kullanıcısı",
         "role_label": "Sürücü" if is_kyc else "Yolcu",
         "is_kyc_driver": is_kyc,
         "profile_photo_url": card.get("profile_photo"),
@@ -21283,7 +21293,8 @@ async def muhabbet_conversations_me(
                     "user_a": a,
                     "user_b": b,
                     "other_user_id": other,
-                    "other_user_name": name_map.get((other or "").lower()) or "Kullanıcı",
+                    "other_user_name": name_map.get((other or "").lower()) or "Leylek kullanıcısı",
+                    "other_user_public_name": name_map.get((other or "").lower()) or "Leylek kullanıcısı",
                     "other_user_role": other_role or role_by_uid.get((other or "").strip().lower()),
                     "my_role": my_role,
                     "other_role": other_role,
@@ -21341,11 +21352,16 @@ async def muhabbet_conversation_messages_get(
         else:
             my_r = role_map.get(uid)
             oth_r = role_map.get(other_uid)
+        other_name_map = _muhabbet_listing_name_map_for_ids([other_uid]) if other_uid else {}
+        other_public_name = other_name_map.get((other_uid or "").strip().lower()) or "Leylek kullanıcısı"
         ms = str(c_row.get("match_source") or "").strip().lower()
         matched_at = c_row.get("matched_at")
         leylek_matched = bool(matched_at) and ms in ("leylek_key", "leylek_key_inchat")
         ctx = {
             "other_user_id": other_uid,
+            "other_user_public_name": other_public_name,
+            "public_name": other_public_name,
+            "name": other_public_name,
             "my_role": my_r,
             "other_role": oth_r,
             "matched_via_leylek_key": leylek_matched,
