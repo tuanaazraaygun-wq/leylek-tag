@@ -331,10 +331,29 @@ export default function MuhabbetChatScreen({
     }
     if (!socket.connected) return false;
     const regOk = await waitForNextRegisterSuccess(socket, 12000);
-    if (!regOk) return false;
+    if (!regOk) {
+      console.log('[chat-send] blocked reason=register_timeout (emit yine denenecek)');
+    }
     roomJoinedRef.current = false;
     setRoomJoined(false);
     emitJoinForChat();
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(t);
+        socket.off('joined_muhabbet', onJoined);
+        resolve();
+      };
+      const t = setTimeout(finish, 1500);
+      const onJoined = (p: { conversation_id?: string }) => {
+        const conv = p?.conversation_id != null ? String(p.conversation_id).trim().toLowerCase() : '';
+        if (!conv || conv !== cid.toLowerCase()) return;
+        finish();
+      };
+      socket.on('joined_muhabbet', onJoined);
+    });
     return true;
   }, [cid, emitJoinForChat]);
 
@@ -1022,26 +1041,42 @@ export default function MuhabbetChatScreen({
 
   const resendMessage = useCallback(
     async (row: ChatMessageRow) => {
+      console.log('[chat-send] pressed');
       const body = (row.body || '').trim();
       const messageId = row.id;
-      if (!body || !cid || !messageId) return;
+      if (!body) {
+        console.log('[chat-send] blocked reason=empty_body');
+        return;
+      }
+      if (!cid) {
+        console.log('[chat-send] blocked reason=missing_conversation_id');
+        return;
+      }
+      if (!messageId) {
+        console.log('[chat-send] blocked reason=missing_message_id');
+        return;
+      }
       const socket = getOrCreateSocket();
-      if (!socket.connected) {
-        const ok = await ensureSocketReadyForSend();
-        if (!ok) {
-          Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
-          return;
-        }
-      }
-      if (!roomJoinedRef.current) {
-        emitJoinForChat();
-      }
+      console.log('[chat-send] socket_exists=', Boolean(socket));
+      console.log('[chat-send] socket_connected=', socket.connected);
+      console.log('[chat-send] socket_id=', socket.id || null);
+      console.log('[chat-send] roomJoined=', roomJoinedRef.current);
+      console.log('[chat-send] conversation_id=', cid);
+      console.log('[chat-send] message_id=', messageId);
+
       setRows((prev) =>
         prev.map((m) => (rowIdLo(m) === rowIdLo({ id: messageId }) ? { ...m, out_status: 'sending' as const } : m))
       );
       scheduleAckTimeout(messageId);
-      console.log('[chat] sending muhabbet_send message_id=', messageId);
+      const ready = await ensureSocketReadyForSend();
+      if (!ready) {
+        console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
+        setRows((prev) => markMessageFailedById(prev, messageId));
+        Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
+        return;
+      }
       try {
+        console.log('[chat-send] emit muhabbet_send');
         socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
       } catch {
         clearAckWait(messageId);
@@ -1056,21 +1091,25 @@ export default function MuhabbetChatScreen({
   );
 
   const send = async () => {
+    console.log('[chat-send] pressed');
     const body = draft.trim();
-    if (!body || !cid) return;
+    if (!body) {
+      console.log('[chat-send] blocked reason=empty_body');
+      return;
+    }
+    if (!cid) {
+      console.log('[chat-send] blocked reason=missing_conversation_id');
+      return;
+    }
     const socket = getOrCreateSocket();
-    if (!socket.connected) {
-      const ok = await ensureSocketReadyForSend();
-      if (!ok) {
-        Alert.alert('Sohbet', 'Bağlantı yok. İnternetinizi kontrol edin.');
-        return;
-      }
-    }
-    if (!roomJoinedRef.current) {
-      emitJoinForChat();
-    }
+    console.log('[chat-send] socket_exists=', Boolean(socket));
+    console.log('[chat-send] socket_connected=', socket.connected);
+    console.log('[chat-send] socket_id=', socket.id || null);
+    console.log('[chat-send] roomJoined=', roomJoinedRef.current);
+    console.log('[chat-send] conversation_id=', cid);
     const myLo = (myIdRef.current || myId || '').trim().toLowerCase();
     if (!myLo) {
+      console.log('[chat-send] blocked reason=missing_user_id');
       Alert.alert('Sohbet', 'Kullanıcı bilgisi yüklenemedi.');
       return;
     }
@@ -1094,8 +1133,18 @@ export default function MuhabbetChatScreen({
     setDraft('');
     setSending(true);
     scheduleAckTimeout(messageId);
-    console.log('[chat] sending muhabbet_send message_id=', messageId);
+    console.log('[chat-send] message_id=', messageId);
+    const ready = await ensureSocketReadyForSend();
+    if (!ready) {
+      console.log('[chat-send] blocked reason=socket_not_connected_after_ensure');
+      clearAckWait(messageId);
+      setRows((prev) => markMessageFailedById(prev, messageId));
+      setSending(false);
+      Alert.alert('Sohbet', 'Sohbet bağlantısı kuruluyor, mesaj birazdan tekrar denenebilir.');
+      return;
+    }
     try {
+      console.log('[chat-send] emit muhabbet_send');
       socket.emit('muhabbet_send', { conversation_id: cid, text: body, message_id: messageId });
     } catch {
       clearAckWait(messageId);
