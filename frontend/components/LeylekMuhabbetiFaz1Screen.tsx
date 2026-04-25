@@ -1429,18 +1429,21 @@ export default function LeylekMuhabbetiFaz1Screen({
             {(['home', 'listings', 'chats'] as const).map((t) => {
               const active = mainTab === t;
               const label = t === 'home' ? 'Ana Sayfa' : t === 'listings' ? 'Teklifler' : 'Sohbetler';
-              const icon =
-                t === 'home' ? ('home-outline' as const) : t === 'listings' ? ('newspaper-outline' as const) : ('chatbubbles-outline' as const);
+              const icon = (() => {
+                if (t === 'home') return active ? ('home' as const) : ('home-outline' as const);
+                if (t === 'listings') return active ? ('newspaper' as const) : ('newspaper-outline' as const);
+                return active ? ('chatbubbles' as const) : ('chatbubbles-outline' as const);
+              })();
               return (
                 <TouchableOpacity
                   key={t}
-                  style={styles.muhabbetTabItem}
+                  style={[styles.muhabbetTabItem, active && styles.muhabbetTabItemActive]}
                   onPress={() => setMainTab(t)}
-                  activeOpacity={0.85}
+                  activeOpacity={0.88}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                 >
-                  <Ionicons name={icon} size={22} color={active ? '#2563EB' : TEXT_SECONDARY} />
+                  <Ionicons name={icon} size={25} color={active ? '#1D4ED8' : TEXT_SECONDARY} />
                   <Text style={[styles.muhabbetTabLabel, active && styles.muhabbetTabLabelActive]}>{label}</Text>
                 </TouchableOpacity>
               );
@@ -1590,15 +1593,27 @@ const styles = StyleSheet.create({
   tabPlaceholder: { flex: 1, justifyContent: 'center', padding: 24 },
   muhabbetTabBar: {
     flexDirection: 'row',
+    alignItems: 'stretch',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(60,60,67,0.14)',
-    backgroundColor: CARD_BG,
-    paddingTop: 6,
-    paddingHorizontal: 4,
+    borderTopColor: 'rgba(60,60,67,0.12)',
+    backgroundColor: '#FAFAFA',
+    paddingTop: 8,
+    paddingHorizontal: 6,
   },
-  muhabbetTabItem: { flex: 1, alignItems: 'center', paddingVertical: 6 },
-  muhabbetTabLabel: { marginTop: 2, fontSize: 10, fontWeight: '700', color: TEXT_SECONDARY },
-  muhabbetTabLabelActive: { color: '#2563EB' },
+  muhabbetTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 14,
+    marginHorizontal: 2,
+  },
+  muhabbetTabItemActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+  },
+  muhabbetTabLabel: { marginTop: 4, fontSize: 11, fontWeight: '700', color: TEXT_SECONDARY, letterSpacing: -0.1 },
+  muhabbetTabLabelActive: { color: '#1D4ED8', fontWeight: '800' },
   cityChipLight: {
     marginHorizontal: 14,
     marginBottom: 8,

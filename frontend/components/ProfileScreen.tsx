@@ -1,5 +1,6 @@
 /**
- * Leylek Muhabbeti — kullanıcı profili (kendi / karşı taraf) + Leylek Anahtar kartı.
+ * Leylek Muhabbeti — kullanıcı profili (kendi / karşı taraf).
+ * Leylek Anahtar eşleşmesi yalnızca sohbet içi akıştan yapılır.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -15,7 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -425,29 +426,18 @@ export default function ProfileScreen({ apiBaseUrl, userId, onBack }: ProfileScr
                   </Text>
                 </View>
               ) : null}
-              <Pressable
-                onPress={() => router.push('/leylek-anahtar' as Href)}
-                style={({ pressed }) => [styles.ctaBl, pressed && { opacity: 0.9 }]}
-              >
-                <LinearGradient colors={PRIMARY_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ctaIn}>
-                  <Text style={styles.ctaTxt}>Leylek Anahtar Gir</Text>
-                </LinearGradient>
-              </Pressable>
+              <Text style={[styles.mutedSmall, { marginTop: 14 }]}>
+                Eşleşmeyi tamamlamak için ilgili sohbette &quot;Leylek Anahtar ile eşleş&quot; düğmesini kullanın; manuel kod
+                girişi Leylek Muhabbeti için kullanılmaz.
+              </Text>
             </View>
           ) : (
             <View style={styles.card}>
               <Text style={styles.section}>Eşleşme</Text>
               <Text style={styles.mutedSmall}>
-                Sohbet ön görüşmedir. Güvenli yolculuk eşleşmesi için Leylek Anahtar ile onaylayın.
+                Sohbet ön görüşmedir. Güvenli yolculuk eşleşmesi için sohbet içindeki &quot;Leylek Anahtar ile eşleş&quot;
+                akışını kullanın.
               </Text>
-              <Pressable
-                onPress={() => router.push('/leylek-anahtar' as Href)}
-                style={({ pressed }) => [styles.ctaBl, { marginTop: 12 }, pressed && { opacity: 0.9 }]}
-              >
-                <LinearGradient colors={PRIMARY_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ctaIn}>
-                  <Text style={styles.ctaTxt}>Leylek Anahtar gir</Text>
-                </LinearGradient>
-              </Pressable>
             </View>
           )}
         </ScrollView>
