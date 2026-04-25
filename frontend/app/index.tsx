@@ -11543,6 +11543,19 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       ...coordFields,
       ...socketPlOnly,
     };
+    try {
+      const ri = (matchedTag as { route_info?: Record<string, unknown> }).route_info;
+      console.log('DRIVER_ACTIVE_TAG_AFTER_SOCKET', {
+        id: matchedTag.id,
+        status: matchedTag.status,
+        routeInfo: ri ?? null,
+        routeInfoKeys: ri && typeof ri === 'object' ? Object.keys(ri) : null,
+        hasOverviewPolyline:
+          ri != null && typeof (ri as { overview_polyline?: unknown }).overview_polyline === 'string',
+      });
+    } catch {
+      /* noop */
+    }
     setActiveTag(matchedTag as Tag);
     setScreen('dashboard');
     setTimeout(() => void loadDriverDashboardDataRef.current?.(), 1000);

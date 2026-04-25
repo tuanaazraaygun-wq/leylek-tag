@@ -228,6 +228,44 @@ function readPickupKmMinFromRouteInfo(
   return { km, min: Math.max(1, Math.round(min)) };
 }
 
+/**
+ * Sürücü buluşma çizgisi: backend `get_route_info` / `_emit_driver_on_the_way_route` aynı alanları
+ * `routeInfo` (index’te `...(activeTag.route_info||{})` ile) üzerinden verir. OSRM public ile ayrı.
+ */
+function decodeMeetingPolylineFromServerRouteInfo(
+  routeInfo: LiveMapViewProps['routeInfo'] | null | undefined,
+): MapLatLng[] | null {
+  if (!routeInfo) return null;
+  const ri = routeInfo as Record<string, unknown>;
+  const enc = ri.overview_polyline ?? ri.polyline;
+  if (typeof enc === 'string' && enc.length > 2) {
+    const c = decodeOsrmPolyline(enc, 5);
+    return c.length >= 2 ? c : null;
+  }
+  const coords = ri.coordinates;
+  if (Array.isArray(coords) && coords.length >= 2) {
+    const out: MapLatLng[] = [];
+    for (const p of coords) {
+      if (Array.isArray(p) && p.length >= 2) {
+        const lng = Number(p[0]);
+        const lat = Number(p[1]);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          out.push({ latitude: lat, longitude: lng });
+        }
+      } else if (p && typeof p === 'object') {
+        const o = p as Record<string, unknown>;
+        const lat = Number(o.latitude ?? o.lat);
+        const lng = Number(o.longitude ?? o.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          out.push({ latitude: lat, longitude: lng });
+        }
+      }
+    }
+    return out.length >= 2 ? out : null;
+  }
+  return null;
+}
+
 /** Google→OSRM (server) — tek bacak; API key istemci dışında. */
 async function fetchBackendRouteMetrics(
   oLa: number,
@@ -4331,6 +4369,49 @@ export default function LiveMapView({
           }
         }
         if (isDriver) {
+          const riLog = routeInfoRef.current as Record<string, unknown> | null | undefined;
+          try {
+            console.log('DRIVER_MAP_ROUTE_INPUT', {
+              activeTagRouteInfo: riLog,
+              propRouteInfo: routeInfoRef.current,
+              routeInfoKeys: riLog && typeof riLog === 'object' ? Object.keys(riLog) : null,
+              hasOverviewPolyline: !!(
+                riLog &&
+                typeof riLog.overview_polyline === 'string' &&
+                riLog.overview_polyline.length > 2
+              ),
+              hasPolyline: !!(
+                riLog && typeof riLog.polyline === 'string' && riLog.polyline.length > 2
+              ),
+              hasCoordinates: Array.isArray(riLog?.coordinates)
+                ? (riLog.coordinates as unknown[]).length
+                : null,
+              activeTagId: tagId,
+              activeTagStatus: tagStatus,
+            });
+          } catch {
+            /* noop */
+          }
+
+          const serverPolyline = decodeMeetingPolylineFromServerRouteInfo(routeInfoRef.current);
+          if (serverPolyline && serverPolyline.length >= 2) {
+            if (commitMeetingPolyline(serverPolyline)) {
+              meetingHasOsrmPolylineRef.current = serverPolyline.length >= 3;
+              pickupNavStepsRef.current = null;
+              lastOsrmKeyRef.current = meetingEndpointsKeyHere();
+              if (!navigationModeRef.current) {
+                fitNavigationViewportRef.current?.(serverPolyline);
+              }
+              endMeetingRoadLoadingUi();
+              logNavDiag('NAV_ROUTE_SUCCESS', {
+                leg: 'meeting',
+                points: serverPolyline.length,
+                source: 'google_route_info_polyline',
+                pickup_fallback: pickupFallbackForDriver,
+              });
+            }
+          }
+
           console.log('DRIVER_ROUTE_PREFETCH_START', {
             tagId: tagId != null && String(tagId).trim() !== '' ? String(tagId) : null,
             navigationMode: navOn,
