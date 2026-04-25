@@ -20641,6 +20641,32 @@ def _muhabbet_last_message_map_for_user(conversation_ids: list[str], uid: str) -
     return out
 
 
+def _muhabbet_touch_conversation_last_message(conversation_id: str, text: str, now_iso: str) -> None:
+    """
+    Mesaj DB'ye yazılsa da yazılmasa da sohbet listesi güncel kalsın:
+    conversations.last_message, last_message_at, updated_at alanlarını best-effort güncelle.
+    Şemada bu kolonlar yoksa sessizce updated_at veya no-op.
+    """
+    cid = str(conversation_id or "").strip().lower()
+    if not cid:
+        return
+    try:
+        supabase.table("conversations").update(
+            {
+                "last_message": str(text or "")[:2000],
+                "last_message_at": now_iso,
+                "updated_at": now_iso,
+            }
+        ).eq("id", cid).execute()
+        return
+    except Exception as e:
+        logger.warning("touch conversation full fields failed cid=%s err=%s", cid[:12], e)
+    try:
+        supabase.table("conversations").update({"updated_at": now_iso}).eq("id", cid).execute()
+    except Exception as e:
+        logger.warning("touch conversation updated_at failed cid=%s err=%s", cid[:12], e)
+
+
 def _muhabbet_message_delete_for_user_db(cid: str, mid: str, uid: str) -> str:
     """Dönüş: ok | not_found | error"""
     cid = str(cid or "").strip().lower()
@@ -20786,6 +20812,15 @@ async def sio_muhabbet_send(sid, data):
             room=sid,
         )
         return
+    if db_ok:
+        try:
+            _muhabbet_touch_conversation_last_message(
+                conversation_id=cid,
+                text=text,
+                now_iso=now_iso,
+            )
+        except Exception as e:
+            logger.error("muhabbet_send touch conversation failed cid=%s message_id=%s err=%s", cid, msg_id, e)
     try:
         await emit_socket_event_to_user(
             uid,

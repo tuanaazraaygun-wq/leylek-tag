@@ -216,7 +216,14 @@ export default function ConversationsScreen({
       }
       let list = Array.isArray(data.conversations) ? data.conversations : [];
       if (onlyAccepted) {
-        list = list.filter((c) => (c.request_status || '').toLowerCase() === 'accepted');
+        list = list.filter((c) => {
+          const req = (c.request_status || '').toLowerCase();
+          if (req === 'accepted') return true;
+          if (String(c.matched_at || '').trim()) return true;
+          // Eski kayıtlarda request_status boş olabilir; mesaj trafiği varsa sohbeti gizleme.
+          if (String(c.last_message_at || '').trim() || String(c.last_message_body || '').trim()) return true;
+          return false;
+        });
       }
       const enriched = await Promise.all(
         list.map(async (c) => {
