@@ -289,6 +289,30 @@ def muhabbet_room(conversation_id: str) -> str:
     return f"muhabbet_{c}" if c else "muhabbet_"
 
 
+# Leylek Muhabbeti FCM: (receiver_user_id, conversation_id) -> time.monotonic() son push
+_muhabbet_last_push_mono: dict[tuple[str, str], float] = {}
+
+
+def _muhabbet_message_push_rate_allow(receiver: str, conversation_id: str) -> bool:
+    """Aynı sohbet için 60 sn içinde tekrar push yok (socket message her zaman room'da)."""
+    ru = str(receiver or "").strip().lower()
+    cc = str(conversation_id or "").strip().lower()
+    if not ru or not cc:
+        return False
+    now = time.monotonic()
+    key = (ru, cc)
+    prev = _muhabbet_last_push_mono.get(key)
+    if prev is not None and (now - prev) < 60.0:
+        logger.info(
+            "[muhabbet_send] push skipped rate_limit receiver=%s conversation_id=%s",
+            ru[:13],
+            cc,
+        )
+        return False
+    _muhabbet_last_push_mono[key] = now
+    return True
+
+
 def _muhabbet_user_socket_online(uid: str) -> bool:
     """Socket `register` sonrası connected_users haritasında aktif sid var mı (push dedupe)."""
     u = (uid or "").strip().lower()
@@ -18886,7 +18910,14 @@ async def _muhabbet_notify_leylek_pair_request(
             "initiator_role": ru,
             "initiator_role_label": role_l,
         }
-        await sio.emit("leylek_pair_match_request", payload, room=muhabbet_room(str(conversation_id).strip().lower()))
+        tgt = str(target_uid).strip().lower()
+        await emit_socket_event_to_user(tgt, "leylek_pair_match_request", payload)
+        logger.info(
+            "[leylek_pair_request] emitted target=%s conversation_id=%s request_id=%s",
+            tgt[:13] if tgt else "",
+            str(conversation_id).strip().lower(),
+            str(request_id).strip().lower()[:13],
+        )
         asyncio.create_task(
             send_push_notification(
                 str(target_uid).strip(),
@@ -18895,6 +18926,7 @@ async def _muhabbet_notify_leylek_pair_request(
                 payload,
             )
         )
+        logger.info("[leylek_pair_request] push sent target=%s", tgt[:13] if tgt else "")
     except Exception as e:
         logger.warning("muhabbet_notify_leylek_pair_request: %s", e)
 
@@ -20445,16 +20477,30 @@ async def sio_muhabbet_send(sid, data):
     logger.info("[muhabbet_send] emitted room=%s message_id=%s peers_in_room=%s", room, msg_id, peer_n)
     try:
         if recipient:
-            online = _muhabbet_user_socket_online(recipient)
-            # Odada yalnız gönderen (veya alıcı odada değil) → FCM; çevrimdışıysa da FCM.
-            if (not online) or peer_n < 2:
+            ru = str(recipient).strip().lower()
+            # İki taraf da aynı muhabbet odasındayken push yok; socket message zaten room'a gider.
+            if peer_n >= 2:
+                logger.info(
+                    "[muhabbet_send] push skipped both_in_room conversation_id=%s peers_in_room=%s",
+                    cid,
+                    peer_n,
+                )
+            elif _muhabbet_message_push_rate_allow(ru, cid):
                 preview = text[:50] + ("…" if len(text) > 50 else "")
+                push_text = text[:400] + ("…" if len(text) > 400 else "")
                 asyncio.create_task(
                     send_push_notification(
                         recipient,
                         "Yeni mesaj",
                         preview,
-                        {"type": "muhabbet_message", "conversation_id": cid, "sender_id": uid},
+                        {
+                            "type": "muhabbet_message",
+                            "conversation_id": cid,
+                            "message_id": msg_id,
+                            "sender_id": uid,
+                            "text": push_text,
+                            "created_at": now_iso,
+                        },
                     )
                 )
     except Exception as e:
@@ -20610,6 +20656,7 @@ async def _sio_leylek_pair_request_handler(sid, data):
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
     if not cid:
         return
+    logger.info("[leylek_pair_request] received sid=%s conversation_id=%s uid=%s", sid, cid, str(uid)[:13])
     if not _muhabbet_conversation_member_ok(cid, uid):
         await sio.emit("leylek_pair_error", {"code": "forbidden", "detail": "Bu sohbete erişim yok"}, room=sid)
         return
@@ -20630,6 +20677,13 @@ async def _sio_leylek_pair_request_handler(sid, data):
     rid = r["request_id"]
     target = r["target"]
     role = r.get("initiator_role") or ""
+    logger.info(
+        "[leylek_pair_request] participants requester=%s target=%s conversation_id=%s request_id=%s",
+        str(uid)[:13],
+        str(target)[:13] if target else "",
+        cid,
+        str(rid)[:13] if rid else "",
+    )
     try:
         await _muhabbet_notify_leylek_pair_request(str(target), uid, cid, rid, role)
     except Exception as e:
@@ -20738,12 +20792,13 @@ def _leylek_pair_decline_from_socket(uid: str, cid: str, rid: str) -> dict:
     if str(row.get("target_user_id") or "").strip().lower() != uid:
         return {"ok": False, "detail": "Sadece karşı taraf yanıtlayabilir"}
     if str(row.get("status") or "").strip().lower() != "pending":
-        return {"ok": True, "message": "zaten yanıtlanmış"}
+        return {"ok": True, "message": "zaten yanıtlanmış", "initiator_user_id": None}
+    initiator_uid = str(row.get("initiator_user_id") or "").strip().lower()
     now_iso = datetime.now(timezone.utc).isoformat()
     supabase.table("muhabbet_leylek_pair_requests").update(
         {"status": "declined", "responded_at": now_iso}
     ).eq("id", rid).execute()
-    return {"ok": True, "message": "declined"}
+    return {"ok": True, "message": "declined", "initiator_user_id": initiator_uid or None}
 
 
 @sio.on("leylek_pair_decline")
@@ -20763,7 +20818,17 @@ async def sio_leylek_pair_decline(sid, data):
         await sio.enter_room(sid, muhabbet_room(cid))
     except Exception as e:
         logger.warning("leylek_pair_decline enter_room: %s", e)
-    _leylek_pair_decline_from_socket(uid, cid, rid)
+    out = _leylek_pair_decline_from_socket(uid, cid, rid)
+    ini = (out or {}).get("initiator_user_id") if isinstance(out, dict) else None
+    if ini and str(out.get("message") or "") == "declined":
+        try:
+            await emit_socket_event_to_user(
+                str(ini).strip(),
+                "leylek_pair_declined",
+                {"conversation_id": cid, "request_id": rid},
+            )
+        except Exception as e:
+            logger.warning("leylek_pair_declined emit: %s", e)
 
 
 @api_router.get("/muhabbet/conversations/me")

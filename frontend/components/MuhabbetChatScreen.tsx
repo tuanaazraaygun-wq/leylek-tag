@@ -50,6 +50,11 @@ const SEND_BTN_GRAD = ['#4facfe', '#00f2fe'] as const;
 const TEXT_PRIMARY = '#111111';
 const TEXT_SECONDARY = '#6E6E73';
 
+const INFO_PRIVACY =
+  'Mesaj içerikleri sunucularımızda saklanmaz. Görüşmeler yalnızca cihazınızda tutulur; istediğiniz zaman silebilirsiniz.';
+const INFO_SAFETY =
+  'Güzergâh, ücret ve buluşma noktasını netleştirmeden yolculuğa başlamayın. Taraflar arası anlaşma kullanıcıların sorumluluğundadır.';
+
 /** Muhabbet mesaj satırı — sunucu DB tutmaz; id istemci UUID veya socket message_id. */
 export type OutMessageStatus = 'sending' | 'sent' | 'delivered' | 'seen' | 'failed';
 
@@ -206,6 +211,10 @@ export default function MuhabbetChatScreen({
   const [pairRequestLoading, setPairRequestLoading] = useState(false);
   /** Karşı taraftan gelen Leylek Anahtar eşleşme isteği (modal) */
   const [pairInModal, setPairInModal] = useState<{ rid: string; fromLo: string } | null>(null);
+  /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
+  const [infoStripDismissed, setInfoStripDismissed] = useState(false);
+  const [infoRotateIx, setInfoRotateIx] = useState(0);
+  const infoFade = useRef(new Animated.Value(1)).current;
   const pairRequestBusyRef = useRef(false);
   /** İstemci tarafı 60 sn eşleşme isteği aralığı (sunucu cooldown ile uyumlu) */
   const lastLeylekPairRequestAtRef = useRef(0);
@@ -308,7 +317,7 @@ export default function MuhabbetChatScreen({
           sender_role: m.sender_role,
         }))
       );
-      console.log('[chat] local load count=', mapped.length);
+      console.log('[chat] local load conversation=', cid, 'count=', mapped.length);
       setRows(mapped);
     } catch {
       setRows([]);
@@ -351,6 +360,24 @@ export default function MuhabbetChatScreen({
   }, [loadContext]);
 
   useEffect(() => {
+    if (cid) console.log('[chat] route conversation_id=', cid);
+  }, [cid]);
+
+  useEffect(() => {
+    if (infoStripDismissed) return;
+    const id = setInterval(() => {
+      setInfoRotateIx((v) => (v + 1) % 2);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [infoStripDismissed]);
+
+  useEffect(() => {
+    if (infoStripDismissed) return;
+    infoFade.setValue(0.65);
+    Animated.timing(infoFade, { toValue: 1, duration: 380, useNativeDriver: true }).start();
+  }, [infoRotateIx, infoFade, infoStripDismissed]);
+
+  useEffect(() => {
     if (!cid) return;
     const s = getOrCreateSocket();
     const onMatch = (data: { conversation_id?: string }) => {
@@ -376,6 +403,7 @@ export default function MuhabbetChatScreen({
       from_user_id?: string;
       initiator_user_id?: string;
     }) => {
+      console.log('[chat] received leylek_pair_match_request data=', data);
       const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
       if (conv !== cidLo) return;
       const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
@@ -637,6 +665,11 @@ export default function MuhabbetChatScreen({
       chatSessionActiveRef.current = false;
       roomJoinedRef.current = false;
       setRoomJoined(false);
+      if (persistDebounceRef.current) {
+        clearTimeout(persistDebounceRef.current);
+        persistDebounceRef.current = null;
+      }
+      void persistMuhabbetChatRowsLocal(cid, rowsRef.current);
       ackTimeoutsRef.current.forEach((t) => clearTimeout(t));
       ackTimeoutsRef.current.clear();
       unsubSessionRefresh();
@@ -670,6 +703,9 @@ export default function MuhabbetChatScreen({
       if (persistDebounceRef.current) {
         clearTimeout(persistDebounceRef.current);
         persistDebounceRef.current = null;
+      }
+      if (!isLoadingMessages && cid) {
+        void persistMuhabbetChatRowsLocal(cid, rowsRef.current);
       }
     };
   }, [cid, rows, isLoadingMessages]);
@@ -997,6 +1033,7 @@ export default function MuhabbetChatScreen({
       } catch {
         /* noop */
       }
+      console.log('[chat] send leylek pair request conversation=', cid);
       socket.emit('leylek_pair_match_request', { conversation_id: cid });
     } catch {
       if (tmo) {
@@ -1109,12 +1146,28 @@ export default function MuhabbetChatScreen({
                       <Text style={styles.connectingStripTxt}>Sohbet bağlantısı kuruluyor…</Text>
                     </View>
                   ) : null}
-                  <View style={styles.privacyBanner}>
-                    <Text style={styles.privacyBannerTxt} numberOfLines={5}>
-                      Mesaj içerikleri sunucularımızda saklanmaz. Görüşmeler yalnızca cihazınızda tutulur; istediğiniz
-                      zaman silebilirsiniz.
-                    </Text>
-                  </View>
+                  {!infoStripDismissed ? (
+                    <Animated.View style={[styles.compactInfoOuter, { opacity: infoFade }]}>
+                      <View
+                        style={[
+                          styles.compactInfoCard,
+                          infoRotateIx === 0 ? styles.compactInfoPrivacy : styles.compactInfoSafety,
+                        ]}
+                      >
+                        <Pressable
+                          accessibilityLabel="Bilgi kartını kapat"
+                          onPress={() => setInfoStripDismissed(true)}
+                          style={styles.compactInfoClose}
+                          hitSlop={10}
+                        >
+                          <Ionicons name="close-circle" size={18} color="rgba(100,116,139,0.95)" />
+                        </Pressable>
+                        <Text style={styles.compactInfoTxt}>
+                          {infoRotateIx === 0 ? INFO_PRIVACY : INFO_SAFETY}
+                        </Text>
+                      </View>
+                    </Animated.View>
+                  ) : null}
                 </View>
               }
               renderItem={({ item }) => {
@@ -1132,7 +1185,13 @@ export default function MuhabbetChatScreen({
                             end={{ x: 1, y: 1 }}
                             style={styles.bubblePad}
                           >
-                            <Text style={styles.tGrad}>{item.body || ''}</Text>
+                            <Text
+                              style={styles.tGrad}
+                              selectable
+                              {...(Platform.OS === 'android' ? { textBreakStrategy: 'highQuality' as const } : {})}
+                            >
+                              {item.body || ''}
+                            </Text>
                           </LinearGradient>
                         </View>
                         <Pressable
@@ -1180,7 +1239,13 @@ export default function MuhabbetChatScreen({
                           end={{ x: 1, y: 1 }}
                           style={styles.bubblePad}
                         >
-                          <Text style={styles.tGrad}>{item.body || ''}</Text>
+                          <Text
+                            style={styles.tGrad}
+                            selectable
+                            {...(Platform.OS === 'android' ? { textBreakStrategy: 'highQuality' as const } : {})}
+                          >
+                            {item.body || ''}
+                          </Text>
                         </LinearGradient>
                       </View>
                     </View>
@@ -1192,10 +1257,6 @@ export default function MuhabbetChatScreen({
           )}
           {!ctx?.matched_via_leylek_key ? (
             <View style={styles.keyRow}>
-              <Text style={styles.routeSafetyTxt}>
-                Önce güzergâh, ücret ve buluşma noktasını netleştirin. Leylek Anahtar ile eşleşmeden yolculuğa
-                başlamayın.
-              </Text>
               <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
                 <View style={styles.keyCtaGlow}>
                   <Pressable
@@ -1342,33 +1403,52 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59, 130, 246, 0.25)',
   },
   connectingStripTxt: { fontSize: 13, color: '#1D4ED8', fontWeight: '600' },
-  privacyBanner: {
-    backgroundColor: 'rgba(22, 163, 74, 0.12)',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
+  compactInfoOuter: { marginBottom: 8, paddingHorizontal: 2 },
+  compactInfoCard: {
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingRight: 36,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(22, 163, 74, 0.2)',
+    maxWidth: '96%',
+    alignSelf: 'center',
   },
-  privacyBannerTxt: {
-    textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 18,
-    color: '#14532D',
-    fontWeight: '500',
+  compactInfoPrivacy: {
+    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    borderColor: 'rgba(22, 163, 74, 0.22)',
   },
-  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '96%', marginBottom: 8 },
-  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '96%', marginBottom: 8 },
+  compactInfoSafety: {
+    backgroundColor: 'rgba(251, 146, 60, 0.12)',
+    borderColor: 'rgba(234, 88, 12, 0.28)',
+  },
+  compactInfoClose: { position: 'absolute', right: 6, top: 6, zIndex: 2, padding: 2 },
+  compactInfoTxt: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  bubbleColMine: { alignSelf: 'flex-end', maxWidth: '78%', marginBottom: 8, flexShrink: 1 },
+  bubbleColTheirs: { alignSelf: 'flex-start', maxWidth: '78%', marginBottom: 8, flexShrink: 1 },
   bubbleRowMine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   bubbleRowTheirs: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 6 },
   trashHit: { padding: 2 },
-  bubbleMax: { maxWidth: '88%' },
+  bubbleMax: { maxWidth: '78%' },
   bubbleShadowWrap: { ...BUBBLE_SHADOW, borderRadius: 18, maxWidth: '100%' },
   bubbleAlignEnd: { alignSelf: 'flex-end' },
   bubbleAlignStart: { alignSelf: 'flex-start' },
-  bubblePad: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
-  tGrad: { color: '#fff', fontSize: 16, lineHeight: 22, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.12)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  bubblePad: { borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14, flexShrink: 1, maxWidth: '100%' },
+  tGrad: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+    flexShrink: 1,
+    maxWidth: '100%',
+    textShadowColor: 'rgba(0,0,0,0.12)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   timeRowMine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1381,15 +1461,6 @@ const styles = StyleSheet.create({
   resendTxt: { fontSize: 12, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
-  routeSafetyTxt: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: '#92400E',
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 4,
-  },
   keyCtaGlow: {
     borderRadius: 16,
     ...Platform.select({
