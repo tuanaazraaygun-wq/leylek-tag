@@ -72,7 +72,6 @@ import {
 } from '../lib/boardingProximity';
 import { BOARDING_COMMS_CLOSED_USER_MSG, BOARDING_COMM_CLOSED_CODE } from '../lib/boardingCommsClosed';
 import {
-  getPersistedAccessToken,
   persistAccessToken,
   clearSessionStorage,
   getPersistedUserRaw,
@@ -8453,29 +8452,6 @@ function PassengerDashboard({
     }
 
     try {
-      const token = (await getPersistedAccessToken())?.trim() || '';
-      const payloadBody = {
-        tag_id: tagId,
-        passenger_id: String(user.id),
-        pickup_lat: pickupLat,
-        pickup_lng: pickupLng,
-        pickup_location: pickupAddress || 'Mevcut konum',
-        passenger_vehicle_kind: rideVehiclePreference,
-        dropoff_lat: dLat,
-        dropoff_lng: dLng,
-        dropoff_location: (destination.address && String(destination.address).trim()) || 'Seçilen hedef',
-        offered_price: offerAmt,
-        distance_km: Number.isFinite(distKm) ? distKm : 0,
-        estimated_minutes: Number.isFinite(estMin) ? Math.max(0, Math.round(estMin)) : 0,
-        passenger_preferred_vehicle: rideVehiclePreference,
-        passenger_payment_method: passengerPaymentPreference,
-      };
-      console.log('[ride-create] pressed');
-      console.log(`[ride-create] token exists=${token ? 'true' : 'false'}`);
-      console.log(`[ride-create] user_id=${String(user?.id || '')}`);
-      console.log(`[ride-create] passenger_id=${String(user?.id || '')}`);
-      console.log(`[ride-create] role=${String(user?.role || '')}`);
-      console.log('[ride-create] payload=', payloadBody);
       console.log('CREATE RIDE REQUEST SENT');
       if (passengerPostForceEndRef.current) {
         console.log('NEW_OFFER_ATTEMPT_AFTER_FORCE_END', { phase: 'ride_create', userId: user?.id ?? null });
@@ -8484,7 +8460,22 @@ function PassengerDashboard({
       const res = await fetch(`${API_URL}/ride/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadBody),
+        body: JSON.stringify({
+          tag_id: tagId,
+          passenger_id: String(user.id),
+          pickup_lat: pickupLat,
+          pickup_lng: pickupLng,
+          pickup_location: pickupAddress || 'Mevcut konum',
+          passenger_vehicle_kind: rideVehiclePreference,
+          dropoff_lat: dLat,
+          dropoff_lng: dLng,
+          dropoff_location: (destination.address && String(destination.address).trim()) || 'Seçilen hedef',
+          offered_price: offerAmt,
+          distance_km: Number.isFinite(distKm) ? distKm : 0,
+          estimated_minutes: Number.isFinite(estMin) ? Math.max(0, Math.round(estMin)) : 0,
+          passenger_preferred_vehicle: rideVehiclePreference,
+          passenger_payment_method: passengerPaymentPreference,
+        }),
       });
       let data: Record<string, unknown> = {};
       try {

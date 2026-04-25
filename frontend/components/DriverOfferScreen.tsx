@@ -27,7 +27,6 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { API_BASE_URL } from '../lib/backendConfig';
-import { getPersistedAccessToken } from '../lib/sessionToken';
 import {
   ROUTE_LOADING_MIN_VISIBLE_MS,
   ROUTE_LOADING_UI,
@@ -603,11 +602,7 @@ function RequestCard({
             if (accepting || globalAcceptFrozen) return;
 
             const tagIdForAccept = String(request.tag_id || request.id || '').trim();
-            const rawUserId = String(driverId || '').trim();
-            const userId =
-              rawUserId && !['none', 'null', 'undefined'].includes(rawUserId.toLowerCase())
-                ? rawUserId
-                : '';
+            const userId = String(driverId || '').trim();
 
             if (!tagIdForAccept || !userId) {
               Alert.alert('Hata', 'Eksik bilgi');
@@ -618,20 +613,11 @@ function RequestCard({
             setAccepting(true);
             try {
               playTapSound?.();
-              const token = (await getPersistedAccessToken())?.trim() || '';
               const url = `${API_BASE_URL}/driver/accept-offer?user_id=${encodeURIComponent(userId)}`;
-              const payload = { tag_id: tagIdForAccept, driver_id: userId };
-              console.log('[driver-accept] pressed');
-              console.log(`[driver-accept] token exists=${token ? 'true' : 'false'}`);
-              console.log(`[driver-accept] current user_id=${userId}`);
-              console.log(`[driver-accept] driver_id=${userId}`);
-              console.log(`[driver-accept] request/tag id=${tagIdForAccept}`);
-              console.log('[driver-accept] payload=', payload);
-              console.log(`[driver-accept] endpoint=${url}`);
               const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({ tag_id: tagIdForAccept, driver_id: userId }),
               });
               const rawText = await res.text();
               let body: Record<string, unknown> | null = null;
