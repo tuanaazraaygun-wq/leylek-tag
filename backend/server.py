@@ -22297,6 +22297,34 @@ async def muhabbet_conversation_messages_get(
         ms = str(c_row.get("match_source") or "").strip().lower()
         matched_at = c_row.get("matched_at")
         leylek_matched = bool(matched_at) and ms in ("leylek_key", "leylek_key_inchat")
+        pending_pair_request_id = None
+        pending_pair_request_direction = None
+        pending_pair_request_requester_id = None
+        pending_pair_request_target_id = None
+        try:
+            # Leylek Teklif Sende only: hydrate in-chat match state from Muhabbet tables.
+            # This must not create/update normal ride tags, dispatch, route, QR, Guven Al, or Agora state.
+            pr = (
+                supabase.table("muhabbet_leylek_pair_requests")
+                .select("id, initiator_user_id, target_user_id")
+                .eq("conversation_id", cid)
+                .eq("status", "pending")
+                .or_(f"initiator_user_id.eq.{uid},target_user_id.eq.{uid}")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if pr.data:
+                prow = dict(pr.data[0])
+                req_uid = str(prow.get("initiator_user_id") or "").strip().lower()
+                tgt_uid = str(prow.get("target_user_id") or "").strip().lower()
+                if uid in (req_uid, tgt_uid):
+                    pending_pair_request_id = str(prow.get("id") or "").strip().lower() or None
+                    pending_pair_request_direction = "outgoing" if req_uid == uid else "incoming"
+                    pending_pair_request_requester_id = req_uid or None
+                    pending_pair_request_target_id = tgt_uid or None
+        except Exception as e:
+            logger.warning("messages_get pending_pair_request: %s", e)
         ctx = {
             "other_user_id": other_uid,
             "other_user_public_name": other_public_name,
@@ -22309,6 +22337,10 @@ async def muhabbet_conversation_messages_get(
             "matched_via_leylek_key": leylek_matched,
             "matched_at": matched_at,
             "match_source": ms or None,
+            "pending_pair_request_id": pending_pair_request_id,
+            "pending_pair_request_direction": pending_pair_request_direction,
+            "pending_pair_request_requester_id": pending_pair_request_requester_id,
+            "pending_pair_request_target_id": pending_pair_request_target_id,
             "ephemeral_chat": False,
         }
         msgs = _muhabbet_messages_fetch_visible_for_user(cid, uid, lim)

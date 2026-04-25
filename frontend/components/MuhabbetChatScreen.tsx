@@ -103,6 +103,10 @@ export type ChatContext = {
   matched_via_leylek_key?: boolean;
   matched_at?: string | null;
   match_source?: string | null;
+  pending_pair_request_id?: string | null;
+  pending_pair_request_direction?: 'incoming' | 'outgoing' | null;
+  pending_pair_request_requester_id?: string | null;
+  pending_pair_request_target_id?: string | null;
   /** Sunucu geçmiş mesaj tutmaz */
   ephemeral_chat?: boolean;
 };
@@ -310,6 +314,13 @@ export default function MuhabbetChatScreen({
   /** message_id -> 8 sn ack bekleme (timeout iptali onAck’te) */
   const ackTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  const pendingPairRequestId = String(ctx?.pending_pair_request_id || '').trim().toLowerCase();
+  const pendingPairDirection = ctx?.pending_pair_request_direction || null;
+  const hasOutgoingPendingPairRequest =
+    !ctx?.matched_via_leylek_key &&
+    !!pendingPairRequestId &&
+    pendingPairDirection === 'outgoing';
+
   const keyboardOffset = insets.top + (Platform.OS === 'ios' ? 52 : 12);
   const pushSystemCard = useCallback((tone: ChatSystemCard['tone'], text: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -390,6 +401,22 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     ctxRef.current = ctx;
   }, [ctx]);
+
+  useEffect(() => {
+    if (!cid || ctx?.matched_via_leylek_key) return;
+    const rid = String(ctx?.pending_pair_request_id || '').trim().toLowerCase();
+    if (!rid || ctx?.pending_pair_request_direction !== 'incoming') return;
+    const fromLo = String(ctx.pending_pair_request_requester_id || '').trim().toLowerCase();
+    // Leylek Teklif Sende only: restore missed in-chat match requests from Muhabbet context.
+    // This must not call normal ride creation, tags, dispatch, route, QR, Guven Al, or Agora.
+    setPairInModal((prev) => (prev?.rid === rid ? prev : { rid, fromLo }));
+  }, [
+    cid,
+    ctx?.matched_via_leylek_key,
+    ctx?.pending_pair_request_direction,
+    ctx?.pending_pair_request_id,
+    ctx?.pending_pair_request_requester_id,
+  ]);
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -610,7 +637,7 @@ export default function MuhabbetChatScreen({
           }
         }
         if (me && fromLo === me) return;
-        setPairInModal({ rid, fromLo });
+        setPairInModal((prev) => (prev?.rid === rid ? prev : { rid, fromLo }));
       })();
     };
     socket.on('leylek_pair_match_request', onReq);
@@ -1438,6 +1465,14 @@ export default function MuhabbetChatScreen({
                       <Text style={styles.systemPermanentOkTxt}>Leylek Anahtar ile eşleşme tamamlandı</Text>
                     </View>
                   ) : null}
+                  {hasOutgoingPendingPairRequest ? (
+                    <View style={styles.systemPermanentPending}>
+                      <Ionicons name="time-outline" size={15} color="#1D4ED8" />
+                      <Text style={styles.systemPermanentPendingTxt}>
+                        Leylek Anahtarı eşleşme isteği gönderildi, yanıt bekleniyor.
+                      </Text>
+                    </View>
+                  ) : null}
                   {systemCards.map((s) => (
                     <View
                       key={s.id}
@@ -1564,7 +1599,26 @@ export default function MuhabbetChatScreen({
               }}
             />
           )}
-          {!ctx?.matched_via_leylek_key ? (
+          {ctx?.matched_via_leylek_key ? (
+            <View style={styles.convertPlanRow}>
+              <View style={styles.convertPlanCard}>
+                {/* Leylek Teklif Sende only: planned UI, no normal ride/tags/dispatch call. */}
+                <Pressable
+                  disabled
+                  style={styles.convertPlanButton}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: true }}
+                  accessibilityLabel="Bu anlaşmayı yolculuğa çevir"
+                >
+                  <Ionicons name="car-sport-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
+                  <Text style={styles.convertPlanButtonTxt}>Bu anlaşmayı yolculuğa çevir</Text>
+                </Pressable>
+                <Text style={styles.convertPlanSub}>
+                  Yakında: Bu sohbet anlaşmasını güvenli yolculuğa dönüştürebileceksiniz.
+                </Text>
+              </View>
+            </View>
+          ) : (
             <View style={styles.keyRow}>
               <Animated.View style={{ opacity: ctaPulse, width: '100%' }}>
                 <View style={styles.keyCtaGlow}>
@@ -1594,7 +1648,7 @@ export default function MuhabbetChatScreen({
                 </View>
               </Animated.View>
             </View>
-          ) : null}
+          )}
           <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <TextInput
               style={styles.input}
@@ -1698,6 +1752,8 @@ const styles = StyleSheet.create({
   peerPreviewPill: { fontSize: 10, fontWeight: '800', color: '#B45309', backgroundColor: 'rgba(245,158,11,0.18)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 7, overflow: 'hidden' },
   systemPermanentOk: { marginHorizontal: 14, marginBottom: 8, backgroundColor: 'rgba(22,163,74,0.14)', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
   systemPermanentOkTxt: { color: '#166534', fontSize: 12, fontWeight: '700' },
+  systemPermanentPending: { marginHorizontal: 14, marginBottom: 8, backgroundColor: 'rgba(37,99,235,0.12)', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  systemPermanentPendingTxt: { color: '#1D4ED8', fontSize: 12, fontWeight: '700', flex: 1 },
   systemCard: { marginHorizontal: 14, marginBottom: 6, borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10 },
   systemCardBlue: { backgroundColor: 'rgba(37,99,235,0.12)' },
   systemCardGreen: { backgroundColor: 'rgba(22,163,74,0.12)' },
@@ -1800,6 +1856,11 @@ const styles = StyleSheet.create({
   resendTxt: { fontSize: 12, fontWeight: '700', color: '#2563EB', textDecorationLine: 'underline' },
   tTimeTheirs: { fontSize: 11, color: TEXT_SECONDARY, marginTop: 4 },
   keyRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, backgroundColor: 'rgba(255,255,255,0.72)' },
+  convertPlanRow: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 6, backgroundColor: 'rgba(255,255,255,0.72)' },
+  convertPlanCard: { borderRadius: 16, padding: 10, backgroundColor: 'rgba(100,116,139,0.1)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(100,116,139,0.22)' },
+  convertPlanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(148,163,184,0.18)' },
+  convertPlanButtonTxt: { color: '#475569', fontSize: 15, fontWeight: '800' },
+  convertPlanSub: { marginTop: 8, color: '#64748B', fontSize: 12, fontWeight: '600', lineHeight: 17, textAlign: 'center' },
   keyCtaGlow: {
     borderRadius: 16,
     ...Platform.select({
