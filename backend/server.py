@@ -7997,6 +7997,7 @@ class DriverAcceptOfferRequest(BaseModel):
 @api_router.post("/driver/accept-offer")
 async def driver_accept_offer_http(
     body: Optional[DriverAcceptOfferRequest] = Body(None),
+    http_request: Request = None,
     tag_id: str = None,
     driver_id: str = None,
     user_id: str = None,
@@ -8011,13 +8012,31 @@ async def driver_accept_offer_http(
             or driver_id
             or user_id
         )
-        if not tid or not did:
+        auth_user_id = None
+        try:
+            if http_request:
+                authorization = http_request.headers.get("Authorization")
+                if authorization:
+                    parts = str(authorization).strip().split(None, 1)
+                    if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+                        auth_user_id = verify_access_token(parts[1].strip())
+        except Exception:
+            auth_user_id = None
+        logger.info("[driver/accept] tag_id=%s", str(tid or "")[:96])
+        logger.info("[driver/accept] raw_driver_id=%s", str(did or "")[:96])
+        logger.info("[driver/accept] auth_user_id=%s", str(auth_user_id or "")[:96])
+        if not tid:
             raise HTTPException(status_code=422, detail="tag_id ve user_id/driver_id gerekli")
         if not supabase:
             raise HTTPException(status_code=500, detail="Veritabanı yapılandırması eksik")
 
-        resolved_driver_id = await resolve_user_id(str(did).strip())
+        resolved_driver_id, resolve_reason = await _resolve_driver_id_for_normal_ride_accept(
+            raw_driver_id=did,
+            auth_user_id=auth_user_id,
+        )
+        logger.info("[driver/accept] resolved_driver_id=%s", str(resolved_driver_id or "")[:96])
         if not resolved_driver_id:
+            logger.error("[driver/accept] resolve failed reason=%s", resolve_reason)
             raise HTTPException(status_code=400, detail="Geçersiz sürücü")
 
         tid = str(tid).strip()
@@ -13678,16 +13697,25 @@ async def handle_driver_accept_offer(sid, data):
     print("ACCEPT PAYLOAD:", data)
     tag_id = data.get("tag_id")
     driver_id = data.get("driver_id")
+    auth_user_id = socket_id_to_user.get(sid)
     driver_name = (data.get("driver_name") or "Sürücü").strip() or "Sürücü"
     print("TAG:", tag_id, "DRIVER:", driver_id)
     logger.info(f"driver_accept_offer RECEIVED tag_id={tag_id} driver_id={str(driver_id)[:20] if driver_id else '?'}")
-    if not tag_id or not driver_id:
+    logger.info("[driver/accept] tag_id=%s", str(tag_id or "")[:96])
+    logger.info("[driver/accept] raw_driver_id=%s", str(driver_id or "")[:96])
+    logger.info("[driver/accept] auth_user_id=%s", str(auth_user_id or "")[:96])
+    if not tag_id:
         logger.warning("driver_accept_offer: tag_id veya driver_id eksik")
         await sio.emit("offer_accepted_error", {"error": "Eksik bilgi"}, room=sid)
         return
 
-    resolved_driver_id = await resolve_user_id(str(driver_id).strip())
+    resolved_driver_id, resolve_reason = await _resolve_driver_id_for_normal_ride_accept(
+        raw_driver_id=driver_id,
+        auth_user_id=auth_user_id,
+    )
+    logger.info("[driver/accept] resolved_driver_id=%s", str(resolved_driver_id or "")[:96])
     if not resolved_driver_id:
+        logger.error("[driver/accept] resolve failed reason=%s", resolve_reason)
         await sio.emit("offer_accepted_error", {"error": "Geçersiz sürücü"}, room=sid)
         return
 
@@ -14754,6 +14782,60 @@ async def _resolve_passenger_id_for_normal_ride_create(
     return None, "not_found"
 
 
+async def _resolve_driver_id_for_normal_ride_accept(
+    raw_driver_id: Optional[str], auth_user_id: Optional[str] = None
+) -> tuple[Optional[str], str]:
+    """Normal accept akışları için driver kimliğini users.id UUID'ye çözer."""
+    def _clean(v: Optional[str]) -> str:
+        s = str(v or "").strip()
+        if not s:
+            return ""
+        if s.lower() in {"none", "undefined", "null"}:
+            return ""
+        return s
+
+    raw = _clean(raw_driver_id)
+    auth = _clean(auth_user_id)
+    candidates = [("raw", raw)] if raw else []
+    if auth and auth != raw:
+        candidates.append(("auth", auth))
+
+    for src, cand in candidates:
+        # 1) UUID -> users.id doğrulama
+        try:
+            uid = str(uuid.UUID(cand)).strip().lower()
+            by_uuid = supabase.table("users").select("id").eq("id", uid).limit(1).execute()
+            if by_uuid.data and by_uuid.data[0].get("id"):
+                return str(by_uuid.data[0]["id"]).strip().lower(), f"{src}_uuid"
+        except Exception:
+            pass
+        # 2) users.id lookup
+        try:
+            by_id = supabase.table("users").select("id").eq("id", cand).limit(1).execute()
+            if by_id.data and by_id.data[0].get("id"):
+                return str(by_id.data[0]["id"]).strip().lower(), f"{src}_users_id"
+        except Exception:
+            pass
+        # 3) users.auth_id lookup
+        try:
+            by_auth = supabase.table("users").select("id").eq("auth_id", cand).limit(1).execute()
+            if by_auth.data and by_auth.data[0].get("id"):
+                return str(by_auth.data[0]["id"]).strip().lower(), f"{src}_auth_id"
+        except Exception:
+            pass
+        # 4) users.mongo_id lookup
+        try:
+            by_mongo = supabase.table("users").select("id").eq("mongo_id", cand).limit(1).execute()
+            if by_mongo.data and by_mongo.data[0].get("id"):
+                return str(by_mongo.data[0]["id"]).strip().lower(), f"{src}_mongo_id"
+        except Exception:
+            pass
+
+    if not raw and not auth:
+        return None, "empty_raw_and_auth"
+    return None, "not_found"
+
+
 async def _create_ride_offer_execute(
     payload: CreateRideOfferRequest,
     auth_user_id: Optional[str] = None,
@@ -15042,15 +15124,33 @@ async def create_ride(http_request: Request):
 
 
 @api_router.post("/ride/accept")
-async def accept_ride(tag_id: str, driver_id: str):
+async def accept_ride(tag_id: str, driver_id: str = None, http_request: Request = None):
     """
     Martı TAG - Sürücü teklifi kabul eder
     İLK KABUL EDEN KAZANIR - Atomik işlem
     Yolcu araç tercihi ile sürücü vehicle_kind eşleşmezse kabul edilmez.
     """
     try:
-        resolved_driver_id = await resolve_user_id(driver_id)
+        auth_user_id = None
+        try:
+            if http_request:
+                authorization = http_request.headers.get("Authorization")
+                if authorization:
+                    parts = str(authorization).strip().split(None, 1)
+                    if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+                        auth_user_id = verify_access_token(parts[1].strip())
+        except Exception:
+            auth_user_id = None
+        logger.info("[driver/accept] tag_id=%s", str(tag_id or "")[:96])
+        logger.info("[driver/accept] raw_driver_id=%s", str(driver_id or "")[:96])
+        logger.info("[driver/accept] auth_user_id=%s", str(auth_user_id or "")[:96])
+        resolved_driver_id, resolve_reason = await _resolve_driver_id_for_normal_ride_accept(
+            raw_driver_id=driver_id,
+            auth_user_id=auth_user_id,
+        )
+        logger.info("[driver/accept] resolved_driver_id=%s", str(resolved_driver_id or "")[:96])
         if not resolved_driver_id:
+            logger.error("[driver/accept] resolve failed reason=%s", resolve_reason)
             return {"success": False, "error": "Geçersiz sürücü"}
         # Önce tag'in durumunu kontrol et (race condition önleme)
         tag_result = supabase.table("tags").select("*").eq("id", tag_id).execute()
