@@ -475,11 +475,30 @@ function mergeTripTagState(prev: Tag | null, incoming: Tag): Tag {
     return prev;
   }
   const base: Tag = { ...prev, ...incoming };
+  if (String(base.status || '').toLowerCase() === 'driver_on_the_way') {
+    base.status = 'matched';
+  }
   if (!incoming.driver_location && prev.driver_location) {
     base.driver_location = prev.driver_location;
   }
   if (!incoming.passenger_location && prev.passenger_location) {
     base.passenger_location = prev.passenger_location;
+  }
+  const incRi = (incoming as { route_info?: unknown }).route_info;
+  const prevRi = (prev as { route_info?: unknown }).route_info;
+  const incRiEmpty =
+    incRi == null ||
+    (typeof incRi === 'object' &&
+      !Array.isArray(incRi) &&
+      Object.keys(incRi as Record<string, unknown>).length === 0);
+  if (
+    incRiEmpty &&
+    prevRi &&
+    typeof prevRi === 'object' &&
+    !Array.isArray(prevRi) &&
+    Object.keys(prevRi as Record<string, unknown>).length > 0
+  ) {
+    (base as { route_info?: unknown }).route_info = prevRi as Tag['route_info'];
   }
   return base;
 }
@@ -10794,6 +10813,72 @@ function driverOtherLocationPickupFallback(
   return Number.isFinite(tag.pickup_lat) && Number.isFinite(tag.pickup_lng);
 }
 
+/**
+ * `_emit_driver_on_the_way_route` / eşleşme: `{ tag, route, pickup_lat, pickup_lng, ... }`;
+ * klasik `ride_matched` ise çoğunlukla düz `tag_id` alanları.
+ */
+function normalizeDriverMatchSocketPayload(raw: unknown): {
+  tag_id: string;
+  m: Record<string, unknown>;
+  route_info: Record<string, unknown>;
+} | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const tag = r.tag && typeof r.tag === 'object' ? (r.tag as Record<string, unknown>) : null;
+  const route = r.route && typeof r.route === 'object' ? (r.route as Record<string, unknown>) : null;
+
+  const tag_id = String(r.tag_id ?? tag?.id ?? tag?.tag_id ?? '').trim();
+  if (!tag_id) return null;
+
+  const merged: Record<string, unknown> = { ...r };
+  if (tag) {
+    for (const [k, v] of Object.entries(tag)) {
+      if (merged[k] === undefined || merged[k] === null) merged[k] = v;
+    }
+  }
+  merged.tag_id = tag_id;
+  merged.id = tag_id;
+
+  const riBase: Record<string, unknown> =
+    tag &&
+    tag.route_info &&
+    typeof tag.route_info === 'object' &&
+    !Array.isArray(tag.route_info)
+      ? { ...(tag.route_info as Record<string, unknown>) }
+      : {};
+
+  if (route) {
+    const dk = Number(route.distance_km);
+    const dm = Number(route.duration_min);
+    if (Number.isFinite(dk) && dk > 0) riBase.pickup_distance_km = dk;
+    if (Number.isFinite(dm) && dm > 0) riBase.pickup_eta_min = Math.max(1, Math.round(dm));
+    const op = route.overview_polyline;
+    if (typeof op === 'string' && op.length > 2) riBase.overview_polyline = op;
+    if (Array.isArray(route.coordinates) && route.coordinates.length >= 2) {
+      riBase.coordinates = route.coordinates;
+    }
+  }
+  const topDm = Number(r.estimated_minutes ?? r.duration);
+  const topDk = Number(r.distance_km);
+  if (!(Number(riBase.pickup_distance_km) > 0) && Number.isFinite(topDk) && topDk > 0) {
+    riBase.pickup_distance_km = topDk;
+  }
+  if (!(Number(riBase.pickup_eta_min) > 0) && Number.isFinite(topDm) && topDm > 0) {
+    riBase.pickup_eta_min = Math.max(1, Math.round(topDm));
+  }
+
+  merged.route_info = riBase;
+
+  const pLa = Number(r.pickup_lat ?? merged.pickup_lat);
+  const pLo = Number(r.pickup_lng ?? merged.pickup_lng);
+  if (Number.isFinite(pLa) && Number.isFinite(pLo)) {
+    merged.pickup_lat = pLa;
+    merged.pickup_lng = pLo;
+  }
+
+  return { tag_id, m: merged, route_info: riBase };
+}
+
 interface DriverDashboardProps {
   user: User;
   logout: () => void;
@@ -11086,6 +11171,10 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
   const [driverForceEndReviewSubmitting, setDriverForceEndReviewSubmitting] = useState(false);
   const driverForceEndModalHandledTagIdsRef = useRef<Set<string>>(new Set());
   const driverForceEndLastRequestKeyRef = useRef<string | null>(null);
+  /** `ride_matched` + `driver_on_the_way` aynı anda — çift ding önlemi */
+  const driverMatchSoundGuardRef = useRef<{ id: string; at: number } | null>(null);
+  /** `applyDriverMatchRouteSocket` useSocket’tan önce tanımlandığı için loadData ataması sonrası doldurulur */
+  const loadDriverDashboardDataRef = useRef<(() => Promise<void>) | null>(null);
 
   /** Cold start: aktif eşleşmeden dönüşte chat / sheet stale kalmasın */
   useEffect(() => {
@@ -11294,6 +11383,95 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     runDriverOutgoingCallRejectCleanup,
   ]);
   
+  const applyDriverMatchRouteSocket = (event: string, raw: unknown) => {
+    console.log('DRIVER EVENT:', event, raw);
+    const norm = normalizeDriverMatchSocketPayload(raw);
+    if (!norm) {
+      console.warn('DRIVER_EVENT_SKIP_NO_TAG_ID', event, raw);
+      return;
+    }
+    const { m: d, tag_id, route_info } = norm;
+    const now = Date.now();
+    const g = driverMatchSoundGuardRef.current;
+    if (!g || g.id !== tag_id || now - g.at > 1800) {
+      playMatchSound();
+      driverMatchSoundGuardRef.current = { id: tag_id, at: now };
+    }
+    clearAllDriverOfferRemovalState();
+    setRequests([]);
+
+    const tagStatusRaw = String(d.status ?? '').toLowerCase();
+    const navBoost = event === 'driver_on_the_way' || tagStatusRaw === 'driver_on_the_way';
+    if (navBoost) {
+      try {
+        console.log('DRIVER_NAV_UI', { event, tag_status: tagStatusRaw, route_info });
+      } catch {
+        /* noop */
+      }
+    }
+
+    const pkKm = Number(d.pickup_distance_km);
+    const pkMin = Number(d.pickup_eta_min);
+    const riPk = Number(route_info.pickup_distance_km);
+    const riPm = Number(route_info.pickup_eta_min);
+    const pkKmEff =
+      Number.isFinite(pkKm) && pkKm > 0 ? pkKm : Number.isFinite(riPk) && riPk > 0 ? riPk : null;
+    const pkMinEff =
+      Number.isFinite(pkMin) && pkMin > 0 ? pkMin : Number.isFinite(riPm) && riPm > 0 ? riPm : null;
+
+    const tripKm = Number(d.trip_distance_km ?? d.distance_km);
+    const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
+    const fromSocketLoc = normalizePassengerLocationFromSocket(d);
+    const pickupLat = Number(d.pickup_lat);
+    const pickupLng = Number(d.pickup_lng);
+    const passenger_location =
+      fromSocketLoc ??
+      (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+        ? { latitude: pickupLat, longitude: pickupLng }
+        : undefined);
+
+    const uiStatus = tagStatusRaw === 'in_progress' ? 'in_progress' : 'matched';
+
+    const routeInfoOut =
+      route_info && Object.keys(route_info).length > 0 ? { ...route_info } : undefined;
+
+    const matchedTag = {
+      id: tag_id,
+      tag_id: tag_id,
+      passenger_id: d.passenger_id as string | undefined,
+      passenger_name: d.passenger_name as string | undefined,
+      driver_id: (d.driver_id as string | undefined) ?? user?.id,
+      driver_name: d.driver_name as string | undefined,
+      pickup_location: d.pickup_location as string | undefined,
+      dropoff_location: d.dropoff_location as string | undefined,
+      pickup_lat: d.pickup_lat as number | undefined,
+      pickup_lng: d.pickup_lng as number | undefined,
+      dropoff_lat: d.dropoff_lat as number | undefined,
+      dropoff_lng: d.dropoff_lng as number | undefined,
+      offered_price: (d.offered_price ?? d.final_price) as number | undefined,
+      final_price: (d.final_price ?? d.offered_price) as number | undefined,
+      distance_km: d.distance_km as number | undefined,
+      estimated_minutes: (d.estimated_minutes ?? d.duration) as number | undefined,
+      pickup_distance_km: pkKmEff,
+      pickup_eta_min: pkMinEff,
+      trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
+      trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
+      distance_to_passenger_km: pkKmEff,
+      time_to_passenger_min: pkMinEff,
+      route_info: routeInfoOut,
+      status: uiStatus,
+      matched_at: (d.matched_at as string | undefined) || new Date().toISOString(),
+      created_at: (d.created_at as string | undefined) || new Date().toISOString(),
+      passenger_payment_method: normalizePassengerPaymentMethod(
+        d.passenger_payment_method as unknown,
+      ) ?? undefined,
+      ...(passenger_location ? { passenger_location } : {}),
+    };
+    setActiveTag(matchedTag as Tag);
+    setScreen('dashboard');
+    setTimeout(() => void loadDriverDashboardDataRef.current?.(), 1000);
+  };
+
   // ==================== SOCKET.IO HOOK - ŞOFÖR ====================
   const {
     isConnected: socketConnected,
@@ -11632,79 +11810,34 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       }
       
       // Backend'den de çek (ekstra bilgiler için)
-      setTimeout(() => loadData(), 1000);
+      setTimeout(() => void loadDriverDashboardDataRef.current?.(), 1000);
     },
-    // Backend accept_ride: doğrudan eşleşme socket’i (sürücü)
+    // Backend accept_ride + `_emit_driver_on_the_way_route`: `ride_matched` / `driver_on_the_way`
     onRideMatched: (data) => {
       console.log('✅ ŞOFÖR - ride_matched (Socket):', data);
-      console.log('OFFER_EVENT_RECEIVED', { kind: 'ride_matched', tag_id: data?.tag_id ?? null });
-      playMatchSound();
-      clearAllDriverOfferRemovalState();
-      setRequests([]);
-      if (data?.tag_id) {
-        const d = data as unknown as Record<string, unknown>;
-        const pkKm = Number(d.pickup_distance_km);
-        const pkMin = Number(d.pickup_eta_min);
-        const tripKm = Number(d.trip_distance_km ?? d.distance_km);
-        const tripMin = Number(d.trip_duration_min ?? d.estimated_minutes);
-        const fromSocketLoc = normalizePassengerLocationFromSocket(d);
-        const pickupLat = Number(d.pickup_lat);
-        const pickupLng = Number(d.pickup_lng);
-        const passenger_location =
-          fromSocketLoc ??
-          (Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
-            ? { latitude: pickupLat, longitude: pickupLng }
-            : undefined);
-        const matchedTag = {
-          id: data.tag_id,
-          tag_id: data.tag_id,
-          passenger_id: data.passenger_id,
-          passenger_name: data.passenger_name,
-          driver_id: data.driver_id,
-          driver_name: data.driver_name,
-          pickup_location: data.pickup_location,
-          dropoff_location: data.dropoff_location,
-          pickup_lat: data.pickup_lat,
-          pickup_lng: data.pickup_lng,
-          dropoff_lat: data.dropoff_lat,
-          dropoff_lng: data.dropoff_lng,
-          offered_price: data.final_price,
-          final_price: data.final_price,
-          distance_km: (data as { distance_km?: number }).distance_km,
-          estimated_minutes: (data as { estimated_minutes?: number }).estimated_minutes,
-          pickup_distance_km: Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
-          pickup_eta_min: Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
-          trip_distance_km: Number.isFinite(tripKm) && tripKm > 0 ? tripKm : null,
-          trip_duration_min: Number.isFinite(tripMin) && tripMin > 0 ? tripMin : null,
-          distance_to_passenger_km:
-            Number.isFinite(pkKm) && pkKm > 0 ? pkKm : null,
-          time_to_passenger_min:
-            Number.isFinite(pkMin) && pkMin > 0 ? pkMin : null,
-          status: 'matched',
-          matched_at: data.matched_at || new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          passenger_payment_method: normalizePassengerPaymentMethod(
-            (data as { passenger_payment_method?: unknown }).passenger_payment_method,
-          ) ?? undefined,
-          ...(passenger_location ? { passenger_location } : {}),
-        };
-        setActiveTag(matchedTag as Tag);
-      }
-      setScreen('dashboard');
-      setTimeout(() => loadData(), 1000);
+      const tid =
+        (data as { tag_id?: string })?.tag_id ??
+        (data as { tag?: { id?: string } })?.tag?.id ??
+        null;
+      console.log('OFFER_EVENT_RECEIVED', { kind: 'ride_matched', tag_id: tid });
+      applyDriverMatchRouteSocket('ride_matched', data);
+    },
+    onDriverOnTheWay: (data) => {
+      console.log('✅ ŞOFÖR - driver_on_the_way (Socket):', data);
+      applyDriverMatchRouteSocket('driver_on_the_way', data);
     },
     // Teklif kabul/red
     onOfferAccepted: (data) => {
       console.log('✅ ŞOFÖR - TEKLİF KABUL EDİLDİ (Socket):', data);
-      loadData();
+      void loadDriverDashboardDataRef.current?.();
       appAlert('🎉 Teklif Kabul Edildi!', 'Yolcu teklifinizi kabul etti.');
     },
     onOfferRejected: (data) => {
       console.log('❌ ŞOFÖR - TEKLİF REDDEDİLDİ (Socket):', data);
-      loadData();
+      void loadDriverDashboardDataRef.current?.();
     },
     onOfferAlreadyTaken: () => {
-      loadData();
+      void loadDriverDashboardDataRef.current?.();
       appAlert(
         'Teklif müsait değil',
         'Bu çağrı başka bir sürücü tarafından alındı veya süresi doldu. Liste güncellendi.',
@@ -12044,7 +12177,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       clearLastTappedNotification();
       setScreen('dashboard');
       if (!activeTag?.id || tagId !== String(activeTag.id)) {
-        void loadData();
+        void loadDriverDashboardDataRef.current?.();
       }
       setDriverChatVisible(true);
       setDriverFirstChatTapBanner(null);
@@ -12055,7 +12188,7 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       clearLastTappedNotification();
       setScreen('dashboard');
       if (!activeTag?.id || tagId !== String(activeTag.id)) {
-        void loadData();
+        void loadDriverDashboardDataRef.current?.();
       }
       return;
     }
@@ -12069,7 +12202,6 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     clearLastTappedNotification,
     fetchAndAppendOfferFromTagId,
     activeTag?.id,
-    loadData,
     setScreen,
   ]);
 
@@ -12082,8 +12214,9 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
     const n = driverForegroundOfferNotification;
     if (!n?.request) return;
     const raw = n.request.content?.data as Record<string, unknown> | undefined;
+    if (!raw) return;
     const rt = String(raw.type || '');
-    if (!raw || !raw.tag_id || (rt !== 'new_offer' && rt !== 'offer')) return;
+    if (!raw.tag_id || (rt !== 'new_offer' && rt !== 'offer')) return;
     const nid = n.request.identifier;
     if (lastOfferPushNotificationIdRef.current === nid) return;
     lastOfferPushNotificationIdRef.current = nid;
@@ -12334,12 +12467,16 @@ function DriverDashboard({ user, logout, setScreen, kycStatusProp, setKycStatusP
       return;
     }
     const trip = await loadActiveTag();
-    const busy = trip && ['matched', 'in_progress'].includes(String(trip.status || ''));
+    const st = String(trip?.status || '').toLowerCase();
+    const busy =
+      trip &&
+      (st === 'matched' || st === 'in_progress' || st === 'driver_on_the_way');
     if (!busy) {
       await loadDispatchPendingOffer();
     }
     await loadRequests();
   };
+  loadDriverDashboardDataRef.current = loadData;
 
   /** Sıralı dispatch: uygulama resume / polling ile DB'deki aktif teklifi listeye ekle */
   const loadDispatchPendingOffer = async () => {

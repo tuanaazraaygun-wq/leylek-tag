@@ -104,6 +104,8 @@ interface UseSocketProps {
   onRideAccepted?: (data: RideMatchSocketData) => void;
   /** Backend doğrudan eşleşme: sürücüye */
   onRideMatched?: (data: RideMatchSocketData) => void;
+  /** Sürücü: alış rotası + `ride_matched` ile aynı gövde (navigasyon uyumu) */
+  onDriverOnTheWay?: (data: unknown) => void;
   // Teklif eventleri
   onNewOffer?: (data: OfferData) => void;
   onOfferAccepted?: (data: OfferData) => void;
@@ -216,6 +218,7 @@ export default function useSocket({
   onTagMatched,
   onRideAccepted,
   onRideMatched,
+  onDriverOnTheWay,
   onNewOffer,
   onOfferAccepted,
   onOfferRejected,
@@ -271,7 +274,7 @@ export default function useSocket({
   // Callback refs - dependency array'i küçültmek için
   const callbackRefs = useRef({
     onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-      onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
+      onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onDriverOnTheWay, onNewOffer,
     onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
     onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
     onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
@@ -284,7 +287,7 @@ export default function useSocket({
   useEffect(() => {
     callbackRefs.current = {
       onIncomingCall, onCallAccepted, onCallRejected, onCallEnded, onCallRinging,
-      onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onNewOffer,
+      onTagCreated, onTagCancelled, onRemoveOffer, onTagUpdated, onTagMatched, onRideAccepted, onRideMatched, onDriverOnTheWay, onNewOffer,
       onOfferAccepted, onOfferRejected, onOfferAlreadyTaken, onOfferSentAck, onLocationUpdated,
       onTripStarted, onTripEnded, onTripEndRequested, onTripEndResponse,
       onTripForceEnded, onForceEndCounterpartyPrompt, onShowRatingModal, onBoardingConfirmed,
@@ -444,6 +447,13 @@ export default function useSocket({
       console.log('✅ [useSocket] ride_matched:', data);
       emitDriverOfferSocketEvent('ride_matched', data, { intent: 'terminal_match_clear_offers' });
       callbackRefs.current.onRideMatched?.(data as RideMatchSocketData);
+    };
+
+    const handleDriverOnTheWay = (data: any) => {
+      if (userRole !== 'driver') return;
+      console.log('✅ [useSocket] driver_on_the_way:', data);
+      emitDriverOfferSocketEvent('driver_on_the_way', data, { intent: 'terminal_match_clear_offers' });
+      callbackRefs.current.onDriverOnTheWay?.(data);
     };
 
     // ══════════ TEKLİF EVENTLERİ ══════════
@@ -611,6 +621,7 @@ export default function useSocket({
     socket.on('driver_matched', handleTagMatched); // 🆕 MARTI TAG - Yolcuya sürücü eşleşti
     socket.on('ride_accepted', handleRideAccepted);
     socket.on('ride_matched', handleRideMatched);
+    socket.on('driver_on_the_way', handleDriverOnTheWay);
     socket.on('offer_already_taken', handleOfferAlreadyTaken);
     
     socket.on('location_updated', handleLocationUpdated);
@@ -666,6 +677,7 @@ export default function useSocket({
       socket.off('driver_matched', handleTagMatched);
       socket.off('ride_accepted', handleRideAccepted);
       socket.off('ride_matched', handleRideMatched);
+      socket.off('driver_on_the_way', handleDriverOnTheWay);
       socket.off('offer_already_taken', handleOfferAlreadyTaken);
       
       socket.off('new_offer', handleNewOffer);
