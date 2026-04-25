@@ -22127,19 +22127,28 @@ async def muhabbet_conversations_me(
             if not cid0 or cid0 in lmr_by_cid:
                 continue
             lmr_by_cid[cid0] = r
+        last_map = _muhabbet_last_message_map_for_user(raw_cids, uid)
         filtered_convs: list = []
         for c in raw_convs:
             cid0 = str(c.get("id") or "").strip().lower()
             if not cid0:
                 continue
+            reason = ""
             st = str((lmr_by_cid.get(cid0) or {}).get("status") or "").strip().lower()
             if st == "accepted":
-                filtered_convs.append(c)
-                continue
-            if str(c.get("last_message") or "").strip():
-                filtered_convs.append(c)
-                continue
-            if c.get("last_message_at"):
+                reason = "accepted_listing_match_request"
+            elif str(c.get("last_message") or "").strip():
+                reason = "conversation_last_message"
+            elif c.get("last_message_at"):
+                reason = "conversation_last_message_at"
+            else:
+                ms = str(c.get("match_source") or "").strip().lower()
+                if c.get("matched_at") and ms in ("leylek_key", "leylek_key_inchat"):
+                    reason = "leylek_key_match"
+                elif last_map.get(cid0):
+                    reason = "visible_muhabbet_message"
+            if reason:
+                logger.info("[muhabbet-conversations] include conversation_id=%s reason=%s", cid0, reason)
                 filtered_convs.append(c)
                 continue
         convs: list = filtered_convs[:lim]
@@ -22191,7 +22200,6 @@ async def muhabbet_conversations_me(
                     role_map_full[str(x["id"]).strip().lower()] = str(x.get("role") or "").strip().lower()
         except Exception as e:
             logger.warning("conversations_me role_map_full: %s", e)
-        last_map = _muhabbet_last_message_map_for_user(cids, uid)
         out: list = []
         for c in convs:
             conv_id = str(c.get("id") or "").strip().lower()
