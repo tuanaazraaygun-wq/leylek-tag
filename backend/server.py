@@ -21246,7 +21246,7 @@ async def muhabbet_conversations_me(
         fetch_lim = min(100, lim + len(hidden_ids))
         res = (
             supabase.table("conversations")
-            .select("id, user_a, user_b, created_at, matched_at, match_source")
+            .select("id, user_a, user_b, created_at, matched_at, match_source, last_message, last_message_at")
             .or_(f"user_a.eq.{uid},user_b.eq.{uid}")
             .order("created_at", desc=True)
             .limit(fetch_lim)
@@ -21331,6 +21331,10 @@ async def muhabbet_conversations_me(
             my_role = sem.get(uid) if sem else role_map_full.get(uid)
             other_role = sem.get(other.lower()) if sem else role_map_full.get(other.lower())
             lm = last_map.get(conv_id) or {}
+            conv_last_body = str(c.get("last_message") or "").strip() or None
+            conv_last_at = c.get("last_message_at")
+            last_body = lm.get("last_message_body") or conv_last_body
+            last_at = lm.get("last_message_at") or conv_last_at
             out.append(
                 {
                     "id": conv_id,
@@ -21354,8 +21358,9 @@ async def muhabbet_conversations_me(
                     "match_source": c.get("match_source"),
                     "matched_at": c.get("matched_at"),
                     "created_at": c.get("created_at"),
-                    "last_message_body": lm.get("last_message_body"),
-                    "last_message_at": lm.get("last_message_at"),
+                    "last_message_body": last_body,
+                    "last_message": conv_last_body,
+                    "last_message_at": last_at,
                 }
             )
         return {"success": True, "conversations": out, "count": len(out)}

@@ -55,6 +55,7 @@ export type MuhabbetConversationListItem = {
   from_text?: string | null;
   to_text?: string | null;
   last_message_body?: string | null;
+  last_message?: string | null;
   last_message_at?: string | null;
   request_status?: string | null;
   matched_at?: string | null;
@@ -221,7 +222,13 @@ export default function ConversationsScreen({
           if (req === 'accepted') return true;
           if (String(c.matched_at || '').trim()) return true;
           // Eski kayıtlarda request_status boş olabilir; mesaj trafiği varsa sohbeti gizleme.
-          if (String(c.last_message_at || '').trim() || String(c.last_message_body || '').trim()) return true;
+          if (
+            String(c.last_message_at || '').trim() ||
+            String(c.last_message_body || '').trim() ||
+            String(c.last_message || '').trim()
+          ) {
+            return true;
+          }
           return false;
         });
       }
@@ -231,7 +238,7 @@ export default function ConversationsScreen({
           if (!cid) return c;
           try {
             const lp = await getLastMessageFromLocal(cid);
-            if (lp && !String(c.last_message_body || '').trim()) {
+            if (lp && !String(c.last_message_body || c.last_message || '').trim()) {
               return {
                 ...c,
                 last_message_body: lp.text,
@@ -244,7 +251,7 @@ export default function ConversationsScreen({
           }
           return {
             ...c,
-            last_message_body: c.last_message_body ?? null,
+            last_message_body: c.last_message_body ?? c.last_message ?? null,
             last_message_at: c.last_message_at ?? null,
             unread_count: c.unread_count || 0,
           };
@@ -511,7 +518,10 @@ export default function ConversationsScreen({
             </View>
           }
           renderItem={({ item }) => {
-            const last = (item.last_message_body && String(item.last_message_body).trim()) || '';
+            const last =
+              (item.last_message_body && String(item.last_message_body).trim()) ||
+              (item.last_message && String(item.last_message).trim()) ||
+              '';
             const lastLine = last ? (last.length > 100 ? `${last.slice(0, 100)}…` : last) : 'Henüz mesaj yok';
             const or = (item.other_user_role || '').toLowerCase();
             const driverish = or === 'driver' || or === 'private_driver';
