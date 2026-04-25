@@ -14701,14 +14701,57 @@ async def _parse_create_ride_offer_json(http_request: Request) -> CreateRideOffe
         raise HTTPException(status_code=422, detail=e.errors()) from e
 
 
+async def _resolve_passenger_id_for_ride_create(passenger_raw: Optional[str]) -> Optional[str]:
+    """ride/create için passenger_id'yi users.id UUID'ye çevir (UUID/auth_id/mongo_id kabul)."""
+    raw = str(passenger_raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return str(uuid.UUID(raw)).strip().lower()
+    except Exception:
+        pass
+    try:
+        by_id = supabase.table("users").select("id").eq("id", raw).limit(1).execute()
+        if by_id.data and by_id.data[0].get("id"):
+            return str(by_id.data[0]["id"]).strip().lower()
+    except Exception as e:
+        logger.warning("[ride/create] passenger resolve by id error: %s", e)
+    try:
+        by_auth = supabase.table("users").select("id").eq("auth_id", raw).limit(1).execute()
+        if by_auth.data and by_auth.data[0].get("id"):
+            return str(by_auth.data[0]["id"]).strip().lower()
+    except Exception as e:
+        logger.warning("[ride/create] passenger resolve by auth_id error: %s", e)
+    try:
+        by_mongo = supabase.table("users").select("id").eq("mongo_id", raw).limit(1).execute()
+        if by_mongo.data and by_mongo.data[0].get("id"):
+            return str(by_mongo.data[0]["id"]).strip().lower()
+    except Exception as e:
+        logger.warning("[ride/create] passenger resolve by mongo_id error: %s", e)
+    return None
+
+
 async def _create_ride_offer_execute(payload: CreateRideOfferRequest):
     """Teklif oluşturma iş mantığı (tag insert + dispatch)."""
     try:
-        # Her zaman canonical UUID ile ilerle (eski id/telefon kaynaklı eşleşme kaçaklarını önler)
-        passenger_id = await resolve_user_id(
-            str(payload.passenger_id).strip() if payload.passenger_id else ""
+        payload_passenger_id = str(payload.passenger_id or "").strip()
+        logger.info("[ride/create] received")
+        logger.info("[ride/create] passenger_id=%s", payload_passenger_id[:96])
+        logger.info(
+            "[ride/create] payload passenger fields=%s",
+            {
+                "passenger_id": payload_passenger_id[:96],
+                "pickup_location": str(payload.pickup_location or "")[:128],
+                "dropoff_location": str(payload.dropoff_location or "")[:128],
+            },
         )
+        # ride/create için: payload passenger_id -> users.id UUID
+        passenger_id = await _resolve_passenger_id_for_ride_create(payload_passenger_id)
         if not passenger_id:
+            logger.error(
+                "[ride/create] invalid passenger reason=resolve_failed passenger_id=%s",
+                payload_passenger_id[:96],
+            )
             return {"success": False, "error": "Geçersiz yolcu kimliği"}
         # Tag ID - frontend'den gelen veya yeni oluştur
         tag_id = (payload.tag_id and str(payload.tag_id).strip()) or str(uuid.uuid4())
@@ -14967,7 +15010,17 @@ async def create_ride(http_request: Request):
     Yolcu teklif oluşturma — POST /api/ride/create
     create-offer ile aynı: tag insert + rolling_dispatch_start.
     """
+    auth_user_id = None
+    try:
+        authorization = http_request.headers.get("Authorization")
+        if authorization:
+            parts = str(authorization).strip().split(None, 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+                auth_user_id = verify_access_token(parts[1].strip())
+    except Exception:
+        auth_user_id = None
     payload = await _parse_create_ride_offer_json(http_request)
+    logger.info("[ride/create] auth_user_id=%s", str(auth_user_id or "")[:96])
     return await _create_ride_offer_execute(payload)
 
 
