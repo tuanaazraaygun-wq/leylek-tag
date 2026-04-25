@@ -959,12 +959,18 @@ async def create_tag(request: CreateTagRequest, user_id: str = None):
             "notes": request.notes,
             "city": user.get("city"),
             "status": "pending",
-            "share_link": share_link
+            "share_link": share_link,
+            "type": "normal",
         }
-        
+        t = tag_data.get("type")
+        if t not in ("normal", "muhabbet"):
+            logger.error("[tag-insert] error=missing_or_invalid_type invalid=%r source=ride", t)
+            raise HTTPException(status_code=500, detail="tags insert requires explicit type")
         result = supabase.table("tags").insert(tag_data).execute()
         
         if result.data:
+            log_src = "muhabbet" if t == "muhabbet" else "ride"
+            logger.info("[tag-insert] type=%s source=%s", t, log_src)
             logger.info(f"🏷️ TAG oluşturuldu: {result.data[0]['id']}")
             return {
                 "success": True,

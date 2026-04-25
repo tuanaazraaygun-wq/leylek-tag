@@ -82,6 +82,37 @@ from routes.admin_leylek_zeka_kb import router as admin_leylek_zeka_kb_router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
+# tags.type: Martı yolculuğu vs Muhabbet (aktif yolculuk/dispatch yalnız TAG_TYPE_NORMAL)
+TAG_TYPE_NORMAL = "normal"
+TAG_TYPE_MUHABBET = "muhabbet"
+
+
+def _validate_tags_insert_payload(row: dict, *, source: str) -> None:
+    """tags INSERT: type zorunlu; DB default kullanılmamalı."""
+    t = row.get("type")
+    if t != TAG_TYPE_NORMAL and t != TAG_TYPE_MUHABBET:
+        logger.error(
+            "[tag-insert] error=missing_or_invalid_type invalid=%r source=%s row_keys=%s",
+            t,
+            source,
+            sorted(row.keys()),
+        )
+        raise ValueError(
+            "tags insert requires explicit type (%r or %r); source=%s"
+            % (TAG_TYPE_NORMAL, TAG_TYPE_MUHABBET, source)
+        )
+
+
+def tags_insert_with_type_required(supabase_client: Client, row: dict, *, source: str):
+    """tags satırı insert — type yoksa ValueError (Postgres'e gitmeden)."""
+    _validate_tags_insert_payload(row, source=source)
+    r = supabase_client.table("tags").insert(row).execute()
+    if r.data:
+        log_src = "muhabbet" if row.get("type") == TAG_TYPE_MUHABBET else "ride"
+        logger.info("[tag-insert] type=%s source=%s", row.get("type"), log_src)
+    return r
+
+
 def _check_netgsm_env_on_startup() -> None:
     """
     NetGSM SMS gönderimi için gerekli env değişkenlerini kontrol eder.
@@ -1515,6 +1546,7 @@ async def emit_existing_waiting_offers_to_driver(driver_id: str) -> None:
                 "dropoff_lat, dropoff_lng, dropoff_location, final_price, distance_km, estimated_minutes, "
                 "passenger_preferred_vehicle, passenger_payment_method"
             )
+            .eq("type", TAG_TYPE_NORMAL)
             .eq("status", "waiting")
             .execute()
         )
@@ -3273,9 +3305,13 @@ async def auto_cleanup_inactive_tags():
         cutoff_time = (datetime.utcnow() - timedelta(minutes=max_inactive_minutes)).isoformat()
         
         # Aktif TAG'leri bul (matched veya in_progress)
-        result = supabase.table("tags").select(
-            "id, passenger_id, driver_id, status, last_activity, matched_at, created_at, end_request"
-        ).in_("status", ["matched", "in_progress"]).execute()
+        result = (
+            supabase.table("tags")
+            .select("id, passenger_id, driver_id, status, last_activity, matched_at, created_at, end_request")
+            .eq("type", TAG_TYPE_NORMAL)
+            .in_("status", ["matched", "in_progress"])
+            .execute()
+        )
         
         cleaned_count = 0
         for tag in result.data:
@@ -6436,10 +6472,11 @@ async def create_tag(request: CreateTagRequest, user_id: str = None):
             "notes": request.notes,
             "city": user.get("city"),
             "status": "pending",
-            "share_link": share_link
+            "share_link": share_link,
+            "type": TAG_TYPE_NORMAL,
         }
         
-        result = supabase.table("tags").insert(tag_data).execute()
+        result = tags_insert_with_type_required(supabase, tag_data, source="ride")
         
         if result.data:
             logger.info(f"🏷️ TAG oluşturuldu: {result.data[0]['id']}")
@@ -6463,7 +6500,16 @@ async def get_passenger_history(user_id: str, limit: int = 20):
     try:
         resolved_id = await resolve_user_id(user_id)
         
-        result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["completed", "cancelled"]).order("created_at", desc=True).limit(limit).execute()
+        result = (
+            supabase.table("tags")
+            .select("*")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("passenger_id", resolved_id)
+            .in_("status", ["completed", "cancelled"])
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
         
         trips = []
         for tag in result.data:
@@ -6489,7 +6535,16 @@ async def get_driver_history(user_id: str, limit: int = 20):
     try:
         resolved_id = await resolve_user_id(user_id)
         
-        result = supabase.table("tags").select("*").eq("driver_id", resolved_id).in_("status", ["completed", "cancelled"]).order("created_at", desc=True).limit(limit).execute()
+        result = (
+            supabase.table("tags")
+            .select("*")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("driver_id", resolved_id)
+            .in_("status", ["completed", "cancelled"])
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
         
         trips = []
         for tag in result.data:
@@ -6703,7 +6758,16 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         resolved_id = await resolve_user_id(uid)
         
         # ÖNCELİK 1: Aktif tag'leri ara (waiting, matched, in_progress)
-        result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).order("created_at", desc=True).limit(1).execute()
+        result = (
+            supabase.table("tags")
+            .select("*")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("passenger_id", resolved_id)
+            .in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         
         if result.data:
             tag = result.data[0]
@@ -6732,7 +6796,17 @@ async def get_active_tag(passenger_id: str = None, user_id: str = None):
         from datetime import timedelta
         ten_seconds_ago = (datetime.utcnow() - timedelta(seconds=10)).isoformat()
         
-        cancelled_result = supabase.table("tags").select("*").eq("passenger_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", ten_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
+        cancelled_result = (
+            supabase.table("tags")
+            .select("*")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("passenger_id", resolved_id)
+            .eq("status", "cancelled")
+            .gte("cancelled_at", ten_seconds_ago)
+            .order("cancelled_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         
         if cancelled_result.data:
             cancelled_tag = cancelled_result.data[0]
@@ -7232,7 +7306,14 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         # 10 DAKİKADAN ESKİ TAG'LERİ OTOMATİK İPTAL ET
         ten_min_ago = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
         try:
-            supabase.table("tags").update({"status": "expired"}).in_("status", ["pending", "offers_received"]).lt("created_at", ten_min_ago).execute()
+            (
+                supabase.table("tags")
+                .update({"status": "expired"})
+                .eq("type", TAG_TYPE_NORMAL)
+                .in_("status", ["pending", "offers_received"])
+                .lt("created_at", ten_min_ago)
+                .execute()
+            )
         except:
             pass  # Hata olursa devam et
         
@@ -7269,7 +7350,16 @@ async def get_driver_requests(driver_id: str = None, user_id: str = None, latitu
         all_blocked = list(set(blocked_ids + blocked_by_ids))
         
         # Pending TAG'leri getir - SADECE SON 10 DAKİKA İÇİNDEKİLER
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)").in_("status", ["waiting", "pending", "offers_received"]).gte("created_at", ten_min_ago).order("created_at", desc=True).limit(150).execute()
+        result = (
+            supabase.table("tags")
+            .select("*, users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details)")
+            .eq("type", TAG_TYPE_NORMAL)
+            .in_("status", ["waiting", "pending", "offers_received"])
+            .gte("created_at", ten_min_ago)
+            .order("created_at", desc=True)
+            .limit(150)
+            .execute()
+        )
         
         driver_eff = _effective_driver_vehicle_kind(
             driver_result.data[0] if driver_result.data else {}
@@ -7488,6 +7578,7 @@ async def get_driver_nearby_passengers_map(
                 "passenger_preferred_vehicle, "
                 "users!tags_passenger_id_fkey(name, rating, profile_photo, city, driver_details, gender)"
             )
+            .eq("type", TAG_TYPE_NORMAL)
             .in_("status", ["waiting", "pending", "offers_received"])
             .gte("created_at", ten_min_ago)
             .order("created_at", desc=True)
@@ -8346,7 +8437,16 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         resolved_id = await resolve_user_id(did)
         
         # ÖNCELİK 1: Aktif tag'leri ara (matched veya in_progress)
-        result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).in_("status", ["matched", "in_progress"]).order("matched_at", desc=True).limit(1).execute()
+        result = (
+            supabase.table("tags")
+            .select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("driver_id", resolved_id)
+            .in_("status", ["matched", "in_progress"])
+            .order("matched_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         
         if result.data:
             tag = result.data[0]
@@ -8455,7 +8555,17 @@ async def get_driver_active_trip(driver_id: str = None, user_id: str = None):
         from datetime import timedelta
         ten_seconds_ago = (datetime.utcnow() - timedelta(seconds=10)).isoformat()
         
-        cancelled_result = supabase.table("tags").select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)").eq("driver_id", resolved_id).eq("status", "cancelled").gte("cancelled_at", ten_seconds_ago).order("cancelled_at", desc=True).limit(1).execute()
+        cancelled_result = (
+            supabase.table("tags")
+            .select("*, users!tags_passenger_id_fkey(name, phone, rating, profile_photo, latitude, longitude)")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("driver_id", resolved_id)
+            .eq("status", "cancelled")
+            .gte("cancelled_at", ten_seconds_ago)
+            .order("cancelled_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         
         if cancelled_result.data:
             cancelled_tag = cancelled_result.data[0]
@@ -8513,6 +8623,7 @@ async def get_driver_dispatch_pending_offer(user_id: str = None, driver_id: str 
                 supabase.table("tags")
                 .select("*")
                 .eq("id", tid)
+                .eq("type", TAG_TYPE_NORMAL)
                 .eq("status", "waiting")
                 .limit(1)
                 .execute()
@@ -10380,8 +10491,20 @@ async def admin_dashboard(admin_phone: str):
         passengers = total_users - drivers
         
         # TAG istatistikleri
-        completed_result = supabase.table("tags").select("id", count="exact").eq("status", "completed").execute()
-        active_result = supabase.table("tags").select("id", count="exact").in_("status", ["pending", "offers_received", "matched", "in_progress"]).execute()
+        completed_result = (
+            supabase.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("status", "completed")
+            .execute()
+        )
+        active_result = (
+            supabase.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .in_("status", ["pending", "offers_received", "matched", "in_progress"])
+            .execute()
+        )
         
         return {
             "success": True,
@@ -10605,7 +10728,13 @@ async def admin_cleanup_inactive_tags(admin_phone: str = None, max_inactive_minu
         cutoff_time = (datetime.utcnow() - timedelta(minutes=max_inactive_minutes)).isoformat()
         
         # Aktif TAG'leri bul (matched veya in_progress)
-        result = supabase.table("tags").select("id, passenger_id, driver_id, status, last_activity").in_("status", ["matched", "in_progress"]).execute()
+        result = (
+            supabase.table("tags")
+            .select("id, passenger_id, driver_id, status, last_activity")
+            .eq("type", TAG_TYPE_NORMAL)
+            .in_("status", ["matched", "in_progress"])
+            .execute()
+        )
         
         cleaned_count = 0
         for tag in result.data:
@@ -13512,6 +13641,13 @@ def _norm_tag_id_str(tid: Optional[str]) -> str:
     return s
 
 
+# Normal sürücü/yolcu "meşgul" kontrolü: yalnızca `tags`. ride_listings / muhabbet tablolarına bakılmaz.
+# matched asla engel değildir; engel: in_progress / driver_arriving / passenger_onboard;
+# accepted yalnızca created_at son 10 dk içindeyse engel.
+_NORMAL_ACTIVE_QUERY_STATUSES = ["in_progress", "driver_arriving", "passenger_onboard", "accepted"]
+_NORMAL_ACTIVE_ALWAYS_BLOCK = frozenset({"in_progress", "driver_arriving", "passenger_onboard"})
+
+
 def _other_active_tag_id_sync(
     supabase_client: Client,
     *,
@@ -13519,25 +13655,138 @@ def _other_active_tag_id_sync(
     user_id: str,
     exclude_tag_id: str,
 ) -> Optional[str]:
-    """Başka bir tag'de matched/in_progress varsa o tag id; yoksa None."""
+    """Başka bir tag'de gerçekten devam eden yolculuk varsa o tag id; yoksa None.
+
+    Yalnızca `tags` okunur; ride_listings, muhabbet_conversations, muhabbet_messages yok.
+    Yalnızca type='normal' tag'ler; matched / pending / offers_received / … bu kontrolde sorgulanmaz ve asla engel olmaz.
+    """
     uid = str(user_id or "").strip()
     if not uid or column not in ("driver_id", "passenger_id"):
+        ck = column if column in ("driver_id", "passenger_id") else "column"
+        logger.info(
+            "[normal-active-check] %s=%s blocking_tag_id=- blocking_status=- blocking_created_at=- allow=true reason=ignored_status",
+            ck,
+            (uid[:96] if uid else "-"),
+        )
         return None
     ex = _norm_tag_id_str(exclude_tag_id)
+    now = datetime.now(timezone.utc)
+    accepted_fresh_seconds = 10 * 60
+    who_key = "driver_id" if column == "driver_id" else "passenger_id"
+
+    def _log(
+        *,
+        blocking_tag_id: str,
+        blocking_status: str,
+        blocking_created_at: str,
+        allow: bool,
+        reason: str,
+    ) -> None:
+        logger.info(
+            "[normal-active-check] %s=%s blocking_tag_id=%s blocking_status=%s blocking_created_at=%s allow=%s reason=%s",
+            who_key,
+            uid[:96],
+            blocking_tag_id[:96] if blocking_tag_id != "-" else "-",
+            blocking_status,
+            blocking_created_at[:96] if len(blocking_created_at) > 96 else blocking_created_at,
+            str(allow).lower(),
+            reason,
+        )
+
     try:
         res = (
             supabase_client.table("tags")
-            .select("id")
+            .select("id,status,created_at")
+            .eq("type", TAG_TYPE_NORMAL)
             .eq(column, uid)
-            .in_("status", ["matched", "in_progress"])
+            .in_("status", list(_NORMAL_ACTIVE_QUERY_STATUSES))
             .execute()
         )
         for row in res.data or []:
             rid = _norm_tag_id_str(str(row.get("id") or ""))
-            if rid and rid != ex:
+            if not rid or rid == ex:
+                continue
+            st = str(row.get("status") or "").strip().lower()
+            ca_raw = row.get("created_at")
+            ca_log = str(ca_raw) if ca_raw is not None else ""
+
+            if st in _NORMAL_ACTIVE_ALWAYS_BLOCK:
+                _log(
+                    blocking_tag_id=rid,
+                    blocking_status=st,
+                    blocking_created_at=ca_log,
+                    allow=False,
+                    reason="active_tag",
+                )
                 return str(row.get("id"))
-    except Exception:
-        pass
+
+            if st == "accepted":
+                if not ca_raw:
+                    _log(
+                        blocking_tag_id=rid,
+                        blocking_status=st,
+                        blocking_created_at="-",
+                        allow=True,
+                        reason="stale_tag",
+                    )
+                    continue
+                try:
+                    t = _parse_iso_dt(str(ca_raw))
+                    if t is None:
+                        _log(
+                            blocking_tag_id=rid,
+                            blocking_status=st,
+                            blocking_created_at=ca_log,
+                            allow=True,
+                            reason="stale_tag",
+                        )
+                        continue
+                    if t.tzinfo is None:
+                        t = t.replace(tzinfo=timezone.utc)
+                    age_sec = (now - t).total_seconds()
+                    if age_sec <= accepted_fresh_seconds:
+                        _log(
+                            blocking_tag_id=rid,
+                            blocking_status=st,
+                            blocking_created_at=ca_log,
+                            allow=False,
+                            reason="active_tag",
+                        )
+                        return str(row.get("id"))
+                    _log(
+                        blocking_tag_id=rid,
+                        blocking_status=st,
+                        blocking_created_at=ca_log,
+                        allow=True,
+                        reason="stale_tag",
+                    )
+                    continue
+                except Exception:
+                    _log(
+                        blocking_tag_id=rid,
+                        blocking_status=st,
+                        blocking_created_at=ca_log,
+                        allow=True,
+                        reason="ignored_status",
+                    )
+                    continue
+
+            _log(
+                blocking_tag_id=rid,
+                blocking_status=st,
+                blocking_created_at=ca_log,
+                allow=True,
+                reason="ignored_status",
+            )
+    except Exception as exn:
+        logger.warning("[normal-active-check] query failed: %s", exn)
+    _log(
+        blocking_tag_id="-",
+        blocking_status="-",
+        blocking_created_at="-",
+        allow=True,
+        reason="ignored_status",
+    )
     return None
 
 
@@ -14896,6 +15145,7 @@ async def _create_ride_offer_execute(
             "status": "waiting",
             "created_at": datetime.utcnow().isoformat(),
             "passenger_preferred_vehicle": passenger_pref_vehicle,
+            "type": TAG_TYPE_NORMAL,
         }
         pay_pref = _canonical_passenger_payment_method(payload.passenger_payment_method)
         if pay_pref:
@@ -14926,10 +15176,15 @@ async def _create_ride_offer_execute(
         def _try_tags_insert(rows: dict) -> tuple:
             """(data list | None, hata metni | None)"""
             try:
+                _validate_tags_insert_payload(rows, source="ride")
                 r = supabase.table("tags").insert(rows).execute()
                 if r.data:
+                    log_src = "muhabbet" if rows.get("type") == TAG_TYPE_MUHABBET else "ride"
+                    logger.info("[tag-insert] type=%s source=%s", rows.get("type"), log_src)
                     return r.data, None
                 return None, "Supabase insert boş data (kolon/kısıt hatası olabilir)"
+            except ValueError as ve:
+                return None, str(ve)
             except Exception as ins_ex:
                 return None, str(ins_ex)
 
@@ -14960,6 +15215,7 @@ async def _create_ride_offer_execute(
                     "status": tag_data["status"],
                     "distance_km": tag_data["distance_km"],
                     "estimated_minutes": tag_data["estimated_minutes"],
+                    "type": TAG_TYPE_NORMAL,
                 },
             ),
             (
@@ -14976,6 +15232,7 @@ async def _create_ride_offer_execute(
                     "dropoff_location": tag_data["dropoff_location"] or "Hedef",
                     "final_price": tag_data["final_price"],
                     "status": tag_data["status"],
+                    "type": TAG_TYPE_NORMAL,
                 },
             ),
         ]
@@ -15077,6 +15334,14 @@ async def _create_ride_offer_execute(
                     )
                 except Exception:
                     pass
+
+            logger.info(
+                "[normal-ride-create] tag_id=%s passenger_id=%s status=%s dispatch_started=%s",
+                str(tag.get("id") or tag_id)[:96],
+                str(passenger_id or "")[:96],
+                str(tag.get("status") or "waiting"),
+                bool(notified >= 0),
+            )
 
             return {
                 "success": True,
@@ -15375,11 +15640,15 @@ async def get_available_offers(driver_id: str, lat: float, lng: float, radius_km
         driver_eff = _effective_driver_vehicle_kind(dr_row.data[0] if dr_row.data else {})
 
         # Tüm bekleyen teklifleri al
-        result = supabase.table("tags").select("*")\
-            .eq("status", "waiting")\
-            .order("created_at", desc=True)\
-            .limit(50)\
+        result = (
+            supabase.table("tags")
+            .select("*")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("status", "waiting")
+            .order("created_at", desc=True)
+            .limit(50)
             .execute()
+        )
         
         offers = []
         for tag in result.data or []:
@@ -15800,11 +16069,37 @@ async def admin_full_dashboard(admin_phone: str):
         except Exception as _nud:
             logger.warning(f"new_users_today count: {_nud}")
         
-        # Trip istatistikleri
-        completed_today = supabase.table("tags").select("id", count="exact").eq("status", "completed").gte("completed_at", today_start).execute()
-        completed_week = supabase.table("tags").select("id", count="exact").eq("status", "completed").gte("completed_at", week_start).execute()
-        active_trips = supabase.table("tags").select("id", count="exact").in_("status", ["matched", "in_progress"]).execute()
-        waiting_trips = supabase.table("tags").select("id", count="exact").eq("status", "waiting").execute()
+        # Trip istatistikleri (yalnız Martı / type=normal)
+        completed_today = (
+            supabase.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("status", "completed")
+            .gte("completed_at", today_start)
+            .execute()
+        )
+        completed_week = (
+            supabase.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("status", "completed")
+            .gte("completed_at", week_start)
+            .execute()
+        )
+        active_trips = (
+            supabase.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .in_("status", ["matched", "in_progress"])
+            .execute()
+        )
+        waiting_trips = (
+            supabase.table("tags")
+            .select("id", count="exact")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("status", "waiting")
+            .execute()
+        )
         
         # KYC istatistikleri
         kyc_pending_count = 0
@@ -21805,13 +22100,13 @@ async def delete_user_account(
             "status": "cancelled",
             "cancelled_at": datetime.utcnow().isoformat(),
             "cancel_reason": "account_deleted"
-        }).eq("passenger_id", user_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).execute()
+        }).eq("type", TAG_TYPE_NORMAL).eq("passenger_id", user_id).in_("status", ["waiting", "pending", "offers_received", "matched", "in_progress"]).execute()
         
         supabase.table("tags").update({
             "status": "cancelled",
             "cancelled_at": datetime.utcnow().isoformat(),
             "cancel_reason": "account_deleted"
-        }).eq("driver_id", user_id).in_("status", ["matched", "in_progress"]).execute()
+        }).eq("type", TAG_TYPE_NORMAL).eq("driver_id", user_id).in_("status", ["matched", "in_progress"]).execute()
         
         # 4. Community mesajlarını anonimleştir (kolon adı insert ile aynı: name)
         supabase.table("community_messages").update({
@@ -21932,9 +22227,13 @@ async def get_nearby_activity(
             except Exception:
                 pass
         # 1. Yakındaki aktif (bekleyen) yolculukları al
-        active_tags = supabase.table("tags").select(
-            "id, pickup_lat, pickup_lng, pickup_location, status, final_price, passenger_preferred_vehicle"
-        ).eq("status", "waiting").execute()
+        active_tags = (
+            supabase.table("tags")
+            .select("id, pickup_lat, pickup_lng, pickup_location, status, final_price, passenger_preferred_vehicle")
+            .eq("type", TAG_TYPE_NORMAL)
+            .eq("status", "waiting")
+            .execute()
+        )
         
         nearby_tags = []
         region_counts = {}  # Bölge yoğunluğu
@@ -22610,7 +22909,13 @@ async def admin_get_active_trips(admin_phone: str):
             raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
         
         # Aktif ve eşleşmiş yolculukları getir
-        result = supabase.table("tags").select("*").in_("status", ["waiting", "matched", "in_progress"]).execute()
+        result = (
+            supabase.table("tags")
+            .select("*")
+            .eq("type", TAG_TYPE_NORMAL)
+            .in_("status", ["waiting", "matched", "in_progress"])
+            .execute()
+        )
         
         trips = []
         for tag in (result.data or []):

@@ -28,6 +28,24 @@ load_dotenv(ROOT_DIR / '.env')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
 
+TAG_TYPE_NORMAL = "normal"
+TAG_TYPE_MUHABBET = "muhabbet"
+
+
+def _validate_tags_insert_row(row: dict, *, source: str) -> None:
+    t = row.get("type")
+    if t != TAG_TYPE_NORMAL and t != TAG_TYPE_MUHABBET:
+        logger.error(
+            "[tag-insert] error=missing_or_invalid_type invalid=%r source=%s",
+            t,
+            source,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="tags insert requires explicit type (normal|muhabbet)",
+        )
+
+
 # ==================== CONFIG ====================
 MAX_DISTANCE_KM = 50
 ADMIN_PHONE_NUMBERS = ["5326497412", "5551234567"]
@@ -404,12 +422,14 @@ async def create_tag(
             "notes": notes,
             "city": user.get("city"),
             "status": "pending",
-            "share_link": share_link
+            "share_link": share_link,
+            "type": TAG_TYPE_NORMAL,
         }
-        
+        _validate_tags_insert_row(tag_data, source="ride")
         result = supabase.table("tags").insert(tag_data).execute()
-        
         if result.data:
+            log_src = "muhabbet" if tag_data.get("type") == TAG_TYPE_MUHABBET else "ride"
+            logger.info("[tag-insert] type=%s source=%s", tag_data.get("type"), log_src)
             logger.info(f"🏷️ TAG oluşturuldu: {result.data[0]['id']}")
             return {
                 "success": True,
