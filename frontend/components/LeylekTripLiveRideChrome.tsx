@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   Dimensions,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -23,7 +24,7 @@ type LeylekTripLiveRideChromeProps = {
   statusDetail: string;
   pickupText: string;
   dropoffText: string;
-  agreedPrice?: number | null;
+  agreedPrice?: number | string | null;
   vehicleKind?: string | null;
   pickup?: Coord | null;
   dropoff?: Coord | null;
@@ -31,10 +32,14 @@ type LeylekTripLiveRideChromeProps = {
   driverLocation?: Coord | null;
   sendingLocation: boolean;
   actionBusy: boolean;
+  callState: 'idle' | 'incoming' | 'outgoing' | 'active';
+  callBusy: boolean;
   canStart: boolean;
   canFinish: boolean;
-  onBack: () => void;
   onShareLocation: () => void;
+  onStartCall: () => void;
+  onJoinCall: () => void;
+  onEndCall: () => void;
   onStart: () => void;
   onFinish: () => void;
   onCancel: () => void;
@@ -45,7 +50,7 @@ function vehicleLabel(vehicleKind?: string | null): string {
 }
 
 function locationLabel(v?: Coord | null): string {
-  return v ? 'Canli' : 'Bekleniyor';
+  return v ? 'Canlı' : 'Bekleniyor';
 }
 
 export default function LeylekTripLiveRideChrome({
@@ -64,10 +69,14 @@ export default function LeylekTripLiveRideChrome({
   driverLocation,
   sendingLocation,
   actionBusy,
+  callState,
+  callBusy,
   canStart,
   canFinish,
-  onBack,
   onShareLocation,
+  onStartCall,
+  onJoinCall,
+  onEndCall,
   onStart,
   onFinish,
   onCancel,
@@ -78,20 +87,62 @@ export default function LeylekTripLiveRideChrome({
   const liveHint = driverLocation
     ? 'Sürücü konumu haritada canlı gösteriliyor'
     : statusDetail;
+  const callButtonLabel =
+    callState === 'incoming'
+      ? 'Yanıtla'
+      : callState === 'outgoing'
+        ? 'Aranıyor'
+        : callState === 'active'
+          ? 'Kapat'
+          : isDriver
+            ? 'Yolcuyu Ara'
+            : 'Sürücüyü Ara';
+  const callButtonIcon: keyof typeof Ionicons.glyphMap =
+    callState === 'incoming'
+      ? 'call'
+      : callState === 'active'
+        ? 'call'
+        : callState === 'outgoing'
+          ? 'radio'
+          : 'call';
+  const handleCallPress = () => {
+    if (callBusy || isTerminal) return;
+    if (callState === 'incoming') {
+      onJoinCall();
+    } else if (callState === 'active' || callState === 'outgoing') {
+      onEndCall();
+    } else {
+      onStartCall();
+    }
+  };
 
   return (
     <View style={styles.container}>
-      <LeylekTripMapPreview
-        pickup={pickup}
-        dropoff={dropoff}
-        passengerLocation={passengerLocation}
-        driverLocation={driverLocation}
-        style={styles.map}
+      <Image
+        source={{
+          uri: isDriver
+            ? 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&q=80'
+            : 'https://images.unsplash.com/photo-1517483000871-1dbf64a6e1c6?w=800&q=80',
+        }}
+        style={styles.cloudBackground}
+        resizeMode="cover"
       />
-
-      <Pressable onPress={onBack} style={styles.mapBackButton} hitSlop={10}>
-        <Ionicons name="chevron-back" size={25} color="#0F172A" />
-      </Pressable>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.cloudTintOverlay,
+          { backgroundColor: isDriver ? 'rgba(124, 58, 237, 0.10)' : 'rgba(14, 165, 233, 0.08)' },
+        ]}
+      />
+      <View style={styles.mapSlot}>
+        <LeylekTripMapPreview
+          pickup={pickup}
+          dropoff={dropoff}
+          passengerLocation={passengerLocation}
+          driverLocation={driverLocation}
+          style={styles.map}
+        />
+      </View>
 
       <View style={styles.topInfoPanel} pointerEvents="box-none">
         <View style={styles.topInfoBorder}>
@@ -153,6 +204,7 @@ export default function LeylekTripLiveRideChrome({
               <Text style={styles.matrixTextDriver}>{matrixStatus}</Text>
             </View>
             <View style={styles.driverMatchYgitOuter}>
+              <View pointerEvents="none" style={styles.driverMatchYgitGlowAura} />
               <Pressable
                 onPress={canStart ? onStart : onShareLocation}
                 disabled={(canStart && actionBusy) || sendingLocation || isTerminal}
@@ -198,9 +250,24 @@ export default function LeylekTripLiveRideChrome({
               </Text>
               <View style={styles.tripCallGuvenRow}>
                 <View style={styles.tripCallChatCluster}>
-                  <View style={[styles.mapCallFabCircle, !passengerLocation && styles.mapCallFabCircleDisabled]}>
-                    <Ionicons name={isDriver ? 'person' : 'car-sport'} size={22} color="#FFF" />
-                  </View>
+                  <Pressable
+                    onPress={handleCallPress}
+                    disabled={callBusy || isTerminal}
+                    style={({ pressed }) => [
+                      styles.mapCallFabCircle,
+                      (callBusy || isTerminal) && styles.mapCallFabCircleDisabled,
+                      callState === 'active' && styles.mapCallFabCircleActive,
+                      pressed && { opacity: 0.82 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={callButtonLabel}
+                  >
+                    {callBusy ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Ionicons name={callButtonIcon} size={22} color="#FFF" />
+                    )}
+                  </Pressable>
                   <View style={styles.tripInlineChatBtn}>
                     <LinearGradient
                       colors={isDriver ? ['#F97316', '#EA580C'] : ['#3B82F6', '#2563EB']}
@@ -208,9 +275,9 @@ export default function LeylekTripLiveRideChrome({
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      <Ionicons name="navigate" size={18} color="#FFF" />
+                      <Ionicons name={callState === 'idle' ? 'navigate' : 'call'} size={18} color="#FFF" />
                       <Text style={styles.tripInlineChatBtnText} numberOfLines={1}>
-                        {statusDetail}
+                        {callState === 'idle' ? statusDetail : callButtonLabel}
                       </Text>
                     </LinearGradient>
                   </View>
@@ -305,25 +372,26 @@ export default function LeylekTripLiveRideChrome({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#E5E7EB' },
-  map: { flex: 1, height: undefined, borderRadius: 0 },
-  mapBackButton: {
+  container: { flex: 1, position: 'relative' },
+  cloudBackground: {
     position: 'absolute',
-    top: 42,
-    left: 14,
-    zIndex: 120,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    elevation: 8,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    zIndex: 0,
+    opacity: 0.14,
   },
+  cloudTintOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    zIndex: 0,
+  },
+  mapSlot: { flex: 1, position: 'relative' },
+  map: { flex: 1, height: undefined, borderRadius: 0 },
   topInfoPanel: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 90 },
   topInfoBorder: {
     alignSelf: 'center',
@@ -404,14 +472,15 @@ const styles = StyleSheet.create({
   },
   vehiclePillText: { fontSize: 13, fontWeight: '700', color: '#334155' },
   driverMatchMatrixRow: {
-    width: SCREEN_WIDTH * 0.885,
-    alignSelf: 'center',
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    zIndex: 91,
   },
-  driverMatchMatrixRowFlex1: { flex: 1 },
+  driverMatchMatrixRowFlex1: { flex: 1, minWidth: 8 },
   matrixContainerDriver: {
     alignSelf: 'flex-start',
     marginLeft: 12,
@@ -424,7 +493,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#00FF00',
   },
-  matrixContainerDriverInRow: { marginLeft: 0, marginTop: 0, flexShrink: 1, marginRight: 10 },
+  matrixContainerDriverInRow: { marginLeft: 0, marginTop: 0, flexShrink: 1, maxWidth: '58%' },
   matrixTextDriver: { fontSize: 12, fontWeight: '800', color: '#00FF00', letterSpacing: 1.5 },
   matrixContainerPassenger: {
     alignSelf: 'flex-start',
@@ -456,8 +525,20 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     lineHeight: 17,
   },
-  driverMatchYgitOuter: { flexShrink: 0 },
-  driverMatchYgitTouch: { borderRadius: 14 },
+  driverMatchYgitOuter: { position: 'relative', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  driverMatchYgitGlowAura: {
+    position: 'absolute',
+    width: 152,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(37, 99, 235, 0.38)',
+    shadowColor: '#60A5FA',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  driverMatchYgitTouch: { zIndex: 2 },
   driverYolcuyaGitChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -516,6 +597,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   mapCallFabCircleDisabled: { opacity: 0.55 },
+  mapCallFabCircleActive: { backgroundColor: '#DC2626', shadowColor: '#7F1D1D' },
   tripInlineChatBtn: {
     borderRadius: 14,
     overflow: 'hidden',

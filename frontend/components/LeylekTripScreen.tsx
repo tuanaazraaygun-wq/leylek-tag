@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -13,7 +15,9 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
-import type { MuhabbetTripSession, MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
+import { agoraUidFromUserId } from '../lib/agoraUid';
+import type { MuhabbetTripCallSocketPayload, MuhabbetTripSession, MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
+import { agoraVoiceService } from '../services/agoraVoiceService';
 import LeylekTripLiveRideChrome from './LeylekTripLiveRideChrome';
 
 type LeylekTripScreenProps = {
@@ -23,6 +27,7 @@ type LeylekTripScreenProps = {
 
 type Coord = { latitude: number; longitude: number };
 type TripActionEvent = 'muhabbet_trip_start' | 'muhabbet_trip_cancel' | 'muhabbet_trip_finish';
+type CallState = 'idle' | 'incoming' | 'outgoing' | 'active';
 
 function coord(lat?: number | null, lng?: number | null): Coord | null {
   const la = Number(lat);
@@ -61,6 +66,10 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [loading, setLoading] = useState(true);
   const [sendingLocation, setSendingLocation] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [callState, setCallState] = useState<CallState>('idle');
+  const [callBusy, setCallBusy] = useState(false);
+  const [callPayload, setCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
+  const joinedCallKeyRef = useRef('');
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
   const isTerminal = session?.status === 'cancelled' || session?.status === 'finished';
@@ -112,6 +121,32 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const onStarted = bind('muhabbet_trip_started');
     const onCancelled = bind('muhabbet_trip_cancelled');
     const onFinished = bind('muhabbet_trip_finished');
+    const callMatches = (payload: MuhabbetTripCallSocketPayload) =>
+      String(payload?.session_id || payload?.sessionId || '').trim().toLowerCase() === sessionId.toLowerCase();
+    const onCallStart = (payload: MuhabbetTripCallSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_call_start', payload);
+      if (!callMatches(payload)) return;
+      setCallPayload(payload);
+      setCallState(String(payload.caller_id || '').trim().toLowerCase() === myId ? 'outgoing' : 'incoming');
+    };
+    const onCallJoin = (payload: MuhabbetTripCallSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_call_join', payload);
+      if (!callMatches(payload)) return;
+      setCallPayload((prev) => ({ ...(prev || {}), ...payload }));
+      if (String(payload.joined_user_id || '').trim().toLowerCase() !== myId) {
+        setCallState('active');
+      }
+    };
+    const onCallEnd = (payload: MuhabbetTripCallSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_call_end', payload);
+      if (!callMatches(payload)) return;
+      void agoraVoiceService.leaveChannelAndDestroy();
+      agoraVoiceService.resetCallbacks();
+      joinedCallKeyRef.current = '';
+      setCallPayload(null);
+      setCallState('idle');
+      setCallBusy(false);
+    };
     const joinPayload = { session_id: sessionId };
     console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
     socket.emit('muhabbet_trip_join', joinPayload);
@@ -119,13 +154,24 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     socket.on('muhabbet_trip_started', onStarted);
     socket.on('muhabbet_trip_cancelled', onCancelled);
     socket.on('muhabbet_trip_finished', onFinished);
+    socket.on('muhabbet_trip_call_start', onCallStart);
+    socket.on('muhabbet_trip_call_join', onCallJoin);
+    socket.on('muhabbet_trip_call_end', onCallEnd);
     return () => {
+      const leavePayload = { session_id: sessionId };
+      console.log('[leylek-trip] emit', 'muhabbet_trip_leave', leavePayload);
+      socket.emit('muhabbet_trip_leave', leavePayload);
       socket.off('muhabbet_trip_location_updated', onLocation);
       socket.off('muhabbet_trip_started', onStarted);
       socket.off('muhabbet_trip_cancelled', onCancelled);
       socket.off('muhabbet_trip_finished', onFinished);
+      socket.off('muhabbet_trip_call_start', onCallStart);
+      socket.off('muhabbet_trip_call_join', onCallJoin);
+      socket.off('muhabbet_trip_call_end', onCallEnd);
+      void agoraVoiceService.leaveChannelAndDestroy();
+      agoraVoiceService.resetCallbacks();
     };
-  }, [loadSession, sessionId]);
+  }, [loadSession, myId, sessionId]);
 
   const locations = useMemo(() => {
     if (!session) return {};
@@ -168,6 +214,97 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     setTimeout(() => setActionBusy(false), 1200);
   }, [sessionId]);
 
+  const ensureMicPermission = useCallback(async () => {
+    if (Platform.OS !== 'android') return true;
+    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }, []);
+
+  const joinMuhabbetAgoraChannel = useCallback(async (payload: MuhabbetTripCallSocketPayload) => {
+    const channelName = String(payload.channel_name || `muhabbet_trip_${sessionId}`).trim();
+    const token = String(payload.agora_token || '').trim();
+    if (!token || !channelName || !myId) {
+      Alert.alert('Arama', 'Arama bileti hazırlanamadı.');
+      return false;
+    }
+    const ok = await ensureMicPermission();
+    if (!ok) {
+      Alert.alert('Mikrofon izni', 'Sesli görüşme için mikrofon izni gerekli.');
+      return false;
+    }
+    await agoraVoiceService.initialize();
+    agoraVoiceService.setCallbacks({
+      onJoinChannelSuccess: () => {
+        setCallState('active');
+        setCallBusy(false);
+      },
+      onUserOffline: () => {
+        setCallState('idle');
+        setCallPayload(null);
+        setCallBusy(false);
+      },
+      onError: (_err, msg) => {
+        setCallBusy(false);
+        Alert.alert('Arama', msg || 'Agora bağlantı hatası.');
+      },
+    });
+    agoraVoiceService.resetJoinGate();
+    await agoraVoiceService.joinChannel(channelName, token, agoraUidFromUserId(myId));
+    return true;
+  }, [ensureMicPermission, myId, sessionId]);
+
+  const startCall = useCallback(() => {
+    if (isTerminal || !session) return;
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_call_start', payload);
+    setCallBusy(true);
+    setCallState('outgoing');
+    getOrCreateSocket().emit('muhabbet_trip_call_start', payload);
+    setTimeout(() => setCallBusy(false), 1500);
+  }, [isTerminal, session, sessionId]);
+
+  const joinCall = useCallback(async () => {
+    if (!callPayload) return;
+    setCallBusy(true);
+    const joined = await joinMuhabbetAgoraChannel(callPayload);
+    if (joined) {
+      const payload = { session_id: sessionId };
+      console.log('[leylek-trip] emit', 'muhabbet_trip_call_join', payload);
+      getOrCreateSocket().emit('muhabbet_trip_call_join', payload);
+    } else {
+      setCallBusy(false);
+    }
+  }, [callPayload, joinMuhabbetAgoraChannel, sessionId]);
+
+  const endCall = useCallback(async () => {
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_call_end', payload);
+    getOrCreateSocket().emit('muhabbet_trip_call_end', payload);
+    await agoraVoiceService.leaveChannelAndDestroy();
+    agoraVoiceService.resetCallbacks();
+    joinedCallKeyRef.current = '';
+    setCallPayload(null);
+    setCallState('idle');
+    setCallBusy(false);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (callState !== 'outgoing' || !callPayload || !myId) return;
+    if (String(callPayload.caller_id || '').trim().toLowerCase() !== myId) return;
+    const channelName = String(callPayload.channel_name || '').trim();
+    const token = String(callPayload.agora_token || '').trim();
+    const joinKey = `${channelName}|${token ? 'token' : 'no-token'}`;
+    if (!channelName || !token || joinedCallKeyRef.current === joinKey) return;
+    joinedCallKeyRef.current = joinKey;
+    setCallBusy(true);
+    void joinMuhabbetAgoraChannel(callPayload).then((joined) => {
+      if (!joined) {
+        joinedCallKeyRef.current = '';
+        setCallBusy(false);
+      }
+    });
+  }, [callPayload, callState, joinMuhabbetAgoraChannel, myId]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingRoot}>
@@ -208,10 +345,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         driverLocation={locations.driver}
         sendingLocation={sendingLocation}
         actionBusy={actionBusy}
+        callState={callState}
+        callBusy={callBusy}
         canStart={isDriver && session.status === 'ready'}
         canFinish={isDriver && (session.status === 'ready' || session.status === 'started')}
-        onBack={() => router.back()}
         onShareLocation={() => void shareLocation()}
+        onStartCall={startCall}
+        onJoinCall={() => void joinCall()}
+        onEndCall={() => void endCall()}
         onStart={() => emitAction('muhabbet_trip_start')}
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}

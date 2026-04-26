@@ -120,8 +120,24 @@ export default function LeylekTripMapPreview({
             <MarkerBubble label="Yolcu" color="#F97316" icon="person" />
           </Marker>
         ) : null}
+        {isCoord(passengerLocation) && isCoord(driverLocation) ? (
+          <Polyline
+            coordinates={[passengerLocation, driverLocation]}
+            strokeColor="#047857"
+            strokeWidth={8}
+            lineJoin="round"
+            lineCap="round"
+          />
+        ) : null}
         {isCoord(pickup) && isCoord(dropoff) ? (
-          <Polyline coordinates={[pickup, dropoff]} strokeColor="#3B82F6" strokeWidth={4} lineDashPattern={[8, 8]} />
+          <Polyline
+            coordinates={[pickup, dropoff]}
+            strokeColor="#EA580C"
+            strokeWidth={8}
+            lineDashPattern={[12, 6]}
+            lineJoin="round"
+            lineCap="round"
+          />
         ) : null}
       </MapView>
     </View>
