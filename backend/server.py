@@ -22282,40 +22282,28 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
         .execute()
     )
     if existing.data:
-        return dict(existing.data[0])
+        out = dict(existing.data[0])
+        logger.info("[muhabbet_trip_session] ready session_id=%s request_id=%s", out.get("id"), rid)
+        return out
 
-    now_iso = datetime.now(timezone.utc).isoformat()
+    insert_payload = {
+        "conversion_request_id": rid,
+        "conversation_id": row.get("conversation_id"),
+        "passenger_id": row.get("passenger_id"),
+        "driver_id": row.get("driver_id"),
+        "status": "ready",
+    }
+    logger.info("[muhabbet_trip_session] insert_payload=%s", insert_payload)
     ins = (
         supabase.table("muhabbet_trip_sessions")
-        .insert(
-            {
-                "conversion_request_id": rid,
-                "conversation_id": row.get("conversation_id"),
-                "listing_id": row.get("listing_id"),
-                "listing_match_request_id": row.get("listing_match_request_id"),
-                "requester_user_id": row.get("requester_user_id"),
-                "passenger_id": row.get("passenger_id"),
-                "driver_id": row.get("driver_id"),
-                "status": "ready",
-                "city": row.get("city"),
-                "pickup_text": row.get("pickup_text"),
-                "pickup_lat": row.get("pickup_lat"),
-                "pickup_lng": row.get("pickup_lng"),
-                "dropoff_text": row.get("dropoff_text"),
-                "dropoff_lat": row.get("dropoff_lat"),
-                "dropoff_lng": row.get("dropoff_lng"),
-                "agreed_price": row.get("agreed_price"),
-                "vehicle_kind": row.get("vehicle_kind"),
-                "payment_method": row.get("payment_method"),
-                "created_at": now_iso,
-                "updated_at": now_iso,
-            }
-        )
+        .insert(insert_payload)
         .execute()
     )
     if not ins.data:
         raise RuntimeError("muhabbet_trip_sessions insert failed")
-    return dict(ins.data[0])
+    out = dict(ins.data[0])
+    logger.info("[muhabbet_trip_session] ready session_id=%s request_id=%s", out.get("id"), rid)
+    return out
 
 
 async def _emit_muhabbet_trip_session_ready(session_row: dict) -> None:

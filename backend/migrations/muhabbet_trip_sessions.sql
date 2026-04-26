@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.muhabbet_trip_sessions (
   conversation_id uuid NOT NULL REFERENCES public.conversations (id) ON DELETE CASCADE,
   listing_id uuid NULL REFERENCES public.ride_listings (id) ON DELETE SET NULL,
   listing_match_request_id uuid NULL REFERENCES public.listing_match_requests (id) ON DELETE SET NULL,
-  requester_user_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
+  requester_user_id uuid NULL REFERENCES public.users (id) ON DELETE SET NULL,
   passenger_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
   driver_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
   status text NOT NULL DEFAULT 'ready'
@@ -53,6 +53,50 @@ CREATE TABLE IF NOT EXISTS public.muhabbet_trip_sessions (
     (driver_location_lng IS NULL OR (driver_location_lng BETWEEN -180 AND 180))
   )
 );
+
+-- Existing environments may already have an older, narrower table. Keep this
+-- migration idempotent so PostgREST can see every column used by Phase 2.
+ALTER TABLE public.muhabbet_trip_sessions
+  ADD COLUMN IF NOT EXISTS conversion_request_id uuid,
+  ADD COLUMN IF NOT EXISTS conversation_id uuid,
+  ADD COLUMN IF NOT EXISTS listing_id uuid,
+  ADD COLUMN IF NOT EXISTS listing_match_request_id uuid,
+  ADD COLUMN IF NOT EXISTS requester_user_id uuid,
+  ADD COLUMN IF NOT EXISTS passenger_id uuid,
+  ADD COLUMN IF NOT EXISTS driver_id uuid,
+  ADD COLUMN IF NOT EXISTS status text DEFAULT 'ready',
+  ADD COLUMN IF NOT EXISTS city text,
+  ADD COLUMN IF NOT EXISTS pickup_text text,
+  ADD COLUMN IF NOT EXISTS pickup_lat double precision,
+  ADD COLUMN IF NOT EXISTS pickup_lng double precision,
+  ADD COLUMN IF NOT EXISTS dropoff_text text,
+  ADD COLUMN IF NOT EXISTS dropoff_lat double precision,
+  ADD COLUMN IF NOT EXISTS dropoff_lng double precision,
+  ADD COLUMN IF NOT EXISTS agreed_price numeric,
+  ADD COLUMN IF NOT EXISTS vehicle_kind text,
+  ADD COLUMN IF NOT EXISTS payment_method text,
+  ADD COLUMN IF NOT EXISTS route_polyline text,
+  ADD COLUMN IF NOT EXISTS route_distance_km double precision,
+  ADD COLUMN IF NOT EXISTS route_duration_min integer,
+  ADD COLUMN IF NOT EXISTS route_source text,
+  ADD COLUMN IF NOT EXISTS route_updated_at timestamptz,
+  ADD COLUMN IF NOT EXISTS passenger_location_lat double precision,
+  ADD COLUMN IF NOT EXISTS passenger_location_lng double precision,
+  ADD COLUMN IF NOT EXISTS passenger_location_updated_at timestamptz,
+  ADD COLUMN IF NOT EXISTS driver_location_lat double precision,
+  ADD COLUMN IF NOT EXISTS driver_location_lng double precision,
+  ADD COLUMN IF NOT EXISTS driver_location_updated_at timestamptz,
+  ADD COLUMN IF NOT EXISTS started_at timestamptz,
+  ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
+  ADD COLUMN IF NOT EXISTS cancelled_by_user_id uuid,
+  ADD COLUMN IF NOT EXISTS cancel_reason text,
+  ADD COLUMN IF NOT EXISTS finished_at timestamptz,
+  ADD COLUMN IF NOT EXISTS finished_by_user_id uuid,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+ALTER TABLE public.muhabbet_trip_sessions
+  ALTER COLUMN status SET DEFAULT 'ready';
 
 CREATE INDEX IF NOT EXISTS idx_mts_conversation_status_created
   ON public.muhabbet_trip_sessions (conversation_id, status, created_at DESC);
