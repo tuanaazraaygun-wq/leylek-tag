@@ -21816,79 +21816,94 @@ def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict
     Leylek eşleşme isteği (socket); REST hariç.
     Dönüş: {ok, request_id, pending, target, initiator_role} veya {ok: False, err, detail}
     """
-    uid = (uid or "").strip().lower()
-    cid = (conversation_id or "").strip().lower()
-    if not uid or not cid:
-        return {"ok": False, "err": "bad_request", "detail": "Eksik parametre"}
     try:
-        c_row = _muhabbet_conversation_for_member_or_403(cid, uid)
-    except HTTPException as he:
-        return {"ok": False, "err": "forbidden", "detail": str(he.detail) if he.detail else "forbidden"}
-    except Exception as e:
-        return {"ok": False, "err": "error", "detail": str(e)}
-    a = str(c_row.get("user_a") or "").strip().lower()
-    b = str(c_row.get("user_b") or "").strip().lower()
-    target = b if a == uid else a
-    now = datetime.now(timezone.utc)
-    lastq = (
-        supabase.table("muhabbet_leylek_pair_requests")
-        .select("id, status, created_at")
-        .eq("conversation_id", cid)
-        .eq("initiator_user_id", uid)
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if lastq.data:
-        last = dict(lastq.data[0])
-        st = str(last.get("status") or "").strip().lower()
-        if st == "pending":
-            return {
-                "ok": True,
-                "pending": True,
-                "request_id": str(last.get("id")).strip().lower(),
-            }
-        created_at = last.get("created_at")
+        uid = (uid or "").strip().lower()
+        cid = (conversation_id or "").strip().lower()
+        print("[PAIR DEBUG]", {
+            "uid": uid,
+            "cid": cid,
+        })
+        if not uid or not cid:
+            return {"ok": False, "err": "bad_request", "detail": "Eksik parametre"}
         try:
-            cdt = _parse_iso_dt(created_at) if created_at else None
-        except Exception:
-            cdt = None
-        if cdt is not None and (now - cdt).total_seconds() < float(_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC):
-            wait = int(_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC - (now - cdt).total_seconds())
-            return {
-                "ok": False,
-                "err": "cooldown",
-                "detail": f"Çok sık istek. {max(1, wait)} sn sonra tekrar deneyin.",
-            }
-    ir = supabase.table("users").select("id, role").eq("id", uid).limit(1).execute()
-    initiator_role = ""
-    if ir.data and ir.data[0].get("id"):
-        initiator_role = str(ir.data[0].get("role") or "").strip().lower()
-    sem = _muhabbet_match_semantic_roles_for_conversation(cid)
-    if sem.get(uid):
-        initiator_role = str(sem.get(uid) or "").strip().lower()
-    ins = (
-        supabase.table("muhabbet_leylek_pair_requests")
-        .insert(
-            {
-                "conversation_id": cid,
-                "initiator_user_id": uid,
-                "target_user_id": target,
-                "status": "pending",
-            }
+            c_row = _muhabbet_conversation_for_member_or_403(cid, uid)
+        except HTTPException as he:
+            return {"ok": False, "err": "forbidden", "detail": str(he.detail) if he.detail else "forbidden"}
+        except Exception as e:
+            return {"ok": False, "err": "error", "detail": str(e)}
+        a = str(c_row.get("user_a") or "").strip().lower()
+        b = str(c_row.get("user_b") or "").strip().lower()
+        target = b if a == uid else a
+        now = datetime.now(timezone.utc)
+        lastq = (
+            supabase.table("muhabbet_leylek_pair_requests")
+            .select("id, status, created_at")
+            .eq("conversation_id", cid)
+            .eq("initiator_user_id", uid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
         )
-        .execute()
-    )
-    if not ins.data or not ins.data[0].get("id"):
-        return {"ok": False, "err": "db", "detail": "İstek oluşturulamadı"}
-    rid = str(ins.data[0]["id"]).strip().lower()
-    return {
-        "ok": True,
-        "pending": False,
-        "request_id": rid,
-        "target": target,
-        "initiator_role": initiator_role,
-    }
+        if lastq.data:
+            last = dict(lastq.data[0])
+            st = str(last.get("status") or "").strip().lower()
+            if st == "pending":
+                return {
+                    "ok": True,
+                    "pending": True,
+                    "request_id": str(last.get("id")).strip().lower(),
+                }
+            created_at = last.get("created_at")
+            try:
+                cdt = _parse_iso_dt(created_at) if created_at else None
+            except Exception:
+                cdt = None
+            if cdt is not None and (now - cdt).total_seconds() < float(_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC):
+                wait = int(_LEYLEK_PAIR_REQUEST_COOLDOWN_SEC - (now - cdt).total_seconds())
+                return {
+                    "ok": False,
+                    "err": "cooldown",
+                    "detail": f"Çok sık istek. {max(1, wait)} sn sonra tekrar deneyin.",
+                }
+        ir = supabase.table("users").select("id, role").eq("id", uid).limit(1).execute()
+        initiator_role = ""
+        if ir.data and ir.data[0].get("id"):
+            initiator_role = str(ir.data[0].get("role") or "").strip().lower()
+        sem = _muhabbet_match_semantic_roles_for_conversation(cid)
+        if sem.get(uid):
+            initiator_role = str(sem.get(uid) or "").strip().lower()
+        other_user_id = target
+        print("[PAIR INSERT]", {
+            "initiator": uid,
+            "target": other_user_id,
+        })
+        ins = (
+            supabase.table("muhabbet_leylek_pair_requests")
+            .insert(
+                {
+                    "conversation_id": cid,
+                    "initiator_user_id": uid,
+                    "target_user_id": target,
+                    "status": "pending",
+                }
+            )
+            .execute()
+        )
+        if not ins.data or not ins.data[0].get("id"):
+            return {"ok": False, "err": "db", "detail": "İstek oluşturulamadı"}
+        rid = str(ins.data[0]["id"]).strip().lower()
+        return {
+            "ok": True,
+            "pending": False,
+            "request_id": rid,
+            "target": target,
+            "initiator_role": initiator_role,
+        }
+    except Exception as e:
+        import traceback
+        print("❌ PAIR INTERNAL ERROR:", e)
+        traceback.print_exc()
+        raise
 
 
 async def _sio_leylek_pair_request_handler(sid, data):
