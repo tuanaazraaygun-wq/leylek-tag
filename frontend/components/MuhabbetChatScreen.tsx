@@ -296,6 +296,8 @@ export default function MuhabbetChatScreen({
   const [systemCards, setSystemCards] = useState<ChatSystemCard[]>([]);
   /** Karşı taraftan gelen Leylek Anahtar eşleşme isteği (modal) */
   const [pairInModal, setPairInModal] = useState<{ rid: string; fromLo: string } | null>(null);
+  const [tripConvertInModal, setTripConvertInModal] = useState<{ rid: string } | null>(null);
+  const [tripConvertLoading, setTripConvertLoading] = useState(false);
   /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
   const [infoStripDismissed, setInfoStripDismissed] = useState(false);
   const [infoRotateIx, setInfoRotateIx] = useState(0);
@@ -593,6 +595,55 @@ export default function MuhabbetChatScreen({
       s.off('leylek_pair_match_completed', onMatch);
     };
   }, [cid, loadContext, pushSystemCard]);
+
+  useEffect(() => {
+    if (!cid) return;
+    const socket = getOrCreateSocket();
+    const cidLo = cid.toLowerCase();
+    const convMatches = (data: { conversation_id?: string }) => {
+      const conv = data?.conversation_id != null ? String(data.conversation_id).trim().toLowerCase() : '';
+      return !!conv && conv === cidLo;
+    };
+    const onConvertRequest = (data: { conversation_id?: string; request_id?: string }) => {
+      if (!convMatches(data)) return;
+      const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
+      if (!rid) return;
+      setTripConvertInModal({ rid });
+    };
+    const onConvertSent = (data: { conversation_id?: string }) => {
+      if (!convMatches(data)) return;
+      setTripConvertLoading(false);
+      pushSystemCard('blue', 'Yolculuğa çevirme isteği gönderildi.');
+    };
+    const onConvertConfirmed = (data: { conversation_id?: string }) => {
+      if (!convMatches(data)) return;
+      setTripConvertLoading(false);
+      setTripConvertInModal(null);
+      pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
+    };
+    const onConvertDeclined = (data: { conversation_id?: string }) => {
+      if (!convMatches(data)) return;
+      setTripConvertLoading(false);
+      pushSystemCard('orange', 'Yolculuğa çevirme isteği reddedildi.');
+      Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
+    };
+    const onConvertError = (data: { detail?: string; message?: string }) => {
+      setTripConvertLoading(false);
+      Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'İstek gönderilemedi.');
+    };
+    socket.on('muhabbet_trip_convert_request', onConvertRequest);
+    socket.on('muhabbet_trip_convert_request_sent', onConvertSent);
+    socket.on('muhabbet_trip_convert_confirmed', onConvertConfirmed);
+    socket.on('muhabbet_trip_convert_declined', onConvertDeclined);
+    socket.on('muhabbet_trip_convert_error', onConvertError);
+    return () => {
+      socket.off('muhabbet_trip_convert_request', onConvertRequest);
+      socket.off('muhabbet_trip_convert_request_sent', onConvertSent);
+      socket.off('muhabbet_trip_convert_confirmed', onConvertConfirmed);
+      socket.off('muhabbet_trip_convert_declined', onConvertDeclined);
+      socket.off('muhabbet_trip_convert_error', onConvertError);
+    };
+  }, [cid, pushSystemCard]);
 
   /** Karşı taraftan Leylek Anahtar isteği — sunucu emit_socket_event_to_user ile (oda join şart değil). */
   useEffect(() => {
@@ -1414,6 +1465,45 @@ export default function MuhabbetChatScreen({
     setPairInModal(null);
   }, [cid, pairInModal, pushSystemCard]);
 
+  const sendTripConvertRequest = useCallback(async () => {
+    if (!cid || tripConvertLoading) return;
+    setTripConvertLoading(true);
+    const ready = await ensureSocketReadyForSend();
+    if (!ready) {
+      setTripConvertLoading(false);
+      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+      return;
+    }
+    const socket = getOrCreateSocket();
+    if (!socket.connected) {
+      setTripConvertLoading(false);
+      Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
+      return;
+    }
+    socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
+    setTimeout(() => setTripConvertLoading(false), 15000);
+  }, [cid, ensureSocketReadyForSend, tripConvertLoading]);
+
+  const acceptTripConvertFromModal = useCallback(() => {
+    if (!cid || !tripConvertInModal) return;
+    const socket = getOrCreateSocket();
+    socket.emit('muhabbet_trip_convert_accept', {
+      conversation_id: cid,
+      request_id: tripConvertInModal.rid,
+    });
+    setTripConvertInModal(null);
+  }, [cid, tripConvertInModal]);
+
+  const declineTripConvertFromModal = useCallback(() => {
+    if (!cid || !tripConvertInModal) return;
+    const socket = getOrCreateSocket();
+    socket.emit('muhabbet_trip_convert_decline', {
+      conversation_id: cid,
+      request_id: tripConvertInModal.rid,
+    });
+    setTripConvertInModal(null);
+  }, [cid, tripConvertInModal]);
+
   return (
     <SafeAreaView style={styles.root} edges={['left', 'right']}>
       <LinearGradient
@@ -1518,19 +1608,22 @@ export default function MuhabbetChatScreen({
                           <Text style={styles.secureStatusTxt}>Sonraki adım: Anlaşmayı yolculuğa çevir</Text>
                         </View>
                       </View>
-                      {/* Leylek Teklif Sende only: UI-only plan, no backend or normal ride call. */}
+                      {/* Leylek Teklif Sende only: records conversion intent; no normal ride/tag call. */}
                       <Pressable
-                        disabled
-                        style={styles.convertPlanButton}
+                        onPress={sendTripConvertRequest}
+                        disabled={tripConvertLoading}
+                        style={({ pressed }) => [styles.convertPlanButton, (pressed || tripConvertLoading) && { opacity: 0.86 }]}
                         accessibilityRole="button"
-                        accessibilityState={{ disabled: true }}
-                        accessibilityLabel="Bu anlaşmayı yolculuğa çevir"
+                        accessibilityState={{ disabled: tripConvertLoading }}
+                        accessibilityLabel="Eşleşmeyi yolculuğa çevir"
                       >
-                        <Ionicons name="car-sport-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
-                        <Text style={styles.convertPlanButtonTxt}>Bu anlaşmayı yolculuğa çevir</Text>
+                        <Ionicons name="car-sport-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.convertPlanButtonTxt}>
+                          {tripConvertLoading ? 'İstek gönderiliyor...' : 'Eşleşmeyi yolculuğa çevir'}
+                        </Text>
                       </Pressable>
                       <Text style={styles.convertPlanSub}>
-                        Yakında: Bu sohbet anlaşmasını güvenli yolculuğa dönüştürebileceksiniz.
+                        Phase 1: Karşı tarafa yolculuğa başlama niyeti gönderilir; normal ride ekranına geçilmez.
                       </Text>
                     </View>
                   ) : null}
@@ -1765,6 +1858,38 @@ export default function MuhabbetChatScreen({
             </View>
           </View>
         </Modal>
+        <Modal
+          visible={!!tripConvertInModal}
+          transparent
+          animationType="fade"
+          onRequestClose={declineTripConvertFromModal}
+        >
+          <View style={styles.pairModalRoot}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={declineTripConvertFromModal} />
+            <View style={styles.pairModalCard}>
+              <Text style={styles.pairModalTitle}>Yolculuğa çevirme isteği</Text>
+              <Text style={styles.pairModalBody}>
+                Sürücü yolculuğa başlamak istiyor. Kabul ediyor musun?
+              </Text>
+              <Pressable
+                onPress={acceptTripConvertFromModal}
+                style={({ pressed }) => [styles.pairModalPri, pressed && { opacity: 0.92 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Evet"
+              >
+                <Text style={styles.pairModalPriTxt}>Evet</Text>
+              </Pressable>
+              <Pressable
+                onPress={declineTripConvertFromModal}
+                style={({ pressed }) => [styles.pairModalSec, pressed && { opacity: 0.88 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Hayır"
+              >
+                <Text style={styles.pairModalSecTxt}>Hayır</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -1914,8 +2039,8 @@ const styles = StyleSheet.create({
   secureStatusList: { marginTop: 12, gap: 7 },
   secureStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   secureStatusTxt: { color: '#14532D', fontSize: 12, fontWeight: '800', flex: 1 },
-  convertPlanButton: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(148,163,184,0.18)' },
-  convertPlanButtonTxt: { color: '#475569', fontSize: 15, fontWeight: '800' },
+  convertPlanButton: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: '#16A34A' },
+  convertPlanButtonTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   convertPlanSub: { marginTop: 8, color: '#64748B', fontSize: 12, fontWeight: '600', lineHeight: 17, textAlign: 'center' },
   keyCtaGlow: {
     borderRadius: 16,
