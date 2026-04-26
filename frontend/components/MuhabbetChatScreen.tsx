@@ -298,6 +298,8 @@ export default function MuhabbetChatScreen({
   const [pairInModal, setPairInModal] = useState<{ rid: string; fromLo: string } | null>(null);
   const [tripConvertInModal, setTripConvertInModal] = useState<{ rid: string } | null>(null);
   const [tripConvertLoading, setTripConvertLoading] = useState(false);
+  const [tripConvertState, setTripConvertState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
+  const tripConvertStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
   const [infoStripDismissed, setInfoStripDismissed] = useState(false);
   const [infoRotateIx, setInfoRotateIx] = useState(0);
@@ -403,6 +405,10 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     ctxRef.current = ctx;
   }, [ctx]);
+
+  useEffect(() => {
+    tripConvertStateRef.current = tripConvertState;
+  }, [tripConvertState]);
 
   useEffect(() => {
     if (!cid || ctx?.matched_via_leylek_key) return;
@@ -608,27 +614,39 @@ export default function MuhabbetChatScreen({
       if (!convMatches(data)) return;
       const rid = data?.request_id != null ? String(data.request_id).trim().toLowerCase() : '';
       if (!rid) return;
+      const myRole = String(ctxRef.current?.my_role || '').trim().toLowerCase();
+      if (isDriverAppRole(myRole)) return;
+      setTripConvertState('pending');
       setTripConvertInModal({ rid });
     };
     const onConvertSent = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
-      pushSystemCard('blue', 'Yolculuğa çevirme isteği gönderildi.');
+      setTripConvertState('pending');
     };
     const onConvertConfirmed = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
       setTripConvertInModal(null);
-      pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
+      setTripConvertState('confirmed');
+      if (tripConvertStateRef.current !== 'confirmed') {
+        pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
+      }
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
+      setTripConvertState('idle');
       pushSystemCard('orange', 'Yolculuğa çevirme isteği reddedildi.');
       Alert.alert('Yolculuğa çevir', 'Karşı taraf şu an kabul etmedi.');
     };
-    const onConvertError = (data: { detail?: string; message?: string }) => {
+    const onConvertError = (data: { code?: string; detail?: string; message?: string }) => {
       setTripConvertLoading(false);
+      setTripConvertState('idle');
+      if (data?.code === 'driver_required') {
+        Alert.alert('Yolculuğa çevir', 'Bu isteği yalnızca sürücü başlatabilir.');
+        return;
+      }
       Alert.alert('Yolculuğa çevir', data?.detail || data?.message || 'İstek gönderilemedi.');
     };
     socket.on('muhabbet_trip_convert_request', onConvertRequest);
@@ -1422,6 +1440,7 @@ export default function MuhabbetChatScreen({
 
   const myR = (ctx?.my_role || '').toLowerCase();
   const oR = (ctx?.other_role || '').toLowerCase();
+  const currentUserIsDriver = isDriverAppRole(myR);
   const chatHeaderTitle =
     (ctx?.other_user_public_name && String(ctx.other_user_public_name).trim()) ||
     (ctx?.public_name && String(ctx.public_name).trim()) ||
@@ -1466,7 +1485,7 @@ export default function MuhabbetChatScreen({
   }, [cid, pairInModal, pushSystemCard]);
 
   const sendTripConvertRequest = useCallback(async () => {
-    if (!cid || tripConvertLoading) return;
+    if (!cid || tripConvertLoading || tripConvertState !== 'idle') return;
     setTripConvertLoading(true);
     const ready = await ensureSocketReadyForSend();
     if (!ready) {
@@ -1480,9 +1499,10 @@ export default function MuhabbetChatScreen({
       Alert.alert('Yolculuğa çevir', 'Sohbet bağlantısı kuruluyor, lütfen birazdan tekrar deneyin.');
       return;
     }
+    setTripConvertState('pending');
     socket.emit('muhabbet_trip_convert_request', { conversation_id: cid });
     setTimeout(() => setTripConvertLoading(false), 15000);
-  }, [cid, ensureSocketReadyForSend, tripConvertLoading]);
+  }, [cid, ensureSocketReadyForSend, tripConvertLoading, tripConvertState]);
 
   const acceptTripConvertFromModal = useCallback(() => {
     if (!cid || !tripConvertInModal) return;
@@ -1608,23 +1628,6 @@ export default function MuhabbetChatScreen({
                           <Text style={styles.secureStatusTxt}>Sonraki adım: Anlaşmayı yolculuğa çevir</Text>
                         </View>
                       </View>
-                      {/* Leylek Teklif Sende only: records conversion intent; no normal ride/tag call. */}
-                      <Pressable
-                        onPress={sendTripConvertRequest}
-                        disabled={tripConvertLoading}
-                        style={({ pressed }) => [styles.convertPlanButton, (pressed || tripConvertLoading) && { opacity: 0.86 }]}
-                        accessibilityRole="button"
-                        accessibilityState={{ disabled: tripConvertLoading }}
-                        accessibilityLabel="Eşleşmeyi yolculuğa çevir"
-                      >
-                        <Ionicons name="car-sport-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                        <Text style={styles.convertPlanButtonTxt}>
-                          {tripConvertLoading ? 'İstek gönderiliyor...' : 'Eşleşmeyi yolculuğa çevir'}
-                        </Text>
-                      </Pressable>
-                      <Text style={styles.convertPlanSub}>
-                        Phase 1: Karşı tarafa yolculuğa başlama niyeti gönderilir; normal ride ekranına geçilmez.
-                      </Text>
                     </View>
                   ) : null}
                   {hasOutgoingPendingPairRequest ? (
@@ -1792,6 +1795,48 @@ export default function MuhabbetChatScreen({
               </Animated.View>
             </View>
           ) : null}
+          {ctx?.matched_via_leylek_key ? (
+            <View style={[styles.tripConvertSticky, tripConvertState === 'confirmed' && styles.tripConvertStickyConfirmed]}>
+              {tripConvertState === 'confirmed' ? (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color="#15803D" />
+                  <Text style={styles.tripConvertConfirmedTxt}>Yolculuk başlatma isteği kabul edildi.</Text>
+                </>
+              ) : currentUserIsDriver ? (
+                <>
+                  <Pressable
+                    onPress={sendTripConvertRequest}
+                    disabled={tripConvertLoading || tripConvertState === 'pending'}
+                    style={({ pressed }) => [
+                      styles.convertPlanButton,
+                      (pressed || tripConvertLoading || tripConvertState === 'pending') && { opacity: 0.86 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: tripConvertLoading || tripConvertState === 'pending' }}
+                    accessibilityLabel="Eşleşmeyi yolculuğa çevir"
+                  >
+                    <Ionicons name="car-sport-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.convertPlanButtonTxt}>
+                      {tripConvertLoading
+                        ? 'İstek gönderiliyor...'
+                        : tripConvertState === 'pending'
+                          ? 'Yolcunun yanıtı bekleniyor'
+                          : 'Eşleşmeyi yolculuğa çevir'}
+                    </Text>
+                  </Pressable>
+                  <Text style={styles.convertPlanSub}>Teklif Sende içinde niyet alınır; normal ride ekranına geçilmez.</Text>
+                </>
+              ) : (
+                <>
+                  <View style={styles.tripConvertWaitingRow}>
+                    <Ionicons name="time-outline" size={17} color="#64748B" />
+                    <Text style={styles.tripConvertWaitingTxt}>Sürücünün yolculuk başlatmasını bekliyor</Text>
+                  </View>
+                  <Text style={styles.convertPlanSub}>Sürücü istek gönderdiğinde buradan kabul veya reddedebilirsiniz.</Text>
+                </>
+              )}
+            </View>
+          ) : null}
           <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <TextInput
               style={styles.input}
@@ -1869,7 +1914,7 @@ export default function MuhabbetChatScreen({
             <View style={styles.pairModalCard}>
               <Text style={styles.pairModalTitle}>Yolculuğa çevirme isteği</Text>
               <Text style={styles.pairModalBody}>
-                Sürücü yolculuğa başlamak istiyor. Kabul ediyor musun?
+                Sürücü yolculuğu başlatmak istiyor. Kabul ediyor musun?
               </Text>
               <Pressable
                 onPress={acceptTripConvertFromModal}
@@ -2039,7 +2084,33 @@ const styles = StyleSheet.create({
   secureStatusList: { marginTop: 12, gap: 7 },
   secureStatusItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   secureStatusTxt: { color: '#14532D', fontSize: 12, fontWeight: '800', flex: 1 },
-  convertPlanButton: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: '#16A34A' },
+  tripConvertSticky: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(22,163,74,0.16)',
+  },
+  tripConvertStickyConfirmed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(220,252,231,0.95)',
+  },
+  tripConvertConfirmedTxt: { color: '#166534', fontSize: 13, fontWeight: '800', flex: 1 },
+  tripConvertWaitingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(148,163,184,0.16)',
+  },
+  tripConvertWaitingTxt: { color: '#475569', fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  convertPlanButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: '#16A34A' },
   convertPlanButtonTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   convertPlanSub: { marginTop: 8, color: '#64748B', fontSize: 12, fontWeight: '600', lineHeight: 17, textAlign: 'center' },
   keyCtaGlow: {

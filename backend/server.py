@@ -22118,7 +22118,7 @@ async def sio_leylek_pair_decline(sid, data):
             logger.warning("leylek_pair_declined emit: %s", e)
 
 
-def _muhabbet_trip_conversion_context(uid: str, cid: str) -> dict:
+def _muhabbet_trip_conversion_context(uid: str, cid: str, *, require_driver_requester: bool = False) -> dict:
     """Leylek Teklif Sende only: build chat-to-trip intent context; never creates normal ride tags."""
     uid = str(uid or "").strip().lower()
     cid = str(cid or "").strip().lower()
@@ -22136,10 +22136,19 @@ def _muhabbet_trip_conversion_context(uid: str, cid: str) -> dict:
     roles = _muhabbet_match_semantic_roles_for_conversation(cid)
     driver_ids = [u for u, r in roles.items() if str(r).strip().lower() == "driver"]
     passenger_ids = [u for u, r in roles.items() if str(r).strip().lower() == "passenger"]
+    logger.info(
+        "[trip_convert_request] roles cid=%s uid=%s drivers=%s passengers=%s",
+        cid,
+        uid,
+        driver_ids,
+        passenger_ids,
+    )
     if len(driver_ids) != 1 or len(passenger_ids) != 1:
         return {"ok": False, "code": "ambiguous_roles", "detail": "Sürücü/yolcu rolleri net değil."}
-    if uid != driver_ids[0]:
-        return {"ok": False, "code": "requester_not_driver", "detail": "Yolculuğa çevirme isteğini sürücü başlatabilir."}
+    if require_driver_requester and uid != driver_ids[0]:
+        return {"ok": False, "code": "driver_required", "detail": "Yolculuğa çevirme isteğini sürücü başlatabilir."}
+    if require_driver_requester and target != passenger_ids[0]:
+        return {"ok": False, "code": "ambiguous_roles", "detail": "Hedef yolcu net değil."}
 
     mq = (
         supabase.table("listing_match_requests")
@@ -22197,11 +22206,12 @@ async def sio_muhabbet_trip_convert_request(sid, data):
         await _emit_muhabbet_trip_conversion_error(sid, "not_registered", "Bağlantı hazırlanıyor. Lütfen tekrar deneyin.")
         return
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
+    logger.info("[trip_convert_request] received sid=%s uid=%s cid=%s", sid, uid, cid)
     if not cid:
         await _emit_muhabbet_trip_conversion_error(sid, "bad_request", "conversation_id gerekli.")
         return
     try:
-        ctx = _muhabbet_trip_conversion_context(uid, cid)
+        ctx = _muhabbet_trip_conversion_context(uid, cid, require_driver_requester=True)
         if not ctx.get("ok"):
             await _emit_muhabbet_trip_conversion_error(sid, str(ctx.get("code") or "error"), str(ctx.get("detail") or "İstek oluşturulamadı."))
             return
@@ -22238,6 +22248,7 @@ async def sio_muhabbet_trip_convert_request(sid, data):
             await _emit_muhabbet_trip_conversion_error(sid, "db", "İstek oluşturulamadı.")
             return
         request_id = str(ins.data[0]["id"]).strip().lower()
+        logger.info("[trip_convert_request] inserted cid=%s request_id=%s requester=%s target=%s", cid, request_id, uid, ctx.get("target_user_id"))
         payload = {
             "request_id": request_id,
             "conversation_id": cid,
@@ -22263,6 +22274,7 @@ async def sio_muhabbet_trip_convert_accept(sid, data):
         return
     rid = str(data.get("request_id") or data.get("requestId") or "").strip().lower()
     cid = str(data.get("conversation_id") or data.get("conversationId") or "").strip().lower()
+    logger.info("[trip_convert_accept] received sid=%s uid=%s cid=%s request_id=%s", sid, uid, cid, rid)
     if not rid or not cid:
         await _emit_muhabbet_trip_conversion_error(sid, "bad_request", "request_id / conversation_id gerekli.")
         return
@@ -22279,6 +22291,9 @@ async def sio_muhabbet_trip_convert_accept(sid, data):
         if str(row.get("target_user_id") or "").strip().lower() != str(uid).strip().lower():
             await _emit_muhabbet_trip_conversion_error(sid, "forbidden", "Sadece karşı taraf kabul edebilir.")
             return
+        if str(row.get("passenger_id") or "").strip().lower() != str(uid).strip().lower():
+            await _emit_muhabbet_trip_conversion_error(sid, "forbidden", "Sadece yolcu kabul edebilir.")
+            return
         if str(row.get("status") or "").strip().lower() != "pending":
             await _emit_muhabbet_trip_conversion_error(sid, "not_pending", "İstek artık geçerli değil.")
             return
@@ -22286,9 +22301,11 @@ async def sio_muhabbet_trip_convert_accept(sid, data):
         supabase.table("muhabbet_trip_conversion_requests").update(
             {"status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
         ).eq("id", rid).execute()
+        logger.info("[trip_convert_accept] updated cid=%s request_id=%s target=%s", cid, rid, uid)
         payload = {"request_id": rid, "conversation_id": cid}
         await emit_socket_event_to_user(str(row.get("requester_user_id") or "").strip(), "muhabbet_trip_convert_confirmed", payload)
         await emit_socket_event_to_user(uid, "muhabbet_trip_convert_confirmed", payload)
+        logger.info("[trip_convert_confirmed] emitted cid=%s request_id=%s requester=%s target=%s", cid, rid, row.get("requester_user_id"), uid)
     except Exception as e:
         logger.exception("muhabbet_trip_convert_accept: %s", e)
         await _emit_muhabbet_trip_conversion_error(sid, "server_error", "Yanıt işlenemedi.")
@@ -22315,6 +22332,8 @@ async def sio_muhabbet_trip_convert_decline(sid, data):
             return
         row = dict(rr.data[0])
         if str(row.get("target_user_id") or "").strip().lower() != str(uid).strip().lower():
+            return
+        if str(row.get("passenger_id") or "").strip().lower() != str(uid).strip().lower():
             return
         if str(row.get("status") or "").strip().lower() != "pending":
             return
