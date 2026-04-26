@@ -1225,14 +1225,19 @@ export default function MuhabbetChatScreen({
   }, [otherUserId, ctx, router]);
 
   const sendLeylekPairRequest = useCallback(async () => {
-    if (!cid || pairRequestBusyRef.current) return;
     const socket = getOrCreateSocket();
     console.log("[leylek-pair] pressed", {
       cid,
+      busyRef: pairRequestBusyRef.current,
+      pairRequestLoading,
       socketConnected: socket?.connected,
       socketId: socket?.id,
-      pairRequestLoading,
     });
+    if (!cid) return;
+    if (pairRequestBusyRef.current) {
+      if (pairRequestLoading) return;
+      pairRequestBusyRef.current = false;
+    }
     const token = (await getPersistedAccessToken())?.trim();
     if (!token) {
       Alert.alert('Oturum', 'Giriş yapın ve tekrar deneyin.');
@@ -1246,6 +1251,13 @@ export default function MuhabbetChatScreen({
     }
     pairRequestBusyRef.current = true;
     setPairRequestLoading(true);
+    setTimeout(() => {
+      if (pairRequestBusyRef.current) {
+        pairRequestBusyRef.current = false;
+        setPairRequestLoading(false);
+        console.warn("[leylek-pair] busy safety reset");
+      }
+    }, 15000);
     let finished = false;
     const finish = () => {
       if (finished) return;
