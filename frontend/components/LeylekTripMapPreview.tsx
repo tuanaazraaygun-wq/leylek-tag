@@ -10,6 +10,7 @@ type LeylekTripMapPreviewProps = {
   dropoff?: Coord | null;
   passengerLocation?: Coord | null;
   driverLocation?: Coord | null;
+  routePolyline?: string | null;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -34,6 +35,39 @@ function isCoord(v?: Coord | null): v is Coord {
   return !!v && Number.isFinite(v.latitude) && Number.isFinite(v.longitude);
 }
 
+function decodePolyline(encoded?: string | null): Coord[] {
+  if (!encoded || typeof encoded !== 'string') return [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const coordinates: Coord[] = [];
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    const deltaLat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += deltaLat;
+
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    const deltaLng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += deltaLng;
+
+    coordinates.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return coordinates.filter(isCoord);
+}
+
 function MarkerBubble({ label, color, icon }: { label: string; color: string; icon: keyof typeof Ionicons.glyphMap }) {
   return (
     <View style={[styles.markerBubble, { borderColor: color }]}>
@@ -48,13 +82,15 @@ export default function LeylekTripMapPreview({
   dropoff,
   passengerLocation,
   driverLocation,
+  routePolyline,
   style,
 }: LeylekTripMapPreviewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+  const routeCoordinates = useMemo(() => decodePolyline(routePolyline), [routePolyline]);
   const coords = useMemo(
-    () => [pickup, dropoff, passengerLocation, driverLocation].filter(isCoord),
-    [pickup, dropoff, passengerLocation, driverLocation],
+    () => [pickup, dropoff, passengerLocation, driverLocation, ...routeCoordinates].filter(isCoord),
+    [pickup, dropoff, passengerLocation, driverLocation, routeCoordinates],
   );
 
   useEffect(() => {
@@ -129,7 +165,16 @@ export default function LeylekTripMapPreview({
             lineCap="round"
           />
         ) : null}
-        {isCoord(pickup) && isCoord(dropoff) ? (
+        {routeCoordinates.length >= 2 ? (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#EA580C"
+            strokeWidth={8}
+            lineDashPattern={[12, 6]}
+            lineJoin="round"
+            lineCap="round"
+          />
+        ) : isCoord(pickup) && isCoord(dropoff) ? (
           <Polyline
             coordinates={[pickup, dropoff]}
             strokeColor="#EA580C"

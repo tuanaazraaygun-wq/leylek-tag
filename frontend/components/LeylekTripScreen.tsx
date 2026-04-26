@@ -16,8 +16,13 @@ import { useRouter } from 'expo-router';
 import { getOrCreateSocket } from '../contexts/SocketContext';
 import { getPersistedAccessToken, getPersistedUserRaw } from '../lib/sessionToken';
 import { agoraUidFromUserId } from '../lib/agoraUid';
-import type { MuhabbetTripCallSocketPayload, MuhabbetTripSession, MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
-import { agoraVoiceService } from '../services/agoraVoiceService';
+import type {
+  MuhabbetTripCallSocketPayload,
+  MuhabbetTripSession,
+  MuhabbetTripSessionSocketPayload,
+  MuhabbetTripTrustSocketPayload,
+} from '../lib/muhabbetTripTypes';
+import { muhabbetAgoraVoiceService } from '../services/muhabbetAgoraVoiceService';
 import LeylekTripLiveRideChrome from './LeylekTripLiveRideChrome';
 
 type LeylekTripScreenProps = {
@@ -69,6 +74,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [callState, setCallState] = useState<CallState>('idle');
   const [callBusy, setCallBusy] = useState(false);
   const [callPayload, setCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
+  const [trustBusy, setTrustBusy] = useState(false);
   const joinedCallKeyRef = useRef('');
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
@@ -140,12 +146,20 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const onCallEnd = (payload: MuhabbetTripCallSocketPayload) => {
       console.log('[leylek-trip] event', 'muhabbet_trip_call_end', payload);
       if (!callMatches(payload)) return;
-      void agoraVoiceService.leaveChannelAndDestroy();
-      agoraVoiceService.resetCallbacks();
+      void muhabbetAgoraVoiceService.leaveChannelAndDestroy();
+      muhabbetAgoraVoiceService.resetCallbacks();
       joinedCallKeyRef.current = '';
       setCallPayload(null);
       setCallState('idle');
       setCallBusy(false);
+    };
+    const onTrustRequested = (payload: MuhabbetTripTrustSocketPayload) => {
+      console.log('[leylek-trip] event', 'muhabbet_trip_trust_requested', payload);
+      if (!callMatches(payload)) return;
+      setTrustBusy(false);
+      if (String(payload.requester_user_id || '').trim().toLowerCase() !== myId) {
+        Alert.alert('Güven AL', 'Karşı taraf Muhabbet güven kontrolü istedi. Bu akış yakında aktif olacak.');
+      }
     };
     const joinPayload = { session_id: sessionId };
     console.log('[leylek-trip] emit', 'muhabbet_trip_join', joinPayload);
@@ -157,6 +171,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     socket.on('muhabbet_trip_call_start', onCallStart);
     socket.on('muhabbet_trip_call_join', onCallJoin);
     socket.on('muhabbet_trip_call_end', onCallEnd);
+    socket.on('muhabbet_trip_trust_requested', onTrustRequested);
     return () => {
       const leavePayload = { session_id: sessionId };
       console.log('[leylek-trip] emit', 'muhabbet_trip_leave', leavePayload);
@@ -168,8 +183,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       socket.off('muhabbet_trip_call_start', onCallStart);
       socket.off('muhabbet_trip_call_join', onCallJoin);
       socket.off('muhabbet_trip_call_end', onCallEnd);
-      void agoraVoiceService.leaveChannelAndDestroy();
-      agoraVoiceService.resetCallbacks();
+      socket.off('muhabbet_trip_trust_requested', onTrustRequested);
+      void muhabbetAgoraVoiceService.leaveChannelAndDestroy();
+      muhabbetAgoraVoiceService.resetCallbacks();
     };
   }, [loadSession, myId, sessionId]);
 
@@ -232,8 +248,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
       Alert.alert('Mikrofon izni', 'Sesli görüşme için mikrofon izni gerekli.');
       return false;
     }
-    await agoraVoiceService.initialize();
-    agoraVoiceService.setCallbacks({
+    await muhabbetAgoraVoiceService.initialize();
+    muhabbetAgoraVoiceService.setCallbacks({
       onJoinChannelSuccess: () => {
         setCallState('active');
         setCallBusy(false);
@@ -248,8 +264,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         Alert.alert('Arama', msg || 'Agora bağlantı hatası.');
       },
     });
-    agoraVoiceService.resetJoinGate();
-    await agoraVoiceService.joinChannel(channelName, token, agoraUidFromUserId(myId));
+    muhabbetAgoraVoiceService.resetJoinGate();
+    await muhabbetAgoraVoiceService.joinChannel(channelName, token, agoraUidFromUserId(myId));
     return true;
   }, [ensureMicPermission, myId, sessionId]);
 
@@ -280,13 +296,23 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     const payload = { session_id: sessionId };
     console.log('[leylek-trip] emit', 'muhabbet_trip_call_end', payload);
     getOrCreateSocket().emit('muhabbet_trip_call_end', payload);
-    await agoraVoiceService.leaveChannelAndDestroy();
-    agoraVoiceService.resetCallbacks();
+    await muhabbetAgoraVoiceService.leaveChannelAndDestroy();
+    muhabbetAgoraVoiceService.resetCallbacks();
     joinedCallKeyRef.current = '';
     setCallPayload(null);
     setCallState('idle');
     setCallBusy(false);
   }, [sessionId]);
+
+  const requestTrust = useCallback(() => {
+    if (isTerminal || !session) return;
+    const payload = { session_id: sessionId };
+    console.log('[leylek-trip] emit', 'muhabbet_trip_trust_request', payload);
+    setTrustBusy(true);
+    getOrCreateSocket().emit('muhabbet_trip_trust_request', payload);
+    Alert.alert('Güven AL', 'Muhabbet güven isteği gönderildi. Bu izole akışın canlı görüşme adımı yakında aktif olacak.');
+    setTimeout(() => setTrustBusy(false), 1500);
+  }, [isTerminal, session, sessionId]);
 
   useEffect(() => {
     if (callState !== 'outgoing' || !callPayload || !myId) return;
@@ -339,6 +365,9 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         dropoffText={session.dropoff_text || 'Sohbette belirlenen varış noktası'}
         agreedPrice={session.agreed_price}
         vehicleKind={session.vehicle_kind}
+        routePolyline={session.route_polyline}
+        routeDistanceKm={session.route_distance_km}
+        routeDurationMin={session.route_duration_min}
         pickup={locations.pickup}
         dropoff={locations.dropoff}
         passengerLocation={locations.passenger}
@@ -347,12 +376,14 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         actionBusy={actionBusy}
         callState={callState}
         callBusy={callBusy}
+        trustBusy={trustBusy}
         canStart={isDriver && session.status === 'ready'}
         canFinish={isDriver && (session.status === 'ready' || session.status === 'started')}
         onShareLocation={() => void shareLocation()}
         onStartCall={startCall}
         onJoinCall={() => void joinCall()}
         onEndCall={() => void endCall()}
+        onTrustRequest={requestTrust}
         onStart={() => emitAction('muhabbet_trip_start')}
         onFinish={() => emitAction('muhabbet_trip_finish')}
         onCancel={() => emitAction('muhabbet_trip_cancel')}

@@ -26,6 +26,9 @@ type LeylekTripLiveRideChromeProps = {
   dropoffText: string;
   agreedPrice?: number | string | null;
   vehicleKind?: string | null;
+  routePolyline?: string | null;
+  routeDistanceKm?: number | null;
+  routeDurationMin?: number | null;
   pickup?: Coord | null;
   dropoff?: Coord | null;
   passengerLocation?: Coord | null;
@@ -34,12 +37,14 @@ type LeylekTripLiveRideChromeProps = {
   actionBusy: boolean;
   callState: 'idle' | 'incoming' | 'outgoing' | 'active';
   callBusy: boolean;
+  trustBusy: boolean;
   canStart: boolean;
   canFinish: boolean;
   onShareLocation: () => void;
   onStartCall: () => void;
   onJoinCall: () => void;
   onEndCall: () => void;
+  onTrustRequest: () => void;
   onStart: () => void;
   onFinish: () => void;
   onCancel: () => void;
@@ -63,6 +68,9 @@ export default function LeylekTripLiveRideChrome({
   dropoffText,
   agreedPrice,
   vehicleKind,
+  routePolyline,
+  routeDistanceKm,
+  routeDurationMin,
   pickup,
   dropoff,
   passengerLocation,
@@ -71,12 +79,14 @@ export default function LeylekTripLiveRideChrome({
   actionBusy,
   callState,
   callBusy,
+  trustBusy,
   canStart,
   canFinish,
   onShareLocation,
   onStartCall,
   onJoinCall,
   onEndCall,
+  onTrustRequest,
   onStart,
   onFinish,
   onCancel,
@@ -115,6 +125,10 @@ export default function LeylekTripLiveRideChrome({
       onStartCall();
     }
   };
+  const routeMetricLabel =
+    routeDistanceKm != null && Number.isFinite(Number(routeDistanceKm))
+      ? `${Number(routeDistanceKm).toFixed(1)} km${routeDurationMin != null ? ` • ${Math.max(1, Math.round(Number(routeDurationMin)))} dk` : ''}`
+      : null;
 
   return (
     <View style={styles.container}>
@@ -140,6 +154,7 @@ export default function LeylekTripLiveRideChrome({
           dropoff={dropoff}
           passengerLocation={passengerLocation}
           driverLocation={driverLocation}
+          routePolyline={routePolyline}
           style={styles.map}
         />
       </View>
@@ -175,8 +190,13 @@ export default function LeylekTripLiveRideChrome({
                 <View style={styles.routeTextStack}>
                   <Text style={styles.routeLabelModern}>Hedef</Text>
                   <Text style={styles.routeValueModern} numberOfLines={1}>
-                    {dropoffText}
+                    {routeMetricLabel || dropoffText}
                   </Text>
+                  {routeMetricLabel ? (
+                    <Text style={styles.routePolylineHint} numberOfLines={1}>
+                      {dropoffText}
+                    </Text>
+                  ) : null}
                 </View>
                 {agreedPrice != null ? (
                   <View style={styles.routeRowTrailColumn}>
@@ -284,9 +304,9 @@ export default function LeylekTripLiveRideChrome({
                 </View>
                 <View style={styles.tripGuvenMirrorWrap}>
                   <Pressable
-                    onPress={onShareLocation}
-                    disabled={sendingLocation || isTerminal}
-                    style={({ pressed }) => [styles.tripGuvenFabCompact, (pressed || sendingLocation || isTerminal) && { opacity: 0.7 }]}
+                    onPress={onTrustRequest}
+                    disabled={trustBusy || isTerminal}
+                    style={({ pressed }) => [styles.tripGuvenFabCompact, (pressed || trustBusy || isTerminal) && { opacity: 0.7 }]}
                   >
                     <LinearGradient
                       colors={['#0D9488', '#059669', '#10B981', '#34D399']}
@@ -295,8 +315,8 @@ export default function LeylekTripLiveRideChrome({
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      {sendingLocation ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="locate" size={20} color="#FFF" />}
-                      <Text style={styles.tripGuvenFabLabel}>Konum</Text>
+                      {trustBusy ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="shield-checkmark" size={20} color="#FFF" />}
+                      <Text style={styles.tripGuvenFabLabel}>Güven AL</Text>
                     </LinearGradient>
                   </Pressable>
                 </View>

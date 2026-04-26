@@ -58,6 +58,16 @@ export type MuhabbetTripCallSocketPayload = {
   caller_id?: string;
   joined_user_id?: string;
   ended_by_user_id?: string;
+  agora_app_id?: string;
   agora_token?: string;
   agora_uid?: number;
+};
+
+export type MuhabbetTripTrustSocketPayload = {
+  session_id?: string;
+  sessionId?: string;
+  conversation_id?: string | null;
+  requester_user_id?: string;
+  target_user_id?: string;
+  status?: 'requested' | 'placeholder';
 };

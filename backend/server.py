@@ -11385,6 +11385,8 @@ async def get_realtime_channel_info(trip_id: str = None, user_id: str = None):
 # - Yoksa mevcut hardcoded değerle geriye dönük uyumlu devam et
 AGORA_APP_ID = (os.getenv("AGORA_APP_ID") or "94d93f08ffb84b90b4231d4988463464").strip()
 AGORA_APP_CERTIFICATE = (os.getenv("AGORA_APP_CERTIFICATE") or "62116c6f9b534b7e9765c6659f4c1c73").strip()
+MUHABBET_AGORA_APP_ID = (os.getenv("MUHABBET_AGORA_APP_ID") or AGORA_APP_ID).strip()
+MUHABBET_AGORA_APP_CERTIFICATE = (os.getenv("MUHABBET_AGORA_APP_CERTIFICATE") or AGORA_APP_CERTIFICATE).strip()
 if not os.getenv("AGORA_APP_ID") or not os.getenv("AGORA_APP_CERTIFICATE"):
     logger.warning("⚠️ AGORA env eksik; fallback credentials kullanılıyor")
 
@@ -11429,6 +11431,39 @@ def generate_agora_token(
         return token
     except Exception as e:
         logger.error(f"Agora token üretme hatası: {e}")
+        return ""
+
+
+def generate_muhabbet_agora_token(
+    channel_name: str,
+    uid: int = 0,
+    user_id: Optional[str] = None,
+    expiration_seconds: int = 86400,
+) -> str:
+    """Muhabbet-only Agora token. Normal ride voice/trust lifecycle kullanmaz."""
+    if not MUHABBET_AGORA_APP_CERTIFICATE:
+        logger.warning("⚠️ Muhabbet Agora token üretilemiyor - certificate eksik")
+        return ""
+    try:
+        if not AGORA_TOKEN_AVAILABLE or RtcTokenBuilder is None:
+            logger.warning("⚠️ Agora token builder yok, Muhabbet boş token dönüyor")
+            return ""
+        from agora_token_builder.RtcTokenBuilder import Role_Publisher as ROLE_PUBLISHER
+        current_timestamp = int(time.time())
+        privilege_expired_ts = current_timestamp + expiration_seconds
+        resolved_uid = agora_uid_from_user_id(user_id) if user_id else int(uid or 0)
+        token = RtcTokenBuilder.buildTokenWithUid(
+            MUHABBET_AGORA_APP_ID,
+            MUHABBET_AGORA_APP_CERTIFICATE,
+            channel_name,
+            resolved_uid,
+            ROLE_PUBLISHER,
+            privilege_expired_ts,
+        )
+        logger.info("🎫 Muhabbet Agora token üretildi: %s uid=%s", channel_name, resolved_uid)
+        return token
+    except Exception as e:
+        logger.error("Muhabbet Agora token üretme hatası: %s", e)
         return ""
 
 @api_router.get("/voice/get-token")
@@ -22513,8 +22548,9 @@ def _muhabbet_trip_call_payload(session_row: dict, uid: str) -> dict:
         "session_id": session_id,
         "conversation_id": session_row.get("conversation_id"),
         "channel_name": channel_name,
+        "agora_app_id": MUHABBET_AGORA_APP_ID,
         "agora_uid": agora_uid_from_user_id(uid),
-        "agora_token": generate_agora_token(channel_name, user_id=uid),
+        "agora_token": generate_muhabbet_agora_token(channel_name, user_id=uid),
     }
 
 
@@ -22774,6 +22810,39 @@ async def sio_muhabbet_trip_call_end(sid, data):
         await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
     except Exception as e:
         logger.warning("muhabbet_trip_call_end: %s", e)
+
+
+@sio.on("muhabbet_trip_trust_request")
+async def sio_muhabbet_trip_trust_request(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            await sio.emit("muhabbet_trip_error", {"code": "not_active", "message": "Oturum aktif değil."}, room=sid)
+            return
+        passenger_id = str(row.get("passenger_id") or "").strip().lower()
+        driver_id = str(row.get("driver_id") or "").strip().lower()
+        uid_lo = str(uid).strip().lower()
+        target_uid = driver_id if uid_lo == passenger_id else passenger_id
+        payload = {
+            "session_id": session_id,
+            "conversation_id": row.get("conversation_id"),
+            "requester_user_id": uid_lo,
+            "target_user_id": target_uid,
+            "status": "placeholder",
+        }
+        for target in (uid_lo, target_uid):
+            if target:
+                await emit_socket_event_to_user(target, "muhabbet_trip_trust_requested", payload)
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("muhabbet_trip_trust_request: %s", e)
 
 
 @api_router.get("/muhabbet/conversations/me")
