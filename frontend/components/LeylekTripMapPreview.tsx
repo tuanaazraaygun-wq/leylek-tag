@@ -10,6 +10,7 @@ type LeylekTripMapPreviewProps = {
   dropoff?: Coord | null;
   passengerLocation?: Coord | null;
   driverLocation?: Coord | null;
+  deviceLocation?: Coord | null;
   routePolyline?: string | null;
   style?: StyleProp<ViewStyle>;
 };
@@ -82,22 +83,29 @@ export default function LeylekTripMapPreview({
   dropoff,
   passengerLocation,
   driverLocation,
+  deviceLocation,
   routePolyline,
   style,
 }: LeylekTripMapPreviewProps) {
   const mapRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
   const routeCoordinates = useMemo(() => decodePolyline(routePolyline), [routePolyline]);
-  const coords = useMemo(
-    () => [pickup, dropoff, passengerLocation, driverLocation, ...routeCoordinates].filter(isCoord),
+  const fitCoords = useMemo(
+    () => [passengerLocation, driverLocation, pickup, dropoff, ...routeCoordinates].filter(isCoord),
     [pickup, dropoff, passengerLocation, driverLocation, routeCoordinates],
+  );
+  const center = useMemo(
+    () =>
+      [passengerLocation, driverLocation, pickup, dropoff, deviceLocation].filter(isCoord)[0] ||
+      DEFAULT_TR_MAP_FALLBACK_CENTER,
+    [deviceLocation, driverLocation, dropoff, passengerLocation, pickup],
   );
 
   useEffect(() => {
-    if (!mapReady || !mapRef.current || coords.length < 2) return;
+    if (!mapReady || !mapRef.current || fitCoords.length < 2) return;
     const t = setTimeout(() => {
       try {
-        mapRef.current?.fitToCoordinates(coords, {
+        mapRef.current?.fitToCoordinates(fitCoords, {
           edgePadding: { top: 80, right: 48, bottom: 80, left: 48 },
           animated: true,
         });
@@ -106,9 +114,7 @@ export default function LeylekTripMapPreview({
       }
     }, 250);
     return () => clearTimeout(t);
-  }, [coords, mapReady]);
-
-  const center = coords[0] || DEFAULT_TR_MAP_FALLBACK_CENTER;
+  }, [fitCoords, mapReady]);
 
   if (Platform.OS === 'web' || !MapView) {
     return (

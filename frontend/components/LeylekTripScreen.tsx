@@ -75,6 +75,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
   const [callBusy, setCallBusy] = useState(false);
   const [callPayload, setCallPayload] = useState<MuhabbetTripCallSocketPayload | null>(null);
   const [trustBusy, setTrustBusy] = useState(false);
+  const [deviceLocation, setDeviceLocation] = useState<Coord | null>(null);
   const joinedCallKeyRef = useRef('');
 
   const isDriver = !!session && myId === String(session.driver_id || '').trim().toLowerCase();
@@ -111,6 +112,27 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
     void currentUserId().then(setMyId);
     void loadSession();
   }, [loadSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDeviceLocation = async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (perm.status !== 'granted') return;
+        const last = await Location.getLastKnownPositionAsync();
+        const pos = last || (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        if (!cancelled && pos?.coords) {
+          setDeviceLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        }
+      } catch {
+        /* Device location is only a map fallback; absence should not block the trip screen. */
+      }
+    };
+    void loadDeviceLocation();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -208,6 +230,7 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setDeviceLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
       const payload = {
         session_id: sessionId,
         latitude: pos.coords.latitude,
@@ -372,6 +395,8 @@ export default function LeylekTripScreen({ apiBaseUrl, sessionId }: LeylekTripSc
         dropoff={locations.dropoff}
         passengerLocation={locations.passenger}
         driverLocation={locations.driver}
+        deviceLocation={deviceLocation}
+        routeDataMissing={!locations.pickup || !locations.dropoff}
         sendingLocation={sendingLocation}
         actionBusy={actionBusy}
         callState={callState}

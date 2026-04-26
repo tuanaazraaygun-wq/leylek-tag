@@ -22304,6 +22304,118 @@ def _muhabbet_trip_session_for_member_or_403(session_id: str, uid: str) -> dict:
     return row
 
 
+def _muhabbet_trip_first_value(*values):
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _muhabbet_trip_float_or_none(value):
+    try:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        out = float(value)
+        return out if math.isfinite(out) else None
+    except Exception:
+        return None
+
+
+def _muhabbet_trip_hydrate_source(row: dict) -> dict:
+    listing_id = str((row or {}).get("listing_id") or "").strip().lower()
+    match_id = str((row or {}).get("listing_match_request_id") or "").strip().lower()
+    logger.info("[muhabbet_trip_session] hydrate_source listing_id=%s match_id=%s", listing_id or None, match_id or None)
+
+    match_row = {}
+    if match_id:
+        try:
+            mr = supabase.table("listing_match_requests").select("*").eq("id", match_id).limit(1).execute()
+            if mr.data:
+                match_row = dict(mr.data[0])
+                listing_id = listing_id or str(match_row.get("listing_id") or "").strip().lower()
+        except Exception as e:
+            logger.warning("[muhabbet_trip_session] hydrate match lookup failed match_id=%s err=%s", match_id, e)
+
+    listing_raw = {}
+    listing = {}
+    if listing_id:
+        try:
+            lr = supabase.table("ride_listings").select("*").eq("id", listing_id).limit(1).execute()
+            if lr.data:
+                listing_raw = dict(lr.data[0])
+                listing = _ride_listing_response_row(listing_raw)
+        except Exception as e:
+            logger.warning("[muhabbet_trip_session] hydrate listing lookup failed listing_id=%s err=%s", listing_id, e)
+
+    pickup_lat = _muhabbet_trip_float_or_none(
+        _muhabbet_trip_first_value(row.get("pickup_lat"), listing.get("start_lat"), listing_raw.get("start_lat"), listing_raw.get("pickup_lat"))
+    )
+    pickup_lng = _muhabbet_trip_float_or_none(
+        _muhabbet_trip_first_value(row.get("pickup_lng"), listing.get("start_lng"), listing_raw.get("start_lng"), listing_raw.get("pickup_lng"))
+    )
+    dropoff_lat = _muhabbet_trip_float_or_none(
+        _muhabbet_trip_first_value(row.get("dropoff_lat"), listing.get("end_lat"), listing_raw.get("end_lat"), listing_raw.get("dropoff_lat"))
+    )
+    dropoff_lng = _muhabbet_trip_float_or_none(
+        _muhabbet_trip_first_value(row.get("dropoff_lng"), listing.get("end_lng"), listing_raw.get("end_lng"), listing_raw.get("dropoff_lng"))
+    )
+    if pickup_lat is None or pickup_lng is None or dropoff_lat is None or dropoff_lng is None:
+        logger.warning("[muhabbet_trip_session] missing pickup/dropoff coordinates")
+
+    route_distance = _muhabbet_trip_float_or_none(
+        _muhabbet_trip_first_value(
+            row.get("route_distance_km"),
+            row.get("distance_km"),
+            listing.get("route_distance_km"),
+            listing.get("distance_km"),
+            listing_raw.get("route_distance_km"),
+            listing_raw.get("distance_km"),
+        )
+    )
+    route_duration = _muhabbet_trip_float_or_none(
+        _muhabbet_trip_first_value(
+            row.get("route_duration_min"),
+            row.get("estimated_minutes"),
+            listing.get("route_duration_min"),
+            listing.get("estimated_minutes"),
+            listing_raw.get("route_duration_min"),
+            listing_raw.get("estimated_minutes"),
+        )
+    )
+
+    hydrated = {
+        "listing_id": listing_id or None,
+        "listing_match_request_id": match_id or None,
+        "requester_user_id": row.get("requester_user_id"),
+        "city": _muhabbet_trip_first_value(row.get("city"), listing.get("city"), listing_raw.get("city")),
+        "pickup_text": _muhabbet_trip_first_value(row.get("pickup_text"), listing.get("from_text"), listing_raw.get("from_text"), listing_raw.get("pickup_text")),
+        "pickup_lat": pickup_lat,
+        "pickup_lng": pickup_lng,
+        "dropoff_text": _muhabbet_trip_first_value(row.get("dropoff_text"), listing.get("to_text"), listing_raw.get("to_text"), listing_raw.get("dropoff_text")),
+        "dropoff_lat": dropoff_lat,
+        "dropoff_lng": dropoff_lng,
+        "agreed_price": _muhabbet_trip_first_value(row.get("agreed_price"), listing.get("price_amount"), listing_raw.get("price_amount"), match_row.get("agreed_price")),
+        "vehicle_kind": _canonical_vehicle_kind(_muhabbet_trip_first_value(row.get("vehicle_kind"), listing.get("vehicle_kind"), listing_raw.get("vehicle_kind"))),
+        "payment_method": _canonical_passenger_payment_method(_muhabbet_trip_first_value(row.get("payment_method"), listing.get("payment_method"), listing_raw.get("payment_method"), listing_raw.get("passenger_payment_method"))),
+        "route_polyline": _muhabbet_trip_first_value(row.get("route_polyline"), listing.get("route_polyline"), listing.get("overview_polyline"), listing_raw.get("route_polyline"), listing_raw.get("overview_polyline")),
+        "route_distance_km": route_distance,
+        "route_duration_min": int(round(route_duration)) if route_duration is not None else None,
+        "route_source": _muhabbet_trip_first_value(row.get("route_source"), listing.get("route_source"), listing_raw.get("route_source")),
+    }
+    if hydrated.get("route_polyline") or hydrated.get("route_distance_km") is not None or hydrated.get("route_duration_min") is not None:
+        hydrated["route_updated_at"] = datetime.now(timezone.utc).isoformat()
+    logger.info(
+        "[muhabbet_trip_session] hydrated pickup=%s dropoff=%s price=%s",
+        {"text": hydrated.get("pickup_text"), "lat": hydrated.get("pickup_lat"), "lng": hydrated.get("pickup_lng")},
+        {"text": hydrated.get("dropoff_text"), "lat": hydrated.get("dropoff_lat"), "lng": hydrated.get("dropoff_lng")},
+        hydrated.get("agreed_price"),
+    )
+    return {k: v for k, v in hydrated.items() if v is not None}
+
+
 def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
     """Accepted conversion request -> isolated Muhabbet trip session. Never creates/touches tags."""
     rid = str((row or {}).get("id") or "").strip().lower()
@@ -22321,12 +22433,14 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
         logger.info("[muhabbet_trip_session] ready session_id=%s request_id=%s", out.get("id"), rid)
         return out
 
+    hydrated = _muhabbet_trip_hydrate_source(row)
     insert_payload = {
         "conversion_request_id": rid,
         "conversation_id": row.get("conversation_id"),
         "passenger_id": row.get("passenger_id"),
         "driver_id": row.get("driver_id"),
         "status": "ready",
+        **hydrated,
     }
     logger.info("[muhabbet_trip_session] insert_payload=%s", insert_payload)
     ins = (

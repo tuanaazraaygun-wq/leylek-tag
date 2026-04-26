@@ -33,6 +33,8 @@ type LeylekTripLiveRideChromeProps = {
   dropoff?: Coord | null;
   passengerLocation?: Coord | null;
   driverLocation?: Coord | null;
+  deviceLocation?: Coord | null;
+  routeDataMissing?: boolean;
   sendingLocation: boolean;
   actionBusy: boolean;
   callState: 'idle' | 'incoming' | 'outgoing' | 'active';
@@ -75,6 +77,8 @@ export default function LeylekTripLiveRideChrome({
   dropoff,
   passengerLocation,
   driverLocation,
+  deviceLocation,
+  routeDataMissing,
   sendingLocation,
   actionBusy,
   callState,
@@ -154,6 +158,7 @@ export default function LeylekTripLiveRideChrome({
           dropoff={dropoff}
           passengerLocation={passengerLocation}
           driverLocation={driverLocation}
+          deviceLocation={deviceLocation}
           routePolyline={routePolyline}
           style={styles.map}
         />
@@ -206,6 +211,13 @@ export default function LeylekTripLiveRideChrome({
                   </View>
                 ) : null}
               </View>
+
+              {routeDataMissing ? (
+                <View style={styles.routeWarning}>
+                  <Ionicons name="alert-circle-outline" size={15} color="#B45309" />
+                  <Text style={styles.routeWarningText}>Alış/varış konumu henüz belirlenmedi.</Text>
+                </View>
+              ) : null}
 
               <View style={styles.priceRow}>
                 <Text style={styles.priceLabel}>{statusLabel}</Text>
@@ -454,6 +466,23 @@ const styles = StyleSheet.create({
   },
   routeValueModern: { fontSize: 17, fontWeight: '700', color: '#0F172A', letterSpacing: 0.15, marginTop: 0 },
   routePolylineHint: { fontSize: 10, color: '#94A3B8', marginTop: 2, fontWeight: '500' },
+  routeWarning: {
+    marginTop: 4,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 12,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  routeWarningText: {
+    flex: 1,
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   offeredPriceBadge: {
     backgroundColor: '#0284C7',
     paddingHorizontal: 10,
