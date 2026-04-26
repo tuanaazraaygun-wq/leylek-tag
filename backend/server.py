@@ -22320,10 +22320,9 @@ def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
 
 async def _emit_muhabbet_trip_session_ready(session_row: dict) -> None:
     payload = {
-        "session_id": session_row.get("id"),
         "request_id": session_row.get("conversion_request_id"),
         "conversation_id": session_row.get("conversation_id"),
-        "session": _muhabbet_trip_session_public(session_row),
+        "session_id": session_row.get("id"),
     }
     for uid in (
         str(session_row.get("passenger_id") or "").strip(),
@@ -22459,7 +22458,6 @@ async def sio_muhabbet_trip_convert_accept(sid, data):
             "request_id": rid,
             "conversation_id": cid,
             "session_id": session_row.get("id"),
-            "session": _muhabbet_trip_session_public(session_row),
         }
         await emit_socket_event_to_user(str(row.get("requester_user_id") or "").strip(), "muhabbet_trip_convert_confirmed", payload)
         await emit_socket_event_to_user(uid, "muhabbet_trip_convert_confirmed", payload)
