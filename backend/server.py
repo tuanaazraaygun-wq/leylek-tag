@@ -21865,7 +21865,7 @@ def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict
                     "err": "cooldown",
                     "detail": f"Çok sık istek. {max(1, wait)} sn sonra tekrar deneyin.",
                 }
-        ir = supabase.table("users").select("id, role").eq("id", uid).limit(1).execute()
+        ir = supabase.table("users").select("id").eq("id", uid).limit(1).execute()
         initiator_role = ""
         if ir.data and ir.data[0].get("id"):
             initiator_role = str(ir.data[0].get("role") or "").strip().lower()
