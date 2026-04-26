@@ -44,6 +44,7 @@ import {
   storedMessagesToDisplayRows,
 } from '../lib/muhabbetMessagesStorage';
 import MuhabbetWatermark from './MuhabbetWatermark';
+import type { MuhabbetTripSessionSocketPayload } from '../lib/muhabbetTripTypes';
 
 const PRIMARY_GRAD = ['#3B82F6', '#60A5FA'] as const;
 /** Sürücü / yolcu balon — istenen gradientler */
@@ -300,6 +301,7 @@ export default function MuhabbetChatScreen({
   const [tripConvertLoading, setTripConvertLoading] = useState(false);
   const [tripConvertState, setTripConvertState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
   const tripConvertStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
+  const tripSessionNavRef = useRef<string | null>(null);
   /** Üst bilgi şeridi: küçük kartlar, kapatılabilir / dönüşümlü */
   const [infoStripDismissed, setInfoStripDismissed] = useState(false);
   const [infoRotateIx, setInfoRotateIx] = useState(0);
@@ -409,6 +411,13 @@ export default function MuhabbetChatScreen({
   useEffect(() => {
     tripConvertStateRef.current = tripConvertState;
   }, [tripConvertState]);
+
+  const navigateToLeylekTripSession = useCallback((sessionIdRaw?: string | null) => {
+    const sessionId = String(sessionIdRaw || '').trim().toLowerCase();
+    if (!sessionId || tripSessionNavRef.current === sessionId) return;
+    tripSessionNavRef.current = sessionId;
+    router.push(`/leylek-trip/${encodeURIComponent(sessionId)}` as Href);
+  }, [router]);
 
   useEffect(() => {
     if (!cid || ctx?.matched_via_leylek_key) return;
@@ -624,7 +633,7 @@ export default function MuhabbetChatScreen({
       setTripConvertLoading(false);
       setTripConvertState('pending');
     };
-    const onConvertConfirmed = (data: { conversation_id?: string }) => {
+    const onConvertConfirmed = (data: MuhabbetTripSessionSocketPayload) => {
       if (!convMatches(data)) return;
       setTripConvertLoading(false);
       setTripConvertInModal(null);
@@ -632,6 +641,11 @@ export default function MuhabbetChatScreen({
       if (tripConvertStateRef.current !== 'confirmed') {
         pushSystemCard('green', 'Yolculuk başlatma isteği kabul edildi.');
       }
+      navigateToLeylekTripSession(data?.session_id || data?.session?.id || null);
+    };
+    const onSessionReady = (data: MuhabbetTripSessionSocketPayload) => {
+      if (!convMatches(data)) return;
+      navigateToLeylekTripSession(data?.session_id || data?.session?.id || null);
     };
     const onConvertDeclined = (data: { conversation_id?: string }) => {
       if (!convMatches(data)) return;
@@ -652,16 +666,18 @@ export default function MuhabbetChatScreen({
     socket.on('muhabbet_trip_convert_request', onConvertRequest);
     socket.on('muhabbet_trip_convert_request_sent', onConvertSent);
     socket.on('muhabbet_trip_convert_confirmed', onConvertConfirmed);
+    socket.on('muhabbet_trip_session_ready', onSessionReady);
     socket.on('muhabbet_trip_convert_declined', onConvertDeclined);
     socket.on('muhabbet_trip_convert_error', onConvertError);
     return () => {
       socket.off('muhabbet_trip_convert_request', onConvertRequest);
       socket.off('muhabbet_trip_convert_request_sent', onConvertSent);
       socket.off('muhabbet_trip_convert_confirmed', onConvertConfirmed);
+      socket.off('muhabbet_trip_session_ready', onSessionReady);
       socket.off('muhabbet_trip_convert_declined', onConvertDeclined);
       socket.off('muhabbet_trip_convert_error', onConvertError);
     };
-  }, [cid, pushSystemCard]);
+  }, [cid, navigateToLeylekTripSession, pushSystemCard]);
 
   /** Karşı taraftan Leylek Anahtar isteği — sunucu emit_socket_event_to_user ile (oda join şart değil). */
   useEffect(() => {

@@ -324,6 +324,12 @@ def muhabbet_room(conversation_id: str) -> str:
     return f"muhabbet_{c}" if c else "muhabbet_"
 
 
+def muhabbet_trip_room(session_id: str) -> str:
+    """Leylek Teklif Sende trip-like oturum odası; normal ride odalarıyla karışmaz."""
+    sid = str(session_id or "").strip().lower()
+    return f"muhabbet_trip_{sid}" if sid else "muhabbet_trip_"
+
+
 # Leylek Muhabbeti FCM: (receiver_user_id, conversation_id) -> time.monotonic() son push
 _muhabbet_last_push_mono: dict[tuple[str, str], float] = {}
 
@@ -22197,6 +22203,151 @@ async def _emit_muhabbet_trip_conversion_error(sid: str, code: str, detail: str)
     )
 
 
+def _muhabbet_trip_session_public(row: dict) -> dict:
+    """Public payload for Leylek Teklif Sende trip-like sessions only."""
+    if not isinstance(row, dict):
+        return {}
+    return {
+        "id": row.get("id"),
+        "session_id": row.get("id"),
+        "conversion_request_id": row.get("conversion_request_id"),
+        "conversation_id": row.get("conversation_id"),
+        "listing_id": row.get("listing_id"),
+        "listing_match_request_id": row.get("listing_match_request_id"),
+        "requester_user_id": row.get("requester_user_id"),
+        "passenger_id": row.get("passenger_id"),
+        "driver_id": row.get("driver_id"),
+        "status": row.get("status"),
+        "city": row.get("city"),
+        "pickup_text": row.get("pickup_text"),
+        "pickup_lat": row.get("pickup_lat"),
+        "pickup_lng": row.get("pickup_lng"),
+        "dropoff_text": row.get("dropoff_text"),
+        "dropoff_lat": row.get("dropoff_lat"),
+        "dropoff_lng": row.get("dropoff_lng"),
+        "agreed_price": row.get("agreed_price"),
+        "vehicle_kind": row.get("vehicle_kind"),
+        "payment_method": row.get("payment_method"),
+        "route_polyline": row.get("route_polyline"),
+        "route_distance_km": row.get("route_distance_km"),
+        "route_duration_min": row.get("route_duration_min"),
+        "route_source": row.get("route_source"),
+        "route_updated_at": row.get("route_updated_at"),
+        "passenger_location_lat": row.get("passenger_location_lat"),
+        "passenger_location_lng": row.get("passenger_location_lng"),
+        "passenger_location_updated_at": row.get("passenger_location_updated_at"),
+        "driver_location_lat": row.get("driver_location_lat"),
+        "driver_location_lng": row.get("driver_location_lng"),
+        "driver_location_updated_at": row.get("driver_location_updated_at"),
+        "started_at": row.get("started_at"),
+        "cancelled_at": row.get("cancelled_at"),
+        "cancelled_by_user_id": row.get("cancelled_by_user_id"),
+        "cancel_reason": row.get("cancel_reason"),
+        "finished_at": row.get("finished_at"),
+        "finished_by_user_id": row.get("finished_by_user_id"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
+
+
+def _muhabbet_trip_session_for_member_or_403(session_id: str, uid: str) -> dict:
+    sid = str(session_id or "").strip().lower()
+    uid_lo = str(uid or "").strip().lower()
+    try:
+        uuid.UUID(sid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Geçersiz Muhabbet yolculuk oturumu") from e
+    r = supabase.table("muhabbet_trip_sessions").select("*").eq("id", sid).limit(1).execute()
+    if not r.data:
+        raise HTTPException(status_code=404, detail="Muhabbet yolculuk oturumu bulunamadı")
+    row = dict(r.data[0])
+    if uid_lo not in (
+        str(row.get("passenger_id") or "").strip().lower(),
+        str(row.get("driver_id") or "").strip().lower(),
+    ):
+        raise HTTPException(status_code=403, detail="Bu Muhabbet yolculuk oturumuna erişim yetkiniz yok")
+    return row
+
+
+def _muhabbet_trip_create_or_get_session_for_request(row: dict) -> dict:
+    """Accepted conversion request -> isolated Muhabbet trip session. Never creates/touches tags."""
+    rid = str((row or {}).get("id") or "").strip().lower()
+    if not rid:
+        raise ValueError("conversion request id missing")
+    existing = (
+        supabase.table("muhabbet_trip_sessions")
+        .select("*")
+        .eq("conversion_request_id", rid)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        return dict(existing.data[0])
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ins = (
+        supabase.table("muhabbet_trip_sessions")
+        .insert(
+            {
+                "conversion_request_id": rid,
+                "conversation_id": row.get("conversation_id"),
+                "listing_id": row.get("listing_id"),
+                "listing_match_request_id": row.get("listing_match_request_id"),
+                "requester_user_id": row.get("requester_user_id"),
+                "passenger_id": row.get("passenger_id"),
+                "driver_id": row.get("driver_id"),
+                "status": "ready",
+                "city": row.get("city"),
+                "pickup_text": row.get("pickup_text"),
+                "pickup_lat": row.get("pickup_lat"),
+                "pickup_lng": row.get("pickup_lng"),
+                "dropoff_text": row.get("dropoff_text"),
+                "dropoff_lat": row.get("dropoff_lat"),
+                "dropoff_lng": row.get("dropoff_lng"),
+                "agreed_price": row.get("agreed_price"),
+                "vehicle_kind": row.get("vehicle_kind"),
+                "payment_method": row.get("payment_method"),
+                "created_at": now_iso,
+                "updated_at": now_iso,
+            }
+        )
+        .execute()
+    )
+    if not ins.data:
+        raise RuntimeError("muhabbet_trip_sessions insert failed")
+    return dict(ins.data[0])
+
+
+async def _emit_muhabbet_trip_session_ready(session_row: dict) -> None:
+    payload = {
+        "session_id": session_row.get("id"),
+        "request_id": session_row.get("conversion_request_id"),
+        "conversation_id": session_row.get("conversation_id"),
+        "session": _muhabbet_trip_session_public(session_row),
+    }
+    for uid in (
+        str(session_row.get("passenger_id") or "").strip(),
+        str(session_row.get("driver_id") or "").strip(),
+    ):
+        if uid:
+            await emit_socket_event_to_user(uid, "muhabbet_trip_session_ready", payload)
+
+
+async def _broadcast_muhabbet_trip_session_state(session_row: dict, event_name: str = "muhabbet_trip_session_updated") -> None:
+    payload = {
+        "session_id": session_row.get("id"),
+        "conversation_id": session_row.get("conversation_id"),
+        "session": _muhabbet_trip_session_public(session_row),
+    }
+    await sio.emit(event_name, payload, room=muhabbet_trip_room(str(session_row.get("id") or "")))
+    for uid in (
+        str(session_row.get("passenger_id") or "").strip(),
+        str(session_row.get("driver_id") or "").strip(),
+    ):
+        if uid:
+            await emit_socket_event_to_user(uid, event_name, payload)
+
+
 @sio.on("muhabbet_trip_convert_request")
 async def sio_muhabbet_trip_convert_request(sid, data):
     if not isinstance(data, dict):
@@ -22301,10 +22452,18 @@ async def sio_muhabbet_trip_convert_accept(sid, data):
         supabase.table("muhabbet_trip_conversion_requests").update(
             {"status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
         ).eq("id", rid).execute()
+        row = {**row, "status": "accepted", "responded_at": now_iso, "updated_at": now_iso}
+        session_row = _muhabbet_trip_create_or_get_session_for_request(row)
         logger.info("[trip_convert_accept] updated cid=%s request_id=%s target=%s", cid, rid, uid)
-        payload = {"request_id": rid, "conversation_id": cid}
+        payload = {
+            "request_id": rid,
+            "conversation_id": cid,
+            "session_id": session_row.get("id"),
+            "session": _muhabbet_trip_session_public(session_row),
+        }
         await emit_socket_event_to_user(str(row.get("requester_user_id") or "").strip(), "muhabbet_trip_convert_confirmed", payload)
         await emit_socket_event_to_user(uid, "muhabbet_trip_convert_confirmed", payload)
+        await _emit_muhabbet_trip_session_ready(session_row)
         logger.info("[trip_convert_confirmed] emitted cid=%s request_id=%s requester=%s target=%s", cid, rid, row.get("requester_user_id"), uid)
     except Exception as e:
         logger.exception("muhabbet_trip_convert_accept: %s", e)
@@ -22348,6 +22507,186 @@ async def sio_muhabbet_trip_convert_decline(sid, data):
         )
     except Exception as e:
         logger.warning("muhabbet_trip_convert_decline: %s", e)
+
+
+@api_router.get("/muhabbet/trip-sessions/{session_id}")
+async def muhabbet_trip_session_get(
+    session_id: str,
+    authenticated_user_id: str = Depends(get_authenticated_user_id_from_authorization),
+):
+    """Leylek Teklif Sende Phase 2 session detail; never reads normal ride tags."""
+    uid = await _muhabbet_listing_uid(authenticated_user_id)
+    row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+    return {"success": True, "session": _muhabbet_trip_session_public(row)}
+
+
+@sio.on("join_muhabbet_trip_session")
+async def sio_join_muhabbet_trip_session(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        await sio.emit("muhabbet_trip_error", {"code": "bad_request", "message": "session_id gerekli."}, room=sid)
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        room = muhabbet_trip_room(session_id)
+        await sio.enter_room(sid, room)
+        await sio.emit(
+            "joined_muhabbet_trip_session",
+            {"session_id": session_id, "room": room, "session": _muhabbet_trip_session_public(row)},
+            room=sid,
+        )
+    except HTTPException as e:
+        await sio.emit("muhabbet_trip_error", {"code": "forbidden", "message": str(e.detail)}, room=sid)
+    except Exception as e:
+        logger.warning("join_muhabbet_trip_session: %s", e)
+        await sio.emit("muhabbet_trip_error", {"code": "server_error", "message": "Oturuma katılamadı."}, room=sid)
+
+
+@sio.on("leave_muhabbet_trip_session")
+async def sio_leave_muhabbet_trip_session(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not session_id:
+        return
+    try:
+        await sio.leave_room(sid, muhabbet_trip_room(session_id))
+    except Exception:
+        pass
+
+
+@sio.on("muhabbet_trip_location_update")
+async def sio_muhabbet_trip_location_update(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        lat = float(data.get("latitude"))
+        lng = float(data.get("longitude"))
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            return
+        uid_lo = str(uid).strip().lower()
+        passenger_id = str(row.get("passenger_id") or "").strip().lower()
+        driver_id = str(row.get("driver_id") or "").strip().lower()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if uid_lo == passenger_id:
+            patch = {
+                "passenger_location_lat": lat,
+                "passenger_location_lng": lng,
+                "passenger_location_updated_at": now_iso,
+                "updated_at": now_iso,
+            }
+        elif uid_lo == driver_id:
+            patch = {
+                "driver_location_lat": lat,
+                "driver_location_lng": lng,
+                "driver_location_updated_at": now_iso,
+                "updated_at": now_iso,
+            }
+        else:
+            return
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        payload = {
+            "session_id": session_id,
+            "user_id": uid_lo,
+            "latitude": lat,
+            "longitude": lng,
+            "updated_at": now_iso,
+            "session": _muhabbet_trip_session_public(next_row),
+        }
+        await sio.emit("muhabbet_trip_location_updated", payload, room=muhabbet_trip_room(session_id))
+    except Exception as e:
+        logger.warning("muhabbet_trip_location_update: %s", e)
+
+
+@sio.on("muhabbet_trip_start")
+async def sio_muhabbet_trip_start(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("driver_id") or "").strip().lower() != str(uid).strip().lower():
+            await sio.emit("muhabbet_trip_error", {"code": "driver_required", "message": "Yalnızca sürücü başlatabilir."}, room=sid)
+            return
+        if str(row.get("status") or "").strip().lower() != "ready":
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        upd = supabase.table("muhabbet_trip_sessions").update(
+            {"status": "started", "started_at": now_iso, "updated_at": now_iso}
+        ).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, "status": "started", "started_at": now_iso, "updated_at": now_iso}
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_started")
+    except Exception as e:
+        logger.warning("muhabbet_trip_start: %s", e)
+
+
+@sio.on("muhabbet_trip_cancel")
+async def sio_muhabbet_trip_cancel(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("status") or "").strip().lower() in ("cancelled", "finished"):
+            return
+        reason = str(data.get("reason") or "").strip()[:300] or None
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "status": "cancelled",
+            "cancelled_at": now_iso,
+            "cancelled_by_user_id": str(uid).strip().lower(),
+            "cancel_reason": reason,
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_cancelled")
+    except Exception as e:
+        logger.warning("muhabbet_trip_cancel: %s", e)
+
+
+@sio.on("muhabbet_trip_finish")
+async def sio_muhabbet_trip_finish(sid, data):
+    if not isinstance(data, dict):
+        data = {}
+    uid = _muhabbet_socket_uid_from_sid(sid)
+    session_id = str(data.get("session_id") or data.get("sessionId") or "").strip().lower()
+    if not uid or not session_id:
+        return
+    try:
+        row = _muhabbet_trip_session_for_member_or_403(session_id, uid)
+        if str(row.get("driver_id") or "").strip().lower() != str(uid).strip().lower():
+            await sio.emit("muhabbet_trip_error", {"code": "driver_required", "message": "Yalnızca sürücü bitirebilir."}, room=sid)
+            return
+        if str(row.get("status") or "").strip().lower() not in ("ready", "started"):
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        patch = {
+            "status": "finished",
+            "finished_at": now_iso,
+            "finished_by_user_id": str(uid).strip().lower(),
+            "updated_at": now_iso,
+        }
+        upd = supabase.table("muhabbet_trip_sessions").update(patch).eq("id", session_id).execute()
+        next_row = dict(upd.data[0]) if upd.data else {**row, **patch}
+        await _broadcast_muhabbet_trip_session_state(next_row, "muhabbet_trip_finished")
+    except Exception as e:
+        logger.warning("muhabbet_trip_finish: %s", e)
 
 
 @api_router.get("/muhabbet/conversations/me")

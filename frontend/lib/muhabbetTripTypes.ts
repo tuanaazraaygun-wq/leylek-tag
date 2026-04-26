@@ -1,0 +1,50 @@
+export type MuhabbetTripStatus = 'ready' | 'started' | 'cancelled' | 'finished';
+
+export type MuhabbetTripSession = {
+  id: string;
+  session_id?: string;
+  conversion_request_id?: string | null;
+  conversation_id?: string | null;
+  listing_id?: string | null;
+  listing_match_request_id?: string | null;
+  requester_user_id?: string | null;
+  passenger_id: string;
+  driver_id: string;
+  status: MuhabbetTripStatus;
+  city?: string | null;
+  pickup_text?: string | null;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
+  dropoff_text?: string | null;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
+  agreed_price?: number | string | null;
+  vehicle_kind?: 'car' | 'motorcycle' | null;
+  payment_method?: 'cash' | 'card' | null;
+  route_polyline?: string | null;
+  route_distance_km?: number | null;
+  route_duration_min?: number | null;
+  route_source?: string | null;
+  route_updated_at?: string | null;
+  passenger_location_lat?: number | null;
+  passenger_location_lng?: number | null;
+  passenger_location_updated_at?: string | null;
+  driver_location_lat?: number | null;
+  driver_location_lng?: number | null;
+  driver_location_updated_at?: string | null;
+  started_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by_user_id?: string | null;
+  cancel_reason?: string | null;
+  finished_at?: string | null;
+  finished_by_user_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type MuhabbetTripSessionSocketPayload = {
+  session_id?: string;
+  request_id?: string;
+  conversation_id?: string;
+  session?: MuhabbetTripSession;
+};
