@@ -21882,6 +21882,7 @@ def _leylek_pair_request_try_from_socket(uid: str, conversation_id: str) -> dict
             .insert(
                 {
                     "conversation_id": cid,
+                    "requester_user_id": uid,
                     "initiator_user_id": uid,
                     "target_user_id": target,
                     "status": "pending",
